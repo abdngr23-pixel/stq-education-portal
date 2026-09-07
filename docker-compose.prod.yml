@@ -1,0 +1,73 @@
+services:
+  # 1. Aplikasi STQ Education Portal (Next.js Standalone)
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stq_portal_app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:stqpasswordsecure2026@db:5432/stq_education_db?schema=public
+      - AUTH_SECRET=stq-education-portal-production-secret-key-32chars-min
+      - NEXT_PUBLIC_APP_URL=https://stqduc.sch.id
+      - NODE_ENV=production
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - stq_network
+
+  # 2. Database Utama PostgreSQL 16
+  db:
+    image: postgres:16-alpine
+    container_name: stq_postgres_db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: stqpasswordsecure2026
+      POSTGRES_DB: stq_education_db
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+      - ./backups:/backups
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d stq_education_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - stq_network
+
+  # 3. Layanan Otomatisasi Backup Terjadwal (Cron Harian Pukul 02.00)
+  backup:
+    image: prodrigestivill/postgres-backup-local:16-alpine
+    container_name: stq_postgres_backup
+    restart: always
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=stq_education_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=stqpasswordsecure2026
+      - SCHEDULE=@daily
+      - BACKUP_KEEP_DAYS=7
+      - BACKUP_KEEP_WEEKS=4
+      - BACKUP_KEEP_MONTHS=6
+      - HEALTHCHECK_PORT=80
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - stq_network
+
+volumes:
+  pgdata_prod:
+    driver: local
+
+networks:
+  stq_network:
+    driver: bridge

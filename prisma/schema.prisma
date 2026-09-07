@@ -1,0 +1,768 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ----------------------------------------------------
+// ENUMS
+// ----------------------------------------------------
+
+enum Role {
+  YAY   // Yayasan
+  KS    // Kepala Sekolah / Mudir
+  ADM   // Admin / Tata Usaha
+  MK    // Musyrif Keasramaan
+  MT    // Musyrif Tahfizh
+  GA    // Guru Akademik
+  PH    // Pembina Halaqoh
+  OSDA  // Organisasi Santri
+  WS    // Wali Santri
+  ST    // Santri
+}
+
+enum UserStatus {
+  AKTIF
+  NONAKTIF
+  SUSPENDED
+}
+
+enum SantriStatus {
+  AKTIF
+  LULUS
+  MUTASI
+  KELUAR
+}
+
+enum JenisKelamin {
+  L // Laki-laki
+  P // Perempuan
+}
+
+enum JenisSetoran {
+  SABAQ   // Hafalan baru
+  SABQI   // Muroja'ah hafalan baru
+  MANZIL  // Muroja'ah hafalan lama
+  MUFAR   // Pengulangan/pemantapan khusus
+}
+
+enum NilaiSetoran {
+  MUMTAZ        // A+ / Sempurna
+  JAYYID_JIDDAN // A / Sangat Baik
+  JAYYID        // B / Baik
+  MAQBUL        // C / Cukup
+  DHOIF         // D / Perlu Mengulang
+}
+
+// Enums Fase 2: Akademik & Kesantrian
+enum KategoriMapel {
+  DINIYAH
+  UMUM
+  KEPESANTRENAN
+}
+
+enum JenisNilai {
+  KEAKTIFAN
+  TUGAS
+  UTS
+  UAS
+  PBL
+}
+
+enum JenisIzin {
+  PULANG
+  KELUAR_KOMPLEK
+  SAKIT
+  TUGAS_PONDOK
+}
+
+enum StatusIzin {
+  MENUNGGU_MK
+  MENUNGGU_KS
+  DISETUJUI
+  DITOLAK
+  KEMBALI_TERKONFIRMASI
+}
+
+enum StatusAbsensi {
+  HADIR
+  IZIN
+  SAKIT
+  ALFA
+}
+
+// Enums Fase 3: Kedisiplinan & Administrasi
+enum TingkatPelanggaran {
+  RINGAN
+  SEDANG
+  BERAT
+}
+
+enum StatusSP {
+  AKTIF
+  DIPUTIHKAN
+  SELESAI
+}
+
+enum KategoriBintang {
+  TAHFIZH
+  KEDISIPLINAN
+  KEBERSIHAN
+  TELADAN_UMUM
+}
+
+enum StatusPengajuan {
+  DIAJUKAN
+  DISETUJUI_KS
+  DITOLAK
+  DICAIRKAN
+}
+
+// Enums Fase 4: Integrasi Eksternal
+enum StatusSponsor {
+  AKTIF
+  NONAKTIF
+}
+
+enum StatusKirimWA {
+  BELUM_KIRIM
+  TERKIRIM
+  GAGAL
+}
+
+enum JenisSurat {
+  SURAT_KETERANGAN_AKTIF
+  SURAT_UNDANGAN_WALI
+  SURAT_IZIN_KEGIATAN
+  SURAT_REKOMENDASI
+}
+
+enum StatusSurat {
+  DRAFT
+  FINAL
+  DITERBITKAN
+}
+
+// Enums Fase 6: Modul Lanjutan
+enum StatusIkhtibar {
+  PENGAJUAN
+  LULUS_TAHAP_1
+  LULUS_SEMPURNA_TAHAP_2
+  MENGULANG
+}
+
+enum StatusKesehatan {
+  RAWAT_PONDOK
+  DIRUJUK_PUSKESMAS
+  DIRUJUK_RS
+  SEMBUH
+}
+
+enum KategoriLogistik {
+  SEMBAKO
+  OBAT_P3K
+  PERLENGKAPAN_ASRAMA
+  ATK
+}
+
+enum JenisMutasiLogistik {
+  MASUK
+  KELUAR
+}
+
+
+// ----------------------------------------------------
+// ENTITAS AUTH & USER MANAGEMENT
+// ----------------------------------------------------
+
+model User {
+  id           String      @id @default(cuid())
+  username     String      @unique
+  email        String?     @unique
+  phone        String?     @unique
+  passwordHash String      @map("password_hash")
+  role         Role
+  status       UserStatus  @default(AKTIF)
+  
+  // Relasi ke master data spesifik
+  staffId      String?     @unique @map("staff_id")
+  staff        Staff?      @relation(fields: [staffId], references: [id])
+  
+  santriId     String?     @unique @map("santri_id")
+  santri       Santri?     @relation(fields: [santriId], references: [id])
+
+  sessions     Session[]
+  auditLogs    AuditLog[]
+
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expires      DateTime
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("sessions")
+}
+
+// ----------------------------------------------------
+// MASTER DATA: STAFF
+// ----------------------------------------------------
+
+model Staff {
+  id                 String           @id @default(cuid())
+  staffCode          String           @unique @map("staff_code") // e.g. STF-0001
+  nama               String
+  noHp               String           @map("no_hp")
+  roleStaff          Role             @map("role_staff")
+  status             UserStatus       @default(AKTIF)
+  
+  user               User?
+  halaqohDipimpin    Halaqoh[]        @relation("PembinaHalaqoh")
+  setoranDiampu      SetoranTahfizh[]
+
+  // Relasi Fase 2
+  mapelDiampu        MataPelajaran[]
+  nilaiDiberikan     NilaiAkademik[]
+  izinDisetujuiMK    PerizinanSantri[] @relation("IzinDisetujuiMK")
+  izinDisetujuiKS    PerizinanSantri[] @relation("IzinDisetujuiKS")
+
+  // Relasi Fase 3
+  pelanggaranDicatat PelanggaranSantri[] @relation("PelanggaranDicatat")
+
+  // Relasi Fase 6
+  ikhtibarDiujiTahap1 IkhtibarTahfizh[] @relation("PengujiTahap1")
+  ikhtibarDiujiTahap2 IkhtibarTahfizh[] @relation("PengujiTahap2")
+
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+  createdBy          String?          @map("created_by")
+
+  @@map("staff")
+}
+
+// ----------------------------------------------------
+// MASTER DATA: SANTRI
+// ----------------------------------------------------
+
+model Santri {
+  id            String           @id @default(cuid())
+  nis           String           @unique // e.g. SAN-0001
+  nama          String
+  kelas         String           // e.g. "7A", "8B"
+  jenisKelamin  JenisKelamin     @map("jenis_kelamin")
+  status        SantriStatus     @default(AKTIF)
+  isYatimDhuafa Boolean          @default(false) @map("is_yatim_dhuafa")
+  
+  namaWali      String?          @map("nama_wali")
+  noHpWali      String?          @map("no_hp_wali")
+
+  user          User?
+
+  halaqohId     String?          @map("halaqoh_id")
+  halaqoh       Halaqoh?         @relation(fields: [halaqohId], references: [id])
+  
+  setoranList   SetoranTahfizh[]
+
+  // Relasi Fase 2
+  nilaiList     NilaiAkademik[]
+  perizinanList PerizinanSantri[]
+  absensiList   Absensi[]
+
+  // Relasi Fase 3
+  pelanggaranList PelanggaranSantri[]
+  spList          SuratPeringatan[]
+  bintangList     BintangSantri[]
+
+  // Relasi Fase 4
+  sponsorList        OrangTuaAsuh[]
+  laporanSponsorList LaporanBulananSponsor[]
+
+  // Relasi Fase 6
+  ikhtibarList       IkhtibarTahfizh[]
+  kesehatanList      CatatanKesehatan[]
+
+  // Relasi Fase 7
+  saranList          KotakSaran[]
+
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+  createdBy     String?          @map("created_by")
+
+  @@index([kelas])
+  @@index([status])
+  @@map("santri")
+}
+
+// ----------------------------------------------------
+// MASTER DATA: HALAQOH
+// ----------------------------------------------------
+
+model Halaqoh {
+  id          String         @id @default(cuid())
+  halaqohCode String         @unique @map("halaqoh_code") // e.g. HLQ-0001
+  nama        String         // e.g. "Halaqoh Utsman bin Affan"
+  pembinaId   String         @map("pembina_id")
+  pembina     Staff          @relation("PembinaHalaqoh", fields: [pembinaId], references: [id])
+  tahunAjaran String         @map("tahun_ajaran")
+  status      UserStatus     @default(AKTIF)
+  
+  santriList  Santri[]
+
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  createdBy   String?        @map("created_by")
+
+  @@map("halaqoh")
+}
+
+// ----------------------------------------------------
+// MODUL TAHFIZH: SETORAN
+// ----------------------------------------------------
+
+model SetoranTahfizh {
+  id           String        @id @default(cuid())
+  setoranCode  String        @unique @map("setoran_code") // e.g. SET-000001
+  santriId     String        @map("santri_id")
+  santri       Santri        @relation(fields: [santriId], references: [id], onDelete: Restrict)
+  
+  musyrifId    String        @map("musyrif_id")
+  musyrif      Staff         @relation(fields: [musyrifId], references: [id], onDelete: Restrict)
+
+  tanggal      DateTime      @default(now())
+  jenis        JenisSetoran
+  juz          Int
+  surahMulai   String        @map("surah_mulai")
+  ayatMulai    Int           @map("ayat_mulai")
+  surahSelesai String        @map("surah_selesai")
+  ayatSelesai  Int           @map("ayat_selesai")
+  
+  nilai        NilaiSetoran
+  catatan      String?
+  
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  createdBy    String?       @map("created_by")
+
+  @@index([santriId, tanggal])
+  @@index([musyrifId])
+  @@index([jenis])
+  @@map("setoran_tahfizh")
+}
+
+// ----------------------------------------------------
+// MODUL FASE 2: AKADEMIK UMUM & DINIYAH
+// ----------------------------------------------------
+
+model MataPelajaran {
+  id          String         @id @default(cuid())
+  kodeMapel   String         @unique @map("kode_mapel") // e.g. "MP-TAF-01"
+  nama        String         // e.g. "Fiqih Ibadah", "Bahasa Arab", "Matematika"
+  kategori    KategoriMapel
+  guruId      String?        @map("guru_id")
+  guru        Staff?         @relation(fields: [guruId], references: [id])
+  
+  nilaiList   NilaiAkademik[]
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  @@map("mata_pelajaran")
+}
+
+model NilaiAkademik {
+  id          String        @id @default(cuid())
+  santriId    String        @map("santri_id")
+  santri      Santri        @relation(fields: [santriId], references: [id], onDelete: Cascade)
+  mapelId     String        @map("mapel_id")
+  mapel       MataPelajaran @relation(fields: [mapelId], references: [id])
+  guruId      String        @map("guru_id")
+  guru        Staff         @relation(fields: [guruId], references: [id])
+  
+  semester    Int           // 1 atau 2
+  tahunAjaran String        @map("tahun_ajaran") // e.g. "2026/2027"
+  jenis       JenisNilai
+  angka       Float         // 0 - 100
+  huruf       String        // A, B, C, D
+  catatan     String?
+
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  @@index([santriId, mapelId])
+  @@map("nilai_akademik")
+}
+
+// ----------------------------------------------------
+// MODUL FASE 2: KESANTRIAN & ASRAMA
+// ----------------------------------------------------
+
+model PerizinanSantri {
+  id             String      @id @default(cuid())
+  kodeIzin       String      @unique @map("kode_izin") // e.g. "IZN-0001"
+  santriId       String      @map("santri_id")
+  santri         Santri      @relation(fields: [santriId], references: [id], onDelete: Restrict)
+  
+  jenis          JenisIzin
+  tanggalMulai   DateTime    @map("tanggal_mulai")
+  tanggalSelesai DateTime    @map("tanggal_selesai")
+  alasan         String
+  status         StatusIzin  @default(MENUNGGU_MK)
+  
+  disetujuiMKId  String?     @map("disetujui_mk_id")
+  disetujuiMK    Staff?      @relation("IzinDisetujuiMK", fields: [disetujuiMKId], references: [id])
+  
+  disetujuiKSId  String?     @map("disetujui_ks_id")
+  disetujuiKS    Staff?      @relation("IzinDisetujuiKS", fields: [disetujuiKSId], references: [id])
+  
+  catatan        String?
+
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  @@index([santriId, status])
+  @@map("perizinan_santri")
+}
+
+model Absensi {
+  id          String        @id @default(cuid())
+  tanggal     DateTime      @default(now())
+  santriId    String        @map("santri_id")
+  santri      Santri        @relation(fields: [santriId], references: [id], onDelete: Cascade)
+  kegiatan    String        // e.g. "Sholat Subuh", "KBM Pagi", "Halaqoh Maghrib"
+  status      StatusAbsensi @default(HADIR)
+  catatan     String?
+  dicatatOleh String        @map("dicatat_oleh") // username
+
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  @@index([santriId, tanggal])
+  @@map("absensi")
+}
+
+// ----------------------------------------------------
+// MODUL FASE 3: KEDISIPLINAN & PENGHARGAAN
+// ----------------------------------------------------
+
+model KategoriPelanggaran {
+  id              String             @id @default(cuid())
+  kode            String             @unique // e.g. "PLG-DIS-01"
+  nama            String             // e.g. "Terlambat Sholat", "Membawa Gadget Ilegal"
+  tingkat         TingkatPelanggaran
+  poinDasar       Int                @map("poin_dasar") // e.g. 5, 10, 25
+  
+  pelanggaranList PelanggaranSantri[]
+  createdAt       DateTime           @default(now()) @map("created_at")
+
+  @@map("kategori_pelanggaran")
+}
+
+model PelanggaranSantri {
+  id              String              @id @default(cuid())
+  kodePelanggaran String              @unique @map("kode_pelanggaran") // e.g. "PLG-000001"
+  santriId        String              @map("santri_id")
+  santri          Santri              @relation(fields: [santriId], references: [id], onDelete: Cascade)
+  kategoriId      String              @map("kategori_id")
+  kategori        KategoriPelanggaran @relation(fields: [kategoriId], references: [id])
+  
+  tanggal         DateTime            @default(now())
+  poinFinal       Int                 @map("poin_final") // Hasil setelah pengulangan (x2 jika berulang)
+  isPengulangan   Boolean             @default(false) @map("is_pengulangan")
+  kronologi       String
+  
+  pencatatId      String              @map("pencatat_id")
+  pencatat        Staff               @relation("PelanggaranDicatat", fields: [pencatatId], references: [id])
+
+  createdAt       DateTime            @default(now()) @map("created_at")
+
+  @@index([santriId, tanggal])
+  @@map("pelanggaran_santri")
+}
+
+model SuratPeringatan {
+  id                  String    @id @default(cuid())
+  nomorSP             String    @unique @map("nomor_sp") // e.g. "001/SP-DUC/2026"
+  santriId            String    @map("santri_id")
+  santri              Santri    @relation(fields: [santriId], references: [id], onDelete: Cascade)
+  tingkatSP           Int       @map("tingkat_sp") // 1, 2, atau 3
+  totalPoinSaatTerbit Int       @map("total_poin_saat_terbit")
+  tanggalTerbit       DateTime  @default(now()) @map("tanggal_terbit")
+  status              StatusSP  @default(AKTIF)
+  keteranganPemutihan String?   @map("keterangan_pemutihan")
+  tanggalPemutihan    DateTime? @map("tanggal_pemutihan")
+
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  @@index([santriId, status])
+  @@map("surat_peringatan")
+}
+
+model BintangSantri {
+  id        String          @id @default(cuid())
+  santriId  String          @map("santri_id")
+  santri    Santri          @relation(fields: [santriId], references: [id], onDelete: Cascade)
+  periode   String          // e.g. "Agustus 2026"
+  kategori  KategoriBintang
+  prestasi  String          // e.g. "Nol Pelanggaran & Setoran 2 Juz dalam Sebulan"
+  
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  @@index([santriId, periode])
+  @@map("bintang_santri")
+}
+
+// ----------------------------------------------------
+// MODUL FASE 3: ADMINISTRASI & NOTULEN RAPAT
+// ----------------------------------------------------
+
+model PengajuanBulanan {
+  id            String          @id @default(cuid())
+  kodePengajuan String          @unique @map("kode_pengajuan") // e.g. "AJU-000001"
+  judul         String          // e.g. "Pengadaan Kitab Fiqih & ATK Santri"
+  kategori      String          // "LOGISTIK", "OPERASIONAL", "KEGIATAN"
+  nominal       Float
+  keterangan    String
+  status        StatusPengajuan @default(DIAJUKAN)
+  
+  diajukanOleh  String          @map("diajukan_oleh") // username Admin
+  disetujuiOleh String?         @map("disetujui_oleh") // username Mudir/KS
+  catatanKS     String?         @map("catatan_ks")
+  
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  @@map("pengajuan_bulanan")
+}
+
+model NotulenRapat {
+  id           String   @id @default(cuid())
+  judulRapat   String   @map("judul_rapat") // e.g. "Rapat Pleno Asatidz Evaluasi Bulanan"
+  tanggal      DateTime @default(now())
+  tempat       String
+  peserta      String   // e.g. "Seluruh Asatidz, Mudir, Staf TU"
+  isiNotulen   String   @map("isi_notulen")
+  tindakLanjut String   @map("tindak_lanjut")
+  notulis      String   // username Admin/TU
+
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("notulen_rapat")
+}
+
+// ----------------------------------------------------
+// MODUL FASE 4: INTEGRASI EKSTERNAL (ORANG TUA ASUH, WA, SURAT AI)
+// ----------------------------------------------------
+
+model OrangTuaAsuh {
+  id             String         @id @default(cuid())
+  kodeSponsor    String         @unique @map("kode_sponsor") // e.g. "OTA-001"
+  nama           String
+  noHp           String         @map("no_hp") // Nomor WhatsApp
+  email          String?
+  alamat         String?
+  nominalBulanan Float          @map("nominal_bulanan")
+  status         StatusSponsor  @default(AKTIF)
+
+  santriId       String?        @map("santri_id")
+  santri         Santri?        @relation(fields: [santriId], references: [id])
+  
+  laporanList    LaporanBulananSponsor[]
+
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  @@map("orang_tua_asuh")
+}
+
+model LaporanBulananSponsor {
+  id              String        @id @default(cuid())
+  kodeLaporan     String        @unique @map("kode_laporan") // e.g. "LAP-2026-08-01"
+  sponsorId       String        @map("sponsor_id")
+  sponsor         OrangTuaAsuh  @relation(fields: [sponsorId], references: [id])
+  santriId        String        @map("santri_id")
+  santri          Santri        @relation(fields: [santriId], references: [id])
+
+  bulan           String        // e.g. "Agustus 2026"
+  snapshotTahfizh Json          @map("snapshot_tahfizh")
+  catatanMusyrif  String?       @map("catatan_musyrif")
+  
+  statusKirimWA   StatusKirimWA @default(BELUM_KIRIM) @map("status_kirim_wa")
+  tanggalKirimWA  DateTime?     @map("tanggal_kirim_wa")
+
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  @@index([sponsorId, bulan])
+  @@map("laporan_bulanan_sponsor")
+}
+
+model SuratResmi {
+  id            String      @id @default(cuid())
+  nomorSurat    String      @unique @map("nomor_surat") // e.g. "024/STQ-DUC/SK/IX/2026"
+  jenisSurat    JenisSurat  @map("jenis_surat")
+  perihal       String
+  tujuan        String
+  isiSurat      String      @map("isi_surat")
+  status        StatusSurat @default(DRAFT)
+  
+  dibuatOleh    String      @map("dibuat_oleh")
+  penandatangan String      @map("penandatangan")
+
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  @@index([jenisSurat, status])
+  @@map("surat_resmi")
+}
+
+// ----------------------------------------------------
+// MODUL FASE 6: MODUL LANJUTAN (IKHTIBAR, KESEHATAN, LOGISTIK)
+// ----------------------------------------------------
+
+model IkhtibarTahfizh {
+  id              String         @id @default(cuid())
+  santriId        String         @map("santri_id")
+  santri          Santri         @relation(fields: [santriId], references: [id])
+  
+  juz             Int            // Juz yang diujikan (1-30)
+  status          StatusIkhtibar @default(PENGAJUAN)
+  
+  pengujiTahap1Id String?        @map("penguji_tahap_1_id")
+  pengujiTahap1   Staff?         @relation("PengujiTahap1", fields: [pengujiTahap1Id], references: [id])
+  nilaiTahap1     Float?         @map("nilai_tahap_1")
+  catatanTahap1   String?        @map("catatan_tahap_1")
+  tanggalTahap1   DateTime?      @map("tanggal_tahap_1")
+
+  pengujiTahap2Id String?        @map("penguji_tahap_2_id")
+  pengujiTahap2   Staff?         @relation("PengujiTahap2", fields: [pengujiTahap2Id], references: [id])
+  nilaiTahap2     Float?         @map("nilai_tahap_2")
+  catatanTahap2   String?        @map("catatan_tahap_2")
+  tanggalTahap2   DateTime?      @map("tanggal_tahap_2")
+
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  @@index([santriId, juz])
+  @@map("ikhtibar_tahfizh")
+}
+
+model CatatanKesehatan {
+  id          String          @id @default(cuid())
+  santriId    String          @map("santri_id")
+  santri      Santri          @relation(fields: [santriId], references: [id])
+  
+  keluhan     String          // Gejala/keluhan fisik
+  diagnosa    String?         // Dugaan awal penyakit
+  tindakan    String          // Obat/tindakan medis yang diberikan
+  status      StatusKesehatan @default(RAWAT_PONDOK)
+  dicatatOleh String          @map("dicatat_oleh") // Musyrif Asrama / OSDA
+  tanggal     DateTime        @default(now())
+
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  @@index([santriId, status])
+  @@map("catatan_kesehatan")
+}
+
+model StokLogistik {
+  id          String           @id @default(cuid())
+  kodeBarang  String           @unique @map("kode_barang") // e.g. "LOG-001"
+  namaBarang  String           @map("nama_barang")
+  kategori    KategoriLogistik
+  jumlahStok  Float            @map("jumlah_stok")
+  satuan      String           // e.g. "Kg", "Dus", "Botol", "Pcs"
+  lokasi      String           // e.g. "Gudang Dapur", "Ruang UKS", "Kantor TU"
+  keterangan  String?
+  
+  mutasiList  MutasiLogistik[]
+
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  @@map("stok_logistik")
+}
+
+model MutasiLogistik {
+  id              String              @id @default(cuid())
+  logistikId      String              @map("logistik_id")
+  logistik        StokLogistik        @relation(fields: [logistikId], references: [id])
+  
+  jenis           JenisMutasiLogistik
+  jumlah          Float
+  keterangan      String              // Donasi Sembako, Pemasakan Dapur, dll.
+  penanggungJawab String              @map("penanggung_jawab")
+  tanggal         DateTime            @default(now())
+
+  createdAt       DateTime            @default(now()) @map("created_at")
+
+  @@index([logistikId])
+  @@map("mutasi_logistik")
+}
+
+// ----------------------------------------------------
+// MODUL FASE 7: PORTAL WALI, KOTAK SARAN & KALENDER AKADEMIK
+// ----------------------------------------------------
+
+model KotakSaran {
+  id         String    @id @default(cuid())
+  pengirimId String?   @map("pengirim_id") // User ID jika login
+  nama       String    // Nama Wali Santri / Pengirim
+  noHp       String?   @map("no_hp")
+  santriId   String?   @map("santri_id")
+  santri     Santri?   @relation(fields: [santriId], references: [id])
+  kategori   String    // "Gizi & Katering", "Tahfizh & Musyrif", "Kedisiplinan", "Fasilitas"
+  pesan      String
+  tanggapan  String?
+  status     String    @default("BARU") // BARU, DITANGGAPI, SELESAI
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@index([santriId])
+  @@index([status])
+  @@map("kotak_saran")
+}
+
+model KalenderAkademik {
+  id             String    @id @default(cuid())
+  judul          String
+  deskripsi      String?
+  tanggalMulai   DateTime  @map("tanggal_mulai")
+  tanggalSelesai DateTime? @map("tanggal_selesai")
+  kategori       String    // "TAHFIZH", "LIBUR", "UJIAN", "KEGIATAN_SANTRI"
+  targetPeserta  String    // "SEMUA", "KELAS_7", "KELAS_8", "ASATIDZ"
+  lokasi         String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([kategori])
+  @@map("kalender_akademik")
+}
+
+// ----------------------------------------------------
+// AUDIT LOG
+// ----------------------------------------------------
+
+model AuditLog {
+  id        String    @id @default(cuid())
+  userId    String?   @map("user_id")
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  action    String    // "LOGIN", "CREATE_SETORAN", "KIRIM_WA", "GENERATE_SURAT_AI", dll.
+  entity    String    // "SetoranTahfizh", "LaporanBulananSponsor", "SuratResmi", dll.
+  entityId  String?   @map("entity_id")
+  details   Json?     // Snapshot perubahan
+  ipAddress String?   @map("ip_address")
+  userAgent String?   @map("user_agent")
+  
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

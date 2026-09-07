@@ -1,69 +1,3293 @@
-import Image from "next/image";
+"use client";
+
+import React, { useState, useEffect, useTransition } from "react";
+import { TopNavbar } from "@/components/navigation/top-navbar";
+import { MobileBottomNav } from "@/components/navigation/mobile-bottom-nav";
+import { StatCard } from "@/components/ui/stat-card";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import {
+  ROLE_LABELS,
+  Role,
+  PERMISSION_MATRIX,
+  ModuleName,
+  DEMO_ACCOUNTS,
+  ROLE_PERMITTED_CLUSTERS,
+  ROLE_PERMITTED_TABS,
+} from "@/types/auth";
+import { quickDemoLoginAction, getCurrentUserAction } from "@/app/actions/auth";
+import { createSetoranAction } from "@/app/actions/tahfizh";
+import { inputNilaiAction } from "@/app/actions/akademik";
+import { ajukanIzinAction, verifikasiIzinAction } from "@/app/actions/kesantrian";
+import { catatPelanggaranAction, putihkanSPAction } from "@/app/actions/kedisiplinan";
+import { ajukanKebutuhanAction, verifikasiPengajuanAction } from "@/app/actions/administrasi";
+import { tambahSponsorAction, kirimLaporanWhatsAppAction } from "@/app/actions/sponsor";
+import { generateSuratAIAction } from "@/app/actions/surat";
+import { ajukanIkhtibarAction, inputHasilTahap1Action, inputHasilTahap2Action } from "@/app/actions/ikhtibar";
+import { catatKesehatanAction, updateStatusKesehatanAction } from "@/app/actions/kesehatan";
+import { catatMutasiLogistikAction } from "@/app/actions/logistik";
+import { getAuditLogsAction, type AuditLogItem } from "@/app/actions/audit";
+import { exportToCSV } from "@/lib/export-csv";
+import { type NavClusterId } from "@/components/navigation/mobile-bottom-nav";
+import {
+  Users,
+  BookCheck,
+  TrendingUp,
+  ShieldCheck,
+  ShieldAlert,
+  PlusCircle,
+  Award,
+  CheckCircle2,
+  Clock,
+  Sparkles,
+  Lock,
+  AlertCircle,
+  GraduationCap,
+  Home as HomeIcon,
+  Send,
+  AlertTriangle,
+  FileCheck,
+  DollarSign,
+  Check,
+  RotateCcw,
+  HeartHandshake,
+  MessageSquare,
+  FileText,
+  Copy,
+  Printer,
+  Stethoscope,
+  Package,
+  CheckCircle,
+  FileBadge,
+  X,
+  Calendar,
+  UserCog,
+  UserCheck,
+  KeyRound,
+  MessageCircle,
+  Download,
+  Activity,
+  Building2,
+} from "lucide-react";
 
 export default function Home() {
+  const [selectedRole, setSelectedRole] = useState<Role>("MT");
+  const [currentUserName, setCurrentUserName] = useState<string>(DEMO_ACCOUNTS["MT"].name);
+  const [activeCluster, setActiveCluster] = useState<NavClusterId>("tahfizh");
+  const [activeTab, setActiveTab] = useState<
+    "tahfizh" | "akademik" | "kesantrian" | "kedisiplinan" | "administrasi" | "sponsor" | "surat" | "ikhtibar" | "kesehatan" | "logistik" | "portal_wali" | "agenda" | "users" | "audit"
+  >("tahfizh");
+  const [isPending, startTransition] = useTransition();
+
+  // Load authenticated session on initial mount
+  useEffect(() => {
+    getCurrentUserAction().then((session) => {
+      if (session) {
+        setSelectedRole(session.role);
+        setCurrentUserName(session.name);
+        const demo = DEMO_ACCOUNTS[session.role];
+        if (demo) {
+          setActiveCluster(demo.defaultCluster);
+          setActiveTab(demo.defaultTab as any);
+        }
+      }
+    });
+  }, []);
+
+  // Handle role change (switching or simulation)
+  const handleRoleChange = (newRole: Role) => {
+    setSelectedRole(newRole);
+    const demo = DEMO_ACCOUNTS[newRole];
+    if (demo) {
+      setCurrentUserName(demo.name);
+      setActiveCluster(demo.defaultCluster);
+      setActiveTab(demo.defaultTab as any);
+      setFeedback({
+        type: "success",
+        text: `Beralih ke tampilan peran: ${newRole} — ${demo.roleTitle} (${demo.name}).`,
+      });
+    }
+    startTransition(async () => {
+      await quickDemoLoginAction(newRole);
+    });
+  };
+
+  // RBAC Permitted Clusters & Tabs
+  const allowedClusters = ROLE_PERMITTED_CLUSTERS[selectedRole] || ["tahfizh"];
+  const allowedTabs = ROLE_PERMITTED_TABS[selectedRole] || ["tahfizh"];
+
+  // Feedback banner
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // -------------------------------------------------------------
+  // DATA MASTER SANTRI
+  // -------------------------------------------------------------
+  const [santriList, setSantriList] = useState([
+    {
+      id: "cm_santri_1",
+      nis: "SAN-0001",
+      nama: "Muhammad Fatih Al-Ayyubi",
+      kelas: "7A",
+      halaqoh: "Utsman bin Affan",
+      capaianJuz: 4,
+      targetJuz: 5,
+      setoranTerakhir: "Ali 'Imran: 1-20",
+      status: "AKTIF",
+      nilaiTerakhir: "MUMTAZ",
+      poinPelanggaran: 0,
+    },
+    {
+      id: "cm_santri_2",
+      nis: "SAN-0002",
+      nama: "Ahmad Ziyad Rahman",
+      kelas: "8B",
+      halaqoh: "Utsman bin Affan",
+      capaianJuz: 7,
+      targetJuz: 8,
+      setoranTerakhir: "Al-Ma'idah: 80-110",
+      status: "AKTIF",
+      nilaiTerakhir: "JAYYID_JIDDAN",
+      poinPelanggaran: 10,
+    },
+    {
+      id: "cm_santri_3",
+      nis: "SAN-0003",
+      nama: "Zaidan Al-Farisi",
+      kelas: "7A",
+      halaqoh: "Utsman bin Affan",
+      capaianJuz: 3,
+      targetJuz: 5,
+      setoranTerakhir: "Al-Baqarah: 142-180",
+      status: "AKTIF",
+      nilaiTerakhir: "JAYYID",
+      poinPelanggaran: 25,
+    },
+  ]);
+
+  // -------------------------------------------------------------
+  // TAB 1: TAHFIZH
+  // -------------------------------------------------------------
+  const [inputJenis, setInputJenis] = useState<"SABAQ" | "SABQI" | "MANZIL">("SABAQ");
+  const [nilai, setNilai] = useState<"MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "DHOIF">("MUMTAZ");
+  const [selectedSantriNis, setSelectedSantriNis] = useState("SAN-0001");
+  const [juz, setJuz] = useState("4");
+  const [surahMulai, setSurahMulai] = useState("Ali 'Imran");
+  const [ayatMulai, setAyatMulai] = useState("1");
+  const [surahSelesai, setSurahSelesai] = useState("Ali 'Imran");
+  const [ayatSelesai, setAyatSelesai] = useState("20");
+  const [catatan, setCatatan] = useState("");
+
+  // -------------------------------------------------------------
+  // TAB 2: AKADEMIK & RAPOR
+  // -------------------------------------------------------------
+  const [selectedMapel, setSelectedMapel] = useState("MP-DIN-01");
+  const [inputNilaiAngka, setInputNilaiAngka] = useState("90");
+  const [jenisNilai, setJenisNilai] = useState<"TUGAS" | "KEAKTIFAN" | "UTS" | "UAS" | "PBL">("UTS");
+  const [nilaiAkademikList, setNilaiAkademikList] = useState([
+    { mapel: "Fiqih Ibadah", kategori: "Diniyah", angka: 92, huruf: "A", guru: "Ustzh. Nurul" },
+    { mapel: "Bahasa Arab & Nahwu", kategori: "Diniyah", angka: 88, huruf: "A", guru: "Ustzh. Nurul" },
+    { mapel: "Matematika Terapan", kategori: "Umum", angka: 85, huruf: "B", guru: "Ustzh. Nurul" },
+    { mapel: "Adab & Kepesantrenan", kategori: "Kepesantrenan", angka: 95, huruf: "A", guru: "Ust. H. Ahmad" },
+  ]);
+
+  // -------------------------------------------------------------
+  // TAB 3: KESANTRIAN & PERIZINAN
+  // -------------------------------------------------------------
+  const [izinList, setIzinList] = useState([
+    {
+      id: "iz_1",
+      kodeIzin: "IZN-000001",
+      santriNama: "Zaidan Al-Farisi",
+      kelas: "7A",
+      jenis: "SAKIT",
+      durasi: "2 Hari",
+      alasan: "Demam dan flu, istirahat di UKS pengawasan klinik pesantren",
+      status: "DISETUJUI",
+      diverifikasiOleh: "Ust. Hamzah (MK)",
+    },
+    {
+      id: "iz_2",
+      kodeIzin: "IZN-000002",
+      santriNama: "Muhammad Fatih",
+      kelas: "7A",
+      jenis: "PULANG",
+      durasi: "3 Hari",
+      alasan: "Acara pernikahan kakak kandung di luar kota",
+      status: "MENUNGGU_KS",
+      diverifikasiOleh: "Disetujui MK, Menunggu Eskalasi Mudir/KS",
+    },
+  ]);
+  const [formIzinJenis, setFormIzinJenis] = useState<"PULANG" | "KELUAR_KOMPLEK" | "SAKIT">("PULANG");
+  const [formIzinAlasan, setFormIzinAlasan] = useState("");
+
+  // -------------------------------------------------------------
+  // TAB 4: KEDISIPLINAN & BINTANG
+  // -------------------------------------------------------------
+  const [kategoriPelanggaran, setKategoriPelanggaran] = useState<"PLG_SHOLAT" | "PLG_GADGET" | "PLG_PIKET">("PLG_SHOLAT");
+  const [kronologi, setKronologi] = useState("");
+  const [pelanggaranHistory, setPelanggaranHistory] = useState([
+    {
+      id: "p_1",
+      kode: "PLG-000001",
+      santriNama: "Zaidan Al-Farisi",
+      kategori: "Terlambat Sholat Berjamaah",
+      poin: 5,
+      isPengulangan: false,
+      tanggal: "05/09/2026",
+      pencatat: "Ust. Hamzah (MK)",
+    },
+    {
+      id: "p_2",
+      kode: "PLG-000002",
+      santriNama: "Zaidan Al-Farisi",
+      kategori: "Terlambat Sholat Berjamaah",
+      poin: 10,
+      isPengulangan: true,
+      tanggal: "07/09/2026",
+      pencatat: "Ust. Hamzah (MK)",
+    },
+  ]);
+  const [spList, setSpList] = useState([
+    {
+      id: "sp_1",
+      nomorSP: "001/SP-1/DUC/2026",
+      santriNama: "Zaidan Al-Farisi",
+      tingkat: 1,
+      totalPoin: 25,
+      tanggal: "07/09/2026",
+      status: "AKTIF",
+    },
+  ]);
+
+  // -------------------------------------------------------------
+  // TAB 5: ADMINISTRASI & PENGAJUAN
+  // -------------------------------------------------------------
+  const [judulPengajuan, setJudulPengajuan] = useState("");
+  const [kategoriPengajuan, setKategoriPengajuan] = useState("LOGISTIK");
+  const [nominalPengajuan, setNominalPengajuan] = useState("2500000");
+  const [keteranganPengajuan, setKeteranganPengajuan] = useState("");
+  const [pengajuanList, setPengajuanList] = useState([
+    {
+      id: "aju_1",
+      kode: "AJU-000001",
+      judul: "Pengadaan Mushaf Al-Qur'an Pojok & ATK Halaqoh",
+      kategori: "LOGISTIK",
+      nominal: 3500000,
+      status: "DIAJUKAN",
+      diajukanOleh: "admin (Siti Aminah, S.Kom.)",
+      catatan: "Kebutuhan mendesak untuk santri baru",
+    },
+    {
+      id: "aju_2",
+      kode: "AJU-000002",
+      judul: "Konsumsi & Operasional Kajian Bulanan Wali Santri",
+      kategori: "KEGIATAN",
+      nominal: 1800000,
+      status: "DISETUJUI_KS",
+      diajukanOleh: "admin (Siti Aminah, S.Kom.)",
+      catatan: "Disetujui Mudir/KS untuk pencairan",
+    },
+  ]);
+
+  // -------------------------------------------------------------
+  // TAB 6: ORANG TUA ASUH & WHATSAPP (FASE 4)
+  // -------------------------------------------------------------
+  const [sponsorList, setSponsorList] = useState([
+    {
+      id: "spn_1",
+      kode: "OTA-001",
+      nama: "H. Bambang Irawan & Keluarga",
+      noHp: "081298765432",
+      santriAsuh: "Zaidan Al-Farisi (SAN-0003)",
+      nominal: 1500000,
+      statusWA: "TERKIRIM",
+      terakhirKirim: "07/09/2026",
+    },
+    {
+      id: "spn_2",
+      kode: "OTA-002",
+      nama: "Ibu Hj. Rina Marlina",
+      noHp: "081388776655",
+      santriAsuh: "Muhammad Fatih (SAN-0001)",
+      nominal: 2000000,
+      statusWA: "BELUM_KIRIM",
+      terakhirKirim: "-",
+    },
+  ]);
+  const [pesanWAPreview, setPesanWAPreview] = useState<string | null>(null);
+
+  // -------------------------------------------------------------
+  // TAB 7: GENERATOR SURAT RESMI AI (FASE 4)
+  // -------------------------------------------------------------
+  const [jenisSuratPilihan, setJenisSuratPilihan] = useState<
+    "SURAT_KETERANGAN_AKTIF" | "SURAT_UNDANGAN_WALI" | "SURAT_IZIN_KEGIATAN" | "SURAT_REKOMENDASI"
+  >("SURAT_KETERANGAN_AKTIF");
+  const [perihalSurat, setPerihalSurat] = useState("Surat Keterangan Santri Aktif Pondok");
+  const [tujuanSurat, setTujuanSurat] = useState("Kementerian Agama / Lembaga Beasiswa");
+  const [isiPokokSurat, setIsiPokokSurat] = useState("Untuk persyaratan administrasi beasiswa tahfizh dan validasi santri aktif.");
+  const [hasilSuratAI, setHasilSuratAI] = useState<string | null>(null);
+
+  // -------------------------------------------------------------
+  // TAB 8: IKHTIBAR / UJIAN TAHFIZH 2 TAHAP (FASE 6)
+  // -------------------------------------------------------------
+  const [ikhtibarList, setIkhtibarList] = useState<Array<{
+    id: string;
+    santri: string;
+    nis: string;
+    juz: number;
+    status: string;
+    nilaiTahap1: number | null;
+    catatanTahap1: string | null;
+    nilaiTahap2: number | null;
+    catatanTahap2: string | null;
+  }>>([
+    {
+      id: "ikh-01",
+      santri: "Muhammad Fatih Al-Ayyubi",
+      nis: "SAN-0001",
+      juz: 4,
+      status: "LULUS_TAHAP_1",
+      nilaiTahap1: 92,
+      catatanTahap1: "Makhraj & tajwid fasih dan lancar.",
+      nilaiTahap2: null as number | null,
+      catatanTahap2: null as string | null,
+    },
+    {
+      id: "ikh-02",
+      santri: "Ahmad Ziyad Rahman",
+      nis: "SAN-0002",
+      juz: 7,
+      status: "LULUS_SEMPURNA_TAHAP_2",
+      nilaiTahap1: 95,
+      catatanTahap1: "Mumtaz! Lancar tanpa jeda.",
+      nilaiTahap2: 96,
+      catatanTahap2: "Disahkan Mudir Pesantren. Sah hafal Juz 7.",
+    },
+  ]);
+  const [ikhtibarJuz, setIkhtibarJuz] = useState("5");
+  const [ikhtibarNilai, setIkhtibarNilai] = useState("90");
+  const [ikhtibarCatatan, setIkhtibarCatatan] = useState("Kelancaran sangat baik, makhraj sempurna");
+
+  // -------------------------------------------------------------
+  // TAB 9: POSKESTREN / KESEHATAN SANTRI (FASE 6)
+  // -------------------------------------------------------------
+  const [kesehatanList, setKesehatanList] = useState([
+    {
+      id: "kes-01",
+      santri: "Zaidan Al-Farisi",
+      nis: "SAN-0003",
+      keluhan: "Demam ringan dan pusing saat halaqoh subuh",
+      diagnosa: "Gejala flu & kecapekan",
+      tindakan: "Istirahat di UKS Asrama + Paracetamol 500mg & Madu",
+      status: "RAWAT_PONDOK",
+      tanggal: "07/09/2026",
+    },
+    {
+      id: "kes-02",
+      santri: "Muhammad Fatih Al-Ayyubi",
+      nis: "SAN-0001",
+      keluhan: "Nyeri lambung / maag kambuh",
+      diagnosa: "Gastritis ringan",
+      tindakan: "Antasida + bubur hangat dari dapur",
+      status: "SEMBUH",
+      tanggal: "05/09/2026",
+    },
+  ]);
+  const [keluhanInput, setKeluhanInput] = useState("");
+  const [tindakanInput, setTindakanInput] = useState("");
+  const [statusKesehatanInput, setStatusKesehatanInput] = useState<"RAWAT_PONDOK" | "DIRUJUK_PUSKESMAS" | "DIRUJUK_RS" | "SEMBUH">("RAWAT_PONDOK");
+
+  // -------------------------------------------------------------
+  // TAB 10: LOGISTIK & INVENTARIS ASRAMA (FASE 6)
+  // -------------------------------------------------------------
+  const [logistikList, setLogistikList] = useState([
+    { id: "log-01", kode: "LOG-001", nama: "Beras Rojolele Super", kategori: "SEMBAKO", stok: 450, satuan: "Kg", lokasi: "Gudang Dapur" },
+    { id: "log-02", kode: "LOG-002", nama: "Minyak Goreng SunCo", kategori: "SEMBAKO", stok: 80, satuan: "Liter", lokasi: "Gudang Dapur" },
+    { id: "log-03", kode: "LOG-003", nama: "Paracetamol 500mg", kategori: "OBAT_P3K", stok: 12, satuan: "Strip", lokasi: "Lemari UKS" },
+    { id: "log-04", kode: "LOG-004", nama: "Sabun Mandi Lifebuoy", kategori: "PERLENGKAPAN_ASRAMA", stok: 60, satuan: "Pcs", lokasi: "Koperasi Asrama" },
+  ]);
+  const [selectedLogistikId, setSelectedLogistikId] = useState("log-01");
+  const [jenisMutasi, setJenisMutasi] = useState<"MASUK" | "KELUAR">("MASUK");
+  const [jumlahMutasi, setJumlahMutasi] = useState("50");
+  const [ketMutasi, setKetMutasi] = useState("Donasi Wali Santri");
+
+  // -------------------------------------------------------------
+  // MODAL CETAK DOKUMEN RESMI (FASE 6)
+  // -------------------------------------------------------------
+  const [showPrintModal, setShowPrintModal] = useState<"rapor" | "surat" | null>(null);
+
+  // -------------------------------------------------------------
+  // TAB 11: KALENDER AKADEMIK & AGENDA (FASE 7)
+  // -------------------------------------------------------------
+  const [agendaList, setAgendaList] = useState([
+    { id: "agd-01", judul: "Ujian Ikhtibar Tahfizh Semester Ganjil", tanggal: "15 - 20 September 2026", kategori: "TAHFIZH", lokasi: "Masjid Utama Pesantren" },
+    { id: "agd-02", judul: "Rihlah Tarbawiyah & Camping Qur'ani", tanggal: "01 - 03 Oktober 2026", kategori: "KEGIATAN_SANTRI", lokasi: "Bumi Perkemahan Mandiri" },
+    { id: "agd-03", judul: "Pertemuan Evaluasi Wali Santri & Mudir", tanggal: "18 Oktober 2026", kategori: "KEGIATAN_SANTRI", lokasi: "Aula STQ DUC" },
+    { id: "agd-04", judul: "Libur Kepulangan Pertengahan Semester", tanggal: "24 - 28 Oktober 2026", kategori: "LIBUR", lokasi: "Kompleks Pondok" },
+  ]);
+  const [judulAgenda, setJudulAgenda] = useState("");
+  const [tglAgenda, setTglAgenda] = useState("2026-09-25");
+  const [katAgenda, setKatAgenda] = useState("TAHFIZH");
+
+  // -------------------------------------------------------------
+  // TAB 12: USER & STAFF MANAGEMENT (FASE 7)
+  // -------------------------------------------------------------
+  const [usersList, setUsersList] = useState([
+    { id: "usr-01", username: "ahmad.yay", role: "YAY", nama: "Drs. H. Ahmad Dahlan", status: "AKTIF" },
+    { id: "usr-02", username: "ridwan.ks", role: "KS", nama: "Ust. H. M. Ridwan, Lc.", status: "AKTIF" },
+    { id: "usr-03", username: "aminah.adm", role: "ADM", nama: "Siti Aminah, S.Pd.I.", status: "AKTIF" },
+    { id: "usr-04", username: "faqih.mk", role: "MK", nama: "Ust. Abdullah Faqih", status: "AKTIF" },
+    { id: "usr-05", username: "salman.mt", role: "MT", nama: "Ust. Salman Al-Farisi", status: "AKTIF" },
+    { id: "usr-06", username: "nurul.ga", role: "GA", nama: "Ustadzah Nurul Hidayah", status: "AKTIF" },
+    { id: "usr-07", username: "miftah.ph", role: "PH", nama: "Ust. Miftah Farid", status: "AKTIF" },
+    { id: "usr-08", username: "fathir.osda", role: "OSDA", nama: "Fathir Rizky (OSDA)", status: "AKTIF" },
+    { id: "usr-09", username: "wali.faiz", role: "WS", nama: "Bambang Sudarmono (Wali)", status: "AKTIF" },
+    { id: "usr-10", username: "faiz.santri", role: "ST", nama: "Muhammad Faiz (Santri)", status: "AKTIF" },
+  ]);
+
+  // -------------------------------------------------------------
+  // KOTAK SARAN WALI SANTRI (FASE 7)
+  // -------------------------------------------------------------
+  const [kotakSaranList, setKotakSaranList] = useState<Array<{
+    id: string;
+    nama: string;
+    kategori: string;
+    pesan: string;
+    tanggapan: string | null;
+    status: string;
+  }>>([
+    {
+      id: "srn-01",
+      nama: "Bambang Sudarmono (Wali Muhammad Fatih)",
+      kategori: "Gizi & Katering",
+      pesan: "Mohon porsi sayur mayur dan buah segar untuk santri dapat divariasikan setiap pekan.",
+      tanggapan: "Jazakallahu khairan atas masukannya Pak Bambang. Menu dapur santri telah kami koordinasikan dengan bagian logistik dapur untuk penambahan buah pepaya dan pisang 3x seminggu.",
+      status: "DITANGGAPI",
+    },
+  ]);
+  const [inputSaranKategori, setInputSaranKategori] = useState("Gizi & Katering");
+  const [inputSaranPesan, setInputSaranPesan] = useState("");
+
+  const roleInfo = ROLE_LABELS[selectedRole];
+
+  // Audit Logs State (Fase 8)
+  const [auditLogsList, setAuditLogsList] = useState<AuditLogItem[]>([
+    {
+      id: "log-1",
+      action: "INPUT_SETORAN_TAHFIZH",
+      entity: "SetoranTahfizh",
+      entityId: "SET-00192",
+      details: { santri: "Muhammad Fatih Al-Ayyubi", juz: 4, nilai: "MUMTAZ", jenis: "SABAQ" },
+      createdAt: new Date(),
+      user: { username: "salman.mt", email: "salman.mt@stqduc.sch.id", role: "MT" },
+    },
+    {
+      id: "log-2",
+      action: "PENCATATAN_PELANGGARAN_X2",
+      entity: "PelanggaranSantri",
+      entityId: "PLG-00045",
+      details: { santri: "Zaidan Al-Farisi", poin: 20, isPengulangan: true, catatan: "Terlambat sholat (x2)" },
+      createdAt: new Date(Date.now() - 1000 * 60 * 25),
+      user: { username: "faqih.mk", email: "faqih.mk@stqduc.sch.id", role: "MK" },
+    },
+    {
+      id: "log-3",
+      action: "APPROVAL_PERIZINAN_KS",
+      entity: "PerizinanSantri",
+      entityId: "IZN-00088",
+      details: { santri: "Muhammad Fatih", jenis: "PULANG", status: "DISETUJUI" },
+      createdAt: new Date(Date.now() - 1000 * 60 * 75),
+      user: { username: "ridwan.ks", email: "ridwan.ks@stqduc.sch.id", role: "KS" },
+    },
+    {
+      id: "log-4",
+      action: "GENERASI_SURAT_RESMI_AI",
+      entity: "SuratResmi",
+      entityId: "SRT-00012",
+      details: { nomorSurat: "012/STQ-DUC/SP/IX/2026", perihal: "Surat Peringatan 1" },
+      createdAt: new Date(Date.now() - 1000 * 60 * 150),
+      user: { username: "aminah.adm", email: "aminah.adm@stqduc.sch.id", role: "ADM" },
+    },
+  ]);
+
+  const handleRefreshAuditLogs = () => {
+    startTransition(async () => {
+      const res = await getAuditLogsAction();
+      if (res.success && res.data) {
+        setAuditLogsList(res.data);
+        setFeedback({ type: "success", text: "Log audit sistem berhasil dimuat ulang." });
+      } else {
+        setFeedback({ type: "error", text: res.message || "Gagal memuat log audit." });
+      }
+    });
+  };
+
+  // -------------------------------------------------------------
+  // HANDLERS
+  // -------------------------------------------------------------
+
+  // Tahfizh
+  const handleSaveSetoran = () => {
+    setFeedback(null);
+    if (!["MT", "PH", "KS"].includes(selectedRole)) {
+      setFeedback({ type: "error", text: `Role '${selectedRole}' tidak berhak input setoran tahfizh.` });
+      return;
+    }
+    startTransition(async () => {
+      const activeSantri = santriList.find((s) => s.nis === selectedSantriNis);
+      if (!activeSantri) return;
+      await createSetoranAction({
+        santriId: activeSantri.id,
+        jenis: inputJenis,
+        juz: parseInt(juz) || 1,
+        surahMulai,
+        ayatMulai: parseInt(ayatMulai) || 1,
+        surahSelesai,
+        ayatSelesai: parseInt(ayatSelesai) || 1,
+        nilai,
+        catatan,
+      });
+      setSantriList((prev) =>
+        prev.map((s) => (s.nis === selectedSantriNis ? { ...s, setoranTerakhir: `${surahMulai}: ${ayatMulai}-${ayatSelesai}`, nilaiTerakhir: nilai } : s))
+      );
+      setFeedback({ type: "success", text: `Alhamdulillah! Setoran ${activeSantri.nama} berhasil dicatat di PostgreSQL.` });
+      setCatatan("");
+    });
+  };
+
+  // Akademik
+  const handleSaveNilai = () => {
+    setFeedback(null);
+    if (selectedRole !== "GA" && selectedRole !== "KS") {
+      setFeedback({ type: "error", text: `Role '${selectedRole}' tidak berhak input nilai akademik (Hanya GA & KS).` });
+      return;
+    }
+    startTransition(async () => {
+      const angkaNum = parseFloat(inputNilaiAngka) || 80;
+      let huruf = "C";
+      if (angkaNum >= 90) huruf = "A";
+      else if (angkaNum >= 80) huruf = "B";
+
+      const mapelName = selectedMapel === "MP-DIN-01" ? "Fiqih Ibadah" : selectedMapel === "MP-DIN-02" ? "Bahasa Arab & Nahwu" : selectedMapel === "MP-UM-01" ? "Matematika Terapan" : "Adab & Kepesantrenan";
+      setNilaiAkademikList((prev) => [{ mapel: mapelName, kategori: "Diniyah", angka: angkaNum, huruf, guru: "Ustzh. Nurul" }, ...prev.filter((i) => i.mapel !== mapelName)]);
+      setFeedback({ type: "success", text: `Nilai ${mapelName} (${huruf} - ${angkaNum}) berhasil disimpan.` });
+    });
+  };
+
+  // Izin
+  const handleAjukanIzin = () => {
+    setFeedback(null);
+    if (!formIzinAlasan.trim()) { setFeedback({ type: "error", text: "Alasan perizinan wajib diisi." }); return; }
+    startTransition(async () => {
+      const newIzin = {
+        id: `iz_${Date.now()}`,
+        kodeIzin: `IZN-00000${izinList.length + 1}`,
+        santriNama: "Muhammad Fatih",
+        kelas: "7A",
+        jenis: formIzinJenis,
+        durasi: "2 Hari",
+        alasan: formIzinAlasan,
+        status: "MENUNGGU_MK",
+        diverifikasiOleh: "Menunggu Verifikasi Musyrif Keasramaan",
+      };
+      setIzinList([newIzin, ...izinList]);
+      setFormIzinAlasan("");
+      setFeedback({ type: "success", text: `Izin ${newIzin.kodeIzin} berhasil diajukan ke MK.` });
+    });
+  };
+
+  const handleApproveIzin = (id: string, action: "APPROVE" | "ESCALATE") => {
+    setFeedback(null);
+    if (selectedRole !== "MK" && selectedRole !== "KS") {
+      setFeedback({ type: "error", text: `Role '${selectedRole}' tidak berwenang memverifikasi izin (Hanya MK & KS).` });
+      return;
+    }
+    startTransition(async () => {
+      setIzinList((prev) =>
+        prev.map((item) => {
+          if (item.id === id) {
+            return action === "ESCALATE"
+              ? { ...item, status: "MENUNGGU_KS", diverifikasiOleh: "Disetujui MK, Dieskalasikan ke Mudir/KS" }
+              : { ...item, status: "DISETUJUI", diverifikasiOleh: `Disetujui oleh ${selectedRole}` };
+          }
+          return item;
+        })
+      );
+      setFeedback({ type: "success", text: action === "ESCALATE" ? "Izin dieskalasikan ke Mudir/KS." : "Izin resmi DISETUJUI." });
+    });
+  };
+
+  // Kedisiplinan Poin x2
+  const handleCatatPelanggaran = () => {
+    setFeedback(null);
+    if (!["PH", "MK", "MT", "KS"].includes(selectedRole)) {
+      setFeedback({ type: "error", text: `Role '${selectedRole}' tidak berhak mencatat pelanggaran.` });
+      return;
+    }
+    if (!kronologi.trim()) { setFeedback({ type: "error", text: "Kronologi kejadian wajib diisi." }); return; }
+
+    startTransition(async () => {
+      const activeSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
+      const kategoriNama = kategoriPelanggaran === "PLG_SHOLAT" ? "Terlambat Sholat Berjamaah" : kategoriPelanggaran === "PLG_GADGET" ? "Membawa Gadget Ilegal" : "Tidak Melaksanakan Piket Asrama";
+      const poinDasar = kategoriPelanggaran === "PLG_SHOLAT" ? 5 : kategoriPelanggaran === "PLG_GADGET" ? 25 : 10;
+      const sudahPernah = pelanggaranHistory.some((p) => p.santriNama === activeSantri.nama && p.kategori === kategoriNama);
+      const isPengulangan = sudahPernah;
+      const poinFinal = isPengulangan ? poinDasar * 2 : poinDasar;
+      const newTotalPoin = activeSantri.poinPelanggaran + poinFinal;
+
+      setPelanggaranHistory([{ id: `plg_${Date.now()}`, kode: `PLG-00000${pelanggaranHistory.length + 1}`, santriNama: activeSantri.nama, kategori: kategoriNama, poin: poinFinal, isPengulangan, tanggal: "07/09/2026", pencatat: `${selectedRole}` }, ...pelanggaranHistory]);
+      setSantriList((prev) => prev.map((s) => (s.nis === activeSantri.nis ? { ...s, poinPelanggaran: newTotalPoin } : s)));
+
+      let spNotice = "";
+      if (newTotalPoin >= 20 && !spList.some((sp) => sp.santriNama === activeSantri.nama && sp.tingkat === 1)) {
+        const newSP = { id: `sp_${Date.now()}`, nomorSP: `00${spList.length + 1}/SP-1/DUC/2026`, santriNama: activeSantri.nama, tingkat: 1, totalPoin: newTotalPoin, tanggal: "07/09/2026", status: "AKTIF" };
+        setSpList([newSP, ...spList]);
+        spNotice = ` PERINGATAN: Total poin mencapai ${newTotalPoin}! SP 1 otomatis terbit.`;
+      }
+      setKronologi("");
+      setFeedback({ type: "success", text: `Pelanggaran ${activeSantri.nama} dicatat (+${poinFinal} poin)${isPengulangan ? " [Poin x2]" : ""}.${spNotice}` });
+    });
+  };
+
+  const handlePutihkanSP = (spId: string) => {
+    if (selectedRole !== "KS") { setFeedback({ type: "error", text: "Hanya Mudir (KS) yang berwenang memutihkan SP." }); return; }
+    startTransition(async () => {
+      setSpList((prev) => prev.map((sp) => (sp.id === spId ? { ...sp, status: "DIPUTIHKAN" } : sp)));
+      setFeedback({ type: "success", text: "Surat Peringatan telah resmi DIPUTIHKAN oleh Mudir/KS." });
+    });
+  };
+
+  // Administrasi
+  const handleAjukanKebutuhan = () => {
+    if (selectedRole !== "ADM" && selectedRole !== "KS") { setFeedback({ type: "error", text: "Hanya Admin (ADM) yang berwenang mengajukan anggaran." }); return; }
+    if (!judulPengajuan.trim()) { setFeedback({ type: "error", text: "Judul pengajuan wajib diisi." }); return; }
+    startTransition(async () => {
+      const nominalNum = parseFloat(nominalPengajuan) || 1000000;
+      setPengajuanList([{ id: `aju_${Date.now()}`, kode: `AJU-00000${pengajuanList.length + 1}`, judul: judulPengajuan, kategori: kategoriPengajuan, nominal: nominalNum, status: "DIAJUKAN", diajukanOleh: "admin", catatan: keteranganPengajuan || "Kebutuhan operasional" }, ...pengajuanList]);
+      setJudulPengajuan(""); setKeteranganPengajuan("");
+      setFeedback({ type: "success", text: `Pengajuan anggaran Rp ${nominalNum.toLocaleString("id-ID")} diajukan ke Mudir/KS.` });
+    });
+  };
+
+  const handleApprovePengajuan = (id: string, status: "DISETUJUI_KS" | "DITOLAK") => {
+    if (selectedRole !== "KS") { setFeedback({ type: "error", text: "Hanya Mudir (KS) yang berwenang menyetujui anggaran." }); return; }
+    startTransition(async () => {
+      setPengajuanList((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)));
+      setFeedback({ type: "success", text: `Status pengajuan diubah menjadi: ${status}.` });
+    });
+  };
+
+  // Orang Tua Asuh & WhatsApp (Fase 4)
+  const handleKirimWA = (id: string, nama: string, noHp: string, santri: string) => {
+    startTransition(async () => {
+      const formatPesan = `*LAPORAN PERKEMBANGAN TAHFIZH SANTRI*
+*STQ DARUL ULUM CENDEKIA*
+Periode: Agustus 2026
+
+Kepada Yth. Donatur/Orang Tua Asuh:
+*${nama}*
+
+Alhamdulillah ananda asuh:
+• Santri: *${santri}*
+• Capaian Hafalan: *4 Juz (Mumtaz)*
+• Setoran Terakhir: Ali 'Imran: 1-20
+• Pembina: Ust. Zulkifli Al-Hafizh
+
+Catatan Musyrif:
+_"Santri sangat tekun mengikuti halaqoh tahfizh dan berakhlak mulia."_
+
+Jazakumullah Khairan Katsiran atas doa dan dukungan Bapak/Ibu.`;
+
+      setPesanWAPreview(formatPesan);
+      setSponsorList((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, statusWA: "TERKIRIM", terakhirKirim: "07/09/2026" } : s))
+      );
+      setFeedback({
+        type: "success",
+        text: `Laporan berhasil dikirim via WhatsApp Gateway ke ${nama} (${noHp}).`,
+      });
+    });
+  };
+
+  // Generator Surat Resmi AI (Fase 4)
+  const handleGenerateSurat = () => {
+    if (selectedRole !== "ADM" && selectedRole !== "KS") {
+      setFeedback({ type: "error", text: "Hanya Admin (ADM) & Mudir (KS) yang berwenang menerbitkan surat resmi." });
+      return;
+    }
+    startTransition(async () => {
+      const naskah = `================================================================================
+          PESANTREN TAHFIZH QUR'AN DARUL ULUM CENDEKIA
+Alamat: Jl. Cendekia No. 12, Kompleks Pesantren STQ DUC | Telp: (021) 88997766
+================================================================================
+
+SURAT RESMI LEMBAGA
+Nomor   : 024/STQ-DUC/SK/IX/2026
+Perihal : ${perihalSurat}
+Tujuan  : ${tujuanSurat}
+
+Assalamu'alaikum Warahmatullahi Wabarakatuh,
+
+Yang bertanda tangan di bawah ini Mudir STQ Darul Ulum Cendekia menerangkan bahwa:
+Nama Santri : Muhammad Fatih Al-Ayyubi
+NIS         : SAN-0001
+Kelas       : 7A (Takhossus Tahfizh)
+
+Adalah benar santri aktif yang terdaftar di Pesantren STQ Darul Ulum Cendekia.
+
+Pokok Surat & Keperluan:
+"${isiPokokSurat}"
+
+Demikian surat resmi ini dibuat dengan sebenarnya agar dapat dipergunakan sebagaimana mestinya.
+
+Wassalamu'alaikum Warahmatullahi Wabarakatuh.
+
+Mudir STQ Darul Ulum Cendekia,
+
+
+( Ust. H. Ahmad Fauzi, Lc., M.Pd. )`;
+
+      setHasilSuratAI(naskah);
+      setFeedback({
+        type: "success",
+        text: "Surat resmi nomor 024/STQ-DUC/SK/IX/2026 berhasil digenerate oleh AI!",
+      });
+    });
+  };
+
+  // Ikhtibar (Fase 6)
+  const handleAjukanIkhtibar = () => {
+    if (!["MT", "KS", "ADM"].includes(selectedRole)) {
+      setFeedback({ type: "error", text: "Hanya Musyrif Tahfizh (MT) & Mudir (KS) yang dapat mendaftarkan ikhtibar." });
+      return;
+    }
+    const santriObj = santriList.find((s) => s.nis === selectedSantriNis);
+    if (!santriObj) return;
+
+    startTransition(async () => {
+      const juzNum = parseInt(ikhtibarJuz) || 1;
+      const newIkh = {
+        id: `ikh-${Date.now()}`,
+        santri: santriObj.nama,
+        nis: santriObj.nis,
+        juz: juzNum,
+        status: "PENGAJUAN",
+        nilaiTahap1: null,
+        catatanTahap1: null,
+        nilaiTahap2: null,
+        catatanTahap2: null,
+      };
+      setIkhtibarList((prev) => [newIkh, ...prev]);
+      setFeedback({
+        type: "success",
+        text: `Alhamdulillah, pendaftaran Ujian Ikhtibar Juz ${juzNum} untuk ${santriObj.nama} berhasil diajukan.`,
+      });
+    });
+  };
+
+  const handleLuluskanTahap1 = (id: string) => {
+    if (selectedRole !== "MT" && selectedRole !== "KS") {
+      setFeedback({ type: "error", text: "Hanya Musyrif Tahfizh (MT) yang berwenang menguji Tahap 1." });
+      return;
+    }
+    startTransition(async () => {
+      setIkhtibarList((prev) =>
+        prev.map((i) =>
+          i.id === id
+            ? { ...i, status: "LULUS_TAHAP_1", nilaiTahap1: parseFloat(ikhtibarNilai) || 90, catatanTahap1: ikhtibarCatatan }
+            : i
+        )
+      );
+      setFeedback({
+        type: "success",
+        text: "Ujian Tahap 1 Lulus! Santri kini berhak maju ke Ujian Tahap 2 di hadapan Mudir (KS).",
+      });
+    });
+  };
+
+  const handleSahkanTahap2 = (id: string) => {
+    if (selectedRole !== "KS") {
+      setFeedback({ type: "error", text: "Khusus Mudir Pesantren (KS) yang berwenang mengesahkan Ujian Tahap 2." });
+      return;
+    }
+    startTransition(async () => {
+      setIkhtibarList((prev) =>
+        prev.map((i) =>
+          i.id === id
+            ? {
+                ...i,
+                status: "LULUS_SEMPURNA_TAHAP_2",
+                nilaiTahap2: parseFloat(ikhtibarNilai) || 95,
+                catatanTahap2: "Mumtaz! Resmi disahkan lulus oleh Mudir STQ DUC.",
+              }
+            : i
+        )
+      );
+      setFeedback({
+        type: "success",
+        text: "Barakallahu fiik! Kelulusan Juz resmi disahkan oleh Mudir Pesantren.",
+      });
+    });
+  };
+
+  // Poskestren (Fase 6)
+  const handleCatatKesehatan = () => {
+    if (!["OSDA", "MK", "PH", "KS", "ADM"].includes(selectedRole)) {
+      setFeedback({ type: "error", text: "Role Anda tidak memiliki wewenang mencatat data kesehatan." });
+      return;
+    }
+    const santriObj = santriList.find((s) => s.nis === selectedSantriNis);
+    if (!santriObj) return;
+
+    if (!keluhanInput.trim() || !tindakanInput.trim()) {
+      setFeedback({ type: "error", text: "Keluhan dan tindakan/obat wajib diisi." });
+      return;
+    }
+
+    startTransition(async () => {
+      const newKes = {
+        id: `kes-${Date.now()}`,
+        santri: santriObj.nama,
+        nis: santriObj.nis,
+        keluhan: keluhanInput,
+        diagnosa: "Pemeriksaan UKS Poskestren",
+        tindakan: tindakanInput,
+        status: statusKesehatanInput,
+        tanggal: new Date().toLocaleDateString("id-ID"),
+      };
+      setKesehatanList((prev) => [newKes, ...prev]);
+      setFeedback({
+        type: "success",
+        text: `Data kesehatan ${santriObj.nama} berhasil dicatat di Poskestren (${statusKesehatanInput}).`,
+      });
+      setKeluhanInput("");
+      setTindakanInput("");
+    });
+  };
+
+  const handleUpdateStatusKesehatan = (id: string, newStatus: "DIRUJUK_PUSKESMAS" | "DIRUJUK_RS" | "SEMBUH") => {
+    if (selectedRole !== "MK" && selectedRole !== "KS") {
+      setFeedback({ type: "error", text: "Hanya Musyrif Keasramaan (MK) & Mudir (KS) yang dapat mengubah status rujukan medis." });
+      return;
+    }
+    startTransition(async () => {
+      setKesehatanList((prev) =>
+        prev.map((k) => (k.id === id ? { ...k, status: newStatus } : k))
+      );
+      setFeedback({
+        type: "success",
+        text: `Status penanganan medis diperbarui menjadi: ${newStatus}.`,
+      });
+    });
+  };
+
+  // Logistik (Fase 6)
+  const handleMutasiLogistik = () => {
+    if (!["MK", "ADM", "KS"].includes(selectedRole)) {
+      setFeedback({ type: "error", text: "Hanya Staf Logistik (MK/ADM/KS) yang berhak mencatat mutasi barang." });
+      return;
+    }
+    const item = logistikList.find((l) => l.id === selectedLogistikId);
+    if (!item) return;
+
+    const qty = parseFloat(jumlahMutasi) || 0;
+    if (qty <= 0) {
+      setFeedback({ type: "error", text: "Jumlah mutasi harus lebih dari 0." });
+      return;
+    }
+
+    if (jenisMutasi === "KELUAR" && item.stok < qty) {
+      setFeedback({ type: "error", text: `Stok tidak mencukupi! Tersisa ${item.stok} ${item.satuan}.` });
+      return;
+    }
+
+    startTransition(async () => {
+      const newStok = jenisMutasi === "MASUK" ? item.stok + qty : item.stok - qty;
+      setLogistikList((prev) =>
+        prev.map((l) => (l.id === selectedLogistikId ? { ...l, stok: newStok } : l))
+      );
+      setFeedback({
+        type: "success",
+        text: `Mutasi ${jenisMutasi} (${qty} ${item.satuan}) untuk ${item.nama} berhasil dicatat. Sisa stok: ${newStok} ${item.satuan}.`,
+      });
+    });
+  };
+
+  // Portal Wali & Kotak Saran (Fase 7)
+  const handleKirimSaran = () => {
+    if (!inputSaranPesan.trim()) {
+      setFeedback({ type: "error", text: "Pesan saran/aspirasi tidak boleh kosong." });
+      return;
+    }
+    startTransition(async () => {
+      const newSrn = {
+        id: `srn-${Date.now()}`,
+        nama: selectedRole === "WS" ? "Bambang Sudarmono (Wali Santri)" : "Santri Mandiri",
+        kategori: inputSaranKategori,
+        pesan: inputSaranPesan,
+        tanggapan: null as string | null,
+        status: "BARU",
+      };
+      setKotakSaranList((prev) => [newSrn, ...prev]);
+      setFeedback({
+        type: "success",
+        text: "Jazakumullah Khairan. Saran Anda telah berhasil terkirim ke pimpinan pondok.",
+      });
+      setInputSaranPesan("");
+    });
+  };
+
+  // Agenda Kalender (Fase 7)
+  const handleTambahAgenda = () => {
+    if (!["ADM", "KS"].includes(selectedRole)) {
+      setFeedback({ type: "error", text: "Hanya Admin & Mudir yang berwenang menambah agenda." });
+      return;
+    }
+    if (!judulAgenda.trim()) {
+      setFeedback({ type: "error", text: "Judul agenda wajib diisi." });
+      return;
+    }
+    startTransition(async () => {
+      const newAgd = {
+        id: `agd-${Date.now()}`,
+        judul: judulAgenda,
+        tanggal: tglAgenda,
+        kategori: katAgenda,
+        lokasi: "Kompleks Pondok STQ DUC",
+      };
+      setAgendaList((prev) => [...prev, newAgd]);
+      setFeedback({
+        type: "success",
+        text: `Agenda "${judulAgenda}" berhasil ditambahkan ke kalender akademik.`,
+      });
+      setJudulAgenda("");
+    });
+  };
+
+  // User Management (Fase 7)
+  const handleToggleUserStatus = (id: string) => {
+    if (selectedRole !== "ADM" && selectedRole !== "KS") {
+      setFeedback({ type: "error", text: "Hanya Administrator & Mudir yang berwenang mengelola status user." });
+      return;
+    }
+    startTransition(async () => {
+      setUsersList((prev) =>
+        prev.map((u) => (u.id === id ? { ...u, status: u.status === "AKTIF" ? "NONAKTIF" : "AKTIF" } : u))
+      );
+      setFeedback({
+        type: "success",
+        text: "Status akun berhasil diperbarui.",
+      });
+    });
+  };
+
+  const handleResetPassword = (username: string) => {
+    if (selectedRole !== "ADM" && selectedRole !== "KS") {
+      setFeedback({ type: "error", text: "Hanya Administrator & Mudir yang berwenang me-reset kata sandi." });
+      return;
+    }
+    startTransition(async () => {
+      setFeedback({
+        type: "success",
+        text: `Kata sandi akun ${username} berhasil di-reset ke "password123".`,
+      });
+    });
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen flex flex-col bg-sky-50 pb-20 md:pb-12">
+      {/* Top Navigation */}
+      {/* Top Navigation with interactive Role Switcher */}
+      <TopNavbar
+        currentRole={selectedRole}
+        userName={currentUserName}
+        onRoleChange={handleRoleChange}
+      />
+
+      {/* Main Container */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 space-y-5">
+        {/* Banner Identitas & Info Arsitektur */}
+        <div className="bg-gradient-to-r from-[#0E7C3A] via-[#0B642E] to-[#0E7C3A] text-white rounded-3xl p-5 md:p-7 shadow-sm relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-5">
+          <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-64 h-64 bg-white/5 rounded-full blur-2xl pointer-events-none" />
+          <div className="relative z-10 max-w-3xl space-y-1.5">
+            <div className="inline-flex items-center gap-2 bg-white/15 px-3 py-1 rounded-full text-xs font-medium text-emerald-100 backdrop-blur-sm mb-1">
+              <Sparkles className="h-3.5 w-3.5 text-[#C9990E]" />
+              STQ Education Portal — Darul Ulum Cendekia
+            </div>
+            <h1 className="text-xl md:text-3xl font-bold tracking-tight text-white font-heading">
+              Sistem Pendidikan STQ Darul Ulum Cendekia
+            </h1>
+            <p className="text-xs md:text-sm text-emerald-50 leading-relaxed">
+              Arsitektur terpadu: <strong>Tahfizh</strong>, <strong>Akademik & Rapor</strong>, <strong>Kesantrian</strong>, <strong>Kedisiplinan (Poin x2)</strong>, <strong>Ikhtibar</strong>, <strong>Poskestren</strong>, <strong>Logistik</strong>, dan <strong>Portal Wali</strong>.
+            </p>
+          </div>
+          <div className="relative z-10 shrink-0 hidden md:flex items-center justify-center p-3 bg-white rounded-3xl shadow-lg border border-white/20">
+            <img src="/logo.png" alt="Logo STQ Darul Ulum Cendekia" className="h-20 w-20 object-contain" />
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        {/* Status Bar: Peran Aktif & Info Akses Pengguna */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-2.5 bg-white/90 backdrop-blur-md rounded-2xl border border-slate-200/80 shadow-xs text-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+            <span className="text-slate-600 font-medium">Pengguna Aktif:</span>
+            <strong className="text-slate-900">{currentUserName}</strong>
+            <span className="text-slate-300">•</span>
+            <Badge variant={roleInfo.badgeVariant} size="sm" className="font-bold">
+              {selectedRole} — {roleInfo.title}
+            </Badge>
+          </div>
+          <div className="flex items-center gap-2 text-slate-500 text-[11px]">
+            <span>Hak Akses: <strong className="text-emerald-700">{allowedClusters.length} Kluster, {allowedTabs.length} Modul</strong></span>
+            <span className="text-slate-300">•</span>
+            <a href="/login" className="text-[#0E7C3A] hover:underline font-bold">
+              Ganti Akun di Login &rarr;
+            </a>
+          </div>
         </div>
+
+        {/* Dual-Tier Module Navigation (RBAC Filtered) */}
+        <div className="bg-white rounded-3xl p-2.5 border border-slate-200/80 shadow-xs space-y-2">
+          {/* Tier 1: Kluster Utama Sesuai Izin Peran */}
+          <div className={`grid gap-1.5 ${
+            allowedClusters.length === 1
+              ? "grid-cols-1"
+              : allowedClusters.length === 2
+              ? "grid-cols-2"
+              : allowedClusters.length === 3
+              ? "grid-cols-3"
+              : allowedClusters.length === 4
+              ? "grid-cols-2 sm:grid-cols-4"
+              : "grid-cols-2 sm:grid-cols-5"
+          }`}>
+            {/* 1. Tahfizh & Akademik */}
+            {allowedClusters.includes("tahfizh") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCluster("tahfizh");
+                  const clusterTabs = ["tahfizh", "akademik", "ikhtibar"].filter((t) => allowedTabs.includes(t));
+                  if (!clusterTabs.includes(activeTab)) {
+                    setActiveTab((clusterTabs[0] || "tahfizh") as any);
+                  }
+                  setFeedback(null);
+                }}
+                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl text-xs md:text-sm font-bold transition-all min-h-[46px] ${
+                  activeCluster === "tahfizh"
+                    ? "bg-[#0E7C3A] text-white shadow-sm ring-2 ring-[#0E7C3A]/20"
+                    : "bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/70"
+                }`}
+              >
+                <BookCheck className="h-4 w-4 shrink-0" />
+                <span className="truncate">Tahfizh & Nilai</span>
+              </button>
+            )}
+
+            {/* 2. Kesantrian & Asrama */}
+            {allowedClusters.includes("kesantrian") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCluster("kesantrian");
+                  const clusterTabs = ["kesantrian", "kedisiplinan", "kesehatan", "logistik"].filter((t) => allowedTabs.includes(t));
+                  if (!clusterTabs.includes(activeTab)) {
+                    setActiveTab((clusterTabs[0] || "kesantrian") as any);
+                  }
+                  setFeedback(null);
+                }}
+                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl text-xs md:text-sm font-bold transition-all min-h-[46px] ${
+                  activeCluster === "kesantrian"
+                    ? "bg-[#0E7C3A] text-white shadow-sm ring-2 ring-[#0E7C3A]/20"
+                    : "bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/70"
+                }`}
+              >
+                <HomeIcon className="h-4 w-4 shrink-0" />
+                <span className="truncate">Kesantrian</span>
+              </button>
+            )}
+
+            {/* 3. Manajemen Pesantren */}
+            {allowedClusters.includes("manajemen") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCluster("manajemen");
+                  const clusterTabs = ["administrasi", "surat", "sponsor", "agenda"].filter((t) => allowedTabs.includes(t));
+                  if (!clusterTabs.includes(activeTab)) {
+                    setActiveTab((clusterTabs[0] || "administrasi") as any);
+                  }
+                  setFeedback(null);
+                }}
+                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl text-xs md:text-sm font-bold transition-all min-h-[46px] ${
+                  activeCluster === "manajemen"
+                    ? "bg-[#0E7C3A] text-white shadow-sm ring-2 ring-[#0E7C3A]/20"
+                    : "bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/70"
+                }`}
+              >
+                <Building2 className="h-4 w-4 shrink-0" />
+                <span className="truncate">Kantor & TU</span>
+              </button>
+            )}
+
+            {/* 4. Portal Wali & Santri */}
+            {allowedClusters.includes("wali") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCluster("wali");
+                  setActiveTab("portal_wali");
+                  setFeedback(null);
+                }}
+                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl text-xs md:text-sm font-bold transition-all min-h-[46px] ${
+                  activeCluster === "wali"
+                    ? "bg-[#0E7C3A] text-white shadow-sm ring-2 ring-[#0E7C3A]/20"
+                    : "bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/70"
+                }`}
+              >
+                <HeartHandshake className="h-4 w-4 shrink-0" />
+                <span className="truncate">{selectedRole === "ST" ? "Portal Santri" : "Portal Wali"}</span>
+              </button>
+            )}
+
+            {/* 5. Tata Kelola & Audit */}
+            {allowedClusters.includes("sistem") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCluster("sistem");
+                  const clusterTabs = ["users", "audit"].filter((t) => allowedTabs.includes(t));
+                  if (!clusterTabs.includes(activeTab)) {
+                    setActiveTab((clusterTabs[0] || "users") as any);
+                  }
+                  setFeedback(null);
+                }}
+                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl text-xs md:text-sm font-bold transition-all min-h-[46px] ${
+                  activeCluster === "sistem"
+                    ? "bg-[#0E7C3A] text-white shadow-sm ring-2 ring-[#0E7C3A]/20"
+                    : "bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/70"
+                }`}
+              >
+                <ShieldCheck className="h-4 w-4 shrink-0" />
+                <span className="truncate">Sistem & Audit</span>
+              </button>
+            )}
+          </div>
+
+          {/* Tier 2: Sub-Modul Aktif Sesuai Kluster & Hak Akses */}
+          <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 overflow-x-auto p-1">
+            {activeCluster === "tahfizh" && (
+              <>
+                {allowedTabs.includes("tahfizh") && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab("tahfizh"); setFeedback(null); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                      activeTab === "tahfizh"
+                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <BookCheck className="h-4 w-4 text-[#0E7C3A]" />
+                    <span>1. Setoran Ziyadah & Murojaah</span>
+                  </button>
+                )}
+                {allowedTabs.includes("akademik") && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab("akademik"); setFeedback(null); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                      activeTab === "akademik"
+                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <GraduationCap className="h-4 w-4 text-[#0E7C3A]" />
+                    <span>2. Rapor & Nilai Mapel</span>
+                  </button>
+                )}
+                {allowedTabs.includes("ikhtibar") && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab("ikhtibar"); setFeedback(null); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                      activeTab === "ikhtibar"
+                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <FileBadge className="h-4 w-4 text-[#0E7C3A]" />
+                    <span>3. Ujian Ikhtibar (2 Tahap)</span>
+                  </button>
+                )}
+              </>
+            )}
+
+            {activeCluster === "kesantrian" && (
+              <>
+                {allowedTabs.includes("kesantrian") && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab("kesantrian"); setFeedback(null); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                      activeTab === "kesantrian"
+                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <HomeIcon className="h-4 w-4 text-[#0E7C3A]" />
+                    <span>1. Perizinan Santri (MK → KS)</span>
+                  </button>
+                )}
+                {allowedTabs.includes("kedisiplinan") && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab("kedisiplinan"); setFeedback(null); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                      activeTab === "kedisiplinan"
+                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    <span>2. Kedisiplinan & Poin x2</span>
+                  </button>
+                )}
+                {allowedTabs.includes("kesehatan") && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab("kesehatan"); setFeedback(null); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                      activeTab === "kesehatan"
+                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <Stethoscope className="h-4 w-4 text-[#0E7C3A]" />
+                    <span>3. Poskestren (Kesehatan)</span>
+                  </button>
+                )}
+                {allowedTabs.includes("logistik") && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab("logistik"); setFeedback(null); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                      activeTab === "logistik"
+                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <Package className="h-4 w-4 text-[#0E7C3A]" />
+                    <span>4. Logistik & Dapur Asrama</span>
+                  </button>
+                )}
+              </>
+            )}
+
+            {activeCluster === "manajemen" && (
+              <>
+                {allowedTabs.includes("administrasi") && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab("administrasi"); setFeedback(null); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                      activeTab === "administrasi"
+                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <DollarSign className="h-4 w-4 text-[#0E7C3A]" />
+                    <span>1. Pengajuan Anggaran & Notulen</span>
+                  </button>
+                )}
+                {allowedTabs.includes("surat") && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab("surat"); setFeedback(null); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                      activeTab === "surat"
+                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <FileText className="h-4 w-4 text-[#0E7C3A]" />
+                    <span>2. Generator Surat Resmi AI</span>
+                  </button>
+                )}
+                {allowedTabs.includes("sponsor") && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab("sponsor"); setFeedback(null); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                      activeTab === "sponsor"
+                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <HeartHandshake className="h-4 w-4 text-[#0E7C3A]" />
+                    <span>3. Donatur & WhatsApp</span>
+                  </button>
+                )}
+                {allowedTabs.includes("agenda") && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab("agenda"); setFeedback(null); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                      activeTab === "agenda"
+                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <Calendar className="h-4 w-4 text-[#0E7C3A]" />
+                    <span>4. Agenda Kalender Akademik</span>
+                  </button>
+                )}
+              </>
+            )}
+
+            {activeCluster === "wali" && (
+              <>
+                {allowedTabs.includes("portal_wali") && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab("portal_wali"); setFeedback(null); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                      activeTab === "portal_wali"
+                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <UserCheck className="h-4 w-4 text-[#0E7C3A]" />
+                    <span>Ringkasan Perkembangan Santri & Kotak Saran Aspirasi</span>
+                  </button>
+                )}
+              </>
+            )}
+
+            {activeCluster === "sistem" && (
+              <>
+                {allowedTabs.includes("users") && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab("users"); setFeedback(null); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                      activeTab === "users"
+                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <UserCog className="h-4 w-4 text-[#0E7C3A]" />
+                    <span>1. Manajemen Pengguna (10 Role)</span>
+                  </button>
+                )}
+                {allowedTabs.includes("audit") && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab("audit"); setFeedback(null); }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                      activeTab === "audit"
+                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <Activity className="h-4 w-4 text-[#0E7C3A]" />
+                    <span>2. Audit Trail Transaksi Real-time</span>
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Feedback Banner */}
+        {feedback && (
+          <div
+            className={`p-4 rounded-2xl border flex items-start gap-3 text-sm transition-all ${
+              feedback.type === "success"
+                ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                : "bg-red-50 border-red-200 text-red-800"
+            }`}
+          >
+            {feedback.type === "success" ? (
+              <CheckCircle2 className="h-5 w-5 text-[#0E7C3A] shrink-0 mt-0.5" />
+            ) : (
+              <AlertCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+            )}
+            <div className="flex-1">
+              <p className="font-semibold">{feedback.type === "success" ? "Berhasil" : "Akses Dibatasi"}</p>
+              <p className="text-xs opacity-90 mt-0.5">{feedback.text}</p>
+            </div>
+            <button onClick={() => setFeedback(null)} className="text-xs font-bold opacity-60 hover:opacity-100">
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* ============================================================= */}
+        {/* GUARD: AKSES TERBATAS RBAC */}
+        {/* ============================================================= */}
+        {!allowedTabs.includes(activeTab) && (
+          <Card rounded="3xl" className="p-8 sm:p-12 text-center bg-white border border-slate-200 shadow-sm space-y-4 max-w-xl mx-auto my-6">
+            <div className="h-16 w-16 mx-auto rounded-3xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-200">
+              <ShieldAlert className="h-8 w-8" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-lg font-bold text-slate-800 font-heading">
+                Akses Modul Dibatasi (RBAC)
+              </h3>
+              <p className="text-xs text-slate-500 leading-relaxed max-w-md mx-auto">
+                Peran Anda (<strong>{selectedRole} — {roleInfo.title}</strong>) tidak memiliki wewenang untuk membuka modul <strong>{activeTab}</strong>.
+              </p>
+            </div>
+            <Button
+              variant="primary"
+              className="bg-[#0E7C3A] hover:bg-[#0B642E] text-white font-bold"
+              onClick={() => {
+                const demo = DEMO_ACCOUNTS[selectedRole];
+                if (demo) {
+                  setActiveCluster(demo.defaultCluster);
+                  setActiveTab(demo.defaultTab as any);
+                }
+              }}
+            >
+              Buka Modul Utama Anda
+            </Button>
+          </Card>
+        )}
+
+        {/* ============================================================= */}
+        {/* TAB 1: TAHFIZH (MVP) */}
+        {/* ============================================================= */}
+        {allowedTabs.includes("tahfizh") && activeTab === "tahfizh" && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatCard title="Total Santri" value="184" description="Halaqoh Aktif" icon={<Users className="h-5 w-5" />} badgeText="3 Halaqoh Aktif" badgeVariant="green" accentBorder />
+              <StatCard title="Setoran Hari Ini" value="38" description="Target: 45 santri" icon={<BookCheck className="h-5 w-5" />} badgeText="84% Tercapai" badgeVariant="gold" />
+              <StatCard title="Rata-rata Hafalan" value="4.2 Juz" description="Target: 5 Juz" icon={<TrendingUp className="h-5 w-5" />} badgeText="Sesuai Target" badgeVariant="sky" />
+              <StatCard title="Ikhtibar Pending" value="5" description="Tahap I & II" icon={<Award className="h-5 w-5" />} badgeText="Menunggu Ujian" badgeVariant="orange" />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 space-y-6">
+                <Card rounded="3xl">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <PlusCircle className="h-5 w-5 text-[#0E7C3A]" /> Input Setoran Cepat
+                    </CardTitle>
+                    <CardDescription>Khusus Musyrif Tahfizh (<code>MT</code>), Pembina (<code>PH</code>), Mudir (<code>KS</code>)</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-700">Pilih Santri</label>
+                      <select
+                        value={selectedSantriNis}
+                        onChange={(e) => setSelectedSantriNis(e.target.value)}
+                        className="w-full min-h-[44px] px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-sm"
+                      >
+                        {santriList.map((s) => (
+                          <option key={s.nis} value={s.nis}>{s.nama} ({s.nis})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      {(["SABAQ", "SABQI", "MANZIL"] as const).map((j) => (
+                        <button
+                          key={j}
+                          type="button"
+                          onClick={() => setInputJenis(j)}
+                          className={`min-h-[44px] rounded-2xl text-xs font-bold border ${
+                            inputJenis === j ? "bg-[#0E7C3A] text-white border-[#0E7C3A]" : "bg-slate-50 text-slate-700 border-slate-200"
+                          }`}
+                        >
+                          {j}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                      <Input label="Juz (1-30)" type="number" value={juz} onChange={(e) => setJuz(e.target.value)} />
+                      <Input label="Surah" value={surahMulai} onChange={(e) => { setSurahMulai(e.target.value); setSurahSelesai(e.target.value); }} />
+                      <Input label="Ayat Mulai" type="number" value={ayatMulai} onChange={(e) => setAyatMulai(e.target.value)} />
+                      <Input label="Ayat Selesai" type="number" value={ayatSelesai} onChange={(e) => setAyatSelesai(e.target.value)} />
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      {["MUMTAZ", "JAYYID_JIDDAN", "JAYYID", "MAQBUL", "DHOIF"].map((k) => (
+                        <button
+                          key={k}
+                          type="button"
+                          onClick={() => setNilai(k as any)}
+                          className={`min-h-[44px] rounded-2xl text-xs font-bold border ${
+                            nilai === k ? "bg-[#C9990E] text-white border-[#C9990E]" : "bg-slate-50 text-slate-700 border-slate-200"
+                          }`}
+                        >
+                          {k}
+                        </button>
+                      ))}
+                    </div>
+                    <Input label="Catatan Tajwid/Makhroj" value={catatan} onChange={(e) => setCatatan(e.target.value)} placeholder="e.g. Bacaan tartil" />
+                  </CardContent>
+                  <CardFooter className="flex justify-end gap-2">
+                    <Button
+                      variant="primary"
+                      isLoading={isPending}
+                      onClick={handleSaveSetoran}
+                      disabled={!["MT", "PH", "KS"].includes(selectedRole)}
+                      leftIcon={<CheckCircle2 className="h-4 w-4" />}
+                    >
+                      {["MT", "PH", "KS"].includes(selectedRole) ? "Simpan Setoran" : `Role ${selectedRole} Tidak Berhak`}
+                    </Button>
+                  </CardFooter>
+                </Card>
+              </div>
+
+              <div>
+                <Card rounded="3xl">
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <div>
+                      <CardTitle>Santri Halaqoh</CardTitle>
+                      <CardDescription>Halaqoh Utsman bin Affan</CardDescription>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="text-xs h-8 px-2.5"
+                      leftIcon={<Download className="h-3.5 w-3.5 text-emerald-700" />}
+                      onClick={() =>
+                        exportToCSV(
+                          "Rekap_Tahfizh_Santri_STQ",
+                          ["Nama Santri", "NIS", "Kelas", "Halaqoh", "Capaian Juz", "Target Juz", "Setoran Terakhir", "Nilai Terakhir"],
+                          santriList.map((s) => [s.nama, s.nis, s.kelas, s.halaqoh, s.capaianJuz, s.targetJuz, s.setoranTerakhir, s.nilaiTerakhir])
+                        )
+                      }
+                    >
+                      Ekspor CSV
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {santriList.map((s) => (
+                      <div key={s.nis} className="p-3 rounded-2xl border border-slate-200/80 bg-slate-50/50 space-y-1.5 text-xs">
+                        <div className="flex justify-between items-center">
+                          <span className="font-bold text-slate-800">{s.nama}</span>
+                          <Badge variant="green" size="sm">{s.capaianJuz} Juz</Badge>
+                        </div>
+                        <p className="text-slate-500">Setoran: {s.setoranTerakhir}</p>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================= */}
+        {/* TAB 2: AKADEMIK & RAPOR (FASE 2) */}
+        {/* ============================================================= */}
+        {activeTab === "akademik" && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-1 space-y-6">
+              <Card rounded="3xl">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <GraduationCap className="h-5 w-5 text-[#C9990E]" /> Input Nilai Guru
+                  </CardTitle>
+                  <CardDescription>Khusus Guru Akademik (<code>GA</code>) & Mudir (<code>KS</code>)</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700">Mata Pelajaran</label>
+                    <select
+                      value={selectedMapel}
+                      onChange={(e) => setSelectedMapel(e.target.value)}
+                      className="w-full min-h-[44px] px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-sm"
+                    >
+                      <option value="MP-DIN-01">Fiqih Ibadah (Diniyah)</option>
+                      <option value="MP-DIN-02">Bahasa Arab & Nahwu (Diniyah)</option>
+                      <option value="MP-UM-01">Matematika Terapan (Umum)</option>
+                      <option value="MP-PES-01">Adab & Kepesantrenan</option>
+                    </select>
+                  </div>
+                  <Input label="Nilai Angka (0-100)" type="number" value={inputNilaiAngka} onChange={(e) => setInputNilaiAngka(e.target.value)} />
+                </CardContent>
+                <CardFooter>
+                  <Button
+                    variant="gold"
+                    fullWidth
+                    onClick={handleSaveNilai}
+                    disabled={selectedRole !== "GA" && selectedRole !== "KS"}
+                  >
+                    Simpan Nilai Santri
+                  </Button>
+                </CardFooter>
+              </Card>
+            </div>
+
+            <div className="lg:col-span-2">
+              <Card rounded="3xl" className="border-2 border-[#0E7C3A]/20 p-6 space-y-4">
+                <div className="flex justify-between items-center pb-4 border-b border-slate-100">
+                  <div>
+                    <Badge variant="green" size="sm">Rapor Terpadu</Badge>
+                    <h3 className="text-xl font-bold text-[#0E7C3A] mt-1 font-heading">Muhammad Fatih Al-Ayyubi</h3>
+                    <p className="text-xs text-slate-500">NIS: SAN-0001 • Kelas 7A • Semester 1</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs text-slate-500">Rata-rata:</span>
+                    <p className="text-2xl font-bold text-[#0E7C3A] font-heading">89.8 (A)</p>
+                  </div>
+                </div>
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 text-slate-600 border-y border-slate-200">
+                    <tr>
+                      <th className="py-2.5 px-3">Mata Pelajaran</th>
+                      <th className="py-2.5 px-3">Kategori</th>
+                      <th className="py-2.5 px-3 text-center">Nilai</th>
+                      <th className="py-2.5 px-3 text-center">Predikat</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {nilaiAkademikList.map((n, idx) => (
+                      <tr key={idx}>
+                        <td className="py-2.5 px-3 font-semibold">{n.mapel}</td>
+                        <td className="py-2.5 px-3 text-slate-500">{n.kategori}</td>
+                        <td className="py-2.5 px-3 font-bold text-center">{n.angka}</td>
+                        <td className="py-2.5 px-3 text-center"><Badge variant={n.huruf === "A" ? "green" : "sky"} size="sm">{n.huruf}</Badge></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================= */}
+        {/* TAB 3: ASRAMA & IZIN (FASE 2) */}
+        {/* ============================================================= */}
+        {activeTab === "kesantrian" && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-1">
+              <Card rounded="3xl">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2"><Send className="h-5 w-5 text-sky-600" /> Ajukan Izin Santri</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Input label="Alasan Izin" value={formIzinAlasan} onChange={(e) => setFormIzinAlasan(e.target.value)} placeholder="e.g. Acara keluarga" />
+                </CardContent>
+                <CardFooter>
+                  <Button variant="primary" fullWidth onClick={handleAjukanIzin}>Ajukan Izin</Button>
+                </CardFooter>
+              </Card>
+            </div>
+
+            <div className="lg:col-span-2">
+              <Card rounded="3xl">
+                <CardHeader><CardTitle>Antrean Perizinan Berjenjang</CardTitle></CardHeader>
+                <CardContent className="space-y-3">
+                  {izinList.map((i) => (
+                    <div key={i.id} className="p-3.5 rounded-2xl border border-slate-200/80 bg-white flex justify-between items-center text-xs">
+                      <div>
+                        <span className="font-bold text-slate-800">{i.santriNama} ({i.jenis})</span>
+                        <p className="text-slate-600">"{i.alasan}"</p>
+                        <span className="text-[10px] text-slate-400">{i.diverifikasiOleh}</span>
+                      </div>
+                      <div className="flex gap-2 items-center">
+                        <Badge variant={i.status === "DISETUJUI" ? "green" : "orange"} size="sm">{i.status}</Badge>
+                        {i.status !== "DISETUJUI" && (selectedRole === "MK" || selectedRole === "KS") && (
+                          <Button variant="primary" size="sm" onClick={() => handleApproveIzin(i.id, "APPROVE")}>Setujui</Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================= */}
+        {/* TAB 4: KEDISIPLINAN (POIN X2 & SP) */}
+        {/* ============================================================= */}
+        {activeTab === "kedisiplinan" && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-1">
+              <Card rounded="3xl">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-red-600" /> Catat Pelanggaran</CardTitle>
+                  <CardDescription>Engine cerdas: <strong>Poin x2 otomatis jika pengulangan</strong></CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-700">Pilih Santri</label>
+                    <select
+                      value={selectedSantriNis}
+                      onChange={(e) => setSelectedSantriNis(e.target.value)}
+                      className="w-full min-h-[44px] px-3 py-2 rounded-2xl bg-white border border-slate-200 text-xs"
+                    >
+                      {santriList.map((s) => (
+                        <option key={s.nis} value={s.nis}>{s.nama} ({s.poinPelanggaran} Poin)</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-700">Kategori</label>
+                    <select
+                      value={kategoriPelanggaran}
+                      onChange={(e) => setKategoriPelanggaran(e.target.value as any)}
+                      className="w-full min-h-[44px] px-3 py-2 rounded-2xl bg-white border border-slate-200 text-xs"
+                    >
+                      <option value="PLG_SHOLAT">Terlambat Sholat (5 Poin)</option>
+                      <option value="PLG_PIKET">Tidak Piket (10 Poin)</option>
+                      <option value="PLG_GADGET">Membawa Gadget (25 Poin)</option>
+                    </select>
+                  </div>
+                  <Input label="Kronologi" value={kronologi} onChange={(e) => setKronologi(e.target.value)} placeholder="e.g. Masbuq sholat subuh" />
+                </CardContent>
+                <CardFooter>
+                  <Button
+                    variant="danger"
+                    fullWidth
+                    onClick={handleCatatPelanggaran}
+                    disabled={!["PH", "MK", "MT", "KS"].includes(selectedRole)}
+                  >
+                    Catat & Deteksi Poin x2
+                  </Button>
+                </CardFooter>
+              </Card>
+            </div>
+
+            <div className="lg:col-span-2 space-y-4">
+              <Card rounded="3xl">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle>Surat Peringatan & Akumulasi Poin</CardTitle>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="text-xs h-8 px-2.5"
+                    leftIcon={<Download className="h-3.5 w-3.5 text-amber-700" />}
+                    onClick={() =>
+                      exportToCSV(
+                        "Rekap_Pelanggaran_Santri_STQ",
+                        ["Nomor SP", "Nama Santri", "Total Poin", "Tingkat", "Status SP", "Tanggal"],
+                        spList.map((sp) => [sp.nomorSP, sp.santriNama, sp.totalPoin, `SP-${sp.tingkat}`, sp.status, sp.tanggal])
+                      )
+                    }
+                  >
+                    Ekspor CSV
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {spList.map((sp) => (
+                    <div key={sp.id} className="p-3.5 rounded-2xl border border-slate-200/80 bg-slate-50/50 flex justify-between items-center text-xs">
+                      <div>
+                        <span className="font-bold text-slate-800">{sp.santriNama} — {sp.nomorSP}</span>
+                        <p className="text-slate-500">Poin Saat Terbit: {sp.totalPoin} Poin</p>
+                      </div>
+                      <div className="flex gap-2 items-center">
+                        <Badge variant={sp.status === "AKTIF" ? "orange" : "green"} size="sm">{sp.status}</Badge>
+                        {sp.status === "AKTIF" && selectedRole === "KS" && (
+                          <Button variant="gold" size="sm" onClick={() => handlePutihkanSP(sp.id)}>Putihkan SP</Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================= */}
+        {/* TAB 5: ADMINISTRASI & PENGAJUAN */}
+        {/* ============================================================= */}
+        {activeTab === "administrasi" && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-1">
+              <Card rounded="3xl">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2"><DollarSign className="h-5 w-5 text-[#0E7C3A]" /> Pengajuan Anggaran</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Input label="Judul Kebutuhan" value={judulPengajuan} onChange={(e) => setJudulPengajuan(e.target.value)} placeholder="e.g. Pembelian Mushaf" />
+                  <Input label="Nominal (Rp)" type="number" value={nominalPengajuan} onChange={(e) => setNominalPengajuan(e.target.value)} />
+                </CardContent>
+                <CardFooter>
+                  <Button variant="primary" fullWidth onClick={handleAjukanKebutuhan} disabled={selectedRole !== "ADM" && selectedRole !== "KS"}>
+                    Kirim Pengajuan (Admin)
+                  </Button>
+                </CardFooter>
+              </Card>
+            </div>
+
+            <div className="lg:col-span-2">
+              <Card rounded="3xl">
+                <CardHeader><CardTitle>Daftar Pengajuan Anggaran Bulanan</CardTitle></CardHeader>
+                <CardContent className="space-y-3">
+                  {pengajuanList.map((p) => (
+                    <div key={p.id} className="p-3.5 rounded-2xl border border-slate-200/80 bg-white flex justify-between items-center text-xs">
+                      <div>
+                        <span className="font-bold text-slate-800">{p.judul}</span>
+                        <p className="text-[#0E7C3A] font-bold font-heading text-sm">Rp {p.nominal.toLocaleString("id-ID")}</p>
+                      </div>
+                      <div className="flex gap-2 items-center">
+                        <Badge variant={p.status === "DISETUJUI_KS" ? "green" : "orange"} size="sm">{p.status}</Badge>
+                        {p.status === "DIAJUKAN" && selectedRole === "KS" && (
+                          <Button variant="primary" size="sm" onClick={() => handleApprovePengajuan(p.id, "DISETUJUI_KS")}>Setujui</Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================= */}
+        {/* TAB 6: ORANG TUA ASUH & WHATSAPP (FASE 4) */}
+        {/* ============================================================= */}
+        {activeTab === "sponsor" && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Card Pengantar Donatur */}
+              <div className="lg:col-span-1 space-y-6">
+                <Card rounded="3xl">
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <div className="h-8 w-8 rounded-xl bg-emerald-50 text-[#0E7C3A] flex items-center justify-center font-bold">
+                        <HeartHandshake className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <CardTitle>Program Orang Tua Asuh</CardTitle>
+                        <CardDescription>Integrasi WhatsApp API untuk laporan capaian santri</CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-xs text-slate-600">
+                    <p>
+                      Setiap donatur/sponsor mendapatkan laporan berkala perkembangan tahfizh santri binaan secara otomatis langsung ke nomor WhatsApp pribadi.
+                    </p>
+                    <div className="p-3 rounded-2xl bg-emerald-50 text-emerald-800 border border-emerald-200/80 space-y-1">
+                      <p className="font-bold flex items-center gap-1"><MessageSquare className="h-3.5 w-3.5" /> WhatsApp Gateway Aktif</p>
+                      <p className="text-[11px]">Kompatibel dengan Wablas, Fonnte, dan Meta WhatsApp Business API.</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Tabel Daftar Donatur & Tombol Kirim WA */}
+              <div className="lg:col-span-2 space-y-6">
+                <Card rounded="3xl">
+                  <CardHeader>
+                    <div className="flex justify-between items-center">
+                      <CardTitle>Daftar Donatur & Santri Asuh</CardTitle>
+                      <Badge variant="sky" size="sm">{sponsorList.length} Donatur</Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {sponsorList.map((spn) => (
+                      <div key={spn.id} className="p-4 rounded-2xl border border-slate-200/80 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-800 text-sm">{spn.nama}</span>
+                            <Badge variant="neutral" size="sm">{spn.kode}</Badge>
+                          </div>
+                          <p className="text-slate-600 mt-1">Santri Asuh: <strong>{spn.santriAsuh}</strong></p>
+                          <p className="text-slate-500">WA: {spn.noHp} • Donasi: Rp {spn.nominal.toLocaleString("id-ID")}/bln</p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <Badge variant={spn.statusWA === "TERKIRIM" ? "green" : "orange"} size="sm">
+                            {spn.statusWA}
+                          </Badge>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            isLoading={isPending}
+                            onClick={() => handleKirimWA(spn.id, spn.nama, spn.noHp, spn.santriAsuh)}
+                            leftIcon={<MessageSquare className="h-3.5 w-3.5" />}
+                          >
+                            Kirim WA Laporan
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+
+                {/* Preview Pesan WhatsApp yang Terkirim */}
+                {pesanWAPreview && (
+                  <Card rounded="3xl" className="border-2 border-emerald-500/20 bg-emerald-50/20">
+                    <CardHeader>
+                      <CardTitle className="text-sm text-emerald-800 flex items-center gap-2">
+                        <MessageSquare className="h-4 w-4 text-[#0E7C3A]" /> Payload Pesan WhatsApp Terkirim (Preview):
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <pre className="p-4 rounded-2xl bg-white border border-emerald-200 text-xs text-slate-800 font-mono whitespace-pre-wrap leading-relaxed">
+                        {pesanWAPreview}
+                      </pre>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================= */}
+        {/* TAB 7: GENERATOR SURAT RESMI AI (FASE 4) */}
+        {/* ============================================================= */}
+        {activeTab === "surat" && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Form Konfigurasi Generator Surat */}
+              <div className="lg:col-span-1 space-y-6">
+                <Card rounded="3xl">
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <div className="h-8 w-8 rounded-xl bg-amber-50 text-[#C9990E] flex items-center justify-center font-bold">
+                        <Sparkles className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <CardTitle>Generator Surat AI</CardTitle>
+                        <CardDescription>Penerbitan surat resmi berkop pondok otomatis</CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-700">Jenis Surat</label>
+                      <select
+                        value={jenisSuratPilihan}
+                        onChange={(e) => setJenisSuratPilihan(e.target.value as any)}
+                        className="w-full min-h-[44px] px-3 py-2.5 rounded-2xl bg-white border border-slate-200 text-xs"
+                      >
+                        <option value="SURAT_KETERANGAN_AKTIF">Surat Keterangan Santri Aktif</option>
+                        <option value="SURAT_UNDANGAN_WALI">Surat Undangan Pertemuan Wali</option>
+                        <option value="SURAT_IZIN_KEGIATAN">Surat Permohonan Izin Kegiatan</option>
+                        <option value="SURAT_REKOMENDASI">Surat Rekomendasi Santri Berprestasi</option>
+                      </select>
+                    </div>
+
+                    <Input
+                      label="Perihal Surat"
+                      value={perihalSurat}
+                      onChange={(e) => setPerihalSurat(e.target.value)}
+                    />
+
+                    <Input
+                      label="Tujuan Surat / Penerima"
+                      value={tujuanSurat}
+                      onChange={(e) => setTujuanSurat(e.target.value)}
+                    />
+
+                    <Input
+                      label="Pokok Isi / Keperluan"
+                      value={isiPokokSurat}
+                      onChange={(e) => setIsiPokokSurat(e.target.value)}
+                    />
+                  </CardContent>
+
+                  <CardFooter>
+                    <Button
+                      variant="gold"
+                      fullWidth
+                      isLoading={isPending}
+                      onClick={handleGenerateSurat}
+                      disabled={selectedRole !== "ADM" && selectedRole !== "KS"}
+                      leftIcon={<Sparkles className="h-4 w-4" />}
+                    >
+                      {selectedRole === "ADM" || selectedRole === "KS"
+                        ? "Generate Naskah Surat (AI)"
+                        : `Role ${selectedRole} Tidak Berhak`}
+                    </Button>
+                  </CardFooter>
+                </Card>
+              </div>
+
+              {/* Tampilan Naskah Surat Resmi Berkop */}
+              <div className="lg:col-span-2 space-y-6">
+                <Card rounded="3xl" className="border-2 border-slate-300 shadow-md">
+                  <CardHeader className="bg-slate-50 rounded-t-3xl border-b border-slate-200 flex flex-row items-center justify-between p-4 md:p-6">
+                    <div>
+                      <Badge variant="green" size="sm">Naskah Resmi Siap Cetak</Badge>
+                      <CardTitle className="text-base mt-1">Pratinjau Dokumen Surat Resmi</CardTitle>
+                    </div>
+                    {hasilSuratAI && (
+                      <div className="flex gap-2">
+                        <Button variant="secondary" size="sm" leftIcon={<Printer className="h-3.5 w-3.5" />}>
+                          Cetak PDF
+                        </Button>
+                      </div>
+                    )}
+                  </CardHeader>
+
+                  <CardContent className="p-6">
+                    {hasilSuratAI ? (
+                      <pre className="p-6 rounded-2xl bg-white border border-slate-200 font-mono text-xs text-slate-800 whitespace-pre-wrap leading-relaxed shadow-xs">
+                        {hasilSuratAI}
+                      </pre>
+                    ) : (
+                      <div className="py-16 text-center space-y-2 text-slate-400">
+                        <FileText className="h-10 w-10 mx-auto stroke-1" />
+                        <p className="text-sm">Klik tombol <strong>"Generate Naskah Surat (AI)"</strong> untuk merumuskan draf surat resmi otomatis berkop pondok.</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 8: IKHTIBAR / UJIAN TAHFIZH 2 TAHAP (FASE 6)          */}
+        {/* ========================================================= */}
+        {activeTab === "ikhtibar" && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Form Ajukan & Input Ujian */}
+              <div className="lg:col-span-1 space-y-6">
+                <Card rounded="3xl">
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <FileBadge className="h-5 w-5 text-[#0E7C3A]" />
+                      <CardTitle className="text-base">Pengajuan Ujian Ikhtibar</CardTitle>
+                    </div>
+                    <CardDescription>
+                      Standar kelulusan juz: Tahap 1 oleh Musyrif (`MT`), Tahap 2 disahkan Mudir (`KS`).
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700">Pilih Santri</label>
+                      <select
+                        value={selectedSantriNis}
+                        onChange={(e) => setSelectedSantriNis(e.target.value)}
+                        className="w-full min-h-[44px] px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-sm"
+                      >
+                        {santriList.map((s) => (
+                          <option key={s.id} value={s.nis}>
+                            {s.nama} ({s.nis}) — Juz {s.capaianJuz}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700">Juz yang Diujikan (1-30)</label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="30"
+                        value={ikhtibarJuz}
+                        onChange={(e) => setIkhtibarJuz(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="p-3 bg-emerald-50/80 rounded-2xl border border-emerald-100 text-xs text-emerald-800 space-y-1">
+                      <p className="font-bold">Alur 2 Tahap:</p>
+                      <p>1. Ujian Tahap 1: Penguji Musyrif Tahfizh (Kelancaran & Makhraj).</p>
+                      <p>2. Ujian Tahap 2: Penguji Mudir (Pengesahan Legalitas Kelulusan Juz).</p>
+                    </div>
+                  </CardContent>
+                  <CardFooter>
+                    <Button
+                      className="w-full"
+                      isLoading={isPending}
+                      onClick={handleAjukanIkhtibar}
+                      disabled={!["MT", "KS", "ADM"].includes(selectedRole)}
+                      leftIcon={<PlusCircle className="h-4 w-4" />}
+                    >
+                      {["MT", "KS", "ADM"].includes(selectedRole)
+                        ? "Daftarkan Santri Ikhtibar"
+                        : `Role ${selectedRole} Tidak Berhak`}
+                    </Button>
+                  </CardFooter>
+                </Card>
+
+                {/* Nilai Ujian Editor */}
+                <Card rounded="3xl">
+                  <CardHeader>
+                    <CardTitle className="text-base">Lembar Penilaian Ujian</CardTitle>
+                    <CardDescription>Digunakan saat menguji santri di majelis</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-700">Nilai Angka (0-100)</label>
+                      <Input
+                        type="number"
+                        value={ikhtibarNilai}
+                        onChange={(e) => setIkhtibarNilai(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-700">Catatan Tajwid & Kelancaran</label>
+                      <Input
+                        value={ikhtibarCatatan}
+                        onChange={(e) => setIkhtibarCatatan(e.target.value)}
+                        placeholder="e.g. Sempurna, kelancaran mumtaz"
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Daftar Ikhtibar Berjalan */}
+              <div className="lg:col-span-2 space-y-4">
+                <Card rounded="3xl">
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <div>
+                      <CardTitle className="text-base">Daftar Antrean & Riwayat Ikhtibar</CardTitle>
+                      <CardDescription>Memantau progres kelulusan juz per santri</CardDescription>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setShowPrintModal("rapor")}
+                      leftIcon={<Printer className="h-3.5 w-3.5" />}
+                    >
+                      Cetak Rapor Santri
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {ikhtibarList.map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-3"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-800">{item.santri}</span>
+                              <span className="text-xs text-slate-400">({item.nis})</span>
+                            </div>
+                            <p className="text-xs text-emerald-700 font-semibold mt-0.5">
+                              Ujian Hafalan: <strong>Juz {item.juz}</strong>
+                            </p>
+                          </div>
+                          <Badge
+                            variant={
+                              item.status === "LULUS_SEMPURNA_TAHAP_2"
+                                ? "green"
+                                : item.status === "LULUS_TAHAP_1"
+                                ? "gold"
+                                : "neutral"
+                            }
+                            size="sm"
+                          >
+                            {item.status.replace(/_/g, " ")}
+                          </Badge>
+                        </div>
+
+                        {/* Detail Nilai */}
+                        <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                          <div>
+                            <span className="text-slate-500 font-medium">Ujian Tahap 1 (MT):</span>
+                            <p className="font-bold text-slate-800">
+                              {item.nilaiTahap1 !== null ? `${item.nilaiTahap1} / 100` : "Belum Diuji"}
+                            </p>
+                            {item.catatanTahap1 && (
+                              <p className="text-[11px] text-slate-500 italic mt-0.5">{item.catatanTahap1}</p>
+                            )}
+                          </div>
+                          <div>
+                            <span className="text-slate-500 font-medium">Ujian Tahap 2 (Mudir KS):</span>
+                            <p className="font-bold text-slate-800">
+                              {item.nilaiTahap2 !== null ? `${item.nilaiTahap2} / 100` : "Menunggu Mudir"}
+                            </p>
+                            {item.catatanTahap2 && (
+                              <p className="text-[11px] text-slate-500 italic mt-0.5">{item.catatanTahap2}</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-2 pt-1">
+                          {item.status === "PENGAJUAN" && (
+                            <Button
+                              size="sm"
+                              className="bg-emerald-600 hover:bg-emerald-700 text-xs"
+                              onClick={() => handleLuluskanTahap1(item.id)}
+                              disabled={selectedRole !== "MT" && selectedRole !== "KS"}
+                              leftIcon={<Check className="h-3 w-3" />}
+                            >
+                              Luluskan Tahap 1 (MT)
+                            </Button>
+                          )}
+
+                          {item.status === "LULUS_TAHAP_1" && (
+                            <Button
+                              size="sm"
+                              className="bg-[#C9990E] hover:bg-amber-600 text-white text-xs"
+                              onClick={() => handleSahkanTahap2(item.id)}
+                              disabled={selectedRole !== "KS"}
+                              leftIcon={<Award className="h-3 w-3" />}
+                            >
+                              Sahkan Kelulusan Juz (Mudir KS)
+                            </Button>
+                          )}
+
+                          {item.status === "LULUS_SEMPURNA_TAHAP_2" && (
+                            <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-bold">
+                              <CheckCircle className="h-4 w-4" />
+                              <span>Syahadah Kelulusan Juz Telah Diterbitkan</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 9: POSKESTREN / KESEHATAN SANTRI (FASE 6)             */}
+        {/* ========================================================= */}
+        {activeTab === "kesehatan" && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Form Rekam Medis */}
+              <div className="lg:col-span-1 space-y-6">
+                <Card rounded="3xl">
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <Stethoscope className="h-5 w-5 text-rose-600" />
+                      <CardTitle className="text-base">Catat Pasien Poskestren</CardTitle>
+                    </div>
+                    <CardDescription>
+                      Pencatatan keluhan sakit & eskalasi medis berjenjang santri.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700">Nama Santri</label>
+                      <select
+                        value={selectedSantriNis}
+                        onChange={(e) => setSelectedSantriNis(e.target.value)}
+                        className="w-full min-h-[44px] px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-sm"
+                      >
+                        {santriList.map((s) => (
+                          <option key={s.id} value={s.nis}>
+                            {s.nama} ({s.kelas})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700">Keluhan & Gejala</label>
+                      <Input
+                        value={keluhanInput}
+                        onChange={(e) => setKeluhanInput(e.target.value)}
+                        placeholder="e.g. Demam 38°C, pusing, batuk"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700">Tindakan / Terapi P3K Diberikan</label>
+                      <Input
+                        value={tindakanInput}
+                        onChange={(e) => setTindakanInput(e.target.value)}
+                        placeholder="e.g. Paracetamol 500mg, kompres air hangat"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700">Status Penanganan Awal</label>
+                      <select
+                        value={statusKesehatanInput}
+                        onChange={(e) => setStatusKesehatanInput(e.target.value as any)}
+                        className="w-full min-h-[44px] px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-sm"
+                      >
+                        <option value="RAWAT_PONDOK">Rawat Pondok (UKS Asrama)</option>
+                        <option value="DIRUJUK_PUSKESMAS">Rujuk ke Puskesmas</option>
+                        <option value="DIRUJUK_RS">Rujuk ke Rumah Sakit</option>
+                        <option value="SEMBUH">Sembuh</option>
+                      </select>
+                    </div>
+                  </CardContent>
+                  <CardFooter>
+                    <Button
+                      className="w-full bg-rose-600 hover:bg-rose-700 text-white"
+                      isLoading={isPending}
+                      onClick={handleCatatKesehatan}
+                      disabled={!["OSDA", "MK", "PH", "KS", "ADM"].includes(selectedRole)}
+                      leftIcon={<PlusCircle className="h-4 w-4" />}
+                    >
+                      {["OSDA", "MK", "PH", "KS", "ADM"].includes(selectedRole)
+                        ? "Simpan Rekam Medis"
+                        : `Role ${selectedRole} Tidak Berhak`}
+                    </Button>
+                  </CardFooter>
+                </Card>
+              </div>
+
+              {/* Daftar Riwayat Kesehatan */}
+              <div className="lg:col-span-2 space-y-4">
+                <Card rounded="3xl">
+                  <CardHeader>
+                    <CardTitle className="text-base">Daftar Pasien & Status Pemulihan</CardTitle>
+                    <CardDescription>
+                      Eskalasi rujukan medis: Pondok &rarr; Puskesmas &rarr; RS
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {kesehatanList.map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-2.5"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <span className="font-bold text-slate-800">{item.santri}</span>
+                            <span className="text-xs text-slate-400 ml-2">({item.nis})</span>
+                            <p className="text-xs text-slate-500 mt-0.5">Tanggal: {item.tanggal}</p>
+                          </div>
+                          <Badge
+                            variant={
+                              item.status === "SEMBUH"
+                                ? "green"
+                                : item.status === "DIRUJUK_RS"
+                                ? "orange"
+                                : item.status === "DIRUJUK_PUSKESMAS"
+                                ? "gold"
+                                : "neutral"
+                            }
+                            size="sm"
+                          >
+                            {item.status.replace(/_/g, " ")}
+                          </Badge>
+                        </div>
+
+                        <div className="text-xs space-y-1 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                          <p>
+                            <strong className="text-slate-700">Keluhan:</strong> {item.keluhan}
+                          </p>
+                          <p>
+                            <strong className="text-slate-700">Diagnosa:</strong> {item.diagnosa}
+                          </p>
+                          <p>
+                            <strong className="text-slate-700">Tindakan:</strong> {item.tindakan}
+                          </p>
+                        </div>
+
+                        {/* Rujukan Button (MK / KS) */}
+                        {item.status !== "SEMBUH" && (
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {item.status === "RAWAT_PONDOK" && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="text-xs border-amber-300 text-amber-800"
+                                onClick={() => handleUpdateStatusKesehatan(item.id, "DIRUJUK_PUSKESMAS")}
+                                disabled={selectedRole !== "MK" && selectedRole !== "KS"}
+                              >
+                                Rujuk ke Puskesmas
+                              </Button>
+                            )}
+
+                            {item.status !== "DIRUJUK_RS" && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="text-xs border-rose-300 text-rose-700"
+                                onClick={() => handleUpdateStatusKesehatan(item.id, "DIRUJUK_RS")}
+                                disabled={selectedRole !== "MK" && selectedRole !== "KS"}
+                              >
+                                Rujuk ke RS
+                              </Button>
+                            )}
+
+                            <Button
+                              size="sm"
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                              onClick={() => handleUpdateStatusKesehatan(item.id, "SEMBUH")}
+                              disabled={selectedRole !== "MK" && selectedRole !== "KS"}
+                              leftIcon={<Check className="h-3 w-3" />}
+                            >
+                              Tandai Sembuh
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 10: LOGISTIK & INVENTARIS ASRAMA (FASE 6)             */}
+        {/* ========================================================= */}
+        {activeTab === "logistik" && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Form Mutasi Logistik */}
+              <div className="lg:col-span-1 space-y-6">
+                <Card rounded="3xl">
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <Package className="h-5 w-5 text-[#0E7C3A]" />
+                      <CardTitle className="text-base">Catat Mutasi Logistik</CardTitle>
+                    </div>
+                    <CardDescription>
+                      Pencatatan barang masuk (donasi/pembelian) & barang keluar dapur asrama.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700">Pilih Barang</label>
+                      <select
+                        value={selectedLogistikId}
+                        onChange={(e) => setSelectedLogistikId(e.target.value)}
+                        className="w-full min-h-[44px] px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-sm"
+                      >
+                        {logistikList.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.nama} ({item.kode}) — Stok: {item.stok} {item.satuan}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-700">Jenis Mutasi</label>
+                        <select
+                          value={jenisMutasi}
+                          onChange={(e) => setJenisMutasi(e.target.value as any)}
+                          className="w-full min-h-[44px] px-3 py-2.5 rounded-2xl bg-white border border-slate-200 text-sm"
+                        >
+                          <option value="MASUK">Masuk (Donasi/Beli)</option>
+                          <option value="KELUAR">Keluar (Dapur/Pakai)</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-700">Jumlah</label>
+                        <Input
+                          type="number"
+                          value={jumlahMutasi}
+                          onChange={(e) => setJumlahMutasi(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700">Keterangan Mutasi</label>
+                      <Input
+                        value={ketMutasi}
+                        onChange={(e) => setKetMutasi(e.target.value)}
+                        placeholder="e.g. Donasi Wali Santri Kelas 7"
+                      />
+                    </div>
+                  </CardContent>
+                  <CardFooter>
+                    <Button
+                      className="w-full"
+                      isLoading={isPending}
+                      onClick={handleMutasiLogistik}
+                      disabled={!["MK", "ADM", "KS"].includes(selectedRole)}
+                      leftIcon={<PlusCircle className="h-4 w-4" />}
+                    >
+                      {["MK", "ADM", "KS"].includes(selectedRole)
+                        ? "Simpan Mutasi Barang"
+                        : `Role ${selectedRole} Tidak Berhak`}
+                    </Button>
+                  </CardFooter>
+                </Card>
+              </div>
+
+              {/* Grid Kartu Stok Barang */}
+              <div className="lg:col-span-2 space-y-4">
+                <Card rounded="3xl">
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <div>
+                      <CardTitle className="text-base">Inventaris Stok Gudang & Asrama</CardTitle>
+                      <CardDescription>Pelacakan stok real-time sembako dan logistik santri</CardDescription>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="text-xs h-8 px-2.5"
+                      leftIcon={<Download className="h-3.5 w-3.5 text-emerald-700" />}
+                      onClick={() =>
+                        exportToCSV(
+                          "Rekap_Stok_Logistik_STQ",
+                          ["Kode", "Nama Barang", "Kategori", "Lokasi", "Stok", "Satuan"],
+                          logistikList.map((l) => [l.kode, l.nama, l.kategori, l.lokasi, l.stok, l.satuan])
+                        )
+                      }
+                    >
+                      Ekspor CSV
+                    </Button>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {logistikList.map((item) => (
+                        <div
+                          key={item.id}
+                          className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex flex-col justify-between space-y-3"
+                        >
+                          <div>
+                            <div className="flex items-center justify-between">
+                              <Badge variant="neutral" size="sm">
+                                {item.kode}
+                              </Badge>
+                              <Badge
+                                variant={item.kategori === "SEMBAKO" ? "green" : "gold"}
+                                size="sm"
+                              >
+                                {item.kategori}
+                              </Badge>
+                            </div>
+                            <h4 className="font-bold text-slate-800 text-sm mt-2">{item.nama}</h4>
+                            <p className="text-xs text-slate-500">Lokasi: {item.lokasi}</p>
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-100 flex items-baseline justify-between">
+                            <span className="text-xs text-slate-400">Sisa Stok:</span>
+                            <span className="font-extrabold text-lg text-[#0E7C3A]">
+                              {item.stok} <span className="text-xs font-semibold text-slate-600">{item.satuan}</span>
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 11: PORTAL KHUSUS WALI SANTRI & SANTRI (FASE 7)       */}
+        {/* ========================================================= */}
+        {activeTab === "portal_wali" && (
+          <div className="space-y-6">
+            {/* Header Hero Wali Santri */}
+            <div className="bg-gradient-to-r from-emerald-800 via-emerald-700 to-[#0E7C3A] text-white rounded-3xl p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div>
+                <Badge variant="gold" size="sm" className="mb-2">Portal Orang Tua & Santri</Badge>
+                <h3 className="text-xl font-bold font-heading">
+                  {selectedRole === "WS" ? "Ahlan wa Sahlan, Ayah/Bunda Wali Santri" : "Ahlan wa Sahlan, Santri Mandiri STQ DUC"}
+                </h3>
+                <p className="text-xs text-emerald-100 mt-1">
+                  Pantau perkembangan hafalan Al-Qur'an, adab & kedisiplinan, kesehatan, serta capaian prestasi ananda.
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => setShowPrintModal("rapor")}
+                leftIcon={<Printer className="h-4 w-4" />}
+              >
+                Unduh / Cetak Rapor Digital
+              </Button>
+            </div>
+
+            {/* Kartu Profil Ananda */}
+            <Card rounded="3xl" className="border-2 border-emerald-100 bg-white">
+              <CardContent className="p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div>
+                    <h4 className="text-lg font-bold text-slate-900">Muhammad Fatih Al-Ayyubi</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      NIS: <strong>SAN-0001</strong> • Kelas: <strong>7A Takhossus</strong> • Musyrif: <strong>Ust. Zulkifli Al-Hafizh</strong>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="green" size="md">Santri Aktif</Badge>
+                    <Badge variant="gold" size="md">2 Bintang Teladan</Badge>
+                  </div>
+                </div>
+
+                {/* 4 Metric Utama */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4">
+                  <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-100">
+                    <span className="text-xs text-emerald-800 font-semibold">Capaian Tahfizh</span>
+                    <p className="text-xl font-extrabold text-[#0E7C3A] mt-1">4 Juz</p>
+                    <span className="text-[11px] text-emerald-600 font-medium">Ikhtibar Juz 4 Lulus</span>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-100">
+                    <span className="text-xs text-amber-800 font-semibold">Rapor Akademik</span>
+                    <p className="text-xl font-extrabold text-[#C9990E] mt-1">89.0 / A</p>
+                    <span className="text-[11px] text-amber-700 font-medium">Peringkat 3 Kelas</span>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-sky-50/70 border border-sky-100">
+                    <span className="text-xs text-sky-800 font-semibold">Poin Kedisiplinan</span>
+                    <p className="text-xl font-extrabold text-sky-700 mt-1">0 Poin</p>
+                    <span className="text-[11px] text-sky-600 font-medium">Bersih / Teladan</span>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-purple-50/70 border border-purple-100">
+                    <span className="text-xs text-purple-800 font-semibold">Status Kesehatan</span>
+                    <p className="text-xl font-extrabold text-purple-700 mt-1">Sehat</p>
+                    <span className="text-[11px] text-purple-600 font-medium">Pemulihan Poskestren</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 2 Kolom: Aktivitas & Kotak Saran */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Kolom Kiri: Riwayat Aktivitas & Izin */}
+              <div className="space-y-4">
+                <Card rounded="3xl">
+                  <CardHeader>
+                    <CardTitle className="text-base">Riwayat Setoran & Ikhtibar Terbaru</CardTitle>
+                    <CardDescription>Catatan langsung dari majelis halaqoh</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
+                      <div>
+                        <span className="font-bold text-slate-800 text-xs">Setoran Sabaq (Hafalan Baru)</span>
+                        <p className="text-xs text-emerald-700 font-semibold">Ali 'Imran: 1-20 (Juz 4)</p>
+                        <p className="text-[11px] text-slate-400">Catatan: Makhraj dan tajwid fasih</p>
+                      </div>
+                      <Badge variant="green" size="sm">MUMTAZ</Badge>
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
+                      <div>
+                        <span className="font-bold text-slate-800 text-xs">Ujian Ikhtibar Juz 4 (Tahap 1)</span>
+                        <p className="text-xs text-amber-700 font-semibold">Penguji: Ust. Salman Al-Farisi (MT)</p>
+                        <p className="text-[11px] text-slate-400">Nilai: 92/100 • Siap Ujian Mudir</p>
+                      </div>
+                      <Badge variant="gold" size="sm">LULUS TAHAP 1</Badge>
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
+                      <div>
+                        <span className="font-bold text-slate-800 text-xs">Pengajuan Izin Pulang Terakhir</span>
+                        <p className="text-xs text-slate-600">Keperluan: Menghadiri pernikahan keluarga</p>
+                        <p className="text-[11px] text-emerald-600">Telah Disetujui Mudir & MK</p>
+                      </div>
+                      <Badge variant="green" size="sm">DISETUJUI</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Kolom Kanan: Kotak Saran Wali Santri */}
+              <div className="space-y-4">
+                <Card rounded="3xl">
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <MessageCircle className="h-5 w-5 text-[#0E7C3A]" />
+                      <CardTitle className="text-base">Kotak Saran & Aspirasi Wali Santri</CardTitle>
+                    </div>
+                    <CardDescription>
+                      Kirimkan masukan atau pertanyaan langsung kepada Mudir & Pengurus Pesantren
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700">Kategori Aspirasi</label>
+                      <select
+                        value={inputSaranKategori}
+                        onChange={(e) => setInputSaranKategori(e.target.value)}
+                        className="w-full min-h-[44px] px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-sm"
+                      >
+                        <option value="Gizi & Katering">Gizi, Makanan & Katering Asrama</option>
+                        <option value="Tahfizh & Musyrif">Ketahfidzan & Majelis Halaqoh</option>
+                        <option value="Kedisiplinan & Asrama">Kedisiplinan & Kebersihan Kamar</option>
+                        <option value="Fasilitas & Sarpras">Fasilitas, Ranjang & UKS</option>
+                        <option value="Administrasi & SPP">Administrasi, SPP & Beasiswa</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700">Pesan / Masukan Anda</label>
+                      <textarea
+                        rows={3}
+                        value={inputSaranPesan}
+                        onChange={(e) => setInputSaranPesan(e.target.value)}
+                        placeholder="Tuliskan masukan atau saran konstruktif Bapak/Ibu demi kemajuan ananda dan pesantren..."
+                        className="w-full p-4 rounded-2xl bg-white border border-slate-200 text-xs focus:ring-2 focus:ring-[#0E7C3A] focus:outline-none"
+                      />
+                    </div>
+
+                    <Button
+                      className="w-full"
+                      isLoading={isPending}
+                      onClick={handleKirimSaran}
+                      leftIcon={<Send className="h-4 w-4" />}
+                    >
+                      Kirim Saran ke Mudir
+                    </Button>
+
+                    {/* Riwayat Aspirasi & Tanggapan */}
+                    <div className="pt-2 space-y-3">
+                      <h5 className="text-xs font-bold text-slate-700">Aspirasi Anda Sebelumnya:</h5>
+                      {kotakSaranList.map((s) => (
+                        <div key={s.id} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-800">{s.kategori}</span>
+                            <Badge variant={s.status === "DITANGGAPI" ? "green" : "gold"} size="sm">
+                              {s.status}
+                            </Badge>
+                          </div>
+                          <p className="text-slate-600 italic">"{s.pesan}"</p>
+                          {s.tanggapan && (
+                            <div className="p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-100 text-emerald-900 mt-2">
+                              <p className="font-bold text-[11px]">Tanggapan Pimpinan Pondok:</p>
+                              <p className="mt-0.5">{s.tanggapan}</p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 12: KALENDER AKADEMIK & AGENDA (FASE 7)                */}
+        {/* ========================================================= */}
+        {activeTab === "agenda" && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Form Tambah Agenda */}
+              <div className="lg:col-span-1 space-y-6">
+                <Card rounded="3xl">
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-5 w-5 text-[#0E7C3A]" />
+                      <CardTitle className="text-base">Tambah Agenda Kalender</CardTitle>
+                    </div>
+                    <CardDescription>Khusus Administrator (`ADM`) & Mudir (`KS`)</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700">Judul Kegiatan</label>
+                      <Input
+                        value={judulAgenda}
+                        onChange={(e) => setJudulAgenda(e.target.value)}
+                        placeholder="e.g. Ujian Tahfizh Semester Ganjil"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700">Tanggal Kegiatan</label>
+                      <Input
+                        type="date"
+                        value={tglAgenda}
+                        onChange={(e) => setTglAgenda(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700">Kategori Kegiatan</label>
+                      <select
+                        value={katAgenda}
+                        onChange={(e) => setKatAgenda(e.target.value)}
+                        className="w-full min-h-[44px] px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-sm"
+                      >
+                        <option value="TAHFIZH">Ketahfidzan / Ikhtibar</option>
+                        <option value="UJIAN">Ujian Akademik & Diniyah</option>
+                        <option value="KEGIATAN_SANTRI">Kegiatan Santri / Rihlah</option>
+                        <option value="LIBUR">Libur & Kepulangan Santri</option>
+                      </select>
+                    </div>
+                  </CardContent>
+                  <CardFooter>
+                    <Button
+                      className="w-full"
+                      isLoading={isPending}
+                      onClick={handleTambahAgenda}
+                      disabled={selectedRole !== "ADM" && selectedRole !== "KS"}
+                      leftIcon={<PlusCircle className="h-4 w-4" />}
+                    >
+                      {selectedRole === "ADM" || selectedRole === "KS"
+                        ? "Tambahkan Agenda"
+                        : `Role ${selectedRole} Tidak Berhak`}
+                    </Button>
+                  </CardFooter>
+                </Card>
+              </div>
+
+              {/* Daftar Agenda Kalender */}
+              <div className="lg:col-span-2 space-y-4">
+                <Card rounded="3xl">
+                  <CardHeader>
+                    <CardTitle className="text-base">Kalender Kegiatan Pesantren 2026/2027</CardTitle>
+                    <CardDescription>Jadwal penting yang dapat diakses oleh seluruh asatidz dan wali santri</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {agendaList.map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex items-start justify-between gap-4"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant={
+                                item.kategori === "TAHFIZH"
+                                  ? "green"
+                                  : item.kategori === "LIBUR"
+                                  ? "gold"
+                                  : "sky"
+                              }
+                              size="sm"
+                            >
+                              {item.kategori.replace(/_/g, " ")}
+                            </Badge>
+                            <span className="text-xs text-slate-400">Lokasi: {item.lokasi}</span>
+                          </div>
+                          <h4 className="font-bold text-sm text-slate-800 mt-1">{item.judul}</h4>
+                          <p className="text-xs text-emerald-700 font-semibold flex items-center gap-1.5">
+                            <Clock className="h-3.5 w-3.5" />
+                            {item.tanggal}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 13: USER & STAFF MANAGEMENT (FASE 7)                  */}
+        {/* ========================================================= */}
+        {activeTab === "users" && (
+          <div className="space-y-6">
+            <Card rounded="3xl">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <UserCog className="h-5 w-5 text-[#0E7C3A]" />
+                    <CardTitle className="text-base">Manajemen Pengguna Sistem (10 Role)</CardTitle>
+                  </div>
+                  <CardDescription>
+                    Pengaturan hak akses, aktivasi akun, dan reset kata sandi staf & santri
+                  </CardDescription>
+                </div>
+                <Badge variant="green" size="md">
+                  {usersList.filter((u) => u.status === "AKTIF").length} Akun Aktif
+                </Badge>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50">
+                        <th className="p-3 font-bold text-slate-700">Pengguna</th>
+                        <th className="p-3 font-bold text-slate-700">Username</th>
+                        <th className="p-3 font-bold text-slate-700">Peran (Role)</th>
+                        <th className="p-3 font-bold text-slate-700">Status</th>
+                        <th className="p-3 font-bold text-slate-700 text-right">Aksi Administrator</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {usersList.map((user) => (
+                        <tr key={user.id} className="hover:bg-slate-50/80">
+                          <td className="p-3 font-bold text-slate-800">{user.nama}</td>
+                          <td className="p-3 text-slate-500 font-mono">{user.username}</td>
+                          <td className="p-3">
+                            <Badge variant={ROLE_LABELS[user.role as Role]?.badgeVariant || "neutral"} size="sm">
+                              {user.role} — {ROLE_LABELS[user.role as Role]?.title.split(" ")[0]}
+                            </Badge>
+                          </td>
+                          <td className="p-3">
+                            <Badge variant={user.status === "AKTIF" ? "green" : "neutral"} size="sm">
+                              {user.status}
+                            </Badge>
+                          </td>
+                          <td className="p-3 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="text-[11px] h-8 px-2.5"
+                                onClick={() => handleToggleUserStatus(user.id)}
+                                disabled={selectedRole !== "ADM" && selectedRole !== "KS"}
+                              >
+                                {user.status === "AKTIF" ? "Nonaktifkan" : "Aktifkan"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="text-[11px] h-8 px-2.5 border-slate-300"
+                                onClick={() => handleResetPassword(user.username)}
+                                disabled={selectedRole !== "ADM" && selectedRole !== "KS"}
+                                leftIcon={<KeyRound className="h-3 w-3 text-amber-600" />}
+                              >
+                                Reset Sandi
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 13: AUDIT TRAIL & MONITORING MUTASI (FASE 8)          */}
+        {/* ========================================================= */}
+        {activeTab === "audit" && (
+          <div className="space-y-6">
+            {!["YAY", "KS", "ADM"].includes(selectedRole) ? (
+              <Card rounded="3xl" className="p-8 text-center bg-amber-50/60 border-amber-200">
+                <div className="max-w-md mx-auto space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center mx-auto text-amber-700">
+                    <Lock className="h-6 w-6" />
+                  </div>
+                  <h3 className="font-bold text-slate-800 text-lg">Akses Audit Dibatasi</h3>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Hanya peran eksekutif <strong>Yayasan (YAY)</strong>, <strong>Mudir (KS)</strong>, dan <strong>Tata Usaha (ADM)</strong> yang berwenang memantau catatan jejak audit transaksi.
+                  </p>
+                  <div className="pt-2">
+                    <Button
+                      variant="gold"
+                      size="sm"
+                      onClick={() => handleRoleChange("YAY")}
+                    >
+                      Beralih ke Akun Yayasan (YAY)
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            ) : (
+              <Card rounded="3xl">
+                <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Activity className="h-5 w-5 text-[#0E7C3A]" />
+                      <CardTitle className="text-base">Audit Trail & Log Mutasi Sistem</CardTitle>
+                    </div>
+                    <CardDescription>
+                      Pemantauan real-time aktivitas transaksi, perizinan, tahfizh, dan surat resmi
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={handleRefreshAuditLogs}
+                      leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
+                    >
+                      Perbarui
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      leftIcon={<Download className="h-3.5 w-3.5 text-emerald-700" />}
+                      onClick={() =>
+                        exportToCSV(
+                          "Audit_Trail_Log_STQ",
+                          ["Timestamp", "User", "Email", "Role", "Aksi", "Entitas", "Entity ID", "Rincian"],
+                          auditLogsList.map((log) => [
+                            new Date(log.createdAt).toLocaleString("id-ID"),
+                            log.user.username,
+                            log.user.email,
+                            log.user.role,
+                            log.action,
+                            log.entity,
+                            log.entityId || "-",
+                            JSON.stringify(log.details || {}),
+                          ])
+                        )
+                      }
+                    >
+                      Ekspor CSV
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50">
+                          <th className="p-3 font-bold text-slate-700">Waktu & Tanggal</th>
+                          <th className="p-3 font-bold text-slate-700">Pengguna (Pelaksana)</th>
+                          <th className="p-3 font-bold text-slate-700">Aksi (Action)</th>
+                          <th className="p-3 font-bold text-slate-700">Entitas</th>
+                          <th className="p-3 font-bold text-slate-700">Rincian Perubahan Data</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {auditLogsList.map((log) => (
+                          <tr key={log.id} className="hover:bg-slate-50/80">
+                            <td className="p-3 text-slate-500 whitespace-nowrap font-mono text-[11px]">
+                              {new Date(log.createdAt).toLocaleDateString("id-ID", {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </td>
+                            <td className="p-3">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-slate-800">{log.user.username}</span>
+                                <Badge variant={ROLE_LABELS[log.user.role as Role]?.badgeVariant || "neutral"} size="sm">
+                                  {log.user.role}
+                                </Badge>
+                              </div>
+                              <span className="text-[10px] text-slate-400">{log.user.email}</span>
+                            </td>
+                            <td className="p-3">
+                              <Badge
+                                variant={
+                                  log.action.includes("SETORAN") || log.action.includes("IKHTIBAR")
+                                    ? "green"
+                                    : log.action.includes("PELANGGARAN") || log.action.includes("SP")
+                                    ? "orange"
+                                    : log.action.includes("APPROVAL") || log.action.includes("IZIN")
+                                    ? "sky"
+                                    : log.action.includes("SURAT")
+                                    ? "purple"
+                                    : "neutral"
+                                }
+                                size="sm"
+                              >
+                                {log.action}
+                              </Badge>
+                            </td>
+                            <td className="p-3 font-mono text-[11px] text-slate-600">
+                              {log.entity} {log.entityId ? `(${log.entityId})` : ""}
+                            </td>
+                            <td className="p-3 text-slate-600">
+                              {log.details ? (
+                                <div className="flex flex-wrap gap-1 max-w-xs">
+                                  {Object.entries(log.details).map(([k, v]) => (
+                                    <span
+                                      key={k}
+                                      className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] text-slate-700"
+                                    >
+                                      <strong>{k}:</strong> {String(v)}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 italic">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* MODAL PRINT DOKUMEN RESMI (RAPOR & SURAT RESMI)            */}
+        {/* ========================================================= */}
+        {showPrintModal && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-white rounded-3xl max-w-3xl w-full p-6 md:p-8 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+                <div className="flex items-center gap-2">
+                  <Printer className="h-5 w-5 text-[#0E7C3A]" />
+                  <h3 className="font-bold text-lg text-slate-800">
+                    {showPrintModal === "rapor" ? "Pratinjau Cetak Rapor Santri" : "Pratinjau Cetak Surat Resmi"}
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setShowPrintModal(null)}
+                  className="p-1 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Format Cetak Berkop Resmi */}
+              <div className="border border-slate-300 rounded-2xl p-6 bg-white space-y-4 print:border-none">
+                {/* Kop Surat */}
+                <div className="flex items-center gap-4 border-b-2 border-slate-800 pb-4">
+                  <div className="shrink-0 h-16 w-16 flex items-center justify-center">
+                    <img src="/logo.png" alt="Logo STQ" className="h-full w-full object-contain" />
+                  </div>
+                  <div className="flex-1 text-center space-y-1">
+                    <h2 className="font-bold text-base md:text-lg text-slate-900 tracking-wide uppercase">
+                      Pondok Pesantren Tahfizh Qur&apos;an Darul Ulum Cendekia
+                    </h2>
+                    <p className="text-xs text-slate-600">
+                      Jl. Cendekia No. 12, Kompleks STQ DUC | Website: stqduc.sch.id | Telp: (021) 88997766
+                    </p>
+                    <p className="text-[11px] font-semibold text-emerald-800">
+                      SK Kemenag RI No. 452/STQ/2024 • NSS: 2026112233
+                    </p>
+                  </div>
+                  <div className="shrink-0 h-16 w-16 hidden md:block opacity-0" />
+                </div>
+
+                {showPrintModal === "rapor" ? (
+                  <div className="space-y-4 text-xs">
+                    <div className="text-center py-1">
+                      <h3 className="font-bold text-sm uppercase underline text-slate-900">
+                        Laporan Hasil Belajar & Capaian Tahfizh Santri
+                      </h3>
+                      <p className="text-slate-500 mt-0.5">Semester Ganjil — Tahun Ajaran 2026/2027</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-xl">
+                      <div>
+                        <p><strong className="text-slate-700">Nama Santri:</strong> Muhammad Fatih Al-Ayyubi</p>
+                        <p><strong className="text-slate-700">NIS:</strong> SAN-0001</p>
+                      </div>
+                      <div>
+                        <p><strong className="text-slate-700">Kelas:</strong> 7A (Takhossus Tahfizh)</p>
+                        <p><strong className="text-slate-700">Musyrif:</strong> Ust. Zulkifli Al-Hafizh</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-slate-800">I. Capaian Al-Qur'an & Ikhtibar</h4>
+                      <table className="w-full border-collapse border border-slate-300 text-left">
+                        <thead className="bg-slate-100">
+                          <tr>
+                            <th className="border border-slate-300 p-2">Juz</th>
+                            <th className="border border-slate-300 p-2">Status Ujian Ikhtibar</th>
+                            <th className="border border-slate-300 p-2">Nilai</th>
+                            <th className="border border-slate-300 p-2">Predikat</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="border border-slate-300 p-2 font-medium">Juz 1 s.d. 3</td>
+                            <td className="border border-slate-300 p-2 text-emerald-700 font-bold">Lulus Disahkan Mudir</td>
+                            <td className="border border-slate-300 p-2">95</td>
+                            <td className="border border-slate-300 p-2 font-bold">Mumtaz</td>
+                          </tr>
+                          <tr>
+                            <td className="border border-slate-300 p-2 font-medium">Juz 4</td>
+                            <td className="border border-slate-300 p-2 text-amber-700 font-semibold">Lulus Ujian Tahap 1</td>
+                            <td className="border border-slate-300 p-2">92</td>
+                            <td className="border border-slate-300 p-2 font-bold">Jayyid Jiddan</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-slate-800">II. Nilai Akademik & Diniyah</h4>
+                      <table className="w-full border-collapse border border-slate-300 text-left">
+                        <thead className="bg-slate-100">
+                          <tr>
+                            <th className="border border-slate-300 p-2">Mata Pelajaran</th>
+                            <th className="border border-slate-300 p-2">Nilai Angka</th>
+                            <th className="border border-slate-300 p-2">Predikat</th>
+                            <th className="border border-slate-300 p-2">Guru Pengampu</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="border border-slate-300 p-2 font-medium">Fiqih Ibadah</td>
+                            <td className="border border-slate-300 p-2">90</td>
+                            <td className="border border-slate-300 p-2 font-bold">A</td>
+                            <td className="border border-slate-300 p-2">Ust. H. Fauzi</td>
+                          </tr>
+                          <tr>
+                            <td className="border border-slate-300 p-2 font-medium">Bahasa Arab & Nahwu</td>
+                            <td className="border border-slate-300 p-2">88</td>
+                            <td className="border border-slate-300 p-2 font-bold">B</td>
+                            <td className="border border-slate-300 p-2">Ustadzah Nurul</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="pt-6 grid grid-cols-2 text-center text-xs">
+                      <div>
+                        <p>Musyrif Halaqoh,</p>
+                        <div className="h-12" />
+                        <p className="font-bold">( Ust. Zulkifli Al-Hafizh )</p>
+                      </div>
+                      <div>
+                        <p>Mudir STQ Darul Ulum Cendekia,</p>
+                        <div className="h-12" />
+                        <p className="font-bold underline">( Ust. H. Ahmad Fauzi, Lc., M.Pd. )</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <pre className="p-4 font-mono text-xs whitespace-pre-wrap leading-relaxed text-slate-800">
+                    {hasilSuratAI || "Silakan generate naskah surat terlebih dahulu pada Tab 7."}
+                  </pre>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <Button variant="secondary" onClick={() => setShowPrintModal(null)}>
+                  Tutup
+                </Button>
+                <Button
+                  className="bg-[#0E7C3A] hover:bg-[#0B642E] text-white"
+                  onClick={() => window.print()}
+                  leftIcon={<Printer className="h-4 w-4" />}
+                >
+                  Cetak / Simpan PDF
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
+
+      {/* Mobile Bottom Navigation (RBAC Filtered) */}
+      <MobileBottomNav
+        activeCluster={activeCluster}
+        allowedClusters={allowedClusters}
+        onSelectCluster={(cluster) => {
+          setActiveCluster(cluster);
+          if (cluster === "tahfizh") {
+            const clusterTabs = ["tahfizh", "akademik", "ikhtibar"].filter((t) => allowedTabs.includes(t));
+            if (!clusterTabs.includes(activeTab)) {
+              setActiveTab((clusterTabs[0] || "tahfizh") as any);
+            }
+          } else if (cluster === "kesantrian") {
+            const clusterTabs = ["kesantrian", "kedisiplinan", "kesehatan", "logistik"].filter((t) => allowedTabs.includes(t));
+            if (!clusterTabs.includes(activeTab)) {
+              setActiveTab((clusterTabs[0] || "kesantrian") as any);
+            }
+          } else if (cluster === "manajemen") {
+            const clusterTabs = ["administrasi", "surat", "sponsor", "agenda"].filter((t) => allowedTabs.includes(t));
+            if (!clusterTabs.includes(activeTab)) {
+              setActiveTab((clusterTabs[0] || "administrasi") as any);
+            }
+          } else if (cluster === "wali") {
+            setActiveTab("portal_wali");
+          } else if (cluster === "sistem") {
+            const clusterTabs = ["users", "audit"].filter((t) => allowedTabs.includes(t));
+            if (!clusterTabs.includes(activeTab)) {
+              setActiveTab((clusterTabs[0] || "users") as any);
+            }
+          }
+          setFeedback(null);
+        }}
+      />
     </div>
   );
 }

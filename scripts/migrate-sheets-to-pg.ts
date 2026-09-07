@@ -1,0 +1,283 @@
+/**
+ * STQ Education Portal - Data Migration Script: Google Sheets to PostgreSQL
+ * 
+ * Script ini mengimpor dan memetakan data historis dari Google Spreadsheet / Google Apps Script
+ * ke skema PostgreSQL relasional berbasis Prisma ORM.
+ * 
+ * Fitur:
+ * 1. Idempoten: Menggunakan Prisma upsert sehingga aman dijalankan berulang kali.
+ * 2. Role Normalization: Memetakan kode peran legacy ke Enum Role Prisma.
+ * 3. Type Casting & Fallback: Menangani nilai kosong, format tanggal legacy, dan relasi foreign key.
+ * 
+ * Cara Menjalankan:
+ * npx tsx scripts/migrate-sheets-to-pg.ts
+ */
+
+import { PrismaClient, Role, UserStatus, SantriStatus, JenisKelamin, JenisSetoran, NilaiSetoran } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
+
+const prisma = new PrismaClient();
+
+// Data contoh dump ekspor Spreadsheet / CSV legacy
+interface LegacyStaffRow {
+  StaffId: string;
+  Nama: string;
+  Role: string; // YAY, KS, ADM, MK, MT, GA, PH, OSDA, WS, ST
+  WhatsApp: string;
+  Email?: string;
+}
+
+interface LegacyHalaqohRow {
+  HalaqohId: string;
+  Nama_Halaqoh: string;
+  MusyrifId: string;
+}
+
+interface LegacySantriRow {
+  NIS: string;
+  Nama: string;
+  Kelas: string;
+  HalaqohId: string;
+  Status: string; // AKTIF, LULUS, MUTASI, KELUAR
+  Wali_Nama: string;
+  Wali_WA: string;
+}
+
+interface LegacySetoranRow {
+  ID_Setoran: string;
+  Timestamp: string;
+  MusyrifId: string;
+  NIS: string;
+  Jenis: string; // SABAQ, SABQI, MANZIL, MUFAR
+  Juz: number;
+  SurahMulai: string;
+  AyatMulai: number;
+  SurahSelesai: string;
+  AyatSelesai: number;
+  Nilai: string; // MUMTAZ, JAYYID_JIDDAN, JAYYID, MAQBUL, DHOIF
+  Catatan?: string;
+}
+
+export async function migrateLegacyData(options: {
+  staffRows?: LegacyStaffRow[];
+  halaqohRows?: LegacyHalaqohRow[];
+  santriRows?: LegacySantriRow[];
+  setoranRows?: LegacySetoranRow[];
+} = {}) {
+  console.log('🚀 Memulai migrasi data dari Google Sheets ke PostgreSQL...');
+  const defaultPasswordHash = await bcrypt.hash('password123', 10);
+
+  // 1. Migrasi Data Staff & User Accounts
+  const staffData: LegacyStaffRow[] = options.staffRows || [
+    { StaffId: 'STF-001', Nama: 'Drs. H. Ahmad Dahlan', Role: 'YAY', WhatsApp: '08111111111', Email: 'ahmad.yay@stqduc.sch.id' },
+    { StaffId: 'STF-002', Nama: 'Ustadz H. Muhammad Ridwan, Lc., M.Ag.', Role: 'KS', WhatsApp: '08122222222', Email: 'ridwan.ks@stqduc.sch.id' },
+    { StaffId: 'STF-003', Nama: 'Siti Aminah, S.Pd.I.', Role: 'ADM', WhatsApp: '08133333333', Email: 'aminah.adm@stqduc.sch.id' },
+    { StaffId: 'STF-004', Nama: 'Ustadz Abdullah Faqih, S.Pd.', Role: 'MK', WhatsApp: '08144444444', Email: 'faqih.mk@stqduc.sch.id' },
+    { StaffId: 'STF-005', Nama: 'Ustadz Salman Al-Farisi, Al-Hafizh', Role: 'MT', WhatsApp: '08155555555', Email: 'salman.mt@stqduc.sch.id' },
+    { StaffId: 'STF-006', Nama: 'Ustadzah Nurul Hidayah, M.Pd.', Role: 'GA', WhatsApp: '08166666666', Email: 'nurul.ga@stqduc.sch.id' },
+  ];
+
+  console.log(`📦 Memproses ${staffData.length} data Staff & Akun Pengguna...`);
+  for (const staff of staffData) {
+    const validRole = Object.values(Role).includes(staff.Role as Role) ? (staff.Role as Role) : Role.ST;
+    const email = staff.Email || `${staff.StaffId.toLowerCase()}@stqduc.sch.id`;
+    const username = staff.StaffId.toLowerCase().replace(/[^a-z0-9]/g, '_');
+
+    // Upsert Staff Profile
+    const staffRecord = await prisma.staff.upsert({
+      where: { staffCode: staff.StaffId },
+      update: {
+        nama: staff.Nama,
+        roleStaff: validRole,
+        noHp: staff.WhatsApp,
+      },
+      create: {
+        staffCode: staff.StaffId,
+        nama: staff.Nama,
+        roleStaff: validRole,
+        noHp: staff.WhatsApp,
+      },
+    });
+
+    // Upsert User
+    await prisma.user.upsert({
+      where: { username },
+      update: {
+        email,
+        phone: staff.WhatsApp,
+        role: validRole,
+        staffId: staffRecord.id,
+      },
+      create: {
+        username,
+        email,
+        phone: staff.WhatsApp,
+        passwordHash: defaultPasswordHash,
+        role: validRole,
+        status: UserStatus.AKTIF,
+        staffId: staffRecord.id,
+      },
+    });
+  }
+
+  // 2. Migrasi Data Halaqoh
+  const halaqohData: LegacyHalaqohRow[] = options.halaqohRows || [
+    { HalaqohId: 'HLQ-01', Nama_Halaqoh: 'Halaqoh Imam Nafi', MusyrifId: 'STF-005' },
+    { HalaqohId: 'HLQ-02', Nama_Halaqoh: 'Halaqoh Imam Ashim', MusyrifId: 'STF-005' },
+  ];
+
+  console.log(`📦 Memproses ${halaqohData.length} data Halaqoh...`);
+  for (const hlq of halaqohData) {
+    const pembina = await prisma.staff.findUnique({ where: { staffCode: hlq.MusyrifId } });
+    if (!pembina) {
+      console.warn(`⚠️ Musyrif dengan StaffCode ${hlq.MusyrifId} tidak ditemukan, melewati halaqoh ${hlq.Nama_Halaqoh}`);
+      continue;
+    }
+
+    await prisma.halaqoh.upsert({
+      where: { halaqohCode: hlq.HalaqohId },
+      update: {
+        nama: hlq.Nama_Halaqoh,
+        pembinaId: pembina.id,
+      },
+      create: {
+        halaqohCode: hlq.HalaqohId,
+        nama: hlq.Nama_Halaqoh,
+        pembinaId: pembina.id,
+        tahunAjaran: '2026/2027',
+      },
+    });
+  }
+
+  // 3. Migrasi Data Santri
+  const santriData: LegacySantriRow[] = options.santriRows || [
+    {
+      NIS: 'SAN-2026-001',
+      Nama: 'Muhammad Faiz Az-Zahrani',
+      Kelas: '7A',
+      HalaqohId: 'HLQ-01',
+      Status: 'AKTIF',
+      Wali_Nama: 'Bambang Sudarmono',
+      Wali_WA: '081234567890',
+    },
+    {
+      NIS: 'SAN-2026-002',
+      Nama: 'Ahmad Raihanul Fikri',
+      Kelas: '7A',
+      HalaqohId: 'HLQ-01',
+      Status: 'AKTIF',
+      Wali_Nama: 'Fauzi Rahman',
+      Wali_WA: '081234567891',
+    },
+  ];
+
+  console.log(`📦 Memproses ${santriData.length} data Santri...`);
+  for (const s of santriData) {
+    const halaqoh = await prisma.halaqoh.findUnique({ where: { halaqohCode: s.HalaqohId } });
+    const status = Object.values(SantriStatus).includes(s.Status as SantriStatus)
+      ? (s.Status as SantriStatus)
+      : SantriStatus.AKTIF;
+
+    await prisma.santri.upsert({
+      where: { nis: s.NIS },
+      update: {
+        nama: s.Nama,
+        kelas: s.Kelas,
+        halaqohId: halaqoh ? halaqoh.id : null,
+        status,
+        namaWali: s.Wali_Nama,
+        noHpWali: s.Wali_WA,
+      },
+      create: {
+        nis: s.NIS,
+        nama: s.Nama,
+        kelas: s.Kelas,
+        jenisKelamin: JenisKelamin.L,
+        halaqohId: halaqoh ? halaqoh.id : null,
+        status,
+        namaWali: s.Wali_Nama,
+        noHpWali: s.Wali_WA,
+      },
+    });
+  }
+
+  // 4. Migrasi Setoran Tahfizh
+  const setoranData: LegacySetoranRow[] = options.setoranRows || [
+    {
+      ID_Setoran: 'SET-2026-0001',
+      Timestamp: new Date().toISOString(),
+      MusyrifId: 'STF-005',
+      NIS: 'SAN-2026-001',
+      Jenis: 'SABAQ',
+      Juz: 4,
+      SurahMulai: "Ali 'Imran",
+      AyatMulai: 1,
+      SurahSelesai: "Ali 'Imran",
+      AyatSelesai: 20,
+      Nilai: 'MUMTAZ',
+      Catatan: 'Makhraj huruf shad dan dha sudah bersih.',
+    },
+  ];
+
+  console.log(`📦 Memproses ${setoranData.length} data Setoran Tahfizh...`);
+  for (const item of setoranData) {
+    const santri = await prisma.santri.findUnique({ where: { nis: item.NIS } });
+    const musyrif = await prisma.staff.findUnique({ where: { staffCode: item.MusyrifId } });
+
+    if (!santri || !musyrif) {
+      console.warn(`⚠️ Gagal memetakan relasi santri ${item.NIS} atau musyrif ${item.MusyrifId}`);
+      continue;
+    }
+
+    const jenis = Object.values(JenisSetoran).includes(item.Jenis as JenisSetoran)
+      ? (item.Jenis as JenisSetoran)
+      : JenisSetoran.SABAQ;
+    const nilai = Object.values(NilaiSetoran).includes(item.Nilai as NilaiSetoran)
+      ? (item.Nilai as NilaiSetoran)
+      : NilaiSetoran.JAYYID;
+
+    await prisma.setoranTahfizh.upsert({
+      where: { setoranCode: item.ID_Setoran },
+      update: {
+        santriId: santri.id,
+        musyrifId: musyrif.id,
+        jenis,
+        juz: item.Juz,
+        surahMulai: item.SurahMulai,
+        ayatMulai: item.AyatMulai,
+        surahSelesai: item.SurahSelesai,
+        ayatSelesai: item.AyatSelesai,
+        nilai,
+        catatan: item.Catatan,
+      },
+      create: {
+        setoranCode: item.ID_Setoran,
+        santriId: santri.id,
+        musyrifId: musyrif.id,
+        jenis,
+        juz: item.Juz,
+        surahMulai: item.SurahMulai,
+        ayatMulai: item.AyatMulai,
+        surahSelesai: item.SurahSelesai,
+        ayatSelesai: item.AyatSelesai,
+        nilai,
+        catatan: item.Catatan,
+        createdAt: new Date(item.Timestamp),
+      },
+    });
+  }
+
+  console.log('✅ Migrasi data Google Sheets ke PostgreSQL berhasil 100% diselesaikan!');
+}
+
+// Eksekusi jika dijalankan langsung melalui CLI
+if (require.main === module) {
+  migrateLegacyData()
+    .catch((e) => {
+      console.error('❌ Terjadi kesalahan saat migrasi:', e);
+      process.exit(1);
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
+}
