@@ -13,7 +13,6 @@ import { DashboardMusyrifKesantrian } from "@/components/dashboard/dashboard-mus
 import { DashboardGuruAkademik } from "@/components/dashboard/dashboard-guru-akademik";
 import { DashboardMudirKS } from "@/components/dashboard/dashboard-mudir-ks";
 import { RekapLaporanBulanan } from "@/components/dashboard/rekap-laporan-bulanan";
-import { ManajemenHalaqoh } from "@/components/dashboard/manajemen-halaqoh";
 import { MasterDataSantri } from "@/components/dashboard/master-data-santri";
 import { PrintLaporanBulanan } from "@/components/print/print-laporan-bulanan";
 import { DashboardYayasan } from "@/components/dashboard/dashboard-yayasan";
@@ -29,12 +28,7 @@ import { Input } from "@/components/ui/input";
 import {
   ROLE_LABELS,
   Role,
-  PERMISSION_MATRIX,
-  ModuleName,
   DEMO_ACCOUNTS,
-  ALL_STAFF_ACCOUNTS,
-  ALL_MUDHABBIR_ACCOUNTS,
-  ALL_MUSYRIF_TAHFIZH_ACCOUNTS,
   STAFF_HALAQOH_MAP,
   getHalaqohByStaff,
   type StaffAccountItem,
@@ -47,8 +41,6 @@ import { inputNilaiAction } from "@/app/actions/akademik";
 import { ajukanIzinAction, verifikasiIzinAction } from "@/app/actions/kesantrian";
 import { catatPelanggaranAction, putihkanSPAction } from "@/app/actions/kedisiplinan";
 import { ajukanKebutuhanAction, verifikasiPengajuanAction } from "@/app/actions/administrasi";
-import { tambahSponsorAction, kirimLaporanWhatsAppAction } from "@/app/actions/sponsor";
-import { generateSuratAIAction } from "@/app/actions/surat";
 import { ajukanIkhtibarAction, inputHasilTahap1Action, inputHasilTahap2Action } from "@/app/actions/ikhtibar";
 import { catatKesehatanAction, updateStatusKesehatanAction } from "@/app/actions/kesehatan";
 import { catatMutasiLogistikAction } from "@/app/actions/logistik";
@@ -56,6 +48,9 @@ import { kirimKotakSaranAction } from "@/app/actions/portal-wali";
 import { tambahAgendaAction } from "@/app/actions/kalender";
 import { toggleUserStatusAction, resetUserPasswordAction } from "@/app/actions/users";
 import { getAuditLogsAction, type AuditLogItem } from "@/app/actions/audit";
+import { type LaporanBulananData } from "@/app/actions/laporan-bulanan";
+import type { JenisIzin } from "@prisma/client";
+import { konversiPredikatNilai } from "@/lib/educational-rules";
 import { exportToCSV } from "@/lib/export-csv";
 import { cn } from "@/lib/utils";
 import { INSTITUTION_CONFIG } from "@/lib/institution-config";
@@ -71,7 +66,6 @@ import {
   BookCheck,
   BookOpen,
   TrendingUp,
-  ShieldCheck,
   ShieldAlert,
   PlusCircle,
   Award,
@@ -81,17 +75,14 @@ import {
   Lock,
   AlertCircle,
   GraduationCap,
-  Home as HomeIcon,
   Send,
   AlertTriangle,
-  FileCheck,
   DollarSign,
   Check,
   RotateCcw,
   HeartHandshake,
   MessageSquare,
   FileText,
-  Copy,
   Printer,
   Stethoscope,
   Package,
@@ -100,14 +91,68 @@ import {
   X,
   Calendar,
   UserCog,
-  UserCheck,
   KeyRound,
   MessageCircle,
   Download,
   Activity,
-  Building2,
   FileSpreadsheet,
 } from "lucide-react";
+
+export interface DashboardSantriItem {
+  id: string;
+  nis: string;
+  nama: string;
+  kelas: string;
+  halaqoh: string;
+  capaianJuz: number;
+  targetJuz: number;
+  setoranTerakhir: string;
+  status: string;
+  nilaiTerakhir: string;
+  poinPelanggaran: number;
+  namaWali?: string;
+  noHpWali?: string;
+  bintangKebaikan?: number;
+}
+
+const INITIAL_AUDIT_LOGS: AuditLogItem[] = [
+  {
+    id: "log-1",
+    action: "INPUT_SETORAN_TAHFIZH",
+    entity: "SetoranTahfizh",
+    entityId: "SET-00192",
+    details: { santri: "Obama Ozearld Egberted Turizqi", juz: 4, nilai: "MUMTAZ", jenis: "SABAQ" },
+    createdAt: new Date("2026-09-08T07:45:00.000Z"),
+    user: { username: "razan.mt", email: "razan.mt@stqduc.sch.id", role: "MT" },
+  },
+  {
+    id: "log-2",
+    action: "PENCATATAN_PELANGGARAN_X2",
+    entity: "PelanggaranSantri",
+    entityId: "PLG-00045",
+    details: { santri: "M. Hafizh Dzulqarnain", poin: 10, isPengulangan: false, catatan: "Terlambat halaqoh" },
+    createdAt: new Date("2026-09-08T07:20:00.000Z"),
+    user: { username: "mujaddid.mk", email: "mujaddid.mk@stqduc.sch.id", role: "MK" },
+  },
+  {
+    id: "log-3",
+    action: "APPROVAL_PERIZINAN_KS",
+    entity: "PerizinanSantri",
+    entityId: "IZN-00088",
+    details: { santri: "Obama Ozearld Egberted Turizqi", jenis: "PULANG", status: "DISETUJUI" },
+    createdAt: new Date("2026-09-08T06:30:00.000Z"),
+    user: { username: "mudir.ks", email: "mudir.ks@stqduc.sch.id", role: "KS" },
+  },
+  {
+    id: "log-4",
+    action: "GENERASI_SURAT_RESMI_AI",
+    entity: "SuratResmi",
+    entityId: "SRT-00012",
+    details: { nomorSurat: "012/STQ-DUC/SP/IX/2026", perihal: "Surat Keterangan Aktif" },
+    createdAt: new Date("2026-09-08T05:15:00.000Z"),
+    user: { username: "aminah.adm", email: "aminah.adm@stqduc.sch.id", role: "ADM" },
+  },
+];
 
 export default function Home() {
   const [selectedRole, setSelectedRole] = useState<Role>("MT");
@@ -120,28 +165,29 @@ export default function Home() {
 
   // U01: Load initial state from URL query or session, and support browser history
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      const urlRole = params.get("role") as Role | null;
-      const urlTab = params.get("tab") as (NavTabId | "beranda") | null;
-      const urlHalaqoh = params.get("halaqoh");
+    const initApp = async () => {
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        const urlRole = params.get("role") as Role | null;
+        const urlTab = params.get("tab") as (NavTabId | "beranda") | null;
+        const urlHalaqoh = params.get("halaqoh");
 
-      if (urlRole && DEMO_ACCOUNTS[urlRole]) {
-        setSelectedRole(urlRole);
-        const demo = DEMO_ACCOUNTS[urlRole];
-        setCurrentUserName(demo.name);
-        setActiveStaffKey(demo.username);
-        setActiveCluster(demo.defaultCluster);
+        if (urlRole && DEMO_ACCOUNTS[urlRole]) {
+          setSelectedRole(urlRole);
+          const demo = DEMO_ACCOUNTS[urlRole];
+          setCurrentUserName(demo.name);
+          setActiveStaffKey(demo.username);
+          setActiveCluster(demo.defaultCluster);
+        }
+        if (urlTab) {
+          setActiveTab(urlTab);
+        }
+        if (urlHalaqoh) {
+          setHalaqohFilter(urlHalaqoh);
+        }
       }
-      if (urlTab) {
-        setActiveTab(urlTab);
-      }
-      if (urlHalaqoh) {
-        setHalaqohFilter(urlHalaqoh);
-      }
-    }
 
-    getCurrentUserAction().then((session) => {
+      const session = await getCurrentUserAction();
       if (session) {
         const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
         if (!params?.get("role")) {
@@ -159,7 +205,9 @@ export default function Home() {
           }
         }
       }
-    });
+    };
+
+    void initApp();
 
     const handlePopState = () => {
       if (typeof window === "undefined") return;
@@ -319,7 +367,7 @@ export default function Home() {
   // -------------------------------------------------------------
   // DATA MASTER SANTRI
   // -------------------------------------------------------------
-  const [santriList, setSantriList] = useState([
+  const [santriList, setSantriList] = useState<DashboardSantriItem[]>([
     // Halaqoh Ust. Razan Mufli, S.Pd (Musyrif Ketahfidzhan)
     { id: "cm_santri_1", nis: "SAN-0001", nama: "Obama Ozearld Egberted Turizqi", kelas: "9A Takhossus", halaqoh: "Halaqoh Ust. Razan Mufli, S.Pd", capaianJuz: 22, targetJuz: 30, setoranTerakhir: "Al-Ahzab: 1-35", status: "AKTIF", nilaiTerakhir: "MUMTAZ", poinPelanggaran: 0 },
     { id: "cm_santri_2", nis: "SAN-0002", nama: "Muhammad Fardhan", kelas: "9A Takhossus", halaqoh: "Halaqoh Ust. Razan Mufli, S.Pd", capaianJuz: 16, targetJuz: 20, setoranTerakhir: "An-Nahl: 50-80", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0 },
@@ -396,7 +444,7 @@ export default function Home() {
   const [inputJenis, setInputJenis] = useState<"SABAQ" | "SABQI" | "MANZIL" | "MUFAR">("SABAQ");
   const [jumlahHalaman, setJumlahHalaman] = useState("1");
   const [tahfizhSubView, setTahfizhSubView] = useState<"rekap_bulanan" | "input">("rekap_bulanan");
-  const [printLaporanData, setPrintLaporanData] = useState<any>(null);
+  const [printLaporanData, setPrintLaporanData] = useState<LaporanBulananData | null>(null);
   const [nilai, setNilai] = useState<"MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "DHOIF">("MUMTAZ");
   const [selectedSantriNis, setSelectedSantriNis] = useState("SAN-0001");
   const [juz, setJuz] = useState("4");
@@ -414,6 +462,7 @@ export default function Home() {
     message: string;
     title: string;
     description: string;
+    onConfirmSent?: () => void;
   }>({
     isOpen: false,
     phone: "",
@@ -468,22 +517,23 @@ export default function Home() {
     return santriList;
   }, [selectedRole, currentHalaqohName, halaqohFilter, santriList]);
 
-  // Sinkronisasi: pastikan selectedSantriNis selalu berada di dalam displayedSantriTahfizh
-  useEffect(() => {
-    if (displayedSantriTahfizh.length > 0) {
-      const exists = displayedSantriTahfizh.some((s) => s.nis === selectedSantriNis);
-      if (!exists) {
-        setSelectedSantriNis(displayedSantriTahfizh[0].nis);
-      }
-    }
-  }, [displayedSantriTahfizh, selectedSantriNis]);
+  // Sinkronisasi: pastikan selectedSantriNis selalu berada di dalam displayedSantriTahfizh (Render-phase adjustment)
+  const [prevFirstSantriNis, setPrevFirstSantriNis] = useState(displayedSantriTahfizh[0]?.nis || "");
+  const currentFirstNis = displayedSantriTahfizh[0]?.nis || "";
+  if (
+    displayedSantriTahfizh.length > 0 &&
+    !displayedSantriTahfizh.some((s) => s.nis === selectedSantriNis) &&
+    prevFirstSantriNis !== currentFirstNis
+  ) {
+    setPrevFirstSantriNis(currentFirstNis);
+    setSelectedSantriNis(currentFirstNis);
+  }
 
   // -------------------------------------------------------------
   // TAB 2: AKADEMIK & RAPOR (KURIKULUM RESMI BAB VI & VII)
   // -------------------------------------------------------------
   const [selectedMapel, setSelectedMapel] = useState("MP-KP-01");
   const [inputNilaiAngka, setInputNilaiAngka] = useState("90");
-  const [jenisNilai, setJenisNilai] = useState<"TUGAS" | "KEAKTIFAN" | "UTS" | "UAS" | "PBL">("UTS");
   const [nilaiAkademikList, setNilaiAkademikList] = useState([
     { mapel: "Bahasa Arab", kategori: "Kepesantrenan", angka: 90, huruf: "A", guru: "Ustzh. Nurul Hidayah, S.Pd." },
     { mapel: "Tafsir Al-Qur'an", kategori: "Kepesantrenan", angka: 94, huruf: "A", guru: "Ust. Razan Mufli, S.Pd" },
@@ -815,44 +865,7 @@ export default function Home() {
   const roleInfo = ROLE_LABELS[selectedRole];
 
   // Audit Logs State (Fase 8)
-  const [auditLogsList, setAuditLogsList] = useState<AuditLogItem[]>([
-    {
-      id: "log-1",
-      action: "INPUT_SETORAN_TAHFIZH",
-      entity: "SetoranTahfizh",
-      entityId: "SET-00192",
-      details: { santri: "Obama Ozearld Egberted Turizqi", juz: 4, nilai: "MUMTAZ", jenis: "SABAQ" },
-      createdAt: new Date(),
-      user: { username: "razan.mt", email: "razan.mt@stqduc.sch.id", role: "MT" },
-    },
-    {
-      id: "log-2",
-      action: "PENCATATAN_PELANGGARAN_X2",
-      entity: "PelanggaranSantri",
-      entityId: "PLG-00045",
-      details: { santri: "M. Hafizh Dzulqarnain", poin: 10, isPengulangan: false, catatan: "Terlambat halaqoh" },
-      createdAt: new Date(Date.now() - 1000 * 60 * 25),
-      user: { username: "mujaddid.mk", email: "mujaddid.mk@stqduc.sch.id", role: "MK" },
-    },
-    {
-      id: "log-3",
-      action: "APPROVAL_PERIZINAN_KS",
-      entity: "PerizinanSantri",
-      entityId: "IZN-00088",
-      details: { santri: "Obama Ozearld Egberted Turizqi", jenis: "PULANG", status: "DISETUJUI" },
-      createdAt: new Date(Date.now() - 1000 * 60 * 75),
-      user: { username: "mudir.ks", email: "mudir.ks@stqduc.sch.id", role: "KS" },
-    },
-    {
-      id: "log-4",
-      action: "GENERASI_SURAT_RESMI_AI",
-      entity: "SuratResmi",
-      entityId: "SRT-00012",
-      details: { nomorSurat: "012/STQ-DUC/SP/IX/2026", perihal: "Surat Keterangan Aktif" },
-      createdAt: new Date(Date.now() - 1000 * 60 * 150),
-      user: { username: "aminah.adm", email: "aminah.adm@stqduc.sch.id", role: "ADM" },
-    },
-  ]);
+  const [auditLogsList, setAuditLogsList] = useState<AuditLogItem[]>(INITIAL_AUDIT_LOGS);
 
   const handleRefreshAuditLogs = () => {
     startTransition(async () => {
@@ -905,8 +918,8 @@ export default function Home() {
         santriNama: activeSantri.nama,
         santriNis: activeSantri.nis,
         kelas: activeSantri.kelas,
-        namaWali: (activeSantri as any).namaWali,
-        noHpWali: (activeSantri as any).noHpWali,
+        namaWali: activeSantri.namaWali,
+        noHpWali: activeSantri.noHpWali,
         jenisSetoran: inputJenis,
         juz,
         surah: surahMulai,
@@ -937,10 +950,7 @@ export default function Home() {
     if (!activeSantri) return;
 
     startTransition(async () => {
-      let huruf = "D";
-      if (angkaNum >= 90) huruf = "A";
-      else if (angkaNum >= 80) huruf = "B";
-      else if (angkaNum >= 70) huruf = "C";
+      const huruf = konversiPredikatNilai(angkaNum);
 
       const res = await inputNilaiAction({
         santriId: activeSantri.id,
@@ -1010,7 +1020,7 @@ export default function Home() {
 
       const res = await ajukanIzinAction({
         santriId: activeSantri.id,
-        jenis: formIzinJenis as any,
+        jenis: formIzinJenis as JenisIzin,
         tanggalMulai: now.toISOString(),
         tanggalSelesai: end.toISOString(),
         alasan: formIzinAlasan.trim(),
@@ -1022,9 +1032,10 @@ export default function Home() {
         return;
       }
 
+      const resData = res.data as { id?: string; kodeIzin?: string } | undefined;
       const newIzin = {
-        id: (res.data as any)?.id || `iz_${Date.now()}`,
-        kodeIzin: (res.data as any)?.kodeIzin || `IZN-00000${izinList.length + 1}`,
+        id: resData?.id || `iz_${Date.now()}`,
+        kodeIzin: resData?.kodeIzin || `IZN-00000${izinList.length + 1}`,
         santriNama: activeSantri.nama,
         kelas: activeSantri.kelas,
         jenis: formIzinJenis,
@@ -1049,7 +1060,7 @@ export default function Home() {
       const actionParam = action === "ESCALATE" ? "ESCALATE_KS" : action;
       const res = await verifikasiIzinAction({
         izinId: id,
-        action: actionParam as any,
+        action: actionParam as "APPROVE" | "ESCALATE_KS" | "REJECT",
       });
 
       if (!res.success) {
@@ -1099,11 +1110,12 @@ export default function Home() {
       }
 
       const kategoriNama = kategoriPelanggaran === "PLG_SHOLAT" ? "Terlambat Sholat Berjamaah" : kategoriPelanggaran === "PLG_GADGET" ? "Membawa Gadget Ilegal" : "Tidak Melaksanakan Piket Asrama";
-      const poinFinal = (res.data as any)?.poinFinal || 5;
-      const isPengulangan = (res.data as any)?.isPengulangan || false;
-      const newTotalPoin = (res as any).totalPoin || (activeSantri.poinPelanggaran + poinFinal);
+      const resData = res.data as { id?: string; kodePelanggaran?: string; poinFinal?: number; isPengulangan?: boolean } | undefined;
+      const poinFinal = resData?.poinFinal || 5;
+      const isPengulangan = resData?.isPengulangan || false;
+      const newTotalPoin = (res as { totalPoin?: number }).totalPoin || (activeSantri.poinPelanggaran + poinFinal);
 
-      setPelanggaranHistory([{ id: (res.data as any)?.id || `plg_${Date.now()}`, kode: (res.data as any)?.kodePelanggaran || `PLG-00000${pelanggaranHistory.length + 1}`, santriNama: activeSantri.nama, kategori: kategoriNama, poin: poinFinal, isPengulangan, tanggal: new Date().toLocaleDateString("id-ID"), pencatat: `${selectedRole}` }, ...pelanggaranHistory]);
+      setPelanggaranHistory([{ id: resData?.id || `plg_${Date.now()}`, kode: resData?.kodePelanggaran || `PLG-00000${pelanggaranHistory.length + 1}`, santriNama: activeSantri.nama, kategori: kategoriNama, poin: poinFinal, isPengulangan, tanggal: new Date().toLocaleDateString("id-ID"), pencatat: `${selectedRole}` }, ...pelanggaranHistory]);
       setSantriList((prev) => prev.map((s) => (s.nis === activeSantri.nis ? { ...s, poinPelanggaran: newTotalPoin } : s)));
 
       setKronologi("");
@@ -1154,7 +1166,8 @@ export default function Home() {
         return;
       }
 
-      setPengajuanList([{ id: (res.data as any)?.id || `aju_${Date.now()}`, kode: (res.data as any)?.kodePengajuan || `AJU-00000${pengajuanList.length + 1}`, judul: judulPengajuan, kategori: kategoriPengajuan, nominal: nominalNum, status: "DIAJUKAN", diajukanOleh: "admin", catatan: keteranganPengajuan || "Kebutuhan operasional" }, ...pengajuanList]);
+      const resData = res.data as { id?: string; kodePengajuan?: string } | undefined;
+      setPengajuanList([{ id: resData?.id || `aju_${Date.now()}`, kode: resData?.kodePengajuan || `AJU-00000${pengajuanList.length + 1}`, judul: judulPengajuan, kategori: kategoriPengajuan, nominal: nominalNum, status: "DIAJUKAN", diajukanOleh: "admin", catatan: keteranganPengajuan || "Kebutuhan operasional" }, ...pengajuanList]);
       setJudulPengajuan(""); setKeteranganPengajuan("");
       setFeedback({ type: "success", text: res.message || `Pengajuan anggaran Rp ${nominalNum.toLocaleString("id-ID")} diajukan ke Mudir/KS.` });
     });
@@ -1182,8 +1195,17 @@ export default function Home() {
   // Orang Tua Asuh & WhatsApp (Fase 4 - Komunikasi Jujur Tanpa Sukses Palsu)
   const handleKirimWA = (id: string, nama: string, noHp: string, santri: string) => {
     startTransition(async () => {
+      if (!noHp || noHp.trim() === "") {
+        setFeedback({
+          type: "error",
+          text: "Nomor WhatsApp donatur kosong atau belum diisi. Pengiriman laporan diblokir.",
+        });
+        return;
+      }
+
       const formatPesan = `*LAPORAN PERKEMBANGAN TAHFIZH SANTRI*
-*${INSTITUTION_CONFIG.name.toUpperCase()}*
+*${INSTITUTION_CONFIG.schoolName.toUpperCase()}*
+*${INSTITUTION_CONFIG.yayasanName.toUpperCase()}*
 Periode: Agustus 2026
 
 Kepada Yth. Donatur/Orang Tua Asuh:
@@ -1198,23 +1220,29 @@ Alhamdulillah ananda asuh:
 Catatan Musyrif:
 _"Santri sangat tekun mengikuti halaqoh tahfizh dan berakhlak mulia."_
 
-Jazakumullah Khairan Katsiran atas doa dan dukungan Bapak/Ibu.`;
+Jazakumullah Khairan Katsiran atas doa dan dukungan Bapak/Ibu bagi santri beasiswa yatim/dhuafa.`;
 
       setPesanWAPreview(formatPesan);
       setGlobalWaDialog({
         isOpen: true,
-        phone: noHp || "",
+        phone: noHp.trim(),
         recipientName: `Donatur ${nama}`,
         message: formatPesan,
         title: `Laporan Santri Asuh ke ${nama}`,
         description: "Buka WhatsApp resmi untuk mengirim laporan ananda asuh langsung ke donatur.",
+        onConfirmSent: () => {
+          setSponsorList((prev) =>
+            prev.map((s) => (s.id === id ? { ...s, statusWA: "TERKIRIM", terakhirKirim: new Date().toLocaleDateString("id-ID") } : s))
+          );
+          setFeedback({
+            type: "success",
+            text: `Konfirmasi: Laporan untuk donatur ${nama} telah terkirim via WhatsApp.`,
+          });
+        },
       });
-      setSponsorList((prev) =>
-        prev.map((s) => (s.id === id ? { ...s, statusWA: "TERKIRIM", terakhirKirim: new Date().toLocaleDateString("id-ID") } : s))
-      );
       setFeedback({
         type: "success",
-        text: `Laporan untuk ${nama} siap dikirim. Dialog WhatsApp telah dibuka.`,
+        text: `Laporan untuk ${nama} siap dikirim. Klik 'Kirim via WhatsApp' lalu lakukan konfirmasi pengiriman.`,
       });
     });
   };
@@ -1227,10 +1255,18 @@ Jazakumullah Khairan Katsiran atas doa dan dukungan Bapak/Ibu.`;
     }
     startTransition(async () => {
       const activeSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
-      const nomorSurat = `024/STQ-IMN/SK/IX/${new Date().getFullYear()}`;
+      const nomorSurat = `024/STQ-DUC/SK/IX/${new Date().getFullYear()}`;
+      const contactLine = [
+        INSTITUTION_CONFIG.address || `${INSTITUTION_CONFIG.kota}, ${INSTITUTION_CONFIG.provinsi}`,
+        INSTITUTION_CONFIG.phone ? `Telp: ${INSTITUTION_CONFIG.phone}` : "",
+        INSTITUTION_CONFIG.email ? `Email: ${INSTITUTION_CONFIG.email}` : "",
+      ].filter(Boolean).join(" | ");
+
       const naskah = `================================================================================
-          ${INSTITUTION_CONFIG.name.toUpperCase()}
-Alamat: ${INSTITUTION_CONFIG.address} | Telp: ${INSTITUTION_CONFIG.phone}
+          ${INSTITUTION_CONFIG.yayasanName.toUpperCase()}
+          ${INSTITUTION_CONFIG.schoolName.toUpperCase()}
+          ${INSTITUTION_CONFIG.character.toUpperCase()}
+${contactLine}
 ================================================================================
 
 SURAT RESMI LEMBAGA
@@ -1240,12 +1276,12 @@ Tujuan  : ${tujuanSurat}
 
 Assalamu'alaikum Warahmatullahi Wabarakatuh,
 
-Yang bertanda tangan di bawah ini Mudir ${INSTITUTION_CONFIG.shortName} menerangkan bahwa:
+Yang bertanda tangan di bawah ini Mudir ${INSTITUTION_CONFIG.schoolName} menerangkan bahwa:
 Nama Santri : ${activeSantri.nama}
 NIS         : ${activeSantri.nis}
 Kelas       : ${activeSantri.kelas}
 
-Adalah benar santri aktif yang terdaftar di ${INSTITUTION_CONFIG.name}.
+Adalah benar santri aktif yang terdaftar di ${INSTITUTION_CONFIG.schoolName} (${INSTITUTION_CONFIG.character}).
 
 Pokok Surat & Keperluan:
 "${isiPokokSurat}"
@@ -1254,7 +1290,7 @@ Demikian surat resmi ini dibuat dengan sebenarnya agar dapat dipergunakan sebaga
 
 Wassalamu'alaikum Warahmatullahi Wabarakatuh.
 
-Mudir ${INSTITUTION_CONFIG.name},
+Mudir ${INSTITUTION_CONFIG.schoolName},
 
 
 ( ${INSTITUTION_CONFIG.mudir} )`;
@@ -1288,8 +1324,9 @@ Mudir ${INSTITUTION_CONFIG.name},
         return;
       }
 
+      const resData = res.data as { id?: string } | undefined;
       const newIkh = {
-        id: (res.data as any)?.id || `ikh-${Date.now()}`,
+        id: resData?.id || `ikh-${Date.now()}`,
         santri: santriObj.nama,
         nis: santriObj.nis,
         juz: juzNum,
@@ -1406,7 +1443,7 @@ Mudir ${INSTITUTION_CONFIG.name},
         keluhan: keluhanInput.trim(),
         diagnosa: "Pemeriksaan UKS Poskestren",
         tindakan: tindakanInput.trim(),
-        status: statusKesehatanInput as any,
+        status: statusKesehatanInput,
       });
 
       if (!res.success) {
@@ -1414,8 +1451,9 @@ Mudir ${INSTITUTION_CONFIG.name},
         return;
       }
 
+      const resData = res.data as { id?: string } | undefined;
       const newKes = {
-        id: (res.data as any)?.id || `kes-${Date.now()}`,
+        id: resData?.id || `kes-${Date.now()}`,
         santri: santriObj.nama,
         nis: santriObj.nis,
         keluhan: keluhanInput,
@@ -1442,7 +1480,7 @@ Mudir ${INSTITUTION_CONFIG.name},
     startTransition(async () => {
       const res = await updateStatusKesehatanAction({
         id,
-        status: newStatus as any,
+        status: newStatus,
       });
 
       if (!res.success) {
@@ -1483,7 +1521,7 @@ Mudir ${INSTITUTION_CONFIG.name},
     startTransition(async () => {
       const res = await catatMutasiLogistikAction({
         logistikId: selectedLogistikId,
-        jenis: jenisMutasi as any,
+        jenis: jenisMutasi,
         jumlah: qty,
         keterangan: `Mutasi ${jenisMutasi} oleh ${selectedRole}`,
       });
@@ -1523,8 +1561,9 @@ Mudir ${INSTITUTION_CONFIG.name},
         return;
       }
 
+      const resData = res.data as { id?: string } | undefined;
       const newSrn = {
-        id: (res.data as any)?.id || `srn-${Date.now()}`,
+        id: resData?.id || `srn-${Date.now()}`,
         nama: senderNama,
         kategori: inputSaranKategori,
         pesan: inputSaranPesan,
@@ -1564,8 +1603,9 @@ Mudir ${INSTITUTION_CONFIG.name},
         return;
       }
 
+      const resData = res.data as { id?: string } | undefined;
       const newAgd = {
-        id: (res.data as any)?.id || `agd-${Date.now()}`,
+        id: resData?.id || `agd-${Date.now()}`,
         judul: judulAgenda,
         tanggal: tglAgenda,
         kategori: katAgenda,
@@ -1657,14 +1697,17 @@ Mudir ${INSTITUTION_CONFIG.name},
               STQ Education Portal — {INSTITUTION_CONFIG.shortName}
             </div>
             <h1 className="text-xl md:text-3xl font-bold tracking-tight text-white font-heading">
-              Sistem Pendidikan {INSTITUTION_CONFIG.name}
+              Sistem Pendidikan {INSTITUTION_CONFIG.schoolName}
             </h1>
+            <p className="text-xs text-emerald-100 font-medium">
+              {INSTITUTION_CONFIG.character} • {INSTITUTION_CONFIG.yayasanName}
+            </p>
             <p className="text-xs md:text-sm text-emerald-50 leading-relaxed">
               Arsitektur terpadu: <strong>Tahfizh</strong>, <strong>Akademik & Rapor</strong>, <strong>Kesantrian</strong>, <strong>Kedisiplinan (Poin x2)</strong>, <strong>Ikhtibar</strong>, <strong>Poskestren</strong>, <strong>Logistik</strong>, dan <strong>Portal Wali</strong>.
             </p>
           </div>
           <div className="relative z-10 shrink-0 hidden md:flex items-center justify-center p-3 bg-white rounded-3xl shadow-lg border border-white/20">
-            <img src="/logo.png" alt={`Logo ${INSTITUTION_CONFIG.name}`} className="h-20 w-20 object-contain" />
+            <img src="/logo.png" alt={`Logo ${INSTITUTION_CONFIG.schoolName}`} width={80} height={80} className="h-20 w-20 object-contain" />
           </div>
         </div>
 
@@ -1707,7 +1750,7 @@ Mudir ${INSTITUTION_CONFIG.name},
             setFeedback(null);
           }}
           onSelectTab={(t) => {
-            setActiveTab(t as any);
+            setActiveTab(t as NavTabId | "beranda");
             setFeedback(null);
           }}
         />
@@ -1759,7 +1802,7 @@ Mudir ${INSTITUTION_CONFIG.name},
                   setoranTerakhir: santriList[0].setoranTerakhir,
                   nilaiTerakhir: santriList[0].nilaiTerakhir,
                   poinPelanggaran: santriList[0].poinPelanggaran,
-                  bintangKebaikan: (santriList[0] as any).bintangKebaikan || 12,
+                  bintangKebaikan: santriList[0].bintangKebaikan || 12,
                 }}
                 izinAktif={izinList[0]}
                 nilaiAkademikList={nilaiAkademikList}
@@ -1956,7 +1999,7 @@ Mudir ${INSTITUTION_CONFIG.name},
         {/* ============================================================= */}
         {/* GUARD: AKSES TERBATAS RBAC */}
         {/* ============================================================= */}
-        {activeTab !== "beranda" && !allowedTabs.includes(activeTab as any) && (
+        {activeTab !== "beranda" && !allowedTabs.includes(activeTab as NavTabId) && (
           <Card rounded="3xl" className="p-8 sm:p-12 text-center bg-white border border-slate-200 shadow-sm space-y-4 max-w-xl mx-auto my-6">
             <div className="h-16 w-16 mx-auto rounded-3xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-200">
               <ShieldAlert className="h-8 w-8" />
@@ -2253,7 +2296,7 @@ Mudir ${INSTITUTION_CONFIG.name},
                           <button
                             key={k}
                             type="button"
-                            onClick={() => setNilai(k as any)}
+                            onClick={() => setNilai(k as "MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "DHOIF")}
                             className={`min-h-[44px] rounded-2xl text-xs font-bold border transition-all ${
                               nilai === k ? "bg-[#0E7C3A] text-white border-[#0E7C3A] shadow-xs" : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
                             }`}
@@ -2280,8 +2323,8 @@ Mudir ${INSTITUTION_CONFIG.name},
                               santriNama: cur.nama,
                               santriNis: cur.nis,
                               kelas: cur.kelas,
-                              namaWali: (cur as any).namaWali,
-                              noHpWali: (cur as any).noHpWali,
+                              namaWali: cur.namaWali,
+                              noHpWali: cur.noHpWali,
                               jenisSetoran: inputJenis,
                               juz,
                               surah: surahMulai,
@@ -2294,8 +2337,8 @@ Mudir ${INSTITUTION_CONFIG.name},
                             });
                             setGlobalWaDialog({
                               isOpen: true,
-                              phone: (cur as any).noHpWali || "",
-                              recipientName: (cur as any).namaWali || `Wali ${cur.nama}`,
+                              phone: cur.noHpWali || "",
+                              recipientName: cur.namaWali || `Wali ${cur.nama}`,
                               message: msg,
                               title: `Kirim Setoran ${cur.nama} ke WA Wali`,
                               description: "Pesan terformat akan dibuka di aplikasi WhatsApp resmi Anda.",
@@ -2366,8 +2409,8 @@ Mudir ${INSTITUTION_CONFIG.name},
                                     santriNis: s.nis,
                                     kelas: s.kelas,
                                     halaqoh: s.halaqoh,
-                                    namaWali: (s as any).namaWali,
-                                    noHpWali: (s as any).noHpWali,
+                                    namaWali: s.namaWali,
+                                    noHpWali: s.noHpWali,
                                     capaianJuz: s.capaianJuz,
                                     targetJuz: s.targetJuz,
                                     setoranTerakhir: s.setoranTerakhir,
@@ -2376,8 +2419,8 @@ Mudir ${INSTITUTION_CONFIG.name},
                                   });
                                   setGlobalWaDialog({
                                     isOpen: true,
-                                    phone: (s as any).noHpWali || "",
-                                    recipientName: (s as any).namaWali || `Wali ${s.nama}`,
+                                    phone: s.noHpWali || "",
+                                    recipientName: s.namaWali || `Wali ${s.nama}`,
                                     message: msg,
                                     title: `Kirim Progres Hafalan ${s.nama}`,
                                     description: "Ringkasan capaian juz dan hafalan santri akan dikirim via WhatsApp.",
@@ -2426,7 +2469,7 @@ Mudir ${INSTITUTION_CONFIG.name},
                     >
                       <optgroup label="Program Kepesantrenan (Senin–Jumat)">
                         <option value="MP-KP-01">Bahasa Arab (Senin)</option>
-                        <option value="MP-KP-02">Tafsir Al-Qur'an (Selasa)</option>
+                        <option value="MP-KP-02">Tafsir Al-Qur&apos;an (Selasa)</option>
                         <option value="MP-KP-03">Fikih Ibadah &amp; Muamalah (Rabu)</option>
                         <option value="MP-KP-04">Aqidah Islamiyyah (Kamis)</option>
                         <option value="MP-KP-05">Ilmu Tajwid (Jumat)</option>
@@ -2593,7 +2636,7 @@ Mudir ${INSTITUTION_CONFIG.name},
                         <select
                           aria-label="Jenis Perizinan"
                           value={formIzinJenis}
-                          onChange={(e) => setFormIzinJenis(e.target.value as any)}
+                          onChange={(e) => setFormIzinJenis(e.target.value as "PULANG" | "KELUAR_KOMPLEK" | "SAKIT")}
                           className="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white font-medium text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-[#0E7C3A]"
                         >
                           <option value="PULANG">Izin Pulang ke Rumah</option>
@@ -2642,7 +2685,7 @@ Mudir ${INSTITUTION_CONFIG.name},
                         <div key={i.id} className="p-3.5 rounded-2xl border border-slate-200/80 bg-white flex justify-between items-center text-xs">
                           <div>
                             <span className="font-bold text-slate-800">{i.santriNama} ({i.jenis})</span>
-                            <p className="text-slate-600">"{i.alasan}"</p>
+                            <p className="text-slate-600">&quot;{i.alasan}&quot;</p>
                             <span className="text-[10px] text-slate-400">{i.diverifikasiOleh}</span>
                           </div>
                           <div className="flex gap-2 items-center">
@@ -2663,7 +2706,7 @@ Mudir ${INSTITUTION_CONFIG.name},
                                 });
                                 setGlobalWaDialog({
                                   isOpen: true,
-                                  phone: (i as any).noHpWali || "",
+                                  phone: ("noHpWali" in i ? ((i as Record<string, unknown>).noHpWali as string) : "") || "",
                                   recipientName: `Wali ${i.santriNama}`,
                                   message: msg,
                                   title: `Notifikasi Izin ${i.santriNama} via WA`,
@@ -2720,7 +2763,7 @@ Mudir ${INSTITUTION_CONFIG.name},
                     <label className="text-xs font-semibold text-slate-700">Kategori</label>
                     <select
                       value={kategoriPelanggaran}
-                      onChange={(e) => setKategoriPelanggaran(e.target.value as any)}
+                      onChange={(e) => setKategoriPelanggaran(e.target.value as "PLG_SHOLAT" | "PLG_PIKET" | "PLG_GADGET")}
                       className="w-full min-h-[44px] px-3 py-2 rounded-2xl bg-white border border-slate-200 text-xs"
                     >
                       <option value="PLG_SHOLAT">Terlambat Sholat (5 Poin)</option>
@@ -2786,7 +2829,7 @@ Mudir ${INSTITUTION_CONFIG.name},
                             });
                             setGlobalWaDialog({
                               isOpen: true,
-                              phone: (sp as any).noHpWali || "",
+                              phone: ("noHpWali" in sp ? ((sp as Record<string, unknown>).noHpWali as string) : "") || "",
                               recipientName: `Wali ${sp.santriNama}`,
                               message: msg,
                               title: `Pemberitahuan SP ke Wali ${sp.santriNama}`,
@@ -2836,6 +2879,19 @@ Mudir ${INSTITUTION_CONFIG.name},
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <Input label="Judul Kebutuhan" value={judulPengajuan} onChange={(e) => setJudulPengajuan(e.target.value)} placeholder="e.g. Pembelian Mushaf" />
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-700">Kategori Anggaran</label>
+                    <select
+                      value={kategoriPengajuan}
+                      onChange={(e) => setKategoriPengajuan(e.target.value)}
+                      className="w-full min-h-[44px] px-3 py-2 rounded-2xl bg-white border border-slate-200 text-xs"
+                    >
+                      <option value="LOGISTIK">Logistik & Sarpras</option>
+                      <option value="DAPUR">Dapur & Konsumsi</option>
+                      <option value="KESEHATAN">Kesehatan & P3K</option>
+                      <option value="OPERASIONAL">Operasional Pondok</option>
+                    </select>
+                  </div>
                   <Input label="Nominal (Rp)" type="number" value={nominalPengajuan} onChange={(e) => setNominalPengajuan(e.target.value)} />
                 </CardContent>
                 <CardFooter>
@@ -2988,7 +3044,15 @@ Mudir ${INSTITUTION_CONFIG.name},
                       <label className="text-xs font-semibold text-slate-700">Jenis Surat</label>
                       <select
                         value={jenisSuratPilihan}
-                        onChange={(e) => setJenisSuratPilihan(e.target.value as any)}
+                        onChange={(e) =>
+                          setJenisSuratPilihan(
+                            e.target.value as
+                              | "SURAT_KETERANGAN_AKTIF"
+                              | "SURAT_UNDANGAN_WALI"
+                              | "SURAT_IZIN_KEGIATAN"
+                              | "SURAT_REKOMENDASI"
+                          )
+                        }
                         className="w-full min-h-[44px] px-3 py-2.5 rounded-2xl bg-white border border-slate-200 text-xs"
                       >
                         <option value="SURAT_KETERANGAN_AKTIF">Surat Keterangan Santri Aktif</option>
@@ -3064,7 +3128,7 @@ Mudir ${INSTITUTION_CONFIG.name},
                     ) : (
                       <div className="py-16 text-center space-y-2 text-slate-400">
                         <FileText className="h-10 w-10 mx-auto stroke-1" />
-                        <p className="text-sm">Klik tombol <strong>"Buat Draf Surat Resmi Lembaga"</strong> untuk merumuskan draf surat resmi otomatis berkop pondok.</p>
+                        <p className="text-sm">Klik tombol <strong>&quot;Buat Draf Surat Resmi Lembaga&quot;</strong> untuk merumuskan draf surat resmi otomatis berkop pondok.</p>
                       </div>
                     )}
                   </CardContent>
@@ -3334,7 +3398,7 @@ Mudir ${INSTITUTION_CONFIG.name},
                       <label className="text-xs font-bold text-slate-700">Status Penanganan Awal</label>
                       <select
                         value={statusKesehatanInput}
-                        onChange={(e) => setStatusKesehatanInput(e.target.value as any)}
+                        onChange={(e) => setStatusKesehatanInput(e.target.value as "RAWAT_PONDOK" | "DIRUJUK_PUSKESMAS" | "DIRUJUK_RS" | "SEMBUH")}
                         className="w-full min-h-[44px] px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-sm"
                       >
                         <option value="RAWAT_PONDOK">Rawat Pondok (UKS Asrama)</option>
@@ -3495,7 +3559,7 @@ Mudir ${INSTITUTION_CONFIG.name},
                         <label className="text-xs font-bold text-slate-700">Jenis Mutasi</label>
                         <select
                           value={jenisMutasi}
-                          onChange={(e) => setJenisMutasi(e.target.value as any)}
+                          onChange={(e) => setJenisMutasi(e.target.value as "MASUK" | "KELUAR")}
                           className="w-full min-h-[44px] px-3 py-2.5 rounded-2xl bg-white border border-slate-200 text-sm"
                         >
                           <option value="MASUK">Masuk (Donasi/Beli)</option>
@@ -3614,7 +3678,7 @@ Mudir ${INSTITUTION_CONFIG.name},
                   {selectedRole === "WS" ? "Ahlan wa Sahlan, Ayah/Bunda Wali Santri" : "Ahlan wa Sahlan, Santri Mandiri STQ DUC"}
                 </h3>
                 <p className="text-xs text-emerald-100 mt-1">
-                  Pantau perkembangan hafalan Al-Qur'an, adab & kedisiplinan, kesehatan, serta capaian prestasi ananda.
+                  Pantau perkembangan hafalan Al-Qur&apos;an, adab & kedisiplinan, kesehatan, serta capaian prestasi ananda.
                 </p>
               </div>
               <Button
@@ -3685,7 +3749,7 @@ Mudir ${INSTITUTION_CONFIG.name},
                     <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
                       <div>
                         <span className="font-bold text-slate-800 text-xs">Setoran Sabaq (Hafalan Baru)</span>
-                        <p className="text-xs text-emerald-700 font-semibold">Ali 'Imran: 1-20 (Juz 4)</p>
+                        <p className="text-xs text-emerald-700 font-semibold">Ali &apos;Imran: 1-20 (Juz 4)</p>
                         <p className="text-[11px] text-slate-400">Catatan: Makhraj dan tajwid fasih</p>
                       </div>
                       <Badge variant="green" size="sm">MUMTAZ</Badge>
@@ -3771,7 +3835,7 @@ Mudir ${INSTITUTION_CONFIG.name},
                               {s.status}
                             </Badge>
                           </div>
-                          <p className="text-slate-600 italic">"{s.pesan}"</p>
+                          <p className="text-slate-600 italic">&quot;{s.pesan}&quot;</p>
                           {s.tanggapan && (
                             <div className="p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-100 text-emerald-900 mt-2">
                               <p className="font-bold text-[11px]">Tanggapan Pimpinan Pondok:</p>
@@ -4408,7 +4472,7 @@ Mudir ${INSTITUTION_CONFIG.name},
                 })()}
                 {showPrintModal === "sp" && (() => {
                   const activeSp = spList.find((s) => s.id === selectedSpId) || spList[0];
-                  const targetSantri = santriList.find((s) => s.nama === activeSp?.santriNama || s.nis === (activeSp as any)?.santriNis) || santriList[0];
+                  const targetSantri = santriList.find((s) => s.nama === activeSp?.santriNama || ("santriNis" in (activeSp || {}) && s.nis === (activeSp as Record<string, unknown>).santriNis)) || santriList[0];
                   const filteredPelanggaran = pelanggaranHistory.filter((p) => p.santriNama === activeSp?.santriNama || p.santriNama === targetSantri?.nama);
                   const tingkatStr = (activeSp ? `SP${activeSp.tingkat}` : "SP1") as "SP1" | "SP2" | "SP3";
 
@@ -4524,7 +4588,7 @@ Mudir ${INSTITUTION_CONFIG.name},
         activeTab={activeTab}
         allowedTabs={allowedTabs}
         onSelectTab={(tab) => {
-          setActiveTab(tab as any);
+          setActiveTab(tab);
           if (["tahfizh", "akademik", "ikhtibar"].includes(tab)) setActiveCluster("tahfizh");
           else if (["kesantrian", "kedisiplinan", "kesehatan", "logistik"].includes(tab)) setActiveCluster("kesantrian");
           else if (["administrasi", "surat", "sponsor", "agenda"].includes(tab)) setActiveCluster("manajemen");
@@ -4543,6 +4607,7 @@ Mudir ${INSTITUTION_CONFIG.name},
         defaultMessage={globalWaDialog.message}
         title={globalWaDialog.title}
         description={globalWaDialog.description}
+        onConfirmSent={globalWaDialog.onConfirmSent}
       />
     </div>
   );

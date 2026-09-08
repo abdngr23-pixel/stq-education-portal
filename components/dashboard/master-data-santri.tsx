@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useTransition, useMemo } from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,6 @@ import {
   Search,
   PlusCircle,
   Download,
-  Filter,
   GraduationCap,
   BookCheck,
   Building2,

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { jwtVerify } from "jose";
+import { jwtVerify, JWTPayload } from "jose";
 import { checkRateLimit, getClientIp } from "@/lib/security/rate-limit";
 import { verifyCsrf } from "@/lib/security/csrf";
 import { getCorsHeaders, handleCorsPreflight } from "@/lib/security/cors";
@@ -137,7 +137,7 @@ export async function middleware(request: NextRequest) {
 
   // 2. Authentication Middleware: Ekstraksi Token JWT
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-  let sessionPayload: any = null;
+  let sessionPayload: (JWTPayload & { role?: string }) | null = null;
 
   if (token) {
     try {

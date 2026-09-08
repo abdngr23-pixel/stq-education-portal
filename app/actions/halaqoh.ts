@@ -109,7 +109,7 @@ export async function createHalaqohAction(input: CreateHalaqohInput) {
       details: {
         halaqohCode,
         nama: newHalaqoh.nama,
-        pembina: (newHalaqoh as any).pembina?.nama,
+        pembina: (newHalaqoh as { pembina?: { nama?: string } | null }).pembina?.nama,
         tahunAjaran: newHalaqoh.tahunAjaran,
       },
     });

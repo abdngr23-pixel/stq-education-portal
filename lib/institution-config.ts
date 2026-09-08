@@ -1,16 +1,21 @@
 /**
  * Centralized Legal & Institutional Configuration
- * STQ Education Portal - Pesantren Tahfizh Al-Qur'an
+ * STQ Education Portal - STQ Darul Ulum Cendekia
+ * Yayasan Infak Medika Nusantara
  *
- * Sesuai temuan A11 Audit STQ 2026-09-08:
- * Menggantikan nama contoh (Darul Ulum Cendekia) dengan identitas resmi
- * Yayasan Infak Medika Nusantara dan konfigurasi legalitas terpusat.
+ * Koreksi Identitas Resmi (Audit STQ 2026-09-08):
+ * - Nama Sekolah: STQ Darul Ulum Cendekia (Singkatan: STQ DUC)
+ * - Yayasan Pengelola: Yayasan Infak Medika Nusantara
+ * - Karakteristik: Sekolah tahfizh full beasiswa untuk yatim dan dhuafa, didukung infak & orang tua asuh
+ * - Data legalitas/kontak yang belum terverifikasi dibiarkan kosong ("") tanpa mengarang data palsu.
  */
 
 export interface InstitutionConfig {
-  yayasanName: string;
-  pesantrenName: string;
+  schoolName: string;
   shortName: string;
+  yayasanName: string;
+  character: string;
+  supportedBy: string;
   skKemenag: string;
   nsp: string;
   alamat: string;
@@ -21,34 +26,43 @@ export interface InstitutionConfig {
   timeZone: string;
   mudirName: string;
 
-  // Aliases for intuitive property access
+  // Compatibility aliases
   readonly name: string;
+  readonly pesantrenName: string;
   readonly foundation: string;
   readonly address: string;
   readonly phone: string;
   readonly city: string;
   readonly mudir: string;
+  readonly isComplete: boolean;
 }
 
 export const INSTITUTION_CONFIG: InstitutionConfig = {
+  schoolName: process.env.NEXT_PUBLIC_SCHOOL_NAME || "STQ Darul Ulum Cendekia",
+  shortName: process.env.NEXT_PUBLIC_SHORT_NAME || "STQ DUC",
   yayasanName: process.env.NEXT_PUBLIC_YAYASAN_NAME || "Yayasan Infak Medika Nusantara",
-  pesantrenName: process.env.NEXT_PUBLIC_PESANTREN_NAME || "Pondok Pesantren & STQ Infak Medika Nusantara",
-  shortName: process.env.NEXT_PUBLIC_SHORT_NAME || "STQ IMN",
-  // Legal numbers are configurable or left empty if unverified by administrators (no fake literals)
-  skKemenag: process.env.NEXT_PUBLIC_SK_KEMENAG || "SK Kemenag RI (Dalam Proses Registrasi)",
-  nsp: process.env.NEXT_PUBLIC_NSP || "NSP: (Konfirmasi Sekretariat)",
-  alamat: process.env.NEXT_PUBLIC_ALAMAT_PESANTREN || "Jl. Rutan No. 12, Kel. Gunung Sari, Kec. Rappocini, Kota Makassar, Sulawesi Selatan 90222",
-  telepon: process.env.NEXT_PUBLIC_TELP_PESANTREN || "0812-4242-6789",
-  email: process.env.NEXT_PUBLIC_EMAIL_PESANTREN || "stq@infakmedikanusantara.org",
+  character: "Sekolah Tahfizh Al-Qur'an Full Beasiswa untuk Yatim dan Dhuafa",
+  supportedBy: "Didukung oleh Program Infak dan Orang Tua Asuh",
+
+  // Tidak mengarang alamat, nomor kontak, atau legalitas yang belum diverifikasi pimpinan
+  skKemenag: process.env.NEXT_PUBLIC_SK_KEMENAG || "",
+  nsp: process.env.NEXT_PUBLIC_NSP || "",
+  alamat: process.env.NEXT_PUBLIC_ALAMAT_SEKOLAH || "",
+  telepon: process.env.NEXT_PUBLIC_TELP_SEKOLAH || "",
+  email: process.env.NEXT_PUBLIC_EMAIL_SEKOLAH || "",
   kota: "Makassar",
   provinsi: "Sulawesi Selatan",
   timeZone: "Asia/Makassar",
   mudirName: "Ust. Andi Quarzy Ayatullah, S.H, M.H",
 
-  get name() { return this.pesantrenName; },
+  get name() { return this.schoolName; },
+  get pesantrenName() { return this.schoolName; },
   get foundation() { return this.yayasanName; },
   get address() { return this.alamat; },
   get phone() { return this.telepon; },
   get city() { return this.kota; },
   get mudir() { return this.mudirName; },
+  get isComplete() {
+    return Boolean(this.alamat && this.telepon && this.email && this.skKemenag);
+  },
 };

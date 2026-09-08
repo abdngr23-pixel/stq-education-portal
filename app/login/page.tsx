@@ -2,17 +2,13 @@
 
 import React, { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { loginAction, quickDemoLoginAction } from "@/app/actions/auth";
 import {
-  ROLE_LABELS,
   Role,
   DEMO_ACCOUNTS,
-  ALL_MUDHABBIR_ACCOUNTS,
-  ALL_MUSYRIF_TAHFIZH_ACCOUNTS,
   ALL_STAFF_ACCOUNTS,
   type StaffAccountItem,
 } from "@/types/auth";
@@ -125,13 +121,16 @@ export default function LoginPage() {
       {/* Brand Header */}
       <div className="max-w-6xl w-full mx-auto text-center mb-8 space-y-2">
         <div className="inline-flex h-20 w-20 rounded-3xl bg-white p-2.5 items-center justify-center shadow-md border border-slate-200/80 mb-1">
-          <img src="/logo.png" alt={`Logo ${INSTITUTION_CONFIG.name}`} className="h-full w-full object-contain" />
+          <img src="/logo.png" alt={`Logo ${INSTITUTION_CONFIG.schoolName}`} width={70} height={70} className="h-full w-full object-contain" />
         </div>
         <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 font-heading">
           STQ Education Portal — {INSTITUTION_CONFIG.shortName}
         </h1>
-        <p className="text-xs md:text-sm text-slate-600 max-w-2xl mx-auto">
-          Sistem Informasi Manajemen Terpadu Tahfizh Al-Qur&apos;an, Akademik, Asrama, dan Layanan Orang Tua
+        <p className="text-sm font-semibold text-emerald-800">
+          {INSTITUTION_CONFIG.schoolName}
+        </p>
+        <p className="text-xs text-slate-600 max-w-2xl mx-auto">
+          {INSTITUTION_CONFIG.character} • {INSTITUTION_CONFIG.yayasanName}
         </p>
       </div>
 

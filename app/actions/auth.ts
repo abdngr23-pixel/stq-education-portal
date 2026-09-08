@@ -7,9 +7,7 @@ import {
   Role,
   DEMO_ACCOUNTS,
   ALL_STAFF_ACCOUNTS,
-  STAFF_HALAQOH_MAP,
   getHalaqohByStaff,
-  type UserSession,
 } from "@/types/auth";
 
 function isProductionEnv(): boolean {

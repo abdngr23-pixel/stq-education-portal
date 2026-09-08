@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { verifyPassword, createSessionToken, recordAuditLog } from '@/lib/auth';
 import { loginSchema, validateData } from '@/lib/validations';
+import { Prisma } from '@prisma/client';
 
 /**
  * POST /api/v1/auth/login
@@ -30,7 +31,9 @@ export async function POST(req: Request) {
     const { username, email, password } = validation.data;
     const identifier = username || email || '';
 
-    let user: any = null;
+    let user: Prisma.UserGetPayload<{
+      include: { staff: true; santri: true };
+    }> | null = null;
     try {
       user = await prisma.user.findFirst({
         where: {

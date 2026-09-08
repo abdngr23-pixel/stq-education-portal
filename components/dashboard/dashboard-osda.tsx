@@ -1,8 +1,7 @@
 import React from "react";
 import { StatCard } from "@/components/ui/stat-card";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Stethoscope, Users, CheckCircle2 } from "lucide-react";
 
 export interface DashboardOSDAProps {

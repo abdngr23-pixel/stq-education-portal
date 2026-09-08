@@ -8,7 +8,14 @@
  * diekstrak ke satu modul bersama yang dipakai oleh produksi dan diuji oleh automated tests.
  */
 
-// 1. Ambang Batas Poin Surat Peringatan (SP)
+/**
+ * 1. Ambang Batas Poin Surat Peringatan (SP)
+ * STATUS: MENUNGGU KONFIRMASI PENGURUS
+ * Catatan: Dokumen README lama menyebut SP1/SP2/SP3 pada 30/60/100 poin,
+ * sedangkan implementasi kode saat ini menggunakan 20/40/60 poin.
+ * Angka 20/40/60 dipertahankan sementara secara konsisten di UI, backend, laporan, dan pengujian
+ * hingga disahkan melalui Surat Keputusan / Kebijakan Lembaga resmi.
+ */
 export const SP_THRESHOLDS = {
   SP1: 20,
   SP2: 40,
@@ -22,7 +29,12 @@ export function evaluasiLevelSP(totalPoin: number): 'SP3' | 'SP2' | 'SP1' | null
   return null;
 }
 
-// 2. Ambang Batas Predikat Nilai Akademik
+/**
+ * 2. Ambang Batas Predikat Nilai Akademik
+ * STATUS: MENUNGGU KONFIRMASI PENGURUS
+ * Angka A (>=90), B (>=80), C (>=70), D (<70) dipertahankan sementara secara konsisten
+ * di UI, backend, cetak rapor, dan tes hingga ada pengesahan KKM baku dari rapat kurikulum.
+ */
 export const NILAI_THRESHOLDS = {
   A: 90,
   B: 80,

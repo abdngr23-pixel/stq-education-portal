@@ -211,7 +211,17 @@ export async function kirimLaporanWhatsAppAction(laporanId: string) {
       return { success: false, message: "Laporan tidak ditemukan." };
     }
 
-    const snapshot = laporan.snapshotTahfizh as any;
+    interface SnapshotTahfizhData {
+      santriNama?: string;
+      nis?: string;
+      kelas?: string;
+      capaianJuz?: number;
+      totalSetoran?: number;
+      setoranTerakhir?: string;
+      pembina?: string;
+    }
+
+    const snapshot = (laporan.snapshotTahfizh as unknown as SnapshotTahfizhData) || {};
 
     // Format pesan WhatsApp resmi STQ
     const pesanWA = `*LAPORAN PERKEMBANGAN TAHFIZH SANTRI*
@@ -224,9 +234,9 @@ Kepada Yth. Bapak/Ibu Donatur/Orang Tua Asuh:
 Berikut ringkasan capaian ananda asuh:
 • Nama Santri: *${laporan.santri.nama}* (${laporan.santri.nis})
 • Kelas: ${laporan.santri.kelas}
-• Capaian Teruji: *${snapshot.capaianJuz} Juz Selesai*
-• Setoran Terakhir: ${snapshot.setoranTerakhir}
-• Pembina: ${snapshot.pembina}
+• Capaian Teruji: *${snapshot.capaianJuz ?? 0} Juz Selesai*
+• Setoran Terakhir: ${snapshot.setoranTerakhir || "Belum ada setoran"}
+• Pembina: ${snapshot.pembina || "Ustadz Pembina Halaqoh"}
 
 *Catatan Musyrif:*
 _"${laporan.catatanMusyrif || "Santri istiqomah dalam murojaah dan tahsin."}"_
@@ -236,7 +246,17 @@ Jazakumullah Khairan Katsiran atas dukungan dan doa Bapak/Ibu. Semoga menjadi am
 _${INSTITUTION_CONFIG.pesantrenName}_`;
 
     const formattedPhone = formatIndonesianPhone(laporan.sponsor.noHp);
-    const waLink = formattedPhone ? generateWALink(formattedPhone, pesanWA) : "";
+    if (!formattedPhone) {
+      return {
+        success: false,
+        message: "Nomor telepon/WhatsApp donatur belum terdaftar atau tidak valid. Pengiriman diblokir hingga nomor diperbarui.",
+        pesanPreview: pesanWA,
+        waLink: "",
+        phone: "",
+      };
+    }
+
+    const waLink = generateWALink(formattedPhone, pesanWA);
 
     await recordAuditLog({
       userId: session.userId,
@@ -244,16 +264,14 @@ _${INSTITUTION_CONFIG.pesantrenName}_`;
       entity: "LaporanBulananSponsor",
       entityId: laporan.id,
       details: {
-        nomorTujuan: formattedPhone || "TIDAK_VALID",
+        nomorTujuan: formattedPhone,
         santri: laporan.santri.nama,
       },
     });
 
     return {
       success: true,
-      message: formattedPhone
-        ? `Laporan santri asuh siap dikirimkan ke ${laporan.sponsor.nama} via WhatsApp.`
-        : `Nomor telepon donatur belum valid. Mohon periksa kembali nomor WhatsApp donatur.`,
+      message: `Tautan WhatsApp laporan untuk ${laporan.sponsor.nama} siap dibuka.`,
       pesanPreview: pesanWA,
       waLink,
       phone: formattedPhone,
@@ -261,6 +279,49 @@ _${INSTITUTION_CONFIG.pesantrenName}_`;
   } catch (error) {
     console.error("Gagal menyiapkan WhatsApp:", error);
     return { success: false, message: "Gagal memproses pesan WhatsApp laporan donatur." };
+  }
+}
+
+/**
+ * Server Action: Konfirmasi Manual Pengiriman Laporan WhatsApp (Honest State Transition)
+ * Status hanya berubah menjadi TERKIRIM jika petugas secara sadar mengonfirmasi
+ * bahwa pesan telah berhasil terkirim kepada donatur.
+ */
+export async function konfirmasiPengirimanLaporanAction(laporanId: string) {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Silakan login terlebih dahulu." };
+  }
+
+  if (session.role !== "ADM" && session.role !== "KS") {
+    return { success: false, message: "Hanya Admin dan Mudir yang dapat mengonfirmasi pengiriman laporan." };
+  }
+
+  try {
+    const updated = await prisma.laporanBulananSponsor.update({
+      where: { id: laporanId },
+      data: {
+        statusKirimWA: StatusKirimWA.TERKIRIM,
+        tanggalKirimWA: new Date(),
+      },
+    });
+
+    await recordAuditLog({
+      userId: session.userId,
+      action: "KONFIRMASI_KIRIM_WA_SPONSOR",
+      entity: "LaporanBulananSponsor",
+      entityId: updated.id,
+      details: { kodeLaporan: updated.kodeLaporan, status: "TERKIRIM" },
+    });
+
+    return {
+      success: true,
+      message: `Laporan ${updated.kodeLaporan} berhasil dikonfirmasi telah terkirim kepada donatur.`,
+      data: updated,
+    };
+  } catch (error) {
+    console.error("Gagal mengonfirmasi pengiriman laporan:", error);
+    return { success: false, message: "Gagal memperbarui status pengiriman laporan." };
   }
 }
 

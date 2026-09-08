@@ -9,26 +9,31 @@ export function KopSurat() {
         <div className="h-20 w-20 shrink-0 flex items-center justify-center p-1 border border-black/30 rounded-lg">
           <img
             src="/logo.png"
-            alt="Logo STQ"
+            alt={`Logo ${INSTITUTION_CONFIG.schoolName}`}
+            width={72}
+            height={72}
             className="h-full w-full object-contain filter grayscale"
           />
         </div>
 
         {/* Teks Identitas Lembaga */}
         <div className="flex-1 text-center leading-tight space-y-0.5">
-          <p className="text-xs uppercase tracking-widest font-semibold">
+          <p className="text-xs uppercase tracking-widest font-semibold text-gray-800">
             {INSTITUTION_CONFIG.yayasanName}
           </p>
-          <h2 className="text-base sm:text-lg font-bold uppercase tracking-tight font-serif">
-            {INSTITUTION_CONFIG.pesantrenName}
+          <h2 className="text-base sm:text-lg font-bold uppercase tracking-tight font-serif text-black">
+            {INSTITUTION_CONFIG.schoolName}
           </h2>
+          <p className="text-[10px] italic text-gray-700 font-sans">
+            {INSTITUTION_CONFIG.character}
+          </p>
           {(INSTITUTION_CONFIG.nsp || INSTITUTION_CONFIG.skKemenag) && (
-            <p className="text-[10px] text-gray-700">
+            <p className="text-[10px] text-gray-700 font-sans">
               {INSTITUTION_CONFIG.nsp} {INSTITUTION_CONFIG.skKemenag ? `• ${INSTITUTION_CONFIG.skKemenag}` : ""}
             </p>
           )}
-          <p className="text-[10px] text-gray-600">
-            {INSTITUTION_CONFIG.alamat}
+          <p className="text-[10px] text-gray-600 font-sans">
+            {INSTITUTION_CONFIG.alamat || `${INSTITUTION_CONFIG.kota}, ${INSTITUTION_CONFIG.provinsi}`}
             {INSTITUTION_CONFIG.telepon ? ` | Telp: ${INSTITUTION_CONFIG.telepon}` : ""}
             {INSTITUTION_CONFIG.email ? ` | Email: ${INSTITUTION_CONFIG.email}` : ""}
           </p>

@@ -11,7 +11,6 @@ export async function GET(req: Request) {
   try {
     const auth = await apiGuard(req, ['ADM', 'KS', 'MK', 'PH', 'GA', 'MT', 'YAY']);
     if (auth.errorResponse) return auth.errorResponse;
-    const session = auth.session;
 
     let list: unknown[];
     try {

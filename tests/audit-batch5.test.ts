@@ -4,13 +4,17 @@ import { INSTITUTION_CONFIG } from "../lib/institution-config";
 
 test("Audit Batch 5 (UX Refinement - U04): Master Legal Identity Configuration", () => {
   // Verifikasi identitas lembaga resmi dan legalitas
+  assert.equal(INSTITUTION_CONFIG.schoolName, "STQ Darul Ulum Cendekia");
+  assert.equal(INSTITUTION_CONFIG.shortName, "STQ DUC");
+  assert.equal(INSTITUTION_CONFIG.yayasanName, "Yayasan Infak Medika Nusantara");
   assert.equal(INSTITUTION_CONFIG.foundation, "Yayasan Infak Medika Nusantara");
-  assert.equal(INSTITUTION_CONFIG.name, "Pondok Pesantren & STQ Infak Medika Nusantara");
-  assert.ok(INSTITUTION_CONFIG.shortName.includes("IMN"));
+  assert.equal(INSTITUTION_CONFIG.name, "STQ Darul Ulum Cendekia");
   assert.equal(INSTITUTION_CONFIG.city, "Makassar");
-  assert.ok(INSTITUTION_CONFIG.address.includes("Makassar"));
-  assert.ok(INSTITUTION_CONFIG.phone.length >= 10);
-  assert.ok(INSTITUTION_CONFIG.mudir.includes("Andi Quarzy"));
+  assert.equal(INSTITUTION_CONFIG.provinsi, "Sulawesi Selatan");
+  assert.ok(INSTITUTION_CONFIG.mudirName.includes("Andi Quarzy"));
+  // Tidak mengarang alamat/telepon jika belum diverifikasi resmi
+  assert.equal(typeof INSTITUTION_CONFIG.alamat, "string");
+  assert.equal(typeof INSTITUTION_CONFIG.telepon, "string");
 });
 
 test("Audit Batch 5 (UX Refinement - U01): URL Query Parameter Parsing & Synchronization", () => {

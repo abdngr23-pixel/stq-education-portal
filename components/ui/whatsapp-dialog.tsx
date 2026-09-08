@@ -15,6 +15,7 @@ export interface WhatsAppDialogProps {
   defaultMessage: string;
   title?: string;
   description?: string;
+  onConfirmSent?: () => void;
 }
 
 export function WhatsAppDialog({
@@ -25,18 +26,25 @@ export function WhatsAppDialog({
   defaultMessage,
   title = "Kirim Pesan via WhatsApp Direct",
   description = "Pesan akan otomatis terkirim dari aplikasi WhatsApp resmi Anda tanpa biaya langganan API.",
+  onConfirmSent,
 }: WhatsAppDialogProps) {
+  const [prevDefaultMessage, setPrevDefaultMessage] = useState(defaultMessage);
+  const [prevPhone, setPrevPhone] = useState(defaultPhone);
+  const [prevRecipient, setPrevRecipient] = useState(defaultRecipientName);
   const [phone, setPhone] = useState(defaultPhone || "");
   const [recipientName, setRecipientName] = useState(defaultRecipientName || "Wali Santri");
   const [message, setMessage] = useState(defaultMessage || "");
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
+  if (defaultMessage !== prevDefaultMessage || defaultPhone !== prevPhone || defaultRecipientName !== prevRecipient) {
+    setPrevDefaultMessage(defaultMessage);
+    setPrevPhone(defaultPhone);
+    setPrevRecipient(defaultRecipientName);
     setPhone(defaultPhone || "");
     setRecipientName(defaultRecipientName || "Wali Santri");
     setMessage(defaultMessage || "");
     setCopied(false);
-  }, [defaultPhone, defaultRecipientName, defaultMessage, isOpen]);
+  }
 
   useEffect(() => {
     if (!isOpen) return;
@@ -234,6 +242,22 @@ export function WhatsAppDialog({
             >
               Buka WhatsApp
             </Button>
+
+            {onConfirmSent && (
+              <Button
+                type="button"
+                variant="gold"
+                size="sm"
+                onClick={() => {
+                  onConfirmSent();
+                  onClose();
+                }}
+                className="w-full sm:w-auto font-bold text-xs"
+                leftIcon={<Check className="h-4 w-4" />}
+              >
+                Konfirmasi Terkirim
+              </Button>
+            )}
           </div>
         </div>
       </Card>

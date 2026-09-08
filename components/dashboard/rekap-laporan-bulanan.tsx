@@ -8,29 +8,26 @@ import { Input } from "@/components/ui/input";
 import { StatCard } from "@/components/ui/stat-card";
 import {
   BookOpen,
-  Calendar,
   Download,
   Printer,
-  Sparkles,
   CheckCircle2,
   AlertCircle,
   Award,
   Layers,
   FileSpreadsheet,
   TrendingUp,
-  Filter,
   PlusCircle,
   ChevronRight,
-  RefreshCw,
 } from "lucide-react";
 import { exportToCSV } from "@/lib/export-csv";
 import {
   getLaporanBulananHalaqohAction,
-  upsertTargetSantriAction,
   inputCapaianPekananAction,
   recordTasmiSimaanAction,
+  type LaporanBulananData,
+  type RekapSantriBulananItem,
 } from "@/app/actions/laporan-bulanan";
-import { KategoriCapaian, JenisSetoran, NilaiSetoran, JenisUjiHafalan } from "@prisma/client";
+import { KategoriCapaian, NilaiSetoran, JenisUjiHafalan } from "@prisma/client";
 
 const BULAN_NAMES = [
   "Januari",
@@ -51,7 +48,7 @@ export interface RekapLaporanBulananProps {
   halaqohList?: Array<{ id: string; nama: string }>;
   initialHalaqohId?: string;
   userRole?: string;
-  onPrintPreview?: (data: any) => void;
+  onPrintPreview?: (data: LaporanBulananData) => void;
 }
 
 export function RekapLaporanBulanan({
@@ -67,14 +64,13 @@ export function RekapLaporanBulanan({
   const [selectedTahunAjaran, setSelectedTahunAjaran] = useState<string>("2026/2027");
   const [activeSubTab, setActiveSubTab] = useState<"tahfizh" | "mutabaah" | "tasmi_simaan">("tahfizh");
   
-  const [laporanData, setLaporanData] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [laporanData, setLaporanData] = useState<LaporanBulananData | null>(null);
   const [isPending, startTransition] = useTransition();
   const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // State modal input non-tahfizh
   const [showModalMutabaah, setShowModalMutabaah] = useState(false);
-  const [modalSantri, setModalSantri] = useState<any>(null);
+  const [modalSantri, setModalSantri] = useState<{ id: string; nis: string; nama: string; kelas: string } | null>(null);
   const [modalKategori, setModalKategori] = useState<KategoriCapaian>("HAFALAN_HADITS");
   const [modalHBL, setModalHBL] = useState<number>(0);
   const [modalP1, setModalP1] = useState<number>(0);
@@ -91,27 +87,7 @@ export function RekapLaporanBulanan({
   const [testPredikat, setTestPredikat] = useState<NilaiSetoran>("MUMTAZ");
   const [testCatatan, setTestCatatan] = useState<string>("");
 
-  // Fetch report data
-  const loadData = async (hId: string, bln: number, ta: string) => {
-    if (!hId) return;
-    setIsLoading(true);
-    try {
-      const res = await getLaporanBulananHalaqohAction(hId, bln, ta);
-      if (res.success && res.data) {
-        setLaporanData(res.data);
-      } else {
-        // Mock fallback if DB has no records yet
-        generateMockFallback(hId, bln, ta);
-      }
-    } catch (err) {
-      console.error(err);
-      generateMockFallback(hId, bln, ta);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const generateMockFallback = (hId: string, bln: number, ta: string) => {
+  const generateMockFallback = React.useCallback((hId: string, bln: number, ta: string): LaporanBulananData => {
     const mockSantriList = [
       { id: "SAN-0001", nis: "SAN-0001", nama: "Obama Ozearld Egberted Turizqi", kelas: "9A" },
       { id: "SAN-0002", nis: "SAN-0002", nama: "Muhammad Fardhan", kelas: "9A" },
@@ -121,7 +97,7 @@ export function RekapLaporanBulanan({
       { id: "SAN-0048", nis: "SAN-0048", nama: "Habiba Asri", kelas: "9C Putri" },
     ];
 
-    const rekap = mockSantriList.map((s, idx) => ({
+    const rekap: RekapSantriBulananItem[] = mockSantriList.map((s, idx) => ({
       santri: s,
       tahfizh: {
         sabaq: {
@@ -155,13 +131,13 @@ export function RekapLaporanBulanan({
         },
       },
       nonTahfizh: [
-        { kategori: "HAFALAN_HADITS", label: "Hafalan Hadits", satuan: "Hadits", hbl: 78, p1: 1, p2: 1, p3: 1, p4: 1, penambahanBulanIni: 4, totalKumulatif: 82, targetMin: 4, isTuntas: true, statusLabel: "Tuntas (4/4)" },
-        { kategori: "HAFALAN_MUFRODAT", label: "Mufrodat (B. Arab)", satuan: "Kosakata", hbl: 250, p1: 3, p2: 3, p3: 3, p4: 3, penambahanBulanIni: 12, totalKumulatif: 262, targetMin: 12, isTuntas: true, statusLabel: "Tuntas (12/12)" },
-        { kategori: "HAFALAN_VOCABULARY", label: "Vocabulary (B. Inggris)", satuan: "Vocab", hbl: 250, p1: 3, p2: 3, p3: 3, p4: 3, penambahanBulanIni: 12, totalKumulatif: 262, targetMin: 12, isTuntas: true, statusLabel: "Tuntas (12/12)" },
-        { kategori: "SHOLAT_TAHAJJUD", label: "Sholat Tahajjud", satuan: "Malam", hbl: 0, p1: 4, p2: 4, p3: 4, p4: 4, penambahanBulanIni: 16, totalKumulatif: 16, targetMin: 15, isTuntas: true, statusLabel: "Tuntas (16/15)" },
-        { kategori: "SHOLAT_DHUHA", label: "Sholat Dhuha", satuan: "Pagi", hbl: 0, p1: 4, p2: 4, p3: 4, p4: 4, penambahanBulanIni: 16, totalKumulatif: 16, targetMin: 15, isTuntas: true, statusLabel: "Tuntas (16/15)" },
-        { kategori: "PUASA_SUNNAH", label: "Puasa Sunnah", satuan: "Hari", hbl: 0, p1: 2, p2: 2, p3: 1, p4: 2, penambahanBulanIni: 7, totalKumulatif: 7, targetMin: 6, isTuntas: true, statusLabel: "Tuntas (7/6)" },
-        { kategori: "LITERASI", label: "Literasi Kitab/Buku", satuan: "Halaman", hbl: 0, p1: 20, p2: 25, p3: 20, p4: 20, penambahanBulanIni: 85, totalKumulatif: 85, targetMin: 80, isTuntas: true, statusLabel: "Tuntas (85/80)" },
+        { kategori: "HAFALAN_HADITS" as const, label: "Hafalan Hadits", satuan: "Hadits", hbl: 78, p1: 1, p2: 1, p3: 1, p4: 1, penambahanBulanIni: 4, totalKumulatif: 82, targetMin: 4, isTuntas: true, statusLabel: "Tuntas (4/4)" },
+        { kategori: "HAFALAN_MUFRODAT" as const, label: "Mufrodat (B. Arab)", satuan: "Kosakata", hbl: 250, p1: 3, p2: 3, p3: 3, p4: 3, penambahanBulanIni: 12, totalKumulatif: 262, targetMin: 12, isTuntas: true, statusLabel: "Tuntas (12/12)" },
+        { kategori: "HAFALAN_VOCABULARY" as const, label: "Vocabulary (B. Inggris)", satuan: "Vocab", hbl: 250, p1: 3, p2: 3, p3: 3, p4: 3, penambahanBulanIni: 12, totalKumulatif: 262, targetMin: 12, isTuntas: true, statusLabel: "Tuntas (12/12)" },
+        { kategori: "SHOLAT_TAHAJJUD" as const, label: "Sholat Tahajjud", satuan: "Malam", hbl: 0, p1: 4, p2: 4, p3: 4, p4: 4, penambahanBulanIni: 16, totalKumulatif: 16, targetMin: 15, isTuntas: true, statusLabel: "Tuntas (16/15)" },
+        { kategori: "SHOLAT_DHUHA" as const, label: "Sholat Dhuha", satuan: "Pagi", hbl: 0, p1: 4, p2: 4, p3: 4, p4: 4, penambahanBulanIni: 16, totalKumulatif: 16, targetMin: 15, isTuntas: true, statusLabel: "Tuntas (16/15)" },
+        { kategori: "PUASA_SUNNAH" as const, label: "Puasa Sunnah", satuan: "Hari", hbl: 0, p1: 2, p2: 2, p3: 1, p4: 2, penambahanBulanIni: 7, totalKumulatif: 7, targetMin: 6, isTuntas: true, statusLabel: "Tuntas (7/6)" },
+        { kategori: "LITERASI" as const, label: "Literasi Kitab/Buku", satuan: "Halaman", hbl: 0, p1: 20, p2: 25, p3: 20, p4: 20, penambahanBulanIni: 85, totalKumulatif: 85, targetMin: 80, isTuntas: true, statusLabel: "Tuntas (85/80)" },
       ],
       tasmiSimaan: {
         countTasmi: 17,
@@ -169,13 +145,13 @@ export function RekapLaporanBulanan({
         rataRataNilai: 91.26,
         ringkasanTeks: "Telah melakukan 2 kali Simaan, 17 Kali Tasmi' dengan rata-rata nilai 91.26 (Mumtaz).",
         riwayat: [
-          { jenis: "SIMAAN", juz: 30, nilai: 95, predikat: "MUMTAZ", tanggal: new Date().toISOString() },
-          { jenis: "TASMI", juz: 22, nilai: 91, predikat: "MUMTAZ", tanggal: new Date().toISOString() },
-        ],
+          { jenis: "SIMAAN" as const, juz: 30, nilai: 95, predikat: "MUMTAZ" as const, tanggal: new Date() },
+          { jenis: "TASMI" as const, juz: 22, nilai: 91, predikat: "MUMTAZ" as const, tanggal: new Date() },
+        ] as unknown as RekapSantriBulananItem["tasmiSimaan"]["riwayat"],
       },
     }));
 
-    setLaporanData({
+    return {
       halaqoh: {
         id: hId,
         nama: "Halaqoh Ust. Razan Mufli, S.Pd",
@@ -188,12 +164,48 @@ export function RekapLaporanBulanan({
         tahunKalender: 2026,
       },
       rekapSantri: rekap,
-    });
-  };
+    };
+  }, []);
+
+  // Fetch report data
+  const loadData = React.useCallback(async (hId: string, bln: number, ta: string) => {
+    if (!hId) return;
+    try {
+      const res = await getLaporanBulananHalaqohAction(hId, bln, ta);
+      if (res.success && res.data) {
+        setLaporanData(res.data);
+      } else {
+        setLaporanData(generateMockFallback(hId, bln, ta));
+      }
+    } catch (err) {
+      console.error(err);
+      setLaporanData(generateMockFallback(hId, bln, ta));
+    }
+  }, [generateMockFallback]);
 
   useEffect(() => {
-    loadData(selectedHalaqohId, selectedBulan, selectedTahunAjaran);
-  }, [selectedHalaqohId, selectedBulan, selectedTahunAjaran]);
+    let ignore = false;
+    if (!selectedHalaqohId) return;
+
+    getLaporanBulananHalaqohAction(selectedHalaqohId, selectedBulan, selectedTahunAjaran)
+      .then((res) => {
+        if (ignore) return;
+        if (res.success && res.data) {
+          setLaporanData(res.data);
+        } else {
+          setLaporanData(generateMockFallback(selectedHalaqohId, selectedBulan, selectedTahunAjaran));
+        }
+      })
+      .catch((err) => {
+        if (ignore) return;
+        console.error(err);
+        setLaporanData(generateMockFallback(selectedHalaqohId, selectedBulan, selectedTahunAjaran));
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [selectedHalaqohId, selectedBulan, selectedTahunAjaran, generateMockFallback]);
 
   const handleExportCSV = () => {
     if (!laporanData) return;
@@ -217,7 +229,7 @@ export function RekapLaporanBulanan({
         "% Kepatuhan Manzil",
         "Mufar Total Freq",
       ];
-      const rows = laporanData.rekapSantri.map((r: any) => [
+      const rows = laporanData.rekapSantri.map((r) => [
         r.santri.nis,
         r.santri.nama,
         r.santri.kelas,
@@ -250,8 +262,8 @@ export function RekapLaporanBulanan({
         "Literasi (Hlm)",
         "Status Keseluruhan",
       ];
-      const rows = laporanData.rekapSantri.map((r: any) => {
-        const getK = (cat: string) => r.nonTahfizh.find((n: any) => n.kategori === cat);
+      const rows = laporanData.rekapSantri.map((r) => {
+        const getK = (cat: string) => r.nonTahfizh.find((n) => n.kategori === cat);
         const hadits = getK("HAFALAN_HADITS");
         const mufrodat = getK("HAFALAN_MUFRODAT");
         const vocab = getK("HAFALAN_VOCABULARY");
@@ -260,7 +272,7 @@ export function RekapLaporanBulanan({
         const puasa = getK("PUASA_SUNNAH");
         const literasi = getK("LITERASI");
 
-        const allTuntas = r.nonTahfizh.every((n: any) => n.isTuntas);
+        const allTuntas = r.nonTahfizh.every((n) => n.isTuntas);
 
         return [
           r.santri.nis,
@@ -279,7 +291,7 @@ export function RekapLaporanBulanan({
       exportToCSV(`Laporan_Mutabaah_${BULAN_NAMES[selectedBulan - 1]}_${selectedTahunAjaran.replace("/", "_")}`, headers, rows);
     } else {
       const headers = ["NIS", "Nama Santri", "Kelas", "Simaan (Kali)", "Tasmi (Kali)", "Rata-rata Nilai", "Ringkasan Resmi"];
-      const rows = laporanData.rekapSantri.map((r: any) => [
+      const rows = laporanData.rekapSantri.map((r) => [
         r.santri.nis,
         r.santri.nama,
         r.santri.kelas,
@@ -495,7 +507,7 @@ export function RekapLaporanBulanan({
           <StatCard
             title="Sabaq Tercapai"
             value={`${
-              laporanData.rekapSantri.filter((r: any) => r.tahfizh.sabaq.isTercapai).length
+              laporanData.rekapSantri.filter((r) => r.tahfizh.sabaq.isTercapai).length
             } / ${laporanData.rekapSantri.length}`}
             description="Target Halaman Bulanan"
             icon={<TrendingUp className="h-5 w-5" />}
@@ -514,7 +526,7 @@ export function RekapLaporanBulanan({
           <StatCard
             title="Ujian Tasmi' & Sima'an"
             value={`${laporanData.rekapSantri.reduce(
-              (acc: number, r: any) => acc + r.tasmiSimaan.countSimaan + r.tasmiSimaan.countTasmi,
+              (acc: number, r) => acc + r.tasmiSimaan.countSimaan + r.tasmiSimaan.countTasmi,
               0
             )} Kali`}
             description="Bulan Berjalan"
@@ -646,7 +658,7 @@ export function RekapLaporanBulanan({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {laporanData?.rekapSantri.map((item: any, idx: number) => {
+                {laporanData?.rekapSantri.map((item, idx) => {
                   const sbq = item.tahfizh.sabaq;
                   const sbqi = item.tahfizh.sabqi;
                   const mzl = item.tahfizh.manzil;
@@ -783,8 +795,8 @@ export function RekapLaporanBulanan({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {laporanData?.rekapSantri.map((item: any, idx: number) => {
-                  const getK = (cat: string) => item.nonTahfizh.find((n: any) => n.kategori === cat);
+                {laporanData?.rekapSantri.map((item, idx) => {
+                  const getK = (cat: string) => item.nonTahfizh.find((n) => n.kategori === cat);
                   const hadits = getK("HAFALAN_HADITS");
                   const mufrodat = getK("HAFALAN_MUFRODAT");
                   const vocab = getK("HAFALAN_VOCABULARY");
@@ -793,7 +805,7 @@ export function RekapLaporanBulanan({
                   const puasa = getK("PUASA_SUNNAH");
                   const literasi = getK("LITERASI");
 
-                  const isAllTuntas = item.nonTahfizh.every((n: any) => n.isTuntas);
+                  const isAllTuntas = item.nonTahfizh.every((n) => n.isTuntas);
 
                   return (
                     <tr key={item.santri.id} className="hover:bg-slate-50/80 transition-colors">
@@ -903,7 +915,7 @@ export function RekapLaporanBulanan({
               </div>
             </CardHeader>
             <CardContent className="space-y-3 pt-4">
-              {laporanData?.rekapSantri.map((item: any) => (
+              {laporanData?.rekapSantri.map((item) => (
                 <div
                   key={item.santri.id}
                   className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 flex flex-col md:flex-row md:items-center justify-between gap-3"
@@ -1084,7 +1096,7 @@ export function RekapLaporanBulanan({
                   onChange={(e) => setTestSantriId(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold"
                 >
-                  {laporanData?.rekapSantri.map((r: any) => (
+                  {laporanData?.rekapSantri.map((r) => (
                     <option key={r.santri.id} value={r.santri.id}>
                       {r.santri.nama} ({r.santri.nis})
                     </option>

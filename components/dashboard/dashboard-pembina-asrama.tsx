@@ -2,7 +2,6 @@ import React from "react";
 import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Star, ShieldCheck, Home, AlertTriangle, PlusCircle } from "lucide-react";
 
 export interface DashboardPembinaAsramaProps {

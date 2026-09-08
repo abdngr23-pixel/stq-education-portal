@@ -101,14 +101,14 @@ export async function GET(
           totalBintangTeladan: santri.bintangList.length,
           ikhtibarLulus: santri.ikhtibarList.filter((i) => i.status === 'LULUS_SEMPURNA_TAHAP_2').length,
         },
-        nilaiAkademik: santri.nilaiList.map((n: any) => ({
+        nilaiAkademik: santri.nilaiList.map((n) => ({
           mapel: n.mapel.nama,
           kategori: n.mapel.kategori,
           nilaiAngka: n.angka,
           predikat: n.huruf,
           guru: n.guru.nama,
         })),
-        riwayatTahfizh: santri.setoranList.map((s: any) => ({
+        riwayatTahfizh: santri.setoranList.map((s) => ({
           juz: s.juz,
           surah: `${s.surahMulai}:${s.ayatMulai} - ${s.surahSelesai}:${s.ayatSelesai}`,
           jenis: s.jenis,

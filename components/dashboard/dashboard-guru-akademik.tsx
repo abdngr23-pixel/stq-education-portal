@@ -105,7 +105,7 @@ export function DashboardGuruAkademik({
                 >
                   <optgroup label="Program Kepesantrenan (Senin–Jumat)">
                     <option value="MP-KP-01">Bahasa Arab (Senin)</option>
-                    <option value="MP-KP-02">Tafsir Al-Qur'an (Selasa)</option>
+                    <option value="MP-KP-02">Tafsir Al-Qur&apos;an (Selasa)</option>
                     <option value="MP-KP-03">Fikih Ibadah &amp; Muamalah (Rabu)</option>
                     <option value="MP-KP-04">Aqidah Islamiyyah (Kamis)</option>
                     <option value="MP-KP-05">Ilmu Tajwid (Jumat)</option>

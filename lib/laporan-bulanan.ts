@@ -1,4 +1,4 @@
-import { KategoriCapaian, JenisSetoran, NilaiSetoran, JenisUjiHafalan } from "@prisma/client";
+import { KategoriCapaian, JenisUjiHafalan } from "@prisma/client";
 
 /**
  * Standar Mushaf Madinah: 1 Juz = 20 Halaman

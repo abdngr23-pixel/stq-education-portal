@@ -2,7 +2,7 @@
 
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
-import { SantriStatus, JenisKelamin } from "@prisma/client";
+import { SantriStatus, JenisKelamin, Prisma } from "@prisma/client";
 
 export interface CreateSantriInput {
   nis: string;
@@ -17,6 +17,10 @@ export interface CreateSantriInput {
 
 /**
  * Mengambil daftar santri dengan filter pencarian dan relasi halaqoh
+ * Dilengkapi otorisasi sesi dan pembatasan cakupan data (ABAC):
+ * - Wali / Santri hanya melihat data diri/anak yang sah
+ * - MT / PH hanya melihat santri dalam halaqoh binaannya
+ * - Admin / Mudir / Manajemen memiliki akses penuh
  */
 export async function getSantriListAction(params?: {
   search?: string;
@@ -24,7 +28,45 @@ export async function getSantriListAction(params?: {
   halaqohId?: string;
 }) {
   try {
-    const where: any = {};
+    const session = await getCurrentSession();
+    if (!session) {
+      return { success: false, message: "Sesi tidak valid atau belum login.", data: [] };
+    }
+
+    const where: Prisma.SantriWhereInput = {};
+
+    // Scoping berdasarkan Role
+    if (session.role === "WS" || session.role === "ST") {
+      if (!session.santriId) {
+        return {
+          success: false,
+          message: "Akun Anda belum terhubung dengan data santri resmi. Silakan hubungi admin.",
+          data: [],
+        };
+      }
+      where.id = session.santriId;
+    } else if (session.role === "MT" || session.role === "PH") {
+      if (session.staffId) {
+        const halaqohDibina = await prisma.halaqoh.findMany({
+          where: { pembinaId: session.staffId },
+          select: { id: true },
+        });
+        const halaqohIds = halaqohDibina.map((h) => h.id);
+        if (params?.halaqohId && halaqohIds.includes(params.halaqohId)) {
+          where.halaqohId = params.halaqohId;
+        } else if (halaqohIds.length > 0) {
+          where.halaqohId = { in: halaqohIds };
+        } else {
+          return { success: true, data: [] };
+        }
+      } else {
+        return { success: true, data: [] };
+      }
+    } else {
+      if (params?.halaqohId) {
+        where.halaqohId = params.halaqohId;
+      }
+    }
 
     if (params?.search) {
       where.OR = [
@@ -35,10 +77,6 @@ export async function getSantriListAction(params?: {
 
     if (params?.kelas) {
       where.kelas = params.kelas;
-    }
-
-    if (params?.halaqohId) {
-      where.halaqohId = params.halaqohId;
     }
 
     const list = await prisma.santri.findMany({
@@ -57,7 +95,7 @@ export async function getSantriListAction(params?: {
     return { success: true, data: list };
   } catch (error) {
     console.error("Gagal mengambil data santri:", error);
-    return { success: false, data: [] };
+    return { success: false, message: "Gagal mengambil data santri.", data: [] };
   }
 }
 

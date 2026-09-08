@@ -8,10 +8,10 @@ import {
   santriInputSchema,
   setoranSchema,
   kotakSaranSchema,
-  kalenderSchema,
   validateData,
 } from '../lib/validations';
 import { createSessionToken, verifySessionToken } from '../lib/auth';
+import { SECURE_HEADERS, applySecureHeaders } from '../lib/security/headers';
 
 describe('1. Rate Limiting Security Tests', () => {
   it('harus mengizinkan request di bawah ambang batas (10 req/menit)', () => {
@@ -209,7 +209,6 @@ describe('5 & 6. CORS Restrictions Tests', () => {
 
 describe('7. Secure Headers (Helmet Equivalents) Tests', () => {
   it('harus memuat konfigurasi Content-Security-Policy, HSTS, X-Frame-Options, dan nosniff', () => {
-    const { SECURE_HEADERS, applySecureHeaders } = require('../lib/security/headers');
     assert.equal(SECURE_HEADERS['X-Frame-Options'], 'DENY');
     assert.equal(SECURE_HEADERS['X-Content-Type-Options'], 'nosniff');
     assert.ok(SECURE_HEADERS['Strict-Transport-Security'].includes('max-age'));

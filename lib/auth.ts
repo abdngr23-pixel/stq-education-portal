@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { AuthTokenPayload, Role, UserSession } from "@/types/auth";
 import prisma from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 
 export function getAuthSecretKey(): Uint8Array {
   const secret = process.env.AUTH_SECRET;
@@ -71,6 +72,11 @@ export async function getCurrentSession(): Promise<UserSession | null> {
     const payload = await verifySessionToken(token);
     if (!payload) return null;
 
+    // Tolak token demo di lingkungan produksi
+    if (process.env.NODE_ENV === "production" && payload.sub && payload.sub.startsWith("user_")) {
+      return null;
+    }
+
     // Verifikasi status akun aktif di DB untuk akun non-memory
     if (payload.sub && !payload.sub.startsWith("user_")) {
       try {
@@ -118,6 +124,10 @@ export async function getAuthFromRequest(req: Request): Promise<UserSession | nu
       const token = authHeader.substring(7).trim();
       const payload = await verifySessionToken(token);
       if (payload) {
+        if (process.env.NODE_ENV === "production" && payload.sub && payload.sub.startsWith("user_")) {
+          return null;
+        }
+
         if (payload.sub && !payload.sub.startsWith("user_")) {
           try {
             const user = await prisma.user.findUnique({
@@ -262,7 +272,7 @@ export async function recordAuditLog(
         action: payload.action,
         entity: payload.entity,
         entityId: payload.entityId,
-        details: payload.details as any,
+        details: (payload.details as Prisma.InputJsonValue) ?? Prisma.JsonNull,
         ipAddress: payload.ipAddress,
         userAgent: payload.userAgent,
       },

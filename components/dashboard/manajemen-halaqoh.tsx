@@ -6,8 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
-  Users,
-  UserPlus,
   ArrowRightLeft,
   ShieldCheck,
   CheckCircle2,
@@ -53,7 +51,7 @@ export function ManajemenHalaqoh({
 
   // Modal State: Ganti Pembina
   const [showAssignModal, setShowAssignModal] = useState(false);
-  const [selectedHalaqohForAssign, setSelectedHalaqohForAssign] = useState<any>(null);
+  const [selectedHalaqohForAssign, setSelectedHalaqohForAssign] = useState<ManajemenHalaqohProps["halaqohList"][number] | null>(null);
   const [assignStaffId, setAssignStaffId] = useState("");
 
   // Modal State: Pindahkan Santri

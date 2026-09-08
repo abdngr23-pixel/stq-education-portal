@@ -2,9 +2,9 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'STQ Education Portal - Darul Ulum Cendekia',
-    short_name: 'STQ Portal',
-    description: 'Sistem Informasi Manajemen Terpadu Pondok Pesantren Tahfizh Quran Darul Ulum Cendekia',
+    name: 'STQ Education Portal - STQ Darul Ulum Cendekia',
+    short_name: 'STQ DUC',
+    description: 'Sistem Informasi Manajemen STQ Darul Ulum Cendekia - Sekolah Tahfizh Al-Qur\'an Full Beasiswa untuk Yatim dan Dhuafa, Yayasan Infak Medika Nusantara',
     start_url: '/',
     display: 'standalone',
     background_color: '#f0f9ff',

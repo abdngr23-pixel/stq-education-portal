@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useTransition } from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
@@ -11,17 +11,9 @@ import { getTodayWITADateString } from "@/lib/wita-date";
 import { MASTER_SESI_SHALAT, MASTER_SESI_SUNNAH, MASTER_SESI_HALAQOH } from "@/lib/master-schedule";
 import {
   CheckCircle2,
-  Clock,
-  HeartPulse,
-  FileText,
   AlertCircle,
   Users,
-  Calendar,
   Share2,
-  RotateCcw,
-  Sparkles,
-  ChevronDown,
-  Filter,
 } from "lucide-react";
 
 export interface SantriPresensiItem {
@@ -47,7 +39,7 @@ export interface PresensiHarianMobileProps {
   onPresensiSaved?: (result: { kegiatan: string; total: number }) => void;
 }
 
-type StatusType = "HADIR" | "MASBUK" | "SAKIT" | "IZIN" | "ALFA";
+type StatusType = "BELUM_DICATAT" | "HADIR" | "MASBUK" | "SAKIT" | "IZIN" | "ALFA";
 type KategoriSesiType = "SHALAT" | "SUNNAH" | "HALAQOH";
 
 const SESI_SHALAT = MASTER_SESI_SHALAT;
@@ -57,7 +49,6 @@ const SESI_HALAQOH = MASTER_SESI_HALAQOH;
 export function PresensiHarianMobile({
   santriList,
   currentUserName = "Musyrif STQ",
-  currentUserRole = "MK",
   currentHalaqohName,
   halaqohList = [],
   onPresensiSaved,
@@ -73,47 +64,43 @@ export function PresensiHarianMobile({
   const [selectedKelasFilter, setSelectedKelasFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
-  // State Kehadiran Map: santriId -> { status, catatan }
-  const [attendanceMap, setAttendanceMap] = useState<Record<string, { status: StatusType; catatan?: string }>>(() => {
-    const initial: Record<string, { status: StatusType; catatan?: string }> = {};
-    santriList.forEach((s) => {
-      // Jika santri punya izin aktif yang disetujui, otomatis prefill
-      if (s.statusIzinAktif && s.statusIzinAktif.status === "DISETUJUI") {
-        if (s.statusIzinAktif.jenis === "SAKIT") {
-          initial[s.id] = { status: "SAKIT", catatan: "Izin Sakit Disetujui" };
-        } else {
-          initial[s.id] = { status: "IZIN", catatan: `Izin Pulang (${s.statusIzinAktif.alasan})` };
-        }
-      } else {
-        initial[s.id] = { status: "HADIR" };
-      }
-    });
-    return initial;
-  });
-
-  // A13: Reset draft presensi saat sesi atau tanggal berganti agar tidak tercampur sesi lain
-  React.useEffect(() => {
-    const initial: Record<string, { status: StatusType; catatan?: string }> = {};
-    santriList.forEach((s) => {
-      if (s.statusIzinAktif && s.statusIzinAktif.status === "DISETUJUI") {
-        if (s.statusIzinAktif.jenis === "SAKIT") {
-          initial[s.id] = { status: "SAKIT", catatan: "Izin Sakit Disetujui" };
-        } else {
-          initial[s.id] = { status: "IZIN", catatan: `Izin Pulang (${s.statusIzinAktif.alasan})` };
-        }
-      } else {
-        initial[s.id] = { status: "HADIR" };
-      }
-    });
-    setAttendanceMap(initial);
-    setFeedback(null);
-  }, [selectedSesi, tanggal, santriList]);
-
-  // Modal WhatsApp state
+  // Modal & Async Feedback State
   const [isWaModalOpen, setIsWaModalOpen] = useState(false);
   const [waMessage, setWaMessage] = useState("");
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  // Helper pembentuk peta presensi awal (Audit P1: Default santri adalah BELUM_DICATAT)
+  const buildInitialAttendance = (list: SantriPresensiItem[]): Record<string, { status: StatusType; catatan?: string }> => {
+    const initial: Record<string, { status: StatusType; catatan?: string }> = {};
+    list.forEach((s) => {
+      if (s.statusIzinAktif && s.statusIzinAktif.status === "DISETUJUI") {
+        if (s.statusIzinAktif.jenis === "SAKIT") {
+          initial[s.id] = { status: "SAKIT", catatan: "Izin Sakit Disetujui" };
+        } else {
+          initial[s.id] = { status: "IZIN", catatan: `Izin Pulang (${s.statusIzinAktif.alasan})` };
+        }
+      } else {
+        initial[s.id] = { status: "BELUM_DICATAT" };
+      }
+    });
+    return initial;
+  };
+
+  // State Kehadiran Map: santriId -> { status, catatan }
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, { status: StatusType; catatan?: string }>>(() =>
+    buildInitialAttendance(santriList)
+  );
+
+  // A13: Reset draft presensi saat sesi atau tanggal berganti secara murni tanpa efek samping
+  const [prevSessionDateKey, setPrevSessionDateKey] = useState(() => `${selectedSesi}_${tanggal}_${santriList.length}`);
+  const currentSessionDateKey = `${selectedSesi}_${tanggal}_${santriList.length}`;
+
+  if (currentSessionDateKey !== prevSessionDateKey) {
+    setPrevSessionDateKey(currentSessionDateKey);
+    setAttendanceMap(buildInitialAttendance(santriList));
+    setFeedback(null);
+  }
 
   // Filter santri yang tampil
   const filteredSantri = useMemo(() => {
@@ -172,6 +159,8 @@ export function PresensiHarianMobile({
           return { label: "Izin Pulang / Uzur", short: "Izin", badgeColor: "bg-purple-100 text-purple-800 border-purple-300", btnActive: "bg-purple-600 text-white border-purple-600" };
         case "ALFA":
           return { label: "Kesiangan / Belum Shalat", short: "Belum", badgeColor: "bg-rose-100 text-rose-800 border-rose-300", btnActive: "bg-rose-600 text-white border-rose-600" };
+        case "BELUM_DICATAT":
+          return { label: "Belum Dicatat", short: "Belum", badgeColor: "bg-slate-100 text-slate-600 border-slate-300", btnActive: "bg-slate-500 text-white border-slate-500" };
       }
     }
 
@@ -187,15 +176,24 @@ export function PresensiHarianMobile({
         return { label: "Izin Pulang Resmi", short: "Izin", badgeColor: "bg-purple-100 text-purple-800 border-purple-300", btnActive: "bg-purple-600 text-white border-purple-600" };
       case "ALFA":
         return { label: "Alpa / Tanpa Keterangan", short: "Alpa", badgeColor: "bg-rose-100 text-rose-800 border-rose-300", btnActive: "bg-rose-600 text-white border-rose-600" };
+      case "BELUM_DICATAT":
+        return { label: "Belum Dicatat", short: "Belum", badgeColor: "bg-slate-100 text-slate-600 border-slate-300", btnActive: "bg-slate-500 text-white border-slate-500" };
     }
   };
 
   // Hitung ringkasan status
   const summaryCounts = useMemo(() => {
-    const counts = { HADIR: 0, MASBUK: 0, SAKIT: 0, IZIN: 0, ALFA: 0 };
+    const counts: Record<StatusType, number> = {
+      BELUM_DICATAT: 0,
+      HADIR: 0,
+      MASBUK: 0,
+      SAKIT: 0,
+      IZIN: 0,
+      ALFA: 0,
+    };
     filteredSantri.forEach((s) => {
       const record = attendanceMap[s.id];
-      const status = record ? record.status : "HADIR";
+      const status: StatusType = record ? record.status : "BELUM_DICATAT";
       counts[status]++;
     });
     return counts;
@@ -203,8 +201,8 @@ export function PresensiHarianMobile({
 
   // Toggle status berurutan (Mobile fast tap)
   const handleToggleStatus = (santriId: string) => {
-    const currentStatus = attendanceMap[santriId]?.status || "HADIR";
-    const statusCycle: StatusType[] = ["HADIR", "MASBUK", "SAKIT", "IZIN", "ALFA"];
+    const currentStatus = attendanceMap[santriId]?.status || "BELUM_DICATAT";
+    const statusCycle: StatusType[] = ["BELUM_DICATAT", "HADIR", "MASBUK", "SAKIT", "IZIN", "ALFA"];
     const nextIndex = (statusCycle.indexOf(currentStatus) + 1) % statusCycle.length;
     const nextStatus = statusCycle[nextIndex];
 
@@ -256,14 +254,27 @@ export function PresensiHarianMobile({
       return;
     }
 
+    // Cegah penyimpanan jika masih ada santri yang belum dicatat
+    const unrecorded = filteredSantri.filter(
+      (s) => (attendanceMap[s.id]?.status || "BELUM_DICATAT") === "BELUM_DICATAT"
+    );
+    if (unrecorded.length > 0) {
+      setFeedback({
+        type: "error",
+        text: `Terdapat ${unrecorded.length} santri yang berstatus "Belum Dicatat". Mohon periksa dan tentukan kehadiran seluruh santri sebelum menyimpan.`,
+      });
+      return;
+    }
+
     startTransition(async () => {
       const payloadItems: PresensiItemPayload[] = filteredSantri.map((s) => {
         const record = attendanceMap[s.id] || { status: "HADIR" };
+        const safeStatus = record.status === "BELUM_DICATAT" ? "HADIR" : record.status;
         return {
           santriId: s.id,
           santriNis: s.nis,
           santriNama: s.nama,
-          status: record.status,
+          status: safeStatus,
           catatan: record.catatan,
         };
       });
@@ -447,7 +458,7 @@ export function PresensiHarianMobile({
             : SESI_HALAQOH
           ).map((sesi) => {
             const isSelected = selectedSesi === sesi.id;
-            const targetBadge = "target" in sesi ? (sesi as any).target : null;
+            const targetBadge = "target" in sesi ? (sesi as { target?: string }).target : null;
             return (
               <button
                 key={sesi.id}
@@ -459,7 +470,7 @@ export function PresensiHarianMobile({
                     : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
                 }`}
               >
-                {"icon" in sesi && <span>{(sesi as any).icon}</span>}
+                {"icon" in sesi && <span>{(sesi as { icon?: string }).icon}</span>}
                 <span>{sesi.label}</span>
                 {targetBadge && (
                   <span
@@ -674,12 +685,25 @@ export function PresensiHarianMobile({
             Kirim Rekap WA Asatidz
           </Button>
         </div>
+
+        {/* Indikator Peringatan Belum Dicatat (Audit P1) */}
+        {summaryCounts.BELUM_DICATAT > 0 && (
+          <div className="p-3 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 flex items-center justify-between text-xs font-semibold">
+            <span className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+              <span>Santri Belum Dicatat:</span>
+            </span>
+            <span className="px-2.5 py-0.5 rounded-full bg-amber-200 text-amber-900 font-extrabold text-xs">
+              {summaryCounts.BELUM_DICATAT} santri
+            </span>
+          </div>
+        )}
       </Card>
 
-      {/* Card 3: Daftar Santri (Touch-Friendly Rows) */}
+      {/* Card 3: Daftar Santri & Input Presensi Cepat */}
       <div className="space-y-2.5">
         {filteredSantri.map((s) => {
-          const currentRec = attendanceMap[s.id] || { status: "HADIR" };
+          const currentRec = attendanceMap[s.id] || { status: "BELUM_DICATAT" };
           const status = currentRec.status;
           const isPermitted = s.statusIzinAktif && s.statusIzinAktif.status === "DISETUJUI";
           const currentCfg = getStatusConfig(status);
@@ -690,7 +714,9 @@ export function PresensiHarianMobile({
               rounded="2xl"
               onClick={() => handleToggleStatus(s.id)}
               className={`p-3.5 sm:p-4 border transition-all cursor-pointer select-none ${
-                status === "HADIR"
+                status === "BELUM_DICATAT"
+                  ? "bg-slate-50/70 border-dashed border-slate-300 hover:border-slate-400"
+                  : status === "HADIR"
                   ? "bg-white border-slate-200/80 hover:border-emerald-300"
                   : status === "MASBUK"
                   ? "bg-amber-50/50 border-amber-300 shadow-2xs"

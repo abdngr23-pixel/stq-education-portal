@@ -3,7 +3,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ShieldCheck, Award, Send, DollarSign, Check, FileText, Printer, FileSpreadsheet, Users } from "lucide-react";
+import { ShieldCheck, Award, Send, DollarSign, Check, Printer, FileSpreadsheet, Users } from "lucide-react";
 import { RekapLaporanBulanan } from "./rekap-laporan-bulanan";
 import { ManajemenHalaqoh } from "./manajemen-halaqoh";
 

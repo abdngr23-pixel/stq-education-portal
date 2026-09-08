@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { BookCheck, Award, PlusCircle, CheckCircle2, Download, FileSpreadsheet, Share2 } from "lucide-react";
+import { BookCheck, Award, PlusCircle, CheckCircle2, Download, FileSpreadsheet } from "lucide-react";
 import { exportToCSV } from "@/lib/export-csv";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
 import { buildSetoranTahfizhWAMessage, buildProgressSantriWAMessage } from "@/lib/whatsapp";
@@ -66,7 +66,6 @@ export function DashboardMusyrifTahfizh({
   onSetSurahMulai,
   ayatMulai,
   onSetAyatMulai,
-  surahSelesai,
   onSetSurahSelesai,
   ayatSelesai,
   onSetAyatSelesai,

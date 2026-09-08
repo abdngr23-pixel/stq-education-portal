@@ -8,7 +8,7 @@ import {
   evaluasiCapaianNonTahfizh,
   generateRingkasanTasmiSimaan,
 } from "../lib/laporan-bulanan";
-import { KategoriCapaian, JenisUjiHafalan, NilaiSetoran } from "@prisma/client";
+import { KategoriCapaian, JenisUjiHafalan } from "@prisma/client";
 
 describe("Aturan Konversi & Laporan Bulanan (Roadmap v2)", () => {
   describe("1. Konversi Halaman ke Juz (Standar Mushaf Madinah 20 Hlm/Juz)", () => {

@@ -47,17 +47,12 @@ export function PrintRapor({
   const avgKepesantrenan =
     nilaiKepesantrenan.length > 0
       ? (nilaiKepesantrenan.reduce((sum, n) => sum + n.angka, 0) / nilaiKepesantrenan.length).toFixed(1)
-      : "92.0";
+      : "-";
 
   const avgStudiUmum =
     nilaiStudiUmum.length > 0
       ? (nilaiStudiUmum.reduce((sum, n) => sum + n.angka, 0) / nilaiStudiUmum.length).toFixed(1)
-      : "88.0";
-
-  const avgTotal =
-    nilaiAkademik.length > 0
-      ? (nilaiAkademik.reduce((sum, n) => sum + n.angka, 0) / nilaiAkademik.length).toFixed(1)
-      : "90.0";
+      : "-";
 
   return (
     <div className={cn("bg-white text-black p-4 max-w-[210mm] mx-auto text-xs font-sans", className)}>
@@ -156,43 +151,11 @@ export function PrintRapor({
                 </tr>
               ))
             ) : (
-              <>
-                <tr>
-                  <td className="border border-black py-1 px-2 text-center">1</td>
-                  <td className="border border-black py-1 px-3 font-medium">Bahasa Arab (Nahwu, Sharaf &amp; Mufradat)</td>
-                  <td className="border border-black py-1 px-2 text-center font-bold">90</td>
-                  <td className="border border-black py-1 px-2 text-center font-bold">A</td>
-                  <td className="border border-black py-1 px-3">Ustzh. Nurul Hidayah, S.Pd.</td>
-                </tr>
-                <tr>
-                  <td className="border border-black py-1 px-2 text-center">2</td>
-                  <td className="border border-black py-1 px-3 font-medium">Tafsir Al-Qur&apos;an (Tadabbur Ayat)</td>
-                  <td className="border border-black py-1 px-2 text-center font-bold">94</td>
-                  <td className="border border-black py-1 px-2 text-center font-bold">A</td>
-                  <td className="border border-black py-1 px-3">Ust. Razan Mufli, S.Pd</td>
-                </tr>
-                <tr>
-                  <td className="border border-black py-1 px-2 text-center">3</td>
-                  <td className="border border-black py-1 px-3 font-medium">Fikih Ibadah &amp; Muamalah</td>
-                  <td className="border border-black py-1 px-2 text-center font-bold">92</td>
-                  <td className="border border-black py-1 px-2 text-center font-bold">A</td>
-                  <td className="border border-black py-1 px-3">Ust. Mujaddid Zhohruddin</td>
-                </tr>
-                <tr>
-                  <td className="border border-black py-1 px-2 text-center">4</td>
-                  <td className="border border-black py-1 px-3 font-medium">Aqidah Islamiyyah (Tauhid &amp; Rukun Iman)</td>
-                  <td className="border border-black py-1 px-2 text-center font-bold">95</td>
-                  <td className="border border-black py-1 px-2 text-center font-bold">A</td>
-                  <td className="border border-black py-1 px-3">Ust. Andi Quarzy Ayatullah, S.H, M.H</td>
-                </tr>
-                <tr>
-                  <td className="border border-black py-1 px-2 text-center">5</td>
-                  <td className="border border-black py-1 px-3 font-medium">Ilmu Tajwid (Makharij &amp; Sifatul Huruf)</td>
-                  <td className="border border-black py-1 px-2 text-center font-bold">91</td>
-                  <td className="border border-black py-1 px-2 text-center font-bold">A</td>
-                  <td className="border border-black py-1 px-3">Ust. Razan Mufli, S.Pd</td>
-                </tr>
-              </>
+              <tr>
+                <td colSpan={5} className="border border-black py-2 px-3 text-center italic text-gray-500">
+                  Belum ada rekaman nilai mata pelajaran kepesantrenan untuk semester ini.
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
@@ -204,7 +167,7 @@ export function PrintRapor({
           <h4 className="font-bold uppercase text-[11px]">
             III. Aspek Program Studi Umum &amp; PBL (Sabtu 08.00–15.30 WITA)
           </h4>
-          <span className="text-[10px] font-semibold">Rata-rata: {avgStudiUmum} (A)</span>
+          <span className="text-[10px] font-semibold">Rata-rata: {avgStudiUmum}</span>
         </div>
         <table className="w-full border-collapse border border-black text-xs">
           <thead>
@@ -228,36 +191,11 @@ export function PrintRapor({
                 </tr>
               ))
             ) : (
-              <>
-                <tr>
-                  <td className="border border-black py-1 px-2 text-center">1</td>
-                  <td className="border border-black py-1 px-3 font-medium">Matematika Terapan (Mapel Tetap)</td>
-                  <td className="border border-black py-1 px-2 text-center font-bold">86</td>
-                  <td className="border border-black py-1 px-2 text-center font-bold">A</td>
-                  <td className="border border-black py-1 px-3">Ustzh. Nurul Hidayah, S.Pd.</td>
-                </tr>
-                <tr>
-                  <td className="border border-black py-1 px-2 text-center">2</td>
-                  <td className="border border-black py-1 px-3 font-medium">Bahasa Inggris (Mapel Tetap)</td>
-                  <td className="border border-black py-1 px-2 text-center font-bold">88</td>
-                  <td className="border border-black py-1 px-2 text-center font-bold">A</td>
-                  <td className="border border-black py-1 px-3">Ustzh. Nurul Hidayah, S.Pd.</td>
-                </tr>
-                <tr>
-                  <td className="border border-black py-1 px-2 text-center">3</td>
-                  <td className="border border-black py-1 px-3 font-medium">Bahasa Indonesia (PBL Tematik)</td>
-                  <td className="border border-black py-1 px-2 text-center font-bold">90</td>
-                  <td className="border border-black py-1 px-2 text-center font-bold">A</td>
-                  <td className="border border-black py-1 px-3">Ustzh. Nurul Hidayah, S.Pd.</td>
-                </tr>
-                <tr>
-                  <td className="border border-black py-1 px-2 text-center">4</td>
-                  <td className="border border-black py-1 px-3 font-medium">IPA &amp; Literasi Lingkungan (PBL Tematik)</td>
-                  <td className="border border-black py-1 px-2 text-center font-bold">87</td>
-                  <td className="border border-black py-1 px-2 text-center font-bold">A</td>
-                  <td className="border border-black py-1 px-3">Ustzh. Nurul Hidayah, S.Pd.</td>
-                </tr>
-              </>
+              <tr>
+                <td colSpan={5} className="border border-black py-2 px-3 text-center italic text-gray-500">
+                  Belum ada rekaman nilai mata pelajaran umum/PBL untuk semester ini.
+                </td>
+              </tr>
             )}
           </tbody>
         </table>

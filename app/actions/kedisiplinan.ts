@@ -88,10 +88,9 @@ export async function catatPelanggaranAction(input: CatatPelanggaranData) {
     });
     const totalPoin = allPelanggaran.reduce((acc, curr) => acc + curr.poinFinal, 0);
 
-    // 3. Pemicu Surat Peringatan (SP) Otomatis menggunakan single source of truth
     let spNotice = "";
     const spGrade = evaluasiLevelSP(totalPoin);
-    let spLevel = spGrade === "SP3" ? 3 : spGrade === "SP2" ? 2 : spGrade === "SP1" ? 1 : 0;
+    const spLevel = spGrade === "SP3" ? 3 : spGrade === "SP2" ? 2 : spGrade === "SP1" ? 1 : 0;
 
     if (spLevel > 0) {
       // Cek apakah SP pada tingkat ini sudah ada

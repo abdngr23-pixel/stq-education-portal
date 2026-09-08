@@ -6,8 +6,6 @@ import {
   konversiPredikatNilai,
   validasiAlurPerizinan,
   validasiIkhtibarTahap2,
-  SP_THRESHOLDS,
-  NILAI_THRESHOLDS,
 } from '../lib/educational-rules';
 
 /**

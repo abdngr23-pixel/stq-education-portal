@@ -3,6 +3,7 @@ import {
   Role,
   UserStatus,
   SantriStatus,
+  Santri,
   JenisKelamin,
   JenisSetoran,
   NilaiSetoran,
@@ -294,7 +295,7 @@ async function main() {
     { nis: "SAN-0057", nama: "Naafilah Kaltsum Aslan", kelas: "7C", jk: JenisKelamin.P, halaqohId: halaqoh6.id, hblHadits: 13, hblMuf: 55, hblVoc: 60, hblTahfizh: 92 },
   ];
 
-  const createdSantriMap: Record<string, any> = {};
+  const createdSantriMap: Record<string, Santri> = {};
 
   for (const item of rawSantriData) {
     const s = await prisma.santri.create({

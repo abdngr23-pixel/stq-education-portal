@@ -2,10 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   getTodayWITADateString,
-  parseWITADate,
   getWITADayRange,
-  formatWITADate,
-  isSameWITADay,
 } from "../lib/wita-date";
 import {
   evaluasiLevelSP,
@@ -13,12 +10,9 @@ import {
   hitungPoinPelanggaran,
   validasiIkhtibarTahap1,
   validasiIkhtibarTahap2,
-  SP_THRESHOLDS,
-  NILAI_THRESHOLDS,
-  MIN_NILAI_IKHTIBAR,
 } from "../lib/educational-rules";
 import { INSTITUTION_CONFIG } from "../lib/institution-config";
-import { MASTER_SESI_HALAQOH, MASTER_SESI_SHALAT, MASTER_SESI_SUNNAH } from "../lib/master-schedule";
+import { MASTER_SESI_HALAQOH } from "../lib/master-schedule";
 
 describe("Audit STQ 2026-09-08 — Remediasi Batch 3 (P1 Educational Logic, Documents & WITA Time)", () => {
   describe("1. A14 & A15: WITA Timezone (Asia/Makassar) Date Engine", () => {
@@ -131,9 +125,10 @@ describe("Audit STQ 2026-09-08 — Remediasi Batch 3 (P1 Educational Logic, Docu
   });
 
   describe("4. A11: Sentralisasi Legalitas Lembaga (Yayasan Infak Medika Nusantara)", () => {
-    it("harus memuat identitas legal Yayasan Infak Medika Nusantara secara terpusat", () => {
+    it("harus memuat identitas legal Yayasan Infak Medika Nusantara dan STQ Darul Ulum Cendekia", () => {
+      assert.strictEqual(INSTITUTION_CONFIG.schoolName, "STQ Darul Ulum Cendekia");
+      assert.strictEqual(INSTITUTION_CONFIG.shortName, "STQ DUC");
       assert.strictEqual(INSTITUTION_CONFIG.yayasanName, "Yayasan Infak Medika Nusantara");
-      assert.ok(INSTITUTION_CONFIG.pesantrenName.length > 0);
       assert.strictEqual(INSTITUTION_CONFIG.kota, "Makassar");
       assert.strictEqual(INSTITUTION_CONFIG.timeZone, "Asia/Makassar");
     });

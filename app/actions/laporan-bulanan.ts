@@ -288,6 +288,25 @@ export async function upsertTargetSantriAction(input: TargetSantriInput) {
     return { success: false, message: "Anda tidak memiliki wewenang mengatur target santri." };
   }
 
+  // ABAC: MT dan PH hanya berwenang mengatur target santri binaannya
+  if (session.role === "MT" || session.role === "PH") {
+    if (!session.staffId) {
+      return { success: false, message: "Profil staf pembina Anda belum terhubung." };
+    }
+    const isBinaan = await prisma.halaqoh.findFirst({
+      where: {
+        pembinaId: session.staffId,
+        santriList: { some: { id: input.santriId } },
+      },
+    });
+    if (!isBinaan) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Anda hanya berwenang mengatur target santri di dalam halaqoh binaan Anda.",
+      };
+    }
+  }
+
   try {
     const record = await prisma.targetSantri.upsert({
       where: {
@@ -345,6 +364,25 @@ export async function inputCapaianPekananAction(input: CapaianPekananInput) {
 
   if (!["MT", "PH", "MK", "KS", "ADM"].includes(session.role)) {
     return { success: false, message: "Anda tidak memiliki izin mencatat capaian non-tahfizh." };
+  }
+
+  // ABAC: MT dan PH hanya berwenang mencatat capaian santri binaannya
+  if (session.role === "MT" || session.role === "PH") {
+    if (!session.staffId) {
+      return { success: false, message: "Profil staf pembina Anda belum terhubung." };
+    }
+    const isBinaan = await prisma.halaqoh.findFirst({
+      where: {
+        pembinaId: session.staffId,
+        santriList: { some: { id: input.santriId } },
+      },
+    });
+    if (!isBinaan) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Anda hanya berwenang mencatat capaian santri di dalam halaqoh binaan Anda.",
+      };
+    }
   }
 
   try {
@@ -428,6 +466,25 @@ export async function recordTasmiSimaanAction(input: RecordTasmiSimaanInput) {
     return { success: false, message: "Anda tidak berhak menguji Tasmi' atau Sima'an." };
   }
 
+  // ABAC: MT dan PH hanya menguji santri binaannya
+  if (session.role === "MT" || session.role === "PH") {
+    if (!session.staffId) {
+      return { success: false, message: "Profil staf penguji Anda belum terhubung." };
+    }
+    const isBinaan = await prisma.halaqoh.findFirst({
+      where: {
+        pembinaId: session.staffId,
+        santriList: { some: { id: input.santriId } },
+      },
+    });
+    if (!isBinaan) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Anda hanya berwenang menguji santri di dalam halaqoh binaan Anda.",
+      };
+    }
+  }
+
   try {
     const musyrifStaff = session.staffId
       ? await prisma.staff.findUnique({ where: { id: session.staffId } })
@@ -479,3 +536,6 @@ export async function recordTasmiSimaanAction(input: RecordTasmiSimaanInput) {
     return { success: false, message: "Gagal mencatat data ujian." };
   }
 }
+
+export type LaporanBulananData = NonNullable<Awaited<ReturnType<typeof getLaporanBulananHalaqohAction>>["data"]>;
+export type RekapSantriBulananItem = LaporanBulananData["rekapSantri"][number];

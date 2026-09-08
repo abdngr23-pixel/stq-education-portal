@@ -2,7 +2,7 @@
 
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
-import { JenisIzin, StatusIzin, StatusAbsensi } from "@prisma/client";
+import { JenisIzin, StatusIzin, StatusAbsensi, Prisma } from "@prisma/client";
 
 export interface AjukanIzinData {
   santriId: string;
@@ -94,7 +94,7 @@ export async function verifikasiIzinAction(params: {
     }
 
     let newStatus: StatusIzin = izin.status;
-    const updateData: any = {
+    const updateData: Prisma.PerizinanSantriUpdateInput = {
       catatan: params.catatan || izin.catatan,
     };
 
@@ -102,18 +102,18 @@ export async function verifikasiIzinAction(params: {
       newStatus = StatusIzin.DITOLAK;
     } else if (params.action === "ESCALATE_KS") {
       newStatus = StatusIzin.MENUNGGU_KS;
-      if (session.staffId) updateData.disetujuiMKId = session.staffId;
+      if (session.staffId) updateData.disetujuiMK = { connect: { id: session.staffId } };
     } else if (params.action === "APPROVE") {
       // Jika izin PULANG, butuh persetujuan KS
       if (izin.jenis === JenisIzin.PULANG && session.role !== "KS" && izin.status !== StatusIzin.MENUNGGU_KS) {
         newStatus = StatusIzin.MENUNGGU_KS;
-        if (session.staffId) updateData.disetujuiMKId = session.staffId;
+        if (session.staffId) updateData.disetujuiMK = { connect: { id: session.staffId } };
       } else {
         newStatus = StatusIzin.DISETUJUI;
         if (session.role === "KS" && session.staffId) {
-          updateData.disetujuiKSId = session.staffId;
+          updateData.disetujuiKS = { connect: { id: session.staffId } };
         } else if (session.role === "MK" && session.staffId) {
-          updateData.disetujuiMKId = session.staffId;
+          updateData.disetujuiMK = { connect: { id: session.staffId } };
         }
       }
     }
@@ -155,7 +155,7 @@ export async function verifikasiIzinAction(params: {
  */
 export async function getPerizinanListAction(statusFilter?: StatusIzin) {
   try {
-    const where: any = {};
+    const where: Prisma.PerizinanSantriWhereInput = {};
     if (statusFilter) where.status = statusFilter;
 
     const list = await prisma.perizinanSantri.findMany({

@@ -1,5 +1,6 @@
 'use server';
 
+import crypto from 'crypto';
 import prisma from '@/lib/prisma';
 import { requireRole, recordAuditLog, hashPassword } from '@/lib/auth';
 import { UserStatus } from '@prisma/client';
@@ -59,6 +60,11 @@ export async function toggleUserStatusAction(userId: string): Promise<UsersRespo
       data: { status: newStatus },
     });
 
+    // Jika akun dinonaktifkan, cabut seluruh sesi aktif
+    if (newStatus === UserStatus.NONAKTIF) {
+      await prisma.session.deleteMany({ where: { userId: user.id } });
+    }
+
     await recordAuditLog(
       session.userId,
       'TOGGLE_USER_STATUS',
@@ -79,7 +85,7 @@ export async function toggleUserStatusAction(userId: string): Promise<UsersRespo
 }
 
 /**
- * Reset kata sandi pengguna ke password default ("password123")
+ * Reset kata sandi pengguna dengan password acak sementara & pencabutan sesi lama
  * Akses: ADM, KS
  */
 export async function resetUserPasswordAction(userId: string): Promise<UsersResponse> {
@@ -91,24 +97,31 @@ export async function resetUserPasswordAction(userId: string): Promise<UsersResp
       return { success: false, message: 'Pengguna tidak ditemukan.' };
     }
 
-    const newHash = await hashPassword('password123');
+    // Generate sandi sementara acak (bukan default statis)
+    const tempPassword = `DUC-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    const newHash = await hashPassword(tempPassword);
 
     await prisma.user.update({
       where: { id: userId },
       data: { passwordHash: newHash },
     });
 
+    // Cabut seluruh sesi aktif lama pengguna
+    await prisma.session.deleteMany({ where: { userId: user.id } });
+
+    // Jangan catat plain password ke log audit
     await recordAuditLog(
       session.userId,
       'RESET_PASSWORD',
       'User',
       user.id,
-      { targetUser: user.username }
+      { targetUser: user.username, reason: 'RESET_BY_ADMIN' }
     );
 
     return {
       success: true,
-      message: `Kata sandi akun ${user.username} berhasil di-reset ke "password123".`,
+      message: `Kata sandi akun ${user.username} berhasil di-reset dengan sandi acak: "${tempPassword}". Seluruh sesi lama telah dicabut.`,
+      data: { temporaryPassword: tempPassword },
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';

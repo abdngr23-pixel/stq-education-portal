@@ -3,7 +3,7 @@
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
 import { StatusAbsensi } from "@prisma/client";
-import { batchPresensiSchema, type BatchPresensiInput } from "@/lib/validations";
+import { batchPresensiSchema } from "@/lib/validations";
 import { getTodayWITADateString, getWITADayRange, parseWITADate } from "@/lib/wita-date";
 
 export interface PresensiItemPayload {
@@ -47,6 +47,27 @@ export async function simpanBatchPresensiAction(input: SimpanBatchPresensiInput)
   }
 
   const { kegiatan, items } = validation.data;
+
+  // ABAC Scoping: MT/PH hanya boleh mencatat santri di halaqoh binaannya saat kegiatan halaqoh
+  if ((session.role === "MT" || session.role === "PH") && kegiatan.toLowerCase().includes("halaqoh")) {
+    if (!session.staffId) {
+      return { success: false, message: "Profil staf pembina Anda belum terhubung." };
+    }
+    const santriBinaan = await prisma.santri.findMany({
+      where: {
+        id: { in: items.map((i) => i.santriId) },
+        halaqoh: { pembinaId: session.staffId },
+      },
+      select: { id: true },
+    });
+    if (santriBinaan.length !== items.length) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Anda hanya berwenang mencatat presensi santri di dalam halaqoh binaan Anda.",
+      };
+    }
+  }
+
   const witaDateStr = input.tanggal || getTodayWITADateString();
   const { startOfDayUTC, endOfDayUTC } = getWITADayRange(witaDateStr);
   const tanggalDate = parseWITADate(witaDateStr);
