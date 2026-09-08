@@ -2,7 +2,20 @@
 
 import React, { useState, useEffect, useTransition } from "react";
 import { TopNavbar } from "@/components/navigation/top-navbar";
-import { MobileBottomNav } from "@/components/navigation/mobile-bottom-nav";
+import { MobileBottomNav, type NavTabId } from "@/components/navigation/mobile-bottom-nav";
+import { DualTierNav, type NavClusterId } from "@/components/navigation/dual-tier-nav";
+import { PrintRapor } from "@/components/print/print-rapor";
+import { PrintSurat } from "@/components/print/print-surat";
+import { PrintSP } from "@/components/print/print-sp";
+import { DashboardWaliSantri } from "@/components/dashboard/dashboard-wali-santri";
+import { DashboardMusyrifTahfizh } from "@/components/dashboard/dashboard-musyrif-tahfizh";
+import { DashboardMusyrifKesantrian } from "@/components/dashboard/dashboard-musyrif-kesantrian";
+import { DashboardGuruAkademik } from "@/components/dashboard/dashboard-guru-akademik";
+import { DashboardMudirKS } from "@/components/dashboard/dashboard-mudir-ks";
+import { DashboardYayasan } from "@/components/dashboard/dashboard-yayasan";
+import { DashboardAdminTU } from "@/components/dashboard/dashboard-admin-tu";
+import { DashboardPembinaAsrama } from "@/components/dashboard/dashboard-pembina-asrama";
+import { DashboardOSDA } from "@/components/dashboard/dashboard-osda";
 import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,7 +43,6 @@ import { catatKesehatanAction, updateStatusKesehatanAction } from "@/app/actions
 import { catatMutasiLogistikAction } from "@/app/actions/logistik";
 import { getAuditLogsAction, type AuditLogItem } from "@/app/actions/audit";
 import { exportToCSV } from "@/lib/export-csv";
-import { type NavClusterId } from "@/components/navigation/mobile-bottom-nav";
 import {
   Users,
   BookCheck,
@@ -76,9 +88,7 @@ export default function Home() {
   const [selectedRole, setSelectedRole] = useState<Role>("MT");
   const [currentUserName, setCurrentUserName] = useState<string>(DEMO_ACCOUNTS["MT"].name);
   const [activeCluster, setActiveCluster] = useState<NavClusterId>("tahfizh");
-  const [activeTab, setActiveTab] = useState<
-    "tahfizh" | "akademik" | "kesantrian" | "kedisiplinan" | "administrasi" | "sponsor" | "surat" | "ikhtibar" | "kesehatan" | "logistik" | "portal_wali" | "agenda" | "users" | "audit"
-  >("tahfizh");
+  const [activeTab, setActiveTab] = useState<NavTabId | "beranda">("beranda");
   const [isPending, startTransition] = useTransition();
 
   // Load authenticated session on initial mount
@@ -90,7 +100,7 @@ export default function Home() {
         const demo = DEMO_ACCOUNTS[session.role];
         if (demo) {
           setActiveCluster(demo.defaultCluster);
-          setActiveTab(demo.defaultTab as any);
+          setActiveTab("beranda");
         }
       }
     });
@@ -103,7 +113,7 @@ export default function Home() {
     if (demo) {
       setCurrentUserName(demo.name);
       setActiveCluster(demo.defaultCluster);
-      setActiveTab(demo.defaultTab as any);
+      setActiveTab("beranda");
       setFeedback({
         type: "success",
         text: `Beralih ke tampilan peran: ${newRole} — ${demo.roleTitle} (${demo.name}).`,
@@ -416,7 +426,7 @@ export default function Home() {
   // -------------------------------------------------------------
   // MODAL CETAK DOKUMEN RESMI (FASE 6)
   // -------------------------------------------------------------
-  const [showPrintModal, setShowPrintModal] = useState<"rapor" | "surat" | null>(null);
+  const [showPrintModal, setShowPrintModal] = useState<"rapor" | "surat" | "sp" | null>(null);
 
   // -------------------------------------------------------------
   // TAB 11: KALENDER AKADEMIK & AGENDA (FASE 7)
@@ -598,7 +608,7 @@ export default function Home() {
     });
   };
 
-  const handleApproveIzin = (id: string, action: "APPROVE" | "ESCALATE") => {
+  const handleApproveIzin = (id: string, action: "APPROVE" | "ESCALATE" | "REJECT") => {
     setFeedback(null);
     if (selectedRole !== "MK" && selectedRole !== "KS") {
       setFeedback({ type: "error", text: `Role '${selectedRole}' tidak berwenang memverifikasi izin (Hanya MK & KS).` });
@@ -608,6 +618,9 @@ export default function Home() {
       setIzinList((prev) =>
         prev.map((item) => {
           if (item.id === id) {
+            if (action === "REJECT") {
+              return { ...item, status: "DITOLAK", diverifikasiOleh: `Ditolak oleh ${selectedRole}` };
+            }
             return action === "ESCALATE"
               ? { ...item, status: "MENUNGGU_KS", diverifikasiOleh: "Disetujui MK, Dieskalasikan ke Mudir/KS" }
               : { ...item, status: "DISETUJUI", diverifikasiOleh: `Disetujui oleh ${selectedRole}` };
@@ -615,7 +628,7 @@ export default function Home() {
           return item;
         })
       );
-      setFeedback({ type: "success", text: action === "ESCALATE" ? "Izin dieskalasikan ke Mudir/KS." : "Izin resmi DISETUJUI." });
+      setFeedback({ type: "success", text: action === "REJECT" ? "Izin santri DITOLAK." : action === "ESCALATE" ? "Izin dieskalasikan ke Mudir/KS." : "Izin resmi DISETUJUI." });
     });
   };
 
@@ -1049,356 +1062,20 @@ Mudir STQ Darul Ulum Cendekia,
         </div>
 
         {/* Dual-Tier Module Navigation (RBAC Filtered) */}
-        <div className="bg-white rounded-3xl p-2.5 border border-slate-200/80 shadow-xs space-y-2">
-          {/* Tier 1: Kluster Utama Sesuai Izin Peran */}
-          <div className={`grid gap-1.5 ${
-            allowedClusters.length === 1
-              ? "grid-cols-1"
-              : allowedClusters.length === 2
-              ? "grid-cols-2"
-              : allowedClusters.length === 3
-              ? "grid-cols-3"
-              : allowedClusters.length === 4
-              ? "grid-cols-2 sm:grid-cols-4"
-              : "grid-cols-2 sm:grid-cols-5"
-          }`}>
-            {/* 1. Tahfizh & Akademik */}
-            {allowedClusters.includes("tahfizh") && (
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveCluster("tahfizh");
-                  const clusterTabs = ["tahfizh", "akademik", "ikhtibar"].filter((t) => allowedTabs.includes(t));
-                  if (!clusterTabs.includes(activeTab)) {
-                    setActiveTab((clusterTabs[0] || "tahfizh") as any);
-                  }
-                  setFeedback(null);
-                }}
-                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl text-xs md:text-sm font-bold transition-all min-h-[46px] ${
-                  activeCluster === "tahfizh"
-                    ? "bg-[#0E7C3A] text-white shadow-sm ring-2 ring-[#0E7C3A]/20"
-                    : "bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/70"
-                }`}
-              >
-                <BookCheck className="h-4 w-4 shrink-0" />
-                <span className="truncate">Tahfizh & Nilai</span>
-              </button>
-            )}
-
-            {/* 2. Kesantrian & Asrama */}
-            {allowedClusters.includes("kesantrian") && (
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveCluster("kesantrian");
-                  const clusterTabs = ["kesantrian", "kedisiplinan", "kesehatan", "logistik"].filter((t) => allowedTabs.includes(t));
-                  if (!clusterTabs.includes(activeTab)) {
-                    setActiveTab((clusterTabs[0] || "kesantrian") as any);
-                  }
-                  setFeedback(null);
-                }}
-                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl text-xs md:text-sm font-bold transition-all min-h-[46px] ${
-                  activeCluster === "kesantrian"
-                    ? "bg-[#0E7C3A] text-white shadow-sm ring-2 ring-[#0E7C3A]/20"
-                    : "bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/70"
-                }`}
-              >
-                <HomeIcon className="h-4 w-4 shrink-0" />
-                <span className="truncate">Kesantrian</span>
-              </button>
-            )}
-
-            {/* 3. Manajemen Pesantren */}
-            {allowedClusters.includes("manajemen") && (
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveCluster("manajemen");
-                  const clusterTabs = ["administrasi", "surat", "sponsor", "agenda"].filter((t) => allowedTabs.includes(t));
-                  if (!clusterTabs.includes(activeTab)) {
-                    setActiveTab((clusterTabs[0] || "administrasi") as any);
-                  }
-                  setFeedback(null);
-                }}
-                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl text-xs md:text-sm font-bold transition-all min-h-[46px] ${
-                  activeCluster === "manajemen"
-                    ? "bg-[#0E7C3A] text-white shadow-sm ring-2 ring-[#0E7C3A]/20"
-                    : "bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/70"
-                }`}
-              >
-                <Building2 className="h-4 w-4 shrink-0" />
-                <span className="truncate">Kantor & TU</span>
-              </button>
-            )}
-
-            {/* 4. Portal Wali & Santri */}
-            {allowedClusters.includes("wali") && (
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveCluster("wali");
-                  setActiveTab("portal_wali");
-                  setFeedback(null);
-                }}
-                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl text-xs md:text-sm font-bold transition-all min-h-[46px] ${
-                  activeCluster === "wali"
-                    ? "bg-[#0E7C3A] text-white shadow-sm ring-2 ring-[#0E7C3A]/20"
-                    : "bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/70"
-                }`}
-              >
-                <HeartHandshake className="h-4 w-4 shrink-0" />
-                <span className="truncate">{selectedRole === "ST" ? "Portal Santri" : "Portal Wali"}</span>
-              </button>
-            )}
-
-            {/* 5. Tata Kelola & Audit */}
-            {allowedClusters.includes("sistem") && (
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveCluster("sistem");
-                  const clusterTabs = ["users", "audit"].filter((t) => allowedTabs.includes(t));
-                  if (!clusterTabs.includes(activeTab)) {
-                    setActiveTab((clusterTabs[0] || "users") as any);
-                  }
-                  setFeedback(null);
-                }}
-                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl text-xs md:text-sm font-bold transition-all min-h-[46px] ${
-                  activeCluster === "sistem"
-                    ? "bg-[#0E7C3A] text-white shadow-sm ring-2 ring-[#0E7C3A]/20"
-                    : "bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/70"
-                }`}
-              >
-                <ShieldCheck className="h-4 w-4 shrink-0" />
-                <span className="truncate">Sistem & Audit</span>
-              </button>
-            )}
-          </div>
-
-          {/* Tier 2: Sub-Modul Aktif Sesuai Kluster & Hak Akses */}
-          <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 overflow-x-auto p-1">
-            {activeCluster === "tahfizh" && (
-              <>
-                {allowedTabs.includes("tahfizh") && (
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTab("tahfizh"); setFeedback(null); }}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                      activeTab === "tahfizh"
-                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
-                        : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    <BookCheck className="h-4 w-4 text-[#0E7C3A]" />
-                    <span>1. Setoran Ziyadah & Murojaah</span>
-                  </button>
-                )}
-                {allowedTabs.includes("akademik") && (
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTab("akademik"); setFeedback(null); }}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                      activeTab === "akademik"
-                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
-                        : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    <GraduationCap className="h-4 w-4 text-[#0E7C3A]" />
-                    <span>2. Rapor & Nilai Mapel</span>
-                  </button>
-                )}
-                {allowedTabs.includes("ikhtibar") && (
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTab("ikhtibar"); setFeedback(null); }}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                      activeTab === "ikhtibar"
-                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
-                        : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    <FileBadge className="h-4 w-4 text-[#0E7C3A]" />
-                    <span>3. Ujian Ikhtibar (2 Tahap)</span>
-                  </button>
-                )}
-              </>
-            )}
-
-            {activeCluster === "kesantrian" && (
-              <>
-                {allowedTabs.includes("kesantrian") && (
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTab("kesantrian"); setFeedback(null); }}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                      activeTab === "kesantrian"
-                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
-                        : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    <HomeIcon className="h-4 w-4 text-[#0E7C3A]" />
-                    <span>1. Perizinan Santri (MK → KS)</span>
-                  </button>
-                )}
-                {allowedTabs.includes("kedisiplinan") && (
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTab("kedisiplinan"); setFeedback(null); }}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                      activeTab === "kedisiplinan"
-                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
-                        : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    <AlertTriangle className="h-4 w-4 text-amber-600" />
-                    <span>2. Kedisiplinan & Poin x2</span>
-                  </button>
-                )}
-                {allowedTabs.includes("kesehatan") && (
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTab("kesehatan"); setFeedback(null); }}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                      activeTab === "kesehatan"
-                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
-                        : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    <Stethoscope className="h-4 w-4 text-[#0E7C3A]" />
-                    <span>3. Poskestren (Kesehatan)</span>
-                  </button>
-                )}
-                {allowedTabs.includes("logistik") && (
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTab("logistik"); setFeedback(null); }}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                      activeTab === "logistik"
-                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
-                        : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    <Package className="h-4 w-4 text-[#0E7C3A]" />
-                    <span>4. Logistik & Dapur Asrama</span>
-                  </button>
-                )}
-              </>
-            )}
-
-            {activeCluster === "manajemen" && (
-              <>
-                {allowedTabs.includes("administrasi") && (
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTab("administrasi"); setFeedback(null); }}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                      activeTab === "administrasi"
-                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
-                        : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    <DollarSign className="h-4 w-4 text-[#0E7C3A]" />
-                    <span>1. Pengajuan Anggaran & Notulen</span>
-                  </button>
-                )}
-                {allowedTabs.includes("surat") && (
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTab("surat"); setFeedback(null); }}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                      activeTab === "surat"
-                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
-                        : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    <FileText className="h-4 w-4 text-[#0E7C3A]" />
-                    <span>2. Generator Surat Resmi AI</span>
-                  </button>
-                )}
-                {allowedTabs.includes("sponsor") && (
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTab("sponsor"); setFeedback(null); }}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                      activeTab === "sponsor"
-                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
-                        : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    <HeartHandshake className="h-4 w-4 text-[#0E7C3A]" />
-                    <span>3. Donatur & WhatsApp</span>
-                  </button>
-                )}
-                {allowedTabs.includes("agenda") && (
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTab("agenda"); setFeedback(null); }}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                      activeTab === "agenda"
-                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
-                        : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    <Calendar className="h-4 w-4 text-[#0E7C3A]" />
-                    <span>4. Agenda Kalender Akademik</span>
-                  </button>
-                )}
-              </>
-            )}
-
-            {activeCluster === "wali" && (
-              <>
-                {allowedTabs.includes("portal_wali") && (
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTab("portal_wali"); setFeedback(null); }}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                      activeTab === "portal_wali"
-                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
-                        : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    <UserCheck className="h-4 w-4 text-[#0E7C3A]" />
-                    <span>Ringkasan Perkembangan Santri & Kotak Saran Aspirasi</span>
-                  </button>
-                )}
-              </>
-            )}
-
-            {activeCluster === "sistem" && (
-              <>
-                {allowedTabs.includes("users") && (
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTab("users"); setFeedback(null); }}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                      activeTab === "users"
-                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
-                        : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    <UserCog className="h-4 w-4 text-[#0E7C3A]" />
-                    <span>1. Manajemen Pengguna (10 Role)</span>
-                  </button>
-                )}
-                {allowedTabs.includes("audit") && (
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTab("audit"); setFeedback(null); }}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                      activeTab === "audit"
-                        ? "bg-emerald-100 text-[#0E7C3A] border border-emerald-300 shadow-xs"
-                        : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    <Activity className="h-4 w-4 text-[#0E7C3A]" />
-                    <span>2. Audit Trail Transaksi Real-time</span>
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-        </div>
+        <DualTierNav
+          activeCluster={activeCluster}
+          activeTab={activeTab}
+          allowedClusters={allowedClusters}
+          allowedTabs={["beranda", ...allowedTabs]}
+          onSelectCluster={(c) => {
+            setActiveCluster(c);
+            setFeedback(null);
+          }}
+          onSelectTab={(t) => {
+            setActiveTab(t as any);
+            setFeedback(null);
+          }}
+        />
 
         {/* Feedback Banner */}
         {feedback && (
@@ -1425,9 +1102,180 @@ Mudir STQ Darul Ulum Cendekia,
         )}
 
         {/* ============================================================= */}
+        {/* BERANDA: DASHBOARD UTAMA SESUAI PERAN (RBAC) */}
+        {/* ============================================================= */}
+        {activeTab === "beranda" && (
+          <div className="space-y-6">
+            {(selectedRole === "WS" || selectedRole === "ST") && (
+              <DashboardWaliSantri
+                santri={{
+                  nama: santriList[0].nama,
+                  nis: santriList[0].nis,
+                  kelas: santriList[0].kelas,
+                  halaqoh: santriList[0].halaqoh,
+                  capaianJuz: santriList[0].capaianJuz,
+                  targetJuz: santriList[0].targetJuz,
+                  setoranTerakhir: santriList[0].setoranTerakhir,
+                  nilaiTerakhir: santriList[0].nilaiTerakhir,
+                  poinPelanggaran: santriList[0].poinPelanggaran,
+                  bintangKebaikan: (santriList[0] as any).bintangKebaikan || 12,
+                }}
+                izinAktif={izinList[0]}
+                nilaiAkademikList={nilaiAkademikList}
+                onPrintRapor={() => setShowPrintModal("rapor")}
+                onNavigateToIzin={() => {
+                  setActiveCluster("kesantrian");
+                  setActiveTab("kesantrian");
+                }}
+              />
+            )}
+
+            {selectedRole === "MT" && (
+              <DashboardMusyrifTahfizh
+                santriList={santriList}
+                selectedSantriNis={selectedSantriNis}
+                onSelectSantriNis={setSelectedSantriNis}
+                inputJenis={inputJenis}
+                onSetInputJenis={setInputJenis}
+                juz={juz}
+                onSetJuz={setJuz}
+                surahMulai={surahMulai}
+                onSetSurahMulai={setSurahMulai}
+                ayatMulai={ayatMulai}
+                onSetAyatMulai={setAyatMulai}
+                surahSelesai={surahSelesai}
+                onSetSurahSelesai={setSurahSelesai}
+                ayatSelesai={ayatSelesai}
+                onSetAyatSelesai={setAyatSelesai}
+                nilai={nilai}
+                onSetNilai={setNilai}
+                catatan={catatan}
+                onSetCatatan={setCatatan}
+                onSaveSetoran={handleSaveSetoran}
+                isPending={isPending}
+              />
+            )}
+
+            {selectedRole === "MK" && (
+              <DashboardMusyrifKesantrian
+                izinList={izinList}
+                onApproveIzin={(id, isEskalasi) =>
+                  handleApproveIzin(id, isEskalasi ? "ESCALATE" : "APPROVE")
+                }
+                onRejectIzin={(id) => handleApproveIzin(id, "REJECT")}
+                onNavigateToDisiplin={() => {
+                  setActiveCluster("kesantrian");
+                  setActiveTab("kedisiplinan");
+                }}
+                isPending={isPending}
+              />
+            )}
+
+            {selectedRole === "GA" && (
+              <DashboardGuruAkademik
+                selectedMapel={selectedMapel}
+                onSetSelectedMapel={setSelectedMapel}
+                inputNilaiAngka={inputNilaiAngka}
+                onSetInputNilaiAngka={setInputNilaiAngka}
+                nilaiAkademikList={nilaiAkademikList}
+                onSaveNilai={handleSaveNilai}
+                onPrintRapor={() => setShowPrintModal("rapor")}
+                isPending={isPending}
+              />
+            )}
+
+            {selectedRole === "KS" && (
+              <DashboardMudirKS
+                totalSantri={santriList.length}
+                izinEskalasiList={izinList.filter((i) => i.status === "MENUNGGU_KS")}
+                ikhtibarTahap2List={ikhtibarList.filter((ik) => ik.status === "TAHAP_1_LULUS" || ik.status === "TAHAP_2_LULUS")}
+                pengajuanAnggaranList={pengajuanList.map((p) => ({
+                  id: p.id,
+                  nomor: p.kode,
+                  pemohon: p.diajukanOleh,
+                  keperluan: p.judul,
+                  nominal: p.nominal,
+                  status: p.status,
+                }))}
+                onApproveIzinPulang={(id) => handleApproveIzin(id, "APPROVE")}
+                onSahkanIkhtibar={(id) => handleSahkanTahap2(id)}
+                onApproveAnggaran={(id) => handleApprovePengajuan(id, "DISETUJUI_KS")}
+                onPrintLaporan={() => setShowPrintModal("rapor")}
+                isPending={isPending}
+              />
+            )}
+
+            {selectedRole === "YAY" && (
+              <DashboardYayasan
+                totalSantri={santriList.length}
+                auditLogsCount={auditLogsList.length}
+                onNavigateToAudit={() => {
+                  setActiveCluster("sistem");
+                  setActiveTab("audit");
+                }}
+                onNavigateToSponsor={() => {
+                  setActiveCluster("manajemen");
+                  setActiveTab("sponsor");
+                }}
+              />
+            )}
+
+            {selectedRole === "ADM" && (
+              <DashboardAdminTU
+                totalSantri={santriList.length}
+                totalUsers={usersList.length}
+                onNavigateToSurat={() => {
+                  setActiveCluster("manajemen");
+                  setActiveTab("surat");
+                }}
+                onNavigateToAnggaran={() => {
+                  setActiveCluster("manajemen");
+                  setActiveTab("administrasi");
+                }}
+                onNavigateToUsers={() => {
+                  setActiveCluster("sistem");
+                  setActiveTab("users");
+                }}
+              />
+            )}
+
+            {selectedRole === "PH" && (
+              <DashboardPembinaAsrama
+                totalSantri={santriList.length}
+                onNavigateToBintang={() => {
+                  setActiveCluster("kesantrian");
+                  setActiveTab("kedisiplinan");
+                }}
+                onNavigateToDisiplin={() => {
+                  setActiveCluster("kesantrian");
+                  setActiveTab("kedisiplinan");
+                }}
+                onNavigateToLogistik={() => {
+                  setActiveCluster("kesantrian");
+                  setActiveTab("logistik");
+                }}
+              />
+            )}
+
+            {selectedRole === "OSDA" && (
+              <DashboardOSDA
+                onNavigateToDisiplin={() => {
+                  setActiveCluster("kesantrian");
+                  setActiveTab("kedisiplinan");
+                }}
+                onNavigateToKesehatan={() => {
+                  setActiveCluster("kesantrian");
+                  setActiveTab("kesehatan");
+                }}
+              />
+            )}
+          </div>
+        )}
+
+        {/* ============================================================= */}
         {/* GUARD: AKSES TERBATAS RBAC */}
         {/* ============================================================= */}
-        {!allowedTabs.includes(activeTab) && (
+        {activeTab !== "beranda" && !allowedTabs.includes(activeTab as any) && (
           <Card rounded="3xl" className="p-8 sm:p-12 text-center bg-white border border-slate-200 shadow-sm space-y-4 max-w-xl mx-auto my-6">
             <div className="h-16 w-16 mx-auto rounded-3xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-200">
               <ShieldAlert className="h-8 w-8" />
@@ -1444,14 +1292,10 @@ Mudir STQ Darul Ulum Cendekia,
               variant="primary"
               className="bg-[#0E7C3A] hover:bg-[#0B642E] text-white font-bold"
               onClick={() => {
-                const demo = DEMO_ACCOUNTS[selectedRole];
-                if (demo) {
-                  setActiveCluster(demo.defaultCluster);
-                  setActiveTab(demo.defaultTab as any);
-                }
+                setActiveTab("beranda");
               }}
             >
-              Buka Modul Utama Anda
+              Buka Beranda Peran Anda
             </Button>
           </Card>
         )}
@@ -1519,8 +1363,8 @@ Mudir STQ Darul Ulum Cendekia,
                           key={k}
                           type="button"
                           onClick={() => setNilai(k as any)}
-                          className={`min-h-[44px] rounded-2xl text-xs font-bold border ${
-                            nilai === k ? "bg-[#C9990E] text-white border-[#C9990E]" : "bg-slate-50 text-slate-700 border-slate-200"
+                          className={`min-h-[44px] rounded-2xl text-xs font-bold border transition-all ${
+                            nilai === k ? "bg-[#0E7C3A] text-white border-[#0E7C3A] shadow-xs" : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
                           }`}
                         >
                           {k}
@@ -1592,7 +1436,7 @@ Mudir STQ Darul Ulum Cendekia,
               <Card rounded="3xl">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <GraduationCap className="h-5 w-5 text-[#C9990E]" /> Input Nilai Guru
+                    <GraduationCap className="h-5 w-5 text-[#0E7C3A]" /> Input Nilai Guru
                   </CardTitle>
                   <CardDescription>Khusus Guru Akademik (<code>GA</code>) & Mudir (<code>KS</code>)</CardDescription>
                 </CardHeader>
@@ -1614,9 +1458,11 @@ Mudir STQ Darul Ulum Cendekia,
                 </CardContent>
                 <CardFooter>
                   <Button
-                    variant="gold"
+                    variant="primary"
                     fullWidth
                     onClick={handleSaveNilai}
+                    isLoading={isPending}
+                    leftIcon={<GraduationCap className="h-4 w-4" />}
                     disabled={selectedRole !== "GA" && selectedRole !== "KS"}
                   >
                     Simpan Nilai Santri
@@ -3101,190 +2947,101 @@ Mudir STQ Darul Ulum Cendekia,
         )}
 
         {/* ========================================================= */}
-        {/* MODAL PRINT DOKUMEN RESMI (RAPOR & SURAT RESMI)            */}
+        {/* MODAL PRINT DOKUMEN RESMI (RAPOR, SURAT AI, & SP)         */}
         {/* ========================================================= */}
         {showPrintModal && (
-          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-            <div className="bg-white rounded-3xl max-w-3xl w-full p-6 md:p-8 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+            <div className="bg-white rounded-3xl max-w-4xl w-full p-4 sm:p-7 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-3 no-print">
                 <div className="flex items-center gap-2">
                   <Printer className="h-5 w-5 text-[#0E7C3A]" />
-                  <h3 className="font-bold text-lg text-slate-800">
-                    {showPrintModal === "rapor" ? "Pratinjau Cetak Rapor Santri" : "Pratinjau Cetak Surat Resmi"}
+                  <h3 className="font-bold text-base sm:text-lg text-slate-800">
+                    {showPrintModal === "rapor"
+                      ? "Pratinjau Cetak Rapor Santri (A4)"
+                      : showPrintModal === "sp"
+                      ? "Pratinjau Surat Peringatan / SP (A4)"
+                      : "Pratinjau Cetak Surat Resmi (A4)"}
                   </h3>
                 </div>
-                <button
-                  onClick={() => setShowPrintModal(null)}
-                  className="p-1 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              {/* Format Cetak Berkop Resmi */}
-              <div className="border border-slate-300 rounded-2xl p-6 bg-white space-y-4 print:border-none">
-                {/* Kop Surat */}
-                <div className="flex items-center gap-4 border-b-2 border-slate-800 pb-4">
-                  <div className="shrink-0 h-16 w-16 flex items-center justify-center">
-                    <img src="/logo.png" alt="Logo STQ" className="h-full w-full object-contain" />
-                  </div>
-                  <div className="flex-1 text-center space-y-1">
-                    <h2 className="font-bold text-base md:text-lg text-slate-900 tracking-wide uppercase">
-                      Pondok Pesantren Tahfizh Qur&apos;an Darul Ulum Cendekia
-                    </h2>
-                    <p className="text-xs text-slate-600">
-                      Jl. Cendekia No. 12, Kompleks STQ DUC | Website: stqduc.sch.id | Telp: (021) 88997766
-                    </p>
-                    <p className="text-[11px] font-semibold text-emerald-800">
-                      SK Kemenag RI No. 452/STQ/2024 • NSS: 2026112233
-                    </p>
-                  </div>
-                  <div className="shrink-0 h-16 w-16 hidden md:block opacity-0" />
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="bg-[#0E7C3A] hover:bg-[#0B642E] text-white font-bold text-xs"
+                    onClick={() => window.print()}
+                    leftIcon={<Printer className="h-3.5 w-3.5" />}
+                  >
+                    Cetak / Unduh PDF
+                  </Button>
+                  <button
+                    onClick={() => setShowPrintModal(null)}
+                    className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
                 </div>
-
-                {showPrintModal === "rapor" ? (
-                  <div className="space-y-4 text-xs">
-                    <div className="text-center py-1">
-                      <h3 className="font-bold text-sm uppercase underline text-slate-900">
-                        Laporan Hasil Belajar & Capaian Tahfizh Santri
-                      </h3>
-                      <p className="text-slate-500 mt-0.5">Semester Ganjil — Tahun Ajaran 2026/2027</p>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-xl">
-                      <div>
-                        <p><strong className="text-slate-700">Nama Santri:</strong> Muhammad Fatih Al-Ayyubi</p>
-                        <p><strong className="text-slate-700">NIS:</strong> SAN-0001</p>
-                      </div>
-                      <div>
-                        <p><strong className="text-slate-700">Kelas:</strong> 7A (Takhossus Tahfizh)</p>
-                        <p><strong className="text-slate-700">Musyrif:</strong> Ust. Zulkifli Al-Hafizh</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <h4 className="font-bold text-slate-800">I. Capaian Al-Qur'an & Ikhtibar</h4>
-                      <table className="w-full border-collapse border border-slate-300 text-left">
-                        <thead className="bg-slate-100">
-                          <tr>
-                            <th className="border border-slate-300 p-2">Juz</th>
-                            <th className="border border-slate-300 p-2">Status Ujian Ikhtibar</th>
-                            <th className="border border-slate-300 p-2">Nilai</th>
-                            <th className="border border-slate-300 p-2">Predikat</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            <td className="border border-slate-300 p-2 font-medium">Juz 1 s.d. 3</td>
-                            <td className="border border-slate-300 p-2 text-emerald-700 font-bold">Lulus Disahkan Mudir</td>
-                            <td className="border border-slate-300 p-2">95</td>
-                            <td className="border border-slate-300 p-2 font-bold">Mumtaz</td>
-                          </tr>
-                          <tr>
-                            <td className="border border-slate-300 p-2 font-medium">Juz 4</td>
-                            <td className="border border-slate-300 p-2 text-amber-700 font-semibold">Lulus Ujian Tahap 1</td>
-                            <td className="border border-slate-300 p-2">92</td>
-                            <td className="border border-slate-300 p-2 font-bold">Jayyid Jiddan</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <div className="space-y-1">
-                      <h4 className="font-bold text-slate-800">II. Nilai Akademik & Diniyah</h4>
-                      <table className="w-full border-collapse border border-slate-300 text-left">
-                        <thead className="bg-slate-100">
-                          <tr>
-                            <th className="border border-slate-300 p-2">Mata Pelajaran</th>
-                            <th className="border border-slate-300 p-2">Nilai Angka</th>
-                            <th className="border border-slate-300 p-2">Predikat</th>
-                            <th className="border border-slate-300 p-2">Guru Pengampu</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            <td className="border border-slate-300 p-2 font-medium">Fiqih Ibadah</td>
-                            <td className="border border-slate-300 p-2">90</td>
-                            <td className="border border-slate-300 p-2 font-bold">A</td>
-                            <td className="border border-slate-300 p-2">Ust. H. Fauzi</td>
-                          </tr>
-                          <tr>
-                            <td className="border border-slate-300 p-2 font-medium">Bahasa Arab & Nahwu</td>
-                            <td className="border border-slate-300 p-2">88</td>
-                            <td className="border border-slate-300 p-2 font-bold">B</td>
-                            <td className="border border-slate-300 p-2">Ustadzah Nurul</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <div className="pt-6 grid grid-cols-2 text-center text-xs">
-                      <div>
-                        <p>Musyrif Halaqoh,</p>
-                        <div className="h-12" />
-                        <p className="font-bold">( Ust. Zulkifli Al-Hafizh )</p>
-                      </div>
-                      <div>
-                        <p>Mudir STQ Darul Ulum Cendekia,</p>
-                        <div className="h-12" />
-                        <p className="font-bold underline">( Ust. H. Ahmad Fauzi, Lc., M.Pd. )</p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <pre className="p-4 font-mono text-xs whitespace-pre-wrap leading-relaxed text-slate-800">
-                    {hasilSuratAI || "Silakan generate naskah surat terlebih dahulu pada Tab 7."}
-                  </pre>
-                )}
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <Button variant="secondary" onClick={() => setShowPrintModal(null)}>
-                  Tutup
-                </Button>
-                <Button
-                  className="bg-[#0E7C3A] hover:bg-[#0B642E] text-white"
-                  onClick={() => window.print()}
-                  leftIcon={<Printer className="h-4 w-4" />}
-                >
-                  Cetak / Simpan PDF
-                </Button>
+              {/* Preview Dokumen Standar A4 Cetak */}
+              <div className="border border-slate-200 rounded-2xl p-2 sm:p-6 bg-slate-50/50 overflow-x-auto">
+                {showPrintModal === "rapor" && (
+                  <PrintRapor
+                    santri={{
+                      nama: santriList[0].nama,
+                      nis: santriList[0].nis,
+                      kelas: santriList[0].kelas,
+                      halaqoh: santriList[0].halaqoh,
+                      capaianJuz: santriList[0].capaianJuz,
+                      targetJuz: santriList[0].targetJuz,
+                      setoranTerakhir: santriList[0].setoranTerakhir,
+                      nilaiTerakhir: santriList[0].nilaiTerakhir,
+                    }}
+                    nilaiAkademik={nilaiAkademikList}
+                  />
+                )}
+                {showPrintModal === "surat" && (
+                  <PrintSurat
+                    perihal={perihalSurat || "Surat Keterangan Santri Aktif"}
+                    tujuan={tujuanSurat || "Orang Tua / Wali Santri"}
+                    isiPokok={
+                      hasilSuratAI ||
+                      "Menyatakan bahwa santri yang bersangkutan terdaftar aktif dalam program Tahfizh Al-Qur'an dan pendidikan kepesantrenan Darul Ulum Cendekia untuk Tahun Ajaran 2026/2027."
+                    }
+                  />
+                )}
+                {showPrintModal === "sp" && (
+                  <PrintSP
+                    tingkatSP="SP1"
+                    santriNama="Zaidan Al-Farisi"
+                    santriNis="SAN-0003"
+                    santriKelas="7A"
+                    totalPoin={25}
+                    riwayatPelanggaran={pelanggaranHistory.map((p) => ({
+                      deskripsi: p.kategori,
+                      poin: p.poin,
+                      tanggal: p.tanggal,
+                      isPengulangan: p.isPengulangan,
+                    }))}
+                    arahanPembinaan="Diberikan pembinaan tarbiyah intensif, shalat tepat waktu di shaf pertama, dan penugasan murojaah juz pilihan bersama Musyrif Asrama."
+                  />
+                )}
               </div>
             </div>
           </div>
         )}
       </main>
 
-      {/* Mobile Bottom Navigation (RBAC Filtered) */}
+      {/* Mobile Bottom Navigation (Strictly 4 Items + Slide-up Sheet) */}
       <MobileBottomNav
-        activeCluster={activeCluster}
-        allowedClusters={allowedClusters}
-        onSelectCluster={(cluster) => {
-          setActiveCluster(cluster);
-          if (cluster === "tahfizh") {
-            const clusterTabs = ["tahfizh", "akademik", "ikhtibar"].filter((t) => allowedTabs.includes(t));
-            if (!clusterTabs.includes(activeTab)) {
-              setActiveTab((clusterTabs[0] || "tahfizh") as any);
-            }
-          } else if (cluster === "kesantrian") {
-            const clusterTabs = ["kesantrian", "kedisiplinan", "kesehatan", "logistik"].filter((t) => allowedTabs.includes(t));
-            if (!clusterTabs.includes(activeTab)) {
-              setActiveTab((clusterTabs[0] || "kesantrian") as any);
-            }
-          } else if (cluster === "manajemen") {
-            const clusterTabs = ["administrasi", "surat", "sponsor", "agenda"].filter((t) => allowedTabs.includes(t));
-            if (!clusterTabs.includes(activeTab)) {
-              setActiveTab((clusterTabs[0] || "administrasi") as any);
-            }
-          } else if (cluster === "wali") {
-            setActiveTab("portal_wali");
-          } else if (cluster === "sistem") {
-            const clusterTabs = ["users", "audit"].filter((t) => allowedTabs.includes(t));
-            if (!clusterTabs.includes(activeTab)) {
-              setActiveTab((clusterTabs[0] || "users") as any);
-            }
-          }
+        activeTab={activeTab}
+        allowedTabs={allowedTabs}
+        onSelectTab={(tab) => {
+          setActiveTab(tab as any);
+          if (["tahfizh", "akademik", "ikhtibar"].includes(tab)) setActiveCluster("tahfizh");
+          else if (["kesantrian", "kedisiplinan", "kesehatan", "logistik"].includes(tab)) setActiveCluster("kesantrian");
+          else if (["administrasi", "surat", "sponsor", "agenda"].includes(tab)) setActiveCluster("manajemen");
+          else if (["portal_wali"].includes(tab)) setActiveCluster("wali");
+          else if (["users", "audit"].includes(tab)) setActiveCluster("sistem");
           setFeedback(null);
         }}
       />

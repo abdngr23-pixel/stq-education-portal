@@ -1,10 +1,20 @@
 @import "tailwindcss";
 
 @theme {
+  --color-primary: #0E7C3A;
+  --color-primary-hover: #0B642E;
+  --color-primary-light: #E7F4EC;
+  --color-primary-subtle: #F0F9F3;
+
+  --color-accent: #C9990E;
+  --color-accent-hover: #A87E0B;
+  --color-accent-light: #FDF8E8;
+
+  --color-canvas: #F0F9FF;
+
   --color-brand-green: #0E7C3A;
   --color-brand-green-hover: #0B642E;
   --color-brand-green-light: #E7F4EC;
-  --color-brand-green-subtle: #F0F9F3;
 
   --color-brand-gold: #C9990E;
   --color-brand-gold-hover: #A87E0B;
@@ -15,8 +25,15 @@
 }
 
 :root {
-  --background: #f0f9ff; /* sky-50 */
-  --foreground: #0f172a; /* slate-900 */
+  --color-primary: #0E7C3A;
+  --color-primary-light: #E7F4EC;
+  --color-accent: #C9990E;
+  --color-canvas: #F0F9FF; /* sky-50 */
+  --color-danger-subtle: #FEF2F2;
+  --color-danger-text: #991B1B;
+
+  --background: #F0F9FF; /* sky-50 */
+  --foreground: #0F172A; /* slate-900 */
 }
 
 body {
@@ -34,4 +51,43 @@ h1, h2, h3, h4, h5, h6 {
 .tap-target {
   min-height: 44px;
   min-width: 44px;
+}
+
+/* Screen vs Print Layout Segregation */
+.print-only {
+  display: none !important;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 15mm;
+  }
+
+  body {
+    background: #FFFFFF !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+    line-height: 1.4 !important;
+  }
+
+  /* Sembunyikan elemen navigasi dan kontrol layar saat mencetak */
+  header,
+  nav,
+  footer,
+  button,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Tampilkan komponen resmi cetak */
+  .print-only {
+    display: block !important;
+  }
+
+  /* Hindari pemotongan halaman di tengah kartu/tabel penting */
+  .page-break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }
