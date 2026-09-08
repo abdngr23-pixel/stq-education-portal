@@ -54,6 +54,13 @@ import { catatMutasiLogistikAction } from "@/app/actions/logistik";
 import { getAuditLogsAction, type AuditLogItem } from "@/app/actions/audit";
 import { exportToCSV } from "@/lib/export-csv";
 import { cn } from "@/lib/utils";
+import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
+import {
+  buildSetoranTahfizhWAMessage,
+  buildIzinSantriWAMessage,
+  buildPelanggaranSPWAMessage,
+  buildProgressSantriWAMessage,
+} from "@/lib/whatsapp";
 import {
   Users,
   BookCheck,
@@ -319,6 +326,40 @@ export default function Home() {
   const [surahSelesai, setSurahSelesai] = useState("Ali 'Imran");
   const [ayatSelesai, setAyatSelesai] = useState("20");
   const [catatan, setCatatan] = useState("");
+
+  // State WhatsApp Direct Dialog Universal
+  const [globalWaDialog, setGlobalWaDialog] = useState<{
+    isOpen: boolean;
+    phone: string;
+    recipientName: string;
+    message: string;
+    title: string;
+    description: string;
+  }>({
+    isOpen: false,
+    phone: "081299887766",
+    recipientName: "Wali Santri",
+    message: "",
+    title: "Kirim Pesan via WhatsApp Direct",
+    description: "Pesan terformat akan dibuka di WhatsApp resmi Anda tanpa biaya langganan API.",
+  });
+
+  // Notifikasi Setoran Terakhir Tersimpan untuk Direct WA Action
+  const [lastSetoranSaved, setLastSetoranSaved] = useState<{
+    santriNama: string;
+    santriNis: string;
+    kelas: string;
+    namaWali?: string;
+    noHpWali?: string;
+    jenisSetoran: string;
+    juz: number | string;
+    surah: string;
+    ayatMulai: number | string;
+    ayatSelesai: number | string;
+    nilai: string;
+    catatan?: string;
+    jumlahHalaman?: number | string;
+  } | null>(null);
 
   // -------------------------------------------------------------
   // LOGIKA FILTER SANTRI DINAMIS PER KELOMPOK HALAQOH
@@ -741,6 +782,21 @@ export default function Home() {
       setSantriList((prev) =>
         prev.map((s) => (s.nis === selectedSantriNis ? { ...s, setoranTerakhir: `${surahMulai}: ${ayatMulai}-${ayatSelesai}`, nilaiTerakhir: nilai } : s))
       );
+      setLastSetoranSaved({
+        santriNama: activeSantri.nama,
+        santriNis: activeSantri.nis,
+        kelas: activeSantri.kelas,
+        namaWali: (activeSantri as any).namaWali,
+        noHpWali: (activeSantri as any).noHpWali,
+        jenisSetoran: inputJenis,
+        juz,
+        surah: surahMulai,
+        ayatMulai,
+        ayatSelesai,
+        nilai,
+        catatan,
+        jumlahHalaman: inputJenis === "SABAQ" ? jumlahHalaman : undefined,
+      });
       setFeedback({ type: "success", text: `Alhamdulillah! Setoran ${activeSantri.nama} berhasil dicatat di PostgreSQL.` });
       setCatatan("");
     });
@@ -1663,6 +1719,74 @@ Mudir STQ Darul Ulum Cendekia,
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-6">
+                  {lastSetoranSaved && (
+                    <div className="p-4 rounded-3xl bg-emerald-50 border border-emerald-300 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-2xl bg-[#25D366]/20 text-[#128C7E] flex items-center justify-center shrink-0">
+                          <svg className="h-5 w-5 fill-current" viewBox="0 0 24 24">
+                            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-emerald-950">
+                            Setoran Disimpan: <span className="underline">{lastSetoranSaved.santriNama}</span> ({lastSetoranSaved.surah}: {lastSetoranSaved.ayatMulai}–{lastSetoranSaved.ayatSelesai} • Nilai: {lastSetoranSaved.nilai})
+                          </p>
+                          <p className="text-[11px] text-emerald-700">
+                            Kirim laporan langsung ke orang tua santri lewat WhatsApp dengan teks otomatis.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 self-end sm:self-auto">
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => {
+                            const msg = buildSetoranTahfizhWAMessage({
+                              santriNama: lastSetoranSaved.santriNama,
+                              santriNis: lastSetoranSaved.santriNis,
+                              kelas: lastSetoranSaved.kelas,
+                              namaWali: lastSetoranSaved.namaWali,
+                              noHpWali: lastSetoranSaved.noHpWali,
+                              jenisSetoran: lastSetoranSaved.jenisSetoran,
+                              juz: lastSetoranSaved.juz,
+                              surah: lastSetoranSaved.surah,
+                              ayatMulai: lastSetoranSaved.ayatMulai,
+                              ayatSelesai: lastSetoranSaved.ayatSelesai,
+                              nilai: lastSetoranSaved.nilai,
+                              catatan: lastSetoranSaved.catatan,
+                              jumlahHalaman: lastSetoranSaved.jumlahHalaman,
+                              pembinaNama: currentUserName || currentHalaqohName || "Musyrif Tahfizh STQ DUC",
+                            });
+                            setGlobalWaDialog({
+                              isOpen: true,
+                              phone: lastSetoranSaved.noHpWali || "081299887766",
+                              recipientName: lastSetoranSaved.namaWali || `Wali ${lastSetoranSaved.santriNama}`,
+                              message: msg,
+                              title: `Kirim Setoran ${lastSetoranSaved.santriNama} ke WA Wali`,
+                              description: "Pesan terformat akan dibuka di aplikasi WhatsApp resmi Anda.",
+                            });
+                          }}
+                          className="bg-[#25D366] hover:bg-[#20bd5a] text-white border-0 font-bold shadow-xs"
+                          leftIcon={
+                            <svg className="h-4 w-4 fill-current" viewBox="0 0 24 24">
+                              <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
+                            </svg>
+                          }
+                        >
+                          Kirim Laporan WA
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setLastSetoranSaved(null)}
+                          className="text-xs text-slate-400 hover:text-slate-600"
+                        >
+                          Tutup
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
                   <Card rounded="3xl">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
@@ -1754,16 +1878,62 @@ Mudir STQ Darul Ulum Cendekia,
                       </div>
                       <Input label="Catatan Tajwid/Makhroj" value={catatan} onChange={(e) => setCatatan(e.target.value)} placeholder="e.g. Bacaan tartil" />
                     </CardContent>
-                    <CardFooter className="flex justify-end gap-2">
-                      <Button
-                        variant="primary"
-                        isLoading={isPending}
-                        onClick={handleSaveSetoran}
-                        disabled={!["MT", "PH", "KS"].includes(selectedRole)}
-                        leftIcon={<CheckCircle2 className="h-4 w-4" />}
-                      >
-                        {["MT", "PH", "KS"].includes(selectedRole) ? "Simpan Setoran" : `Role ${selectedRole} Tidak Berhak`}
-                      </Button>
+                    <CardFooter className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-4">
+                      <div className="text-xs text-slate-500">
+                        Santri: <strong className="text-slate-800">{displayedSantriTahfizh.find((s) => s.nis === selectedSantriNis)?.nama}</strong>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            const cur = displayedSantriTahfizh.find((s) => s.nis === selectedSantriNis);
+                            if (!cur) return;
+                            const msg = buildSetoranTahfizhWAMessage({
+                              santriNama: cur.nama,
+                              santriNis: cur.nis,
+                              kelas: cur.kelas,
+                              namaWali: (cur as any).namaWali,
+                              noHpWali: (cur as any).noHpWali,
+                              jenisSetoran: inputJenis,
+                              juz,
+                              surah: surahMulai,
+                              ayatMulai,
+                              ayatSelesai,
+                              nilai,
+                              catatan,
+                              jumlahHalaman: inputJenis === "SABAQ" ? jumlahHalaman : undefined,
+                              pembinaNama: currentUserName || currentHalaqohName || "Musyrif Tahfizh STQ DUC",
+                            });
+                            setGlobalWaDialog({
+                              isOpen: true,
+                              phone: (cur as any).noHpWali || "081299887766",
+                              recipientName: (cur as any).namaWali || `Wali ${cur.nama}`,
+                              message: msg,
+                              title: `Kirim Setoran ${cur.nama} ke WA Wali`,
+                              description: "Pesan terformat akan dibuka di aplikasi WhatsApp resmi Anda.",
+                            });
+                          }}
+                          className="bg-[#25D366]/15 hover:bg-[#25D366]/25 text-[#128C7E] border border-[#25D366]/30 font-bold"
+                          leftIcon={
+                            <svg className="h-4 w-4 fill-current text-[#25D366]" viewBox="0 0 24 24">
+                              <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
+                            </svg>
+                          }
+                        >
+                          Kirim WA Wali
+                        </Button>
+                        <Button
+                          variant="primary"
+                          isLoading={isPending}
+                          onClick={handleSaveSetoran}
+                          disabled={!["MT", "PH", "KS"].includes(selectedRole)}
+                          leftIcon={<CheckCircle2 className="h-4 w-4" />}
+                        >
+                          {["MT", "PH", "KS"].includes(selectedRole) ? "Simpan Setoran" : `Role ${selectedRole} Tidak Berhak`}
+                        </Button>
+                      </div>
                     </CardFooter>
                   </Card>
                 </div>
@@ -1800,7 +1970,41 @@ Mudir STQ Darul Ulum Cendekia,
                         <div key={s.nis} className="p-3 rounded-2xl border border-slate-200/80 bg-slate-50/50 space-y-1.5 text-xs">
                           <div className="flex justify-between items-center">
                             <span className="font-bold text-slate-800">{s.nama}</span>
-                            <Badge variant="green" size="sm">{s.capaianJuz} Juz</Badge>
+                            <div className="flex items-center gap-1.5">
+                              <Badge variant="green" size="sm">{s.capaianJuz} Juz</Badge>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const msg = buildProgressSantriWAMessage({
+                                    santriNama: s.nama,
+                                    santriNis: s.nis,
+                                    kelas: s.kelas,
+                                    halaqoh: s.halaqoh,
+                                    namaWali: (s as any).namaWali,
+                                    noHpWali: (s as any).noHpWali,
+                                    capaianJuz: s.capaianJuz,
+                                    targetJuz: s.targetJuz,
+                                    setoranTerakhir: s.setoranTerakhir,
+                                    nilaiTerakhir: s.nilaiTerakhir,
+                                    pembinaNama: currentUserName || currentHalaqohName || "Musyrif Tahfizh STQ DUC",
+                                  });
+                                  setGlobalWaDialog({
+                                    isOpen: true,
+                                    phone: (s as any).noHpWali || "081299887766",
+                                    recipientName: (s as any).namaWali || `Wali ${s.nama}`,
+                                    message: msg,
+                                    title: `Kirim Progres Hafalan ${s.nama}`,
+                                    description: "Ringkasan capaian juz dan hafalan santri akan dikirim via WhatsApp.",
+                                  });
+                                }}
+                                title="Kirim Update WA ke Wali Santri"
+                                className="p-1 rounded-lg bg-[#25D366]/15 hover:bg-[#25D366]/25 text-[#128C7E] transition-all"
+                              >
+                                <svg className="h-3.5 w-3.5 fill-current text-[#25D366]" viewBox="0 0 24 24">
+                                  <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
+                                </svg>
+                              </button>
+                            </div>
                           </div>
                           <p className="text-slate-500">Setoran: {s.setoranTerakhir}</p>
                         </div>
@@ -1938,6 +2142,37 @@ Mudir STQ Darul Ulum Cendekia,
                       </div>
                       <div className="flex gap-2 items-center">
                         <Badge variant={i.status === "DISETUJUI" ? "green" : "orange"} size="sm">{i.status}</Badge>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const msg = buildIzinSantriWAMessage({
+                              santriNama: i.santriNama,
+                              kelas: i.kelas,
+                              kodeIzin: i.kodeIzin,
+                              jenisIzin: i.jenis,
+                              durasi: i.durasi,
+                              alasan: i.alasan,
+                              status: i.status,
+                              diverifikasiOleh: i.diverifikasiOleh,
+                              batasKembali: i.jenis === "PULANG" ? "Ahad pukul 17.00 WITA" : undefined,
+                            });
+                            setGlobalWaDialog({
+                              isOpen: true,
+                              phone: "081299887766",
+                              recipientName: `Wali ${i.santriNama}`,
+                              message: msg,
+                              title: `Notifikasi Izin ${i.santriNama} via WA`,
+                              description: "Kirim update status perizinan santri langsung ke WhatsApp orang tua.",
+                            });
+                          }}
+                          title="Kirim Notifikasi Izin ke WA Wali"
+                          className="p-1.5 rounded-xl bg-[#25D366]/15 hover:bg-[#25D366]/25 text-[#128C7E] border border-[#25D366]/30 transition-all flex items-center gap-1 font-bold"
+                        >
+                          <svg className="h-3.5 w-3.5 fill-current text-[#25D366]" viewBox="0 0 24 24">
+                            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
+                          </svg>
+                          <span className="text-[10px]">WA</span>
+                        </button>
                         {i.status !== "DISETUJUI" && (selectedRole === "MK" || selectedRole === "KS") && (
                           <Button variant="primary" size="sm" onClick={() => handleApproveIzin(i.id, "APPROVE")}>Setujui</Button>
                         )}
@@ -2030,6 +2265,35 @@ Mudir STQ Darul Ulum Cendekia,
                       </div>
                       <div className="flex gap-2 items-center">
                         <Badge variant={sp.status === "AKTIF" ? "orange" : "green"} size="sm">{sp.status}</Badge>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const msg = buildPelanggaranSPWAMessage({
+                              santriNama: sp.santriNama,
+                              kelas: "7A",
+                              perihal: `Penerbitan ${sp.nomorSP}`,
+                              totalPoin: sp.totalPoin,
+                              kategori: "Kedisiplinan & Adab Asrama",
+                              tingkatSP: sp.tingkat,
+                              tindakan: "Pemberian pembinaan adab & hafalan tambahan oleh Musyrif Keasramaan",
+                            });
+                            setGlobalWaDialog({
+                              isOpen: true,
+                              phone: "081299887766",
+                              recipientName: `Wali ${sp.santriNama}`,
+                              message: msg,
+                              title: `Pemberitahuan SP ke Wali ${sp.santriNama}`,
+                              description: "Pesan resmi peringatan kedisiplinan santri ke orang tua.",
+                            });
+                          }}
+                          title="Kirim Pemberitahuan SP ke WA Wali"
+                          className="p-1.5 rounded-xl bg-[#25D366]/15 hover:bg-[#25D366]/25 text-[#128C7E] border border-[#25D366]/30 transition-all flex items-center gap-1 font-bold"
+                        >
+                          <svg className="h-3.5 w-3.5 fill-current text-[#25D366]" viewBox="0 0 24 24">
+                            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
+                          </svg>
+                          <span className="text-[10px]">WA</span>
+                        </button>
                         {sp.status === "AKTIF" && selectedRole === "KS" && (
                           <Button variant="gold" size="sm" onClick={() => handlePutihkanSP(sp.id)}>Putihkan SP</Button>
                         )}
@@ -3723,6 +3987,17 @@ Mudir STQ Darul Ulum Cendekia,
           else if (["users", "audit"].includes(tab)) setActiveCluster("sistem");
           setFeedback(null);
         }}
+      />
+
+      {/* Modal Dialog WhatsApp Direct Universal */}
+      <WhatsAppDialog
+        isOpen={globalWaDialog.isOpen}
+        onClose={() => setGlobalWaDialog((prev) => ({ ...prev, isOpen: false }))}
+        defaultPhone={globalWaDialog.phone}
+        defaultRecipientName={globalWaDialog.recipientName}
+        defaultMessage={globalWaDialog.message}
+        title={globalWaDialog.title}
+        description={globalWaDialog.description}
       />
     </div>
   );
