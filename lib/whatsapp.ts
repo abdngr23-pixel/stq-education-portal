@@ -301,3 +301,59 @@ export function buildProgressSantriWAMessage(p: ProgressSantriWAParams): string 
 
   return msg;
 }
+
+export interface RekapPresensiWAParams {
+  kegiatan: string;
+  tanggal?: string;
+  petugasNama: string;
+  totalSantri: number;
+  hadir: number;
+  masbuk: number;
+  sakit: number;
+  izin: number;
+  alpa: number;
+  daftarTidakHadir?: Array<{ nama: string; kelas: string; status: string; catatan?: string }>;
+}
+
+/**
+ * Template Pesan: Laporan Rekap Presensi Shaf Shalat & Halaqoh (ke Grup Asatidz)
+ */
+export function buildRekapPresensiWAMessage(p: RekapPresensiWAParams): string {
+  const tgl = p.tanggal || new Date().toLocaleDateString("id-ID", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const jam = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+  const totalHadir = p.hadir + p.masbuk;
+  const persentase = Math.round((totalHadir / (p.totalSantri || 1)) * 100);
+
+  let msg = `*LAPORAN PRESENSI SHALAT & HALAQOH*\n`;
+  msg += `*STQ DARUL ULUM CENDEKIA*\n`;
+  msg += `📅 ${tgl} • Pukul ${jam} WITA\n\n`;
+  msg += `• *Sesi Kegiatan*: ${p.kegiatan}\n`;
+  msg += `• *Petugas Presensi*: ${p.petugasNama}\n`;
+  msg += `• *Total Santri*: ${p.totalSantri} Santri\n\n`;
+  msg += `📊 *Ringkasan Kehadiran*:\n`;
+  msg += `✅ *Hadir Tepat Waktu*: ${p.hadir} santri\n`;
+  if (p.masbuk > 0) msg += `⏱️ *Masbuk/Terlambat*: ${p.masbuk} santri\n`;
+  if (p.sakit > 0) msg += `🏥 *Sakit*: ${p.sakit} santri\n`;
+  if (p.izin > 0) msg += `📝 *Izin Resmi*: ${p.izin} santri\n`;
+  if (p.alpa > 0) msg += `❌ *Alpa/Tanpa Keterangan*: ${p.alpa} santri\n`;
+  msg += `📈 *Tingkat Kehadiran*: *${persentase}%*\n`;
+
+  if (p.daftarTidakHadir && p.daftarTidakHadir.length > 0) {
+    msg += `\n📋 *Daftar Santri Masbuk / Sakit / Izin / Alpa*:\n`;
+    p.daftarTidakHadir.forEach((s, idx) => {
+      const icon = s.status === "ALPA" ? "❌" : s.status === "SAKIT" ? "🏥" : s.status === "IZIN" ? "📝" : "⏱️";
+      msg += `${idx + 1}. ${icon} *${s.nama}* (${s.kelas}) — [${s.status}]${s.catatan ? ` : _${s.catatan}_` : ""}\n`;
+    });
+  }
+
+  msg += `\n_Laporan otomatis terverifikasi sistem portal:_\n`;
+  msg += `🔗 ${PORTAL_URL}\n`;
+
+  return msg;
+}
+

@@ -10,6 +10,7 @@ export interface DashboardPembinaAsramaProps {
   onNavigateToBintang: () => void;
   onNavigateToDisiplin: () => void;
   onNavigateToLogistik: () => void;
+  onNavigateToPresensi?: () => void;
 }
 
 export function DashboardPembinaAsrama({
@@ -17,6 +18,7 @@ export function DashboardPembinaAsrama({
   onNavigateToBintang,
   onNavigateToDisiplin,
   onNavigateToLogistik,
+  onNavigateToPresensi,
 }: DashboardPembinaAsramaProps) {
   return (
     <div className="space-y-6">
@@ -39,14 +41,21 @@ export function DashboardPembinaAsrama({
           badgeText="Apresiasi Positif"
           badgeVariant="gold"
         />
-        <StatCard
-          title="Ketertiban Asrama"
-          value="96%"
-          description="Disiplin Bangun &amp; Shalat"
-          icon={<ShieldCheck className="h-5 w-5" />}
-          badgeText="Kondusif"
-          badgeVariant="green"
-        />
+        <div
+          onClick={onNavigateToPresensi}
+          className={onNavigateToPresensi ? "cursor-pointer transition-transform hover:scale-[1.02]" : ""}
+          role="button"
+          tabIndex={0}
+        >
+          <StatCard
+            title="Ketertiban Shalat"
+            value="96%"
+            description="Disiplin Bangun &amp; Shalat"
+            icon={<ShieldCheck className="h-5 w-5" />}
+            badgeText={onNavigateToPresensi ? "Presensi ➜" : "Kondusif"}
+            badgeVariant="green"
+          />
+        </div>
         <StatCard
           title="Pelanggaran Ringan"
           value="2 Kasus"

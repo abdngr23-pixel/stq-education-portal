@@ -3,7 +3,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Send, Check, X, ArrowUpRight, ShieldCheck, AlertTriangle } from "lucide-react";
+import { Send, Check, X, ArrowUpRight, ShieldCheck, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 export interface DashboardMusyrifKesantrianProps {
   izinList: Array<{
@@ -20,6 +20,7 @@ export interface DashboardMusyrifKesantrianProps {
   onApproveIzin: (id: string, isEskalasi: boolean) => void;
   onRejectIzin: (id: string) => void;
   onNavigateToDisiplin: () => void;
+  onNavigateToPresensi?: () => void;
   isPending?: boolean;
 }
 
@@ -28,6 +29,7 @@ export function DashboardMusyrifKesantrian({
   onApproveIzin,
   onRejectIzin,
   onNavigateToDisiplin,
+  onNavigateToPresensi,
   isPending = false,
 }: DashboardMusyrifKesantrianProps) {
   const pendingIzin = izinList.filter((i) => i.status === "MENUNGGU_MK");
@@ -84,14 +86,26 @@ export function DashboardMusyrifKesantrian({
               Izin LOKAL disahkan langsung oleh MK. Izin PULANG/LUAR KOTA dieskalasi ke Mudir (KS).
             </CardDescription>
           </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={onNavigateToDisiplin}
-            leftIcon={<AlertTriangle className="h-3.5 w-3.5 text-amber-700" />}
-          >
-            Kedisiplinan &amp; SP
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {onNavigateToPresensi && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={onNavigateToPresensi}
+                leftIcon={<CheckCircle2 className="h-3.5 w-3.5" />}
+              >
+                Presensi Shalat &amp; Halaqoh
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onNavigateToDisiplin}
+              leftIcon={<AlertTriangle className="h-3.5 w-3.5 text-amber-700" />}
+            >
+              Kedisiplinan &amp; SP
+            </Button>
+          </div>
         </CardHeader>
 
         <CardContent className="space-y-3 pt-4">

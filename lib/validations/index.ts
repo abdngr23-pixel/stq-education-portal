@@ -186,6 +186,27 @@ export const suratAISchema = z.object({
 export type SuratAIInput = z.infer<typeof suratAISchema>;
 
 /**
+ * 9. Skema Validasi Batch Presensi Shalat & Halaqoh
+ */
+export const batchPresensiSchema = z.object({
+  kegiatan: z.string().min(2, { message: 'Nama kegiatan/sesi wajib diisi' }).max(100),
+  tanggal: z.string().optional(),
+  items: z
+    .array(
+      z.object({
+        santriId: z.string().min(1, { message: 'ID Santri wajib disertakan' }),
+        status: z.enum(['HADIR', 'MASBUK', 'IZIN', 'SAKIT', 'ALFA'], {
+          message: 'Status absensi tidak valid',
+        }),
+        catatan: z.string().max(255).optional().nullable(),
+      })
+    )
+    .min(1, { message: 'Minimal 1 santri dalam daftar presensi' }),
+});
+
+export type BatchPresensiInput = z.infer<typeof batchPresensiSchema>;
+
+/**
  * Helper Validasi Generik
  */
 export function validateData<T>(schema: z.ZodSchema<T>, data: unknown) {
