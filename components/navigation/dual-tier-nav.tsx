@@ -60,7 +60,7 @@ export function DualTierNav({
       id: "manajemen" as NavClusterId,
       label: "Manajemen & Kantor",
       icon: Building2,
-      tabs: ["administrasi", "sponsor", "surat", "agenda"],
+      tabs: ["data_santri", "administrasi", "sponsor", "surat", "agenda"],
     },
     {
       id: "wali" as NavClusterId,
@@ -82,6 +82,7 @@ export function DualTierNav({
     { label: string; icon: React.ComponentType<{ className?: string }> }
   > = {
     beranda: { label: "Beranda Ringkasan", icon: Home },
+    data_santri: { label: "Data Santri", icon: Users },
     tahfizh: { label: "Setoran Tahfizh", icon: BookCheck },
     akademik: { label: "Nilai & Rapor", icon: GraduationCap },
     ikhtibar: { label: "Ujian Ikhtibar", icon: Award },

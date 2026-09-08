@@ -14,6 +14,7 @@ import { DashboardGuruAkademik } from "@/components/dashboard/dashboard-guru-aka
 import { DashboardMudirKS } from "@/components/dashboard/dashboard-mudir-ks";
 import { RekapLaporanBulanan } from "@/components/dashboard/rekap-laporan-bulanan";
 import { ManajemenHalaqoh } from "@/components/dashboard/manajemen-halaqoh";
+import { MasterDataSantri } from "@/components/dashboard/master-data-santri";
 import { PrintLaporanBulanan } from "@/components/print/print-laporan-bulanan";
 import { DashboardYayasan } from "@/components/dashboard/dashboard-yayasan";
 import { DashboardAdminTU } from "@/components/dashboard/dashboard-admin-tu";
@@ -1345,6 +1346,10 @@ Mudir STQ Darul Ulum Cendekia,
               <DashboardAdminTU
                 totalSantri={santriList.length}
                 totalUsers={usersList.length}
+                onNavigateToSantri={() => {
+                  setActiveCluster("manajemen");
+                  setActiveTab("data_santri");
+                }}
                 onNavigateToSurat={() => {
                   setActiveCluster("manajemen");
                   setActiveTab("surat");
@@ -1419,6 +1424,21 @@ Mudir STQ Darul Ulum Cendekia,
               Buka Beranda Peran Anda
             </Button>
           </Card>
+        )}
+
+        {/* ============================================================= */}
+        {/* TAB MASTER: DATA SANTRI */}
+        {/* ============================================================= */}
+        {allowedTabs.includes("data_santri") && activeTab === "data_santri" && (
+          <MasterDataSantri
+            santriList={santriList}
+            userRole={selectedRole}
+            halaqohList={MASTER_HALAQOH_LIST.map((h) => ({ id: h.id, nama: h.nama, pembina: h.pembina }))}
+            onPrintRapor={(s) => {
+              setSelectedSantriNis(s.nis);
+              setShowPrintModal("rapor");
+            }}
+          />
         )}
 
         {/* ============================================================= */}

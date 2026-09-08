@@ -22,6 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 
 export type NavTabId =
+  | "data_santri"
   | "tahfizh"
   | "akademik"
   | "kesantrian"

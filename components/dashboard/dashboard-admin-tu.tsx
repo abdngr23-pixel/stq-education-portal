@@ -8,6 +8,7 @@ import { DollarSign, FileText, Users, UserCog, PlusCircle } from "lucide-react";
 export interface DashboardAdminTUProps {
   totalSantri: number;
   totalUsers: number;
+  onNavigateToSantri?: () => void;
   onNavigateToSurat: () => void;
   onNavigateToAnggaran: () => void;
   onNavigateToUsers: () => void;
@@ -16,6 +17,7 @@ export interface DashboardAdminTUProps {
 export function DashboardAdminTU({
   totalSantri,
   totalUsers,
+  onNavigateToSantri,
   onNavigateToSurat,
   onNavigateToAnggaran,
   onNavigateToUsers,
@@ -24,14 +26,20 @@ export function DashboardAdminTU({
     <div className="space-y-6">
       {/* 1. KPI Tata Usaha */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <StatCard
-          title="Master Data Santri"
-          value={`${totalSantri} Santri`}
-          description="Data Pokok Pesantren"
-          icon={<Users className="h-5 w-5" />}
-          badgeText="Lengkap"
-          badgeVariant="green"
-        />
+        <div
+          onClick={onNavigateToSantri}
+          className="cursor-pointer transition-transform hover:-translate-y-0.5"
+        >
+          <StatCard
+            title="Master Data Santri"
+            value={`${totalSantri} Santri`}
+            description="Klik untuk Buka Direktori"
+            icon={<Users className="h-5 w-5" />}
+            badgeText="57 Santri"
+            badgeVariant="green"
+            accentBorder
+          />
+        </div>
         <StatCard
           title="Akun Pengguna"
           value={`${totalUsers} Akun`}
@@ -59,7 +67,29 @@ export function DashboardAdminTU({
       </div>
 
       {/* 2. Menu Aksi Cepat Administrasi Lembaga */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card rounded="3xl" className="p-5 flex flex-col justify-between space-y-4 border-2 border-emerald-200 bg-emerald-50/40">
+          <div className="space-y-1.5">
+            <div className="h-10 w-10 rounded-2xl bg-emerald-100 text-[#0E7C3A] flex items-center justify-center font-bold">
+              <Users className="h-5 w-5" />
+            </div>
+            <h4 className="font-bold text-slate-800 text-sm font-heading">
+              Direktori Data Santri
+            </h4>
+            <p className="text-xs text-slate-500">
+              Kelola 57 data santri aktif, pencarian NIS/nama, filter halaqoh/kelas, dan ekspor CSV.
+            </p>
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onNavigateToSantri}
+            leftIcon={<Users className="h-4 w-4" />}
+            className="bg-[#0E7C3A] hover:bg-[#0B642E]"
+          >
+            Buka Data Santri
+          </Button>
+        </Card>
         <Card rounded="3xl" className="p-5 flex flex-col justify-between space-y-4">
           <div className="space-y-1.5">
             <div className="h-10 w-10 rounded-2xl bg-emerald-50 text-[#0E7C3A] flex items-center justify-center font-bold">

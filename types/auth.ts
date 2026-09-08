@@ -341,6 +341,7 @@ export const ROLE_PERMITTED_CLUSTERS: Record<Role, Array<"tahfizh" | "kesantrian
 
 export const ROLE_PERMITTED_TABS: Record<Role, string[]> = {
   KS: [
+    "data_santri",
     "tahfizh", "akademik", "ikhtibar",
     "kesantrian", "kedisiplinan", "kesehatan", "logistik",
     "administrasi", "surat", "sponsor", "agenda",
@@ -348,20 +349,21 @@ export const ROLE_PERMITTED_TABS: Record<Role, string[]> = {
     "users", "audit"
   ],
   ADM: [
+    "data_santri",
     "tahfizh", "akademik", "ikhtibar",
     "kesantrian", "kedisiplinan", "kesehatan", "logistik",
     "administrasi", "surat", "sponsor", "agenda",
     "portal_wali",
     "users", "audit"
   ],
-  MT: ["tahfizh", "akademik", "ikhtibar", "kedisiplinan"],
-  MK: ["kesantrian", "kedisiplinan", "kesehatan", "logistik"],
-  GA: ["akademik", "agenda"],
-  PH: ["tahfizh", "kedisiplinan"],
+  MT: ["data_santri", "tahfizh", "akademik", "ikhtibar", "kedisiplinan"],
+  MK: ["data_santri", "kesantrian", "kedisiplinan", "kesehatan", "logistik"],
+  GA: ["data_santri", "akademik", "agenda"],
+  PH: ["data_santri", "tahfizh", "kedisiplinan"],
   OSDA: ["kesehatan", "logistik"],
   WS: ["portal_wali"],
   ST: ["portal_wali"],
-  YAY: ["tahfizh", "akademik", "administrasi", "sponsor", "audit"],
+  YAY: ["data_santri", "tahfizh", "akademik", "administrasi", "sponsor", "audit"],
 };
 
 /**
