@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate",
-    "test": "tsx --test tests/business-rules.test.ts",
+    "test": "tsx --test tests/business-rules.test.ts tests/security-checklist.test.ts",
     "db:backup": "tsx scripts/backup-db.ts"
   },
   "dependencies": {
@@ -20,7 +20,8 @@
     "next": "16.3.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "tailwind-merge": "^3.6.0"
+    "tailwind-merge": "^3.6.0",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

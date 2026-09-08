@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getAuthFromRequest, recordAuditLog } from '@/lib/auth';
+import { apiGuard, recordAuditLog } from '@/lib/auth';
+import { santriInputSchema, validateData } from '@/lib/validations';
 import { JenisKelamin, SantriStatus } from '@prisma/client';
 
 /**
@@ -9,13 +10,9 @@ import { JenisKelamin, SantriStatus } from '@prisma/client';
  */
 export async function GET(req: Request) {
   try {
-    const session = await getAuthFromRequest(req);
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: { code: 'UNAUTHORIZED', message: 'Token otentikasi tidak valid.' } },
-        { status: 401 }
-      );
-    }
+    const auth = await apiGuard(req);
+    if (auth.errorResponse) return auth.errorResponse;
+    const session = auth.session;
 
     const { searchParams } = new URL(req.url);
     const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
@@ -83,23 +80,27 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
   try {
-    const session = await getAuthFromRequest(req);
-    if (!session || !['ADM', 'KS'].includes(session.role)) {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Akses ditolak.' } },
-        { status: 403 }
-      );
-    }
+    const auth = await apiGuard(req, ['ADM', 'KS']);
+    if (auth.errorResponse) return auth.errorResponse;
+    const session = auth.session;
 
     const body = await req.json();
-    const { nis, nama, kelas, jenisKelamin, halaqohId, namaWali, noHpWali } = body;
-
-    if (!nis || !nama || !kelas || !jenisKelamin) {
+    const validation = validateData(santriInputSchema, body);
+    if (!validation.success) {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION_ERROR', message: 'NIS, nama, kelas, dan jenis kelamin wajib diisi.' } },
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: validation.errors[0] || 'Data input santri tidak valid.',
+            details: validation.errors,
+          },
+        },
         { status: 400 }
       );
     }
+
+    const { nis, nama, kelas, jenisKelamin, halaqohId, namaWali, noHpWali } = validation.data;
 
     const existing = await prisma.santri.findUnique({ where: { nis } });
     if (existing) {

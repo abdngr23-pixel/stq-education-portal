@@ -1,20 +1,17 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getAuthFromRequest, recordAuditLog } from '@/lib/auth';
+import { apiGuard, getAuthFromRequest, recordAuditLog } from '@/lib/auth';
+import { kotakSaranSchema, validateData } from '@/lib/validations';
 
 /**
  * GET /api/v1/kotak-saran
- * Daftar saran/masukan
+ * Daftar saran/masukan (Khusus Pengurus/Staff)
  */
 export async function GET(req: Request) {
   try {
-    const session = await getAuthFromRequest(req);
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: { code: 'UNAUTHORIZED', message: 'Token otentikasi tidak valid.' } },
-        { status: 401 }
-      );
-    }
+    const auth = await apiGuard(req, ['ADM', 'KS', 'MK', 'PH', 'GA', 'MT', 'YAY']);
+    if (auth.errorResponse) return auth.errorResponse;
+    const session = auth.session;
 
     let list: unknown[];
     try {
@@ -62,14 +59,23 @@ export async function POST(req: Request) {
   try {
     const session = await getAuthFromRequest(req);
     const body = await req.json();
-    const { nama, noHp, santriId, kategori, pesan } = body;
 
-    if (!nama || !pesan) {
+    const validation = validateData(kotakSaranSchema, body);
+    if (!validation.success) {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Nama dan pesan wajib diisi.' } },
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: validation.errors[0] || 'Data masukan/saran tidak valid.',
+            details: validation.errors,
+          },
+        },
         { status: 400 }
       );
     }
+
+    const { nama, noHp, santriId, kategori, pesan } = validation.data;
 
     const saran = await prisma.kotakSaran.create({
       data: {

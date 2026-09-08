@@ -1,20 +1,16 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getAuthFromRequest } from '@/lib/auth';
+import { apiGuard } from '@/lib/auth';
 
 /**
  * GET /api/v1/surat
- * Daftar arsip surat resmi STQ Darul Ulum Cendekia
+ * Daftar arsip surat resmi STQ Darul Ulum Cendekia (Khusus Staff/Pengurus)
  */
 export async function GET(req: Request) {
   try {
-    const session = await getAuthFromRequest(req);
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: { code: 'UNAUTHORIZED', message: 'Token otentikasi tidak valid.' } },
-        { status: 401 }
-      );
-    }
+    const auth = await apiGuard(req, ['ADM', 'KS', 'MK', 'PH', 'GA', 'MT', 'YAY']);
+    if (auth.errorResponse) return auth.errorResponse;
+    const session = auth.session;
 
     const { searchParams } = new URL(req.url);
     const limit = Math.min(50, parseInt(searchParams.get('limit') || '20'));

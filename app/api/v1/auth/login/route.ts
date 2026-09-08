@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { verifyPassword, createSessionToken, recordAuditLog } from '@/lib/auth';
+import { loginSchema, validateData } from '@/lib/validations';
 
 /**
  * POST /api/v1/auth/login
@@ -9,21 +10,25 @@ import { verifyPassword, createSessionToken, recordAuditLog } from '@/lib/auth';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { username, email, password } = body;
 
-    const identifier = username || email;
-    if (!identifier || !password) {
+    // 4. Input validation (Zod)
+    const validation = validateData(loginSchema, body);
+    if (!validation.success) {
       return NextResponse.json(
         {
           success: false,
           error: {
             code: 'VALIDATION_ERROR',
-            message: 'Username/Email dan kata sandi wajib diisi.',
+            message: validation.errors[0] || 'Data login tidak valid.',
+            details: validation.errors,
           },
         },
         { status: 400 }
       );
     }
+
+    const { username, email, password } = validation.data;
+    const identifier = username || email || '';
 
     let user: any = null;
     try {

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getAuthFromRequest } from '@/lib/auth';
+import { apiGuard } from '@/lib/auth';
 
 /**
  * GET /api/v1/rapor/[nis]
@@ -11,15 +11,18 @@ export async function GET(
   context: { params: Promise<{ nis: string }> }
 ) {
   try {
-    const session = await getAuthFromRequest(req);
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: { code: 'UNAUTHORIZED', message: 'Token otentikasi tidak valid.' } },
-        { status: 401 }
-      );
-    }
+    const auth = await apiGuard(req);
+    if (auth.errorResponse) return auth.errorResponse;
+    const session = auth.session;
 
     const { nis } = await context.params;
+
+    if (!nis || !/^[a-zA-Z0-9_-]{3,20}$/.test(nis)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Format NIS tidak valid.' } },
+        { status: 400 }
+      );
+    }
 
     const santri = await prisma.santri.findUnique({
       where: { nis },
@@ -53,6 +56,12 @@ export async function GET(
     if (session.role === 'ST' && session.santriId !== santri.id) {
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'Anda hanya berhak melihat rapor Anda sendiri.' } },
+        { status: 403 }
+      );
+    }
+    if (session.role === 'WS' && session.santriId && session.santriId !== santri.id) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Anda hanya berhak melihat rapor santri yang merupakan anak Anda.' } },
         { status: 403 }
       );
     }

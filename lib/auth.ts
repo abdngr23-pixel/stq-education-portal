@@ -1,6 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 import { AuthTokenPayload, Role, UserSession } from "@/types/auth";
 import prisma from "@/lib/prisma";
 
@@ -116,6 +117,50 @@ export async function requireRole(allowedRoles: Role[]): Promise<UserSession> {
   }
 
   return session;
+}
+
+/**
+ * API-Level Auth + Role Check Guard
+ * Memastikan request memiliki token valid dan wewenang role yang tepat.
+ * Mengembalikan objek { session } jika sah, atau { errorResponse } jika gagal.
+ */
+export async function apiGuard(
+  req: Request,
+  allowedRoles?: Role[]
+): Promise<{ session: UserSession; errorResponse?: never } | { session?: never; errorResponse: NextResponse }> {
+  const session = await getAuthFromRequest(req);
+
+  if (!session) {
+    return {
+      errorResponse: NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Akses API ditolak: Token sesi tidak ditemukan atau telah kedaluwarsa.',
+          },
+        },
+        { status: 401 }
+      ),
+    };
+  }
+
+  if (allowedRoles && allowedRoles.length > 0 && !allowedRoles.includes(session.role)) {
+    return {
+      errorResponse: NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: `Akses API ditolak: Role '${session.role}' tidak memiliki izin untuk endpoint ini.`,
+          },
+        },
+        { status: 403 }
+      ),
+    };
+  }
+
+  return { session };
 }
 
 /**

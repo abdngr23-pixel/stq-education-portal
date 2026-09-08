@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getAuthFromRequest, recordAuditLog } from '@/lib/auth';
+import { apiGuard, recordAuditLog } from '@/lib/auth';
+import { kalenderSchema, validateData } from '@/lib/validations';
 
 /**
  * GET /api/v1/kalender
@@ -60,23 +61,27 @@ export async function GET() {
  */
 export async function POST(req: Request) {
   try {
-    const session = await getAuthFromRequest(req);
-    if (!session || !['ADM', 'KS'].includes(session.role)) {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Akses ditolak.' } },
-        { status: 403 }
-      );
-    }
+    const auth = await apiGuard(req, ['ADM', 'KS']);
+    if (auth.errorResponse) return auth.errorResponse;
+    const session = auth.session;
 
     const body = await req.json();
-    const { judul, deskripsi, tanggalMulai, tanggalSelesai, kategori, targetPeserta, lokasi } = body;
-
-    if (!judul || !tanggalMulai) {
+    const validation = validateData(kalenderSchema, body);
+    if (!validation.success) {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Judul dan tanggal mulai wajib diisi.' } },
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: validation.errors[0] || 'Data agenda kalender tidak valid.',
+            details: validation.errors,
+          },
+        },
         { status: 400 }
       );
     }
+
+    const { judul, deskripsi, tanggalMulai, tanggalSelesai, kategori, targetPeserta, lokasi } = validation.data;
 
     const agenda = await prisma.kalenderAkademik.create({
       data: {

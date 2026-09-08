@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getAuthFromRequest, recordAuditLog } from '@/lib/auth';
+import { apiGuard, recordAuditLog } from '@/lib/auth';
+import { setoranSchema, validateData } from '@/lib/validations';
 import { JenisSetoran, NilaiSetoran } from '@prisma/client';
 
 /**
@@ -9,13 +10,9 @@ import { JenisSetoran, NilaiSetoran } from '@prisma/client';
  */
 export async function GET(req: Request) {
   try {
-    const session = await getAuthFromRequest(req);
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: { code: 'UNAUTHORIZED', message: 'Token otentikasi tidak valid.' } },
-        { status: 401 }
-      );
-    }
+    const auth = await apiGuard(req);
+    if (auth.errorResponse) return auth.errorResponse;
+    const session = auth.session;
 
     const { searchParams } = new URL(req.url);
     const santriId = searchParams.get('santri_id');
@@ -65,23 +62,27 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
   try {
-    const session = await getAuthFromRequest(req);
-    if (!session || !['MT', 'PH', 'KS', 'ADM'].includes(session.role)) {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Akses ditolak.' } },
-        { status: 403 }
-      );
-    }
+    const auth = await apiGuard(req, ['MT', 'PH', 'KS', 'ADM']);
+    if (auth.errorResponse) return auth.errorResponse;
+    const session = auth.session;
 
     const body = await req.json();
-    const { santriId, jenis, juz, surahMulai, ayatMulai, surahSelesai, ayatSelesai, nilai, catatan } = body;
-
-    if (!santriId || !jenis || !juz || !surahMulai || !ayatMulai || !surahSelesai || !ayatSelesai || !nilai) {
+    const validation = validateData(setoranSchema, body);
+    if (!validation.success) {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Semua field wajib diisi.' } },
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: validation.errors[0] || 'Data setoran tidak valid.',
+            details: validation.errors,
+          },
+        },
         { status: 400 }
       );
     }
+
+    const { santriId, jenis, juz, surahMulai, ayatMulai, surahSelesai, ayatSelesai, nilai, catatan } = validation.data;
 
     const santri = await prisma.santri.findUnique({ where: { id: santriId } });
     if (!santri) {
