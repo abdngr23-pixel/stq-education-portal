@@ -66,7 +66,10 @@ export async function getCurrentSession(): Promise<UserSession | null> {
       username: payload.username,
       role: payload.role,
       staffId: payload.staffId,
+      staffCode: payload.staffCode,
       santriId: payload.santriId,
+      name: payload.name,
+      halaqohName: payload.halaqohName,
     };
   } catch {
     return null;
@@ -91,7 +94,10 @@ export async function getAuthFromRequest(req: Request): Promise<UserSession | nu
           username: payload.username,
           role: payload.role,
           staffId: payload.staffId,
+          staffCode: payload.staffCode,
           santriId: payload.santriId,
+          name: payload.name,
+          halaqohName: payload.halaqohName,
         };
       }
     }

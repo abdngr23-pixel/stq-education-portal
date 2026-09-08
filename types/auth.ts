@@ -7,8 +7,10 @@ export interface UserSession {
   username: string;
   role: Role;
   staffId?: string | null;
+  staffCode?: string | null;
   santriId?: string | null;
   name?: string;
+  halaqohName?: string | null;
 }
 
 export interface AuthTokenPayload {
@@ -16,7 +18,10 @@ export interface AuthTokenPayload {
   username: string;
   role: Role;
   staffId?: string | null;
+  staffCode?: string | null;
   santriId?: string | null;
+  name?: string;
+  halaqohName?: string | null;
   iat?: number;
   exp?: number;
 }
@@ -376,4 +381,194 @@ export function hasModuleAccess(role: Role, module: ModuleName, requiredLevel: "
   if (level === "READ" && requiredLevel === "READ") return true;
   return false;
 }
+
+export interface StaffAccountItem {
+  id: string;
+  username: string;
+  email: string;
+  password: string;
+  name: string;
+  role: Role;
+  roleTitle: string;
+  staffCode: string;
+  halaqohName?: string;
+  santriCount?: number;
+  description: string;
+  badgeVariant: "green" | "gold" | "sky" | "orange" | "purple" | "neutral";
+  defaultCluster: "tahfizh" | "kesantrian" | "manajemen" | "wali" | "sistem";
+  defaultTab: string;
+}
+
+/**
+ * Mapping Resmi Musyrif / Mudhabbir ke Kelompok Halaqoh Binaan
+ * Berdasarkan Google Sheets format laporan hafalan riil pesantren
+ */
+export const STAFF_HALAQOH_MAP: Record<string, string> = {
+  // 1. Ust. Razan Mufli, S.Pd (5 Santri: SAN-0001 s.d. SAN-0005)
+  "Ust. Razan Mufli, S.Pd": "Halaqoh Ust. Razan Mufli, S.Pd",
+  "razan.mt": "Halaqoh Ust. Razan Mufli, S.Pd",
+  "musyrif.tahfizh": "Halaqoh Ust. Razan Mufli, S.Pd",
+  "STF-0003": "Halaqoh Ust. Razan Mufli, S.Pd",
+
+  // 2. Ust. Kamal (9 Santri: SAN-0006 s.d. SAN-0014)
+  "Ust. Kamal": "Halaqoh Ust. Kamal",
+  "kamal.ph": "Halaqoh Ust. Kamal",
+  "pembina.kamal": "Halaqoh Ust. Kamal",
+  "pembina.halaqoh": "Halaqoh Ust. Kamal",
+  "STF-0006": "Halaqoh Ust. Kamal",
+
+  // 3. Ust. Rizaldi (10 Santri: SAN-0015 s.d. SAN-0024)
+  "Ust. Rizaldi": "Halaqoh Ust. Rizaldi",
+  "rizaldi.ph": "Halaqoh Ust. Rizaldi",
+  "pembina.rizaldi": "Halaqoh Ust. Rizaldi",
+  "STF-0007": "Halaqoh Ust. Rizaldi",
+
+  // 4. Ust. Abi Hudzaifah (10 Santri: SAN-0025 s.d. SAN-0034)
+  "Ust. Abi Hudzaifah": "Halaqoh Ust. Abi Hudzaifah",
+  "hudzaifah.ph": "Halaqoh Ust. Abi Hudzaifah",
+  "pembina.hudzaifah": "Halaqoh Ust. Abi Hudzaifah",
+  "STF-0008": "Halaqoh Ust. Abi Hudzaifah",
+
+  // 5. Ust. Alwan (13 Santri: SAN-0035 s.d. SAN-0047)
+  "Ust. Alwan": "Halaqoh Ust. Alwan",
+  "alwan.ph": "Halaqoh Ust. Alwan",
+  "pembina.alwan": "Halaqoh Ust. Alwan",
+  "STF-0009": "Halaqoh Ust. Alwan",
+
+  // 6. Ustadzah Lisa Dwina Fitri (10 Santri: SAN-0048 s.d. SAN-0057)
+  "Ustadzah Lisa Dwina Fitri": "Halaqoh Ustadzah Lisa Dwina Fitri",
+  "lisa.mt": "Halaqoh Ustadzah Lisa Dwina Fitri",
+  "musyrifah.putri": "Halaqoh Ustadzah Lisa Dwina Fitri",
+  "STF-0005": "Halaqoh Ustadzah Lisa Dwina Fitri",
+};
+
+/**
+ * Cari nama kelompok halaqoh berdasarkan identifier (nama ustadz, username, atau staffCode)
+ */
+export function getHalaqohByStaff(identifier: string): string | null {
+  if (!identifier) return null;
+  const directMatch = STAFF_HALAQOH_MAP[identifier] || STAFF_HALAQOH_MAP[identifier.trim()];
+  if (directMatch) return directMatch;
+  const found = Object.entries(STAFF_HALAQOH_MAP).find(([key]) =>
+    identifier.toLowerCase().includes(key.toLowerCase()) || key.toLowerCase().includes(identifier.toLowerCase())
+  );
+  return found ? found[1] : null;
+}
+
+/**
+ * Katalog Seluruh Akun Ustadz Mudhabbir (Pembina Halaqoh - Role PH)
+ */
+export const ALL_MUDHABBIR_ACCOUNTS: StaffAccountItem[] = [
+  {
+    id: "stf-kamal",
+    username: "kamal.ph",
+    email: "kamal.mudhabbir@duc-tahfizh.sch.id",
+    password: "password123",
+    name: "Ust. Kamal",
+    role: "PH",
+    roleTitle: "Mudhabbir (Pembina Halaqoh)",
+    staffCode: "STF-0006",
+    halaqohName: "Halaqoh Ust. Kamal",
+    santriCount: 9,
+    description: "Pembina Halaqoh Ust. Kamal (9 Santri: SAN-0006 s.d. SAN-0014)",
+    badgeVariant: "orange",
+    defaultCluster: "tahfizh",
+    defaultTab: "tahfizh",
+  },
+  {
+    id: "stf-rizaldi",
+    username: "rizaldi.ph",
+    email: "rizaldi.mudhabbir@duc-tahfizh.sch.id",
+    password: "password123",
+    name: "Ust. Rizaldi",
+    role: "PH",
+    roleTitle: "Mudhabbir (Pembina Halaqoh)",
+    staffCode: "STF-0007",
+    halaqohName: "Halaqoh Ust. Rizaldi",
+    santriCount: 10,
+    description: "Pembina Halaqoh Ust. Rizaldi (10 Santri: SAN-0015 s.d. SAN-0024)",
+    badgeVariant: "orange",
+    defaultCluster: "tahfizh",
+    defaultTab: "tahfizh",
+  },
+  {
+    id: "stf-hudzaifah",
+    username: "hudzaifah.ph",
+    email: "hudzaifah.mudhabbir@duc-tahfizh.sch.id",
+    password: "password123",
+    name: "Ust. Abi Hudzaifah",
+    role: "PH",
+    roleTitle: "Mudhabbir (Pembina Halaqoh)",
+    staffCode: "STF-0008",
+    halaqohName: "Halaqoh Ust. Abi Hudzaifah",
+    santriCount: 10,
+    description: "Pembina Halaqoh Ust. Abi Hudzaifah (10 Santri: SAN-0025 s.d. SAN-0034)",
+    badgeVariant: "orange",
+    defaultCluster: "tahfizh",
+    defaultTab: "tahfizh",
+  },
+  {
+    id: "stf-alwan",
+    username: "alwan.ph",
+    email: "alwan.mudhabbir@duc-tahfizh.sch.id",
+    password: "password123",
+    name: "Ust. Alwan",
+    role: "PH",
+    roleTitle: "Mudhabbir (Pembina Halaqoh)",
+    staffCode: "STF-0009",
+    halaqohName: "Halaqoh Ust. Alwan",
+    santriCount: 13,
+    description: "Pembina Halaqoh Ust. Alwan (13 Santri: SAN-0035 s.d. SAN-0047)",
+    badgeVariant: "orange",
+    defaultCluster: "tahfizh",
+    defaultTab: "tahfizh",
+  },
+];
+
+/**
+ * Katalog Musyrif Tahfizh (Role MT)
+ */
+export const ALL_MUSYRIF_TAHFIZH_ACCOUNTS: StaffAccountItem[] = [
+  {
+    id: "stf-razan",
+    username: "razan.mt",
+    email: "razan.tahfizh@duc-tahfizh.sch.id",
+    password: "password123",
+    name: "Ust. Razan Mufli, S.Pd",
+    role: "MT",
+    roleTitle: "Musyrif Ketahfidzhan",
+    staffCode: "STF-0003",
+    halaqohName: "Halaqoh Ust. Razan Mufli, S.Pd",
+    santriCount: 5,
+    description: "Musyrif Ketahfidzhan & Pembina Halaqoh Ust. Razan (5 Santri: SAN-0001 s.d. SAN-0005)",
+    badgeVariant: "green",
+    defaultCluster: "tahfizh",
+    defaultTab: "tahfizh",
+  },
+  {
+    id: "stf-lisa",
+    username: "lisa.mt",
+    email: "lisa.putri@duc-tahfizh.sch.id",
+    password: "password123",
+    name: "Ustadzah Lisa Dwina Fitri",
+    role: "MT",
+    roleTitle: "Musyrifah Tahfizh Putri",
+    staffCode: "STF-0005",
+    halaqohName: "Halaqoh Ustadzah Lisa Dwina Fitri",
+    santriCount: 10,
+    description: "Musyrifah Putri & Pembina Halaqoh Putri (10 Santriwati: SAN-0048 s.d. SAN-0057)",
+    badgeVariant: "green",
+    defaultCluster: "tahfizh",
+    defaultTab: "tahfizh",
+  },
+];
+
+/**
+ * Seluruh Akun Staf Khusus untuk Login Cepat & Pengujian Mandiri
+ */
+export const ALL_STAFF_ACCOUNTS: StaffAccountItem[] = [
+  ...ALL_MUDHABBIR_ACCOUNTS,
+  ...ALL_MUSYRIF_TAHFIZH_ACCOUNTS,
+];
+
 

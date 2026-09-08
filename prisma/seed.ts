@@ -463,19 +463,37 @@ async function main() {
 
   console.log("✅ 57 Data master Santri beserta Target & Mutaba'ah HBL berhasil dibuat.");
 
-  // 5. Buat Akun Pengguna untuk Semua Role Resmi
+  // 5. Buat Akun Pengguna untuk Semua Role & Seluruh Asatidz Mudhabbir
   const santriUtama = createdSantriMap["SAN-0001"];
   const usersData = [
+    // Pimpinan & Tata Usaha
     { username: "mudir", email: "mudir@duc-tahfizh.sch.id", role: Role.KS, staffId: staffKS.id },
     { username: "admin", email: "admin@duc-tahfizh.sch.id", role: Role.ADM, staffId: staffADM.id },
-    { username: "musyrif.tahfizh", email: "musyrif.tahfizh@duc-tahfizh.sch.id", role: Role.MT, staffId: staffMT1.id },
-    { username: "musyrif.asrama", email: "musyrif.asrama@duc-tahfizh.sch.id", role: Role.MK, staffId: staffMK.id },
-    { username: "musyrifah.putri", email: "musyrifah@duc-tahfizh.sch.id", role: Role.MT, staffId: staffMTPutri.id },
-    { username: "pembina.halaqoh", email: "pembina@duc-tahfizh.sch.id", role: Role.PH, staffId: staffPH1.id },
-    { username: "guru.akademik", email: "guru@duc-tahfizh.sch.id", role: Role.GA, staffId: staffGA.id },
     { username: "yayasan", email: "yayasan@duc-tahfizh.sch.id", role: Role.YAY },
+
+    // Musyrif Ketahfidzhan
+    { username: "musyrif.tahfizh", email: "musyrif.tahfizh@duc-tahfizh.sch.id", role: Role.MT, staffId: staffMT1.id },
+    { username: "razan.mt", email: "razan.tahfizh@duc-tahfizh.sch.id", role: Role.MT, staffId: staffMT1.id },
+    { username: "musyrifah.putri", email: "musyrifah@duc-tahfizh.sch.id", role: Role.MT, staffId: staffMTPutri.id },
+    { username: "lisa.mt", email: "lisa.putri@duc-tahfizh.sch.id", role: Role.MT, staffId: staffMTPutri.id },
+
+    // Keasramaan & Organisasi
+    { username: "musyrif.asrama", email: "musyrif.asrama@duc-tahfizh.sch.id", role: Role.MK, staffId: staffMK.id },
     { username: "osda", email: "osda@duc-tahfizh.sch.id", role: Role.OSDA },
+
+    // Akademik
+    { username: "guru.akademik", email: "guru@duc-tahfizh.sch.id", role: Role.GA, staffId: staffGA.id },
+
+    // 4 Ustadz Mudhabbir (Pembina Halaqoh)
+    { username: "pembina.halaqoh", email: "pembina@duc-tahfizh.sch.id", role: Role.PH, staffId: staffPH1.id },
+    { username: "kamal.ph", email: "kamal.mudhabbir@duc-tahfizh.sch.id", role: Role.PH, staffId: staffPH1.id },
+    { username: "rizaldi.ph", email: "rizaldi.mudhabbir@duc-tahfizh.sch.id", role: Role.PH, staffId: staffPH2.id },
+    { username: "hudzaifah.ph", email: "hudzaifah.mudhabbir@duc-tahfizh.sch.id", role: Role.PH, staffId: staffPH3.id },
+    { username: "alwan.ph", email: "alwan.mudhabbir@duc-tahfizh.sch.id", role: Role.PH, staffId: staffPH4.id },
+
+    // Wali & Santri
     { username: "walisantri", email: "wali.obama@gmail.com", role: Role.WS },
+    { username: "santri.obama", email: "santri.obama@stqduc.sch.id", role: Role.ST, santriId: santriUtama.id },
     { username: "santri.fatih", email: "obama@duc-tahfizh.sch.id", role: Role.ST, santriId: santriUtama.id },
   ];
 

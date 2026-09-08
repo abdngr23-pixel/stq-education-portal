@@ -44,6 +44,7 @@ export interface DashboardMusyrifTahfizhProps {
   onSetCatatan: (catatan: string) => void;
   onSaveSetoran: () => void;
   onOpenLaporanBulanan?: () => void;
+  halaqohName?: string;
   isPending?: boolean;
 }
 
@@ -71,6 +72,7 @@ export function DashboardMusyrifTahfizh({
   onSetCatatan,
   onSaveSetoran,
   onOpenLaporanBulanan,
+  halaqohName,
   isPending = false,
 }: DashboardMusyrifTahfizhProps) {
   const selectedSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
@@ -109,9 +111,9 @@ export function DashboardMusyrifTahfizh({
         <StatCard
           title="Santri Halaqoh"
           value={`${santriList.length} Santri`}
-          description="Halaqoh Utsman bin Affan"
+          description={halaqohName || "Kelompok Halaqoh Binaan"}
           icon={<BookCheck className="h-5 w-5" />}
-          badgeText="Aktif Lengkap"
+          badgeText="Binaan Aktif"
           badgeVariant="green"
         />
         <StatCard
@@ -312,7 +314,7 @@ export function DashboardMusyrifTahfizh({
         <div className="lg:col-span-5 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold text-slate-800 font-heading">
-              Santri Halaqoh ({santriList.length})
+              Santri {halaqohName || "Halaqoh"} ({santriList.length})
             </h3>
             <Button
               variant="secondary"

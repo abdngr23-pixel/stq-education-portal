@@ -31,6 +31,12 @@ import {
   PERMISSION_MATRIX,
   ModuleName,
   DEMO_ACCOUNTS,
+  ALL_STAFF_ACCOUNTS,
+  ALL_MUDHABBIR_ACCOUNTS,
+  ALL_MUSYRIF_TAHFIZH_ACCOUNTS,
+  STAFF_HALAQOH_MAP,
+  getHalaqohByStaff,
+  type StaffAccountItem,
   ROLE_PERMITTED_CLUSTERS,
   ROLE_PERMITTED_TABS,
 } from "@/types/auth";
@@ -94,6 +100,8 @@ import {
 export default function Home() {
   const [selectedRole, setSelectedRole] = useState<Role>("MT");
   const [currentUserName, setCurrentUserName] = useState<string>(DEMO_ACCOUNTS["MT"].name);
+  const [activeStaffKey, setActiveStaffKey] = useState<string>("razan.mt");
+  const [halaqohFilter, setHalaqohFilter] = useState<string>("ALL");
   const [activeCluster, setActiveCluster] = useState<NavClusterId>("tahfizh");
   const [activeTab, setActiveTab] = useState<NavTabId | "beranda">("beranda");
   const [isPending, startTransition] = useTransition();
@@ -109,6 +117,9 @@ export default function Home() {
           setActiveCluster(demo.defaultCluster);
           setActiveTab("beranda");
         }
+        if (session.username) {
+          setActiveStaffKey(session.username);
+        }
       }
     });
   }, []);
@@ -119,6 +130,7 @@ export default function Home() {
     const demo = DEMO_ACCOUNTS[newRole];
     if (demo) {
       setCurrentUserName(demo.name);
+      setActiveStaffKey(demo.username);
       setActiveCluster(demo.defaultCluster);
       setActiveTab("beranda");
       setFeedback({
@@ -128,6 +140,22 @@ export default function Home() {
     }
     startTransition(async () => {
       await quickDemoLoginAction(newRole);
+    });
+  };
+
+  // Handle direct switch to specific staff / mudhabbir account
+  const handleSwitchStaff = (account: StaffAccountItem) => {
+    setSelectedRole(account.role);
+    setCurrentUserName(account.name);
+    setActiveStaffKey(account.username);
+    setActiveCluster(account.defaultCluster);
+    setActiveTab("beranda");
+    setFeedback({
+      type: "success",
+      text: `Beralih ke akun pembina: ${account.name} (${account.roleTitle} — ${account.halaqohName}). Santri setoran otomatis disesuaikan!`,
+    });
+    startTransition(async () => {
+      await quickDemoLoginAction(account.username);
     });
   };
 
@@ -291,6 +319,44 @@ export default function Home() {
   const [surahSelesai, setSurahSelesai] = useState("Ali 'Imran");
   const [ayatSelesai, setAyatSelesai] = useState("20");
   const [catatan, setCatatan] = useState("");
+
+  // -------------------------------------------------------------
+  // LOGIKA FILTER SANTRI DINAMIS PER KELOMPOK HALAQOH
+  // -------------------------------------------------------------
+  // Kelompok halaqoh aktif berdasarkan profil ustadz login saat ini
+  const currentHalaqohName = React.useMemo(() => {
+    const byStaff = getHalaqohByStaff(currentUserName) || getHalaqohByStaff(activeStaffKey);
+    if (byStaff) return byStaff;
+    if (selectedRole === "MT") return "Halaqoh Ust. Razan Mufli, S.Pd";
+    if (selectedRole === "PH") return "Halaqoh Ust. Kamal";
+    return null;
+  }, [currentUserName, activeStaffKey, selectedRole]);
+
+  // Santri yang tampil di modul setoran tahfizh:
+  // Jika MT / PH: terisolasi HANYA santri binaan halaqohnya!
+  // Jika KS / ADM: dapat melihat semua atau memfilter per halaqoh
+  const displayedSantriTahfizh = React.useMemo(() => {
+    if (selectedRole === "MT" || selectedRole === "PH") {
+      if (currentHalaqohName) {
+        const filtered = santriList.filter((s) => s.halaqoh === currentHalaqohName);
+        if (filtered.length > 0) return filtered;
+      }
+    }
+    if (halaqohFilter && halaqohFilter !== "ALL") {
+      return santriList.filter((s) => s.halaqoh === halaqohFilter);
+    }
+    return santriList;
+  }, [selectedRole, currentHalaqohName, halaqohFilter, santriList]);
+
+  // Sinkronisasi: pastikan selectedSantriNis selalu berada di dalam displayedSantriTahfizh
+  useEffect(() => {
+    if (displayedSantriTahfizh.length > 0) {
+      const exists = displayedSantriTahfizh.some((s) => s.nis === selectedSantriNis);
+      if (!exists) {
+        setSelectedSantriNis(displayedSantriTahfizh[0].nis);
+      }
+    }
+  }, [displayedSantriTahfizh, selectedSantriNis]);
 
   // -------------------------------------------------------------
   // TAB 2: AKADEMIK & RAPOR (KURIKULUM RESMI BAB VI & VII)
@@ -1150,11 +1216,13 @@ Mudir STQ Darul Ulum Cendekia,
   return (
     <div className="min-h-screen flex flex-col bg-sky-50 pb-20 md:pb-12">
       {/* Top Navigation */}
-      {/* Top Navigation with interactive Role Switcher */}
+      {/* Top Navigation with interactive Role & Staff Switcher */}
       <TopNavbar
         currentRole={selectedRole}
         userName={currentUserName}
+        currentHalaqoh={currentHalaqohName}
         onRoleChange={handleRoleChange}
+        onSwitchStaff={handleSwitchStaff}
       />
 
       {/* Main Container */}
@@ -1189,6 +1257,14 @@ Mudir STQ Darul Ulum Cendekia,
             <Badge variant={roleInfo.badgeVariant} size="sm" className="font-bold">
               {selectedRole} — {roleInfo.title}
             </Badge>
+            {currentHalaqohName && (
+              <>
+                <span className="text-slate-300">•</span>
+                <span className="text-emerald-800 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  {currentHalaqohName} ({displayedSantriTahfizh.length} Santri)
+                </span>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-2 text-slate-500 text-[11px]">
             <span>Hak Akses: <strong className="text-emerald-700">{allowedClusters.length} Kluster, {allowedTabs.length} Modul</strong></span>
@@ -1270,7 +1346,8 @@ Mudir STQ Darul Ulum Cendekia,
 
             {selectedRole === "MT" && (
               <DashboardMusyrifTahfizh
-                santriList={santriList}
+                santriList={displayedSantriTahfizh}
+                halaqohName={currentHalaqohName || undefined}
                 selectedSantriNis={selectedSantriNis}
                 onSelectSantriNis={setSelectedSantriNis}
                 inputJenis={inputJenis}
@@ -1483,11 +1560,61 @@ Mudir STQ Darul Ulum Cendekia,
         {allowedTabs.includes("tahfizh") && activeTab === "tahfizh" && (
           <div className="space-y-6">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <StatCard title="Total Santri" value="184" description="Halaqoh Aktif" icon={<Users className="h-5 w-5" />} badgeText="3 Halaqoh Aktif" badgeVariant="green" accentBorder />
+              <StatCard
+                title="Santri Terdaftar"
+                value={`${displayedSantriTahfizh.length} Santri`}
+                description={currentHalaqohName || "Seluruh Halaqoh"}
+                icon={<Users className="h-5 w-5" />}
+                badgeText={currentHalaqohName ? "Halaqoh Binaan" : "Semua Halaqoh"}
+                badgeVariant="green"
+                accentBorder
+              />
               <StatCard title="Setoran Hari Ini" value="38" description="Target: 45 santri" icon={<BookCheck className="h-5 w-5" />} badgeText="84% Tercapai" badgeVariant="gold" />
               <StatCard title="Rata-rata Hafalan" value="4.2 Juz" description="Target: 5 Juz" icon={<TrendingUp className="h-5 w-5" />} badgeText="Sesuai Target" badgeVariant="sky" />
               <StatCard title="Ikhtibar Pending" value="5" description="Tahap I & II" icon={<Award className="h-5 w-5" />} badgeText="Menunggu Ujian" badgeVariant="orange" />
             </div>
+
+            {/* Banner Halaqoh Binaan (Untuk MT & PH) / Filter Supervisi (Untuk KS & ADM) */}
+            {["KS", "ADM"].includes(selectedRole) ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-3xl bg-white border border-slate-200/90 shadow-2xs">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <Badge variant="gold" size="sm" className="font-bold">Supervisi Mudir / TU</Badge>
+                  <span className="text-xs font-bold text-slate-700">Filter Kelompok Halaqoh:</span>
+                  <select
+                    value={halaqohFilter}
+                    onChange={(e) => setHalaqohFilter(e.target.value)}
+                    className="px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-[#0E7C3A]/20"
+                  >
+                    <option value="ALL">Semua Kelompok Halaqoh (57 Santri)</option>
+                    {MASTER_HALAQOH_LIST.map((h) => (
+                      <option key={h.id} value={h.nama}>
+                        {h.nama} ({h.pembina.nama})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <span className="text-xs text-slate-500 font-medium">
+                  Menampilkan: <strong className="text-emerald-800">{displayedSantriTahfizh.length}</strong> dari 57 santri
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-3xl bg-emerald-50/90 border border-emerald-200/90 shadow-2xs">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <span className="px-2.5 py-1 rounded-xl bg-[#0E7C3A] text-white text-[10px] font-extrabold uppercase tracking-wide">
+                    Halaqoh Binaan
+                  </span>
+                  <span className="font-heading font-bold text-sm text-emerald-950">
+                    {currentHalaqohName}
+                  </span>
+                  <Badge variant="green" size="sm" className="font-bold">
+                    {displayedSantriTahfizh.length} Santri Terdaftar
+                  </Badge>
+                </div>
+                <div className="text-xs text-emerald-900 font-medium flex items-center gap-1.5">
+                  <span>Pembina: <strong className="text-emerald-950">{currentUserName}</strong></span>
+                </div>
+              </div>
+            )}
 
             {/* Navigasi Sub-Modul: Rekap Laporan Bulanan (Excel STQ DUC) vs Form Input Cepat */}
             <div className="flex flex-wrap items-center justify-between gap-3 p-2 rounded-3xl bg-white border border-slate-200 shadow-xs">
@@ -1545,14 +1672,21 @@ Mudir STQ Darul Ulum Cendekia,
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="space-y-1.5">
-                        <label className="text-xs font-semibold text-slate-700">Pilih Santri</label>
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-700">Pilih Santri Menyimak</label>
+                          <span className="text-[11px] text-emerald-700 font-medium">
+                            {displayedSantriTahfizh.length} santri dalam kelompok
+                          </span>
+                        </div>
                         <select
                           value={selectedSantriNis}
                           onChange={(e) => setSelectedSantriNis(e.target.value)}
-                          className="w-full min-h-[44px] px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-sm"
+                          className="w-full min-h-[44px] px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-sm font-medium"
                         >
-                          {santriList.map((s) => (
-                            <option key={s.nis} value={s.nis}>{s.nama} ({s.nis})</option>
+                          {displayedSantriTahfizh.map((s) => (
+                            <option key={s.nis} value={s.nis}>
+                              {s.nama} ({s.nis} - Kelas {s.kelas} - {s.capaianJuz} Juz)
+                            </option>
                           ))}
                         </select>
                       </div>
@@ -1638,8 +1772,12 @@ Mudir STQ Darul Ulum Cendekia,
                   <Card rounded="3xl">
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                       <div>
-                        <CardTitle>Santri Halaqoh</CardTitle>
-                        <CardDescription>Halaqoh Utsman bin Affan</CardDescription>
+                        <CardTitle>
+                          Santri {currentHalaqohName ? currentHalaqohName.replace("Halaqoh ", "") : "Halaqoh"} ({displayedSantriTahfizh.length})
+                        </CardTitle>
+                        <CardDescription>
+                          {currentHalaqohName || (halaqohFilter === "ALL" ? "Seluruh Santri DUC (57 Santri)" : halaqohFilter)}
+                        </CardDescription>
                       </div>
                       <Button
                         variant="secondary"
@@ -1648,9 +1786,9 @@ Mudir STQ Darul Ulum Cendekia,
                         leftIcon={<Download className="h-3.5 w-3.5 text-emerald-700" />}
                         onClick={() =>
                           exportToCSV(
-                            "Rekap_Tahfizh_Santri_STQ",
+                            `Rekap_Tahfizh_${(currentHalaqohName || halaqohFilter).replace(/\s+/g, "_")}`,
                             ["Nama Santri", "NIS", "Kelas", "Halaqoh", "Capaian Juz", "Target Juz", "Setoran Terakhir", "Nilai Terakhir"],
-                            santriList.map((s) => [s.nama, s.nis, s.kelas, s.halaqoh, s.capaianJuz, s.targetJuz, s.setoranTerakhir, s.nilaiTerakhir])
+                            displayedSantriTahfizh.map((s) => [s.nama, s.nis, s.kelas, s.halaqoh, s.capaianJuz, s.targetJuz, s.setoranTerakhir, s.nilaiTerakhir])
                           )
                         }
                       >
@@ -1658,7 +1796,7 @@ Mudir STQ Darul Ulum Cendekia,
                       </Button>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                      {santriList.map((s) => (
+                      {displayedSantriTahfizh.map((s) => (
                         <div key={s.nis} className="p-3 rounded-2xl border border-slate-200/80 bg-slate-50/50 space-y-1.5 text-xs">
                           <div className="flex justify-between items-center">
                             <span className="font-bold text-slate-800">{s.nama}</span>

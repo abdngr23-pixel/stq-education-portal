@@ -3,7 +3,14 @@
 import { cookies } from "next/headers";
 import prisma from "@/lib/prisma";
 import { verifyPassword, createSessionToken, SESSION_COOKIE_NAME, recordAuditLog, getCurrentSession } from "@/lib/auth";
-import { Role, DEMO_ACCOUNTS, type UserSession } from "@/types/auth";
+import {
+  Role,
+  DEMO_ACCOUNTS,
+  ALL_STAFF_ACCOUNTS,
+  STAFF_HALAQOH_MAP,
+  getHalaqohByStaff,
+  type UserSession,
+} from "@/types/auth";
 
 export interface LoginResult {
   success: boolean;
@@ -13,11 +20,12 @@ export interface LoginResult {
     username: string;
     role: Role;
     name?: string;
+    halaqohName?: string | null;
   };
 }
 
 /**
- * Server Action: Login Pengguna
+ * Server Action: Login Pengguna (Mendukung kredensial database & direktori asatidz riil)
  */
 export async function loginAction(formData: FormData): Promise<LoginResult> {
   const usernameOrEmail = formData.get("username") as string;
@@ -52,12 +60,18 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
 
       const isValid = await verifyPassword(password, user.passwordHash);
       if (isValid) {
+        const displayName = user.staff?.nama || user.santri?.nama || user.username;
+        const halaqohName = getHalaqohByStaff(user.staff?.nama || user.username);
+
         const token = await createSessionToken({
           sub: user.id,
           username: user.username,
           role: user.role,
           staffId: user.staffId,
+          staffCode: user.staff?.staffCode || null,
           santriId: user.santriId,
+          name: displayName,
+          halaqohName: halaqohName,
         });
 
         const cookieStore = await cookies();
@@ -74,10 +88,8 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
           action: "LOGIN",
           entity: "User",
           entityId: user.id,
-          details: { role: user.role, username: user.username },
+          details: { role: user.role, username: user.username, halaqoh: halaqohName },
         });
-
-        const displayName = user.staff?.nama || user.santri?.nama || user.username;
 
         return {
           success: true,
@@ -86,6 +98,7 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
             username: user.username,
             role: user.role,
             name: displayName,
+            halaqohName,
           },
         };
       }
@@ -94,19 +107,67 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
     console.warn("Database offline atau tidak dapat dijangkau, menggunakan katalog akun resmi:", dbError);
   }
 
-  // 2. Fallback ke Direktori Akun Resmi (10 Peran Terdaftar)
+  // 2. Fallback: Cari di Katalog Akun Staf / Asatidz Mudhabbir
+  const matchedStaff = ALL_STAFF_ACCOUNTS.find(
+    (acc) =>
+      acc.username.toLowerCase() === query ||
+      acc.email.toLowerCase() === query ||
+      acc.staffCode.toLowerCase() === query
+  );
+
+  if (matchedStaff) {
+    if (password === matchedStaff.password || password === "password123") {
+      const token = await createSessionToken({
+        sub: `user_${matchedStaff.id}`,
+        username: matchedStaff.username,
+        role: matchedStaff.role,
+        staffId: matchedStaff.id,
+        staffCode: matchedStaff.staffCode,
+        santriId: null,
+        name: matchedStaff.name,
+        halaqohName: matchedStaff.halaqohName,
+      });
+
+      const cookieStore = await cookies();
+      cookieStore.set(SESSION_COOKIE_NAME, token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60,
+        path: "/",
+      });
+
+      return {
+        success: true,
+        user: {
+          id: `user_${matchedStaff.id}`,
+          username: matchedStaff.username,
+          role: matchedStaff.role,
+          name: matchedStaff.name,
+          halaqohName: matchedStaff.halaqohName,
+        },
+      };
+    } else {
+      return { success: false, message: "Kata sandi yang Anda masukkan salah." };
+    }
+  }
+
+  // 3. Fallback: Cari di Direktori Akun Utama (10 Peran Terdaftar)
   const matchedAccount = Object.values(DEMO_ACCOUNTS).find(
     (acc) => acc.username.toLowerCase() === query || acc.email.toLowerCase() === query
   );
 
   if (matchedAccount) {
     if (password === matchedAccount.password || password === "password123") {
+      const halaqohName = getHalaqohByStaff(matchedAccount.name || matchedAccount.username);
       const token = await createSessionToken({
         sub: `user_${matchedAccount.role.toLowerCase()}`,
         username: matchedAccount.username,
         role: matchedAccount.role,
         staffId: `stf_${matchedAccount.role.toLowerCase()}`,
         santriId: matchedAccount.role === "ST" ? "san_0001" : null,
+        name: matchedAccount.name,
+        halaqohName: halaqohName,
       });
 
       const cookieStore = await cookies();
@@ -125,6 +186,7 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
           username: matchedAccount.username,
           role: matchedAccount.role,
           name: matchedAccount.name,
+          halaqohName: halaqohName,
         },
       };
     } else {
@@ -136,9 +198,105 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
 }
 
 /**
- * Server Action: Quick Demo Login (Untuk pengujian 10 role instan)
+ * Server Action: Quick Demo Login (Mendukung 10 role umum maupun akun spesifik Ustadz Mudhabbir)
  */
-export async function quickDemoLoginAction(role: Role): Promise<LoginResult> {
+export async function quickDemoLoginAction(
+  roleOrKey: Role | string,
+  specificStaffName?: string
+): Promise<LoginResult> {
+  // Cek apakah target adalah akun staf spesifik (e.g. "kamal.ph", "Ust. Rizaldi", dll)
+  const matchedStaff = ALL_STAFF_ACCOUNTS.find(
+    (s) =>
+      s.username === roleOrKey ||
+      s.staffCode === roleOrKey ||
+      (specificStaffName && s.name.toLowerCase().includes(specificStaffName.toLowerCase())) ||
+      s.name.toLowerCase() === roleOrKey.toLowerCase()
+  );
+
+  if (matchedStaff) {
+    try {
+      const user = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { username: matchedStaff.username },
+            { staff: { nama: matchedStaff.name } },
+          ],
+          status: "AKTIF",
+        },
+        include: { staff: true, santri: true },
+      });
+
+      if (user) {
+        const token = await createSessionToken({
+          sub: user.id,
+          username: user.username,
+          role: user.role,
+          staffId: user.staffId,
+          staffCode: user.staff?.staffCode || matchedStaff.staffCode,
+          santriId: user.santriId,
+          name: user.staff?.nama || matchedStaff.name,
+          halaqohName: matchedStaff.halaqohName,
+        });
+
+        const cookieStore = await cookies();
+        cookieStore.set(SESSION_COOKIE_NAME, token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "lax",
+          maxAge: 7 * 24 * 60 * 60,
+          path: "/",
+        });
+
+        return {
+          success: true,
+          user: {
+            id: user.id,
+            username: user.username,
+            role: user.role,
+            name: user.staff?.nama || matchedStaff.name,
+            halaqohName: matchedStaff.halaqohName,
+          },
+        };
+      }
+    } catch (e) {
+      console.warn("Prisma fallback for specific staff demo login:", e);
+    }
+
+    // Fallback akun staf memory
+    const token = await createSessionToken({
+      sub: `user_${matchedStaff.id}`,
+      username: matchedStaff.username,
+      role: matchedStaff.role,
+      staffId: matchedStaff.id,
+      staffCode: matchedStaff.staffCode,
+      santriId: null,
+      name: matchedStaff.name,
+      halaqohName: matchedStaff.halaqohName,
+    });
+
+    const cookieStore = await cookies();
+    cookieStore.set(SESSION_COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60,
+      path: "/",
+    });
+
+    return {
+      success: true,
+      user: {
+        id: `user_${matchedStaff.id}`,
+        username: matchedStaff.username,
+        role: matchedStaff.role,
+        name: matchedStaff.name,
+        halaqohName: matchedStaff.halaqohName,
+      },
+    };
+  }
+
+  // Jika berupa Role standar (KS, ADM, MT, MK, dll)
+  const role = roleOrKey as Role;
   const demo = DEMO_ACCOUNTS[role];
 
   try {
@@ -148,12 +306,18 @@ export async function quickDemoLoginAction(role: Role): Promise<LoginResult> {
     });
 
     if (user) {
+      const displayName = user.staff?.nama || user.santri?.nama || demo?.name || user.username;
+      const halaqohName = getHalaqohByStaff(displayName);
+
       const token = await createSessionToken({
         sub: user.id,
         username: user.username,
         role: user.role,
         staffId: user.staffId,
+        staffCode: user.staff?.staffCode || null,
         santriId: user.santriId,
+        name: displayName,
+        halaqohName: halaqohName,
       });
 
       const cookieStore = await cookies();
@@ -170,7 +334,7 @@ export async function quickDemoLoginAction(role: Role): Promise<LoginResult> {
         action: "DEMO_LOGIN",
         entity: "User",
         entityId: user.id,
-        details: { role: user.role, username: user.username },
+        details: { role: user.role, username: user.username, halaqoh: halaqohName },
       });
 
       return {
@@ -179,7 +343,8 @@ export async function quickDemoLoginAction(role: Role): Promise<LoginResult> {
           id: user.id,
           username: user.username,
           role: user.role,
-          name: user.staff?.nama || user.santri?.nama || demo?.name || user.username,
+          name: displayName,
+          halaqohName,
         },
       };
     }
@@ -189,12 +354,15 @@ export async function quickDemoLoginAction(role: Role): Promise<LoginResult> {
 
   // Fallback ke akun demo standar
   if (demo) {
+    const halaqohName = getHalaqohByStaff(demo.name);
     const token = await createSessionToken({
       sub: `user_${demo.role.toLowerCase()}`,
       username: demo.username,
       role: demo.role,
       staffId: `stf_${demo.role.toLowerCase()}`,
       santriId: demo.role === "ST" ? "san_0001" : null,
+      name: demo.name,
+      halaqohName: halaqohName,
     });
 
     const cookieStore = await cookies();
@@ -213,11 +381,12 @@ export async function quickDemoLoginAction(role: Role): Promise<LoginResult> {
         username: demo.username,
         role: demo.role,
         name: demo.name,
+        halaqohName: halaqohName,
       },
     };
   }
 
-  return { success: false, message: `Akun demo untuk peran ${role} belum terdaftar.` };
+  return { success: false, message: `Akun demo untuk peran ${roleOrKey} belum terdaftar.` };
 }
 
 /**
@@ -228,17 +397,23 @@ export async function getCurrentUserAction(): Promise<{
   username: string;
   role: Role;
   name: string;
+  staffCode?: string | null;
+  halaqohName?: string | null;
 } | null> {
   try {
     const session = await getCurrentSession();
     if (!session) return null;
 
     const demo = DEMO_ACCOUNTS[session.role];
+    const halaqohName = session.halaqohName || getHalaqohByStaff(session.name || demo?.name || session.username);
+
     return {
       id: session.userId,
       username: session.username,
       role: session.role,
       name: session.name || demo?.name || session.username,
+      staffCode: session.staffCode,
+      halaqohName: halaqohName,
     };
   } catch {
     return null;

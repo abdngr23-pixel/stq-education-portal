@@ -173,3 +173,145 @@ describe('Aturan Inventaris & Logistik Asrama', () => {
     }, /Stok tidak mencukupi/);
   });
 });
+
+describe('Aturan Kelompok Halaqoh Pembina & Filter Santri (Google Sheets Riil)', () => {
+  // Simulasi Master Data 57 Santri Sesuai Google Sheets
+  const santriDataMaster = [
+    // 1. Halaqoh Ust. Razan Mufli, S.Pd (5 Santri)
+    { nis: 'SAN-0001', nama: 'Obama Ozearld Egberted Turizqi', halaqoh: 'Halaqoh Ust. Razan Mufli, S.Pd' },
+    { nis: 'SAN-0002', nama: 'Muhammad Fardhan', halaqoh: 'Halaqoh Ust. Razan Mufli, S.Pd' },
+    { nis: 'SAN-0003', nama: 'Muh. Fauzan', halaqoh: 'Halaqoh Ust. Razan Mufli, S.Pd' },
+    { nis: 'SAN-0004', nama: 'Khubaib', halaqoh: 'Halaqoh Ust. Razan Mufli, S.Pd' },
+    { nis: 'SAN-0005', nama: 'Abd. Riziq Ardi', halaqoh: 'Halaqoh Ust. Razan Mufli, S.Pd' },
+
+    // 2. Halaqoh Ust. Kamal (9 Santri)
+    { nis: 'SAN-0006', nama: 'Muhammad Amirul Hanif Al-Fatih', halaqoh: 'Halaqoh Ust. Kamal' },
+    { nis: 'SAN-0007', nama: 'Muh. Riski Isral Wijaya', halaqoh: 'Halaqoh Ust. Kamal' },
+    { nis: 'SAN-0008', nama: 'Muhammad Ridwan Kamil', halaqoh: 'Halaqoh Ust. Kamal' },
+    { nis: 'SAN-0009', nama: 'Ahmad Ripai', halaqoh: 'Halaqoh Ust. Kamal' },
+    { nis: 'SAN-0010', nama: 'Muhammad Mikhael', halaqoh: 'Halaqoh Ust. Kamal' },
+    { nis: 'SAN-0011', nama: 'Arya Idris', halaqoh: 'Halaqoh Ust. Kamal' },
+    { nis: 'SAN-0012', nama: "Muhammad Ghozy Ma'Arif", halaqoh: 'Halaqoh Ust. Kamal' },
+    { nis: 'SAN-0013', nama: 'Muhammad Walied', halaqoh: 'Halaqoh Ust. Kamal' },
+    { nis: 'SAN-0014', nama: 'Hilmy Mutawakkil Al Muntashir', halaqoh: 'Halaqoh Ust. Kamal' },
+
+    // 3. Halaqoh Ust. Rizaldi (10 Santri)
+    { nis: 'SAN-0015', nama: 'Achmad Sufiyan', halaqoh: 'Halaqoh Ust. Rizaldi' },
+    { nis: 'SAN-0016', nama: 'Muh. Rifki Pria Herman', halaqoh: 'Halaqoh Ust. Rizaldi' },
+    { nis: 'SAN-0017', nama: 'Muh Fadhlih Aksa', halaqoh: 'Halaqoh Ust. Rizaldi' },
+    { nis: 'SAN-0018', nama: 'Muhammad Rizky Ashari', halaqoh: 'Halaqoh Ust. Rizaldi' },
+    { nis: 'SAN-0019', nama: 'Hafidzh Asri', halaqoh: 'Halaqoh Ust. Rizaldi' },
+    { nis: 'SAN-0020', nama: "Qonit Su'Adiy", halaqoh: 'Halaqoh Ust. Rizaldi' },
+    { nis: 'SAN-0021', nama: 'Raja Muddin', halaqoh: 'Halaqoh Ust. Rizaldi' },
+    { nis: 'SAN-0022', nama: 'M. Alief Pratama', halaqoh: 'Halaqoh Ust. Rizaldi' },
+    { nis: 'SAN-0023', nama: 'Muh Fadhlan Aksa', halaqoh: 'Halaqoh Ust. Rizaldi' },
+    { nis: 'SAN-0024', nama: 'Muhammad Azaky', halaqoh: 'Halaqoh Ust. Rizaldi' },
+
+    // 4. Halaqoh Ust. Abi Hudzaifah (10 Santri)
+    { nis: 'SAN-0025', nama: 'Syahrul Haq', halaqoh: 'Halaqoh Ust. Abi Hudzaifah' },
+    { nis: 'SAN-0026', nama: 'Iksanul Haq', halaqoh: 'Halaqoh Ust. Abi Hudzaifah' },
+    { nis: 'SAN-0027', nama: 'M. Alamsyah', halaqoh: 'Halaqoh Ust. Abi Hudzaifah' },
+    { nis: 'SAN-0028', nama: 'Ahmad Fausan Al Farisi', halaqoh: 'Halaqoh Ust. Abi Hudzaifah' },
+    { nis: 'SAN-0029', nama: 'Abdul Karim', halaqoh: 'Halaqoh Ust. Abi Hudzaifah' },
+    { nis: 'SAN-0030', nama: 'Muhammad Asfa Ilham Ridwan', halaqoh: 'Halaqoh Ust. Abi Hudzaifah' },
+    { nis: 'SAN-0031', nama: 'Khaerul Azam Abu Bakar', halaqoh: 'Halaqoh Ust. Abi Hudzaifah' },
+    { nis: 'SAN-0032', nama: 'Muh. Alif Ihsan', halaqoh: 'Halaqoh Ust. Abi Hudzaifah' },
+    { nis: 'SAN-0033', nama: 'Muh. Imran Maulana Sahid', halaqoh: 'Halaqoh Ust. Abi Hudzaifah' },
+    { nis: 'SAN-0034', nama: 'Affan Garatta', halaqoh: 'Halaqoh Ust. Abi Hudzaifah' },
+
+    // 5. Halaqoh Ust. Alwan (13 Santri)
+    { nis: 'SAN-0035', nama: 'Laode Hisyam Arqana', halaqoh: 'Halaqoh Ust. Alwan' },
+    { nis: 'SAN-0036', nama: 'Xavier Omar Syarif Hidayatullah', halaqoh: 'Halaqoh Ust. Alwan' },
+    { nis: 'SAN-0037', nama: 'Muhammad Syafiq', halaqoh: 'Halaqoh Ust. Alwan' },
+    { nis: 'SAN-0038', nama: 'Andi Muhammad Ghazi Al Fatih', halaqoh: 'Halaqoh Ust. Alwan' },
+    { nis: 'SAN-0039', nama: 'Zulkifli', halaqoh: 'Halaqoh Ust. Alwan' },
+    { nis: 'SAN-0040', nama: 'M. Dzul Jalaali Walikhrom Rf', halaqoh: 'Halaqoh Ust. Alwan' },
+    { nis: 'SAN-0041', nama: 'Abdullah Khairun Nizham', halaqoh: 'Halaqoh Ust. Alwan' },
+    { nis: 'SAN-0042', nama: 'Andi Muh Rizky S', halaqoh: 'Halaqoh Ust. Alwan' },
+    { nis: 'SAN-0043', nama: 'Muhammad Rifky Firjatullah', halaqoh: 'Halaqoh Ust. Alwan' },
+    { nis: 'SAN-0044', nama: 'Rahmatullah S.', halaqoh: 'Halaqoh Ust. Alwan' },
+    { nis: 'SAN-0045', nama: 'Ade Naufal', halaqoh: 'Halaqoh Ust. Alwan' },
+    { nis: 'SAN-0046', nama: 'Hafiz Abd Aziz', halaqoh: 'Halaqoh Ust. Alwan' },
+    { nis: 'SAN-0047', nama: 'Badar Fayyadh Nabil', halaqoh: 'Halaqoh Ust. Alwan' },
+
+    // 6. Halaqoh Ustadzah Lisa Dwina Fitri (10 Santri)
+    { nis: 'SAN-0048', nama: 'Habiba Asri', halaqoh: 'Halaqoh Ustadzah Lisa Dwina Fitri' },
+    { nis: 'SAN-0049', nama: 'Meisya Arrahma', halaqoh: 'Halaqoh Ustadzah Lisa Dwina Fitri' },
+    { nis: 'SAN-0050', nama: 'Rahmawati', halaqoh: 'Halaqoh Ustadzah Lisa Dwina Fitri' },
+    { nis: 'SAN-0051', nama: 'Annisa Az Zahrah A.', halaqoh: 'Halaqoh Ustadzah Lisa Dwina Fitri' },
+    { nis: 'SAN-0052', nama: 'Aisyah Muthmainnah', halaqoh: 'Halaqoh Ustadzah Lisa Dwina Fitri' },
+    { nis: 'SAN-0053', nama: 'Nur Aqsa', halaqoh: 'Halaqoh Ustadzah Lisa Dwina Fitri' },
+    { nis: 'SAN-0054', nama: 'Sri Ramadhaniyanti', halaqoh: 'Halaqoh Ustadzah Lisa Dwina Fitri' },
+    { nis: 'SAN-0055', nama: 'Farhana', halaqoh: 'Halaqoh Ustadzah Lisa Dwina Fitri' },
+    { nis: 'SAN-0056', nama: 'Rushaifa Rustam', halaqoh: 'Halaqoh Ustadzah Lisa Dwina Fitri' },
+    { nis: 'SAN-0057', nama: 'Naafilah Kaltsum Aslan', halaqoh: 'Halaqoh Ustadzah Lisa Dwina Fitri' },
+  ];
+
+  function filterSantriByRoleOrStaff(role: string, currentStaffHalaqoh: string | null, halaqohFilter: string = 'ALL') {
+    if (role === 'MT' || role === 'PH') {
+      if (currentStaffHalaqoh) {
+        return santriDataMaster.filter((s) => s.halaqoh === currentStaffHalaqoh);
+      }
+    }
+    if (halaqohFilter && halaqohFilter !== 'ALL') {
+      return santriDataMaster.filter((s) => s.halaqoh === halaqohFilter);
+    }
+    return santriDataMaster;
+  }
+
+  it('total master santri dari seluruh 6 halaqoh harus tepat 57 santri', () => {
+    assert.equal(santriDataMaster.length, 57);
+  });
+
+  it('login sebagai Ust. Razan Mufli, S.Pd (MT) wajib mengisolasi hanya 5 santri halaqohnya', () => {
+    const res = filterSantriByRoleOrStaff('MT', 'Halaqoh Ust. Razan Mufli, S.Pd');
+    assert.equal(res.length, 5);
+    assert.equal(res[0].nis, 'SAN-0001');
+    assert.equal(res[4].nis, 'SAN-0005');
+  });
+
+  it('login sebagai Ust. Kamal (PH) wajib mengisolasi hanya 9 santri halaqohnya', () => {
+    const res = filterSantriByRoleOrStaff('PH', 'Halaqoh Ust. Kamal');
+    assert.equal(res.length, 9);
+    assert.equal(res[0].nis, 'SAN-0006');
+    assert.equal(res[8].nis, 'SAN-0014');
+  });
+
+  it('login sebagai Ust. Rizaldi (PH) wajib mengisolasi hanya 10 santri halaqohnya', () => {
+    const res = filterSantriByRoleOrStaff('PH', 'Halaqoh Ust. Rizaldi');
+    assert.equal(res.length, 10);
+    assert.equal(res[0].nis, 'SAN-0015');
+    assert.equal(res[9].nis, 'SAN-0024');
+  });
+
+  it('login sebagai Ust. Abi Hudzaifah (PH) wajib mengisolasi hanya 10 santri halaqohnya', () => {
+    const res = filterSantriByRoleOrStaff('PH', 'Halaqoh Ust. Abi Hudzaifah');
+    assert.equal(res.length, 10);
+    assert.equal(res[0].nis, 'SAN-0025');
+    assert.equal(res[9].nis, 'SAN-0034');
+  });
+
+  it('login sebagai Ust. Alwan (PH) wajib mengisolasi hanya 13 santri halaqohnya', () => {
+    const res = filterSantriByRoleOrStaff('PH', 'Halaqoh Ust. Alwan');
+    assert.equal(res.length, 13);
+    assert.equal(res[0].nis, 'SAN-0035');
+    assert.equal(res[12].nis, 'SAN-0047');
+  });
+
+  it('login sebagai Ustadzah Lisa Dwina Fitri (MT) wajib mengisolasi hanya 10 santriwati halaqohnya', () => {
+    const res = filterSantriByRoleOrStaff('MT', 'Halaqoh Ustadzah Lisa Dwina Fitri');
+    assert.equal(res.length, 10);
+    assert.equal(res[0].nis, 'SAN-0048');
+    assert.equal(res[9].nis, 'SAN-0057');
+  });
+
+  it('login sebagai Mudir (KS) atau Admin (ADM) dapat melihat seluruh 57 santri dan memfilter per halaqoh', () => {
+    // Mode supervisi penuh (ALL)
+    const allSantri = filterSantriByRoleOrStaff('KS', null, 'ALL');
+    assert.equal(allSantri.length, 57);
+
+    // Mudir memilih filter Halaqoh Ust. Kamal
+    const filterKamal = filterSantriByRoleOrStaff('KS', null, 'Halaqoh Ust. Kamal');
+    assert.equal(filterKamal.length, 9);
+  });
+});
