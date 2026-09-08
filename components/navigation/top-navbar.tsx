@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { User as UserIcon, LogOut, LogIn, ChevronDown, ShieldCheck, Check, Users, BookOpen } from "lucide-react";
 import { ROLE_LABELS, Role, ALL_STAFF_ACCOUNTS, type StaffAccountItem } from "@/types/auth";
 import { logoutAction } from "@/app/actions/auth";
+import { INSTITUTION_CONFIG } from "@/lib/institution-config";
 
 export interface TopNavbarProps {
   currentRole?: Role;
@@ -77,7 +78,7 @@ export function TopNavbar({
         {/* Brand Logo & Title */}
         <Link href="/" className="flex items-center gap-2 sm:gap-3 group shrink-0">
           <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl sm:rounded-2xl bg-white border border-slate-200/80 p-0.5 sm:p-1 flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform duration-200 shrink-0">
-            <img src="/logo.png" alt="STQ Darul Ulum Cendekia" className="h-full w-full object-contain" />
+            <img src="/logo.png" alt={`Logo ${INSTITUTION_CONFIG.name}`} className="h-full w-full object-contain" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
@@ -85,11 +86,11 @@ export function TopNavbar({
                 STQ Portal
               </span>
               <span className="text-[9px] sm:text-[10px] text-[#C9990E] font-bold bg-amber-50 px-1.5 sm:px-2 py-0.5 rounded-full border border-amber-200/60 shrink-0">
-                DUC
+                IMN
               </span>
             </div>
             <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium hidden md:block">
-              Darul Ulum Cendekia
+              {INSTITUTION_CONFIG.shortName}
             </p>
           </div>
         </Link>

@@ -25,11 +25,21 @@ export async function GET(req: Request) {
     if (juz) where.juz = juz;
     if (jenis) where.jenis = jenis;
 
-    // Scope jika WS atau ST
-    if (session.role === 'WS' && session.santriId) {
+    // Scope jika WS atau ST (Audit P0 - A06 & A07)
+    if (session.role === 'WS' || session.role === 'ST') {
+      if (!session.santriId) {
+        return NextResponse.json(
+          { success: false, error: { code: 'FORBIDDEN', message: 'Akun Anda belum terhubung dengan data santri terdaftar.' } },
+          { status: 403 }
+        );
+      }
       where.santriId = session.santriId;
-    } else if (session.role === 'ST' && session.santriId) {
-      where.santriId = session.santriId;
+    } else if (session.role === 'MT' || session.role === 'PH') {
+      if (session.staffId) {
+        where.santri = {
+          halaqoh: { pembinaId: session.staffId },
+        };
+      }
     }
 
     const setoranList = await prisma.setoranTahfizh.findMany({
@@ -58,7 +68,7 @@ export async function GET(req: Request) {
 
 /**
  * POST /api/v1/setoran
- * Input setoran tahfizh baru (MT, PH, KS)
+ * Input setoran tahfizh baru (MT, PH, KS, ADM) dengan verifikasi halaqoh binaan
  */
 export async function POST(req: Request) {
   try {
@@ -90,6 +100,36 @@ export async function POST(req: Request) {
         { success: false, error: { code: 'NOT_FOUND', message: 'Data santri tidak ditemukan.' } },
         { status: 404 }
       );
+    }
+
+    // Verifikasi kepemilikan data ABAC: MT dan PH hanya boleh mencatat santri di halaqoh binaannya
+    if (session.role === 'MT' || session.role === 'PH') {
+      if (!session.staffId) {
+        return NextResponse.json(
+          { success: false, error: { code: 'FORBIDDEN', message: 'Profil staf pembina Anda belum terhubung.' } },
+          { status: 403 }
+        );
+      }
+
+      const isBinaan = await prisma.halaqoh.findFirst({
+        where: {
+          pembinaId: session.staffId,
+          santriList: { some: { id: santriId } },
+        },
+      });
+
+      if (!isBinaan) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'FORBIDDEN',
+              message: 'Akses Ditolak: Anda hanya berwenang mencatat setoran santri di dalam halaqoh binaan Anda.',
+            },
+          },
+          { status: 403 }
+        );
+      }
     }
 
     const count = await prisma.setoranTahfizh.count();

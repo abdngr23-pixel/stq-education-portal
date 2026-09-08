@@ -90,7 +90,7 @@ export function DashboardMusyrifTahfizh({
     description: string;
   }>({
     isOpen: false,
-    phone: "081299887766",
+    phone: "",
     recipientName: "Wali Santri",
     message: "",
     title: "Kirim Laporan via WhatsApp",
@@ -342,7 +342,7 @@ export function DashboardMusyrifTahfizh({
                     });
                     setWaDialog({
                       isOpen: true,
-                      phone: selectedSantri.noHpWali || "081299887766",
+                      phone: selectedSantri.noHpWali || "",
                       recipientName: selectedSantri.namaWali || `Wali ${selectedSantri.nama}`,
                       message: msg,
                       title: `Kirim Laporan Setoran ke Wali ${selectedSantri.nama}`,
@@ -427,7 +427,7 @@ export function DashboardMusyrifTahfizh({
                     });
                     setWaDialog({
                       isOpen: true,
-                      phone: s.noHpWali || "081299887766",
+                      phone: s.noHpWali || "",
                       recipientName: s.namaWali || `Wali ${s.nama}`,
                       message: msg,
                       title: `Kirim Progres Hafalan ${s.nama}`,

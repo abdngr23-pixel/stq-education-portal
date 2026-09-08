@@ -6,9 +6,18 @@ import { verifyCsrf } from "@/lib/security/csrf";
 import { getCorsHeaders, handleCorsPreflight } from "@/lib/security/cors";
 import { applySecureHeaders } from "@/lib/security/headers";
 
-const SECRET_KEY = new TextEncoder().encode(
-  process.env.AUTH_SECRET || "stq_portal_super_secret_session_key_min_32_characters_long_2026"
-);
+function getAuthSecretKey(): Uint8Array {
+  const secret = process.env.AUTH_SECRET;
+  if (!secret || secret.length < 32) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "FATAL SECURITY ERROR: AUTH_SECRET wajib dikonfigurasi minimal 32 karakter di lingkungan produksi."
+      );
+    }
+    return new TextEncoder().encode("stq_portal_dev_secret_key_min_32_characters_long_2026");
+  }
+  return new TextEncoder().encode(secret);
+}
 
 const SESSION_COOKIE_NAME = "stq_session_token";
 
@@ -132,7 +141,7 @@ export async function middleware(request: NextRequest) {
 
   if (token) {
     try {
-      const { payload } = await jwtVerify(token, SECRET_KEY);
+      const { payload } = await jwtVerify(token, getAuthSecretKey());
       sessionPayload = payload;
     } catch {
       // Token tidak valid atau kedaluwarsa

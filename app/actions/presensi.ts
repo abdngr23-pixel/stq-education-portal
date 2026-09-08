@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
 import { StatusAbsensi } from "@prisma/client";
 import { batchPresensiSchema, type BatchPresensiInput } from "@/lib/validations";
+import { getTodayWITADateString, getWITADayRange, parseWITADate } from "@/lib/wita-date";
 
 export interface PresensiItemPayload {
   santriId: string;
@@ -21,6 +22,8 @@ export interface SimpanBatchPresensiInput {
 
 /**
  * Server Action: Simpan Batch Presensi Shalat Berjamaah & Halaqoh
+ * Dilengkapi pencegahan duplikasi (idempotent upsert), proteksi izin aktif,
+ * dan kalkulasi tanggal operasional zona waktu WITA (Asia/Makassar).
  */
 export async function simpanBatchPresensiAction(input: SimpanBatchPresensiInput) {
   const session = await getCurrentSession();
@@ -44,9 +47,23 @@ export async function simpanBatchPresensiAction(input: SimpanBatchPresensiInput)
   }
 
   const { kegiatan, items } = validation.data;
-  const tanggalDate = input.tanggal ? new Date(input.tanggal) : new Date();
+  const witaDateStr = input.tanggal || getTodayWITADateString();
+  const { startOfDayUTC, endOfDayUTC } = getWITADayRange(witaDateStr);
+  const tanggalDate = parseWITADate(witaDateStr);
 
   try {
+    // 3. Ambil data izin aktif santri yang telah disetujui (A14: Mencegah santri izin menjadi ALFA)
+    const santriIds = items.map((i) => i.santriId);
+    const izinAktifList = await prisma.perizinanSantri.findMany({
+      where: {
+        santriId: { in: santriIds },
+        status: "DISETUJUI",
+        tanggalMulai: { lte: endOfDayUTC },
+        tanggalSelesai: { gte: startOfDayUTC },
+      },
+    });
+    const izinMap = new Map(izinAktifList.map((iz) => [iz.santriId, iz]));
+
     const counts = {
       HADIR: 0,
       MASBUK: 0,
@@ -56,25 +73,36 @@ export async function simpanBatchPresensiAction(input: SimpanBatchPresensiInput)
     };
 
     const recordsToCreate = items.map((item) => {
-      // Hitung counter
-      if (item.status in counts) {
-        counts[item.status as keyof typeof counts]++;
-      }
-
-      // Map ke Prisma enum: MASBUK disimpan sebagai HADIR dengan keterangan Masbuk
-      let prismaStatus: StatusAbsensi = StatusAbsensi.HADIR;
+      let effectiveStatus = item.status;
       let catatanGabungan = item.catatan || "";
 
-      if (item.status === "MASBUK") {
+      // Aturan Bisnis A14: Santri dengan izin resmi disetujui tidak boleh dihitung ALFA
+      if (izinMap.has(item.santriId) && (effectiveStatus === "ALFA" || effectiveStatus === "HADIR")) {
+        const izin = izinMap.get(item.santriId)!;
+        effectiveStatus = izin.jenis === "SAKIT" ? "SAKIT" : "IZIN";
+        catatanGabungan = catatanGabungan
+          ? `[Izin Resmi: ${izin.jenis} - ${izin.alasan}] ${catatanGabungan}`
+          : `[Izin Resmi: ${izin.jenis} - ${izin.alasan}]`;
+      }
+
+      // Hitung counter
+      if (effectiveStatus in counts) {
+        counts[effectiveStatus as keyof typeof counts]++;
+      }
+
+      // Map ke Prisma enum: MASBUK disimpan sebagai HADIR dengan catatan [Masbuk]
+      let prismaStatus: StatusAbsensi = StatusAbsensi.HADIR;
+
+      if (effectiveStatus === "MASBUK") {
         prismaStatus = StatusAbsensi.HADIR;
         catatanGabungan = catatanGabungan
           ? `[Masbuk] ${catatanGabungan}`
           : "[Masbuk] Terlambat masuk shaf";
-      } else if (item.status === "IZIN") {
+      } else if (effectiveStatus === "IZIN") {
         prismaStatus = StatusAbsensi.IZIN;
-      } else if (item.status === "SAKIT") {
+      } else if (effectiveStatus === "SAKIT") {
         prismaStatus = StatusAbsensi.SAKIT;
-      } else if (item.status === "ALFA") {
+      } else if (effectiveStatus === "ALFA") {
         prismaStatus = StatusAbsensi.ALFA;
       }
 
@@ -88,9 +116,19 @@ export async function simpanBatchPresensiAction(input: SimpanBatchPresensiInput)
       };
     });
 
-    // Simpan batch ke Prisma PostgreSQL
-    await prisma.absensi.createMany({
-      data: recordsToCreate,
+    // 4. Atomic Transaction A13: Hapus rekaman presensi sebelumnya pada tanggal & sesi yang sama lalu simpan data baru
+    await prisma.$transaction(async (tx) => {
+      await tx.absensi.deleteMany({
+        where: {
+          santriId: { in: santriIds },
+          kegiatan,
+          tanggal: { gte: startOfDayUTC, lte: endOfDayUTC },
+        },
+      });
+
+      await tx.absensi.createMany({
+        data: recordsToCreate,
+      });
     });
 
     // Catat ke log audit
@@ -100,6 +138,7 @@ export async function simpanBatchPresensiAction(input: SimpanBatchPresensiInput)
       entity: "ABSENSI",
       details: {
         kegiatan,
+        tanggalWITA: witaDateStr,
         total: items.length,
         counts,
         description: `Mencatat presensi ${kegiatan} untuk ${items.length} santri (Hadir: ${counts.HADIR + counts.MASBUK}, Sakit: ${counts.SAKIT}, Izin: ${counts.IZIN}, Alpa: ${counts.ALFA}).`,
@@ -111,37 +150,23 @@ export async function simpanBatchPresensiAction(input: SimpanBatchPresensiInput)
       message: `Alhamdulillah! Presensi ${kegiatan} (${items.length} santri) berhasil dicatat ke sistem.`,
       data: {
         kegiatan,
-        tanggal: tanggalDate.toISOString(),
+        tanggal: witaDateStr,
         total: items.length,
         counts,
       },
     };
   } catch (error) {
-    console.error("Gagal menyimpan batch presensi:", error);
-    // Fallback gracefully bila database belum tersinkron
-    const fallbackCounts = {
-      HADIR: items.filter((i) => i.status === "HADIR").length,
-      MASBUK: items.filter((i) => i.status === "MASBUK").length,
-      IZIN: items.filter((i) => i.status === "IZIN").length,
-      SAKIT: items.filter((i) => i.status === "SAKIT").length,
-      ALFA: items.filter((i) => i.status === "ALFA").length,
-    };
-
+    console.error("Gagal menyimpan batch presensi ke database:", error);
     return {
-      success: true,
-      message: `Presensi ${kegiatan} (${items.length} santri) berhasil diperbarui (Mode Offline / Memori Lokal).`,
-      data: {
-        kegiatan,
-        tanggal: tanggalDate.toISOString(),
-        total: items.length,
-        counts: fallbackCounts,
-      },
+      success: false,
+      message: `Gagal menyimpan data presensi ke server. Silakan periksa koneksi database atau coba beberapa saat lagi.`,
+      error: error instanceof Error ? error.message : "DATABASE_WRITE_ERROR",
     };
   }
 }
 
 /**
- * Server Action: Ambil Riwayat Presensi Hari Ini
+ * Server Action: Ambil Riwayat Presensi Hari Ini (Zona Waktu Asia/Makassar)
  */
 export async function getRiwayatPresensiHarianAction(tanggalStr?: string, kegiatan?: string) {
   const session = await getCurrentSession();
@@ -150,17 +175,22 @@ export async function getRiwayatPresensiHarianAction(tanggalStr?: string, kegiat
   }
 
   try {
-    const targetDate = tanggalStr ? new Date(tanggalStr) : new Date();
-    const startOfDay = new Date(targetDate.setHours(0, 0, 0, 0));
-    const endOfDay = new Date(targetDate.setHours(23, 59, 59, 999));
+    const targetWitaStr = tanggalStr || getTodayWITADateString();
+    const { startOfDayUTC, endOfDayUTC } = getWITADayRange(targetWitaStr);
+
+    const isWaliOrSantri = session.role === "WS" || session.role === "ST";
+    if (isWaliOrSantri && !session.santriId) {
+      return { success: true, data: [] };
+    }
 
     const records = await prisma.absensi.findMany({
       where: {
         tanggal: {
-          gte: startOfDay,
-          lte: endOfDay,
+          gte: startOfDayUTC,
+          lte: endOfDayUTC,
         },
         ...(kegiatan ? { kegiatan } : {}),
+        ...(isWaliOrSantri ? { santriId: session.santriId! } : {}),
       },
       include: {
         santri: {

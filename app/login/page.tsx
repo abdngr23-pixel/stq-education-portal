@@ -16,6 +16,7 @@ import {
   ALL_STAFF_ACCOUNTS,
   type StaffAccountItem,
 } from "@/types/auth";
+import { INSTITUTION_CONFIG } from "@/lib/institution-config";
 import {
   Lock,
   User as UserIcon,
@@ -124,10 +125,10 @@ export default function LoginPage() {
       {/* Brand Header */}
       <div className="max-w-6xl w-full mx-auto text-center mb-8 space-y-2">
         <div className="inline-flex h-20 w-20 rounded-3xl bg-white p-2.5 items-center justify-center shadow-md border border-slate-200/80 mb-1">
-          <img src="/logo.png" alt="STQ Darul Ulum Cendekia" className="h-full w-full object-contain" />
+          <img src="/logo.png" alt={`Logo ${INSTITUTION_CONFIG.name}`} className="h-full w-full object-contain" />
         </div>
         <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 font-heading">
-          STQ Education Portal — Darul Ulum Cendekia
+          STQ Education Portal — {INSTITUTION_CONFIG.shortName}
         </h1>
         <p className="text-xs md:text-sm text-slate-600 max-w-2xl mx-auto">
           Sistem Informasi Manajemen Terpadu Tahfizh Al-Qur&apos;an, Akademik, Asrama, dan Layanan Orang Tua
@@ -461,7 +462,7 @@ export default function LoginPage() {
 
       {/* Footer info */}
       <div className="max-w-6xl w-full mx-auto text-center mt-8 text-xs text-slate-400">
-        © {new Date().getFullYear()} STQ Darul Ulum Cendekia. Dilindungi oleh Kebijakan Hak Akses Berjenjang (RBAC).
+        © {new Date().getFullYear()} {INSTITUTION_CONFIG.name}. Dilindungi oleh Kebijakan Hak Akses Berjenjang (RBAC).
       </div>
     </div>
   );

@@ -20,41 +20,41 @@ export async function getRingkasanAnakAction(santriIdInput?: string): Promise<Po
       return { success: false, message: 'Silakan login terlebih dahulu.' };
     }
 
-    // Tentukan ID santri sesuai hak akses ABAC
-    let targetSantriId = santriIdInput;
-    if (session.role === 'ST' && session.santriId) {
+    // Tentukan ID santri sesuai hak akses ABAC (Audit P0 - A06)
+    let targetSantriId: string | undefined = santriIdInput;
+
+    if (session.role === 'WS' || session.role === 'ST') {
+      if (!session.santriId) {
+        return {
+          success: false,
+          message: 'Akun Anda belum terhubung dengan data santri terdaftar. Silakan hubungi bagian Administrasi/TU.',
+        };
+      }
+      // Paksa targetSantriId selalu sama dengan session.santriId, abaikan santriIdInput
       targetSantriId = session.santriId;
-    } else if (session.role === 'WS' && session.santriId) {
-      targetSantriId = session.santriId;
+    } else {
+      // Role staf (KS, ADM, MT, MK, dll) harus menyertakan ID santri spesifik
+      if (!targetSantriId) {
+        return {
+          success: false,
+          message: 'ID Santri wajib disertakan untuk melihat ringkasan.',
+        };
+      }
     }
 
-    // Jika tidak spesifik dan bukan staff, cari santri pertama
-    const santri = targetSantriId
-      ? await prisma.santri.findUnique({
-          where: { id: targetSantriId },
-          include: {
-            halaqoh: { include: { pembina: true } },
-            setoranList: { take: 10, orderBy: { createdAt: 'desc' } },
-            ikhtibarList: { orderBy: { createdAt: 'desc' } },
-            nilaiList: { include: { mapel: true }, take: 10 },
-            bintangList: { orderBy: { createdAt: 'desc' } },
-            pelanggaranList: { include: { kategori: true }, orderBy: { createdAt: 'desc' } },
-            kesehatanList: { orderBy: { createdAt: 'desc' }, take: 5 },
-            perizinanList: { orderBy: { createdAt: 'desc' }, take: 5 },
-          },
-        })
-      : await prisma.santri.findFirst({
-          include: {
-            halaqoh: { include: { pembina: true } },
-            setoranList: { take: 10, orderBy: { createdAt: 'desc' } },
-            ikhtibarList: { orderBy: { createdAt: 'desc' } },
-            nilaiList: { include: { mapel: true }, take: 10 },
-            bintangList: { orderBy: { createdAt: 'desc' } },
-            pelanggaranList: { include: { kategori: true }, orderBy: { createdAt: 'desc' } },
-            kesehatanList: { orderBy: { createdAt: 'desc' }, take: 5 },
-            perizinanList: { orderBy: { createdAt: 'desc' }, take: 5 },
-          },
-        });
+    const santri = await prisma.santri.findUnique({
+      where: { id: targetSantriId },
+      include: {
+        halaqoh: { include: { pembina: true } },
+        setoranList: { take: 10, orderBy: { createdAt: 'desc' } },
+        ikhtibarList: { orderBy: { createdAt: 'desc' } },
+        nilaiList: { include: { mapel: true }, take: 10 },
+        bintangList: { orderBy: { createdAt: 'desc' } },
+        pelanggaranList: { include: { kategori: true }, orderBy: { createdAt: 'desc' } },
+        kesehatanList: { orderBy: { createdAt: 'desc' }, take: 5 },
+        perizinanList: { orderBy: { createdAt: 'desc' }, take: 5 },
+      },
+    });
 
     if (!santri) {
       return { success: false, message: 'Data santri tidak ditemukan.' };
@@ -62,7 +62,7 @@ export async function getRingkasanAnakAction(santriIdInput?: string): Promise<Po
 
     const totalPoinPelanggaran = santri.pelanggaranList.reduce((acc, p) => acc + p.poinFinal, 0);
     const totalBintang = santri.bintangList.length;
-    const totalSetoran = santri.setoranList.length;
+    const totalSetoran = await prisma.setoranTahfizh.count({ where: { santriId: targetSantriId } });
     const ikhtibarLulus = santri.ikhtibarList.filter((i) => i.status === 'LULUS_SEMPURNA_TAHAP_2').length;
 
     return {

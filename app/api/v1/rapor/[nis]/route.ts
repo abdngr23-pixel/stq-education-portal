@@ -52,23 +52,37 @@ export async function GET(
       );
     }
 
-    // Scoping check untuk ST dan WS
-    if (session.role === 'ST' && session.santriId !== santri.id) {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Anda hanya berhak melihat rapor Anda sendiri.' } },
-        { status: 403 }
-      );
+    // Scoping check untuk ST dan WS (Audit P0 - A06)
+    if (session.role === 'ST') {
+      if (!session.santriId || session.santriId !== santri.id) {
+        return NextResponse.json(
+          { success: false, error: { code: 'FORBIDDEN', message: 'Anda hanya berhak melihat rapor Anda sendiri.' } },
+          { status: 403 }
+        );
+      }
     }
-    if (session.role === 'WS' && session.santriId && session.santriId !== santri.id) {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Anda hanya berhak melihat rapor santri yang merupakan anak Anda.' } },
-        { status: 403 }
-      );
+    if (session.role === 'WS') {
+      if (!session.santriId) {
+        return NextResponse.json(
+          { success: false, error: { code: 'FORBIDDEN', message: 'Akun Anda belum terhubung dengan data santri terdaftar.' } },
+          { status: 403 }
+        );
+      }
+      if (session.santriId !== santri.id) {
+        return NextResponse.json(
+          { success: false, error: { code: 'FORBIDDEN', message: 'Anda hanya berhak melihat rapor santri yang merupakan anak Anda.' } },
+          { status: 403 }
+        );
+      }
     }
 
     // Hitung rata-rata nilai akademik
     const totalNilai = santri.nilaiList.reduce((acc, curr) => acc + curr.angka, 0);
     const rataRataAkademik = santri.nilaiList.length > 0 ? (totalNilai / santri.nilaiList.length).toFixed(1) : '0.0';
+
+    const totalSetoranTercatat = await prisma.setoranTahfizh.count({
+      where: { santriId: santri.id },
+    });
 
     return NextResponse.json({
       success: true,
@@ -83,7 +97,7 @@ export async function GET(
         },
         ringkasan: {
           rataRataAkademik: parseFloat(rataRataAkademik),
-          totalSetoranTercatat: santri.setoranList.length,
+          totalSetoranTercatat,
           totalBintangTeladan: santri.bintangList.length,
           ikhtibarLulus: santri.ikhtibarList.filter((i) => i.status === 'LULUS_SEMPURNA_TAHAP_2').length,
         },

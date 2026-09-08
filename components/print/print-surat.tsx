@@ -1,6 +1,7 @@
 import React from "react";
 import { KopSurat } from "./kop-surat";
 import { cn } from "@/lib/utils";
+import { INSTITUTION_CONFIG } from "@/lib/institution-config";
 
 export interface PrintSuratProps {
   nomorSurat?: string;
@@ -15,7 +16,7 @@ export interface PrintSuratProps {
 }
 
 export function PrintSurat({
-  nomorSurat = "024/STQ-DUC/SK/IX/2026",
+  nomorSurat = `024/${INSTITUTION_CONFIG.shortName}/SK/IX/2026`,
   perihal,
   tujuan,
   santriNama = "Muhammad Fatih Al-Ayyubi",
@@ -37,7 +38,7 @@ export function PrintSurat({
           <p><span className="inline-block w-20 font-semibold">Perihal</span>: <strong>{perihal}</strong></p>
         </div>
         <div className="text-right">
-          <p>Depok, {tanggalSurat}</p>
+          <p>{INSTITUTION_CONFIG.kota}, {tanggalSurat}</p>
           <p className="mt-2 text-left">
             Kepada Yth.<br />
             <strong>{tujuan}</strong><br />
@@ -54,7 +55,7 @@ export function PrintSurat({
       </p>
 
       <p className="mb-3">
-        Yang bertanda tangan di bawah ini, Mudir Pondok Pesantren Tahfizh Qur&apos;an Darul Ulum Cendekia, menerangkan dengan sebenarnya bahwa santri berikut:
+        Yang bertanda tangan di bawah ini, Mudir {INSTITUTION_CONFIG.pesantrenName}, menerangkan dengan sebenarnya bahwa santri berikut:
       </p>
 
       {/* Identitas Santri */}
@@ -82,7 +83,7 @@ export function PrintSurat({
       {/* Tanda Tangan */}
       <div className="flex justify-end pt-4">
         <div className="text-center w-64">
-          <p>Mudir STQ Darul Ulum Cendekia,</p>
+          <p>Mudir {INSTITUTION_CONFIG.shortName},</p>
           <div className="h-20 flex items-center justify-center italic text-gray-400">
             ( Cap &amp; Tanda Tangan Basah )
           </div>

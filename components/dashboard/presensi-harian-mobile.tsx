@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
 import { buildRekapPresensiWAMessage } from "@/lib/whatsapp";
 import { simpanBatchPresensiAction, type PresensiItemPayload } from "@/app/actions/presensi";
+import { getTodayWITADateString } from "@/lib/wita-date";
+import { MASTER_SESI_SHALAT, MASTER_SESI_SUNNAH, MASTER_SESI_HALAQOH } from "@/lib/master-schedule";
 import {
   CheckCircle2,
   Clock,
@@ -48,48 +50,9 @@ export interface PresensiHarianMobileProps {
 type StatusType = "HADIR" | "MASBUK" | "SAKIT" | "IZIN" | "ALFA";
 type KategoriSesiType = "SHALAT" | "SUNNAH" | "HALAQOH";
 
-const SESI_SHALAT = [
-  { id: "Sholat Subuh", label: "Shalat Subuh (04.45 WITA)", short: "Subuh" },
-  { id: "Sholat Dzuhur", label: "Shalat Dzuhur (12.15 WITA)", short: "Dzuhur" },
-  { id: "Sholat Ashar", label: "Shalat Ashar (15.30 WITA)", short: "Ashar" },
-  { id: "Sholat Maghrib", label: "Shalat Maghrib (18.15 WITA)", short: "Maghrib" },
-  { id: "Sholat Isya", label: "Shalat Isya (19.30 WITA)", short: "Isya" },
-];
-
-const SESI_SUNNAH = [
-  {
-    id: "Sholat Tahajjud",
-    label: "Sholat Tahajjud (03.15–04.15 WITA)",
-    short: "Tahajjud",
-    target: "15 Malam/Bulan",
-    desc: "Qiyamul Lail & sholat tahajjud santri di asrama & masjid",
-    icon: "🌙",
-  },
-  {
-    id: "Sholat Dhuha",
-    label: "Sholat Dhuha (07.15–08.00 WITA)",
-    short: "Dhuha",
-    target: "15 Pagi/Bulan",
-    desc: "Shalat sunnah Dhuha pagi sebelum jam KBM / halaqoh",
-    icon: "☀️",
-  },
-  {
-    id: "Puasa Sunnah",
-    label: "Puasa Sunnah (Senin & Kamis)",
-    short: "Puasa Sunnah",
-    target: "6 Hari/Bulan",
-    desc: "Puasa sunnah Senin & Kamis serta Ayyamul Bidh",
-    icon: "🍃",
-  },
-];
-
-const SESI_HALAQOH = [
-  { id: "Halaqah Ba'da Shubuh", label: "Halaqah 1: Ba'da Shubuh (05.00–06.30)", short: "Halaqah Shubuh" },
-  { id: "Halaqah Pagi (Dhuha)", label: "Halaqah 2: Pagi / Dhuha (08.00–09.30)", short: "Halaqah Dhuha" },
-  { id: "Halaqah Ba'da Ashar", label: "Halaqah 3: Ba'da Ashar (16.00–17.15)", short: "Halaqah Ashar" },
-  { id: "Kajian Ba'da Maghrib", label: "Halaqah 4: Ba'da Maghrib / Diniyah (18.30–19.30)", short: "Kajian Maghrib" },
-  { id: "Halaqah Ba'da Isya", label: "Halaqah 5: Ba'da Isya (20.00–21.00)", short: "Halaqah Isya" },
-];
+const SESI_SHALAT = MASTER_SESI_SHALAT;
+const SESI_SUNNAH = MASTER_SESI_SUNNAH;
+const SESI_HALAQOH = MASTER_SESI_HALAQOH;
 
 export function PresensiHarianMobile({
   santriList,
@@ -101,10 +64,7 @@ export function PresensiHarianMobile({
 }: PresensiHarianMobileProps) {
   const [kategoriSesi, setKategoriSesi] = useState<KategoriSesiType>("SHALAT");
   const [selectedSesi, setSelectedSesi] = useState<string>("Sholat Subuh");
-  const [tanggal, setTanggal] = useState<string>(() => {
-    const now = new Date();
-    return now.toISOString().split("T")[0];
-  });
+  const [tanggal, setTanggal] = useState<string>(() => getTodayWITADateString());
 
   // Filter Target
   const [selectedHalaqohFilter, setSelectedHalaqohFilter] = useState<string>(
@@ -130,6 +90,24 @@ export function PresensiHarianMobile({
     });
     return initial;
   });
+
+  // A13: Reset draft presensi saat sesi atau tanggal berganti agar tidak tercampur sesi lain
+  React.useEffect(() => {
+    const initial: Record<string, { status: StatusType; catatan?: string }> = {};
+    santriList.forEach((s) => {
+      if (s.statusIzinAktif && s.statusIzinAktif.status === "DISETUJUI") {
+        if (s.statusIzinAktif.jenis === "SAKIT") {
+          initial[s.id] = { status: "SAKIT", catatan: "Izin Sakit Disetujui" };
+        } else {
+          initial[s.id] = { status: "IZIN", catatan: `Izin Pulang (${s.statusIzinAktif.alasan})` };
+        }
+      } else {
+        initial[s.id] = { status: "HADIR" };
+      }
+    });
+    setAttendanceMap(initial);
+    setFeedback(null);
+  }, [selectedSesi, tanggal, santriList]);
 
   // Modal WhatsApp state
   const [isWaModalOpen, setIsWaModalOpen] = useState(false);
@@ -836,7 +814,7 @@ export function PresensiHarianMobile({
       <WhatsAppDialog
         isOpen={isWaModalOpen}
         onClose={() => setIsWaModalOpen(false)}
-        defaultPhone="081299887766"
+        defaultPhone=""
         defaultRecipientName="Grup Asatidz STQ DUC"
         defaultMessage={waMessage}
         title="Kirim Rekap Presensi ke Grup Asatidz"

@@ -92,32 +92,36 @@ export async function catatMutasiLogistikAction(formData: {
       return { success: false, message: 'Jumlah mutasi harus lebih besar dari 0.' };
     }
 
-    const item = await prisma.stokLogistik.findUnique({
-      where: { id: formData.logistikId },
-    });
-
-    if (!item) {
-      return { success: false, message: 'Data barang logistik tidak ditemukan.' };
-    }
-
-    if (formData.jenis === JenisMutasiLogistik.KELUAR && item.jumlahStok < formData.jumlah) {
-      return {
-        success: false,
-        message: `Stok tidak mencukupi. Sisa stok: ${item.jumlahStok} ${item.satuan}, jumlah keluar: ${formData.jumlah} ${item.satuan}.`,
-      };
-    }
-
-    const newStock =
-      formData.jenis === JenisMutasiLogistik.MASUK
-        ? item.jumlahStok + formData.jumlah
-        : item.jumlahStok - formData.jumlah;
-
-    const [updatedItem, mutasi] = await prisma.$transaction([
-      prisma.stokLogistik.update({
+    const result = await prisma.$transaction(async (tx) => {
+      const item = await tx.stokLogistik.findUnique({
         where: { id: formData.logistikId },
-        data: { jumlahStok: newStock },
-      }),
-      prisma.mutasiLogistik.create({
+      });
+
+      if (!item) {
+        throw new Error('Data barang logistik tidak ditemukan.');
+      }
+
+      if (formData.jenis === JenisMutasiLogistik.KELUAR && item.jumlahStok < formData.jumlah) {
+        throw new Error(
+          `Stok tidak mencukupi. Sisa stok: ${item.jumlahStok} ${item.satuan}, jumlah keluar: ${formData.jumlah} ${item.satuan}.`
+        );
+      }
+
+      const updatedItem = await tx.stokLogistik.update({
+        where: { id: formData.logistikId },
+        data: {
+          jumlahStok:
+            formData.jenis === JenisMutasiLogistik.MASUK
+              ? { increment: formData.jumlah }
+              : { decrement: formData.jumlah },
+        },
+      });
+
+      if (updatedItem.jumlahStok < 0) {
+        throw new Error(`Stok tidak mencukupi setelah pembaruan konkuren.`);
+      }
+
+      const mutasi = await tx.mutasiLogistik.create({
         data: {
           logistikId: formData.logistikId,
           jenis: formData.jenis,
@@ -125,21 +129,23 @@ export async function catatMutasiLogistikAction(formData: {
           keterangan: formData.keterangan,
           penanggungJawab: session.username,
         },
-      }),
-    ]);
+      });
 
-    await recordAuditLog(
-      session.userId,
-      'MUTASI_LOGISTIK',
-      'MutasiLogistik',
-      mutasi.id,
-      { jenis: formData.jenis, jumlah: formData.jumlah, stokBaru: newStock }
-    );
+      return { item, updatedItem, mutasi };
+    });
+
+    await recordAuditLog({
+      userId: session.userId,
+      action: 'MUTASI_LOGISTIK',
+      entity: 'MutasiLogistik',
+      entityId: result.mutasi.id,
+      details: { jenis: formData.jenis, jumlah: formData.jumlah, stokBaru: result.updatedItem.jumlahStok },
+    });
 
     return {
       success: true,
-      message: `Mutasi ${formData.jenis} (${formData.jumlah} ${item.satuan}) untuk ${item.namaBarang} berhasil. Sisa stok saat ini: ${newStock} ${item.satuan}.`,
-      data: { updatedItem, mutasi },
+      message: `Mutasi ${formData.jenis} (${formData.jumlah} ${result.item.satuan}) untuk ${result.item.namaBarang} berhasil. Sisa stok saat ini: ${result.updatedItem.jumlahStok} ${result.item.satuan}.`,
+      data: { updatedItem: result.updatedItem, mutasi: result.mutasi },
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';

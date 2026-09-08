@@ -5,9 +5,18 @@ import { NextResponse } from "next/server";
 import { AuthTokenPayload, Role, UserSession } from "@/types/auth";
 import prisma from "@/lib/prisma";
 
-const SECRET_KEY = new TextEncoder().encode(
-  process.env.AUTH_SECRET || "stq_portal_super_secret_session_key_min_32_characters_long_2026"
-);
+export function getAuthSecretKey(): Uint8Array {
+  const secret = process.env.AUTH_SECRET;
+  if (!secret || secret.length < 32) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "FATAL SECURITY ERROR: AUTH_SECRET wajib dikonfigurasi minimal 32 karakter di lingkungan produksi."
+      );
+    }
+    return new TextEncoder().encode("stq_portal_dev_secret_key_min_32_characters_long_2026");
+  }
+  return new TextEncoder().encode(secret);
+}
 
 export const SESSION_COOKIE_NAME = "stq_session_token";
 
@@ -34,7 +43,7 @@ export async function createSessionToken(payload: Omit<AuthTokenPayload, "iat" |
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("7d")
-    .sign(SECRET_KEY);
+    .sign(getAuthSecretKey());
 }
 
 /**
@@ -42,7 +51,7 @@ export async function createSessionToken(payload: Omit<AuthTokenPayload, "iat" |
  */
 export async function verifySessionToken(token: string): Promise<AuthTokenPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, SECRET_KEY);
+    const { payload } = await jwtVerify(token, getAuthSecretKey());
     return payload as unknown as AuthTokenPayload;
   } catch {
     return null;
@@ -51,6 +60,7 @@ export async function verifySessionToken(token: string): Promise<AuthTokenPayloa
 
 /**
  * Ambil sesi pengguna saat ini dari HTTP-only Cookie
+ * Menvalidasi token JWT dan status keaktifan akun terkini di database
  */
 export async function getCurrentSession(): Promise<UserSession | null> {
   try {
@@ -60,6 +70,25 @@ export async function getCurrentSession(): Promise<UserSession | null> {
 
     const payload = await verifySessionToken(token);
     if (!payload) return null;
+
+    // Verifikasi status akun aktif di DB untuk akun non-memory
+    if (payload.sub && !payload.sub.startsWith("user_")) {
+      try {
+        const user = await prisma.user.findUnique({
+          where: { id: payload.sub },
+          select: { id: true, status: true, role: true },
+        });
+
+        // Jika user tidak ditemukan, akun dinonaktifkan, atau role diubah -> batalkan sesi
+        if (!user || user.status !== "AKTIF" || user.role !== payload.role) {
+          return null;
+        }
+      } catch {
+        if (process.env.NODE_ENV === "production") {
+          return null;
+        }
+      }
+    }
 
     return {
       userId: payload.sub,
@@ -89,6 +118,19 @@ export async function getAuthFromRequest(req: Request): Promise<UserSession | nu
       const token = authHeader.substring(7).trim();
       const payload = await verifySessionToken(token);
       if (payload) {
+        if (payload.sub && !payload.sub.startsWith("user_")) {
+          try {
+            const user = await prisma.user.findUnique({
+              where: { id: payload.sub },
+              select: { id: true, status: true, role: true },
+            });
+            if (!user || user.status !== "AKTIF" || user.role !== payload.role) {
+              return null;
+            }
+          } catch {
+            if (process.env.NODE_ENV === "production") return null;
+          }
+        }
         return {
           userId: payload.sub,
           username: payload.username,

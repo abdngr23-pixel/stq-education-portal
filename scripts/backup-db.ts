@@ -84,13 +84,12 @@ async function runBackup() {
       console.log(`✔ Backup berhasil disimpan: ${backupFilePath}`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`⚠ pg_dump biner tidak ditemukan di PATH lokal (${msg}).`);
-      console.log(`ℹ Membuat catatan placeholder dump untuk verifikasi sistem...`);
-      fs.writeFileSync(
-        backupFilePath,
-        `-- STQ Education Portal Database Backup Placeholder\n-- Tanggal: ${now.toISOString()}\n-- Database: ${dbConfig.database}\n`
-      );
-      console.log(`✔ File backup tercatat: ${backupFilePath}`);
+      console.error(`❌ GALAT FATAL: pg_dump gagal dieksekusi (${msg}).`);
+      if (fs.existsSync(backupFilePath)) {
+        fs.unlinkSync(backupFilePath);
+      }
+      console.error(`🚨 Pencadangan database DIBATALKAN. Tidak membuat file placeholder palsu.`);
+      process.exit(1);
     }
   }
 

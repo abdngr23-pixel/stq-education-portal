@@ -12,6 +12,21 @@ import {
   type UserSession,
 } from "@/types/auth";
 
+function isProductionEnv(): boolean {
+  return process.env.NODE_ENV === "production";
+}
+
+async function setSessionCookie(token: string): Promise<void> {
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: isProductionEnv(),
+    sameSite: "lax",
+    maxAge: 7 * 24 * 60 * 60,
+    path: "/",
+  });
+}
+
 export interface LoginResult {
   success: boolean;
   message?: string;
@@ -74,14 +89,7 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
           halaqohName: halaqohName,
         });
 
-        const cookieStore = await cookies();
-        cookieStore.set(SESSION_COOKIE_NAME, token, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: "lax",
-          maxAge: 7 * 24 * 60 * 60,
-          path: "/",
-        });
+        await setSessionCookie(token);
 
         await recordAuditLog({
           userId: user.id,
@@ -102,9 +110,17 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
           },
         };
       }
+
+      // Password salah untuk akun database riil - JANGAN fallback ke katalog
+      return { success: false, message: "Kata sandi yang Anda masukkan salah." };
     }
   } catch (dbError) {
-    console.warn("Database offline atau tidak dapat dijangkau, menggunakan katalog akun resmi:", dbError);
+    console.warn("Database offline atau tidak dapat dijangkau:", dbError);
+  }
+
+  // Pada production, tidak diizinkan fallback ke katalog akun demo
+  if (isProductionEnv()) {
+    return { success: false, message: "Kredensial tidak ditemukan atau salah. Periksa username dan kata sandi." };
   }
 
   // 2. Fallback: Cari di Katalog Akun Staf / Asatidz Mudhabbir
@@ -128,14 +144,7 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
         halaqohName: matchedStaff.halaqohName,
       });
 
-      const cookieStore = await cookies();
-      cookieStore.set(SESSION_COOKIE_NAME, token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 7 * 24 * 60 * 60,
-        path: "/",
-      });
+      await setSessionCookie(token);
 
       return {
         success: true,
@@ -170,14 +179,7 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
         halaqohName: halaqohName,
       });
 
-      const cookieStore = await cookies();
-      cookieStore.set(SESSION_COOKIE_NAME, token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 7 * 24 * 60 * 60,
-        path: "/",
-      });
+      await setSessionCookie(token);
 
       return {
         success: true,
@@ -204,6 +206,14 @@ export async function quickDemoLoginAction(
   roleOrKey: Role | string,
   specificStaffName?: string
 ): Promise<LoginResult> {
+  // Keamanan P0 (Audit A04): Nonaktifkan login demo tanpa kata sandi di lingkungan produksi
+  if (isProductionEnv()) {
+    return {
+      success: false,
+      message: "Akses login demo tanpa kata sandi dinonaktifkan pada lingkungan produksi demi keamanan data.",
+    };
+  }
+
   // Cek apakah target adalah akun staf spesifik (e.g. "kamal.ph", "Ust. Rizaldi", dll)
   const matchedStaff = ALL_STAFF_ACCOUNTS.find(
     (s) =>
@@ -238,14 +248,7 @@ export async function quickDemoLoginAction(
           halaqohName: matchedStaff.halaqohName,
         });
 
-        const cookieStore = await cookies();
-        cookieStore.set(SESSION_COOKIE_NAME, token, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: "lax",
-          maxAge: 7 * 24 * 60 * 60,
-          path: "/",
-        });
+        await setSessionCookie(token);
 
         return {
           success: true,
@@ -274,14 +277,7 @@ export async function quickDemoLoginAction(
       halaqohName: matchedStaff.halaqohName,
     });
 
-    const cookieStore = await cookies();
-    cookieStore.set(SESSION_COOKIE_NAME, token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 7 * 24 * 60 * 60,
-      path: "/",
-    });
+    await setSessionCookie(token);
 
     return {
       success: true,
@@ -320,14 +316,7 @@ export async function quickDemoLoginAction(
         halaqohName: halaqohName,
       });
 
-      const cookieStore = await cookies();
-      cookieStore.set(SESSION_COOKIE_NAME, token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 7 * 24 * 60 * 60,
-        path: "/",
-      });
+      await setSessionCookie(token);
 
       await recordAuditLog({
         userId: user.id,
@@ -365,14 +354,7 @@ export async function quickDemoLoginAction(
       halaqohName: halaqohName,
     });
 
-    const cookieStore = await cookies();
-    cookieStore.set(SESSION_COOKIE_NAME, token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 7 * 24 * 60 * 60,
-      path: "/",
-    });
+    await setSessionCookie(token);
 
     return {
       success: true,

@@ -18,7 +18,7 @@ export interface WhatsAppButtonProps extends Omit<ButtonProps, "onClick"> {
 }
 
 export function WhatsAppButton({
-  phone = "081299887766",
+  phone = "",
   recipientName = "Wali Santri",
   message,
   label = "Kirim WA",

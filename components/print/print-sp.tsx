@@ -1,6 +1,7 @@
 import React from "react";
 import { KopSurat } from "./kop-surat";
 import { cn } from "@/lib/utils";
+import { INSTITUTION_CONFIG } from "@/lib/institution-config";
 
 export interface PrintSPProps {
   nomorSurat?: string;
@@ -21,7 +22,7 @@ export interface PrintSPProps {
 }
 
 export function PrintSP({
-  nomorSurat = "018/STQ-DUC/SP/IX/2026",
+  nomorSurat = `018/${INSTITUTION_CONFIG.shortName}/SP/IX/2026`,
   tingkatSP = "SP1",
   santriNama,
   santriNis,
@@ -51,7 +52,7 @@ export function PrintSP({
           <p><span className="inline-block w-20 font-semibold">Perihal</span>: <strong>{judulSP}</strong></p>
         </div>
         <div className="text-right">
-          <p>Depok, {tanggalSurat}</p>
+          <p>{INSTITUTION_CONFIG.kota}, {tanggalSurat}</p>
           <p className="mt-2 text-left">
             Kepada Yth.<br />
             <strong>Orang Tua / Wali dari {santriNama}</strong><br />
@@ -65,7 +66,7 @@ export function PrintSP({
           {judulSP}
         </h3>
         <p className="text-[11px] text-gray-700 font-sans">
-          Berdasarkan Buku Panduan Tata Tertib &amp; Kedisiplinan STQ Darul Ulum Cendekia
+          Berdasarkan Buku Panduan Tata Tertib &amp; Kedisiplinan {INSTITUTION_CONFIG.pesantrenName}
         </p>
       </div>
 
@@ -134,7 +135,7 @@ export function PrintSP({
 
         <div>
           <p>Mengetahui,</p>
-          <p className="font-semibold">Mudir STQ Darul Ulum Cendekia</p>
+          <p className="font-semibold">Mudir {INSTITUTION_CONFIG.pesantrenName}</p>
           <div className="h-12" />
           <p className="border-t border-black pt-1 font-bold mx-8">
             ( Ust. Andi Quarzy Ayatullah, S.H, M.H )

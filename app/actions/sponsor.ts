@@ -3,6 +3,9 @@
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
 import { StatusKirimWA } from "@prisma/client";
+import { INSTITUTION_CONFIG } from "@/lib/institution-config";
+import { formatIndonesianPhone, generateWALink } from "@/lib/whatsapp";
+import { generateSponsorCode, generateLaporanSponsorCode } from "@/lib/sequence";
 
 export interface TambahSponsorData {
   nama: string;
@@ -28,7 +31,7 @@ export async function tambahSponsorAction(input: TambahSponsorData) {
 
   try {
     const count = await prisma.orangTuaAsuh.count();
-    const kodeSponsor = `OTA-${String(count + 1).padStart(3, "0")}`;
+    const kodeSponsor = generateSponsorCode(count + 1);
 
     const sponsor = await prisma.orangTuaAsuh.create({
       data: {
@@ -69,6 +72,7 @@ export async function generateLaporanSponsorAction(params: {
   sponsorId: string;
   santriId: string;
   bulan: string;
+  catatanMusyrif?: string;
 }) {
   const session = await getCurrentSession();
   if (!session) {
@@ -76,14 +80,25 @@ export async function generateLaporanSponsorAction(params: {
   }
 
   try {
+    const sponsor = await prisma.orangTuaAsuh.findUnique({
+      where: { id: params.sponsorId },
+    });
+
+    if (!sponsor) {
+      return { success: false, message: "Data orang tua asuh / donatur tidak ditemukan." };
+    }
+
+    if (sponsor.santriId && sponsor.santriId !== params.santriId) {
+      return {
+        success: false,
+        message: `Donatur ${sponsor.nama} tidak terhubung sebagai orang tua asuh santri yang dipilih.`,
+      };
+    }
+
     const santri = await prisma.santri.findUnique({
       where: { id: params.santriId },
       include: {
         halaqoh: { include: { pembina: true } },
-        setoranList: {
-          take: 5,
-          orderBy: { tanggal: "desc" },
-        },
       },
     });
 
@@ -91,27 +106,56 @@ export async function generateLaporanSponsorAction(params: {
       return { success: false, message: "Data santri tidak ditemukan." };
     }
 
-    const totalSetoran = await prisma.setoranTahfizh.count({
-      where: { santriId: params.santriId },
+    // Parse bulan e.g. "2026-09" or "September 2026"
+    let startDate: Date;
+    let endDate: Date;
+    const matchYearMonth = params.bulan.match(/(\d{4})[/-](\d{1,2})/) || params.bulan.match(/(\d{1,2})[/-](\d{4})/);
+    if (matchYearMonth) {
+      const year = parseInt(matchYearMonth[1].length === 4 ? matchYearMonth[1] : matchYearMonth[2]);
+      const month = parseInt(matchYearMonth[1].length === 4 ? matchYearMonth[2] : matchYearMonth[1]);
+      startDate = new Date(Date.UTC(year, month - 1, 1));
+      endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+    } else {
+      const now = new Date();
+      startDate = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
+      endDate = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999));
+    }
+
+    // Ambil setoran khusus periode bulan tersebut
+    const setoranBulanIni = await prisma.setoranTahfizh.findMany({
+      where: {
+        santriId: params.santriId,
+        tanggal: { gte: startDate, lte: endDate },
+      },
+      orderBy: { tanggal: "desc" },
     });
 
-    const maxJuz = santri.setoranList.reduce((max, s) => Math.max(max, s.juz), 0);
-    const setoranTerakhir = santri.setoranList[0]
-      ? `${santri.setoranList[0].surahMulai}: ${santri.setoranList[0].ayatMulai}-${santri.setoranList[0].ayatSelesai} (${santri.setoranList[0].nilai})`
-      : "Belum ada setoran bulan ini";
+    const totalSetoran = setoranBulanIni.length;
+
+    // Hitung capaian juz yang sah teruji / lulus sempurna melalui ikhtibar
+    const lulusIkhtibarCount = await prisma.ikhtibarTahfizh.count({
+      where: {
+        santriId: params.santriId,
+        status: "LULUS_SEMPURNA_TAHAP_2",
+      },
+    });
+
+    const setoranTerakhir = setoranBulanIni[0]
+      ? `${setoranBulanIni[0].surahMulai}: ${setoranBulanIni[0].ayatMulai}-${setoranBulanIni[0].ayatSelesai} (${setoranBulanIni[0].nilai})`
+      : "Belum ada setoran pada periode ini";
 
     const snapshotTahfizh = {
       santriNama: santri.nama,
       nis: santri.nis,
       kelas: santri.kelas,
-      capaianJuz: maxJuz,
+      capaianJuz: lulusIkhtibarCount,
       totalSetoran,
       setoranTerakhir,
-      pembina: santri.halaqoh?.pembina.nama || "Ustadz Pembina",
+      pembina: santri.halaqoh?.pembina.nama || "Ustadz Pembina Halaqoh",
     };
 
     const count = await prisma.laporanBulananSponsor.count();
-    const kodeLaporan = `LAP-${params.bulan.replace(/\s+/g, "-")}-${String(count + 1).padStart(3, "0")}`;
+    const kodeLaporan = generateLaporanSponsorCode(params.bulan, count + 1);
 
     const laporan = await prisma.laporanBulananSponsor.create({
       data: {
@@ -120,7 +164,7 @@ export async function generateLaporanSponsorAction(params: {
         santriId: params.santriId,
         bulan: params.bulan,
         snapshotTahfizh,
-        catatanMusyrif: "Alhamdulillah santri sangat tekun mengikuti halaqoh tahfizh dan berakhlak mulia.",
+        catatanMusyrif: params.catatanMusyrif?.trim() || "Santri istiqomah dalam mengikuti halaqoh tahfizh dan murojaah.",
         statusKirimWA: StatusKirimWA.BELUM_KIRIM,
       },
       include: {
@@ -134,7 +178,7 @@ export async function generateLaporanSponsorAction(params: {
       action: "GENERATE_LAPORAN_SPONSOR",
       entity: "LaporanBulananSponsor",
       entityId: laporan.id,
-      details: { kodeLaporan, bulan: params.bulan },
+      details: { kodeLaporan, bulan: params.bulan, santri: santri.nama },
     });
 
     return {
@@ -149,7 +193,7 @@ export async function generateLaporanSponsorAction(params: {
 }
 
 /**
- * Server Action: Kirim Laporan via WhatsApp API (Dispatcher)
+ * Server Action: Buka Tautan WhatsApp Laporan Donatur (Honest Dispatcher)
  */
 export async function kirimLaporanWhatsAppAction(laporanId: string) {
   const session = await getCurrentSession();
@@ -169,9 +213,9 @@ export async function kirimLaporanWhatsAppAction(laporanId: string) {
 
     const snapshot = laporan.snapshotTahfizh as any;
 
-    // Format pesan WhatsApp resmi STQ DUC
+    // Format pesan WhatsApp resmi STQ
     const pesanWA = `*LAPORAN PERKEMBANGAN TAHFIZH SANTRI*
-*STQ DARUL ULUM CENDEKIA*
+*${INSTITUTION_CONFIG.pesantrenName.toUpperCase()}*
 Periode: ${laporan.bulan}
 
 Kepada Yth. Bapak/Ibu Donatur/Orang Tua Asuh:
@@ -180,49 +224,43 @@ Kepada Yth. Bapak/Ibu Donatur/Orang Tua Asuh:
 Berikut ringkasan capaian ananda asuh:
 • Nama Santri: *${laporan.santri.nama}* (${laporan.santri.nis})
 • Kelas: ${laporan.santri.kelas}
-• Capaian Hafalan: *${snapshot.capaianJuz} Juz*
+• Capaian Teruji: *${snapshot.capaianJuz} Juz Selesai*
 • Setoran Terakhir: ${snapshot.setoranTerakhir}
-• Musyrif Pembina: ${snapshot.pembina}
+• Pembina: ${snapshot.pembina}
 
 *Catatan Musyrif:*
 _"${laporan.catatanMusyrif || "Santri istiqomah dalam murojaah dan tahsin."}"_
 
 Jazakumullah Khairan Katsiran atas dukungan dan doa Bapak/Ibu. Semoga menjadi amal jariyah yang terus mengalir pahalanya.
 
-_Pengurus STQ Darul Ulum Cendekia_`;
+_${INSTITUTION_CONFIG.pesantrenName}_`;
 
-    // Simulasi pengiriman via WhatsApp Gateway (Wablas / Fonnte / WhatsApp Cloud API)
-    console.log(`[WhatsApp Dispatcher] Mengirim pesan ke ${laporan.sponsor.noHp}:\n${pesanWA}`);
-
-    // Update status di database
-    const updated = await prisma.laporanBulananSponsor.update({
-      where: { id: laporanId },
-      data: {
-        statusKirimWA: StatusKirimWA.TERKIRIM,
-        tanggalKirimWA: new Date(),
-      },
-    });
+    const formattedPhone = formatIndonesianPhone(laporan.sponsor.noHp);
+    const waLink = formattedPhone ? generateWALink(formattedPhone, pesanWA) : "";
 
     await recordAuditLog({
       userId: session.userId,
-      action: "KIRIM_WA_LAPORAN",
+      action: "PREPARE_WA_LAPORAN",
       entity: "LaporanBulananSponsor",
-      entityId: updated.id,
+      entityId: laporan.id,
       details: {
-        nomorTujuan: laporan.sponsor.noHp,
+        nomorTujuan: formattedPhone || "TIDAK_VALID",
         santri: laporan.santri.nama,
-        status: "TERKIRIM",
       },
     });
 
     return {
       success: true,
-      message: `Laporan berhasil dikirim via WhatsApp ke ${laporan.sponsor.nama} (${laporan.sponsor.noHp}).`,
+      message: formattedPhone
+        ? `Laporan santri asuh siap dikirimkan ke ${laporan.sponsor.nama} via WhatsApp.`
+        : `Nomor telepon donatur belum valid. Mohon periksa kembali nomor WhatsApp donatur.`,
       pesanPreview: pesanWA,
+      waLink,
+      phone: formattedPhone,
     };
   } catch (error) {
-    console.error("Gagal kirim WhatsApp:", error);
-    return { success: false, message: "Gagal mengirim laporan melalui WhatsApp API." };
+    console.error("Gagal menyiapkan WhatsApp:", error);
+    return { success: false, message: "Gagal memproses pesan WhatsApp laporan donatur." };
   }
 }
 
@@ -230,6 +268,19 @@ _Pengurus STQ Darul Ulum Cendekia_`;
  * Server Action: Mengambil daftar Orang Tua Asuh
  */
 export async function getDaftarSponsorAction() {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Silakan login terlebih dahulu.", data: [] };
+  }
+
+  if (session.role !== "ADM" && session.role !== "KS") {
+    return {
+      success: false,
+      message: "Akses Ditolak: Hanya Admin (ADM) dan Mudir (KS) yang dapat mengakses daftar Orang Tua Asuh.",
+      data: [],
+    };
+  }
+
   try {
     const list = await prisma.orangTuaAsuh.findMany({
       orderBy: { kodeSponsor: "asc" },

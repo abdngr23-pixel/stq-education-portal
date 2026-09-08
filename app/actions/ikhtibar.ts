@@ -3,6 +3,7 @@
 import prisma from '@/lib/prisma';
 import { requireRole, getSession, recordAuditLog } from '@/lib/auth';
 import { StatusIkhtibar } from '@prisma/client';
+import { validasiIkhtibarTahap1, validasiIkhtibarTahap2, MIN_NILAI_IKHTIBAR } from '@/lib/educational-rules';
 
 export interface IkhtibarResponse<T = unknown> {
   success: boolean;
@@ -35,6 +36,22 @@ export async function ajukanIkhtibarAction(formData: {
       return { success: false, message: 'Data santri tidak ditemukan.' };
     }
 
+    // Cek apakah santri sudah lulus sempurna juz ini
+    const alreadyPassed = await prisma.ikhtibarTahfizh.findFirst({
+      where: {
+        santriId: formData.santriId,
+        juz: formData.juz,
+        status: StatusIkhtibar.LULUS_SEMPURNA_TAHAP_2,
+      },
+    });
+
+    if (alreadyPassed) {
+      return {
+        success: false,
+        message: `Santri telah dinyatakan RESMI LULUS SELESAI Juz ${formData.juz}. Tidak perlu mendaftar ulang.`,
+      };
+    }
+
     // Cek pengujian berjalan untuk juz yang sama
     const existing = await prisma.ikhtibarTahfizh.findFirst({
       where: {
@@ -59,13 +76,13 @@ export async function ajukanIkhtibarAction(formData: {
       },
     });
 
-    await recordAuditLog(
-      session.userId,
-      'AJUKAN_IKHTIBAR',
-      'IkhtibarTahfizh',
-      ikhtibar.id,
-      { santri: santri.nama, juz: formData.juz }
-    );
+    await recordAuditLog({
+      userId: session.userId,
+      action: 'AJUKAN_IKHTIBAR',
+      entity: 'IkhtibarTahfizh',
+      entityId: ikhtibar.id,
+      details: { santri: santri.nama, juz: formData.juz },
+    });
 
     return {
       success: true,
@@ -100,32 +117,38 @@ export async function inputHasilTahap1Action(formData: {
       return { success: false, message: 'Data ikhtibar tidak ditemukan.' };
     }
 
-    const status = formData.lulus ? StatusIkhtibar.LULUS_TAHAP_1 : StatusIkhtibar.MENGULANG;
+    // Validasi aturan bisnis transisi ikhtibar tahap 1
+    const validation = validasiIkhtibarTahap1(ikhtibar.status, formData.nilai);
+    if (validation.error) {
+      return { success: false, message: validation.error };
+    }
+
+    const status = (formData.lulus && validation.lulus) ? StatusIkhtibar.LULUS_TAHAP_1 : StatusIkhtibar.MENGULANG;
 
     const updated = await prisma.ikhtibarTahfizh.update({
       where: { id: formData.ikhtibarId },
       data: {
         nilaiTahap1: formData.nilai,
-        catatanTahap1: formData.catatan || (formData.lulus ? 'Lancar dan makhraj fasih' : 'Perlu pemantapan hafalan'),
+        catatanTahap1: formData.catatan || (status === StatusIkhtibar.LULUS_TAHAP_1 ? 'Lancar dan makhraj fasih' : `Perlu pemantapan hafalan (Nilai: ${formData.nilai})`),
         tanggalTahap1: new Date(),
         status,
         pengujiTahap1Id: session.staffId || null,
       },
     });
 
-    await recordAuditLog(
-      session.userId,
-      'INPUT_IKHTIBAR_TAHAP_1',
-      'IkhtibarTahfizh',
-      ikhtibar.id,
-      { nilai: formData.nilai, status }
-    );
+    await recordAuditLog({
+      userId: session.userId,
+      action: 'INPUT_IKHTIBAR_TAHAP_1',
+      entity: 'IkhtibarTahfizh',
+      entityId: ikhtibar.id,
+      details: { nilai: formData.nilai, status },
+    });
 
     return {
       success: true,
-      message: formData.lulus
-        ? `Alhamdulillah, ${ikhtibar.santri.nama} dinyatakan LULUS Ujian Tahap 1 Juz ${ikhtibar.juz} dan siap maju ke Ujian Tahap 2 (Mudir).`
-        : `Hasil Ujian Tahap 1 disimpan. Santri diminta mengulang hafalan Juz ${ikhtibar.juz}.`,
+      message: status === StatusIkhtibar.LULUS_TAHAP_1
+        ? `Alhamdulillah, ${ikhtibar.santri.nama} dinyatakan LULUS Ujian Tahap 1 Juz ${ikhtibar.juz} (Nilai: ${formData.nilai}) dan siap maju ke Ujian Tahap 2 (Mudir).`
+        : `Hasil Ujian Tahap 1 disimpan. Nilai ${formData.nilai} belum memenuhi ambang batas ${MIN_NILAI_IKHTIBAR}. Santri diminta mengulang hafalan Juz ${ikhtibar.juz}.`,
       data: updated,
     };
   } catch (err: unknown) {
@@ -156,14 +179,13 @@ export async function inputHasilTahap2Action(formData: {
       return { success: false, message: 'Data ikhtibar tidak ditemukan.' };
     }
 
-    if (ikhtibar.status !== StatusIkhtibar.LULUS_TAHAP_1) {
-      return {
-        success: false,
-        message: 'Ikhtibar harus telah lulus Ujian Tahap 1 sebelum diuji oleh Mudir.',
-      };
+    // Validasi aturan bisnis transisi ikhtibar tahap 2
+    const validation = validasiIkhtibarTahap2(ikhtibar.status, formData.nilai);
+    if (validation.error) {
+      return { success: false, message: validation.error };
     }
 
-    const status = formData.lulus
+    const status = (formData.lulus && validation.lulus)
       ? StatusIkhtibar.LULUS_SEMPURNA_TAHAP_2
       : StatusIkhtibar.MENGULANG;
 
@@ -171,26 +193,26 @@ export async function inputHasilTahap2Action(formData: {
       where: { id: formData.ikhtibarId },
       data: {
         nilaiTahap2: formData.nilai,
-        catatanTahap2: formData.catatan || (formData.lulus ? 'Mumtaz! Disahkan oleh Mudir Pesantren' : 'Perlu perbaikan tajwid lanjutan'),
+        catatanTahap2: formData.catatan || (status === StatusIkhtibar.LULUS_SEMPURNA_TAHAP_2 ? 'Mumtaz! Disahkan oleh Mudir Pesantren' : `Perlu perbaikan tajwid lanjutan (Nilai: ${formData.nilai})`),
         tanggalTahap2: new Date(),
         status,
         pengujiTahap2Id: session.staffId || null,
       },
     });
 
-    await recordAuditLog(
-      session.userId,
-      'INPUT_IKHTIBAR_TAHAP_2',
-      'IkhtibarTahfizh',
-      ikhtibar.id,
-      { nilai: formData.nilai, status, disahkanOleh: session.username }
-    );
+    await recordAuditLog({
+      userId: session.userId,
+      action: 'INPUT_IKHTIBAR_TAHAP_2',
+      entity: 'IkhtibarTahfizh',
+      entityId: ikhtibar.id,
+      details: { nilai: formData.nilai, status, disahkanOleh: session.username },
+    });
 
     return {
       success: true,
-      message: formData.lulus
-        ? `Barakallahu fiik! ${ikhtibar.santri.nama} dinyatakan RESMI LULUS SELESAI JUZ ${ikhtibar.juz} oleh Mudir Pesantren.`
-        : `Hasil evaluasi disimpan. Santri diminta mengulang ujian Tahap 2.`,
+      message: status === StatusIkhtibar.LULUS_SEMPURNA_TAHAP_2
+        ? `Barakallahu fiik! ${ikhtibar.santri.nama} dinyatakan RESMI LULUS SELESAI JUZ ${ikhtibar.juz} (Nilai: ${formData.nilai}) oleh Mudir Pesantren.`
+        : `Hasil evaluasi disimpan. Nilai ${formData.nilai} belum memenuhi standar kelulusan ${MIN_NILAI_IKHTIBAR}. Santri diminta mengulang ujian Tahap 2.`,
       data: updated,
     };
   } catch (err: unknown) {

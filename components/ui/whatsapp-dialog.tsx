@@ -20,23 +20,34 @@ export interface WhatsAppDialogProps {
 export function WhatsAppDialog({
   isOpen,
   onClose,
-  defaultPhone = "081299887766",
+  defaultPhone = "",
   defaultRecipientName = "Wali Santri",
   defaultMessage,
   title = "Kirim Pesan via WhatsApp Direct",
   description = "Pesan akan otomatis terkirim dari aplikasi WhatsApp resmi Anda tanpa biaya langganan API.",
 }: WhatsAppDialogProps) {
-  const [phone, setPhone] = useState(defaultPhone);
-  const [recipientName, setRecipientName] = useState(defaultRecipientName);
-  const [message, setMessage] = useState(defaultMessage);
+  const [phone, setPhone] = useState(defaultPhone || "");
+  const [recipientName, setRecipientName] = useState(defaultRecipientName || "Wali Santri");
+  const [message, setMessage] = useState(defaultMessage || "");
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    setPhone(defaultPhone || "081299887766");
+    setPhone(defaultPhone || "");
     setRecipientName(defaultRecipientName || "Wali Santri");
     setMessage(defaultMessage || "");
     setCopied(false);
   }, [defaultPhone, defaultRecipientName, defaultMessage, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -48,18 +59,26 @@ export function WhatsAppDialog({
     }
   };
 
+  const formattedDestination = formatIndonesianPhone(phone);
+
   const handleOpenWhatsApp = () => {
+    if (!formattedDestination) {
+      return;
+    }
     const link = generateWALink(phone, message);
-    if (typeof window !== "undefined") {
+    if (typeof window !== "undefined" && link) {
       window.open(link, "_blank", "noopener,noreferrer");
     }
     onClose();
   };
 
-  const formattedDestination = formatIndonesianPhone(phone);
-
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="whatsapp-dialog-title"
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200"
+    >
       <Card
         rounded="3xl"
         className="max-w-xl w-full p-6 bg-white border border-slate-200/90 shadow-2xl space-y-5 my-8 relative"
@@ -68,7 +87,8 @@ export function WhatsAppDialog({
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-4 top-4 p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+          aria-label="Tutup Dialog WhatsApp"
+          className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
           title="Tutup Modal"
         >
           <X className="h-5 w-5" />
@@ -82,7 +102,7 @@ export function WhatsAppDialog({
             </svg>
           </div>
           <div>
-            <h3 className="text-base font-bold text-slate-800 font-heading">
+            <h3 id="whatsapp-dialog-title" className="text-base font-bold text-slate-800 font-heading">
               {title}
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -108,9 +128,15 @@ export function WhatsAppDialog({
             <div>
               <label className="text-xs font-semibold text-slate-700 flex items-center justify-between mb-1.5">
                 <span>Nomor WhatsApp (+62 / 08)</span>
-                <span className="text-[10px] text-emerald-700 font-mono font-semibold">
-                  WA: +{formattedDestination}
-                </span>
+                {formattedDestination ? (
+                  <span className="text-[10px] text-emerald-700 font-mono font-semibold">
+                    WA: +{formattedDestination}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-amber-600 font-semibold">
+                    Nomor belum valid
+                  </span>
+                )}
               </label>
               <div className="relative">
                 <Input
@@ -123,6 +149,15 @@ export function WhatsAppDialog({
               </div>
             </div>
           </div>
+
+          {!formattedDestination && (
+            <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200/80 text-xs text-amber-900 flex items-start gap-2">
+              <span className="text-amber-600 font-bold shrink-0">⚠️ Peringatan Keamanan:</span>
+              <p>
+                Nomor WhatsApp penerima belum terdaftar atau kurang dari 9 digit. Masukkan nomor yang valid agar pesan tidak terkirim salah sasaran.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
@@ -192,8 +227,9 @@ export function WhatsAppDialog({
               type="button"
               variant="primary"
               size="sm"
+              disabled={!formattedDestination}
               onClick={handleOpenWhatsApp}
-              className="w-full sm:w-auto bg-[#25D366] hover:bg-[#20bd5a] text-white border-0 shadow-md hover:shadow-lg font-bold"
+              className="w-full sm:w-auto bg-[#25D366] hover:bg-[#20bd5a] text-white border-0 shadow-md hover:shadow-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed"
               leftIcon={<Send className="h-4 w-4" />}
             >
               Buka WhatsApp

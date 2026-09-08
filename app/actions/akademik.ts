@@ -3,6 +3,7 @@
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
 import { JenisNilai } from "@prisma/client";
+import { konversiPredikatNilai } from "@/lib/educational-rules";
 
 export interface InputNilaiData {
   santriId: string;
@@ -40,11 +41,8 @@ export async function inputNilaiAction(input: InputNilaiData) {
       return { success: false, message: "Data staf pengajar tidak ditemukan." };
     }
 
-    // Konversi angka ke predikat huruf
-    let huruf = "D";
-    if (input.angka >= 90) huruf = "A";
-    else if (input.angka >= 80) huruf = "B";
-    else if (input.angka >= 70) huruf = "C";
+    // Konversi angka ke predikat huruf menggunakan single source of truth
+    const huruf = konversiPredikatNilai(Number(input.angka));
 
     const nilaiRecord = await prisma.nilaiAkademik.create({
       data: {

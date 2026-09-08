@@ -3,6 +3,7 @@
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
 import { StatusSP, KategoriBintang } from "@prisma/client";
+import { hitungPoinPelanggaran, evaluasiLevelSP } from "@/lib/educational-rules";
 
 export interface CatatPelanggaranData {
   santriId: string;
@@ -49,8 +50,8 @@ export async function catatPelanggaranAction(input: CatatPelanggaranData) {
     });
 
     const isPengulangan = existingCount > 0;
-    // Aturan Bisnis: jika berulang, poin dikalikan dua
-    const poinFinal = isPengulangan ? kategori.poinDasar * 2 : kategori.poinDasar;
+    // Aturan Bisnis: jika berulang, poin dikalikan dua sesuai educational-rules
+    const poinFinal = hitungPoinPelanggaran(kategori.poinDasar, isPengulangan);
 
     // Pencatat staff
     const pencatatStaff = session.staffId
@@ -87,12 +88,10 @@ export async function catatPelanggaranAction(input: CatatPelanggaranData) {
     });
     const totalPoin = allPelanggaran.reduce((acc, curr) => acc + curr.poinFinal, 0);
 
-    // 3. Pemicu Surat Peringatan (SP) Otomatis
+    // 3. Pemicu Surat Peringatan (SP) Otomatis menggunakan single source of truth
     let spNotice = "";
-    let spLevel = 0;
-    if (totalPoin >= 60) spLevel = 3;
-    else if (totalPoin >= 40) spLevel = 2;
-    else if (totalPoin >= 20) spLevel = 1;
+    const spGrade = evaluasiLevelSP(totalPoin);
+    let spLevel = spGrade === "SP3" ? 3 : spGrade === "SP2" ? 2 : spGrade === "SP1" ? 1 : 0;
 
     if (spLevel > 0) {
       // Cek apakah SP pada tingkat ini sudah ada

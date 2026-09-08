@@ -28,10 +28,12 @@ describe("WhatsApp Direct Link & Message Generator Tests", () => {
       assert.equal(formatIndonesianPhone("81234567890"), "6281234567890");
     });
 
-    it("harus mengembalikan nomor fallback jika parameter kosong, null, atau tidak valid", () => {
-      assert.equal(formatIndonesianPhone(null), "6281299887766");
-      assert.equal(formatIndonesianPhone(""), "6281299887766");
-      assert.equal(formatIndonesianPhone("123"), "6281299887766");
+    it("harus mengembalikan string kosong jika parameter kosong, null, atau tidak valid (mencegah salah sasaran nomor dummy)", () => {
+      assert.equal(formatIndonesianPhone(null), "");
+      assert.equal(formatIndonesianPhone(""), "");
+      assert.equal(formatIndonesianPhone("123"), "");
+      assert.equal(generateWALink(null, "Test"), "");
+      assert.equal(generateWALink("", "Test"), "");
     });
   });
 

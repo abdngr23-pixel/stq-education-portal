@@ -1,4 +1,5 @@
 import React from "react";
+import { INSTITUTION_CONFIG } from "@/lib/institution-config";
 
 export function KopSurat() {
   return (
@@ -16,16 +17,20 @@ export function KopSurat() {
         {/* Teks Identitas Lembaga */}
         <div className="flex-1 text-center leading-tight space-y-0.5">
           <p className="text-xs uppercase tracking-widest font-semibold">
-            Yayasan Darul Ulum Cendekia
+            {INSTITUTION_CONFIG.yayasanName}
           </p>
           <h2 className="text-base sm:text-lg font-bold uppercase tracking-tight font-serif">
-            Pondok Pesantren Tahfizh Qur&apos;an Darul Ulum Cendekia
+            {INSTITUTION_CONFIG.pesantrenName}
           </h2>
-          <p className="text-[10px] text-gray-700">
-            Nomor Statistik Pesantren (NSP): 510032010123 • SK Kemenag RI No. 492/2021
-          </p>
+          {(INSTITUTION_CONFIG.nsp || INSTITUTION_CONFIG.skKemenag) && (
+            <p className="text-[10px] text-gray-700">
+              {INSTITUTION_CONFIG.nsp} {INSTITUTION_CONFIG.skKemenag ? `• ${INSTITUTION_CONFIG.skKemenag}` : ""}
+            </p>
+          )}
           <p className="text-[10px] text-gray-600">
-            Jl. Cendekia No. 12, Kompleks Pesantren STQ DUC | Telp: (021) 88997766 | Email: info@stqduc.sch.id
+            {INSTITUTION_CONFIG.alamat}
+            {INSTITUTION_CONFIG.telepon ? ` | Telp: ${INSTITUTION_CONFIG.telepon}` : ""}
+            {INSTITUTION_CONFIG.email ? ` | Email: ${INSTITUTION_CONFIG.email}` : ""}
           </p>
         </div>
       </div>

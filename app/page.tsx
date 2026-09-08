@@ -52,9 +52,13 @@ import { generateSuratAIAction } from "@/app/actions/surat";
 import { ajukanIkhtibarAction, inputHasilTahap1Action, inputHasilTahap2Action } from "@/app/actions/ikhtibar";
 import { catatKesehatanAction, updateStatusKesehatanAction } from "@/app/actions/kesehatan";
 import { catatMutasiLogistikAction } from "@/app/actions/logistik";
+import { kirimKotakSaranAction } from "@/app/actions/portal-wali";
+import { tambahAgendaAction } from "@/app/actions/kalender";
+import { toggleUserStatusAction, resetUserPasswordAction } from "@/app/actions/users";
 import { getAuditLogsAction, type AuditLogItem } from "@/app/actions/audit";
 import { exportToCSV } from "@/lib/export-csv";
 import { cn } from "@/lib/utils";
+import { INSTITUTION_CONFIG } from "@/lib/institution-config";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
 import {
   buildSetoranTahfizhWAMessage,
@@ -114,23 +118,97 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<NavTabId | "beranda">("beranda");
   const [isPending, startTransition] = useTransition();
 
-  // Load authenticated session on initial mount
+  // U01: Load initial state from URL query or session, and support browser history
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const urlRole = params.get("role") as Role | null;
+      const urlTab = params.get("tab") as (NavTabId | "beranda") | null;
+      const urlHalaqoh = params.get("halaqoh");
+
+      if (urlRole && DEMO_ACCOUNTS[urlRole]) {
+        setSelectedRole(urlRole);
+        const demo = DEMO_ACCOUNTS[urlRole];
+        setCurrentUserName(demo.name);
+        setActiveStaffKey(demo.username);
+        setActiveCluster(demo.defaultCluster);
+      }
+      if (urlTab) {
+        setActiveTab(urlTab);
+      }
+      if (urlHalaqoh) {
+        setHalaqohFilter(urlHalaqoh);
+      }
+    }
+
     getCurrentUserAction().then((session) => {
       if (session) {
-        setSelectedRole(session.role);
-        setCurrentUserName(session.name);
-        const demo = DEMO_ACCOUNTS[session.role];
-        if (demo) {
-          setActiveCluster(demo.defaultCluster);
-          setActiveTab("beranda");
-        }
-        if (session.username) {
-          setActiveStaffKey(session.username);
+        const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+        if (!params?.get("role")) {
+          setSelectedRole(session.role);
+          setCurrentUserName(session.name);
+          const demo = DEMO_ACCOUNTS[session.role];
+          if (demo) {
+            setActiveCluster(demo.defaultCluster);
+            if (!params?.get("tab")) {
+              setActiveTab("beranda");
+            }
+          }
+          if (session.username) {
+            setActiveStaffKey(session.username);
+          }
         }
       }
     });
+
+    const handlePopState = () => {
+      if (typeof window === "undefined") return;
+      const p = new URLSearchParams(window.location.search);
+      const r = p.get("role") as Role | null;
+      const t = p.get("tab") as (NavTabId | "beranda") | null;
+      const h = p.get("halaqoh");
+      if (r && DEMO_ACCOUNTS[r]) {
+        setSelectedRole(r);
+        const demo = DEMO_ACCOUNTS[r];
+        setCurrentUserName(demo.name);
+        setActiveStaffKey(demo.username);
+        setActiveCluster(demo.defaultCluster);
+      }
+      if (t) setActiveTab(t);
+      if (h) setHalaqohFilter(h);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  // U01: Sync state changes back to URL search params
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    let changed = false;
+    if (params.get("role") !== selectedRole) {
+      params.set("role", selectedRole);
+      changed = true;
+    }
+    if (params.get("tab") !== activeTab) {
+      params.set("tab", activeTab);
+      changed = true;
+    }
+    if (halaqohFilter && halaqohFilter !== "ALL") {
+      if (params.get("halaqoh") !== halaqohFilter) {
+        params.set("halaqoh", halaqohFilter);
+        changed = true;
+      }
+    } else if (params.has("halaqoh")) {
+      params.delete("halaqoh");
+      changed = true;
+    }
+    if (changed) {
+      const newUrl = `${window.location.pathname}?${params.toString()}`;
+      window.history.replaceState(null, "", newUrl);
+    }
+  }, [selectedRole, activeTab, halaqohFilter]);
 
   // Handle role change (switching or simulation)
   const handleRoleChange = (newRole: Role) => {
@@ -338,7 +416,7 @@ export default function Home() {
     description: string;
   }>({
     isOpen: false,
-    phone: "081299887766",
+    phone: "",
     recipientName: "Wali Santri",
     message: "",
     title: "Kirim Pesan via WhatsApp Direct",
@@ -445,6 +523,7 @@ export default function Home() {
     },
   ]);
   const [formIzinJenis, setFormIzinJenis] = useState<"PULANG" | "KELUAR_KOMPLEK" | "SAKIT">("PULANG");
+  const [formIzinHari, setFormIzinHari] = useState<string>("2");
   const [formIzinAlasan, setFormIzinAlasan] = useState("");
   const [kesantrianSubView, setKesantrianSubView] = useState<"presensi" | "perizinan">("presensi");
 
@@ -661,9 +740,20 @@ export default function Home() {
   const [ketMutasi, setKetMutasi] = useState("Donasi Wali Santri");
 
   // -------------------------------------------------------------
-  // MODAL CETAK DOKUMEN RESMI (FASE 6)
-  // -------------------------------------------------------------
   const [showPrintModal, setShowPrintModal] = useState<"rapor" | "surat" | "sp" | "laporan_bulanan" | null>(null);
+  const [selectedSpId, setSelectedSpId] = useState<string | null>("sp_1");
+
+  // U03: Keyboard ESC listener for print modal
+  useEffect(() => {
+    if (!showPrintModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowPrintModal(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showPrintModal]);
 
   // -------------------------------------------------------------
   // TAB 11: KALENDER AKADEMIK & AGENDA (FASE 7)
@@ -790,7 +880,7 @@ export default function Home() {
     startTransition(async () => {
       const activeSantri = santriList.find((s) => s.nis === selectedSantriNis);
       if (!activeSantri) return;
-      await createSetoranAction({
+      const res = await createSetoranAction({
         santriId: activeSantri.id,
         jenis: inputJenis,
         juz: parseInt(juz) || 1,
@@ -802,6 +892,12 @@ export default function Home() {
         catatan,
         jumlahHalaman: inputJenis === "SABAQ" ? parseInt(jumlahHalaman) || 1 : undefined,
       });
+
+      if (!res.success) {
+        setFeedback({ type: "error", text: res.message || "Gagal mencatat setoran ke pangkalan data." });
+        return;
+      }
+
       setSantriList((prev) =>
         prev.map((s) => (s.nis === selectedSantriNis ? { ...s, setoranTerakhir: `${surahMulai}: ${ayatMulai}-${ayatSelesai}`, nilaiTerakhir: nilai } : s))
       );
@@ -820,7 +916,7 @@ export default function Home() {
         catatan,
         jumlahHalaman: inputJenis === "SABAQ" ? jumlahHalaman : undefined,
       });
-      setFeedback({ type: "success", text: `Alhamdulillah! Setoran ${activeSantri.nama} berhasil dicatat di PostgreSQL.` });
+      setFeedback({ type: "success", text: `Alhamdulillah! Setoran ${activeSantri.nama} berhasil dicatat di server.` });
       setCatatan("");
     });
   };
@@ -832,11 +928,34 @@ export default function Home() {
       setFeedback({ type: "error", text: `Role '${selectedRole}' tidak berhak input nilai akademik (Hanya GA & KS).` });
       return;
     }
+    const angkaNum = parseFloat(inputNilaiAngka);
+    if (isNaN(angkaNum) || angkaNum < 0 || angkaNum > 100) {
+      setFeedback({ type: "error", text: "Nilai angka harus berada dalam rentang 0 sampai 100." });
+      return;
+    }
+    const activeSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
+    if (!activeSantri) return;
+
     startTransition(async () => {
-      const angkaNum = parseFloat(inputNilaiAngka) || 80;
-      let huruf = "C";
+      let huruf = "D";
       if (angkaNum >= 90) huruf = "A";
       else if (angkaNum >= 80) huruf = "B";
+      else if (angkaNum >= 70) huruf = "C";
+
+      const res = await inputNilaiAction({
+        santriId: activeSantri.id,
+        mapelId: selectedMapel,
+        semester: 1,
+        tahunAjaran: "2026/2027",
+        jenis: "TUGAS",
+        angka: angkaNum,
+        catatan: `Input nilai oleh pengajar ${selectedRole}`,
+      });
+
+      if (!res.success) {
+        setFeedback({ type: "error", text: res.message || "Gagal menyimpan nilai akademik ke server." });
+        return;
+      }
 
       const mapelMap: Record<string, { nama: string; kategori: string; guru: string }> = {
         "MP-KP-01": { nama: "Bahasa Arab", kategori: "Kepesantrenan", guru: "Ustzh. Nurul Hidayah, S.Pd." },
@@ -865,29 +984,58 @@ export default function Home() {
         { mapel: meta.nama, kategori: meta.kategori, angka: angkaNum, huruf, guru: meta.guru },
         ...prev.filter((i) => i.mapel !== meta.nama),
       ]);
-      setFeedback({ type: "success", text: `Nilai ${meta.nama} (${huruf} - ${angkaNum}) berhasil disimpan oleh ${meta.guru}.` });
+      setFeedback({ type: "success", text: `Nilai ${meta.nama} (${huruf} - ${angkaNum}) berhasil disimpan ke database.` });
     });
   };
 
   // Izin
   const handleAjukanIzin = () => {
     setFeedback(null);
-    if (!formIzinAlasan.trim()) { setFeedback({ type: "error", text: "Alasan perizinan wajib diisi." }); return; }
+    if (!formIzinAlasan.trim()) {
+      setFeedback({ type: "error", text: "Alasan perizinan wajib diisi." });
+      return;
+    }
+    const durasiNum = parseInt(formIzinHari);
+    if (isNaN(durasiNum) || durasiNum <= 0) {
+      setFeedback({ type: "error", text: "Durasi izin minimal 1 hari." });
+      return;
+    }
+    const activeSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
+    if (!activeSantri) return;
+
     startTransition(async () => {
+      const now = new Date();
+      const end = new Date();
+      end.setDate(now.getDate() + durasiNum);
+
+      const res = await ajukanIzinAction({
+        santriId: activeSantri.id,
+        jenis: formIzinJenis as any,
+        tanggalMulai: now.toISOString(),
+        tanggalSelesai: end.toISOString(),
+        alasan: formIzinAlasan.trim(),
+      });
+
+      if (!res.success) {
+        // U02: Retain draft on failure so user doesn't lose inputs
+        setFeedback({ type: "error", text: res.message || "Gagal mengajukan perizinan." });
+        return;
+      }
+
       const newIzin = {
-        id: `iz_${Date.now()}`,
-        kodeIzin: `IZN-00000${izinList.length + 1}`,
-        santriNama: "Muhammad Fatih",
-        kelas: "7A",
+        id: (res.data as any)?.id || `iz_${Date.now()}`,
+        kodeIzin: (res.data as any)?.kodeIzin || `IZN-00000${izinList.length + 1}`,
+        santriNama: activeSantri.nama,
+        kelas: activeSantri.kelas,
         jenis: formIzinJenis,
-        durasi: "2 Hari",
+        durasi: `${durasiNum} Hari`,
         alasan: formIzinAlasan,
         status: "MENUNGGU_MK",
         diverifikasiOleh: "Menunggu Verifikasi Musyrif Keasramaan",
       };
       setIzinList([newIzin, ...izinList]);
       setFormIzinAlasan("");
-      setFeedback({ type: "success", text: `Izin ${newIzin.kodeIzin} berhasil diajukan ke MK.` });
+      setFeedback({ type: "success", text: res.message || `Izin ${newIzin.kodeIzin} berhasil diajukan ke MK.` });
     });
   };
 
@@ -898,6 +1046,17 @@ export default function Home() {
       return;
     }
     startTransition(async () => {
+      const actionParam = action === "ESCALATE" ? "ESCALATE_KS" : action;
+      const res = await verifikasiIzinAction({
+        izinId: id,
+        action: actionParam as any,
+      });
+
+      if (!res.success) {
+        setFeedback({ type: "error", text: res.message || "Gagal memproses verifikasi izin." });
+        return;
+      }
+
       setIzinList((prev) =>
         prev.map((item) => {
           if (item.id === id) {
@@ -911,7 +1070,7 @@ export default function Home() {
           return item;
         })
       );
-      setFeedback({ type: "success", text: action === "REJECT" ? "Izin santri DITOLAK." : action === "ESCALATE" ? "Izin dieskalasikan ke Mudir/KS." : "Izin resmi DISETUJUI." });
+      setFeedback({ type: "success", text: res.message || (action === "REJECT" ? "Izin santri DITOLAK." : action === "ESCALATE" ? "Izin dieskalasikan ke Mudir/KS." : "Izin resmi DISETUJUI dan tersimpan di database.") });
     });
   };
 
@@ -924,34 +1083,52 @@ export default function Home() {
     }
     if (!kronologi.trim()) { setFeedback({ type: "error", text: "Kronologi kejadian wajib diisi." }); return; }
 
-    startTransition(async () => {
-      const activeSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
-      const kategoriNama = kategoriPelanggaran === "PLG_SHOLAT" ? "Terlambat Sholat Berjamaah" : kategoriPelanggaran === "PLG_GADGET" ? "Membawa Gadget Ilegal" : "Tidak Melaksanakan Piket Asrama";
-      const poinDasar = kategoriPelanggaran === "PLG_SHOLAT" ? 5 : kategoriPelanggaran === "PLG_GADGET" ? 25 : 10;
-      const sudahPernah = pelanggaranHistory.some((p) => p.santriNama === activeSantri.nama && p.kategori === kategoriNama);
-      const isPengulangan = sudahPernah;
-      const poinFinal = isPengulangan ? poinDasar * 2 : poinDasar;
-      const newTotalPoin = activeSantri.poinPelanggaran + poinFinal;
+    const activeSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
+    if (!activeSantri) return;
 
-      setPelanggaranHistory([{ id: `plg_${Date.now()}`, kode: `PLG-00000${pelanggaranHistory.length + 1}`, santriNama: activeSantri.nama, kategori: kategoriNama, poin: poinFinal, isPengulangan, tanggal: "07/09/2026", pencatat: `${selectedRole}` }, ...pelanggaranHistory]);
+    startTransition(async () => {
+      const res = await catatPelanggaranAction({
+        santriId: activeSantri.id,
+        kategoriId: kategoriPelanggaran,
+        kronologi: kronologi.trim(),
+      });
+
+      if (!res.success) {
+        setFeedback({ type: "error", text: res.message || "Gagal mencatat pelanggaran." });
+        return;
+      }
+
+      const kategoriNama = kategoriPelanggaran === "PLG_SHOLAT" ? "Terlambat Sholat Berjamaah" : kategoriPelanggaran === "PLG_GADGET" ? "Membawa Gadget Ilegal" : "Tidak Melaksanakan Piket Asrama";
+      const poinFinal = (res.data as any)?.poinFinal || 5;
+      const isPengulangan = (res.data as any)?.isPengulangan || false;
+      const newTotalPoin = (res as any).totalPoin || (activeSantri.poinPelanggaran + poinFinal);
+
+      setPelanggaranHistory([{ id: (res.data as any)?.id || `plg_${Date.now()}`, kode: (res.data as any)?.kodePelanggaran || `PLG-00000${pelanggaranHistory.length + 1}`, santriNama: activeSantri.nama, kategori: kategoriNama, poin: poinFinal, isPengulangan, tanggal: new Date().toLocaleDateString("id-ID"), pencatat: `${selectedRole}` }, ...pelanggaranHistory]);
       setSantriList((prev) => prev.map((s) => (s.nis === activeSantri.nis ? { ...s, poinPelanggaran: newTotalPoin } : s)));
 
-      let spNotice = "";
-      if (newTotalPoin >= 20 && !spList.some((sp) => sp.santriNama === activeSantri.nama && sp.tingkat === 1)) {
-        const newSP = { id: `sp_${Date.now()}`, nomorSP: `00${spList.length + 1}/SP-1/DUC/2026`, santriNama: activeSantri.nama, tingkat: 1, totalPoin: newTotalPoin, tanggal: "07/09/2026", status: "AKTIF" };
-        setSpList([newSP, ...spList]);
-        spNotice = ` PERINGATAN: Total poin mencapai ${newTotalPoin}! SP 1 otomatis terbit.`;
-      }
       setKronologi("");
-      setFeedback({ type: "success", text: `Pelanggaran ${activeSantri.nama} dicatat (+${poinFinal} poin)${isPengulangan ? " [Poin x2]" : ""}.${spNotice}` });
+      setFeedback({ type: "success", text: res.message || `Pelanggaran ${activeSantri.nama} berhasil dicatat di server.` });
     });
   };
 
   const handlePutihkanSP = (spId: string) => {
     if (selectedRole !== "KS") { setFeedback({ type: "error", text: "Hanya Mudir (KS) yang berwenang memutihkan SP." }); return; }
+    if (typeof window !== "undefined" && !window.confirm("Apakah Anda yakin ingin memutihkan Surat Peringatan (SP) ini? Tindakan ini akan tercatat dalam audit log.")) {
+      return;
+    }
     startTransition(async () => {
+      const res = await putihkanSPAction({
+        spId,
+        keterangan: "Telah menunjukkan perbaikan adab dan menyelesaikan murojaah binaan Mudir.",
+      });
+
+      if (!res.success) {
+        setFeedback({ type: "error", text: res.message || "Gagal memutihkan SP di database." });
+        return;
+      }
+
       setSpList((prev) => prev.map((sp) => (sp.id === spId ? { ...sp, status: "DIPUTIHKAN" } : sp)));
-      setFeedback({ type: "success", text: "Surat Peringatan telah resmi DIPUTIHKAN oleh Mudir/KS." });
+      setFeedback({ type: "success", text: res.message || "Surat Peringatan telah resmi DIPUTIHKAN di database oleh Mudir/KS." });
     });
   };
 
@@ -959,27 +1136,54 @@ export default function Home() {
   const handleAjukanKebutuhan = () => {
     if (selectedRole !== "ADM" && selectedRole !== "KS") { setFeedback({ type: "error", text: "Hanya Admin (ADM) yang berwenang mengajukan anggaran." }); return; }
     if (!judulPengajuan.trim()) { setFeedback({ type: "error", text: "Judul pengajuan wajib diisi." }); return; }
+    const nominalNum = parseFloat(nominalPengajuan);
+    if (isNaN(nominalNum) || nominalNum <= 0) {
+      setFeedback({ type: "error", text: "Nominal anggaran harus berupa angka positif lebih dari 0." });
+      return;
+    }
     startTransition(async () => {
-      const nominalNum = parseFloat(nominalPengajuan) || 1000000;
-      setPengajuanList([{ id: `aju_${Date.now()}`, kode: `AJU-00000${pengajuanList.length + 1}`, judul: judulPengajuan, kategori: kategoriPengajuan, nominal: nominalNum, status: "DIAJUKAN", diajukanOleh: "admin", catatan: keteranganPengajuan || "Kebutuhan operasional" }, ...pengajuanList]);
+      const res = await ajukanKebutuhanAction({
+        judul: judulPengajuan.trim(),
+        kategori: kategoriPengajuan,
+        nominal: nominalNum,
+        keterangan: keteranganPengajuan || "Kebutuhan operasional",
+      });
+
+      if (!res.success) {
+        setFeedback({ type: "error", text: res.message || "Gagal mengajukan kebutuhan anggaran." });
+        return;
+      }
+
+      setPengajuanList([{ id: (res.data as any)?.id || `aju_${Date.now()}`, kode: (res.data as any)?.kodePengajuan || `AJU-00000${pengajuanList.length + 1}`, judul: judulPengajuan, kategori: kategoriPengajuan, nominal: nominalNum, status: "DIAJUKAN", diajukanOleh: "admin", catatan: keteranganPengajuan || "Kebutuhan operasional" }, ...pengajuanList]);
       setJudulPengajuan(""); setKeteranganPengajuan("");
-      setFeedback({ type: "success", text: `Pengajuan anggaran Rp ${nominalNum.toLocaleString("id-ID")} diajukan ke Mudir/KS.` });
+      setFeedback({ type: "success", text: res.message || `Pengajuan anggaran Rp ${nominalNum.toLocaleString("id-ID")} diajukan ke Mudir/KS.` });
     });
   };
 
   const handleApprovePengajuan = (id: string, status: "DISETUJUI_KS" | "DITOLAK") => {
     if (selectedRole !== "KS") { setFeedback({ type: "error", text: "Hanya Mudir (KS) yang berwenang menyetujui anggaran." }); return; }
     startTransition(async () => {
+      const res = await verifikasiPengajuanAction({
+        pengajuanId: id,
+        status,
+        catatanKS: "Ditinjau oleh Mudir/KS",
+      });
+
+      if (!res.success) {
+        setFeedback({ type: "error", text: res.message || "Gagal memproses persetujuan pengajuan." });
+        return;
+      }
+
       setPengajuanList((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)));
-      setFeedback({ type: "success", text: `Status pengajuan diubah menjadi: ${status}.` });
+      setFeedback({ type: "success", text: res.message || `Status pengajuan diubah menjadi: ${status}.` });
     });
   };
 
-  // Orang Tua Asuh & WhatsApp (Fase 4)
+  // Orang Tua Asuh & WhatsApp (Fase 4 - Komunikasi Jujur Tanpa Sukses Palsu)
   const handleKirimWA = (id: string, nama: string, noHp: string, santri: string) => {
     startTransition(async () => {
       const formatPesan = `*LAPORAN PERKEMBANGAN TAHFIZH SANTRI*
-*STQ DARUL ULUM CENDEKIA*
+*${INSTITUTION_CONFIG.name.toUpperCase()}*
 Periode: Agustus 2026
 
 Kepada Yth. Donatur/Orang Tua Asuh:
@@ -997,41 +1201,51 @@ _"Santri sangat tekun mengikuti halaqoh tahfizh dan berakhlak mulia."_
 Jazakumullah Khairan Katsiran atas doa dan dukungan Bapak/Ibu.`;
 
       setPesanWAPreview(formatPesan);
+      setGlobalWaDialog({
+        isOpen: true,
+        phone: noHp || "",
+        recipientName: `Donatur ${nama}`,
+        message: formatPesan,
+        title: `Laporan Santri Asuh ke ${nama}`,
+        description: "Buka WhatsApp resmi untuk mengirim laporan ananda asuh langsung ke donatur.",
+      });
       setSponsorList((prev) =>
-        prev.map((s) => (s.id === id ? { ...s, statusWA: "TERKIRIM", terakhirKirim: "07/09/2026" } : s))
+        prev.map((s) => (s.id === id ? { ...s, statusWA: "TERKIRIM", terakhirKirim: new Date().toLocaleDateString("id-ID") } : s))
       );
       setFeedback({
         type: "success",
-        text: `Laporan berhasil dikirim via WhatsApp Gateway ke ${nama} (${noHp}).`,
+        text: `Laporan untuk ${nama} siap dikirim. Dialog WhatsApp telah dibuka.`,
       });
     });
   };
 
-  // Generator Surat Resmi AI (Fase 4)
+  // Generator Surat Resmi (Fase 4)
   const handleGenerateSurat = () => {
     if (selectedRole !== "ADM" && selectedRole !== "KS") {
       setFeedback({ type: "error", text: "Hanya Admin (ADM) & Mudir (KS) yang berwenang menerbitkan surat resmi." });
       return;
     }
     startTransition(async () => {
+      const activeSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
+      const nomorSurat = `024/STQ-IMN/SK/IX/${new Date().getFullYear()}`;
       const naskah = `================================================================================
-          PESANTREN TAHFIZH QUR'AN DARUL ULUM CENDEKIA
-Alamat: Jl. Cendekia No. 12, Kompleks Pesantren STQ DUC | Telp: (021) 88997766
+          ${INSTITUTION_CONFIG.name.toUpperCase()}
+Alamat: ${INSTITUTION_CONFIG.address} | Telp: ${INSTITUTION_CONFIG.phone}
 ================================================================================
 
 SURAT RESMI LEMBAGA
-Nomor   : 024/STQ-DUC/SK/IX/2026
+Nomor   : ${nomorSurat}
 Perihal : ${perihalSurat}
 Tujuan  : ${tujuanSurat}
 
 Assalamu'alaikum Warahmatullahi Wabarakatuh,
 
-Yang bertanda tangan di bawah ini Mudir STQ Darul Ulum Cendekia menerangkan bahwa:
-Nama Santri : Obama Ozearld Egberted Turizqi
-NIS         : SAN-0001
-Kelas       : 9A (Takhossus Tahfizh)
+Yang bertanda tangan di bawah ini Mudir ${INSTITUTION_CONFIG.shortName} menerangkan bahwa:
+Nama Santri : ${activeSantri.nama}
+NIS         : ${activeSantri.nis}
+Kelas       : ${activeSantri.kelas}
 
-Adalah benar santri aktif yang terdaftar di Pesantren STQ Darul Ulum Cendekia.
+Adalah benar santri aktif yang terdaftar di ${INSTITUTION_CONFIG.name}.
 
 Pokok Surat & Keperluan:
 "${isiPokokSurat}"
@@ -1040,15 +1254,15 @@ Demikian surat resmi ini dibuat dengan sebenarnya agar dapat dipergunakan sebaga
 
 Wassalamu'alaikum Warahmatullahi Wabarakatuh.
 
-Mudir STQ Darul Ulum Cendekia,
+Mudir ${INSTITUTION_CONFIG.name},
 
 
-( Ust. Andi Quarzy Ayatullah, S.H, M.H )`;
+( ${INSTITUTION_CONFIG.mudir} )`;
 
       setHasilSuratAI(naskah);
       setFeedback({
         type: "success",
-        text: "Surat resmi nomor 024/STQ-DUC/SK/IX/2026 berhasil digenerate oleh AI!",
+        text: `Surat resmi nomor ${nomorSurat} berhasil dibuat dari template resmi lembaga.`,
       });
     });
   };
@@ -1064,8 +1278,18 @@ Mudir STQ Darul Ulum Cendekia,
 
     startTransition(async () => {
       const juzNum = parseInt(ikhtibarJuz) || 1;
+      const res = await ajukanIkhtibarAction({
+        santriId: santriObj.id,
+        juz: juzNum,
+      });
+
+      if (!res.success) {
+        setFeedback({ type: "error", text: res.message || "Gagal mendaftarkan ikhtibar ke server." });
+        return;
+      }
+
       const newIkh = {
-        id: `ikh-${Date.now()}`,
+        id: (res.data as any)?.id || `ikh-${Date.now()}`,
         santri: santriObj.nama,
         nis: santriObj.nis,
         juz: juzNum,
@@ -1078,7 +1302,7 @@ Mudir STQ Darul Ulum Cendekia,
       setIkhtibarList((prev) => [newIkh, ...prev]);
       setFeedback({
         type: "success",
-        text: `Alhamdulillah, pendaftaran Ujian Ikhtibar Juz ${juzNum} untuk ${santriObj.nama} berhasil diajukan.`,
+        text: res.message || `Alhamdulillah, pendaftaran Ujian Ikhtibar Juz ${juzNum} untuk ${santriObj.nama} berhasil dicatat di server.`,
       });
     });
   };
@@ -1088,17 +1312,34 @@ Mudir STQ Darul Ulum Cendekia,
       setFeedback({ type: "error", text: "Hanya Musyrif Tahfizh (MT) yang berwenang menguji Tahap 1." });
       return;
     }
+    const nilaiNum = parseFloat(ikhtibarNilai);
+    if (isNaN(nilaiNum) || nilaiNum < 0 || nilaiNum > 100) {
+      setFeedback({ type: "error", text: "Nilai ujian Tahap 1 harus berupa angka antara 0 sampai 100." });
+      return;
+    }
     startTransition(async () => {
+      const res = await inputHasilTahap1Action({
+        ikhtibarId: id,
+        nilai: nilaiNum,
+        catatan: ikhtibarCatatan || "Lancar dan makhraj fasih",
+        lulus: true,
+      });
+
+      if (!res.success) {
+        setFeedback({ type: "error", text: res.message || "Gagal menyimpan hasil ujian Tahap 1." });
+        return;
+      }
+
       setIkhtibarList((prev) =>
         prev.map((i) =>
           i.id === id
-            ? { ...i, status: "LULUS_TAHAP_1", nilaiTahap1: parseFloat(ikhtibarNilai) || 90, catatanTahap1: ikhtibarCatatan }
+            ? { ...i, status: "LULUS_TAHAP_1", nilaiTahap1: nilaiNum, catatanTahap1: ikhtibarCatatan }
             : i
         )
       );
       setFeedback({
         type: "success",
-        text: "Ujian Tahap 1 Lulus! Santri kini berhak maju ke Ujian Tahap 2 di hadapan Mudir (KS).",
+        text: res.message || "Ujian Tahap 1 Lulus dan tersimpan di database! Santri kini berhak maju ke Ujian Tahap 2 di hadapan Mudir (KS).",
       });
     });
   };
@@ -1108,14 +1349,31 @@ Mudir STQ Darul Ulum Cendekia,
       setFeedback({ type: "error", text: "Khusus Mudir Pesantren (KS) yang berwenang mengesahkan Ujian Tahap 2." });
       return;
     }
+    const nilaiNum = parseFloat(ikhtibarNilai);
+    if (isNaN(nilaiNum) || nilaiNum < 0 || nilaiNum > 100) {
+      setFeedback({ type: "error", text: "Nilai ujian Tahap 2 harus berupa angka antara 0 sampai 100." });
+      return;
+    }
     startTransition(async () => {
+      const res = await inputHasilTahap2Action({
+        ikhtibarId: id,
+        nilai: nilaiNum,
+        catatan: "Mumtaz! Disahkan oleh Mudir Pesantren",
+        lulus: true,
+      });
+
+      if (!res.success) {
+        setFeedback({ type: "error", text: res.message || "Gagal mengesahkan kelulusan Ujian Tahap 2." });
+        return;
+      }
+
       setIkhtibarList((prev) =>
         prev.map((i) =>
           i.id === id
             ? {
                 ...i,
                 status: "LULUS_SEMPURNA_TAHAP_2",
-                nilaiTahap2: parseFloat(ikhtibarNilai) || 95,
+                nilaiTahap2: nilaiNum,
                 catatanTahap2: "Mumtaz! Resmi disahkan lulus oleh Mudir STQ DUC.",
               }
             : i
@@ -1123,7 +1381,7 @@ Mudir STQ Darul Ulum Cendekia,
       );
       setFeedback({
         type: "success",
-        text: "Barakallahu fiik! Kelulusan Juz resmi disahkan oleh Mudir Pesantren.",
+        text: res.message || "Barakallahu fiik! Kelulusan Juz resmi disahkan di database oleh Mudir Pesantren.",
       });
     });
   };
@@ -1143,8 +1401,21 @@ Mudir STQ Darul Ulum Cendekia,
     }
 
     startTransition(async () => {
+      const res = await catatKesehatanAction({
+        santriId: santriObj.id,
+        keluhan: keluhanInput.trim(),
+        diagnosa: "Pemeriksaan UKS Poskestren",
+        tindakan: tindakanInput.trim(),
+        status: statusKesehatanInput as any,
+      });
+
+      if (!res.success) {
+        setFeedback({ type: "error", text: res.message || "Gagal menyimpan catatan kesehatan." });
+        return;
+      }
+
       const newKes = {
-        id: `kes-${Date.now()}`,
+        id: (res.data as any)?.id || `kes-${Date.now()}`,
         santri: santriObj.nama,
         nis: santriObj.nis,
         keluhan: keluhanInput,
@@ -1156,7 +1427,7 @@ Mudir STQ Darul Ulum Cendekia,
       setKesehatanList((prev) => [newKes, ...prev]);
       setFeedback({
         type: "success",
-        text: `Data kesehatan ${santriObj.nama} berhasil dicatat di Poskestren (${statusKesehatanInput}).`,
+        text: res.message || `Data kesehatan ${santriObj.nama} berhasil dicatat di Poskestren (${statusKesehatanInput}).`,
       });
       setKeluhanInput("");
       setTindakanInput("");
@@ -1169,12 +1440,22 @@ Mudir STQ Darul Ulum Cendekia,
       return;
     }
     startTransition(async () => {
+      const res = await updateStatusKesehatanAction({
+        id,
+        status: newStatus as any,
+      });
+
+      if (!res.success) {
+        setFeedback({ type: "error", text: res.message || "Gagal memperbarui status rujukan medis." });
+        return;
+      }
+
       setKesehatanList((prev) =>
         prev.map((k) => (k.id === id ? { ...k, status: newStatus } : k))
       );
       setFeedback({
         type: "success",
-        text: `Status penanganan medis diperbarui menjadi: ${newStatus}.`,
+        text: res.message || `Status penanganan medis diperbarui di database menjadi: ${newStatus}.`,
       });
     });
   };
@@ -1200,13 +1481,25 @@ Mudir STQ Darul Ulum Cendekia,
     }
 
     startTransition(async () => {
+      const res = await catatMutasiLogistikAction({
+        logistikId: selectedLogistikId,
+        jenis: jenisMutasi as any,
+        jumlah: qty,
+        keterangan: `Mutasi ${jenisMutasi} oleh ${selectedRole}`,
+      });
+
+      if (!res.success) {
+        setFeedback({ type: "error", text: res.message || "Gagal mencatat mutasi logistik." });
+        return;
+      }
+
       const newStok = jenisMutasi === "MASUK" ? item.stok + qty : item.stok - qty;
       setLogistikList((prev) =>
         prev.map((l) => (l.id === selectedLogistikId ? { ...l, stok: newStok } : l))
       );
       setFeedback({
         type: "success",
-        text: `Mutasi ${jenisMutasi} (${qty} ${item.satuan}) untuk ${item.nama} berhasil dicatat. Sisa stok: ${newStok} ${item.satuan}.`,
+        text: res.message || `Mutasi ${jenisMutasi} (${qty} ${item.satuan}) untuk ${item.nama} berhasil dicatat. Sisa stok: ${newStok} ${item.satuan}.`,
       });
     });
   };
@@ -1218,9 +1511,21 @@ Mudir STQ Darul Ulum Cendekia,
       return;
     }
     startTransition(async () => {
+      const senderNama = selectedRole === "WS" ? "Bambang Sudarmono (Wali Santri)" : "Santri Mandiri";
+      const res = await kirimKotakSaranAction({
+        nama: senderNama,
+        kategori: inputSaranKategori,
+        pesan: inputSaranPesan.trim(),
+      });
+
+      if (!res.success) {
+        setFeedback({ type: "error", text: res.message || "Gagal mengirim aspirasi ke server." });
+        return;
+      }
+
       const newSrn = {
-        id: `srn-${Date.now()}`,
-        nama: selectedRole === "WS" ? "Bambang Sudarmono (Wali Santri)" : "Santri Mandiri",
+        id: (res.data as any)?.id || `srn-${Date.now()}`,
+        nama: senderNama,
         kategori: inputSaranKategori,
         pesan: inputSaranPesan,
         tanggapan: null as string | null,
@@ -1229,7 +1534,7 @@ Mudir STQ Darul Ulum Cendekia,
       setKotakSaranList((prev) => [newSrn, ...prev]);
       setFeedback({
         type: "success",
-        text: "Jazakumullah Khairan. Saran Anda telah berhasil terkirim ke pimpinan pondok.",
+        text: res.message || "Jazakumullah Khairan. Saran Anda telah berhasil tersimpan di server pimpinan pondok.",
       });
       setInputSaranPesan("");
     });
@@ -1246,8 +1551,21 @@ Mudir STQ Darul Ulum Cendekia,
       return;
     }
     startTransition(async () => {
+      const res = await tambahAgendaAction({
+        judul: judulAgenda.trim(),
+        tanggalMulai: tglAgenda || new Date().toISOString(),
+        kategori: katAgenda,
+        targetPeserta: "SEMUA",
+        lokasi: "Kompleks Pondok STQ DUC",
+      });
+
+      if (!res.success) {
+        setFeedback({ type: "error", text: res.message || "Gagal mencatat agenda ke database." });
+        return;
+      }
+
       const newAgd = {
-        id: `agd-${Date.now()}`,
+        id: (res.data as any)?.id || `agd-${Date.now()}`,
         judul: judulAgenda,
         tanggal: tglAgenda,
         kategori: katAgenda,
@@ -1256,7 +1574,7 @@ Mudir STQ Darul Ulum Cendekia,
       setAgendaList((prev) => [...prev, newAgd]);
       setFeedback({
         type: "success",
-        text: `Agenda "${judulAgenda}" berhasil ditambahkan ke kalender akademik.`,
+        text: res.message || `Agenda "${judulAgenda}" berhasil dicatat di server kalender akademik.`,
       });
       setJudulAgenda("");
     });
@@ -1268,13 +1586,22 @@ Mudir STQ Darul Ulum Cendekia,
       setFeedback({ type: "error", text: "Hanya Administrator & Mudir yang berwenang mengelola status user." });
       return;
     }
+    if (typeof window !== "undefined" && !window.confirm("Apakah Anda yakin ingin mengubah status aktif/nonaktif akun ini?")) {
+      return;
+    }
     startTransition(async () => {
+      const res = await toggleUserStatusAction(id);
+      if (!res.success) {
+        setFeedback({ type: "error", text: res.message || "Gagal mengubah status akun di server." });
+        return;
+      }
+
       setUsersList((prev) =>
         prev.map((u) => (u.id === id ? { ...u, status: u.status === "AKTIF" ? "NONAKTIF" : "AKTIF" } : u))
       );
       setFeedback({
         type: "success",
-        text: "Status akun berhasil diperbarui.",
+        text: res.message || "Status akun berhasil diperbarui di database.",
       });
     });
   };
@@ -1284,10 +1611,25 @@ Mudir STQ Darul Ulum Cendekia,
       setFeedback({ type: "error", text: "Hanya Administrator & Mudir yang berwenang me-reset kata sandi." });
       return;
     }
+    if (typeof window !== "undefined" && !window.confirm(`Apakah Anda yakin ingin me-reset kata sandi akun "${username}" ke default?`)) {
+      return;
+    }
     startTransition(async () => {
+      const targetUser = usersList.find((u) => u.username === username);
+      if (!targetUser) {
+        setFeedback({ type: "error", text: "Pengguna tidak ditemukan." });
+        return;
+      }
+
+      const res = await resetUserPasswordAction(targetUser.id);
+      if (!res.success) {
+        setFeedback({ type: "error", text: res.message || "Gagal me-reset kata sandi di server." });
+        return;
+      }
+
       setFeedback({
         type: "success",
-        text: `Kata sandi akun ${username} berhasil di-reset ke "password123".`,
+        text: res.message || `Kata sandi akun ${username} berhasil di-reset ke "password123" di database.`,
       });
     });
   };
@@ -1312,17 +1654,17 @@ Mudir STQ Darul Ulum Cendekia,
           <div className="relative z-10 max-w-3xl space-y-1.5">
             <div className="inline-flex items-center gap-2 bg-white/15 px-3 py-1 rounded-full text-xs font-medium text-emerald-100 backdrop-blur-sm mb-1">
               <Sparkles className="h-3.5 w-3.5 text-[#C9990E]" />
-              STQ Education Portal — Darul Ulum Cendekia
+              STQ Education Portal — {INSTITUTION_CONFIG.shortName}
             </div>
             <h1 className="text-xl md:text-3xl font-bold tracking-tight text-white font-heading">
-              Sistem Pendidikan STQ Darul Ulum Cendekia
+              Sistem Pendidikan {INSTITUTION_CONFIG.name}
             </h1>
             <p className="text-xs md:text-sm text-emerald-50 leading-relaxed">
               Arsitektur terpadu: <strong>Tahfizh</strong>, <strong>Akademik & Rapor</strong>, <strong>Kesantrian</strong>, <strong>Kedisiplinan (Poin x2)</strong>, <strong>Ikhtibar</strong>, <strong>Poskestren</strong>, <strong>Logistik</strong>, dan <strong>Portal Wali</strong>.
             </p>
           </div>
           <div className="relative z-10 shrink-0 hidden md:flex items-center justify-center p-3 bg-white rounded-3xl shadow-lg border border-white/20">
-            <img src="/logo.png" alt="Logo STQ Darul Ulum Cendekia" className="h-20 w-20 object-contain" />
+            <img src="/logo.png" alt={`Logo ${INSTITUTION_CONFIG.name}`} className="h-20 w-20 object-contain" />
           </div>
         </div>
 
@@ -1370,9 +1712,11 @@ Mudir STQ Darul Ulum Cendekia,
           }}
         />
 
-        {/* Feedback Banner */}
+        {/* Feedback Banner (U03: Accessible Alert with ARIA attributes) */}
         {feedback && (
           <div
+            role="alert"
+            aria-live="polite"
             className={`p-4 rounded-2xl border flex items-start gap-3 text-sm transition-all ${
               feedback.type === "success"
                 ? "bg-emerald-50 border-emerald-200 text-emerald-800"
@@ -1388,8 +1732,12 @@ Mudir STQ Darul Ulum Cendekia,
               <p className="font-semibold">{feedback.type === "success" ? "Berhasil" : "Akses Dibatasi"}</p>
               <p className="text-xs opacity-90 mt-0.5">{feedback.text}</p>
             </div>
-            <button onClick={() => setFeedback(null)} className="text-xs font-bold opacity-60 hover:opacity-100">
-              ✕
+            <button
+              onClick={() => setFeedback(null)}
+              aria-label="Tutup Notifikasi"
+              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-black/5 transition-colors"
+            >
+              <X className="h-4 w-4" />
             </button>
           </div>
         )}
@@ -1797,7 +2145,7 @@ Mudir STQ Darul Ulum Cendekia,
                             });
                             setGlobalWaDialog({
                               isOpen: true,
-                              phone: lastSetoranSaved.noHpWali || "081299887766",
+                              phone: lastSetoranSaved.noHpWali || "",
                               recipientName: lastSetoranSaved.namaWali || `Wali ${lastSetoranSaved.santriNama}`,
                               message: msg,
                               title: `Kirim Setoran ${lastSetoranSaved.santriNama} ke WA Wali`,
@@ -1946,7 +2294,7 @@ Mudir STQ Darul Ulum Cendekia,
                             });
                             setGlobalWaDialog({
                               isOpen: true,
-                              phone: (cur as any).noHpWali || "081299887766",
+                              phone: (cur as any).noHpWali || "",
                               recipientName: (cur as any).namaWali || `Wali ${cur.nama}`,
                               message: msg,
                               title: `Kirim Setoran ${cur.nama} ke WA Wali`,
@@ -2028,7 +2376,7 @@ Mudir STQ Darul Ulum Cendekia,
                                   });
                                   setGlobalWaDialog({
                                     isOpen: true,
-                                    phone: (s as any).noHpWali || "081299887766",
+                                    phone: (s as any).noHpWali || "",
                                     recipientName: (s as any).namaWali || `Wali ${s.nama}`,
                                     message: msg,
                                     title: `Kirim Progres Hafalan ${s.nama}`,
@@ -2217,13 +2565,71 @@ Mudir STQ Darul Ulum Cendekia,
                 <div className="lg:col-span-1">
                   <Card rounded="3xl">
                     <CardHeader>
-                      <CardTitle className="flex items-center gap-2"><Send className="h-5 w-5 text-sky-600" /> Ajukan Izin Santri</CardTitle>
+                      <CardTitle className="flex items-center gap-2">
+                        <Send className="h-5 w-5 text-sky-600" /> Ajukan Izin Santri
+                      </CardTitle>
+                      <CardDescription>
+                        Identitas Santri: <strong className="text-slate-800">{santriList.find((s) => s.nis === selectedSantriNis)?.nama || "Pilih Santri"}</strong>
+                      </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                      <Input label="Alasan Izin" value={formIzinAlasan} onChange={(e) => setFormIzinAlasan(e.target.value)} placeholder="e.g. Acara keluarga" />
+                      <div>
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">Pilih Santri</label>
+                        <select
+                          aria-label="Pilih Santri untuk Pengajuan Izin"
+                          value={selectedSantriNis}
+                          onChange={(e) => setSelectedSantriNis(e.target.value)}
+                          className="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white font-medium text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-[#0E7C3A]"
+                        >
+                          {santriList.map((s) => (
+                            <option key={s.nis} value={s.nis}>
+                              {s.nama} ({s.kelas} • {s.halaqoh})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">Jenis Perizinan</label>
+                        <select
+                          aria-label="Jenis Perizinan"
+                          value={formIzinJenis}
+                          onChange={(e) => setFormIzinJenis(e.target.value as any)}
+                          className="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white font-medium text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-[#0E7C3A]"
+                        >
+                          <option value="PULANG">Izin Pulang ke Rumah</option>
+                          <option value="KELUAR_KOMPLEK">Izin Keluar Kompleks Pesantren</option>
+                          <option value="SAKIT">Izin Sakit / Istirahat Poskestren</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">Durasi Izin (Hari)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="30"
+                          aria-label="Durasi Hari Izin"
+                          value={formIzinHari}
+                          onChange={(e) => setFormIzinHari(e.target.value)}
+                          className="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white font-medium text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-[#0E7C3A]"
+                        />
+                      </div>
+                      <Input
+                        label="Alasan Lengkap Izin"
+                        value={formIzinAlasan}
+                        onChange={(e) => setFormIzinAlasan(e.target.value)}
+                        placeholder="Contoh: Menghadiri pernikahan keluarga kandung di luar kota"
+                      />
                     </CardContent>
                     <CardFooter>
-                      <Button variant="primary" fullWidth onClick={handleAjukanIzin}>Ajukan Izin</Button>
+                      <Button
+                        variant="primary"
+                        fullWidth
+                        onClick={handleAjukanIzin}
+                        isLoading={isPending}
+                        disabled={isPending}
+                      >
+                        Ajukan Izin Resmi ke Musyrif
+                      </Button>
                     </CardFooter>
                   </Card>
                 </div>
@@ -2257,7 +2663,7 @@ Mudir STQ Darul Ulum Cendekia,
                                 });
                                 setGlobalWaDialog({
                                   isOpen: true,
-                                  phone: "081299887766",
+                                  phone: (i as any).noHpWali || "",
                                   recipientName: `Wali ${i.santriNama}`,
                                   message: msg,
                                   title: `Notifikasi Izin ${i.santriNama} via WA`,
@@ -2380,7 +2786,7 @@ Mudir STQ Darul Ulum Cendekia,
                             });
                             setGlobalWaDialog({
                               isOpen: true,
-                              phone: "081299887766",
+                              phone: (sp as any).noHpWali || "",
                               recipientName: `Wali ${sp.santriNama}`,
                               message: msg,
                               title: `Pemberitahuan SP ke Wali ${sp.santriNama}`,
@@ -2394,6 +2800,17 @@ Mudir STQ Darul Ulum Cendekia,
                             <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
                           </svg>
                           <span className="text-[10px]">WA</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedSpId(sp.id);
+                            setShowPrintModal("sp");
+                          }}
+                          title="Cetak Dokumen Resmi SP"
+                          className="p-1.5 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition-all flex items-center gap-1 font-semibold text-[10px]"
+                        >
+                          Cetak SP
                         </button>
                         {sp.status === "AKTIF" && selectedRole === "KS" && (
                           <Button variant="gold" size="sm" onClick={() => handlePutihkanSP(sp.id)}>Putihkan SP</Button>
@@ -2469,17 +2886,17 @@ Mudir STQ Darul Ulum Cendekia,
                       </div>
                       <div>
                         <CardTitle>Program Orang Tua Asuh</CardTitle>
-                        <CardDescription>Integrasi WhatsApp API untuk laporan capaian santri</CardDescription>
+                        <CardDescription>Layanan pesan WhatsApp langsung untuk laporan capaian santri binaan</CardDescription>
                       </div>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3 text-xs text-slate-600">
                     <p>
-                      Setiap donatur/sponsor mendapatkan laporan berkala perkembangan tahfizh santri binaan secara otomatis langsung ke nomor WhatsApp pribadi.
+                      Setiap donatur/sponsor mendapatkan laporan berkala perkembangan tahfizh santri binaan yang dapat dikirim langsung ke nomor WhatsApp pribadi.
                     </p>
                     <div className="p-3 rounded-2xl bg-emerald-50 text-emerald-800 border border-emerald-200/80 space-y-1">
-                      <p className="font-bold flex items-center gap-1"><MessageSquare className="h-3.5 w-3.5" /> WhatsApp Gateway Aktif</p>
-                      <p className="text-[11px]">Kompatibel dengan Wablas, Fonnte, dan Meta WhatsApp Business API.</p>
+                      <p className="font-bold flex items-center gap-1"><MessageSquare className="h-3.5 w-3.5" /> Layanan WhatsApp Langsung Aktif</p>
+                      <p className="text-[11px]">Format laporan resmi langsung disiapkan untuk dibuka dan dikirimkan via WhatsApp resmi ke donatur.</p>
                     </div>
                   </CardContent>
                 </Card>
@@ -2610,7 +3027,7 @@ Mudir STQ Darul Ulum Cendekia,
                       leftIcon={<Sparkles className="h-4 w-4" />}
                     >
                       {selectedRole === "ADM" || selectedRole === "KS"
-                        ? "Generate Naskah Surat (AI)"
+                        ? "Buat Draf Surat Resmi Lembaga"
                         : `Role ${selectedRole} Tidak Berhak`}
                     </Button>
                   </CardFooter>
@@ -2627,8 +3044,13 @@ Mudir STQ Darul Ulum Cendekia,
                     </div>
                     {hasilSuratAI && (
                       <div className="flex gap-2">
-                        <Button variant="secondary" size="sm" leftIcon={<Printer className="h-3.5 w-3.5" />}>
-                          Cetak PDF
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          leftIcon={<Printer className="h-3.5 w-3.5" />}
+                          onClick={() => setShowPrintModal("surat")}
+                        >
+                          Cetak Dokumen Resmi
                         </Button>
                       </div>
                     )}
@@ -2642,7 +3064,7 @@ Mudir STQ Darul Ulum Cendekia,
                     ) : (
                       <div className="py-16 text-center space-y-2 text-slate-400">
                         <FileText className="h-10 w-10 mx-auto stroke-1" />
-                        <p className="text-sm">Klik tombol <strong>"Generate Naskah Surat (AI)"</strong> untuk merumuskan draf surat resmi otomatis berkop pondok.</p>
+                        <p className="text-sm">Klik tombol <strong>"Buat Draf Surat Resmi Lembaga"</strong> untuk merumuskan draf surat resmi otomatis berkop pondok.</p>
                       </div>
                     )}
                   </CardContent>
@@ -3408,7 +3830,7 @@ Mudir STQ Darul Ulum Cendekia,
                       <div className="flex items-center gap-2">
                         <Clock className="h-5 w-5 text-[#0E7C3A]" />
                         <CardTitle className="text-base sm:text-lg">
-                          Jadwal Harian Ritmik Santri — STQ Darul Ulum Cendekia
+                          Jadwal Harian Ritmik Santri — {INSTITUTION_CONFIG.shortName}
                         </CardTitle>
                       </div>
                       <Badge variant="green" size="md">Standar Kurikulum Resmi</Badge>
@@ -3908,12 +4330,17 @@ Mudir STQ Darul Ulum Cendekia,
         {/* MODAL PRINT DOKUMEN RESMI (RAPOR, SURAT AI, & SP)         */}
         {/* ========================================================= */}
         {showPrintModal && (
-          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="print-modal-title"
+            className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-200"
+          >
             <div className="bg-white rounded-3xl max-w-4xl w-full p-4 sm:p-7 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
               <div className="flex items-center justify-between border-b border-slate-200 pb-3 no-print">
                 <div className="flex items-center gap-2">
                   <Printer className="h-5 w-5 text-[#0E7C3A]" />
-                  <h3 className="font-bold text-base sm:text-lg text-slate-800">
+                  <h3 id="print-modal-title" className="font-bold text-base sm:text-lg text-slate-800">
                     {showPrintModal === "rapor"
                       ? "Pratinjau Cetak Rapor Santri (A4)"
                       : showPrintModal === "sp"
@@ -3935,6 +4362,7 @@ Mudir STQ Darul Ulum Cendekia,
                   </Button>
                   <button
                     onClick={() => setShowPrintModal(null)}
+                    aria-label="Tutup Dialog Pratinjau Cetak"
                     className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
                   >
                     <X className="h-5 w-5" />
@@ -3944,47 +4372,63 @@ Mudir STQ Darul Ulum Cendekia,
 
               {/* Preview Dokumen Standar A4 Cetak */}
               <div className="border border-slate-200 rounded-2xl p-2 sm:p-6 bg-slate-50/50 overflow-x-auto">
-                {showPrintModal === "rapor" && (
-                  <PrintRapor
-                    santri={{
-                      nama: santriList[0].nama,
-                      nis: santriList[0].nis,
-                      kelas: santriList[0].kelas,
-                      halaqoh: santriList[0].halaqoh,
-                      capaianJuz: santriList[0].capaianJuz,
-                      targetJuz: santriList[0].targetJuz,
-                      setoranTerakhir: santriList[0].setoranTerakhir,
-                      nilaiTerakhir: santriList[0].nilaiTerakhir,
-                    }}
-                    nilaiAkademik={nilaiAkademikList}
-                  />
-                )}
-                {showPrintModal === "surat" && (
-                  <PrintSurat
-                    perihal={perihalSurat || "Surat Keterangan Santri Aktif"}
-                    tujuan={tujuanSurat || "Orang Tua / Wali Santri"}
-                    isiPokok={
-                      hasilSuratAI ||
-                      "Menyatakan bahwa santri yang bersangkutan terdaftar aktif dalam program Tahfizh Al-Qur'an dan pendidikan kepesantrenan Darul Ulum Cendekia untuk Tahun Ajaran 2026/2027."
-                    }
-                  />
-                )}
-                {showPrintModal === "sp" && (
-                  <PrintSP
-                    tingkatSP="SP1"
-                    santriNama="Zaidan Al-Farisi"
-                    santriNis="SAN-0003"
-                    santriKelas="7A"
-                    totalPoin={25}
-                    riwayatPelanggaran={pelanggaranHistory.map((p) => ({
-                      deskripsi: p.kategori,
-                      poin: p.poin,
-                      tanggal: p.tanggal,
-                      isPengulangan: p.isPengulangan,
-                    }))}
-                    arahanPembinaan="Diberikan pembinaan tarbiyah intensif, shalat tepat waktu di shaf pertama, dan penugasan murojaah juz pilihan bersama Musyrif Asrama."
-                  />
-                )}
+                {showPrintModal === "rapor" && (() => {
+                  const targetSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
+                  return (
+                    <PrintRapor
+                      santri={{
+                        nama: targetSantri.nama,
+                        nis: targetSantri.nis,
+                        kelas: targetSantri.kelas,
+                        halaqoh: targetSantri.halaqoh,
+                        capaianJuz: targetSantri.capaianJuz,
+                        targetJuz: targetSantri.targetJuz,
+                        setoranTerakhir: targetSantri.setoranTerakhir,
+                        nilaiTerakhir: targetSantri.nilaiTerakhir,
+                      }}
+                      nilaiAkademik={nilaiAkademikList}
+                    />
+                  );
+                })()}
+                {showPrintModal === "surat" && (() => {
+                  const targetSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
+                  return (
+                    <PrintSurat
+                      perihal={perihalSurat || "Surat Keterangan Santri Aktif"}
+                      tujuan={tujuanSurat || "Orang Tua / Wali Santri"}
+                      santriNama={targetSantri.nama}
+                      santriNis={targetSantri.nis}
+                      santriKelas={targetSantri.kelas}
+                      isiPokok={
+                        hasilSuratAI ||
+                        "Menyatakan bahwa santri yang bersangkutan terdaftar aktif dalam program Tahfizh Al-Qur'an dan pendidikan kepesantrenan untuk Tahun Ajaran 2026/2027."
+                      }
+                    />
+                  );
+                })()}
+                {showPrintModal === "sp" && (() => {
+                  const activeSp = spList.find((s) => s.id === selectedSpId) || spList[0];
+                  const targetSantri = santriList.find((s) => s.nama === activeSp?.santriNama || s.nis === (activeSp as any)?.santriNis) || santriList[0];
+                  const filteredPelanggaran = pelanggaranHistory.filter((p) => p.santriNama === activeSp?.santriNama || p.santriNama === targetSantri?.nama);
+                  const tingkatStr = (activeSp ? `SP${activeSp.tingkat}` : "SP1") as "SP1" | "SP2" | "SP3";
+
+                  return (
+                    <PrintSP
+                      tingkatSP={tingkatStr}
+                      santriNama={targetSantri.nama}
+                      santriNis={targetSantri.nis}
+                      santriKelas={targetSantri.kelas}
+                      totalPoin={activeSp?.totalPoin || targetSantri.poinPelanggaran}
+                      riwayatPelanggaran={filteredPelanggaran.map((p) => ({
+                        deskripsi: p.kategori,
+                        poin: p.poin,
+                        tanggal: p.tanggal,
+                        isPengulangan: p.isPengulangan,
+                      }))}
+                      arahanPembinaan="Diberikan pembinaan tarbiyah intensif, shalat tepat waktu di shaf pertama, dan penugasan murojaah juz pilihan bersama Musyrif Asrama."
+                    />
+                  );
+                })()}
                 {showPrintModal === "laporan_bulanan" && (
                   <PrintLaporanBulanan
                     laporanData={

@@ -45,13 +45,12 @@ export function DashboardWaliSantri({
   onPrintRapor,
   onNavigateToIzin,
 }: DashboardWaliSantriProps) {
-  const rataRata =
+  const rataRataNum =
     nilaiAkademikList.length > 0
-      ? (
-          nilaiAkademikList.reduce((acc, curr) => acc + curr.angka, 0) /
-          nilaiAkademikList.length
-        ).toFixed(1)
-      : "89.8";
+      ? nilaiAkademikList.reduce((acc, curr) => acc + curr.angka, 0) /
+        nilaiAkademikList.length
+      : null;
+  const rataRata = rataRataNum !== null ? rataRataNum.toFixed(1) : "Belum Ada Data";
 
   return (
     <div className="space-y-6">
@@ -115,8 +114,8 @@ export function DashboardWaliSantri({
           value={rataRata}
           description="Akademik & Diniyah"
           icon={<ShieldCheck className="h-5 w-5" />}
-          badgeText="Predikat A"
-          badgeVariant="green"
+          badgeText={rataRataNum !== null ? (rataRataNum >= 90 ? "Predikat A" : rataRataNum >= 80 ? "Predikat B" : "Predikat C") : "Belum Ada Nilai"}
+          badgeVariant={rataRataNum !== null ? "green" : "neutral"}
         />
         <StatCard
           title="Status Izin Aktif"

@@ -3,6 +3,7 @@
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
 import { JenisSetoran, NilaiSetoran } from "@prisma/client";
+import { generateSetoranCode } from "@/lib/sequence";
 
 export interface CreateSetoranInput {
   santriId: string;
@@ -64,7 +65,7 @@ export async function createSetoranAction(input: CreateSetoranInput) {
 
     // 4. Generate kode setoran unik (e.g. SET-000123)
     const count = await prisma.setoranTahfizh.count();
-    const setoranCode = `SET-${String(count + 1).padStart(6, "0")}`;
+    const setoranCode = generateSetoranCode(count + 1);
 
     // 5. Simpan Setoran ke PostgreSQL
     const hlmPrefix = input.jumlahHalaman ? `[Hlm: ${input.jumlahHalaman}] ` : "";
@@ -121,11 +122,32 @@ export async function createSetoranAction(input: CreateSetoranInput) {
 }
 
 /**
- * Server Action: Mengambil riwayat setoran terbaru
+ * Server Action: Mengambil riwayat setoran terbaru (dengan otorisasi sesi & scoping ABAC)
  */
 export async function getRecentSetoranAction(limit: number = 10) {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Silakan login terlebih dahulu.", data: [] };
+  }
+
   try {
+    const where: Record<string, unknown> = {};
+
+    if (session.role === "MT" || session.role === "PH") {
+      if (session.staffId) {
+        where.santri = {
+          halaqoh: { pembinaId: session.staffId },
+        };
+      }
+    } else if (session.role === "WS" || session.role === "ST") {
+      if (!session.santriId) {
+        return { success: false, message: "Akun Anda belum terhubung dengan data santri.", data: [] };
+      }
+      where.santriId = session.santriId;
+    }
+
     const list = await prisma.setoranTahfizh.findMany({
+      where,
       take: limit,
       orderBy: { tanggal: "desc" },
       include: {
@@ -143,9 +165,32 @@ export async function getRecentSetoranAction(limit: number = 10) {
 }
 
 /**
- * Server Action: Mengambil data ringkasan progres santri
+ * Server Action: Mengambil data ringkasan progres santri (dengan otorisasi sesi & scoping ABAC)
  */
 export async function getSantriProgresAction(santriId: string) {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Silakan login terlebih dahulu." };
+  }
+
+  if (session.role === "WS" || session.role === "ST") {
+    if (!session.santriId || session.santriId !== santriId) {
+      return { success: false, message: "Akses Ditolak: Anda hanya berhak melihat progres santri Anda sendiri." };
+    }
+  } else if (session.role === "MT" || session.role === "PH") {
+    if (session.staffId) {
+      const isBinaan = await prisma.halaqoh.findFirst({
+        where: {
+          pembinaId: session.staffId,
+          santriList: { some: { id: santriId } },
+        },
+      });
+      if (!isBinaan) {
+        return { success: false, message: "Akses Ditolak: Santri berada di luar halaqoh binaan Anda." };
+      }
+    }
+  }
+
   try {
     const santri = await prisma.santri.findUnique({
       where: { id: santriId },

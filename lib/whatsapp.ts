@@ -67,20 +67,21 @@ export interface ProgressSantriWAParams {
   pembinaNama?: string;
 }
 
-const DEFAULT_FALLBACK_PHONE = "6281299887766";
 const PORTAL_URL = "https://stq-education-portal-app-two.vercel.app";
 
 /**
  * Memformat nomor telepon Indonesia menjadi format standar internasional WhatsApp (628xxx)
- * Menghapus spasi, strip, tanda kurung, dan mengonversi 08xx -> 628xx
+ * Menghapus spasi, strip, tanda kurung, dan mengonversi 08xx -> 628xx.
+ * Mengembalikan string kosong jika input kosong, null, atau tidak valid (< 9 digit).
+ * Mencegah pengiriman salah sasaran ke nomor dummy (Audit P0 - A09).
  */
 export function formatIndonesianPhone(phone?: string | null): string {
-  if (!phone) return DEFAULT_FALLBACK_PHONE;
+  if (!phone) return "";
   
   // Hapus semua karakter non-digit
   let cleaned = phone.replace(/\D/g, "");
   
-  if (!cleaned) return DEFAULT_FALLBACK_PHONE;
+  if (!cleaned) return "";
   
   // Jika diawali 0, ganti dengan 62
   if (cleaned.startsWith("0")) {
@@ -92,7 +93,7 @@ export function formatIndonesianPhone(phone?: string | null): string {
   
   // Minimal valid length untuk nomor HP Indonesia (biasanya 10-15 digit)
   if (cleaned.length < 9) {
-    return DEFAULT_FALLBACK_PHONE;
+    return "";
   }
   
   return cleaned;
@@ -100,9 +101,11 @@ export function formatIndonesianPhone(phone?: string | null): string {
 
 /**
  * Menghasilkan tautan universal WhatsApp Web / App
+ * Mengembalikan string kosong jika nomor telepon tidak valid/kosong
  */
 export function generateWALink(phone: string | undefined | null, message: string): string {
   const formattedPhone = formatIndonesianPhone(phone);
+  if (!formattedPhone) return "";
   const encodedText = encodeURIComponent(message.trim());
   return `https://wa.me/${formattedPhone}?text=${encodedText}`;
 }
@@ -112,6 +115,10 @@ export function generateWALink(phone: string | undefined | null, message: string
  */
 export function openWhatsAppDirect(phone: string | undefined | null, message: string): void {
   const url = generateWALink(phone, message);
+  if (!url) {
+    console.warn("Panggilan WhatsApp dibatalkan: Nomor tujuan tidak valid atau kosong.");
+    return;
+  }
   if (typeof window !== "undefined") {
     window.open(url, "_blank", "noopener,noreferrer");
   }

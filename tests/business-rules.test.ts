@@ -1,62 +1,19 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import {
+  hitungPoinPelanggaran,
+  evaluasiLevelSP,
+  konversiPredikatNilai,
+  validasiAlurPerizinan,
+  validasiIkhtibarTahap2,
+  SP_THRESHOLDS,
+  NILAI_THRESHOLDS,
+} from '../lib/educational-rules';
 
 /**
  * Logika Bisnis Inti STQ Education Portal
- * Diuji sesuai spesifikasi dokumen PRD (01_PRD_STQ.md & 05_ROLE_PERMISSION_MATRIX.md)
+ * Diuji sesuai spesifikasi dokumen PRD dan remedi audit STQ 2026-09-08 (A17)
  */
-
-// 1. Logika Sanksi Pelanggaran (Doubling Poin)
-function hitungPoinPelanggaran(poinDasar: number, isPengulangan: boolean): number {
-  return isPengulangan ? poinDasar * 2 : poinDasar;
-}
-
-// 2. Ambang Batas Surat Peringatan (SP)
-function evaluasiLevelSP(totalPoin: number): 'SP3' | 'SP2' | 'SP1' | null {
-  if (totalPoin >= 100) return 'SP3';
-  if (totalPoin >= 60) return 'SP2';
-  if (totalPoin >= 30) return 'SP1';
-  return null;
-}
-
-// 3. Konversi Nilai Akademik
-function konversiPredikatNilai(angka: number): 'A' | 'B' | 'C' | 'D' {
-  if (angka >= 85) return 'A';
-  if (angka >= 70) return 'B';
-  if (angka >= 60) return 'C';
-  return 'D';
-}
-
-// 4. Aturan Perizinan Berjenjang
-function validasiAlurPerizinan(jenisIzin: 'PULANG' | 'KELUAR_KOTA' | 'LOKAL', roleApprover: string, currentStatus: string) {
-  if (jenisIzin === 'LOKAL') {
-    // Izin lokal cukup disetujui Musyrif Kesantrian (MK)
-    if (roleApprover === 'MK' || roleApprover === 'KS') {
-      return { disetujui: true, statusBerikutnya: 'DISETUJUI' };
-    }
-    return { disetujui: false, error: 'Hanya MK atau KS yang berwenang menyetujui izin lokal' };
-  } else {
-    // Izin menginap / pulang harus disetujui MK terlebih dahulu, lalu dieskalasi ke KS
-    if (currentStatus === 'MENUNGGU_MK' && roleApprover === 'MK') {
-      return { disetujui: true, statusBerikutnya: 'MENUNGGU_KS' };
-    }
-    if (currentStatus === 'MENUNGGU_KS' && roleApprover === 'KS') {
-      return { disetujui: true, statusBerikutnya: 'DISETUJUI' };
-    }
-    return { disetujui: false, error: 'Alur persetujuan tidak sesuai hierarki' };
-  }
-}
-
-// 5. Validasi Ujian Ikhtibar 2 Tahap
-function validasiIkhtibarTahap2(statusTahap1: string, nilaiTahap2: number) {
-  if (statusTahap1 !== 'LULUS_TAHAP_1') {
-    return { lulus: false, error: 'Santri harus dinyatakan lulus Tahap 1 oleh Musyrif sebelum diuji Mudir' };
-  }
-  if (nilaiTahap2 >= 75) {
-    return { lulus: true, status: 'LULUS_MUNAASYAH', pesan: 'Alhamdulillah, santri dinyatakan Lulus Munaqasyah Juz' };
-  }
-  return { lulus: false, status: 'REMEDIAL_TAHAP_2', pesan: 'Santri perlu mengulang pengujian Tahap 2' };
-}
 
 // 6. Perhitungan Saldo Stok Logistik
 function hitungMutasiStok(stokAwal: number, jenisMutasi: 'MASUK' | 'KELUAR', jumlah: number): number {
@@ -80,43 +37,47 @@ describe('Aturan Bisnis Kedisiplinan & Pelanggaran', () => {
     assert.equal(poin, 20);
   });
 
-  it('harus memicu SP1 pada akumulasi 30 poin', () => {
-    assert.equal(evaluasiLevelSP(30), 'SP1');
-    assert.equal(evaluasiLevelSP(45), 'SP1');
+  it('harus memicu SP1 pada akumulasi 20 poin', () => {
+    assert.equal(evaluasiLevelSP(20), 'SP1');
+    assert.equal(evaluasiLevelSP(35), 'SP1');
   });
 
-  it('harus memicu SP2 pada akumulasi 60 poin', () => {
-    assert.equal(evaluasiLevelSP(60), 'SP2');
-    assert.equal(evaluasiLevelSP(99), 'SP2');
+  it('harus memicu SP2 pada akumulasi 40 poin', () => {
+    assert.equal(evaluasiLevelSP(40), 'SP2');
+    assert.equal(evaluasiLevelSP(59), 'SP2');
   });
 
-  it('harus memicu SP3 pada akumulasi 100 poin atau lebih', () => {
+  it('harus memicu SP3 pada akumulasi 60 poin atau lebih', () => {
+    assert.equal(evaluasiLevelSP(60), 'SP3');
     assert.equal(evaluasiLevelSP(100), 'SP3');
-    assert.equal(evaluasiLevelSP(150), 'SP3');
   });
 
-  it('tidak memicu SP jika total poin di bawah 30', () => {
-    assert.equal(evaluasiLevelSP(25), null);
+  it('tidak memicu SP jika total poin di bawah 20', () => {
+    assert.equal(evaluasiLevelSP(15), null);
+    assert.equal(evaluasiLevelSP(0), null);
   });
 });
 
 describe('Aturan Akademik & Penilaian', () => {
-  it('harus mengonversi angka >= 85 ke predikat A', () => {
+  it('harus mengonversi angka >= 90 ke predikat A', () => {
+    assert.equal(konversiPredikatNilai(95), 'A');
     assert.equal(konversiPredikatNilai(90), 'A');
-    assert.equal(konversiPredikatNilai(85), 'A');
   });
 
-  it('harus mengonversi angka 70-84 ke predikat B', () => {
-    assert.equal(konversiPredikatNilai(75), 'B');
-    assert.equal(konversiPredikatNilai(84.9), 'B');
+  it('harus mengonversi angka 80-89 ke predikat B', () => {
+    assert.equal(konversiPredikatNilai(85), 'B');
+    assert.equal(konversiPredikatNilai(80), 'B');
   });
 
-  it('harus mengonversi angka 60-69 ke predikat C', () => {
-    assert.equal(konversiPredikatNilai(65), 'C');
+  it('harus mengonversi angka 70-79 ke predikat C', () => {
+    assert.equal(konversiPredikatNilai(75), 'C');
+    assert.equal(konversiPredikatNilai(70), 'C');
   });
 
-  it('harus mengonversi angka < 60 ke predikat D (Remedial)', () => {
+  it('harus mengonversi angka < 70 ke predikat D (Remedial)', () => {
+    assert.equal(konversiPredikatNilai(69), 'D');
     assert.equal(konversiPredikatNilai(55), 'D');
+    assert.equal(konversiPredikatNilai(0), 'D');
   });
 });
 
@@ -152,7 +113,7 @@ describe('Aturan Ujian Ikhtibar Tahfizh 2 Tahap', () => {
   it('santri yang lulus Tahap 1 dan mendapat nilai Tahap 2 >= 75 dinyatakan Lulus Munaqasyah', () => {
     const res = validasiIkhtibarTahap2('LULUS_TAHAP_1', 88);
     assert.equal(res.lulus, true);
-    assert.equal(res.status, 'LULUS_MUNAASYAH');
+    assert.equal(res.status, 'LULUS_SEMPURNA_TAHAP_2');
   });
 });
 
