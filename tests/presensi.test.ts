@@ -107,6 +107,66 @@ describe("Modul Presensi Harian Shalat Berjamaah & Halaqoh Tests", () => {
       assert.ok(msg.includes("Tingkat Kehadiran*: *100%*"));
       assert.ok(msg.includes("Hadir Tepat Waktu*: 50 santri"));
     });
+
+    it("harus menyusun laporan mutaba'ah Puasa Sunnah dengan istilah Islami yang tepat", () => {
+      const msg = buildRekapPresensiWAMessage({
+        kegiatan: "Puasa Sunnah",
+        tanggal: "08/09/2026",
+        petugasNama: "Ust. Mujaddid Zhohruddin (MK)",
+        totalSantri: 50,
+        hadir: 45,
+        masbuk: 2,
+        sakit: 2,
+        izin: 1,
+        alpa: 0,
+        daftarTidakHadir: [
+          { nama: "Achmad Sufiyan", kelas: "8B", status: "MASBUK", catatan: "Batal uzur tengah hari" },
+        ],
+      });
+
+      assert.ok(msg.includes("*LAPORAN MUTABA'AH PUASA SUNNAH*"));
+      assert.ok(msg.includes("Berpuasa*: 45 santri"));
+      assert.ok(msg.includes("Batal / Tidak Tuntas*: 2 santri"));
+      assert.ok(msg.includes("Tingkat Kepatuhan Puasa"));
+      assert.ok(msg.includes("Achmad Sufiyan"));
+    });
+
+    it("harus menyusun laporan mutaba'ah Sholat Tahajjud (Qiyamul Lail)", () => {
+      const msg = buildRekapPresensiWAMessage({
+        kegiatan: "Sholat Tahajjud",
+        tanggal: "08/09/2026",
+        petugasNama: "Piket Pembina Asrama Ali",
+        totalSantri: 40,
+        hadir: 36,
+        masbuk: 2,
+        sakit: 1,
+        izin: 1,
+        alpa: 0,
+      });
+
+      assert.ok(msg.includes("*LAPORAN MUTABA'AH SHALAT TAHAJJUD (QIYAMUL LAIL)*"));
+      assert.ok(msg.includes("Melaksanakan*: 36 santri"));
+      assert.ok(msg.includes("Menyusul / Masbuk*: 2 santri"));
+      assert.ok(msg.includes("Tingkat Kepatuhan*: *95%*")); // (36+2)/40 = 95%
+    });
+
+    it("harus menyusun laporan mutaba'ah Sholat Dhuha", () => {
+      const msg = buildRekapPresensiWAMessage({
+        kegiatan: "Sholat Dhuha",
+        tanggal: "08/09/2026",
+        petugasNama: "Ust. Razan Mufli, S.Pd",
+        totalSantri: 45,
+        hadir: 42,
+        masbuk: 0,
+        sakit: 1,
+        izin: 0,
+        alpa: 2,
+      });
+
+      assert.ok(msg.includes("*LAPORAN MUTABA'AH SHALAT DHUHA*"));
+      assert.ok(msg.includes("Melaksanakan*: 42 santri"));
+      assert.ok(msg.includes("Kesiangan / Belum*: 2 santri"));
+    });
   });
 
   describe("3. Aturan Bisnis & Integrasi Izin Aktif", () => {

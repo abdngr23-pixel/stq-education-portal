@@ -46,6 +46,7 @@ export interface PresensiHarianMobileProps {
 }
 
 type StatusType = "HADIR" | "MASBUK" | "SAKIT" | "IZIN" | "ALFA";
+type KategoriSesiType = "SHALAT" | "SUNNAH" | "HALAQOH";
 
 const SESI_SHALAT = [
   { id: "Sholat Subuh", label: "Shalat Subuh (04.45 WITA)", short: "Subuh" },
@@ -53,6 +54,33 @@ const SESI_SHALAT = [
   { id: "Sholat Ashar", label: "Shalat Ashar (15.30 WITA)", short: "Ashar" },
   { id: "Sholat Maghrib", label: "Shalat Maghrib (18.15 WITA)", short: "Maghrib" },
   { id: "Sholat Isya", label: "Shalat Isya (19.30 WITA)", short: "Isya" },
+];
+
+const SESI_SUNNAH = [
+  {
+    id: "Sholat Tahajjud",
+    label: "Sholat Tahajjud (03.15–04.15 WITA)",
+    short: "Tahajjud",
+    target: "15 Malam/Bulan",
+    desc: "Qiyamul Lail & sholat tahajjud santri di asrama & masjid",
+    icon: "🌙",
+  },
+  {
+    id: "Sholat Dhuha",
+    label: "Sholat Dhuha (07.15–08.00 WITA)",
+    short: "Dhuha",
+    target: "15 Pagi/Bulan",
+    desc: "Shalat sunnah Dhuha pagi sebelum jam KBM / halaqoh",
+    icon: "☀️",
+  },
+  {
+    id: "Puasa Sunnah",
+    label: "Puasa Sunnah (Senin & Kamis)",
+    short: "Puasa Sunnah",
+    target: "6 Hari/Bulan",
+    desc: "Puasa sunnah Senin & Kamis serta Ayyamul Bidh",
+    icon: "🍃",
+  },
 ];
 
 const SESI_HALAQOH = [
@@ -71,7 +99,7 @@ export function PresensiHarianMobile({
   halaqohList = [],
   onPresensiSaved,
 }: PresensiHarianMobileProps) {
-  const [kategoriSesi, setKategoriSesi] = useState<"SHALAT" | "HALAQOH">("SHALAT");
+  const [kategoriSesi, setKategoriSesi] = useState<KategoriSesiType>("SHALAT");
   const [selectedSesi, setSelectedSesi] = useState<string>("Sholat Subuh");
   const [tanggal, setTanggal] = useState<string>(() => {
     const now = new Date();
@@ -126,6 +154,64 @@ export function PresensiHarianMobile({
     });
   }, [santriList, selectedHalaqohFilter, selectedKelasFilter, searchQuery]);
 
+  // Deteksi Sesi Ibadah Sunnah & Analisis Kalender
+  const selectedDateObj = useMemo(() => new Date(tanggal), [tanggal]);
+  const dayOfWeek = selectedDateObj.getDay(); // 0 = Ahad, 1 = Senin, 4 = Kamis
+  const isSeninOrKamis = dayOfWeek === 1 || dayOfWeek === 4;
+  const dayNameIndo = ["Ahad", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"][dayOfWeek];
+
+  const isPuasaSesi = selectedSesi.toLowerCase().includes("puasa");
+  const isTahajjudSesi = selectedSesi.toLowerCase().includes("tahajjud");
+  const isDhuhaSesi = selectedSesi.toLowerCase().includes("dhuha");
+  const isSunnahWorship = isPuasaSesi || isTahajjudSesi || isDhuhaSesi;
+
+  // Konfigurasi Label Status Dinamis berdasarkan Sesi Ibadah
+  const getStatusConfig = (st: StatusType) => {
+    if (isPuasaSesi) {
+      switch (st) {
+        case "HADIR":
+          return { label: "Berpuasa Penuh", short: "Puasa", badgeColor: "bg-emerald-100 text-[#0E7C3A] border-emerald-200", btnActive: "bg-[#0E7C3A] text-white border-[#0E7C3A]" };
+        case "MASBUK":
+          return { label: "Batal / Uzur Tengah Hari", short: "Batal", badgeColor: "bg-amber-100 text-amber-800 border-amber-300", btnActive: "bg-amber-500 text-white border-amber-500" };
+        case "SAKIT":
+          return { label: "Sakit (Tidak Berpuasa)", short: "Sakit", badgeColor: "bg-sky-100 text-sky-800 border-sky-300", btnActive: "bg-sky-600 text-white border-sky-600" };
+        case "IZIN":
+          return { label: "Izin Pulang / Safar", short: "Izin", badgeColor: "bg-purple-100 text-purple-800 border-purple-300", btnActive: "bg-purple-600 text-white border-purple-600" };
+        case "ALFA":
+          return { label: "Tidak Berpuasa", short: "Tidak", badgeColor: "bg-slate-100 text-slate-700 border-slate-300", btnActive: "bg-slate-600 text-white border-slate-600" };
+      }
+    }
+
+    if (isTahajjudSesi || isDhuhaSesi) {
+      switch (st) {
+        case "HADIR":
+          return { label: "Melaksanakan Shalat", short: "Shalat", badgeColor: "bg-emerald-100 text-[#0E7C3A] border-emerald-200", btnActive: "bg-[#0E7C3A] text-white border-[#0E7C3A]" };
+        case "MASBUK":
+          return { label: "Menyusul / Masbuk", short: "Menyusul", badgeColor: "bg-amber-100 text-amber-800 border-amber-300", btnActive: "bg-amber-500 text-white border-amber-500" };
+        case "SAKIT":
+          return { label: "Sakit (Istirahat UKS)", short: "Sakit", badgeColor: "bg-sky-100 text-sky-800 border-sky-300", btnActive: "bg-sky-600 text-white border-sky-600" };
+        case "IZIN":
+          return { label: "Izin Pulang / Uzur", short: "Izin", badgeColor: "bg-purple-100 text-purple-800 border-purple-300", btnActive: "bg-purple-600 text-white border-purple-600" };
+        case "ALFA":
+          return { label: "Kesiangan / Belum Shalat", short: "Belum", badgeColor: "bg-rose-100 text-rose-800 border-rose-300", btnActive: "bg-rose-600 text-white border-rose-600" };
+      }
+    }
+
+    // Default Shalat Fardhu 5 Waktu & Halaqoh Al-Qur'an
+    switch (st) {
+      case "HADIR":
+        return { label: "Hadir Tepat Waktu", short: "Hadir", badgeColor: "bg-emerald-100 text-[#0E7C3A] border-emerald-200", btnActive: "bg-[#0E7C3A] text-white border-[#0E7C3A]" };
+      case "MASBUK":
+        return { label: "Masbuk (Terlambat Shaf)", short: "Masbuk", badgeColor: "bg-amber-100 text-amber-800 border-amber-300", btnActive: "bg-amber-500 text-white border-amber-500" };
+      case "SAKIT":
+        return { label: "Sakit (Istirahat UKS)", short: "Sakit", badgeColor: "bg-sky-100 text-sky-800 border-sky-300", btnActive: "bg-sky-600 text-white border-sky-600" };
+      case "IZIN":
+        return { label: "Izin Pulang Resmi", short: "Izin", badgeColor: "bg-purple-100 text-purple-800 border-purple-300", btnActive: "bg-purple-600 text-white border-purple-600" };
+      case "ALFA":
+        return { label: "Alpa / Tanpa Keterangan", short: "Alpa", badgeColor: "bg-rose-100 text-rose-800 border-rose-300", btnActive: "bg-rose-600 text-white border-rose-600" };
+    }
+  };
+
   // Hitung ringkasan status
   const summaryCounts = useMemo(() => {
     const counts = { HADIR: 0, MASBUK: 0, SAKIT: 0, IZIN: 0, ALFA: 0 };
@@ -164,7 +250,7 @@ export function PresensiHarianMobile({
     }));
   };
 
-  // 1-Klik Set Semua Hadir
+  // 1-Klik Set Semua Hadir / Melaksanakan / Berpuasa
   const handleSetAllHadir = () => {
     setAttendanceMap((prev) => {
       const updated = { ...prev };
@@ -176,7 +262,12 @@ export function PresensiHarianMobile({
       });
       return updated;
     });
-    setFeedback({ type: "success", text: "Seluruh santri dalam filter ditandai HADIR." });
+    const actionDesc = isPuasaSesi
+      ? "Seluruh santri dalam filter ditandai BERPUASA."
+      : isSunnahWorship
+      ? "Seluruh santri dalam filter ditandai MELAKSANAKAN SHALAT."
+      : "Seluruh santri dalam filter ditandai HADIR.";
+    setFeedback({ type: "success", text: actionDesc });
   };
 
   // Simpan Batch Presensi
@@ -320,22 +411,37 @@ export function PresensiHarianMobile({
           </div>
         </div>
 
-        {/* Tab Jenis: Shalat Berjamaah vs Halaqoh */}
-        <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-slate-100/90 text-xs font-bold">
+        {/* Tab Kategori: Shalat 5 Waktu vs Ibadah Sunnah vs Halaqoh */}
+        <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-slate-100/90 text-xs font-bold">
           <button
             type="button"
             onClick={() => {
               setKategoriSesi("SHALAT");
               setSelectedSesi("Sholat Subuh");
             }}
-            className={`py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+            className={`py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
               kategoriSesi === "SHALAT"
                 ? "bg-[#0E7C3A] text-white shadow-2xs"
                 : "text-slate-600 hover:text-slate-900"
             }`}
           >
             <span>🕌</span>
-            <span>Shalat 5 Waktu</span>
+            <span className="truncate">Shalat Fardhu</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setKategoriSesi("SUNNAH");
+              setSelectedSesi("Sholat Tahajjud");
+            }}
+            className={`py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+              kategoriSesi === "SUNNAH"
+                ? "bg-[#0E7C3A] text-white shadow-2xs"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <span>🌙</span>
+            <span className="truncate">Ibadah Sunnah</span>
           </button>
           <button
             type="button"
@@ -343,37 +449,117 @@ export function PresensiHarianMobile({
               setKategoriSesi("HALAQOH");
               setSelectedSesi("Halaqah Ba'da Shubuh");
             }}
-            className={`py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+            className={`py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
               kategoriSesi === "HALAQOH"
                 ? "bg-[#0E7C3A] text-white shadow-2xs"
                 : "text-slate-600 hover:text-slate-900"
             }`}
           >
             <span>📖</span>
-            <span>Halaqoh Al-Qur&apos;an</span>
+            <span className="truncate">Halaqoh Qur&apos;an</span>
           </button>
         </div>
 
         {/* Pilihan Sesi Spesifik */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-          {(kategoriSesi === "SHALAT" ? SESI_SHALAT : SESI_HALAQOH).map((sesi) => {
+          {(kategoriSesi === "SHALAT"
+            ? SESI_SHALAT
+            : kategoriSesi === "SUNNAH"
+            ? SESI_SUNNAH
+            : SESI_HALAQOH
+          ).map((sesi) => {
             const isSelected = selectedSesi === sesi.id;
+            const targetBadge = "target" in sesi ? (sesi as any).target : null;
             return (
               <button
                 key={sesi.id}
                 type="button"
                 onClick={() => setSelectedSesi(sesi.id)}
-                className={`px-3 py-2 rounded-2xl text-xs font-bold whitespace-nowrap transition-all border shrink-0 ${
+                className={`px-3 py-2 rounded-2xl text-xs font-bold whitespace-nowrap transition-all border shrink-0 flex items-center gap-1.5 ${
                   isSelected
                     ? "bg-emerald-50 text-[#0E7C3A] border-emerald-300 ring-2 ring-emerald-500/20 shadow-2xs"
                     : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
                 }`}
               >
-                {sesi.label}
+                {"icon" in sesi && <span>{(sesi as any).icon}</span>}
+                <span>{sesi.label}</span>
+                {targetBadge && (
+                  <span
+                    className={`ml-1 px-1.5 py-0.5 rounded-md text-[10px] font-extrabold ${
+                      isSelected
+                        ? "bg-[#0E7C3A] text-white"
+                        : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {targetBadge}
+                  </span>
+                )}
               </button>
             );
           })}
         </div>
+
+        {/* Banner Pintar Ibadah Sunnah */}
+        {kategoriSesi === "SUNNAH" && (
+          <div className="pt-1">
+            {isPuasaSesi ? (
+              <div
+                className={`p-3 rounded-2xl text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 border ${
+                  isSeninOrKamis
+                    ? "bg-emerald-50 border-emerald-300 text-emerald-950"
+                    : "bg-amber-50/70 border-amber-200 text-amber-950"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🍃</span>
+                  <div>
+                    <p className="font-bold">
+                      {isSeninOrKamis
+                        ? `Alhamdulillah Hari Ini Hari ${dayNameIndo} (Jadwal Utama Puasa Sunnah!)`
+                        : `Hari ${dayNameIndo} (Puasa Tathawwu' / Qadha / Ayyamul Bidh)`}
+                    </p>
+                    <p className="text-[11px] opacity-80">
+                      Target kurikulum resmi DUC: <strong>Minimal 6 Hari / Bulan</strong>. Menanamkan tarbiyah ruhiyah dan keikhlasan santri.
+                    </p>
+                  </div>
+                </div>
+                <Badge variant={isSeninOrKamis ? "green" : "gold"} size="sm" className="self-start sm:self-auto">
+                  {isSeninOrKamis ? "Sunnah Muakkadah" : "Tathawwu'"}
+                </Badge>
+              </div>
+            ) : isTahajjudSesi ? (
+              <div className="p-3 rounded-2xl text-xs bg-indigo-50/80 border border-indigo-200 text-indigo-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🌙</span>
+                  <div>
+                    <p className="font-bold">Qiyamul Lail &amp; Shalat Tahajjud (03.15–04.15 WITA)</p>
+                    <p className="text-[11px] text-indigo-800">
+                      Target kurikulum DUC: <strong>Minimal 15 Malam / Bulan</strong>. Pengawasan oleh Musyrif Asrama &amp; Divisi Keamanan OSDA.
+                    </p>
+                  </div>
+                </div>
+                <Badge variant="sky" size="sm" className="self-start sm:self-auto">
+                  Target: 15 Malam/Bln
+                </Badge>
+              </div>
+            ) : (
+              <div className="p-3 rounded-2xl text-xs bg-amber-50/80 border border-amber-200 text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">☀️</span>
+                  <div>
+                    <p className="font-bold">Shalat Sunnah Dhuha (07.15–08.00 WITA)</p>
+                    <p className="text-[11px] text-amber-800">
+                      Target kurikulum DUC: <strong>Minimal 15 Pagi / Bulan</strong>. Dilaksanakan santri sebelum masuk KBM atau halaqoh dhuha.
+                    </p>
+                  </div>
+                </div>
+                <Badge variant="orange" size="sm" className="self-start sm:self-auto">
+                  Target: 15 Pagi/Bln
+                </Badge>
+              </div>
+            )}
+          </div>
+        )}
       </Card>
 
       {/* Card 2: Filter Target & Aksi Cepat Massal */}
@@ -450,23 +636,29 @@ export function PresensiHarianMobile({
             <span className="text-sm font-extrabold text-slate-800">{filteredSantri.length}</span>
           </div>
           <div className="p-2 rounded-xl bg-emerald-50/80 border border-emerald-200">
-            <span className="text-[10px] uppercase font-bold text-emerald-700 block">Hadir</span>
+            <span className="text-[10px] uppercase font-bold text-emerald-700 block truncate">
+              {isPuasaSesi ? "Berpuasa" : isSunnahWorship ? "Shalat" : "Hadir"}
+            </span>
             <span className="text-sm font-extrabold text-emerald-800">{summaryCounts.HADIR}</span>
           </div>
           <div className="p-2 rounded-xl bg-amber-50/80 border border-amber-200">
-            <span className="text-[10px] uppercase font-bold text-amber-700 block">Masbuk</span>
+            <span className="text-[10px] uppercase font-bold text-amber-700 block truncate">
+              {isPuasaSesi ? "Batal" : isSunnahWorship ? "Menyusul" : "Masbuk"}
+            </span>
             <span className="text-sm font-extrabold text-amber-800">{summaryCounts.MASBUK}</span>
           </div>
           <div className="p-2 rounded-xl bg-sky-50/80 border border-sky-200">
-            <span className="text-[10px] uppercase font-bold text-sky-700 block">Sakit</span>
+            <span className="text-[10px] uppercase font-bold text-sky-700 block truncate">Sakit</span>
             <span className="text-sm font-extrabold text-sky-800">{summaryCounts.SAKIT}</span>
           </div>
           <div className="p-2 rounded-xl bg-purple-50/80 border border-purple-200">
-            <span className="text-[10px] uppercase font-bold text-purple-700 block">Izin</span>
+            <span className="text-[10px] uppercase font-bold text-purple-700 block truncate">Izin</span>
             <span className="text-sm font-extrabold text-purple-800">{summaryCounts.IZIN}</span>
           </div>
           <div className="p-2 rounded-xl bg-rose-50/80 border border-rose-200">
-            <span className="text-[10px] uppercase font-bold text-rose-700 block">Alpa</span>
+            <span className="text-[10px] uppercase font-bold text-rose-700 block truncate">
+              {isPuasaSesi ? "Tidak" : isSunnahWorship ? "Belum" : "Alpa"}
+            </span>
             <span className="text-sm font-extrabold text-rose-800">{summaryCounts.ALFA}</span>
           </div>
         </div>
@@ -482,7 +674,11 @@ export function PresensiHarianMobile({
               className="text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border-emerald-200"
               leftIcon={<CheckCircle2 className="h-3.5 w-3.5 text-emerald-700" />}
             >
-              Semua Hadir (1-Klik)
+              {isPuasaSesi
+                ? "Semua Berpuasa (1-Klik)"
+                : isSunnahWorship
+                ? "Semua Melaksanakan (1-Klik)"
+                : "Semua Hadir (1-Klik)"}
             </Button>
             <span className="text-[11px] text-slate-400 hidden sm:inline">
               Ketuk nama santri di bawah untuk mengganti status
@@ -508,6 +704,7 @@ export function PresensiHarianMobile({
           const currentRec = attendanceMap[s.id] || { status: "HADIR" };
           const status = currentRec.status;
           const isPermitted = s.statusIzinAktif && s.statusIzinAktif.status === "DISETUJUI";
+          const currentCfg = getStatusConfig(status);
 
           return (
             <Card
@@ -530,17 +727,7 @@ export function PresensiHarianMobile({
                 {/* Info Identitas Santri */}
                 <div className="flex items-start gap-3 min-w-0">
                   <div
-                    className={`h-10 w-10 rounded-2xl flex items-center justify-center font-bold text-xs shrink-0 font-heading border ${
-                      status === "HADIR"
-                        ? "bg-emerald-100 text-[#0E7C3A] border-emerald-200"
-                        : status === "MASBUK"
-                        ? "bg-amber-100 text-amber-800 border-amber-300"
-                        : status === "SAKIT"
-                        ? "bg-sky-100 text-sky-800 border-sky-300"
-                        : status === "IZIN"
-                        ? "bg-purple-100 text-purple-800 border-purple-300"
-                        : "bg-rose-100 text-rose-800 border-rose-300"
-                    }`}
+                    className={`h-10 w-10 rounded-2xl flex items-center justify-center font-bold text-xs shrink-0 font-heading border ${currentCfg.badgeColor}`}
                   >
                     {s.nama
                       .split(" ")
@@ -582,34 +769,20 @@ export function PresensiHarianMobile({
                 >
                   {(["HADIR", "MASBUK", "SAKIT", "IZIN", "ALFA"] as const).map((st) => {
                     const isCurrent = status === st;
+                    const cfg = getStatusConfig(st);
                     return (
                       <button
                         key={st}
                         type="button"
                         onClick={() => handleSetStatus(s.id, st)}
+                        title={cfg.label}
                         className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
                           isCurrent
-                            ? st === "HADIR"
-                              ? "bg-[#0E7C3A] text-white border-[#0E7C3A] shadow-xs"
-                              : st === "MASBUK"
-                              ? "bg-amber-500 text-white border-amber-500 shadow-xs"
-                              : st === "SAKIT"
-                              ? "bg-sky-600 text-white border-sky-600 shadow-xs"
-                              : st === "IZIN"
-                              ? "bg-purple-600 text-white border-purple-600 shadow-xs"
-                              : "bg-rose-600 text-white border-rose-600 shadow-xs"
+                            ? cfg.btnActive + " shadow-xs"
                             : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
                         }`}
                       >
-                        {st === "HADIR"
-                          ? "Hadir"
-                          : st === "MASBUK"
-                          ? "Masbuk"
-                          : st === "SAKIT"
-                          ? "Sakit"
-                          : st === "IZIN"
-                          ? "Izin"
-                          : "Alpa"}
+                        {cfg.short}
                       </button>
                     );
                   })}
@@ -637,9 +810,9 @@ export function PresensiHarianMobile({
               <span>{filteredSantri.length} Santri</span>
             </p>
             <p className="text-[11px] text-slate-400">
-              Hadir: <strong className="text-white">{summaryCounts.HADIR}</strong> • 
-              Masbuk: <strong className="text-amber-400">{summaryCounts.MASBUK}</strong> • 
-              Alpa: <strong className="text-rose-400">{summaryCounts.ALFA}</strong>
+              {isPuasaSesi ? "Berpuasa" : isSunnahWorship ? "Shalat" : "Hadir"}: <strong className="text-white">{summaryCounts.HADIR}</strong> • 
+              {isPuasaSesi ? "Batal" : isSunnahWorship ? "Menyusul" : "Masbuk"}: <strong className="text-amber-400">{summaryCounts.MASBUK}</strong> • 
+              {isPuasaSesi ? "Tidak" : isSunnahWorship ? "Belum" : "Alpa"}: <strong className="text-rose-400">{summaryCounts.ALFA}</strong>
             </p>
           </div>
 
@@ -667,7 +840,7 @@ export function PresensiHarianMobile({
         defaultRecipientName="Grup Asatidz STQ DUC"
         defaultMessage={waMessage}
         title="Kirim Rekap Presensi ke Grup Asatidz"
-        description="Laporan ringkas kehadiran shalat berjamaah atau halaqoh santri siap dikirim via WhatsApp."
+        description="Laporan ringkas kehadiran shalat berjamaah, ibadah sunnah, atau halaqoh santri siap dikirim via WhatsApp."
       />
     </div>
   );

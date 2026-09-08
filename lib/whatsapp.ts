@@ -329,19 +329,48 @@ export function buildRekapPresensiWAMessage(p: RekapPresensiWAParams): string {
   const totalHadir = p.hadir + p.masbuk;
   const persentase = Math.round((totalHadir / (p.totalSantri || 1)) * 100);
 
-  let msg = `*LAPORAN PRESENSI SHALAT & HALAQOH*\n`;
+  const isPuasa = p.kegiatan.toLowerCase().includes("puasa");
+  const isTahajjud = p.kegiatan.toLowerCase().includes("tahajjud");
+  const isDhuha = p.kegiatan.toLowerCase().includes("dhuha");
+
+  const headerTitle = isPuasa
+    ? "*LAPORAN MUTABA'AH PUASA SUNNAH*"
+    : isTahajjud
+    ? "*LAPORAN MUTABA'AH SHALAT TAHAJJUD (QIYAMUL LAIL)*"
+    : isDhuha
+    ? "*LAPORAN MUTABA'AH SHALAT DHUHA*"
+    : "*LAPORAN PRESENSI SHALAT & HALAQOH*";
+
+  let msg = `${headerTitle}\n`;
   msg += `*STQ DARUL ULUM CENDEKIA*\n`;
   msg += `📅 ${tgl} • Pukul ${jam} WITA\n\n`;
   msg += `• *Sesi Kegiatan*: ${p.kegiatan}\n`;
   msg += `• *Petugas Presensi*: ${p.petugasNama}\n`;
   msg += `• *Total Santri*: ${p.totalSantri} Santri\n\n`;
   msg += `📊 *Ringkasan Kehadiran*:\n`;
-  msg += `✅ *Hadir Tepat Waktu*: ${p.hadir} santri\n`;
-  if (p.masbuk > 0) msg += `⏱️ *Masbuk/Terlambat*: ${p.masbuk} santri\n`;
-  if (p.sakit > 0) msg += `🏥 *Sakit*: ${p.sakit} santri\n`;
-  if (p.izin > 0) msg += `📝 *Izin Resmi*: ${p.izin} santri\n`;
-  if (p.alpa > 0) msg += `❌ *Alpa/Tanpa Keterangan*: ${p.alpa} santri\n`;
-  msg += `📈 *Tingkat Kehadiran*: *${persentase}%*\n`;
+
+  if (isPuasa) {
+    msg += `✅ *Berpuasa*: ${p.hadir} santri\n`;
+    if (p.masbuk > 0) msg += `⏱️ *Batal / Tidak Tuntas*: ${p.masbuk} santri\n`;
+    if (p.sakit > 0) msg += `🏥 *Sakit (Tidak Puasa)*: ${p.sakit} santri\n`;
+    if (p.izin > 0) msg += `📝 *Izin/Safar*: ${p.izin} santri\n`;
+    if (p.alpa > 0) msg += `❌ *Tidak Berpuasa*: ${p.alpa} santri\n`;
+    msg += `📈 *Tingkat Kepatuhan Puasa*: *${persentase}%*\n`;
+  } else if (isTahajjud || isDhuha) {
+    msg += `✅ *Melaksanakan*: ${p.hadir} santri\n`;
+    if (p.masbuk > 0) msg += `⏱️ *Menyusul / Masbuk*: ${p.masbuk} santri\n`;
+    if (p.sakit > 0) msg += `🏥 *Sakit (UKS)*: ${p.sakit} santri\n`;
+    if (p.izin > 0) msg += `📝 *Izin Resmi*: ${p.izin} santri\n`;
+    if (p.alpa > 0) msg += `❌ *Kesiangan / Belum*: ${p.alpa} santri\n`;
+    msg += `📈 *Tingkat Kepatuhan*: *${persentase}%*\n`;
+  } else {
+    msg += `✅ *Hadir Tepat Waktu*: ${p.hadir} santri\n`;
+    if (p.masbuk > 0) msg += `⏱️ *Masbuk/Terlambat*: ${p.masbuk} santri\n`;
+    if (p.sakit > 0) msg += `🏥 *Sakit*: ${p.sakit} santri\n`;
+    if (p.izin > 0) msg += `📝 *Izin Resmi*: ${p.izin} santri\n`;
+    if (p.alpa > 0) msg += `❌ *Alpa/Tanpa Keterangan*: ${p.alpa} santri\n`;
+    msg += `📈 *Tingkat Kehadiran*: *${persentase}%*\n`;
+  }
 
   if (p.daftarTidakHadir && p.daftarTidakHadir.length > 0) {
     msg += `\n📋 *Daftar Santri Masbuk / Sakit / Izin / Alpa*:\n`;
