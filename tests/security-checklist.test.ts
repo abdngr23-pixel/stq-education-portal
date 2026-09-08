@@ -207,6 +207,22 @@ describe('5 & 6. CORS Restrictions Tests', () => {
   });
 });
 
+describe('7. Secure Headers (Helmet Equivalents) Tests', () => {
+  it('harus memuat konfigurasi Content-Security-Policy, HSTS, X-Frame-Options, dan nosniff', () => {
+    const { SECURE_HEADERS, applySecureHeaders } = require('../lib/security/headers');
+    assert.equal(SECURE_HEADERS['X-Frame-Options'], 'DENY');
+    assert.equal(SECURE_HEADERS['X-Content-Type-Options'], 'nosniff');
+    assert.ok(SECURE_HEADERS['Strict-Transport-Security'].includes('max-age'));
+    assert.ok(SECURE_HEADERS['Content-Security-Policy'].includes("default-src 'self'"));
+    assert.ok(SECURE_HEADERS['Permissions-Policy'].includes('camera=()'));
+
+    const testHeaders = new Headers();
+    applySecureHeaders(testHeaders);
+    assert.equal(testHeaders.get('X-Frame-Options'), 'DENY');
+    assert.equal(testHeaders.get('X-Content-Type-Options'), 'nosniff');
+  });
+});
+
 describe('8. Body & Query Size Limits Logic', () => {
   it('harus mendeteksi query string yang melebihi batas 2048 karakter', () => {
     const longQuery = '?' + 'a='.repeat(1025); // > 2048 karakter
@@ -219,3 +235,4 @@ describe('8. Body & Query Size Limits Logic', () => {
     assert.ok(oversizedPayload > maxBytes);
   });
 });
+

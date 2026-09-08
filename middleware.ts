@@ -4,6 +4,7 @@ import { jwtVerify } from "jose";
 import { checkRateLimit, getClientIp } from "@/lib/security/rate-limit";
 import { verifyCsrf } from "@/lib/security/csrf";
 import { getCorsHeaders, handleCorsPreflight } from "@/lib/security/cors";
+import { applySecureHeaders } from "@/lib/security/headers";
 
 const SECRET_KEY = new TextEncoder().encode(
   process.env.AUTH_SECRET || "stq_portal_super_secret_session_key_min_32_characters_long_2026"
@@ -174,6 +175,9 @@ export async function middleware(request: NextRequest) {
       response.headers.set(key, value);
     }
   }
+
+  // 7. Terapkan Secure Headers (Helmet Equivalents) pada seluruh respons
+  applySecureHeaders(response.headers);
 
   return response;
 }
