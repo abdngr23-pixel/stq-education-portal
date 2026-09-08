@@ -2,264 +2,195 @@
 
 import React, { useState } from "react";
 import {
-  Home,
-  BookCheck,
-  Send,
-  LayoutGrid,
-  X,
-  GraduationCap,
-  Award,
-  AlertTriangle,
-  Stethoscope,
-  Package,
-  DollarSign,
-  FileText,
-  HeartHandshake,
-  Calendar,
-  UserCog,
-  ShieldCheck,
-} from "lucide-react";
+  AppNavId,
+  ALL_NAV_ITEMS,
+  ROLE_MOBILE_PRIMARY,
+} from "@/types/navigation";
+import { Role } from "@/types/auth";
 import { cn } from "@/lib/utils";
-
-export type NavTabId =
-  | "data_santri"
-  | "tahfizh"
-  | "akademik"
-  | "kesantrian"
-  | "kedisiplinan"
-  | "administrasi"
-  | "sponsor"
-  | "surat"
-  | "ikhtibar"
-  | "kesehatan"
-  | "logistik"
-  | "portal_wali"
-  | "agenda"
-  | "users"
-  | "audit";
+import { LayoutGrid, X } from "lucide-react";
 
 export interface MobileBottomNavProps {
-  activeTab: NavTabId | "beranda";
-  allowedTabs: string[];
-  onSelectTab: (tab: NavTabId | "beranda") => void;
+  activeTab: AppNavId;
+  allowedTabs: AppNavId[];
+  userRole: Role;
+  onSelectTab: (tab: AppNavId) => void;
+  className?: string;
 }
 
 export function MobileBottomNav({
   activeTab,
   allowedTabs,
+  userRole,
   onSelectTab,
+  className,
 }: MobileBottomNavProps) {
-  const [isMoreOpen, setIsMoreOpen] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
-  // Modul sekunder yang dapat diakses lewat "Lainnya"
-  const moreModules = [
-    {
-      id: "akademik" as NavTabId,
-      label: "Nilai Akademik & Rapor",
-      desc: "Penilaian kurikulum & rapor terpadu",
-      icon: GraduationCap,
-    },
-    {
-      id: "ikhtibar" as NavTabId,
-      label: "Ujian Ikhtibar Tahfizh",
-      desc: "Ujian komprehensif kelulusan juz 2-tahap",
-      icon: Award,
-    },
-    {
-      id: "kedisiplinan" as NavTabId,
-      label: "Kedisiplinan & Bintang",
-      desc: "Poin sanksi berlipat x2 & Surat Peringatan",
-      icon: AlertTriangle,
-    },
-    {
-      id: "kesehatan" as NavTabId,
-      label: "Poskestren & Klinik",
-      desc: "Rekam keluhan medis santri & riwayat obat",
-      icon: Stethoscope,
-    },
-    {
-      id: "logistik" as NavTabId,
-      label: "Logistik Asrama",
-      desc: "Inventaris & mutasi stok perlengkapan",
-      icon: Package,
-    },
-    {
-      id: "administrasi" as NavTabId,
-      label: "Anggaran & Kebutuhan",
-      desc: "Pengajuan dana berjenjang operasional",
-      icon: DollarSign,
-    },
-    {
-      id: "surat" as NavTabId,
-      label: "Surat Resmi AI",
-      desc: "Generator otomatis naskah surat resmi",
-      icon: FileText,
-    },
-    {
-      id: "sponsor" as NavTabId,
-      label: "Laporan Orang Tua Asuh",
-      desc: "Laporan santri beasiswa via WhatsApp",
-      icon: HeartHandshake,
-    },
-    {
-      id: "agenda" as NavTabId,
-      label: "Kalender Akademik",
-      desc: "Agenda kegiatan pesantren & ujian",
-      icon: Calendar,
-    },
-    {
-      id: "users" as NavTabId,
-      label: "Manajemen Pengguna",
-      desc: "Kelola akun & aktivasi akses portal",
-      icon: UserCog,
-    },
-    {
-      id: "audit" as NavTabId,
-      label: "Audit Trail Sistem",
-      desc: "Rekam jejak kepatuhan & log aktivitas",
-      icon: ShieldCheck,
-    },
-  ].filter((m) => allowedTabs.includes(m.id));
+  // 1. Tentukan 3 atau 4 tombol primer HP khusus untuk role ini
+  const primaryIds = (ROLE_MOBILE_PRIMARY[userRole] || [
+    "beranda",
+    "tahfizh",
+    "presensi",
+    "data_santri",
+  ]).filter((id) => allowedTabs.includes(id));
 
-  const isMoreActive =
-    activeTab !== "beranda" &&
-    activeTab !== "tahfizh" &&
-    activeTab !== "kesantrian";
+  // 2. Modul sekunder untuk drawer "Lainnya" (hanya yang diizinkan)
+  const secondaryIds = allowedTabs.filter((id) => !primaryIds.includes(id));
+  const hasMore = secondaryIds.length > 0;
+
+  const isMoreTabActive = hasMore && secondaryIds.includes(activeTab);
 
   return (
     <>
-      {/* 4-Item Primary Bottom Navigation Bar (≤ 390px safe) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 px-2 py-1 safe-area-pb shadow-lg">
-        <div className="grid grid-cols-4 gap-1 max-w-md mx-auto">
-          {/* 1. Beranda */}
-          <button
-            type="button"
-            onClick={() => onSelectTab("beranda")}
-            className={cn(
-              "flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl min-h-[46px] transition-all",
-              activeTab === "beranda"
-                ? "text-[#0E7C3A] font-extrabold bg-emerald-50/80"
-                : "text-slate-500 hover:text-slate-800"
-            )}
-          >
-            <Home className={cn("h-5 w-5", activeTab === "beranda" ? "stroke-[2.5]" : "stroke-[1.75]")} />
-            <span className="text-[10px] mt-0.5 font-medium tracking-tight">Beranda</span>
-          </button>
+      {/* Primary Mobile Bottom Nav Bar (md:hidden) */}
+      <nav
+        className={cn(
+          "md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 px-1 py-1 pb-[max(env(safe-area-inset-bottom),0.35rem)] shadow-lg select-none",
+          className
+        )}
+        aria-label="Navigasi Menu HP"
+      >
+        <div
+          className={cn(
+            "grid gap-1 max-w-lg mx-auto items-center",
+            hasMore
+              ? primaryIds.length === 3
+                ? "grid-cols-4"
+                : "grid-cols-5"
+              : `grid-cols-${primaryIds.length}`
+          )}
+        >
+          {primaryIds.map((id) => {
+            const item = ALL_NAV_ITEMS[id];
+            if (!item) return null;
+            const Icon = item.icon;
+            const isActive = activeTab === id;
 
-          {/* 2. Hafalan */}
-          <button
-            type="button"
-            onClick={() => onSelectTab("tahfizh")}
-            className={cn(
-              "flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl min-h-[46px] transition-all",
-              activeTab === "tahfizh"
-                ? "text-[#0E7C3A] font-extrabold bg-emerald-50/80"
-                : "text-slate-500 hover:text-slate-800"
-            )}
-          >
-            <BookCheck className={cn("h-5 w-5", activeTab === "tahfizh" ? "stroke-[2.5]" : "stroke-[1.75]")} />
-            <span className="text-[10px] mt-0.5 font-medium tracking-tight">Hafalan</span>
-          </button>
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  setIsDrawerOpen(false);
+                  onSelectTab(id);
+                }}
+                className={cn(
+                  "flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl min-h-[48px] transition-all",
+                  isActive
+                    ? "text-[#0E7C3A] font-extrabold bg-emerald-50/90"
+                    : "text-slate-500 hover:text-slate-800"
+                )}
+              >
+                <Icon
+                  className={cn(
+                    "h-5 w-5 shrink-0",
+                    isActive ? "stroke-[2.5]" : "stroke-[1.75]"
+                  )}
+                />
+                <span className="text-[11px] mt-0.5 font-medium tracking-tight truncate max-w-[68px]">
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
 
-          {/* 3. Izin */}
-          <button
-            type="button"
-            onClick={() => onSelectTab("kesantrian")}
-            className={cn(
-              "flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl min-h-[46px] transition-all",
-              activeTab === "kesantrian"
-                ? "text-[#0E7C3A] font-extrabold bg-emerald-50/80"
-                : "text-slate-500 hover:text-slate-800"
-            )}
-          >
-            <Send className={cn("h-5 w-5", activeTab === "kesantrian" ? "stroke-[2.5]" : "stroke-[1.75]")} />
-            <span className="text-[10px] mt-0.5 font-medium tracking-tight">Izin</span>
-          </button>
-
-          {/* 4. Lainnya (Akses Modul Tambahan Sesuai Role) */}
-          <button
-            type="button"
-            onClick={() => setIsMoreOpen(true)}
-            className={cn(
-              "flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl min-h-[46px] transition-all relative",
-              isMoreActive
-                ? "text-[#0E7C3A] font-extrabold bg-emerald-50/80"
-                : "text-slate-500 hover:text-slate-800"
-            )}
-          >
-            <LayoutGrid className={cn("h-5 w-5", isMoreActive ? "stroke-[2.5]" : "stroke-[1.75]")} />
-            <span className="text-[10px] mt-0.5 font-medium tracking-tight">Lainnya</span>
-            {isMoreActive && (
-              <span className="absolute top-1.5 right-4 w-2 h-2 rounded-full bg-[#0E7C3A]" />
-            )}
-          </button>
+          {/* Tombol Lainnya jika role memiliki modul sekunder */}
+          {hasMore && (
+            <button
+              type="button"
+              onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+              className={cn(
+                "flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl min-h-[48px] transition-all",
+                isDrawerOpen || isMoreTabActive
+                  ? "text-[#0E7C3A] font-extrabold bg-emerald-50/90"
+                  : "text-slate-500 hover:text-slate-800"
+              )}
+              aria-expanded={isDrawerOpen}
+              aria-label="Buka Modul Tambahan"
+            >
+              <LayoutGrid
+                className={cn(
+                  "h-5 w-5 shrink-0",
+                  isDrawerOpen || isMoreTabActive
+                    ? "stroke-[2.5]"
+                    : "stroke-[1.75]"
+                )}
+              />
+              <span className="text-[11px] mt-0.5 font-medium tracking-tight truncate">
+                Lainnya
+              </span>
+            </button>
+          )}
         </div>
       </nav>
 
-      {/* Slide-Up Bottom Sheet Panel "Lainnya" */}
-      {isMoreOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
-          <div
-            className="fixed inset-0"
-            onClick={() => setIsMoreOpen(false)}
-            aria-hidden="true"
-          />
-
-          <div className="relative z-10 bg-white rounded-t-3xl p-5 shadow-2xl border-t border-slate-200 max-h-[80vh] overflow-y-auto space-y-4 animate-in slide-in-from-bottom duration-250">
-            {/* Header Sheet */}
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div>
-                <h3 className="text-base font-bold text-slate-800 font-heading">
-                  Modul Portal Lainnya
+      {/* Drawer Modul Tambahan (Sheet Modal) */}
+      {isDrawerOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="mobile-drawer-title"
+          className="md:hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex flex-col justify-end p-2 animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsDrawerOpen(false);
+          }}
+        >
+          <div className="bg-white rounded-3xl p-4 shadow-2xl border border-slate-200 space-y-3 max-h-[80vh] overflow-y-auto animate-in slide-in-from-bottom duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+              <div className="flex items-center gap-2">
+                <LayoutGrid className="h-4 w-4 text-[#0E7C3A]" />
+                <h3
+                  id="mobile-drawer-title"
+                  className="text-sm font-bold text-slate-800 font-heading"
+                >
+                  Modul &amp; Fungsi Tambahan
                 </h3>
-                <p className="text-xs text-slate-500">
-                  Pilih modul yang diizinkan untuk peran aktif Anda
-                </p>
               </div>
               <button
                 type="button"
-                onClick={() => setIsMoreOpen(false)}
-                className="h-8 w-8 rounded-full bg-slate-100 text-slate-500 hover:text-slate-800 flex items-center justify-center"
-                aria-label="Tutup"
+                onClick={() => setIsDrawerOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                aria-label="Tutup Menu Tambahan"
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </button>
             </div>
 
-            {/* List Menu Tambahan */}
-            <div className="grid grid-cols-1 gap-2">
-              {moreModules.map((item) => {
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              {secondaryIds.map((id) => {
+                const item = ALL_NAV_ITEMS[id];
+                if (!item) return null;
                 const Icon = item.icon;
-                const isItemActive = activeTab === item.id;
+                const isActive = activeTab === id;
+
                 return (
                   <button
-                    key={item.id}
+                    key={id}
                     type="button"
                     onClick={() => {
-                      onSelectTab(item.id);
-                      setIsMoreOpen(false);
+                      setIsDrawerOpen(false);
+                      onSelectTab(id);
                     }}
                     className={cn(
-                      "w-full flex items-center gap-3 p-3 rounded-2xl text-left transition-all border",
-                      isItemActive
-                        ? "bg-emerald-50 text-emerald-900 border-emerald-300 font-bold"
-                        : "bg-slate-50/70 hover:bg-slate-100 text-slate-700 border-slate-200/70"
+                      "flex items-start gap-2.5 p-3 rounded-2xl border text-left transition-all min-h-[52px]",
+                      isActive
+                        ? "bg-emerald-50 border-emerald-300 text-emerald-900 font-bold shadow-2xs"
+                        : "bg-slate-50/80 border-slate-200/80 text-slate-700 hover:bg-slate-100"
                     )}
                   >
-                    <div
+                    <Icon
                       className={cn(
-                        "h-10 w-10 rounded-2xl flex items-center justify-center shrink-0",
-                        isItemActive
-                          ? "bg-emerald-600 text-white"
-                          : "bg-white text-[#0E7C3A] border border-slate-200/80 shadow-2xs"
+                        "h-5 w-5 shrink-0 mt-0.5",
+                        isActive ? "text-[#0E7C3A]" : "text-slate-500"
                       )}
-                    >
-                      <Icon className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold truncate">{item.label}</p>
-                      <p className="text-[11px] text-slate-500 font-normal truncate">
-                        {item.desc}
+                    />
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold leading-snug truncate">
+                        {item.label}
+                      </p>
+                      <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">
+                        {item.shortDesc}
                       </p>
                     </div>
                   </button>

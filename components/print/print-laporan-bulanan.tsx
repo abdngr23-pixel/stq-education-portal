@@ -3,70 +3,10 @@
 import React from "react";
 import { KopSurat } from "./kop-surat";
 import { cn } from "@/lib/utils";
+import { type LaporanBulananData } from "@/app/actions/laporan-bulanan";
 
 export interface PrintLaporanBulananProps {
-  laporanData: {
-    halaqoh: {
-      id: string;
-      nama: string;
-      pembina: string;
-      tahunAjaran: string;
-    };
-    periode: {
-      bulan: number;
-      tahunAjaran: string;
-      tahunKalender: number;
-    };
-    rekapSantri: Array<{
-      santri: {
-        id: string;
-        nis: string;
-        nama: string;
-        kelas: string;
-      };
-      tahfizh: {
-        sabaq: {
-          targetBulanan: number;
-          pekan: { p1: number; p2: number; p3: number; p4: number };
-          totalHalaman: number;
-          konversi: { juz: number; sisaHalaman: number; label: string };
-          persentase: number;
-          isTercapai: boolean;
-        };
-        sabqi: {
-          targetBulanan: number;
-          totalFrekuensi: number;
-          persentase: number;
-          isPatuh: boolean;
-        };
-        manzil: {
-          targetBulanan: number;
-          totalFrekuensi: number;
-          persentase: number;
-          isPatuh: boolean;
-        };
-        mufar: {
-          targetBulanan: number;
-          totalFrekuensi: number;
-        };
-      };
-      nonTahfizh: Array<{
-        kategori: string;
-        label: string;
-        hbl: number;
-        penambahanBulanIni: number;
-        totalKumulatif: number;
-        targetMin: number;
-        isTuntas: boolean;
-      }>;
-      tasmiSimaan: {
-        countTasmi: number;
-        countSimaan: number;
-        rataRataNilai: number;
-        ringkasanTeks: string;
-      };
-    }>;
-  };
+  laporanData: LaporanBulananData;
   tanggalCetak?: string;
   className?: string;
 }
