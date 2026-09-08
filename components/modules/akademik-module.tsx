@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useState, useEffect, useTransition } from "react";
 import { Role } from "@/types/auth";
 import { DashboardSantriSummary } from "./beranda-module";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { inputNilaiAction } from "@/app/actions/akademik";
+import { inputNilaiAction, getNilaiAkademikListAction } from "@/app/actions/akademik";
 import { konversiPredikatNilai } from "@/lib/educational-rules";
 import { PrintRapor } from "@/components/print/print-rapor";
 import { JenisNilai } from "@prisma/client";
@@ -61,19 +61,19 @@ export function AkademikModule({
   const [isPending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  // 1. Filter Wajib Sebelum Input Nilai (Point 6)
+  // 1. Filter Wajib Sebelum Input Nilai (Tahap 6)
   const [selectedKelas, setSelectedKelas] = useState<string>("ALL");
   const [selectedTahunAjaran, setSelectedTahunAjaran] = useState<string>("2026/2027");
   const [selectedSemester, setSelectedSemester] = useState<number>(1);
   const [selectedMapelId, setSelectedMapelId] = useState<string>("MP-KP-01");
   const [selectedJenisNilai, setSelectedJenisNilai] = useState<JenisNilai>("TUGAS");
 
-  // Filter Santri yang Aktif Dinilai
+  // Filter Santri yang Aktif Dinilai - Mulai kosong, tidak default ke angka 90 atau santri sembarang
   const [selectedSantriNis, setSelectedSantriNis] = useState<string>(santriList[0]?.nis || "");
-  const [inputNilaiAngka, setInputNilaiAngka] = useState<string>("90");
+  const [inputNilaiAngka, setInputNilaiAngka] = useState<string>("");
   const [catatanNilai, setCatatanNilai] = useState<string>("");
 
-  // Daftar Nilai Akademik Terverifikasi (Data Riil)
+  // Daftar Nilai Akademik Terverifikasi
   const [nilaiList, setNilaiList] = useState<NilaiItem[]>([
     { santriNis: "SAN-0001", santriNama: "Obama Ozearld Egberted Turizqi", mapel: "Bahasa Arab", kategori: "Kepesantrenan", angka: 90, huruf: "A", guru: "Ustzh. Nurul Hidayah, S.Pd." },
     { santriNis: "SAN-0001", santriNama: "Obama Ozearld Egberted Turizqi", mapel: "Tafsir Al-Qur'an", kategori: "Kepesantrenan", angka: 94, huruf: "A", guru: "Ust. Razan Mufli, S.Pd" },
@@ -85,22 +85,61 @@ export function AkademikModule({
     { santriNis: "SAN-0001", santriNama: "Obama Ozearld Egberted Turizqi", mapel: "Bahasa Indonesia (PBL)", kategori: "Studi Umum (PBL)", angka: 90, huruf: "A", guru: "Ustzh. Nurul Hidayah, S.Pd." },
   ]);
 
-  // Santri Terpilih
-  const currentSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
-  const currentMapel = MAPEL_OPTIONS.find((m) => m.id === selectedMapelId) || MAPEL_OPTIONS[0];
-
-  // Nilai untuk santri terpilih pada rapor
-  const santriNilaiForRapor = nilaiList.filter(
-    (n) => n.santriNis === currentSantri?.nis || !n.santriNis
-  );
-
-  // Modal Cetak Rapor
-  const [showPrintRaporModal, setShowPrintRaporModal] = useState(false);
+  // Load data nilai riil dari server action on mount
+  useEffect(() => {
+    let isMounted = true;
+    getNilaiAkademikListAction().then((res) => {
+      if (isMounted && res.success && res.data && res.data.length > 0) {
+        setNilaiList(
+          res.data.map((item) => ({
+            id: item.id,
+            santriId: item.santriId,
+            santriNis: item.santriNis,
+            santriNama: item.santriNama,
+            mapel: item.mapelNama,
+            kategori: item.mapelKategori,
+            angka: item.angka,
+            huruf: item.huruf,
+            guru: item.guruNama,
+            jenisNilai: item.jenis,
+            semester: item.semester,
+            tahunAjaran: item.tahunAjaran,
+          }))
+        );
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Filter kelas untuk santri
   const filteredSantriOptions = selectedKelas === "ALL"
     ? santriList
     : santriList.filter((s) => s.kelas.includes(selectedKelas));
+
+  // Handler ganti filter kelas: langsung sinkronkan pilihan santri secara deterministik
+  const handleKelasChange = (newKelas: string) => {
+    setSelectedKelas(newKelas);
+    const newOptions = newKelas === "ALL"
+      ? santriList
+      : santriList.filter((s) => s.kelas.includes(newKelas));
+    if (!newOptions.some((s) => s.nis === selectedSantriNis)) {
+      setSelectedSantriNis(newOptions[0]?.nis || "");
+    }
+  };
+
+  // Santri Terpilih (tanpa fallback berbahaya ke santriList[0] jika tidak sesuai)
+  const currentSantri = santriList.find((s) => s.nis === selectedSantriNis);
+  const currentMapel = MAPEL_OPTIONS.find((m) => m.id === selectedMapelId) || MAPEL_OPTIONS[0];
+
+  // Nilai untuk santri terpilih pada rapor
+  const santriNilaiForRapor = currentSantri
+    ? nilaiList.filter((n) => n.santriNis === currentSantri.nis)
+    : [];
+
+  // Modal Cetak Rapor
+  const [showPrintRaporModal, setShowPrintRaporModal] = useState(false);
 
   // Handler Simpan Nilai
   const handleSaveNilai = () => {
@@ -110,7 +149,12 @@ export function AkademikModule({
       return;
     }
     if (!currentSantri) {
-      setFeedback({ type: "error", message: "Silakan pilih santri terlebih dahulu." });
+      setFeedback({ type: "error", message: "Silakan pilih santri terlebih dahulu dari kelas yang sesuai." });
+      return;
+    }
+
+    if (!inputNilaiAngka.trim()) {
+      setFeedback({ type: "error", message: "Nilai angka wajib diisi sebelum menyimpan." });
       return;
     }
 
@@ -148,7 +192,7 @@ export function AkademikModule({
             tahunAjaran: selectedTahunAjaran,
           },
           ...prev.filter(
-            (n) => !(n.santriNis === currentSantri.nis && n.mapel === currentMapel.nama)
+            (n) => !(n.santriNis === currentSantri.nis && n.mapel === currentMapel.nama && n.jenisNilai === selectedJenisNilai)
           ),
         ]);
 
@@ -156,6 +200,7 @@ export function AkademikModule({
           type: "success",
           message: `Nilai ${currentMapel.nama} untuk ${currentSantri.nama} (${angkaNum} - Predikat ${huruf}) berhasil disimpan.`,
         });
+        setInputNilaiAngka("");
         setCatatanNilai("");
       } else {
         setFeedback({ type: "error", message: res.message || "Gagal menyimpan nilai akademik." });
@@ -247,7 +292,7 @@ export function AkademikModule({
                   </label>
                   <select
                     value={selectedKelas}
-                    onChange={(e) => setSelectedKelas(e.target.value)}
+                    onChange={(e) => handleKelasChange(e.target.value)}
                     className="w-full min-h-[42px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-semibold"
                   >
                     <option value="ALL">Semua Kelas</option>
@@ -391,10 +436,38 @@ export function AkademikModule({
                     />
                   </div>
 
+                  {/* Konteks Penilaian Lengkap Sebelum Simpan */}
+                  <div className="p-3 bg-emerald-50/80 border border-emerald-200/90 rounded-2xl text-xs space-y-1.5 text-emerald-950">
+                    <div className="flex items-center justify-between font-bold">
+                      <span className="text-emerald-800">Target Evaluasi:</span>
+                      <Badge variant="green" size="sm" className="font-bold uppercase tracking-wider">
+                        {selectedJenisNilai}
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1 text-[11px] text-slate-700">
+                      <div>
+                        <span className="text-slate-500 block">Santri:</span>
+                        <strong className="text-slate-900 line-clamp-1">{currentSantri ? currentSantri.nama : "Belum dipilih"}</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Kelas:</span>
+                        <strong className="text-slate-900">{currentSantri ? currentSantri.kelas : "-"}</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Mata Pelajaran:</span>
+                        <strong className="text-slate-900 line-clamp-1">{currentMapel.nama}</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Periode:</span>
+                        <strong className="text-slate-900">Sem {selectedSemester} • {selectedTahunAjaran}</strong>
+                      </div>
+                    </div>
+                  </div>
+
                   <Button
                     variant="primary"
                     onClick={handleSaveNilai}
-                    disabled={isPending}
+                    disabled={isPending || !currentSantri}
                     className="w-full min-h-[48px] font-bold text-sm bg-[#0E7C3A] hover:bg-[#0B642E]"
                   >
                     <CheckCircle2 className="h-4 w-4 mr-1.5" />
@@ -435,9 +508,9 @@ export function AkademikModule({
                           .map((item, idx) => (
                             <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
                               <td className="px-4 py-3 font-semibold text-slate-800">
-                                {item.santriNama || currentSantri.nama}
+                                {item.santriNama || currentSantri?.nama || "-"}
                                 <span className="block text-[11px] text-slate-400 font-normal">
-                                  {item.santriNis || currentSantri.nis}
+                                  {item.santriNis || currentSantri?.nis || "-"}
                                 </span>
                               </td>
                               <td className="px-3 py-3 text-slate-700">
@@ -504,6 +577,7 @@ export function AkademikModule({
                   onChange={(e) => setSelectedSantriNis(e.target.value)}
                   className="min-h-[40px] px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-semibold"
                 >
+                  <option value="">-- Pilih Santri --</option>
                   {santriList.map((s) => (
                     <option key={s.nis} value={s.nis}>
                       {s.nama} ({s.kelas})
@@ -513,8 +587,9 @@ export function AkademikModule({
                 <Button
                   variant="primary"
                   size="sm"
+                  disabled={!currentSantri}
                   onClick={() => setShowPrintRaporModal(true)}
-                  className="bg-[#0E7C3A] hover:bg-[#0B642E] text-xs font-bold gap-1.5 min-h-[40px]"
+                  className="bg-[#0E7C3A] hover:bg-[#0B642E] text-xs font-bold gap-1.5 min-h-[40px] disabled:opacity-50"
                 >
                   <Printer className="h-4 w-4" />
                   Cetak Rapor A4
@@ -522,67 +597,75 @@ export function AkademikModule({
               </div>
             </CardHeader>
             <CardContent className="p-4 sm:p-6 space-y-4">
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row justify-between gap-3 text-xs sm:text-sm">
-                <div>
-                  <p className="text-slate-500">Nama Santri:</p>
-                  <strong className="text-base text-slate-900">{currentSantri.nama}</strong>
-                  <p className="text-slate-500 mt-1">NIS: {currentSantri.nis} • Kelas: {currentSantri.kelas}</p>
-                </div>
-                <div className="sm:text-right">
-                  <p className="text-slate-500">Tahun Ajaran / Semester:</p>
-                  <strong className="text-slate-900">{selectedTahunAjaran} • Semester {selectedSemester}</strong>
-                  <p className="text-slate-500 mt-1">Capaian Tahfizh: {currentSantri.capaianJuz} Juz</p>
-                </div>
-              </div>
+              {currentSantri ? (
+                <>
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row justify-between gap-3 text-xs sm:text-sm">
+                    <div>
+                      <p className="text-slate-500">Nama Santri:</p>
+                      <strong className="text-base text-slate-900">{currentSantri.nama}</strong>
+                      <p className="text-slate-500 mt-1">NIS: {currentSantri.nis} • Kelas: {currentSantri.kelas}</p>
+                    </div>
+                    <div className="sm:text-right">
+                      <p className="text-slate-500">Tahun Ajaran / Semester:</p>
+                      <strong className="text-slate-900">{selectedTahunAjaran} • Semester {selectedSemester}</strong>
+                      <p className="text-slate-500 mt-1">Capaian Tahfizh: {currentSantri.capaianJuz} Juz</p>
+                    </div>
+                  </div>
 
-              {/* Tabel Nilai Rapor Jujur */}
-              <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                <table className="w-full text-xs sm:text-sm text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
-                      <th className="px-4 py-3">Mata Pelajaran</th>
-                      <th className="px-3 py-3">Kelompok Kurikulum</th>
-                      <th className="px-3 py-3 text-center">Nilai Angka</th>
-                      <th className="px-3 py-3 text-center">Predikat</th>
-                      <th className="px-4 py-3">Guru Pengampu</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {santriNilaiForRapor.length > 0 ? (
-                      santriNilaiForRapor.map((item, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/80">
-                          <td className="px-4 py-3 font-semibold text-slate-800">{item.mapel}</td>
-                          <td className="px-3 py-3 text-slate-600">{item.kategori}</td>
-                          <td className="px-3 py-3 text-center font-extrabold text-slate-900">{item.angka}</td>
-                          <td className="px-3 py-3 text-center">
-                            <Badge
-                              variant={item.huruf === "A" ? "green" : item.huruf === "B" ? "sky" : "orange"}
-                              size="sm"
-                              className="font-bold"
-                            >
-                              {item.huruf}
-                            </Badge>
-                          </td>
-                          <td className="px-4 py-3 text-slate-600">{item.guru}</td>
+                  {/* Tabel Nilai Rapor Jujur */}
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                    <table className="w-full text-xs sm:text-sm text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                          <th className="px-4 py-3">Mata Pelajaran</th>
+                          <th className="px-3 py-3">Kelompok Kurikulum</th>
+                          <th className="px-3 py-3 text-center">Nilai Angka</th>
+                          <th className="px-3 py-3 text-center">Predikat</th>
+                          <th className="px-4 py-3">Guru Pengampu</th>
                         </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={5} className="text-center py-12 text-slate-400 text-xs">
-                          Belum ada data nilai akademik yang dicatat untuk santri ini.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {santriNilaiForRapor.length > 0 ? (
+                          santriNilaiForRapor.map((item, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50/80">
+                              <td className="px-4 py-3 font-semibold text-slate-800">{item.mapel}</td>
+                              <td className="px-3 py-3 text-slate-600">{item.kategori}</td>
+                              <td className="px-3 py-3 text-center font-extrabold text-slate-900">{item.angka}</td>
+                              <td className="px-3 py-3 text-center">
+                                <Badge
+                                  variant={item.huruf === "A" ? "green" : item.huruf === "B" ? "sky" : "orange"}
+                                  size="sm"
+                                  className="font-bold"
+                                >
+                                  {item.huruf}
+                                </Badge>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{item.guru}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={5} className="text-center py-12 text-slate-400 text-xs">
+                              Belum ada data nilai akademik yang dicatat untuk santri ini.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-12 text-slate-400 text-sm">
+                  Silakan pilih santri terlebih dahulu untuk melihat pratinjau rapor.
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
       )}
 
       {/* Modal Cetak Rapor */}
-      {showPrintRaporModal && (
+      {showPrintRaporModal && currentSantri && (
         <div
           role="dialog"
           aria-modal="true"

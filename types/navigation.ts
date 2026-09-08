@@ -257,6 +257,8 @@ export const ROLE_NAV_MAP: Record<Role, AppNavId[]> = {
   YAY: [
     "beranda",
     "tahfizh",
+    "akademik",
+    "kedisiplinan",
     "anggaran",
     "sponsor",
     "data_santri",

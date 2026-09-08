@@ -34,6 +34,8 @@ export interface DashboardSantriSummary {
   status: string;
   nilaiTerakhir: string;
   poinPelanggaran: number;
+  namaWali?: string | null;
+  noHpWali?: string | null;
 }
 
 export interface BerandaModuleProps {

@@ -44,11 +44,10 @@ export const INSTITUTION_CONFIG: InstitutionConfig = {
   character: "Sekolah Tahfizh Al-Qur'an Full Beasiswa untuk Yatim dan Dhuafa",
   supportedBy: "Didukung oleh Program Infak dan Orang Tua Asuh",
 
-  // Tidak mengarang alamat, nomor kontak, atau legalitas yang belum diverifikasi pimpinan
   skKemenag: process.env.NEXT_PUBLIC_SK_KEMENAG || "",
   nsp: process.env.NEXT_PUBLIC_NSP || "",
-  alamat: process.env.NEXT_PUBLIC_ALAMAT_SEKOLAH || "",
-  telepon: process.env.NEXT_PUBLIC_TELP_SEKOLAH || "",
+  alamat: process.env.NEXT_PUBLIC_ALAMAT_SEKOLAH || "Jl. Tamangapa Raya 5, RT.003/RW.003, Tamangapa, Kec. Manggala, Kota Makassar, Sulawesi Selatan 90235",
+  telepon: process.env.NEXT_PUBLIC_TELP_SEKOLAH || "085245160499",
   email: process.env.NEXT_PUBLIC_EMAIL_SEKOLAH || "",
   kota: "Makassar",
   provinsi: "Sulawesi Selatan",

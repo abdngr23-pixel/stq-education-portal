@@ -17,6 +17,9 @@ import {
   getHalaqohByStaff,
 } from "@/types/auth";
 import { getCurrentUserAction } from "@/app/actions/auth";
+import { getSantriListAction } from "@/app/actions/santri";
+import { getHalaqohListAction } from "@/app/actions/halaqoh";
+import { getDaftarKesehatanAction } from "@/app/actions/kesehatan";
 import { PrintRapor } from "@/components/print/print-rapor";
 import { PrintSurat } from "@/components/print/print-surat";
 import { PrintSP } from "@/components/print/print-sp";
@@ -93,9 +96,13 @@ const INITIAL_AUDIT_LOGS: AuditLogItem[] = [
 ];
 
 export default function Home() {
+  const [isSessionLoading, setIsSessionLoading] = useState<boolean>(true);
   const [selectedRole, setSelectedRole] = useState<Role>("MT");
-  const [currentUserName, setCurrentUserName] = useState<string>(DEMO_ACCOUNTS["MT"].name);
-  const [activeStaffKey, setActiveStaffKey] = useState<string>("razan.mt");
+  const [currentUserName, setCurrentUserName] = useState<string>("Memuat profil...");
+  const [activeStaffKey, setActiveStaffKey] = useState<string>("");
+  const [serverHalaqohName, setServerHalaqohName] = useState<string | null>(null);
+  const [selectedSantriForPrint, setSelectedSantriForPrint] = useState<DashboardSantriSummary | null>(null);
+  const [activeKesehatanRecordsCount, setActiveKesehatanRecordsCount] = useState<number>(0);
   const [halaqohFilter, setHalaqohFilter] = useState<string>("ALL");
   const [activeTab, setActiveTab] = useState<AppNavId>("beranda");
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
@@ -300,63 +307,128 @@ export default function Home() {
     message: "",
   });
 
-  // Halaqoh list mapping
-  const halaqohList = useMemo(() => [
+  // Halaqoh list mapping dinamis dari server
+  const [dynamicHalaqohList, setDynamicHalaqohList] = useState<Array<{ id: string; nama: string; pembina: string }>>([
     { id: "HLQ-0001", nama: "Halaqoh Ust. Razan Mufli, S.Pd", pembina: "Ust. Razan Mufli, S.Pd" },
     { id: "HLQ-0002", nama: "Halaqoh Ust. Kamal", pembina: "Ust. Kamal" },
     { id: "HLQ-0003", nama: "Halaqoh Ust. Rizaldi", pembina: "Ust. Rizaldi" },
     { id: "HLQ-0004", nama: "Halaqoh Ust. Abi Hudzaifah", pembina: "Ust. Abi Hudzaifah" },
     { id: "HLQ-0005", nama: "Halaqoh Ust. Alwan", pembina: "Ust. Alwan" },
     { id: "HLQ-0006", nama: "Halaqoh Ustadzah Lisa Dwina Fitri", pembina: "Ustadzah Lisa Dwina Fitri" },
-  ], []);
+  ]);
+
+  const halaqohList = dynamicHalaqohList;
 
   const currentHalaqohName = useMemo(() => {
+    if (serverHalaqohName) return serverHalaqohName;
     return getHalaqohByStaff(activeStaffKey);
-  }, [activeStaffKey]);
+  }, [serverHalaqohName, activeStaffKey]);
 
-  // Allowed tabs based on role
+  // Allowed tabs based on official server role
   const allowedTabs = useMemo(() => {
     return ROLE_NAV_MAP[selectedRole] || ["beranda"];
   }, [selectedRole]);
 
+  // Helper untuk memuat ulang daftar santri dari server
+  const fetchSantriData = async () => {
+    try {
+      const res = await getSantriListAction();
+      if (res.success && res.data && res.data.length > 0) {
+        setSantriList(
+          res.data.map((s) => ({
+            id: s.id,
+            nis: s.nis,
+            nama: s.nama,
+            kelas: s.kelas,
+            halaqoh: s.halaqoh?.nama || "Belum Ditentukan",
+            capaianJuz: (s as unknown as { capaianJuz?: number }).capaianJuz || 0,
+            targetJuz: 30,
+            setoranTerakhir: "-",
+            status: s.status,
+            nilaiTerakhir: "MUMTAZ",
+            poinPelanggaran: 0,
+            namaWali: s.namaWali,
+            noHpWali: s.noHpWali,
+          }))
+        );
+      }
+    } catch {
+      // Pertahankan data lokal jika server offline
+    }
+  };
+
   // -------------------------------------------------------------
-  // SYNC DENGAN URL SEARCH PARAMS & SESSION
+  // SYNC DENGAN SESI SERVER RESMI (Eliminasi parameter URL role)
   // -------------------------------------------------------------
   useEffect(() => {
     const initApp = async () => {
-      if (typeof window !== "undefined") {
-        const params = new URLSearchParams(window.location.search);
-        const urlRole = params.get("role") as Role | null;
-        const rawTab = params.get("tab");
-        const urlHalaqoh = params.get("halaqoh");
-
-        if (urlRole && DEMO_ACCOUNTS[urlRole]) {
-          setSelectedRole(urlRole);
-          const demo = DEMO_ACCOUNTS[urlRole];
-          setCurrentUserName(demo.name);
-          setActiveStaffKey(demo.username);
+      try {
+        const session = await getCurrentUserAction();
+        if (!session) {
+          if (typeof window !== "undefined") {
+            window.location.href = "/login?msg=session_required";
+          }
+          return;
         }
 
-        if (rawTab) {
-          const normalized = normalizeNavTab(rawTab);
-          setActiveTab(normalized);
-        }
+        setSelectedRole(session.role);
+        setCurrentUserName(session.name);
+        if (session.username) setActiveStaffKey(session.username);
+        if (session.halaqohName) setServerHalaqohName(session.halaqohName);
 
-        if (urlHalaqoh) {
-          setHalaqohFilter(urlHalaqoh);
-        }
-      }
+        // Baca parameter navigasi aman (HANYA tab dan filter lokasi)
+        if (typeof window !== "undefined") {
+          const params = new URLSearchParams(window.location.search);
+          const rawTab = params.get("tab");
+          const urlHalaqoh = params.get("halaqoh");
 
-      const session = await getCurrentUserAction();
-      if (session) {
-        const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-        if (!params?.get("role")) {
-          setSelectedRole(session.role);
-          setCurrentUserName(session.name);
-          if (session.username) {
-            setActiveStaffKey(session.username);
+          if (rawTab) {
+            const normalized = normalizeNavTab(rawTab);
+            if (isNavPermitted(normalized, session.role)) {
+              setActiveTab(normalized);
+            } else {
+              setActiveTab("beranda");
+            }
+          }
+
+          if (urlHalaqoh) {
+            setHalaqohFilter(urlHalaqoh);
           }
         }
+
+        // Sinkronisasi data server sekunder (halaqoh, santri, rekam medis)
+        try {
+          const hlqRes = await getHalaqohListAction();
+          if (hlqRes.success && hlqRes.data && hlqRes.data.length > 0) {
+            setDynamicHalaqohList(
+              hlqRes.data.map((h) => ({
+                id: h.id,
+                nama: h.nama,
+                pembina: h.pembina?.nama || "Pembina",
+              }))
+            );
+          }
+        } catch {
+          // ignore
+        }
+
+        try {
+          const kesRes = await getDaftarKesehatanAction();
+          if (kesRes.success && kesRes.data && Array.isArray(kesRes.data)) {
+            const activePatients = kesRes.data.filter(
+              (k: { status: string }) => k.status === "RAWAT_PONDOK" || k.status === "DIRUJUK_PUSKESMAS" || k.status === "DIRUJUK_RS"
+            );
+            setActiveKesehatanRecordsCount(activePatients.length);
+          }
+        } catch {
+          // ignore
+        }
+
+        await fetchSantriData();
+      } catch (err) {
+        console.error("Gagal menginisialisasi sesi:", err);
+      } finally {
+        setIsSessionLoading(false);
       }
     };
 
@@ -365,40 +437,42 @@ export default function Home() {
     const handlePopState = () => {
       if (typeof window === "undefined") return;
       const p = new URLSearchParams(window.location.search);
-      const r = p.get("role") as Role | null;
       const t = p.get("tab");
       const h = p.get("halaqoh");
 
-      if (r && DEMO_ACCOUNTS[r]) {
-        setSelectedRole(r);
-        const demo = DEMO_ACCOUNTS[r];
-        setCurrentUserName(demo.name);
-        setActiveStaffKey(demo.username);
-      }
+      // Validasi izin akses tab pada navigasi browser Back / Forward
       if (t) {
-        setActiveTab(normalizeNavTab(t));
+        const normalized = normalizeNavTab(t);
+        if (isNavPermitted(normalized, selectedRole)) {
+          setActiveTab(normalized);
+        } else {
+          setActiveTab("beranda");
+        }
       }
       if (h) setHalaqohFilter(h);
     };
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, []);
+  }, [selectedRole]);
 
-  // Sync state back to URL
+  // Sync state back to URL secara aman (TIDAK PERNAH menulis role ke URL)
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || isSessionLoading) return;
     const params = new URLSearchParams(window.location.search);
     let changed = false;
 
-    if (params.get("role") !== selectedRole) {
-      params.set("role", selectedRole);
+    // Bersihkan parameter 'role' jika pengguna mencoba memasukkannya secara manual
+    if (params.has("role")) {
+      params.delete("role");
       changed = true;
     }
+
     if (params.get("tab") !== activeTab) {
       params.set("tab", activeTab);
       changed = true;
     }
+
     if (halaqohFilter && halaqohFilter !== "ALL") {
       if (params.get("halaqoh") !== halaqohFilter) {
         params.set("halaqoh", halaqohFilter);
@@ -410,12 +484,24 @@ export default function Home() {
     }
 
     if (changed) {
-      const newUrl = `${window.location.pathname}?${params.toString()}`;
-      window.history.pushState({}, "", newUrl);
+      const queryStr = params.toString();
+      const newUrl = queryStr ? `${window.location.pathname}?${queryStr}` : window.location.pathname;
+      window.history.replaceState({}, "", newUrl);
     }
-  }, [selectedRole, activeTab, halaqohFilter]);
+  }, [activeTab, halaqohFilter, isSessionLoading]);
 
-  // Tab Selection Handler
+  // Escape key listener untuk menutup modal global
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowPrintModal(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Tab Selection Handler dengan RBAC & History Push yang aman
   const handleSelectTab = (tab: AppNavId) => {
     // Validasi RBAC
     if (!isNavPermitted(tab, selectedRole)) {
@@ -428,6 +514,14 @@ export default function Home() {
     }
     setActiveTab(tab);
     setFeedback(null);
+
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      params.delete("role");
+      params.set("tab", tab);
+      const newUrl = `${window.location.pathname}?${params.toString()}`;
+      window.history.pushState({}, "", newUrl);
+    }
   };
 
   // Logout Handler
@@ -567,8 +661,12 @@ export default function Home() {
   }, [izinList]);
 
   const santriSakitCount = useMemo(() => {
+    // Sesuai Tahap 2: Gunakan data rekam medis aktif server sebagai sumber kebenaran jika tersedia
+    if (activeKesehatanRecordsCount > 0) {
+      return activeKesehatanRecordsCount;
+    }
     return izinList.filter((i) => i.jenis === "SAKIT" && i.status === "DISETUJUI").length;
-  }, [izinList]);
+  }, [activeKesehatanRecordsCount, izinList]);
 
   // Render current module based on activeTab
   const renderModule = () => {
@@ -594,7 +692,25 @@ export default function Home() {
             santriList={santriList}
             userRole={selectedRole}
             halaqohList={halaqohList.map((h) => ({ id: h.id, nama: h.nama, pembina: { nama: h.pembina } }))}
-            onPrintRapor={() => setShowPrintModal("rapor")}
+            onPrintRapor={(santri) => {
+              // Teruskan santri terpilih secara eksklusif (Eliminasi fallback santriList[0])
+              const matched = santriList.find((s) => s.nis === santri.nis) || {
+                id: santri.id,
+                nis: santri.nis,
+                nama: santri.nama,
+                kelas: santri.kelas,
+                halaqoh: (santri.halaqoh as unknown as { nama?: string })?.nama || "Halaqoh",
+                capaianJuz: 0,
+                targetJuz: 30,
+                setoranTerakhir: "-",
+                status: santri.status,
+                nilaiTerakhir: "MUMTAZ",
+                poinPelanggaran: 0,
+              };
+              setSelectedSantriForPrint(matched);
+              setShowPrintModal("rapor");
+            }}
+            onRefresh={fetchSantriData}
           />
         );
 
@@ -761,6 +877,16 @@ export default function Home() {
     }
   };
 
+  if (isSessionLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 text-white">
+        <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <h2 className="text-xl font-bold tracking-wide">STQ Darul Ulum Cendekia</h2>
+        <p className="text-sm text-emerald-400 mt-1 font-medium">Memuat profil dan hak akses pengguna...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 font-sans text-slate-800">
       {/* 1. Desktop Collapsible Sidebar */}
@@ -841,6 +967,9 @@ export default function Home() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="print-modal-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowPrintModal(null);
+          }}
           className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-200"
         >
           <div className="bg-white rounded-3xl max-w-4xl w-full p-4 sm:p-7 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
@@ -882,16 +1011,27 @@ export default function Home() {
             <div className="border border-slate-200 rounded-2xl p-2 sm:p-6 bg-slate-50/50 overflow-x-auto">
               {showPrintModal === "rapor" && (
                 <PrintRapor
-                  santri={{
-                    nama: santriList[0].nama,
-                    nis: santriList[0].nis,
-                    kelas: santriList[0].kelas,
-                    halaqoh: santriList[0].halaqoh,
-                    capaianJuz: santriList[0].capaianJuz,
-                    targetJuz: santriList[0].targetJuz,
-                    setoranTerakhir: santriList[0].setoranTerakhir,
-                    nilaiTerakhir: santriList[0].nilaiTerakhir,
-                  }}
+                  santri={
+                    selectedSantriForPrint
+                      ? {
+                          nama: selectedSantriForPrint.nama,
+                          nis: selectedSantriForPrint.nis,
+                          kelas: selectedSantriForPrint.kelas,
+                          halaqoh: selectedSantriForPrint.halaqoh,
+                          capaianJuz: selectedSantriForPrint.capaianJuz,
+                          targetJuz: selectedSantriForPrint.targetJuz,
+                          setoranTerakhir: selectedSantriForPrint.setoranTerakhir,
+                          nilaiTerakhir: selectedSantriForPrint.nilaiTerakhir,
+                        }
+                      : {
+                          nama: santriList[0]?.nama || "Santri",
+                          nis: santriList[0]?.nis || "-",
+                          kelas: santriList[0]?.kelas || "-",
+                          halaqoh: santriList[0]?.halaqoh || "-",
+                          capaianJuz: santriList[0]?.capaianJuz || 0,
+                          targetJuz: 30,
+                        }
+                  }
                   nilaiAkademik={[
                     { mapel: "Bahasa Arab", kategori: "Kepesantrenan", angka: 90, huruf: "A", guru: "Ustzh. Nurul Hidayah, S.Pd." },
                     { mapel: "Tafsir Al-Qur'an", kategori: "Kepesantrenan", angka: 94, huruf: "A", guru: "Ust. Razan Mufli, S.Pd" },
@@ -907,18 +1047,18 @@ export default function Home() {
                 <PrintSurat
                   perihal="Surat Keterangan Santri Aktif"
                   tujuan="Kementerian Agama / Lembaga Beasiswa"
-                  santriNama={santriList[0].nama}
-                  santriNis={santriList[0].nis}
-                  santriKelas={santriList[0].kelas}
+                  santriNama={selectedSantriForPrint?.nama || santriList[0]?.nama || "Santri"}
+                  santriNis={selectedSantriForPrint?.nis || santriList[0]?.nis || "-"}
+                  santriKelas={selectedSantriForPrint?.kelas || santriList[0]?.kelas || "-"}
                   isiPokok="Menerangkan bahwa santri yang bersangkutan terdaftar aktif dalam program ketahfidzhan dan pendidikan kesantrian di STQ Darul Ulum Cendekia untuk Tahun Ajaran 2026/2027."
                 />
               )}
               {showPrintModal === "sp" && (
                 <PrintSP
                   tingkatSP="SP1"
-                  santriNama={spList[0]?.santriNama || santriList[0].nama}
-                  santriNis={santriList[0].nis}
-                  santriKelas={santriList[0].kelas}
+                  santriNama={selectedSantriForPrint?.nama || spList[0]?.santriNama || santriList[0]?.nama || "Santri"}
+                  santriNis={selectedSantriForPrint?.nis || santriList[0]?.nis || "-"}
+                  santriKelas={selectedSantriForPrint?.kelas || santriList[0]?.kelas || "-"}
                   totalPoin={spList[0]?.totalPoin || 25}
                   riwayatPelanggaran={pelanggaranHistory.map((p) => ({
                     deskripsi: p.kategori,

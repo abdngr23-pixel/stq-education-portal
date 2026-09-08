@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useState, useEffect, useTransition } from "react";
 import { Role } from "@/types/auth";
 import { DashboardSantriSummary } from "./beranda-module";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { catatKesehatanAction, updateStatusKesehatanAction } from "@/app/actions/kesehatan";
+import { catatKesehatanAction, updateStatusKesehatanAction, getDaftarKesehatanAction } from "@/app/actions/kesehatan";
 import {
   Stethoscope,
   PlusCircle,
@@ -58,9 +58,41 @@ export function KesehatanModule({
       diagnosa: "Gastritis ringan",
       tindakan: "Antasida + bubur hangat dari dapur pesantren",
       status: "SEMBUH",
-      tanggal: "05/09/2026",
+      tanggal: "06/09/2026",
     },
   ]);
+
+  // Load rekam medis riil dari server action on mount
+  useEffect(() => {
+    let isMounted = true;
+    getDaftarKesehatanAction().then((res) => {
+      if (isMounted && res.success && res.data && Array.isArray(res.data) && res.data.length > 0) {
+        setList(
+          (res.data as Array<{
+            id: string;
+            santri: { nama: string; nis: string };
+            keluhan: string;
+            diagnosa?: string | null;
+            tindakan?: string | null;
+            status: "RAWAT_PONDOK" | "DIRUJUK_PUSKESMAS" | "DIRUJUK_RS" | "SEMBUH";
+            tanggal: Date | string;
+          }>).map((item) => ({
+            id: item.id,
+            santri: item.santri.nama,
+            nis: item.santri.nis,
+            keluhan: item.keluhan,
+            diagnosa: item.diagnosa || "Dalam observasi Poskestren",
+            tindakan: item.tindakan || "Istirahat di UKS",
+            status: item.status,
+            tanggal: new Date(item.tanggal).toLocaleDateString("id-ID"),
+          }))
+        );
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const [isPending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -108,9 +140,10 @@ export function KesehatanModule({
         status: statusInput,
       });
 
-      if (res.success) {
+      if (res.success && res.data) {
+        const recorded = res.data as { id: string };
         const newRecord: KesehatanRecord = {
-          id: `kes-${Date.now()}`,
+          id: recorded.id,
           santri: target.nama,
           nis: target.nis,
           keluhan: keluhanInput,

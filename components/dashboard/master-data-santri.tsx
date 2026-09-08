@@ -37,8 +37,8 @@ export interface SantriItem {
   status: string;
   nilaiTerakhir: string;
   poinPelanggaran: number;
-  namaWali?: string;
-  noHpWali?: string;
+  namaWali?: string | null;
+  noHpWali?: string | null;
 }
 
 export interface MasterDataSantriProps {

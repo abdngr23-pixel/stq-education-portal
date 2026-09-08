@@ -171,3 +171,50 @@ export async function catatNotulenAction(params: {
     return { success: false, message: "Gagal menyimpan notulen ke database." };
   }
 }
+
+/**
+ * Server Action: Mengambil daftar pengajuan anggaran bulanan (Khusus ADM, KS, YAY)
+ */
+export async function getPengajuanAnggaranListAction() {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Silakan login terlebih dahulu.", data: [] };
+  }
+
+  // Hak akses: ADM, KS, YAY
+  if (!["ADM", "KS", "YAY"].includes(session.role)) {
+    return {
+      success: false,
+      message: `Role ${session.role} tidak berwenang melihat daftar anggaran operasional.`,
+      data: [],
+    };
+  }
+
+  try {
+    const list = await prisma.pengajuanBulanan.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+
+    return {
+      success: true,
+      data: list.map((item) => ({
+        id: item.id,
+        kode: item.kodePengajuan,
+        judul: item.judul,
+        kategori: item.kategori,
+        nominal: item.nominal,
+        status: item.status,
+        diajukanOleh: item.diajukanOleh,
+        keterangan: item.keterangan || "",
+        disetujuiOleh: item.disetujuiOleh,
+        catatanKS: item.catatanKS,
+        tanggal: item.createdAt.toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" }),
+        createdAt: item.createdAt.toISOString(),
+      })),
+    };
+  } catch (error) {
+    console.error("Gagal mengambil data pengajuan anggaran:", error);
+    return { success: false, message: "Gagal memuat data anggaran dari server.", data: [] };
+  }
+}
+

@@ -9,7 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { createSetoranAction } from "@/app/actions/tahfizh";
-import { inputHasilTahap1Action, inputHasilTahap2Action } from "@/app/actions/ikhtibar";
+import {
+  inputHasilTahap1Action,
+  inputHasilTahap2Action,
+  ajukanIkhtibarAction,
+} from "@/app/actions/ikhtibar";
 import { type LaporanBulananData } from "@/app/actions/laporan-bulanan";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
 import { buildSetoranTahfizhWAMessage } from "@/lib/whatsapp";
@@ -22,7 +26,7 @@ import {
   FileSpreadsheet,
   Clock,
   X,
-  Check,
+  PlusCircle,
 } from "lucide-react";
 
 export interface TahfizhModuleProps {
@@ -157,10 +161,10 @@ export function TahfizhModule({
           message: `Alhamdulillah! Setoran ${inputJenis} untuk ${activeSantri.nama} (Juz ${juz}) berhasil disimpan di server.`,
         });
 
-        // Tambah ke riwayat lokal
+        const setoranId = res.data?.id || `set-${Date.now()}`;
         setRecentSetoran((prev) => [
           {
-            id: `set-${Date.now()}`,
+            id: setoranId,
             santriNama: activeSantri.nama,
             santriNis: activeSantri.nis,
             kelas: activeSantri.kelas,
@@ -174,7 +178,7 @@ export function TahfizhModule({
           ...prev,
         ]);
 
-        // Siapkan pesan WA
+        // Siapkan pesan WA resmi
         const waMsg = buildSetoranTahfizhWAMessage({
           santriNama: activeSantri.nama,
           santriNis: activeSantri.nis,
@@ -190,14 +194,18 @@ export function TahfizhModule({
           jumlahHalaman: inputJenis === "SABAQ" ? parseInt(jumlahHalaman) || 1 : undefined,
         });
 
-        setWaDialog({
-          isOpen: true,
-          phone: "081299887766", // fallback jika kosong di UI
-          recipientName: `Wali dari ${activeSantri.nama}`,
-          message: waMsg,
-          title: "Kirim Laporan Setoran ke Wali Santri",
-          description: `Kirim laporan mutaba'ah setoran resmi untuk ${activeSantri.nama} via WhatsApp.`,
-        });
+        // Ambil nomor kontak wali riil dari santri terpilih (Eliminasi nomor statis 081299887766)
+        const guardianPhone = (res.data?.santri as unknown as { noHpWali?: string })?.noHpWali || (activeSantri as unknown as { noHpWali?: string })?.noHpWali || "";
+        if (guardianPhone) {
+          setWaDialog({
+            isOpen: true,
+            phone: guardianPhone,
+            recipientName: `Wali dari ${activeSantri.nama}`,
+            message: waMsg,
+            title: "Kirim Laporan Setoran ke Wali Santri",
+            description: `Kirim laporan mutaba'ah setoran resmi untuk ${activeSantri.nama} via WhatsApp.`,
+          });
+        }
       } else {
         setFeedback({
           type: "error",
@@ -208,7 +216,7 @@ export function TahfizhModule({
   };
 
   // -------------------------------------------------------------
-  // TAB IKHTIBAR: ALUR NILAI UJIAN BERDASARKAN BARIS TERPILIH
+  // TAB IKHTIBAR: ALUR PENDAFTARAN & PENILAIAN UJIAN 2-TAHAP
   // -------------------------------------------------------------
   const [ikhtibarList, setIkhtibarList] = useState<Array<{
     id: string;
@@ -264,6 +272,11 @@ export function TahfizhModule({
     },
   ]);
 
+  // Modal Pendaftaran Ikhtibar Baru (Tahap 5)
+  const [showAjukanModal, setShowAjukanModal] = useState(false);
+  const [ajukanSantriNis, setAjukanSantriNis] = useState(santriList[0]?.nis || "");
+  const [ajukanJuz, setAjukanJuz] = useState("1");
+
   const [gradingUjian, setGradingUjian] = useState<{
     id: string;
     santriNama: string;
@@ -273,11 +286,77 @@ export function TahfizhModule({
     penguji: string;
   } | null>(null);
 
-  const [inputNilaiIkhtibar, setInputNilaiIkhtibar] = useState("90");
-  const [inputCatatanIkhtibar, setInputCatatanIkhtibar] = useState("Kelancaran sangat baik, makhraj sempurna");
+  const [inputNilaiIkhtibar, setInputNilaiIkhtibar] = useState("");
+  const [inputCatatanIkhtibar, setInputCatatanIkhtibar] = useState("");
+
+  const handleAjukanIkhtibar = () => {
+    const target = santriList.find((s) => s.nis === ajukanSantriNis);
+    if (!target) {
+      setFeedback({ type: "error", message: "Pilih santri terlebih dahulu." });
+      return;
+    }
+    const j = parseInt(ajukanJuz) || 1;
+    if (j < 1 || j > 30) {
+      setFeedback({ type: "error", message: "Juz ikhtibar harus antara 1 sampai 30." });
+      return;
+    }
+
+    startTransition(async () => {
+      const res = await ajukanIkhtibarAction({
+        santriId: target.id,
+        juz: j,
+      });
+
+      if (res.success && res.data) {
+        setFeedback({
+          type: "success",
+          message: res.message || `Ikhtibar Juz ${j} untuk ${target.nama} berhasil didaftarkan.`,
+        });
+        const resData = res.data as { id?: string };
+        const newIkh = {
+          id: resData?.id || `ikh-${Date.now()}`,
+          santriNama: target.nama,
+          santriNis: target.nis,
+          santriId: target.id,
+          kelas: target.kelas,
+          juz: j,
+          status: "PENGAJUAN",
+          tahap: 1 as const,
+          penguji: currentUserName || "Musyrif Tahfizh",
+          nilai: null,
+          catatan: null,
+        };
+        setIkhtibarList((prev) => [newIkh, ...prev]);
+        setShowAjukanModal(false);
+      } else {
+        setFeedback({
+          type: "error",
+          message: res.message || "Gagal mengajukan ikhtibar.",
+        });
+      }
+    });
+  };
+
+  const handleOpenGrading = (item: typeof ikhtibarList[0]) => {
+    setGradingUjian({
+      id: item.id,
+      santriNama: item.santriNama,
+      santriNis: item.santriNis,
+      juz: item.juz,
+      tahap: item.tahap,
+      penguji: item.penguji,
+    });
+    // Tahap 7: Bersihkan dan muat nilai spesifik peserta tersebut, JANGAN membawa isian kandidat lain
+    setInputNilaiIkhtibar(item.nilai !== null ? String(item.nilai) : "");
+    setInputCatatanIkhtibar(item.catatan || "");
+  };
 
   const handleSimpanNilaiIkhtibar = () => {
     if (!gradingUjian) return;
+    if (!inputNilaiIkhtibar.trim()) {
+      setFeedback({ type: "error", message: "Nilai ujian tidak boleh kosong." });
+      return;
+    }
     const numNilai = parseFloat(inputNilaiIkhtibar) || 0;
     const isLulus = numNilai >= 75;
 
@@ -314,6 +393,8 @@ export function TahfizhModule({
                       ? "LULUS_TAHAP_1"
                       : "LULUS_SEMPURNA_TAHAP_2"
                     : "MENGULANG",
+                  tahap: isLulus && gradingUjian.tahap === 1 ? 2 : gradingUjian.tahap,
+                  penguji: isLulus && gradingUjian.tahap === 1 ? "Mudir Pesantren (KS)" : item.penguji,
                   nilai: numNilai,
                   catatan: inputCatatanIkhtibar,
                 }
@@ -703,20 +784,32 @@ export function TahfizhModule({
         />
       )}
 
-      {/* 4. TAB 3: IKHTIBAR DENGAN PENILAIAN BERDASARKAN BARIS UJIAN */}
+      {/* 4. TAB 3: IKHTIBAR DENGAN PENGAJUAN RESMI & PEMISAHAN ANTREAN (TAHAP 5 & 7) */}
       {activeSubTab === "ikhtibar" && (
-        <div className="space-y-4">
+        <div className="space-y-6">
+          {/* Antrean Ujian Ikhtibar Berjalan */}
           <Card rounded="3xl" className="border border-slate-200 shadow-xs">
             <CardHeader className="pb-3 border-b border-slate-100">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <CardTitle className="text-base font-bold text-slate-900 font-heading">
-                    Antrean Ujian Ikhtibar Komprehensif (2-Tahap)
+                    Antrean Ujian Ikhtibar Berjalan (2-Tahap)
                   </CardTitle>
                   <CardDescription className="text-xs text-slate-500">
                     Ujian kelulusan juz: Tahap 1 oleh Musyrif Tahfizh, Tahap 2 Munaqasyah oleh Mudir Pesantren (Ambang Lulus: ≥ 75).
                   </CardDescription>
                 </div>
+                {["MT", "KS", "ADM"].includes(userRole) && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => setShowAjukanModal(true)}
+                    leftIcon={<PlusCircle className="h-4 w-4" />}
+                    className="bg-[#0E7C3A] hover:bg-[#0B642E] text-white text-xs font-bold shrink-0 min-h-[40px]"
+                  >
+                    Daftarkan Ikhtibar
+                  </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent className="p-0 overflow-x-auto">
@@ -726,78 +819,240 @@ export function TahfizhModule({
                     <th className="px-4 py-3">Nama Santri</th>
                     <th className="px-3 py-3 text-center">Juz</th>
                     <th className="px-3 py-3">Tahap Ujian</th>
-                    <th className="px-3 py-3">Penguji</th>
+                    <th className="px-3 py-3">Penguji Ditugaskan</th>
                     <th className="px-3 py-3 text-center">Status</th>
                     <th className="px-3 py-3 text-center">Nilai</th>
-                    <th className="px-4 py-3 text-center">Tindakan</th>
+                    <th className="px-4 py-3 text-center">Tindakan Penguji</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {ikhtibarList.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="px-4 py-3 font-semibold text-slate-800">
-                        {item.santriNama}
-                        <span className="block text-[11px] text-slate-400 font-normal">
-                          {item.santriNis} • {item.kelas}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3 text-center font-extrabold text-[#0E7C3A]">
-                        Juz {item.juz}
-                      </td>
-                      <td className="px-3 py-3 font-medium">
-                        Tahap {item.tahap}
-                      </td>
-                      <td className="px-3 py-3 text-slate-600">
-                        {item.penguji}
-                      </td>
-                      <td className="px-3 py-3 text-center">
-                        <Badge
-                          variant={
-                            item.status === "LULUS_SEMPURNA_TAHAP_2"
-                              ? "green"
-                              : item.status === "LULUS_TAHAP_1"
-                              ? "gold"
-                              : "orange"
-                          }
-                          size="sm"
-                        >
-                          {item.status.replace(/_/g, " ")}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-3 text-center font-bold text-slate-800">
-                        {item.nilai !== null ? item.nilai : "-"}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {item.status !== "LULUS_SEMPURNA_TAHAP_2" ? (
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() =>
-                              setGradingUjian({
-                                id: item.id,
-                                santriNama: item.santriNama,
-                                santriNis: item.santriNis,
-                                juz: item.juz,
-                                tahap: item.tahap,
-                                penguji: item.penguji,
-                              })
-                            }
-                            className="text-xs font-bold bg-[#0E7C3A] hover:bg-[#0B642E] min-h-[36px]"
-                          >
-                            Nilai Ujian
-                          </Button>
-                        ) : (
-                          <span className="text-xs text-emerald-700 font-semibold flex items-center justify-center gap-1">
-                            <Check className="h-4 w-4" /> Sah
-                          </span>
-                        )}
+                  {ikhtibarList
+                    .filter((item) => item.status !== "LULUS_SEMPURNA_TAHAP_2")
+                    .map((item) => {
+                      const canGradeTahap1 = item.tahap === 1 && ["MT", "KS", "ADM"].includes(userRole);
+                      const canGradeTahap2 = item.tahap === 2 && userRole === "KS";
+
+                      return (
+                        <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="px-4 py-3 font-semibold text-slate-800">
+                            {item.santriNama}
+                            <span className="block text-[11px] text-slate-400 font-normal">
+                              {item.santriNis} • {item.kelas}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3 text-center font-extrabold text-[#0E7C3A]">
+                            Juz {item.juz}
+                          </td>
+                          <td className="px-3 py-3 font-medium">
+                            Tahap {item.tahap}
+                          </td>
+                          <td className="px-3 py-3 text-slate-600">
+                            {item.penguji}
+                          </td>
+                          <td className="px-3 py-3 text-center">
+                            <Badge
+                              variant={
+                                item.status === "LULUS_TAHAP_1"
+                                  ? "gold"
+                                  : item.status === "MENGULANG"
+                                  ? "orange"
+                                  : "sky"
+                              }
+                              size="sm"
+                            >
+                              {item.status.replace(/_/g, " ")}
+                            </Badge>
+                          </td>
+                          <td className="px-3 py-3 text-center font-bold text-slate-800">
+                            {item.nilai !== null ? item.nilai : "-"}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {canGradeTahap1 ? (
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={() => handleOpenGrading(item)}
+                                className="text-xs font-bold bg-[#0E7C3A] hover:bg-[#0B642E] min-h-[36px]"
+                              >
+                                Nilai Tahap 1
+                              </Button>
+                            ) : canGradeTahap2 ? (
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={() => handleOpenGrading(item)}
+                                className="text-xs font-bold bg-amber-700 hover:bg-amber-800 text-white min-h-[36px]"
+                              >
+                                Munaqasyah Mudir
+                              </Button>
+                            ) : (
+                              <span className="text-[11px] text-slate-400 italic">
+                                {item.tahap === 2 ? "Menunggu Ujian Mudir" : "Menunggu Musyrif"}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  {ikhtibarList.filter((item) => item.status !== "LULUS_SEMPURNA_TAHAP_2").length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="text-center py-8 text-slate-400 text-xs">
+                        Tidak ada antrean ujian ikhtibar berjalan saat ini.
                       </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </CardContent>
           </Card>
+
+          {/* Riwayat Kelulusan Ikhtibar Sah Tuntas */}
+          <Card rounded="3xl" className="border border-emerald-200/80 bg-emerald-50/20 shadow-xs">
+            <CardHeader className="pb-3 border-b border-emerald-100">
+              <CardTitle className="text-base font-bold text-emerald-950 font-heading">
+                Riwayat Kelulusan Sempurna (Munaqasyah Tuntas)
+              </CardTitle>
+              <CardDescription className="text-xs text-emerald-800">
+                Daftar santri yang telah dinyatakan sah tuntas ujian kelulusan juz oleh Mudir STQ
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              <table className="w-full text-xs text-left border-collapse">
+                <thead>
+                  <tr className="bg-emerald-100/60 text-emerald-900 font-bold border-b border-emerald-200">
+                    <th className="px-4 py-3">Nama Santri</th>
+                    <th className="px-3 py-3 text-center">Juz Tuntas</th>
+                    <th className="px-3 py-3">Penguji Pengesahan</th>
+                    <th className="px-3 py-3 text-center">Nilai Akhir</th>
+                    <th className="px-3 py-3 text-center">Status Kelulusan</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-emerald-100">
+                  {ikhtibarList
+                    .filter((item) => item.status === "LULUS_SEMPURNA_TAHAP_2")
+                    .map((item) => (
+                      <tr key={item.id} className="hover:bg-emerald-50/60 transition-colors">
+                        <td className="px-4 py-3 font-semibold text-slate-800">
+                          {item.santriNama}
+                          <span className="block text-[11px] text-slate-400 font-normal">
+                            {item.santriNis} • {item.kelas}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-center font-extrabold text-[#0E7C3A]">
+                          Juz {item.juz}
+                        </td>
+                        <td className="px-3 py-3 text-slate-700 font-medium">
+                          {item.penguji}
+                        </td>
+                        <td className="px-3 py-3 text-center font-bold text-emerald-800">
+                          {item.nilai}
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <Badge variant="green" size="sm" className="font-bold">
+                            LULUS TUNTAS
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  {ikhtibarList.filter((item) => item.status === "LULUS_SEMPURNA_TAHAP_2").length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="text-center py-6 text-slate-400 text-xs">
+                        Belum ada riwayat kelulusan sempurna pada periode ini.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL PENDAFTARAN IKHTIBAR BARU (TAHAP 5) */}
+      {showAjukanModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ajukan-ikhtibar-title"
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
+        >
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 id="ajukan-ikhtibar-title" className="text-base font-bold text-slate-900 font-heading">
+                  Pendaftaran Ujian Ikhtibar Juz
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Daftarkan santri yang telah menyelesaikan setoran satu juz penuh
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAjukanModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+                aria-label="Tutup Dialog"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Pilih Santri Peserta Ujian
+                </label>
+                <select
+                  value={ajukanSantriNis}
+                  onChange={(e) => setAjukanSantriNis(e.target.value)}
+                  className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:bg-white"
+                >
+                  {santriList.map((s) => (
+                    <option key={s.id} value={s.nis}>
+                      {s.nama} ({s.nis}) — {s.kelas}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Juz yang Diujikan (1 - 30)
+                </label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={ajukanJuz}
+                  onChange={(e) => setAjukanJuz(e.target.value)}
+                  className="min-h-[44px] text-sm font-bold"
+                />
+              </div>
+
+              <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 space-y-1">
+                <p className="font-bold">Ketentuan Pengujian:</p>
+                <p>• Tahap 1: Ujian kelancaran & tajwid bersama Musyrif Tahfizh (Ambang Lulus: ≥ 75).</p>
+                <p>• Tahap 2: Munaqasyah komprehensif & pengesahan resmi oleh Mudir Pesantren.</p>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <Button
+                  variant="secondary"
+                  onClick={() => setShowAjukanModal(false)}
+                  className="min-h-[42px] text-xs font-semibold"
+                >
+                  Batal
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={handleAjukanIkhtibar}
+                  disabled={isPending}
+                  className="min-h-[42px] text-xs font-bold bg-[#0E7C3A] hover:bg-[#0B642E]"
+                >
+                  {isPending ? "Mendaftarkan..." : "Daftarkan Santri"}
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

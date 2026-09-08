@@ -1,15 +1,54 @@
-"use client";
-
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Role } from "@/types/auth";
+import { getRingkasanAnakAction } from "@/app/actions/portal-wali";
 import {
   Printer,
   MessageCircle,
   Send,
+  UserX,
 } from "lucide-react";
+
+export interface SetoranItemWali {
+  id: string;
+  jenis: string;
+  juz: number;
+  surahMulai: string;
+  surahSelesai: string;
+  catatan?: string | null;
+  nilai: string;
+}
+
+export interface KesehatanItemWali {
+  id: string;
+  keluhan: string;
+  status: string;
+  tanggal?: Date | string;
+}
+
+export interface SantriDetailWali {
+  id: string;
+  nama: string;
+  nis: string;
+  kelas: string;
+  status: string;
+  halaqoh?: { nama: string; pembina?: { nama: string } | null } | null;
+  setoranList?: SetoranItemWali[];
+  kesehatanList?: KesehatanItemWali[];
+}
+
+export interface RingkasanDataWali {
+  totalPoinPelanggaran: number;
+  totalBintang: number;
+  totalSetoran: number;
+  ikhtibarLulus: number;
+  rataRataAkademik?: string;
+  totalMapelDinilai?: number;
+  capaianJuzTertinggi?: number;
+  totalIzin?: number;
+}
 
 export interface SaranItem {
   id: string;
@@ -38,6 +77,32 @@ export function PortalWaliModule({
   const [kategori, setKategori] = useState("Gizi & Katering");
   const [pesan, setPesan] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [loadingSantri, setLoadingSantri] = useState(true);
+  const [santriData, setSantriData] = useState<SantriDetailWali | null>(null);
+  const [ringkasanData, setRingkasanData] = useState<RingkasanDataWali | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadChildData = async () => {
+      try {
+        setLoadingSantri(true);
+        const res = await getRingkasanAnakAction();
+        if (res.success && res.data) {
+          const payload = res.data as unknown as { santri: SantriDetailWali; ringkasan: RingkasanDataWali };
+          setSantriData(payload.santri);
+          setRingkasanData(payload.ringkasan);
+          setLoadError(null);
+        } else {
+          setLoadError(res.message || "Data santri tidak dapat dimuat.");
+        }
+      } catch {
+        setLoadError("Gagal terhubung ke server saat memuat data ananda.");
+      } finally {
+        setLoadingSantri(false);
+      }
+    };
+    void loadChildData();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,97 +128,128 @@ export function PortalWaliModule({
             Pantau perkembangan hafalan Al-Qur&apos;an, adab & kedisiplinan, kesehatan, serta capaian prestasi ananda.
           </p>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={onPrintRapor}
-          leftIcon={<Printer className="h-4 w-4" />}
-        >
-          Unduh / Cetak Rapor Digital
-        </Button>
+        {santriData && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onPrintRapor}
+            leftIcon={<Printer className="h-4 w-4" />}
+          >
+            Unduh / Cetak Rapor Digital
+          </Button>
+        )}
       </div>
 
-      {/* Kartu Profil Ananda */}
-      <Card rounded="3xl" className="border-2 border-emerald-100 bg-white">
-        <CardContent className="p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-            <div>
-              <h4 className="text-lg font-bold text-slate-900">Obama Ozearld Egberted Turizqi</h4>
-              <p className="text-xs text-slate-500 mt-0.5">
-                NIS: <strong>SAN-0001</strong> • Kelas: <strong>9A Takhossus</strong> • Musyrif: <strong>Ust. Razan Mufli, S.Pd</strong>
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="green" size="md">Santri Aktif</Badge>
-              <Badge variant="gold" size="md">2 Bintang Teladan</Badge>
-            </div>
+      {/* Kartu Profil Ananda Riil / State Pemuatan / State Kosong */}
+      {loadingSantri ? (
+        <Card rounded="3xl" className="border border-slate-200 p-8 text-center bg-white">
+          <div className="flex items-center justify-center gap-2 text-sm text-slate-500">
+            <div className="h-2.5 w-2.5 rounded-full bg-emerald-600 animate-ping" />
+            Memuat data perkembangan ananda dari pangkalan data resmi...
           </div>
-
-          {/* 4 Metrik Ringkas */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4">
-            <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-100">
-              <span className="text-xs text-emerald-800 font-semibold">Capaian Tahfizh</span>
-              <p className="text-xl font-extrabold text-[#0E7C3A] mt-1">22 Juz</p>
-              <span className="text-[11px] text-emerald-600 font-medium">Ikhtibar Juz 22 Lulus</span>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-100">
-              <span className="text-xs text-amber-800 font-semibold">Rapor Akademik</span>
-              <p className="text-xl font-extrabold text-[#C9990E] mt-1">89.0 / A</p>
-              <span className="text-[11px] text-amber-700 font-medium">Peringkat 3 Kelas</span>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-sky-50/70 border border-sky-100">
-              <span className="text-xs text-sky-800 font-semibold">Poin Kedisiplinan</span>
-              <p className="text-xl font-extrabold text-sky-700 mt-1">0 Poin</p>
-              <span className="text-[11px] text-sky-600 font-medium">Bersih / Teladan</span>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-purple-50/70 border border-purple-100">
-              <span className="text-xs text-purple-800 font-semibold">Status Kesehatan</span>
-              <p className="text-xl font-extrabold text-purple-700 mt-1">Sehat</p>
-              <span className="text-[11px] text-purple-600 font-medium">Poskestren Terpantau</span>
-            </div>
+        </Card>
+      ) : loadError || !santriData ? (
+        <Card rounded="3xl" className="border-2 border-amber-200 bg-amber-50/50 p-6 text-center space-y-3">
+          <div className="inline-flex p-3 rounded-2xl bg-amber-100 text-amber-800">
+            <UserX className="h-6 w-6" />
           </div>
-        </CardContent>
-      </Card>
+          <h4 className="text-base font-bold text-amber-900 font-heading">
+            Akun Belum Terhubung dengan Data Santri
+          </h4>
+          <p className="text-xs text-amber-800 max-w-lg mx-auto">
+            {loadError || "Akun Anda saat ini belum ditautkan dengan data santri terdaftar di STQ Darul Ulum Cendekia. Silakan hubungi bagian Administrasi / Tata Usaha untuk melengkapi relasi wali dan santri."}
+          </p>
+        </Card>
+      ) : (
+        <Card rounded="3xl" className="border-2 border-emerald-100 bg-white">
+          <CardContent className="p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div>
+                <h4 className="text-lg font-bold text-slate-900">{santriData.nama}</h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  NIS: <strong>{santriData.nis}</strong> • Kelas: <strong>{santriData.kelas}</strong> • Musyrif: <strong>{santriData.halaqoh?.pembina?.nama || santriData.halaqoh?.nama || "Musyrif Halaqoh"}</strong>
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant="green" size="md">
+                  Status: {santriData.status}
+                </Badge>
+                {(ringkasanData?.totalBintang || 0) > 0 && (
+                  <Badge variant="gold" size="md">
+                    {ringkasanData?.totalBintang} Bintang Teladan
+                  </Badge>
+                )}
+              </div>
+            </div>
+
+            {/* 4 Metrik Ringkas Riil */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4">
+              <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-100">
+                <span className="text-xs text-emerald-800 font-semibold">Total Setoran</span>
+                <p className="text-xl font-extrabold text-[#0E7C3A] mt-1">
+                  {ringkasanData?.totalSetoran || santriData.setoranList?.length || 0}x
+                </p>
+                <span className="text-[11px] text-emerald-600 font-medium">Mutaba&apos;ah Hafalan</span>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-100">
+                <span className="text-xs text-amber-800 font-semibold">Ikhtibar Selesai</span>
+                <p className="text-xl font-extrabold text-[#C9990E] mt-1">
+                  {ringkasanData?.ikhtibarLulus || 0} Juz
+                </p>
+                <span className="text-[11px] text-amber-700 font-medium">Ujian Sah 2-Tahap</span>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-sky-50/70 border border-sky-100">
+                <span className="text-xs text-sky-800 font-semibold">Poin Kedisiplinan</span>
+                <p className="text-xl font-extrabold text-sky-700 mt-1">
+                  {ringkasanData?.totalPoinPelanggaran || 0} Poin
+                </p>
+                <span className="text-[11px] text-sky-600 font-medium">
+                  {ringkasanData?.totalPoinPelanggaran === 0 ? "Adab Teladan" : "Dalam Pemantauan"}
+                </span>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-purple-50/70 border border-purple-100">
+                <span className="text-xs text-purple-800 font-semibold">Status Kesehatan</span>
+                <p className="text-xl font-extrabold text-purple-700 mt-1">
+                  {santriData.kesehatanList && santriData.kesehatanList.length > 0
+                    ? santriData.kesehatanList[0].status.replace(/_/g, " ")
+                    : "Sehat"}
+                </p>
+                <span className="text-[11px] text-purple-600 font-medium">Poskestren Terpantau</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 2 Kolom: Aktivitas & Kotak Saran */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Kolom Kiri: Riwayat Aktivitas Terkini */}
+        {/* Kolom Kiri: Riwayat Aktivitas Terkini Riil */}
         <div className="space-y-4">
           <Card rounded="3xl">
             <CardHeader>
               <CardTitle className="text-base">Riwayat Setoran & Ikhtibar Terbaru</CardTitle>
-              <CardDescription>Catatan langsung dari majelis halaqoh</CardDescription>
+              <CardDescription>Catatan langsung dari majelis halaqoh santri</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
-                <div>
-                  <span className="font-bold text-slate-800 text-xs">Setoran Sabaq (Hafalan Baru)</span>
-                  <p className="text-xs text-emerald-700 font-semibold">Ali &apos;Imran: 1-20 (Juz 4)</p>
-                  <p className="text-[11px] text-slate-400">Catatan: Makhraj dan tajwid fasih</p>
+              {santriData?.setoranList && santriData.setoranList.length > 0 ? (
+                santriData.setoranList.slice(0, 3).map((item: SetoranItemWali) => (
+                  <div key={item.id} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-slate-800 text-xs">Setoran {item.jenis} (Juz {item.juz})</span>
+                      <p className="text-xs text-emerald-700 font-semibold">{item.surahMulai} s/d {item.surahSelesai}</p>
+                      <p className="text-[11px] text-slate-400">Catatan: {item.catatan || "Lancar dan tertib"}</p>
+                    </div>
+                    <Badge variant="green" size="sm">{item.nilai}</Badge>
+                  </div>
+                ))
+              ) : (
+                <div className="p-4 text-center text-xs text-slate-400">
+                  Belum ada riwayat setoran yang tercatat pada semester ini.
                 </div>
-                <Badge variant="green" size="sm">MUMTAZ</Badge>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
-                <div>
-                  <span className="font-bold text-slate-800 text-xs">Ujian Ikhtibar Juz 4 (Tahap 1)</span>
-                  <p className="text-xs text-amber-700 font-semibold">Penguji: Ust. Razan Mufli, S.Pd (MT)</p>
-                  <p className="text-[11px] text-slate-400">Nilai: 92/100 • Siap Ujian Mudir</p>
-                </div>
-                <Badge variant="gold" size="sm">LULUS TAHAP 1</Badge>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
-                <div>
-                  <span className="font-bold text-slate-800 text-xs">Pengajuan Izin Pulang Terakhir</span>
-                  <p className="text-xs text-slate-600">Keperluan: Menghadiri pernikahan keluarga</p>
-                  <p className="text-[11px] text-emerald-600">Telah Disetujui Mudir & MK</p>
-                </div>
-                <Badge variant="green" size="sm">DISETUJUI</Badge>
-              </div>
+              )}
             </CardContent>
           </Card>
         </div>

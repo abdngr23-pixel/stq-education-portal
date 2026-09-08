@@ -153,6 +153,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
+  // Jika membuka root dashboard / tanpa sesi yang sah, alihkan ke /login
+  if (pathname === "/" && !sessionPayload) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   // Daftar rute web yang memerlukan login
   const isProtectedWebRoute =
     pathname.startsWith("/admin") ||

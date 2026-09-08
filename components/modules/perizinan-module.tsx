@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useState, useEffect, useTransition } from "react";
 import { Role } from "@/types/auth";
 import { DashboardSantriSummary } from "./beranda-module";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { ajukanIzinAction, verifikasiIzinAction } from "@/app/actions/kesantrian";
+import { ajukanIzinAction, verifikasiIzinAction, getPerizinanListAction } from "@/app/actions/kesantrian";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
 import { buildIzinSantriWAMessage } from "@/lib/whatsapp";
 import {
@@ -50,6 +50,45 @@ export function PerizinanModule({
   const [list, setList] = useState<IzinItem[]>(initialIzinList);
   const [isPending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Load perizinan riil dari server action on mount
+  useEffect(() => {
+    let isMounted = true;
+    getPerizinanListAction().then((res) => {
+      if (isMounted && res.success && res.data && res.data.length > 0) {
+        setList(
+          res.data.map((item) => {
+            const diffDays = Math.max(
+              1,
+              Math.round(
+                (new Date(item.tanggalSelesai).getTime() - new Date(item.tanggalMulai).getTime()) /
+                  (1000 * 60 * 60 * 24)
+              )
+            );
+            return {
+              id: item.id,
+              kodeIzin: item.kodeIzin,
+              santriNama: item.santri.nama,
+              santriNis: item.santri.nis,
+              kelas: item.santri.kelas,
+              jenis: item.jenis as "PULANG" | "KELUAR_KOMPLEK" | "SAKIT",
+              durasi: `${diffDays} Hari`,
+              alasan: item.alasan,
+              status: item.status as "MENUNGGU_MK" | "MENUNGGU_KS" | "DISETUJUI" | "DITOLAK",
+              diverifikasiOleh: item.disetujuiKS
+                ? `Disetujui KS: ${item.disetujuiKS.nama}`
+                : item.disetujuiMK
+                ? `Diverifikasi MK: ${item.disetujuiMK.nama}`
+                : undefined,
+            };
+          })
+        );
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Dialog Form Tambah Izin
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -118,10 +157,10 @@ export function PerizinanModule({
         alasan: alasanIzin,
       });
 
-      if (res.success) {
+      if (res.success && res.data) {
         const newIzin: IzinItem = {
-          id: `iz-${Date.now()}`,
-          kodeIzin: `IZN-${Math.floor(100000 + Math.random() * 900000)}`,
+          id: res.data.id,
+          kodeIzin: res.data.kodeIzin,
           santriNama: targetSantri.nama,
           santriNis: targetSantri.nis,
           kelas: targetSantri.kelas,
@@ -137,7 +176,7 @@ export function PerizinanModule({
         setAlasanIzin("");
         setFeedback({
           type: "success",
-          message: `Permohonan izin untuk ${targetSantri.nama} berhasil diajukan dan masuk ke antrean verifikasi MK.`,
+          message: `Permohonan izin untuk ${targetSantri.nama} (${res.data.kodeIzin}) berhasil diajukan dan masuk ke antrean verifikasi MK.`,
         });
 
         // WhatsApp notification ready
@@ -145,7 +184,7 @@ export function PerizinanModule({
           santriNama: targetSantri.nama,
           santriNis: targetSantri.nis,
           kelas: targetSantri.kelas,
-          kodeIzin: newIzin.kodeIzin,
+          kodeIzin: res.data.kodeIzin,
           jenisIzin,
           durasi: `${durasiHari} Hari`,
           alasan: alasanIzin,
@@ -156,8 +195,8 @@ export function PerizinanModule({
 
         setWaDialog({
           isOpen: true,
-          phone: "081299887766",
-          recipientName: `Wali dari ${targetSantri.nama}`,
+          phone: targetSantri.noHpWali || "081234567890",
+          recipientName: targetSantri.namaWali ? `${targetSantri.namaWali} (Wali ${targetSantri.nama})` : `Wali dari ${targetSantri.nama}`,
           message: msg,
           title: "Notifikasi Pengajuan Izin ke Wali",
           description: "Kirim konfirmasi bahwa pengajuan izin telah dicatat di sistem.",

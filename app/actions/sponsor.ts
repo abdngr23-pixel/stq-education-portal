@@ -334,10 +334,10 @@ export async function getDaftarSponsorAction() {
     return { success: false, message: "Silakan login terlebih dahulu.", data: [] };
   }
 
-  if (session.role !== "ADM" && session.role !== "KS") {
+  if (session.role !== "ADM" && session.role !== "KS" && session.role !== "YAY") {
     return {
       success: false,
-      message: "Akses Ditolak: Hanya Admin (ADM) dan Mudir (KS) yang dapat mengakses daftar Orang Tua Asuh.",
+      message: "Akses Ditolak: Hanya Admin (ADM), Mudir (KS), dan Yayasan (YAY) yang dapat mengakses daftar Orang Tua Asuh.",
       data: [],
     };
   }

@@ -377,22 +377,62 @@ export async function getCurrentUserAction(): Promise<{
   username: string;
   role: Role;
   name: string;
+  staffId?: string | null;
   staffCode?: string | null;
+  santriId?: string | null;
   halaqohName?: string | null;
 } | null> {
   try {
     const session = await getCurrentSession();
     if (!session) return null;
 
-    const demo = DEMO_ACCOUNTS[session.role];
-    const halaqohName = session.halaqohName || getHalaqohByStaff(session.name || demo?.name || session.username);
+    let halaqohName = session.halaqohName || null;
+    let displayName = session.name || null;
+
+    // Ambil data relasi riil dari PostgreSQL via Prisma jika tersedia
+    try {
+      if (session.staffId) {
+        const staff = await prisma.staff.findUnique({
+          where: { id: session.staffId },
+          include: { halaqohDipimpin: true },
+        });
+        if (staff) {
+          if (!displayName) displayName = staff.nama;
+          if (staff.halaqohDipimpin && staff.halaqohDipimpin.length > 0) {
+            halaqohName = staff.halaqohDipimpin[0].nama;
+          }
+        }
+      } else if (session.santriId) {
+        const santri = await prisma.santri.findUnique({
+          where: { id: session.santriId },
+          include: { halaqoh: true },
+        });
+        if (santri) {
+          if (!displayName) displayName = santri.nama;
+          if (santri.halaqoh) halaqohName = santri.halaqoh.nama;
+        }
+      }
+    } catch {
+      // Abaikan galat Prisma jika berjalan di lingkungan memori pengujian
+    }
+
+    if (!displayName) {
+      const demo = DEMO_ACCOUNTS[session.role];
+      displayName = demo?.name || session.username;
+    }
+
+    if (!halaqohName) {
+      halaqohName = getHalaqohByStaff(displayName || session.username);
+    }
 
     return {
       id: session.userId,
       username: session.username,
       role: session.role,
-      name: session.name || demo?.name || session.username,
+      name: displayName,
+      staffId: session.staffId,
       staffCode: session.staffCode,
+      santriId: session.santriId,
       halaqohName: halaqohName,
     };
   } catch {

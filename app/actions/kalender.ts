@@ -81,3 +81,51 @@ export async function getDaftarAgendaAction(): Promise<KalenderResponse> {
     return { success: false, message: errorMsg, error: errorMsg };
   }
 }
+
+/**
+ * Mengambil Agenda Publik Resmi (Terbuka untuk Umum / Calon Donatur / Wali)
+ * Menampilkan hanya agenda yang aman dan disetujui untuk publik (targetPeserta === "SEMUA").
+ * Tidak membuka agenda internal atau informasi pribadi santri/staf.
+ */
+export async function getPublicAgendaAction(): Promise<KalenderResponse<Array<{
+  id: string;
+  judul: string;
+  deskripsi: string | null;
+  tanggalMulai: string;
+  tanggalSelesai: string | null;
+  kategori: string;
+  lokasi: string | null;
+}>>> {
+  try {
+    const list = await prisma.kalenderAkademik.findMany({
+      where: {
+        targetPeserta: 'SEMUA',
+      },
+      orderBy: { tanggalMulai: 'asc' },
+      take: 10,
+    });
+
+    return {
+      success: true,
+      message: list.length > 0 ? 'Berhasil memuat agenda publik' : 'Belum ada agenda yang dipublikasikan',
+      data: list.map((a) => ({
+        id: a.id,
+        judul: a.judul,
+        deskripsi: a.deskripsi,
+        tanggalMulai: a.tanggalMulai.toISOString(),
+        tanggalSelesai: a.tanggalSelesai ? a.tanggalSelesai.toISOString() : null,
+        kategori: a.kategori,
+        lokasi: a.lokasi,
+      })),
+    };
+  } catch (err: unknown) {
+    // Fail-safe: kembalikan list kosong dengan status jujur tanpa data rekaan
+    const errorMsg = err instanceof Error ? err.message : 'Gagal memuat agenda publik';
+    return {
+      success: false,
+      message: 'Belum ada agenda yang dipublikasikan',
+      data: [],
+      error: errorMsg,
+    };
+  }
+}

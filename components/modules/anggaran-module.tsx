@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useState, useEffect, useTransition } from "react";
 import { Role } from "@/types/auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { ajukanKebutuhanAction, verifikasiPengajuanAction } from "@/app/actions/administrasi";
+import { ajukanKebutuhanAction, verifikasiPengajuanAction, getPengajuanAnggaranListAction } from "@/app/actions/administrasi";
 import {
   DollarSign,
   PlusCircle,
@@ -56,6 +56,30 @@ export function AnggaranModule({ userRole, currentUserName }: AnggaranModuleProp
     },
   ]);
 
+  // Load pengajuan anggaran riil dari server action on mount
+  useEffect(() => {
+    let isMounted = true;
+    getPengajuanAnggaranListAction().then((res) => {
+      if (isMounted && res.success && res.data && res.data.length > 0) {
+        setList(
+          res.data.map((item) => ({
+            id: item.id,
+            kode: item.kode,
+            judul: item.judul,
+            kategori: item.kategori,
+            nominal: item.nominal,
+            status: item.status as "DIAJUKAN" | "DISETUJUI_KS" | "DICAIRKAN" | "DITOLAK",
+            diajukanOleh: item.diajukanOleh,
+            catatan: item.keterangan,
+          }))
+        );
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const [isPending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -94,10 +118,10 @@ export function AnggaranModule({ userRole, currentUserName }: AnggaranModuleProp
         keterangan: keteranganInput || "Pengajuan operasional pesantren",
       });
 
-      if (res.success) {
+      if (res.success && res.data) {
         const newItem: PengajuanDanaItem = {
-          id: `aju-${Date.now()}`,
-          kode: `AJU-${Math.floor(100000 + Math.random() * 900000)}`,
+          id: res.data.id,
+          kode: res.data.kodePengajuan,
           judul: judulInput,
           kategori: kategoriInput,
           nominal: nom,
@@ -112,7 +136,7 @@ export function AnggaranModule({ userRole, currentUserName }: AnggaranModuleProp
         setKeteranganInput("");
         setFeedback({
           type: "success",
-          message: `Pengajuan anggaran "${judulInput}" berhasil diajukan dan menunggu telaah Mudir.`,
+          message: `Pengajuan anggaran "${judulInput}" (${res.data.kodePengajuan}) berhasil diajukan dan menunggu telaah Mudir.`,
         });
       } else {
         setFeedback({ type: "error", message: res.message || "Gagal mengajukan anggaran." });

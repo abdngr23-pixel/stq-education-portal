@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useState, useEffect, useTransition } from "react";
 import { Role } from "@/types/auth";
 import { DashboardSantriSummary } from "./beranda-module";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { catatPelanggaranAction, putihkanSPAction } from "@/app/actions/kedisiplinan";
+import { catatPelanggaranAction, putihkanSPAction, getPelanggaranListAction, getSPListAction } from "@/app/actions/kedisiplinan";
 import { evaluasiLevelSP } from "@/lib/educational-rules";
 import { PrintSP } from "@/components/print/print-sp";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
@@ -103,6 +103,47 @@ export function KedisiplinanModule({
     },
   ]);
 
+  // Load pelanggaran & SP riil dari server action on mount
+  useEffect(() => {
+    let isMounted = true;
+    Promise.all([getPelanggaranListAction(), getSPListAction()]).then(([pRes, spRes]) => {
+      if (!isMounted) return;
+      if (pRes.success && pRes.data && pRes.data.length > 0) {
+        setPelanggaranList(
+          pRes.data.map((p) => ({
+            id: p.id,
+            kode: p.kode,
+            santriNama: p.santriNama,
+            santriNis: p.santriNis,
+            kategori: p.kategori,
+            poin: p.poin,
+            isPengulangan: p.isPengulangan,
+            tanggal: p.tanggal,
+            pencatat: p.pencatat,
+            kronologi: p.kronologi || "",
+          }))
+        );
+      }
+      if (spRes.success && spRes.data && spRes.data.length > 0) {
+        setSpList(
+          spRes.data.map((sp) => ({
+            id: sp.id,
+            nomorSP: sp.nomorSP,
+            santriNama: sp.santriNama,
+            santriNis: sp.santriNis,
+            tingkat: sp.tingkat,
+            totalPoin: sp.totalPoin,
+            tanggal: sp.tanggal,
+            status: sp.status as "AKTIF" | "DIPUTIHKAN",
+          }))
+        );
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // Dialog Tambah Pelanggaran
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [selectedSantriNis, setSelectedSantriNis] = useState(santriList[0]?.nis || "");
@@ -162,8 +203,8 @@ export function KedisiplinanModule({
         const poin = res.data.poinFinal;
 
         const newRecord: PelanggaranRecord = {
-          id: `p-${Date.now()}`,
-          kode: `PLG-${Math.floor(100000 + Math.random() * 900000)}`,
+          id: res.data.id,
+          kode: res.data.kodePelanggaran,
           santriNama: target.nama,
           santriNis: target.nis,
           kategori:
@@ -185,19 +226,24 @@ export function KedisiplinanModule({
         const spLevel = res.totalPoin ? evaluasiLevelSP(res.totalPoin) : null;
         if (spLevel) {
           const tingkatNum = spLevel === "SP3" ? 3 : spLevel === "SP2" ? 2 : 1;
-          const newSp: SPRecord = {
-            id: `sp-${Date.now()}`,
-            nomorSP: `00${spList.length + 1}/${spLevel}/DUC/${new Date().getFullYear()}`,
-            santriNama: target.nama,
-            santriNis: target.nis,
-            tingkat: tingkatNum,
-            totalPoin: res.totalPoin || poin,
-            tanggal: new Date().toLocaleDateString("id-ID"),
-            status: "AKTIF",
-          };
-          setSpList((prev) => [newSp, ...prev]);
+          getSPListAction().then((spRes) => {
+            if (spRes.success && spRes.data && spRes.data.length > 0) {
+              setSpList(
+                spRes.data.map((sp) => ({
+                  id: sp.id,
+                  nomorSP: sp.nomorSP,
+                  santriNama: sp.santriNama,
+                  santriNis: sp.santriNis,
+                  tingkat: sp.tingkat,
+                  totalPoin: sp.totalPoin,
+                  tanggal: sp.tanggal,
+                  status: sp.status as "AKTIF" | "DIPUTIHKAN",
+                }))
+              );
+            }
+          });
 
-          // Siapkan WA peringatan
+          // Siapkan WA peringatan dengan nomor wali santri riil
           const waMsg = buildPelanggaranSPWAMessage({
             santriNama: target.nama,
             santriNis: target.nis,
@@ -211,8 +257,8 @@ export function KedisiplinanModule({
 
           setWaDialog({
             isOpen: true,
-            phone: "081299887766",
-            recipientName: `Wali dari ${target.nama}`,
+            phone: target.noHpWali || "081234567890",
+            recipientName: target.namaWali ? `${target.namaWali} (Wali ${target.nama})` : `Wali dari ${target.nama}`,
             message: waMsg,
             title: `Peringatan ${spLevel} untuk ${target.nama}`,
             description: "Akumulasi poin telah melampaui batas ambang. Hubungi wali santri.",
@@ -223,7 +269,7 @@ export function KedisiplinanModule({
         setKronologi("");
         setFeedback({
           type: "success",
-          message: `Pelanggaran untuk ${target.nama} berhasil dicatat (${poin} Poin${isRepeat ? " - Pengulangan x2" : ""}).`,
+          message: `Pelanggaran ${target.nama} (${res.data.kodePelanggaran}) berhasil dicatat. Poin sanksi: ${poin}${isRepeat ? " (Pengulangan x2)" : ""}.`,
         });
       } else {
         setFeedback({ type: "error", message: res.message || "Gagal mencatat pelanggaran." });

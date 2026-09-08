@@ -256,3 +256,107 @@ export async function getKategoriPelanggaranListAction() {
     return { success: false, data: [] };
   }
 }
+
+/**
+ * Server Action: Mengambil daftar riwayat pelanggaran santri (Terkontrol Sesi & ABAC)
+ */
+export async function getPelanggaranListAction(santriId?: string) {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Sesi kedaluwarsa. Silakan login kembali.", data: [] };
+  }
+
+  // ABAC: Wali dan Santri hanya boleh melihat catatan milik santri sendiri
+  let effectiveSantriId = santriId;
+  if (session.role === "WS" || session.role === "ST") {
+    if (!session.santriId) {
+      return { success: false, message: "Akun belum terhubung dengan data santri.", data: [] };
+    }
+    effectiveSantriId = session.santriId;
+  }
+
+  try {
+    const records = await prisma.pelanggaranSantri.findMany({
+      where: effectiveSantriId ? { santriId: effectiveSantriId } : undefined,
+      include: {
+        santri: { select: { id: true, nama: true, nis: true, kelas: true } },
+        kategori: { select: { id: true, nama: true, tingkat: true, poinDasar: true } },
+        pencatat: { select: { id: true, nama: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return {
+      success: true,
+      data: records.map((r) => ({
+        id: r.id,
+        kode: r.kodePelanggaran,
+        santriId: r.santriId,
+        santriNama: r.santri?.nama || "Santri",
+        santriNis: r.santri?.nis || "",
+        santriKelas: r.santri?.kelas || "",
+        kategori: r.kategori?.nama || "Pelanggaran",
+        kategoriId: r.kategoriId,
+        poin: r.poinFinal,
+        isPengulangan: r.isPengulangan,
+        kronologi: r.kronologi,
+        tanggal: r.createdAt.toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" }),
+        pencatat: r.pencatat?.nama || "Musyrif",
+        createdAt: r.createdAt.toISOString(),
+      })),
+    };
+  } catch (error) {
+    console.error("Gagal mengambil data pelanggaran:", error);
+    return { success: false, message: "Gagal memuat catatan pelanggaran dari server.", data: [] };
+  }
+}
+
+/**
+ * Server Action: Mengambil daftar Surat Peringatan / SP resmi (Terkontrol Sesi & ABAC)
+ */
+export async function getSPListAction(santriId?: string) {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Sesi kedaluwarsa. Silakan login kembali.", data: [] };
+  }
+
+  let effectiveSantriId = santriId;
+  if (session.role === "WS" || session.role === "ST") {
+    if (!session.santriId) {
+      return { success: false, message: "Akun belum terhubung dengan data santri.", data: [] };
+    }
+    effectiveSantriId = session.santriId;
+  }
+
+  try {
+    const records = await prisma.suratPeringatan.findMany({
+      where: effectiveSantriId ? { santriId: effectiveSantriId } : undefined,
+      include: {
+        santri: { select: { id: true, nama: true, nis: true, kelas: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return {
+      success: true,
+      data: records.map((sp) => ({
+        id: sp.id,
+        nomorSP: sp.nomorSP,
+        santriId: sp.santriId,
+        santriNama: sp.santri?.nama || "Santri",
+        santriNis: sp.santri?.nis || "",
+        santriKelas: sp.santri?.kelas || "",
+        tingkat: sp.tingkatSP,
+        totalPoin: sp.totalPoinSaatTerbit,
+        status: sp.status,
+        keteranganPemutihan: sp.keteranganPemutihan,
+        tanggalPemutihan: sp.tanggalPemutihan?.toISOString(),
+        tanggal: sp.createdAt.toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" }),
+        createdAt: sp.createdAt.toISOString(),
+      })),
+    };
+  } catch (error) {
+    console.error("Gagal mengambil data SP:", error);
+    return { success: false, message: "Gagal memuat data SP dari server.", data: [] };
+  }
+}

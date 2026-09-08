@@ -171,3 +171,71 @@ export async function getRaporGabunganAction(santriId: string, semester: number 
     return { success: false, message: "Terjadi kesalahan saat mengolah rapor gabungan." };
   }
 }
+
+/**
+ * Server Action: Mengambil daftar nilai akademik santri berdasarkan filter kelas, mapel, semester, dan jenis
+ */
+export async function getNilaiAkademikListAction(params?: {
+  santriId?: string;
+  kelas?: string;
+  mapelId?: string;
+  semester?: number;
+  jenis?: JenisNilai;
+}) {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Silakan login terlebih dahulu.", data: [] };
+  }
+
+  let effectiveSantriId = params?.santriId;
+  if (session.role === "WS" || session.role === "ST") {
+    if (!session.santriId) {
+      return { success: false, message: "Akun belum terhubung dengan data santri.", data: [] };
+    }
+    effectiveSantriId = session.santriId;
+  }
+
+  try {
+    const list = await prisma.nilaiAkademik.findMany({
+      where: {
+        santriId: effectiveSantriId,
+        mapelId: params?.mapelId,
+        semester: params?.semester,
+        jenis: params?.jenis,
+        santri: params?.kelas ? { kelas: params.kelas } : undefined,
+      },
+      include: {
+        santri: { select: { id: true, nama: true, nis: true, kelas: true } },
+        mapel: { select: { id: true, nama: true, kodeMapel: true, kategori: true } },
+        guru: { select: { id: true, nama: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return {
+      success: true,
+      data: list.map((item) => ({
+        id: item.id,
+        santriId: item.santriId,
+        santriNama: item.santri.nama,
+        santriNis: item.santri.nis,
+        kelas: item.santri.kelas,
+        mapelId: item.mapelId,
+        mapelNama: item.mapel.nama,
+        mapelKategori: item.mapel.kategori,
+        semester: item.semester,
+        tahunAjaran: item.tahunAjaran,
+        jenis: item.jenis,
+        angka: item.angka,
+        huruf: item.huruf,
+        catatan: item.catatan || "",
+        guruNama: item.guru?.nama || "Guru Pengajar",
+        createdAt: item.createdAt.toISOString(),
+      })),
+    };
+  } catch (error) {
+    console.error("Gagal mengambil daftar nilai akademik:", error);
+    return { success: false, message: "Gagal memuat daftar nilai dari server.", data: [] };
+  }
+}
+

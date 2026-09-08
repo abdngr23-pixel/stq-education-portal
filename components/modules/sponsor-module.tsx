@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useState, useEffect, useTransition } from "react";
 import { Role } from "@/types/auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { generateLaporanSponsorAction, kirimLaporanWhatsAppAction } from "@/app/actions/sponsor";
+import { generateLaporanSponsorAction, kirimLaporanWhatsAppAction, getDaftarSponsorAction } from "@/app/actions/sponsor";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
 import {
   HeartHandshake,
@@ -60,6 +60,37 @@ export function SponsorModule({ userRole, currentUserName }: SponsorModuleProps)
     },
   ]);
 
+  // Load donatur riil dari server action on mount
+  useEffect(() => {
+    let isMounted = true;
+    getDaftarSponsorAction().then((res) => {
+      if (isMounted && res.success && res.data && res.data.length > 0) {
+        setList(
+          res.data.map((item) => {
+            const latestLaporan = item.laporanList?.[0];
+            return {
+              id: item.id,
+              kode: item.kodeSponsor,
+              nama: item.nama,
+              noHp: item.noHp,
+              santriAsuh: item.santri ? `${item.santri.nama} (${item.santri.nis})` : "Belum Memiliki Santri Asuh",
+              santriId: item.santriId || undefined,
+              nominal: item.nominalBulanan,
+              statusWA: latestLaporan?.statusKirimWA === "TERKIRIM" ? "TERKIRIM" : "BELUM_KIRIM",
+              terakhirKirim: latestLaporan?.tanggalKirimWA
+                ? new Date(latestLaporan.tanggalKirimWA).toLocaleDateString("id-ID")
+                : "-",
+            };
+          })
+        );
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const [selectedPeriod, setSelectedPeriod] = useState<string>("September 2026");
   const [isPending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -91,18 +122,27 @@ export function SponsorModule({ userRole, currentUserName }: SponsorModuleProps)
 
   const handleKirimLaporanWA = (sponsor: SponsorItem) => {
     setFeedback(null);
+    const targetSantriId = sponsor.santriId;
+    if (!targetSantriId) {
+      setFeedback({
+        type: "error",
+        message: `Donatur ${sponsor.nama} belum memiliki santri asuh. Laporan mutaba'ah hanya dapat dibuat untuk donatur dengan santri asuh aktif.`,
+      });
+      return;
+    }
+
     startTransition(async () => {
       // 1. Generate Laporan Terverifikasi
       const res = await generateLaporanSponsorAction({
         sponsorId: sponsor.id,
-        santriId: sponsor.santriId || "cm_santri_1",
-        bulan: "September 2026",
+        santriId: targetSantriId,
+        bulan: selectedPeriod,
         catatanMusyrif: "Ananda menunjukkan ketekunan istimewa dalam halaqoh Al-Qur'an dan kedisiplinan asrama.",
       });
 
       if (res.success && res.data) {
         const laporan = res.data;
-        const msg = `*LAPORAN PERKEMBANGAN SANTRI ASUH BEASISWA*\n*STQ DARUL ULUM CENDEKIA*\n_Yayasan Infak Medika Nusantara_\n\nKepada Yth. *${sponsor.nama}*\n\nBerikut kami sampaikan ringkasan mutaba'ah ananda *${sponsor.santriAsuh}*:\n• *Periode Laporan:* September 2026\n• *Status Laporan:* Terverifikasi Resmi\n• *Kode Laporan:* ${laporan.kodeLaporan}\n• *Catatan Pembina:* Ananda istiqomah dalam halaqoh Al-Qur'an dan adab asrama.\n\nJazakumullahu khairan katsiran atas infak beasiswa dan doa bapak/ibu sekalian. Semoga menjadi amal jariyah yang terus mengalir pahalanya. Aamiin.\n\n_Wassalamu'alaikum Warahmatullahi Wabarakatuh_\n*Pengurus STQ Darul Ulum Cendekia (${currentUserName})*`;
+        const msg = `*LAPORAN PERKEMBANGAN SANTRI ASUH BEASISWA*\n*STQ DARUL ULUM CENDEKIA*\n_Yayasan Infak Medika Nusantara_\n\nKepada Yth. *${sponsor.nama}*\n\nBerikut kami sampaikan ringkasan mutaba'ah ananda *${sponsor.santriAsuh}*:\n• *Periode Laporan:* ${selectedPeriod}\n• *Status Laporan:* Terverifikasi Resmi\n• *Kode Laporan:* ${laporan.kodeLaporan}\n• *Catatan Pembina:* Ananda istiqomah dalam halaqoh Al-Qur'an dan adab asrama.\n\nJazakumullahu khairan katsiran atas infak beasiswa dan doa bapak/ibu sekalian. Semoga menjadi amal jariyah yang terus mengalir pahalanya. Aamiin.\n\n_Wassalamu'alaikum Warahmatullahi Wabarakatuh_\n*Pengurus STQ Darul Ulum Cendekia (${currentUserName})*`;
 
         setWaDialog({
           isOpen: true,
@@ -154,6 +194,21 @@ export function SponsorModule({ userRole, currentUserName }: SponsorModuleProps)
           <p className="text-xs text-slate-500">
             Penyaluran beasiswa santri yatim/dhuafa dan laporan perkembangan hafalan berkala kepada donatur
           </p>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <label className="text-xs font-bold text-slate-600 whitespace-nowrap">Bulan Laporan:</label>
+          <select
+            value={selectedPeriod}
+            onChange={(e) => setSelectedPeriod(e.target.value)}
+            className="min-h-[40px] px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-semibold text-slate-900"
+          >
+            <option value="September 2026">September 2026</option>
+            <option value="Agustus 2026">Agustus 2026</option>
+            <option value="Juli 2026">Juli 2026</option>
+            <option value="Juni 2026">Juni 2026</option>
+            <option value="Oktober 2026">Oktober 2026</option>
+          </select>
         </div>
       </div>
 
@@ -218,7 +273,12 @@ export function SponsorModule({ userRole, currentUserName }: SponsorModuleProps)
                       </Badge>
                     </div>
                     <p className="text-xs text-slate-700">
-                      <strong>Santri Asuh:</strong> {item.santriAsuh}
+                      <strong>Santri Asuh:</strong>{" "}
+                      {item.santriId ? (
+                        item.santriAsuh
+                      ) : (
+                        <span className="text-amber-700 font-semibold italic">Belum Memiliki Santri Asuh</span>
+                      )}
                     </p>
                     <p className="text-[11px] text-slate-400">
                       Kontak WA: {item.noHp} • Laporan Terakhir: {item.terakhirKirim}
@@ -239,8 +299,9 @@ export function SponsorModule({ userRole, currentUserName }: SponsorModuleProps)
                         variant="secondary"
                         size="sm"
                         onClick={() => handleKirimLaporanWA(item)}
-                        disabled={isPending}
-                        className="text-xs font-bold gap-1.5 min-h-[38px] text-emerald-800 border-emerald-200 hover:bg-emerald-50"
+                        disabled={isPending || !item.santriId}
+                        title={!item.santriId ? "Donatur belum memiliki santri asuh" : "Kirim laporan mutaba'ah"}
+                        className="text-xs font-bold gap-1.5 min-h-[38px] text-emerald-800 border-emerald-200 hover:bg-emerald-50 disabled:opacity-40"
                       >
                         <MessageCircle className="h-3.5 w-3.5 text-[#0E7C3A]" />
                         Kirim Laporan WA
