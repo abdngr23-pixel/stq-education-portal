@@ -14,6 +14,7 @@ export interface CreateSetoranInput {
   ayatSelesai: number;
   nilai: NilaiSetoran;
   catatan?: string;
+  jumlahHalaman?: number;
 }
 
 /**
@@ -44,9 +45,11 @@ export async function createSetoranAction(input: CreateSetoranInput) {
         },
       });
 
-      // Jika belum di-assign atau testing, beri catatan di audit log
       if (!isBinaan) {
-        console.warn(`[ABAC Notice] Musyrif ${session.username} mencatat setoran santri di luar binaan.`);
+        return {
+          success: false,
+          message: "Akses Ditolak: Anda hanya berwenang mencatat setoran santri di dalam halaqoh binaan Anda.",
+        };
       }
     }
 
@@ -64,6 +67,11 @@ export async function createSetoranAction(input: CreateSetoranInput) {
     const setoranCode = `SET-${String(count + 1).padStart(6, "0")}`;
 
     // 5. Simpan Setoran ke PostgreSQL
+    const hlmPrefix = input.jumlahHalaman ? `[Hlm: ${input.jumlahHalaman}] ` : "";
+    const finalCatatan = input.catatan
+      ? `${hlmPrefix}${input.catatan}`.trim()
+      : (hlmPrefix.trim() || null);
+
     const newSetoran = await prisma.setoranTahfizh.create({
       data: {
         setoranCode,
@@ -77,7 +85,7 @@ export async function createSetoranAction(input: CreateSetoranInput) {
         surahSelesai: input.surahSelesai,
         ayatSelesai: Number(input.ayatSelesai),
         nilai: input.nilai,
-        catatan: input.catatan,
+        catatan: finalCatatan,
         createdBy: session.username,
       },
       include: {

@@ -1,0 +1,3 @@
+-- STQ Education Portal Database Backup Placeholder
+-- Tanggal: 2026-09-08T04:58:43.018Z
+-- Database: stq_education_db

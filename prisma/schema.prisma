@@ -173,6 +173,22 @@ enum JenisMutasiLogistik {
   KELUAR
 }
 
+// Enums Roadmap v2: Laporan Bulanan & Mutaba'ah Riil
+enum KategoriCapaian {
+  HAFALAN_HADITS       // Min. 4/bulan
+  HAFALAN_MUFRODAT     // Min. 12/bulan (kosakata Arab)
+  HAFALAN_VOCABULARY   // Min. 12/bulan (kosakata Inggris)
+  SHOLAT_TAHAJJUD      // Min. 15x/bulan
+  SHOLAT_DHUHA         // Min. 15x/bulan
+  PUASA_SUNNAH         // Min. 6x/bulan
+  LITERASI             // Min. 80 halaman/bulan
+}
+
+enum JenisUjiHafalan {
+  TASMI
+  SIMAAN
+}
+
 
 // ----------------------------------------------------
 // ENTITAS AUTH & USER MANAGEMENT
@@ -243,6 +259,9 @@ model Staff {
   ikhtibarDiujiTahap1 IkhtibarTahfizh[] @relation("PengujiTahap1")
   ikhtibarDiujiTahap2 IkhtibarTahfizh[] @relation("PengujiTahap2")
 
+  // Relasi Roadmap v2
+  tasmiSimaanDiuji   TasmiSimaan[]    @relation("PengujiTasmiSimaan")
+
   createdAt          DateTime         @default(now()) @map("created_at")
   updatedAt          DateTime         @updatedAt @map("updated_at")
   createdBy          String?          @map("created_by")
@@ -293,6 +312,11 @@ model Santri {
 
   // Relasi Fase 7
   saranList          KotakSaran[]
+
+  // Relasi Roadmap v2: Laporan Bulanan Komprehensif
+  targetList         TargetSantri[]
+  capaianBulananList CapaianBulanan[]
+  tasmiSimaanList    TasmiSimaan[]
 
   createdAt     DateTime         @default(now()) @map("created_at")
   updatedAt     DateTime         @updatedAt @map("updated_at")
@@ -765,4 +789,72 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ----------------------------------------------------
+// ROADMAP V2: MODUL LAPORAN BULANAN KOMPREHENSIF
+// ----------------------------------------------------
+
+model TargetSantri {
+  id              String        @id @default(cuid())
+  santriId        String        @map("santri_id")
+  santri          Santri        @relation(fields: [santriId], references: [id], onDelete: Cascade)
+  jenis           JenisSetoran  // SABAQ, SABQI, MANZIL, MUFAR
+  targetPekanan   Int           @map("target_pekanan") // Halaman (Sabaq) atau Frekuensi per pekan (Sabqi/Manzil/Mufar)
+  targetBulanan   Int           @map("target_bulanan") // Halaman (Sabaq) atau Frekuensi per bulan (Sabqi/Manzil/Mufar)
+  ambangKepatuhan Float         @default(90.0) @map("ambang_kepatuhan") // Minimal persentase kepatuhan bulanan (e.g. 90%)
+  bulan           Int           // 1 - 12
+  tahunAjaran     String        @map("tahun_ajaran") // e.g. "2026/2027"
+  
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  @@unique([santriId, jenis, bulan, tahunAjaran])
+  @@map("target_santri")
+}
+
+model CapaianBulanan {
+  id          String          @id @default(cuid())
+  santriId    String          @map("santri_id")
+  santri      Santri          @relation(fields: [santriId], references: [id], onDelete: Cascade)
+  kategori    KategoriCapaian
+  bulan       Int             // 1 - 12
+  tahunAjaran String          @map("tahun_ajaran") // e.g. "2026/2027"
+  
+  hbl         Int             @default(0) // Hafalan Bulan Lalu (carry-over kumulatif)
+  pekan1      Int             @default(0)
+  pekan2      Int             @default(0)
+  pekan3      Int             @default(0)
+  pekan4      Int             @default(0)
+  total       Int             @default(0)
+  targetMin   Int             @default(0) @map("target_min")
+  isTuntas    Boolean         @default(false) @map("is_tuntas")
+  catatan     String?
+
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  @@unique([santriId, kategori, bulan, tahunAjaran])
+  @@map("capaian_bulanan")
+}
+
+model TasmiSimaan {
+  id          String           @id @default(cuid())
+  santriId    String           @map("santri_id")
+  santri      Santri           @relation(fields: [santriId], references: [id], onDelete: Cascade)
+  musyrifId   String           @map("musyrif_id")
+  musyrif     Staff            @relation("PengujiTasmiSimaan", fields: [musyrifId], references: [id])
+  tanggal     DateTime         @default(now())
+  jenis       JenisUjiHafalan  // TASMI atau SIMAAN
+  juz         Int
+  halaman     Int?
+  nilai       Float            // 0 - 100
+  predikat    NilaiSetoran
+  catatan     String?
+
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  @@index([santriId, tanggal])
+  @@map("tasmi_simaan")
 }

@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { BookCheck, Award, PlusCircle, CheckCircle2, Download } from "lucide-react";
+import { BookCheck, Award, PlusCircle, CheckCircle2, Download, FileSpreadsheet } from "lucide-react";
 import { exportToCSV } from "@/lib/export-csv";
 
 export interface DashboardMusyrifTahfizhProps {
@@ -24,8 +24,10 @@ export interface DashboardMusyrifTahfizhProps {
   }>;
   selectedSantriNis: string;
   onSelectSantriNis: (nis: string) => void;
-  inputJenis: "SABAQ" | "SABQI" | "MANZIL";
-  onSetInputJenis: (jenis: "SABAQ" | "SABQI" | "MANZIL") => void;
+  inputJenis: "SABAQ" | "SABQI" | "MANZIL" | "MUFAR";
+  onSetInputJenis: (jenis: "SABAQ" | "SABQI" | "MANZIL" | "MUFAR") => void;
+  jumlahHalaman?: string;
+  onSetJumlahHalaman?: (hlm: string) => void;
   juz: string;
   onSetJuz: (juz: string) => void;
   surahMulai: string;
@@ -41,6 +43,7 @@ export interface DashboardMusyrifTahfizhProps {
   catatan: string;
   onSetCatatan: (catatan: string) => void;
   onSaveSetoran: () => void;
+  onOpenLaporanBulanan?: () => void;
   isPending?: boolean;
 }
 
@@ -50,6 +53,8 @@ export function DashboardMusyrifTahfizh({
   onSelectSantriNis,
   inputJenis,
   onSetInputJenis,
+  jumlahHalaman = "1",
+  onSetJumlahHalaman,
   juz,
   onSetJuz,
   surahMulai,
@@ -65,12 +70,40 @@ export function DashboardMusyrifTahfizh({
   catatan,
   onSetCatatan,
   onSaveSetoran,
+  onOpenLaporanBulanan,
   isPending = false,
 }: DashboardMusyrifTahfizhProps) {
   const selectedSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
 
   return (
     <div className="space-y-6">
+      {/* Tombol Akses Cepat Laporan Bulanan (Excel DUC Standard) */}
+      {onOpenLaporanBulanan && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-3xl bg-emerald-50/80 border border-emerald-200/90 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <span className="p-2.5 rounded-2xl bg-[#0E7C3A] text-white">
+              <FileSpreadsheet className="h-5 w-5" />
+            </span>
+            <div>
+              <h4 className="text-xs sm:text-sm font-bold text-emerald-950 font-heading">
+                Format Laporan Hafalan STQ Darul Ulum Cendekia (Excel)
+              </h4>
+              <p className="text-[11px] text-emerald-800">
+                Standar konversi 20 Halaman/Juz, Matriks Pekanan P1-P4, Mutaba&apos;ah 7 Komponen, &amp; Ekspor CSV
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onOpenLaporanBulanan}
+            className="text-xs font-semibold bg-[#0E7C3A] hover:bg-[#0B642E]"
+          >
+            Buka Rekap Laporan Bulanan
+          </Button>
+        </div>
+      )}
+
       {/* 1. KPI Metrik Tahfizh Hari Ini */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard
@@ -147,11 +180,11 @@ export function DashboardMusyrifTahfizh({
                 </select>
               </div>
 
-              {/* Tipe Setoran: Segmented Control */}
+              {/* Tipe Setoran: Segmented Control (4 Jenis) */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-700">Jenis Setoran</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(["SABAQ", "SABQI", "MANZIL"] as const).map((j) => (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {(["SABAQ", "SABQI", "MANZIL", "MUFAR"] as const).map((j) => (
                     <button
                       key={j}
                       type="button"
@@ -162,11 +195,34 @@ export function DashboardMusyrifTahfizh({
                           : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
                       }`}
                     >
-                      {j === "SABAQ" ? "Sabaq (Baru)" : j === "SABQI" ? "Sabqi (Murojaah)" : "Manzil (Lancar)"}
+                      {j === "SABAQ"
+                        ? "Sabaq (Baru)"
+                        : j === "SABQI"
+                        ? "Sabqi (Murojaah)"
+                        : j === "MANZIL"
+                        ? "Manzil (Lancar)"
+                        : "Mufar (Khusus)"}
                     </button>
                   ))}
                 </div>
               </div>
+
+              {/* Input Jumlah Halaman jika Sabaq */}
+              {inputJenis === "SABAQ" && onSetJumlahHalaman && (
+                <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-200">
+                  <Input
+                    label="Jumlah Halaman Sabaq (Standar 20 Hlm/Juz)"
+                    type="number"
+                    value={jumlahHalaman}
+                    onChange={(e) => onSetJumlahHalaman(e.target.value)}
+                    placeholder="1"
+                    className="bg-white"
+                  />
+                  <p className="text-[10px] text-emerald-800 mt-1">
+                    Akumulasi halaman akan dikonversi ke format <em>&ldquo;X Juz Y Halaman&rdquo;</em> pada laporan bulanan.
+                  </p>
+                </div>
+              )}
 
               {/* Parameter Ayat & Juz */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

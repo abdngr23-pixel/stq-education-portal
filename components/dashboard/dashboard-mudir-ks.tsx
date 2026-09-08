@@ -1,9 +1,11 @@
-import React from "react";
+import React, { useState } from "react";
 import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ShieldCheck, Award, Send, DollarSign, Check, FileText, Printer } from "lucide-react";
+import { ShieldCheck, Award, Send, DollarSign, Check, FileText, Printer, FileSpreadsheet, Users } from "lucide-react";
+import { RekapLaporanBulanan } from "./rekap-laporan-bulanan";
+import { ManajemenHalaqoh } from "./manajemen-halaqoh";
 
 export interface DashboardMudirKSProps {
   totalSantri: number;
@@ -33,6 +35,16 @@ export interface DashboardMudirKSProps {
     nominal: number;
     status: string;
   }>;
+  halaqohList?: Array<{
+    id: string;
+    halaqohCode: string;
+    nama: string;
+    pembina?: { id: string; nama: string; staffCode?: string } | null;
+    tahunAjaran: string;
+    _count?: { santriList: number };
+  }>;
+  staffMusyrifList?: Array<{ id: string; nama: string; staffCode: string }>;
+  santriList?: Array<{ id: string; nis: string; nama: string; halaqohId?: string | null }>;
   onApproveIzinPulang: (id: string) => void;
   onSahkanIkhtibar: (id: string) => void;
   onApproveAnggaran: (id: string) => void;
@@ -45,12 +57,16 @@ export function DashboardMudirKS({
   izinEskalasiList,
   ikhtibarTahap2List,
   pengajuanAnggaranList,
+  halaqohList = [],
+  staffMusyrifList = [],
+  santriList = [],
   onApproveIzinPulang,
   onSahkanIkhtibar,
   onApproveAnggaran,
   onPrintLaporan,
   isPending = false,
 }: DashboardMudirKSProps) {
+  const [activeTab, setActiveTab] = useState<"keputusan" | "laporan_bulanan" | "manajemen_halaqoh">("keputusan");
   const pendingIzin = izinEskalasiList.filter((i) => i.status === "MENUNGGU_KS");
   const pendingIkhtibar = ikhtibarTahap2List.filter((i) => i.status === "LULUS_TAHAP_1");
   const pendingAnggaran = pengajuanAnggaranList.filter((a) => a.status === "MENUNGGU_MUDIR");
@@ -94,28 +110,72 @@ export function DashboardMudirKS({
         />
       </div>
 
-      {/* 2. Tombol Aksi Cepat Cetak & Ringkasan */}
-      <div className="flex items-center justify-between p-4 rounded-3xl bg-white border border-slate-200/80 shadow-xs">
-        <div>
-          <h3 className="text-sm font-bold text-slate-800 font-heading">
-            Pusat Keputusan Eksekutif &amp; Pengesahan Mudir
-          </h3>
-          <p className="text-xs text-slate-500">
-            Persetujuan final keputusan akademik, perizinan menginap, serta anggaran
-          </p>
+      {/* 2. Subtab Navigasi Eksekutif Mudir */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-2 rounded-3xl bg-white border border-slate-200 shadow-xs">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveTab("keputusan")}
+            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === "keputusan"
+                ? "bg-[#0E7C3A] text-white shadow-2xs"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            <ShieldCheck className="h-4 w-4" />
+            Pusat Keputusan &amp; Approval
+          </button>
+          <button
+            onClick={() => setActiveTab("laporan_bulanan")}
+            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === "laporan_bulanan"
+                ? "bg-[#0E7C3A] text-white shadow-2xs"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Laporan Bulanan (Excel Format)
+          </button>
+          <button
+            onClick={() => setActiveTab("manajemen_halaqoh")}
+            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === "manajemen_halaqoh"
+                ? "bg-[#0E7C3A] text-white shadow-2xs"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            <Users className="h-4 w-4" />
+            Penugasan Halaqoh
+          </button>
         </div>
+
         <Button
           variant="secondary"
           size="sm"
           onClick={onPrintLaporan}
           leftIcon={<Printer className="h-4 w-4 text-[#0E7C3A]" />}
+          className="text-xs font-semibold mr-1"
         >
           Cetak Dokumen A4
         </Button>
       </div>
 
-      {/* 3. Tiga Kartu Antrian Approval Berjenjang */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      {activeTab === "laporan_bulanan" && (
+        <RekapLaporanBulanan
+          userRole="KS"
+          halaqohList={halaqohList.map((h) => ({ id: h.id, nama: h.nama }))}
+        />
+      )}
+
+      {activeTab === "manajemen_halaqoh" && (
+        <ManajemenHalaqoh
+          halaqohList={halaqohList}
+          staffMusyrifList={staffMusyrifList}
+          santriList={santriList}
+        />
+      )}
+
+      {activeTab === "keputusan" && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Antrian 1: Eskalasi Izin Pulang */}
         <Card rounded="3xl">
           <CardHeader className="pb-3 border-b border-slate-100">
@@ -237,6 +297,7 @@ export function DashboardMudirKS({
           </CardContent>
         </Card>
       </div>
+      )}
     </div>
   );
 }

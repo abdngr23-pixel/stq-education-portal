@@ -12,6 +12,9 @@ import { DashboardMusyrifTahfizh } from "@/components/dashboard/dashboard-musyri
 import { DashboardMusyrifKesantrian } from "@/components/dashboard/dashboard-musyrif-kesantrian";
 import { DashboardGuruAkademik } from "@/components/dashboard/dashboard-guru-akademik";
 import { DashboardMudirKS } from "@/components/dashboard/dashboard-mudir-ks";
+import { RekapLaporanBulanan } from "@/components/dashboard/rekap-laporan-bulanan";
+import { ManajemenHalaqoh } from "@/components/dashboard/manajemen-halaqoh";
+import { PrintLaporanBulanan } from "@/components/print/print-laporan-bulanan";
 import { DashboardYayasan } from "@/components/dashboard/dashboard-yayasan";
 import { DashboardAdminTU } from "@/components/dashboard/dashboard-admin-tu";
 import { DashboardPembinaAsrama } from "@/components/dashboard/dashboard-pembina-asrama";
@@ -82,6 +85,7 @@ import {
   Download,
   Activity,
   Building2,
+  FileSpreadsheet,
 } from "lucide-react";
 
 export default function Home() {
@@ -179,7 +183,10 @@ export default function Home() {
   // -------------------------------------------------------------
   // TAB 1: TAHFIZH
   // -------------------------------------------------------------
-  const [inputJenis, setInputJenis] = useState<"SABAQ" | "SABQI" | "MANZIL">("SABAQ");
+  const [inputJenis, setInputJenis] = useState<"SABAQ" | "SABQI" | "MANZIL" | "MUFAR">("SABAQ");
+  const [jumlahHalaman, setJumlahHalaman] = useState("1");
+  const [tahfizhSubView, setTahfizhSubView] = useState<"rekap_bulanan" | "input">("rekap_bulanan");
+  const [printLaporanData, setPrintLaporanData] = useState<any>(null);
   const [nilai, setNilai] = useState<"MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "DHOIF">("MUMTAZ");
   const [selectedSantriNis, setSelectedSantriNis] = useState("SAN-0001");
   const [juz, setJuz] = useState("4");
@@ -426,7 +433,7 @@ export default function Home() {
   // -------------------------------------------------------------
   // MODAL CETAK DOKUMEN RESMI (FASE 6)
   // -------------------------------------------------------------
-  const [showPrintModal, setShowPrintModal] = useState<"rapor" | "surat" | "sp" | null>(null);
+  const [showPrintModal, setShowPrintModal] = useState<"rapor" | "surat" | "sp" | "laporan_bulanan" | null>(null);
 
   // -------------------------------------------------------------
   // TAB 11: KALENDER AKADEMIK & AGENDA (FASE 7)
@@ -558,6 +565,7 @@ export default function Home() {
         ayatSelesai: parseInt(ayatSelesai) || 1,
         nilai,
         catatan,
+        jumlahHalaman: inputJenis === "SABAQ" ? parseInt(jumlahHalaman) || 1 : undefined,
       });
       setSantriList((prev) =>
         prev.map((s) => (s.nis === selectedSantriNis ? { ...s, setoranTerakhir: `${surahMulai}: ${ayatMulai}-${ayatSelesai}`, nilaiTerakhir: nilai } : s))
@@ -1137,6 +1145,8 @@ Mudir STQ Darul Ulum Cendekia,
                 onSelectSantriNis={setSelectedSantriNis}
                 inputJenis={inputJenis}
                 onSetInputJenis={setInputJenis}
+                jumlahHalaman={jumlahHalaman}
+                onSetJumlahHalaman={setJumlahHalaman}
                 juz={juz}
                 onSetJuz={setJuz}
                 surahMulai={surahMulai}
@@ -1152,6 +1162,11 @@ Mudir STQ Darul Ulum Cendekia,
                 catatan={catatan}
                 onSetCatatan={setCatatan}
                 onSaveSetoran={handleSaveSetoran}
+                onOpenLaporanBulanan={() => {
+                  setActiveCluster("tahfizh");
+                  setActiveTab("tahfizh");
+                  setTahfizhSubView("rekap_bulanan");
+                }}
                 isPending={isPending}
               />
             )}
@@ -1197,10 +1212,33 @@ Mudir STQ Darul Ulum Cendekia,
                   nominal: p.nominal,
                   status: p.status,
                 }))}
+                halaqohList={[
+                  {
+                    id: "HLQ-0001",
+                    halaqohCode: "HLQ-0001",
+                    nama: "Halaqoh Utsman bin Affan",
+                    tahunAjaran: "2026/2027",
+                    pembina: { id: "STF-0003", nama: "Ust. Zulkifli Al-Hafizh", staffCode: "STF-0003" },
+                    _count: { santriList: santriList.length },
+                  },
+                  {
+                    id: "HLQ-0002",
+                    halaqohCode: "HLQ-0002",
+                    nama: "Halaqoh Ali bin Abi Thalib",
+                    tahunAjaran: "2026/2027",
+                    pembina: { id: "STF-0004", nama: "Ust. Bilal Habibi, S.Ag.", staffCode: "STF-0004" },
+                    _count: { santriList: 0 },
+                  },
+                ]}
+                staffMusyrifList={[
+                  { id: "STF-0003", nama: "Ust. Zulkifli Al-Hafizh", staffCode: "STF-0003" },
+                  { id: "STF-0004", nama: "Ust. Bilal Habibi, S.Ag.", staffCode: "STF-0004" },
+                ]}
+                santriList={santriList.map((s) => ({ id: s.id, nis: s.nis, nama: s.nama, halaqohId: "HLQ-0001" }))}
                 onApproveIzinPulang={(id) => handleApproveIzin(id, "APPROVE")}
                 onSahkanIkhtibar={(id) => handleSahkanTahap2(id)}
                 onApproveAnggaran={(id) => handleApprovePengajuan(id, "DISETUJUI_KS")}
-                onPrintLaporan={() => setShowPrintModal("rapor")}
+                onPrintLaporan={() => setShowPrintModal("laporan_bulanan")}
                 isPending={isPending}
               />
             )}
@@ -1312,118 +1350,189 @@ Mudir STQ Darul Ulum Cendekia,
               <StatCard title="Ikhtibar Pending" value="5" description="Tahap I & II" icon={<Award className="h-5 w-5" />} badgeText="Menunggu Ujian" badgeVariant="orange" />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 space-y-6">
-                <Card rounded="3xl">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <PlusCircle className="h-5 w-5 text-[#0E7C3A]" /> Input Setoran Cepat
-                    </CardTitle>
-                    <CardDescription>Khusus Musyrif Tahfizh (<code>MT</code>), Pembina (<code>PH</code>), Mudir (<code>KS</code>)</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-slate-700">Pilih Santri</label>
-                      <select
-                        value={selectedSantriNis}
-                        onChange={(e) => setSelectedSantriNis(e.target.value)}
-                        className="w-full min-h-[44px] px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-sm"
-                      >
-                        {santriList.map((s) => (
-                          <option key={s.nis} value={s.nis}>{s.nama} ({s.nis})</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2">
-                      {(["SABAQ", "SABQI", "MANZIL"] as const).map((j) => (
-                        <button
-                          key={j}
-                          type="button"
-                          onClick={() => setInputJenis(j)}
-                          className={`min-h-[44px] rounded-2xl text-xs font-bold border ${
-                            inputJenis === j ? "bg-[#0E7C3A] text-white border-[#0E7C3A]" : "bg-slate-50 text-slate-700 border-slate-200"
-                          }`}
-                        >
-                          {j}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                      <Input label="Juz (1-30)" type="number" value={juz} onChange={(e) => setJuz(e.target.value)} />
-                      <Input label="Surah" value={surahMulai} onChange={(e) => { setSurahMulai(e.target.value); setSurahSelesai(e.target.value); }} />
-                      <Input label="Ayat Mulai" type="number" value={ayatMulai} onChange={(e) => setAyatMulai(e.target.value)} />
-                      <Input label="Ayat Selesai" type="number" value={ayatSelesai} onChange={(e) => setAyatSelesai(e.target.value)} />
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                      {["MUMTAZ", "JAYYID_JIDDAN", "JAYYID", "MAQBUL", "DHOIF"].map((k) => (
-                        <button
-                          key={k}
-                          type="button"
-                          onClick={() => setNilai(k as any)}
-                          className={`min-h-[44px] rounded-2xl text-xs font-bold border transition-all ${
-                            nilai === k ? "bg-[#0E7C3A] text-white border-[#0E7C3A] shadow-xs" : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                          }`}
-                        >
-                          {k}
-                        </button>
-                      ))}
-                    </div>
-                    <Input label="Catatan Tajwid/Makhroj" value={catatan} onChange={(e) => setCatatan(e.target.value)} placeholder="e.g. Bacaan tartil" />
-                  </CardContent>
-                  <CardFooter className="flex justify-end gap-2">
-                    <Button
-                      variant="primary"
-                      isLoading={isPending}
-                      onClick={handleSaveSetoran}
-                      disabled={!["MT", "PH", "KS"].includes(selectedRole)}
-                      leftIcon={<CheckCircle2 className="h-4 w-4" />}
-                    >
-                      {["MT", "PH", "KS"].includes(selectedRole) ? "Simpan Setoran" : `Role ${selectedRole} Tidak Berhak`}
-                    </Button>
-                  </CardFooter>
-                </Card>
+            {/* Navigasi Sub-Modul: Rekap Laporan Bulanan (Excel STQ DUC) vs Form Input Cepat */}
+            <div className="flex flex-wrap items-center justify-between gap-3 p-2 rounded-3xl bg-white border border-slate-200 shadow-xs">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setTahfizhSubView("rekap_bulanan")}
+                  className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    tahfizhSubView === "rekap_bulanan"
+                      ? "bg-[#0E7C3A] text-white shadow-2xs"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Rekap Laporan Bulanan (Format Excel)
+                </button>
+                <button
+                  onClick={() => setTahfizhSubView("input")}
+                  className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    tahfizhSubView === "input"
+                      ? "bg-[#0E7C3A] text-white shadow-2xs"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <PlusCircle className="h-4 w-4" />
+                  Form Input Setoran Cepat
+                </button>
               </div>
 
-              <div>
-                <Card rounded="3xl">
-                  <CardHeader className="flex flex-row items-center justify-between pb-2">
-                    <div>
-                      <CardTitle>Santri Halaqoh</CardTitle>
-                      <CardDescription>Halaqoh Utsman bin Affan</CardDescription>
-                    </div>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="text-xs h-8 px-2.5"
-                      leftIcon={<Download className="h-3.5 w-3.5 text-emerald-700" />}
-                      onClick={() =>
-                        exportToCSV(
-                          "Rekap_Tahfizh_Santri_STQ",
-                          ["Nama Santri", "NIS", "Kelas", "Halaqoh", "Capaian Juz", "Target Juz", "Setoran Terakhir", "Nilai Terakhir"],
-                          santriList.map((s) => [s.nama, s.nis, s.kelas, s.halaqoh, s.capaianJuz, s.targetJuz, s.setoranTerakhir, s.nilaiTerakhir])
-                        )
-                      }
-                    >
-                      Ekspor CSV
-                    </Button>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {santriList.map((s) => (
-                      <div key={s.nis} className="p-3 rounded-2xl border border-slate-200/80 bg-slate-50/50 space-y-1.5 text-xs">
-                        <div className="flex justify-between items-center">
-                          <span className="font-bold text-slate-800">{s.nama}</span>
-                          <Badge variant="green" size="sm">{s.capaianJuz} Juz</Badge>
-                        </div>
-                        <p className="text-slate-500">Setoran: {s.setoranTerakhir}</p>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              </div>
+              <Badge variant="green" size="sm">
+                Standar Mushaf Madinah 20 Hlm/Juz
+              </Badge>
             </div>
+
+            {tahfizhSubView === "rekap_bulanan" ? (
+              <RekapLaporanBulanan
+                userRole={selectedRole}
+                halaqohList={[
+                  { id: "HLQ-0001", nama: "Halaqoh Utsman bin Affan (Ust. Zulkifli)" },
+                  { id: "HLQ-0002", nama: "Halaqoh Ali bin Abi Thalib (Ust. Bilal)" },
+                ]}
+                onPrintPreview={(data) => {
+                  setPrintLaporanData(data);
+                  setShowPrintModal("laporan_bulanan");
+                }}
+              />
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 space-y-6">
+                  <Card rounded="3xl">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <PlusCircle className="h-5 w-5 text-[#0E7C3A]" /> Input Setoran Cepat
+                      </CardTitle>
+                      <CardDescription>Khusus Musyrif Tahfizh (<code>MT</code>), Pembina (<code>PH</code>), Mudir (<code>KS</code>)</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-700">Pilih Santri</label>
+                        <select
+                          value={selectedSantriNis}
+                          onChange={(e) => setSelectedSantriNis(e.target.value)}
+                          className="w-full min-h-[44px] px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-sm"
+                        >
+                          {santriList.map((s) => (
+                            <option key={s.nis} value={s.nis}>{s.nama} ({s.nis})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-700">Jenis Setoran</label>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {(["SABAQ", "SABQI", "MANZIL", "MUFAR"] as const).map((j) => (
+                            <button
+                              key={j}
+                              type="button"
+                              onClick={() => setInputJenis(j)}
+                              className={`min-h-[44px] rounded-2xl text-xs font-bold border ${
+                                inputJenis === j ? "bg-[#0E7C3A] text-white border-[#0E7C3A]" : "bg-slate-50 text-slate-700 border-slate-200"
+                              }`}
+                            >
+                              {j === "SABAQ"
+                                ? "Sabaq (Baru)"
+                                : j === "SABQI"
+                                ? "Sabqi (Murojaah)"
+                                : j === "MANZIL"
+                                ? "Manzil (Lancar)"
+                                : "Mufar (Khusus)"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {inputJenis === "SABAQ" && (
+                        <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-200">
+                          <Input
+                            label="Jumlah Halaman Sabaq (Standar 20 Hlm/Juz)"
+                            type="number"
+                            value={jumlahHalaman}
+                            onChange={(e) => setJumlahHalaman(e.target.value)}
+                            placeholder="1"
+                            className="bg-white"
+                          />
+                          <p className="text-[10px] text-emerald-800 mt-1">
+                            Akumulasi halaman akan otomatis dikonversi ke satuan Juz &amp; Halaman pada laporan bulanan.
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                        <Input label="Juz (1-30)" type="number" value={juz} onChange={(e) => setJuz(e.target.value)} />
+                        <Input label="Surah" value={surahMulai} onChange={(e) => { setSurahMulai(e.target.value); setSurahSelesai(e.target.value); }} />
+                        <Input label="Ayat Mulai" type="number" value={ayatMulai} onChange={(e) => setAyatMulai(e.target.value)} />
+                        <Input label="Ayat Selesai" type="number" value={ayatSelesai} onChange={(e) => setAyatSelesai(e.target.value)} />
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                        {["MUMTAZ", "JAYYID_JIDDAN", "JAYYID", "MAQBUL", "DHOIF"].map((k) => (
+                          <button
+                            key={k}
+                            type="button"
+                            onClick={() => setNilai(k as any)}
+                            className={`min-h-[44px] rounded-2xl text-xs font-bold border transition-all ${
+                              nilai === k ? "bg-[#0E7C3A] text-white border-[#0E7C3A] shadow-xs" : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                            }`}
+                          >
+                            {k}
+                          </button>
+                        ))}
+                      </div>
+                      <Input label="Catatan Tajwid/Makhroj" value={catatan} onChange={(e) => setCatatan(e.target.value)} placeholder="e.g. Bacaan tartil" />
+                    </CardContent>
+                    <CardFooter className="flex justify-end gap-2">
+                      <Button
+                        variant="primary"
+                        isLoading={isPending}
+                        onClick={handleSaveSetoran}
+                        disabled={!["MT", "PH", "KS"].includes(selectedRole)}
+                        leftIcon={<CheckCircle2 className="h-4 w-4" />}
+                      >
+                        {["MT", "PH", "KS"].includes(selectedRole) ? "Simpan Setoran" : `Role ${selectedRole} Tidak Berhak`}
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                </div>
+
+                <div>
+                  <Card rounded="3xl">
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                      <div>
+                        <CardTitle>Santri Halaqoh</CardTitle>
+                        <CardDescription>Halaqoh Utsman bin Affan</CardDescription>
+                      </div>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="text-xs h-8 px-2.5"
+                        leftIcon={<Download className="h-3.5 w-3.5 text-emerald-700" />}
+                        onClick={() =>
+                          exportToCSV(
+                            "Rekap_Tahfizh_Santri_STQ",
+                            ["Nama Santri", "NIS", "Kelas", "Halaqoh", "Capaian Juz", "Target Juz", "Setoran Terakhir", "Nilai Terakhir"],
+                            santriList.map((s) => [s.nama, s.nis, s.kelas, s.halaqoh, s.capaianJuz, s.targetJuz, s.setoranTerakhir, s.nilaiTerakhir])
+                          )
+                        }
+                      >
+                        Ekspor CSV
+                      </Button>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {santriList.map((s) => (
+                        <div key={s.nis} className="p-3 rounded-2xl border border-slate-200/80 bg-slate-50/50 space-y-1.5 text-xs">
+                          <div className="flex justify-between items-center">
+                            <span className="font-bold text-slate-800">{s.nama}</span>
+                            <Badge variant="green" size="sm">{s.capaianJuz} Juz</Badge>
+                          </div>
+                          <p className="text-slate-500">Setoran: {s.setoranTerakhir}</p>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -2960,6 +3069,8 @@ Mudir STQ Darul Ulum Cendekia,
                       ? "Pratinjau Cetak Rapor Santri (A4)"
                       : showPrintModal === "sp"
                       ? "Pratinjau Surat Peringatan / SP (A4)"
+                      : showPrintModal === "laporan_bulanan"
+                      ? "Pratinjau Rekap Laporan Bulanan Resmi (A4 Landscape)"
                       : "Pratinjau Cetak Surat Resmi (A4)"}
                   </h3>
                 </div>
@@ -3023,6 +3134,90 @@ Mudir STQ Darul Ulum Cendekia,
                       isPengulangan: p.isPengulangan,
                     }))}
                     arahanPembinaan="Diberikan pembinaan tarbiyah intensif, shalat tepat waktu di shaf pertama, dan penugasan murojaah juz pilihan bersama Musyrif Asrama."
+                  />
+                )}
+                {showPrintModal === "laporan_bulanan" && (
+                  <PrintLaporanBulanan
+                    laporanData={
+                      printLaporanData || {
+                        halaqoh: {
+                          id: "HLQ-0001",
+                          nama: "Halaqoh Utsman bin Affan",
+                          pembina: "Ust. Zulkifli Al-Hafizh",
+                          tahunAjaran: "2026/2027",
+                        },
+                        periode: {
+                          bulan: 9,
+                          tahunAjaran: "2026/2027",
+                          tahunKalender: 2026,
+                        },
+                        rekapSantri: santriList.map((s) => ({
+                          santri: { id: s.id, nis: s.nis, nama: s.nama, kelas: s.kelas },
+                          tahfizh: {
+                            sabaq: {
+                              targetBulanan: 20,
+                              pekan: { p1: 6, p2: 5, p3: 6, p4: 5 },
+                              totalHalaman: 22,
+                              konversi: { juz: 1, sisaHalaman: 2, label: "1 Juz 2 Halaman" },
+                              persentase: 110.0,
+                              isTercapai: true,
+                            },
+                            sabqi: {
+                              targetBulanan: 16,
+                              totalFrekuensi: 16,
+                              persentase: 100.0,
+                              isPatuh: true,
+                            },
+                            manzil: {
+                              targetBulanan: 16,
+                              totalFrekuensi: 15,
+                              persentase: 93.8,
+                              isPatuh: true,
+                            },
+                            mufar: {
+                              targetBulanan: 8,
+                              totalFrekuensi: 8,
+                            },
+                          },
+                          nonTahfizh: [
+                            {
+                              kategori: "HAFALAN_HADITS",
+                              label: "Hadits",
+                              hbl: 12,
+                              penambahanBulanIni: 4,
+                              totalKumulatif: 16,
+                              targetMin: 4,
+                              isTuntas: true,
+                            },
+                            {
+                              kategori: "HAFALAN_MUFRODAT",
+                              label: "Mufrodat",
+                              hbl: 36,
+                              penambahanBulanIni: 12,
+                              totalKumulatif: 48,
+                              targetMin: 12,
+                              isTuntas: true,
+                            },
+                            {
+                              kategori: "HAFALAN_VOCABULARY",
+                              label: "Vocab",
+                              hbl: 24,
+                              penambahanBulanIni: 12,
+                              totalKumulatif: 36,
+                              targetMin: 12,
+                              isTuntas: true,
+                            },
+                          ],
+                          tasmiSimaan: {
+                            countTasmi: 1,
+                            countSimaan: 2,
+                            rataRataNilai: 92.5,
+                            ringkasanTeks:
+                              "Telah melakukan 2 kali Sima'an dan 1 kali Tasmi' dengan rata-rata nilai 92.5 (Mumtaz)",
+                          },
+                        })),
+                      }
+                    }
                   />
                 )}
               </div>
