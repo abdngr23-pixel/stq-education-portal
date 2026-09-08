@@ -86,7 +86,7 @@ export function PrintSurat({
           <div className="h-20 flex items-center justify-center italic text-gray-400">
             ( Cap &amp; Tanda Tangan Basah )
           </div>
-          <p className="font-bold underline text-sm">Ust. H. Ahmad Fauzi, Lc., M.Pd.</p>
+          <p className="font-bold underline text-sm">Ust. Andi Quarzy Ayatullah, S.H, M.H</p>
           <p className="text-[10px] text-gray-600 font-sans">NIP. 20210701001</p>
         </div>
       </div>

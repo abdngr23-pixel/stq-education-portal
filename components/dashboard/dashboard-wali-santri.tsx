@@ -204,7 +204,7 @@ export function DashboardWaliSantri({
             </div>
             <div className="min-w-0 text-xs">
               <p className="font-bold text-emerald-950 font-heading">
-                Pembina Halaqoh: Ust. Hamzah Ar-Rasyid
+                Musyrif Ketahfidzhan: Ust. Razan Mufli, S.Pd
               </p>
               <p className="text-emerald-800/90 text-[11px] mt-0.5">
                 Murojaah terjadwal setiap ba&apos;da Shubuh &amp; Ashar di Masjid Utama STQ DUC.

@@ -248,7 +248,7 @@ export function PrintLaporanBulanan({
           <div className="h-16 flex items-center justify-center">
             {/* Ruang Tanda Tangan & Cap Lembaga */}
           </div>
-          <p className="font-bold underline">Ust. H. Ahmad Fauzi, Lc., M.Pd.</p>
+          <p className="font-bold underline">Ust. Andi Quarzy Ayatullah, S.H, M.H</p>
           <p className="text-[10px] text-slate-500">NIP: STQ-KS-001</p>
         </div>
       </div>

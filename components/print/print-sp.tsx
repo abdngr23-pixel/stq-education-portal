@@ -128,7 +128,7 @@ export function PrintSP({
           <p>Musyrif Keasramaan (MK),</p>
           <div className="h-16" />
           <p className="border-t border-black pt-1 font-semibold mx-8">
-            ( Ust. Hamzah Ar-Rasyid )
+            ( Ust. Mujaddid Zhohruddin )
           </p>
         </div>
 
@@ -137,7 +137,7 @@ export function PrintSP({
           <p className="font-semibold">Mudir STQ Darul Ulum Cendekia</p>
           <div className="h-12" />
           <p className="border-t border-black pt-1 font-bold mx-8">
-            ( Ust. H. Ahmad Fauzi, Lc., M.Pd. )
+            ( Ust. Andi Quarzy Ayatullah, S.H, M.H )
           </p>
         </div>
       </div>

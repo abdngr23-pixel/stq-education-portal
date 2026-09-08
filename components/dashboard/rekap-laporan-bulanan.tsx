@@ -113,9 +113,12 @@ export function RekapLaporanBulanan({
 
   const generateMockFallback = (hId: string, bln: number, ta: string) => {
     const mockSantriList = [
-      { id: "SAN-0001", nis: "SAN-0001", nama: "Muhammad Fatih Al-Ayyubi", kelas: "7A" },
-      { id: "SAN-0002", nis: "SAN-0002", nama: "Ahmad Ziyad Rahman", kelas: "8B" },
-      { id: "SAN-0003", nis: "SAN-0003", nama: "Zaidan Al-Farisi", kelas: "7A" },
+      { id: "SAN-0001", nis: "SAN-0001", nama: "Obama Ozearld Egberted Turizqi", kelas: "9A" },
+      { id: "SAN-0002", nis: "SAN-0002", nama: "Muhammad Fardhan", kelas: "9A" },
+      { id: "SAN-0003", nis: "SAN-0003", nama: "Muh. Fauzan", kelas: "9A" },
+      { id: "SAN-0004", nis: "SAN-0004", nama: "Khubaib", kelas: "9A" },
+      { id: "SAN-0005", nis: "SAN-0005", nama: "Abd. Riziq Ardi", kelas: "9A" },
+      { id: "SAN-0048", nis: "SAN-0048", nama: "Habiba Asri", kelas: "9C Putri" },
     ];
 
     const rekap = mockSantriList.map((s, idx) => ({
@@ -123,17 +126,17 @@ export function RekapLaporanBulanan({
       tahfizh: {
         sabaq: {
           targetBulanan: 20,
-          pekan: { p1: 6, p2: 5, p3: 6, p4: idx === 2 ? 2 : 5 },
-          totalHalaman: idx === 2 ? 19 : 22,
-          konversi: idx === 2 ? { juz: 0, sisaHalaman: 19, label: "19 Halaman" } : { juz: 1, sisaHalaman: 2, label: "1 Juz 2 Halaman" },
-          persentase: idx === 2 ? 95.0 : 110.0,
-          isTercapai: idx !== 2,
+          pekan: { p1: idx === 0 ? 8 : 5, p2: 5, p3: 6, p4: 5 },
+          totalHalaman: idx === 0 ? 24 : 21,
+          konversi: idx === 0 ? { juz: 1, sisaHalaman: 4, label: "1 Juz 4 Halaman" } : { juz: 1, sisaHalaman: 1, label: "1 Juz 1 Halaman" },
+          persentase: idx === 0 ? 120.0 : 105.0,
+          isTercapai: true,
         },
         sabqi: {
           targetBulanan: 16,
-          pekan: { p1: 4, p2: 4, p3: 4, p4: 3 },
-          totalFrekuensi: 15,
-          persentase: 93.8,
+          pekan: { p1: 4, p2: 4, p3: 4, p4: 4 },
+          totalFrekuensi: 16,
+          persentase: 100.0,
           isPatuh: true,
         },
         manzil: {
@@ -152,22 +155,22 @@ export function RekapLaporanBulanan({
         },
       },
       nonTahfizh: [
-        { kategori: "HAFALAN_HADITS", label: "Hafalan Hadits", satuan: "Hadits", hbl: 12, p1: 1, p2: 1, p3: 1, p4: 1, penambahanBulanIni: 4, totalKumulatif: 16, targetMin: 4, isTuntas: true, statusLabel: "Tuntas (4/4)" },
-        { kategori: "HAFALAN_MUFRODAT", label: "Mufrodat (B. Arab)", satuan: "Kosakata", hbl: 36, p1: 3, p2: 3, p3: 3, p4: 3, penambahanBulanIni: 12, totalKumulatif: 48, targetMin: 12, isTuntas: true, statusLabel: "Tuntas (12/12)" },
-        { kategori: "HAFALAN_VOCABULARY", label: "Vocabulary (B. Inggris)", satuan: "Vocab", hbl: 24, p1: 3, p2: 3, p3: 3, p4: 3, penambahanBulanIni: 12, totalKumulatif: 36, targetMin: 12, isTuntas: true, statusLabel: "Tuntas (12/12)" },
+        { kategori: "HAFALAN_HADITS", label: "Hafalan Hadits", satuan: "Hadits", hbl: 78, p1: 1, p2: 1, p3: 1, p4: 1, penambahanBulanIni: 4, totalKumulatif: 82, targetMin: 4, isTuntas: true, statusLabel: "Tuntas (4/4)" },
+        { kategori: "HAFALAN_MUFRODAT", label: "Mufrodat (B. Arab)", satuan: "Kosakata", hbl: 250, p1: 3, p2: 3, p3: 3, p4: 3, penambahanBulanIni: 12, totalKumulatif: 262, targetMin: 12, isTuntas: true, statusLabel: "Tuntas (12/12)" },
+        { kategori: "HAFALAN_VOCABULARY", label: "Vocabulary (B. Inggris)", satuan: "Vocab", hbl: 250, p1: 3, p2: 3, p3: 3, p4: 3, penambahanBulanIni: 12, totalKumulatif: 262, targetMin: 12, isTuntas: true, statusLabel: "Tuntas (12/12)" },
         { kategori: "SHOLAT_TAHAJJUD", label: "Sholat Tahajjud", satuan: "Malam", hbl: 0, p1: 4, p2: 4, p3: 4, p4: 4, penambahanBulanIni: 16, totalKumulatif: 16, targetMin: 15, isTuntas: true, statusLabel: "Tuntas (16/15)" },
         { kategori: "SHOLAT_DHUHA", label: "Sholat Dhuha", satuan: "Pagi", hbl: 0, p1: 4, p2: 4, p3: 4, p4: 4, penambahanBulanIni: 16, totalKumulatif: 16, targetMin: 15, isTuntas: true, statusLabel: "Tuntas (16/15)" },
         { kategori: "PUASA_SUNNAH", label: "Puasa Sunnah", satuan: "Hari", hbl: 0, p1: 2, p2: 2, p3: 1, p4: 2, penambahanBulanIni: 7, totalKumulatif: 7, targetMin: 6, isTuntas: true, statusLabel: "Tuntas (7/6)" },
         { kategori: "LITERASI", label: "Literasi Kitab/Buku", satuan: "Halaman", hbl: 0, p1: 20, p2: 25, p3: 20, p4: 20, penambahanBulanIni: 85, totalKumulatif: 85, targetMin: 80, isTuntas: true, statusLabel: "Tuntas (85/80)" },
       ],
       tasmiSimaan: {
-        countTasmi: 1,
+        countTasmi: 17,
         countSimaan: 2,
-        rataRataNilai: 92.5,
-        ringkasanTeks: "Telah melakukan 2 kali Sima'an dan 1 kali Tasmi' dengan rata-rata nilai 92.5 (Mumtaz)",
+        rataRataNilai: 91.26,
+        ringkasanTeks: "Telah melakukan 2 kali Simaan, 17 Kali Tasmi' dengan rata-rata nilai 91.26 (Mumtaz).",
         riwayat: [
           { jenis: "SIMAAN", juz: 30, nilai: 95, predikat: "MUMTAZ", tanggal: new Date().toISOString() },
-          { jenis: "TASMI", juz: 1, nilai: 90, predikat: "JAYYID_JIDDAN", tanggal: new Date().toISOString() },
+          { jenis: "TASMI", juz: 22, nilai: 91, predikat: "MUMTAZ", tanggal: new Date().toISOString() },
         ],
       },
     }));
@@ -175,8 +178,8 @@ export function RekapLaporanBulanan({
     setLaporanData({
       halaqoh: {
         id: hId,
-        nama: "Halaqoh Utsman bin Affan",
-        pembina: "Ust. Zulkifli Al-Hafizh",
+        nama: "Halaqoh Ust. Razan Mufli, S.Pd",
+        pembina: "Ust. Razan Mufli, S.Pd (Musyrif Ketahfidzhan)",
         tahunAjaran: ta,
       },
       periode: {
@@ -407,8 +410,12 @@ export function RekapLaporanBulanan({
                   ))
                 ) : (
                   <>
-                    <option value="HLQ-0001">Halaqoh Utsman bin Affan (Ust. Zulkifli)</option>
-                    <option value="HLQ-0002">Halaqoh Ali bin Abi Thalib (Ust. Bilal)</option>
+                    <option value="HLQ-0001">Halaqoh Ust. Razan Mufli, S.Pd (Musyrif Ketahfidzhan)</option>
+                    <option value="HLQ-0002">Halaqoh Ust. Kamal (Mudhabbir)</option>
+                    <option value="HLQ-0003">Halaqoh Ust. Rizaldi (Mudhabbir)</option>
+                    <option value="HLQ-0004">Halaqoh Ust. Abi Hudzaifah (Mudhabbir)</option>
+                    <option value="HLQ-0005">Halaqoh Ust. Alwan (Mudhabbir)</option>
+                    <option value="HLQ-0006">Halaqoh Ustadzah Lisa Dwina Fitri (Musyrifah Putri)</option>
                   </>
                 )}
               </select>

@@ -62,7 +62,7 @@ SURAT KETERANGAN SANTRI AKTIF
 Nomor: ${nomorSurat}
 
 Yang bertanda tangan di bawah ini:
-Nama        : Ust. H. Ahmad Fauzi, Lc., M.Pd.
+Nama        : Ust. Andi Quarzy Ayatullah, S.H, M.H
 Jabatan     : Kepala Sekolah / Mudir STQ Darul Ulum Cendekia
 
 Menerangkan dengan sesungguhnya bahwa:
@@ -85,7 +85,7 @@ Pada tanggal   : ${new Date().toLocaleDateString("id-ID", { dateStyle: "long" })
 Mudir STQ Darul Ulum Cendekia,
 
 
-( Ust. H. Ahmad Fauzi, Lc., M.Pd. )`;
+( Ust. Andi Quarzy Ayatullah, S.H, M.H )`;
     } else if (input.jenisSurat === JenisSurat.SURAT_UNDANGAN_WALI) {
       naskahSurat = `KOP SURAT RESMI
 PESANTREN TAHFIZH QUR'AN DARUL ULUM CENDEKIA
@@ -113,7 +113,7 @@ Wassalamu'alaikum Warahmatullahi Wabarakatuh.
 
 Mudir STQ Darul Ulum Cendekia,
 
-( Ust. H. Ahmad Fauzi, Lc., M.Pd. )`;
+( Ust. Andi Quarzy Ayatullah, S.H, M.H )`;
     } else {
       naskahSurat = `KOP SURAT RESMI
 PESANTREN TAHFIZH QUR'AN DARUL ULUM CENDEKIA
@@ -136,7 +136,7 @@ Demikian surat ini kami sampaikan atas perhatian dan kerjasamanya kami ucapkan j
 
 Mudir STQ Darul Ulum Cendekia,
 
-( Ust. H. Ahmad Fauzi, Lc., M.Pd. )`;
+( Ust. Andi Quarzy Ayatullah, S.H, M.H )`;
     }
 
     // Simpan ke database
@@ -149,7 +149,7 @@ Mudir STQ Darul Ulum Cendekia,
         isiSurat: naskahSurat,
         status: StatusSurat.FINAL,
         dibuatOleh: session.username,
-        penandatangan: "Ust. H. Ahmad Fauzi, Lc., M.Pd. (Mudir)",
+        penandatangan: "Ust. Andi Quarzy Ayatullah, S.H, M.H (Mudir)",
       },
     });
 

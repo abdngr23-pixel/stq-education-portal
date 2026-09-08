@@ -20,6 +20,7 @@ export interface PrintRaporProps {
     huruf: string;
     guru: string;
   }>;
+  musyrifHalaqoh?: string;
   tahunAjaran?: string;
   semester?: string;
   tanggalCetak?: string;
@@ -29,6 +30,7 @@ export interface PrintRaporProps {
 export function PrintRapor({
   santri,
   nilaiAkademik,
+  musyrifHalaqoh = "Ust. Razan Mufli, S.Pd",
   tahunAjaran = "2026/2027",
   semester = "Ganjil",
   tanggalCetak = "08 September 2026",
@@ -161,7 +163,7 @@ export function PrintRapor({
           <p>Musyrif Halaqoh,</p>
           <div className="h-16" />
           <p className="border-t border-black pt-1 font-semibold mx-4">
-            ( Ust. Hamzah Ar-Rasyid )
+            ( {musyrifHalaqoh} )
           </p>
         </div>
 
@@ -170,7 +172,7 @@ export function PrintRapor({
           <p className="font-semibold">Mudir STQ Darul Ulum Cendekia</p>
           <div className="h-12" />
           <p className="border-t border-black pt-1 font-bold mx-4">
-            ( Ust. H. Ahmad Fauzi, Lc., M.Pd. )
+            ( Ust. Andi Quarzy Ayatullah, S.H, M.H )
           </p>
         </div>
       </div>
