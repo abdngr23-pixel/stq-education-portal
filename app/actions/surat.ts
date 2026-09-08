@@ -114,6 +114,39 @@ Wassalamu'alaikum Warahmatullahi Wabarakatuh.
 Mudir STQ Darul Ulum Cendekia,
 
 ( Ust. Andi Quarzy Ayatullah, S.H, M.H )`;
+    } else if (input.jenisSurat === JenisSurat.SURAT_REKOMENDASI) {
+      naskahSurat = `KOP SURAT RESMI
+PESANTREN TAHFIZH QUR'AN DARUL ULUM CENDEKIA
+Alamat: Jl. Cendekia No. 12, Kompleks Pesantren STQ DUC | Telp: (021) 88997766
+================================================================================
+
+SURAT KETERANGAN SELESAI PENGABDIAN (KHIDMAH)
+Nomor: ${nomorSurat}
+
+Yang bertanda tangan di bawah ini:
+Nama        : Ust. Andi Quarzy Ayatullah, S.H, M.H
+Jabatan     : Mudir / Kepala Sekolah STQ Darul Ulum Cendekia
+
+Menerangkan dengan sesungguhnya bahwa:
+Nama Santri : ${input.namaSantri || "Alumni Santri STQ Darul Ulum Cendekia"}
+NIS         : ${input.nisSantri || "SAN-ALUMNI"}
+Jenjang     : Tamatan SMA Takhossus Tahfizh Qur'an
+
+Telah menyelesaikan masa Pengabdian (Khidmah) selama 1 (satu) tahun penuh di Pesantren Tahfizh Qur'an Darul Ulum Cendekia terhitung sejak tanggal penetapan, dengan dedikasi, integritas, adab, dan kinerja yang AMAT BAIK (MUMTAZ) dalam bidang pendampingan tahfizh dan keasramaan.
+
+Berdasarkan pertimbangan kelulusan dan penuntasan pengabdian tersebut, ananda berhak menerima Ijazah, Transkrip Nilai Akademik-Tahfizh, serta Rekomendasi Resmi Lembaga untuk melanjutkan studi ke jenjang perguruan tinggi maupun berkiprah di tengah masyarakat.
+
+Demikian Surat Keterangan Selesai Pengabdian ini kami terbitkan dengan penuh amanah agar dapat dipergunakan sebagaimana mestinya.
+
+Wassalamu'alaikum Warahmatullahi Wabarakatuh.
+
+Diterbitkan di : Bogor
+Pada tanggal   : ${new Date().toLocaleDateString("id-ID", { dateStyle: "long" })}
+
+Mudir STQ Darul Ulum Cendekia,
+
+
+( Ust. Andi Quarzy Ayatullah, S.H, M.H )`;
     } else {
       naskahSurat = `KOP SURAT RESMI
 PESANTREN TAHFIZH QUR'AN DARUL ULUM CENDEKIA

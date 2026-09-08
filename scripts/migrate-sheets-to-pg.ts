@@ -69,12 +69,16 @@ export async function migrateLegacyData(options: {
 
   // 1. Migrasi Data Staff & User Accounts
   const staffData: LegacyStaffRow[] = options.staffRows || [
-    { StaffId: 'STF-001', Nama: 'Drs. H. Ahmad Dahlan', Role: 'YAY', WhatsApp: '08111111111', Email: 'ahmad.yay@stqduc.sch.id' },
-    { StaffId: 'STF-002', Nama: 'Ustadz H. Muhammad Ridwan, Lc., M.Ag.', Role: 'KS', WhatsApp: '08122222222', Email: 'ridwan.ks@stqduc.sch.id' },
-    { StaffId: 'STF-003', Nama: 'Siti Aminah, S.Pd.I.', Role: 'ADM', WhatsApp: '08133333333', Email: 'aminah.adm@stqduc.sch.id' },
-    { StaffId: 'STF-004', Nama: 'Ustadz Abdullah Faqih, S.Pd.', Role: 'MK', WhatsApp: '08144444444', Email: 'faqih.mk@stqduc.sch.id' },
-    { StaffId: 'STF-005', Nama: 'Ustadz Salman Al-Farisi, Al-Hafizh', Role: 'MT', WhatsApp: '08155555555', Email: 'salman.mt@stqduc.sch.id' },
-    { StaffId: 'STF-006', Nama: 'Ustadzah Nurul Hidayah, M.Pd.', Role: 'GA', WhatsApp: '08166666666', Email: 'nurul.ga@stqduc.sch.id' },
+    { StaffId: 'STF-001', Nama: 'Ust. Andi Quarzy Ayatullah, S.H, M.H', Role: 'KS', WhatsApp: '081234567801', Email: 'mudir.ks@stqduc.sch.id' },
+    { StaffId: 'STF-002', Nama: 'Siti Aminah, S.Kom.', Role: 'ADM', WhatsApp: '081234567802', Email: 'aminah.adm@stqduc.sch.id' },
+    { StaffId: 'STF-003', Nama: 'Ust. Razan Mufli, S.Pd', Role: 'MT', WhatsApp: '081234567803', Email: 'razan.mt@stqduc.sch.id' },
+    { StaffId: 'STF-004', Nama: 'Ust. Mujaddid Zhohruddin', Role: 'MK', WhatsApp: '081234567804', Email: 'mujaddid.mk@stqduc.sch.id' },
+    { StaffId: 'STF-005', Nama: 'Ustadzah Lisa Dwina Fitri', Role: 'MT', WhatsApp: '081234567805', Email: 'lisa.mt@stqduc.sch.id' },
+    { StaffId: 'STF-006', Nama: 'Ust. Kamal', Role: 'PH', WhatsApp: '081234567806', Email: 'kamal.ph@stqduc.sch.id' },
+    { StaffId: 'STF-007', Nama: 'Ust. Rizaldi', Role: 'PH', WhatsApp: '081234567807', Email: 'rizaldi.ph@stqduc.sch.id' },
+    { StaffId: 'STF-008', Nama: 'Ust. Abi Hudzaifah', Role: 'PH', WhatsApp: '081234567808', Email: 'hudzaifah.ph@stqduc.sch.id' },
+    { StaffId: 'STF-009', Nama: 'Ust. Alwan', Role: 'PH', WhatsApp: '081234567809', Email: 'alwan.ph@stqduc.sch.id' },
+    { StaffId: 'STF-010', Nama: 'Ustzh. Nurul Hidayah, S.Pd.', Role: 'GA', WhatsApp: '081234567810', Email: 'nurul.ga@stqduc.sch.id' },
   ];
 
   console.log(`📦 Memproses ${staffData.length} data Staff & Akun Pengguna...`);

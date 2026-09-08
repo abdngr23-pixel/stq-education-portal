@@ -103,10 +103,21 @@ export function DashboardGuruAkademik({
                   onChange={(e) => onSetSelectedMapel(e.target.value)}
                   className="w-full min-h-[44px] px-3.5 py-2.5 rounded-2xl bg-white border border-slate-200 text-xs sm:text-sm font-medium focus:ring-2 focus:ring-[#0E7C3A]/20 focus:border-[#0E7C3A]"
                 >
-                  <option value="MP-DIN-01">Fiqih Ibadah (Diniyah)</option>
-                  <option value="MP-DIN-02">Bahasa Arab &amp; Nahwu (Diniyah)</option>
-                  <option value="MP-UM-01">Matematika Terapan (Umum)</option>
-                  <option value="MP-PES-01">Adab &amp; Kepesantrenan</option>
+                  <optgroup label="Program Kepesantrenan (Senin–Jumat)">
+                    <option value="MP-KP-01">Bahasa Arab (Senin)</option>
+                    <option value="MP-KP-02">Tafsir Al-Qur'an (Selasa)</option>
+                    <option value="MP-KP-03">Fikih Ibadah &amp; Muamalah (Rabu)</option>
+                    <option value="MP-KP-04">Aqidah Islamiyyah (Kamis)</option>
+                    <option value="MP-KP-05">Ilmu Tajwid (Jumat)</option>
+                  </optgroup>
+                  <optgroup label="Program Studi Umum &amp; PBL (Sabtu)">
+                    <option value="MP-UM-01">Matematika Terapan (Mapel Tetap)</option>
+                    <option value="MP-UM-02">Bahasa Inggris (Mapel Tetap)</option>
+                    <option value="MP-PBL-01">Bahasa Indonesia (PBL Tematik)</option>
+                    <option value="MP-PBL-02">IPA / Sains (PBL Tematik)</option>
+                    <option value="MP-PBL-03">IPS / Sosial (PBL Tematik)</option>
+                    <option value="MP-PBL-04">TIK &amp; Literasi Digital (PBL)</option>
+                  </optgroup>
                 </select>
               </div>
 

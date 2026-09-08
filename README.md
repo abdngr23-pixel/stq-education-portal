@@ -133,15 +133,19 @@ Buka browser di `http://localhost:3000` (atau `http://localhost:3001` jika port 
 
 Pada halaman login (`/login`) atau Dashboard, Anda dapat langsung mengklik tombol demo switcher untuk menguji fitur dengan peran berikut:
 
-| Role | Email | Password |
-|---|---|---|
-| Pembina Yayasan (`YAY`) | `ahmad.yay@stqduc.sch.id` | `password123` |
-| Mudir / Kepala Sekolah (`KS`) | `ridwan.ks@stqduc.sch.id` | `password123` |
-| Tata Usaha / Keuangan (`ADM`) | `aminah.adm@stqduc.sch.id` | `password123` |
-| Musyrif Kesantrian (`MK`) | `faqih.mk@stqduc.sch.id` | `password123` |
-| Musyrif Tahfizh (`MT`) | `salman.mt@stqduc.sch.id` | `password123` |
-| Guru Akademik (`GA`) | `nurul.ga@stqduc.sch.id` | `password123` |
-| Pembina Asrama (`PH`) | `miftah.ph@stqduc.sch.id` | `password123` |
-| Pengurus OSDA (`OSDA`) | `fathir.osda@stqduc.sch.id` | `password123` |
-| Wali Santri (`WS`) | `wali.faiz@stqduc.sch.id` | `password123` |
-| Santri (`ST`) | `faiz.santri@stqduc.sch.id` | `password123` |
+| Role | Nama Pengurus / Akun Resmi | Email | Password |
+|---|---|---|---|
+| Mudir / Kepala Sekolah (`KS`) | Ust. Andi Quarzy Ayatullah, S.H, M.H | `mudir.ks@stqduc.sch.id` | `password123` |
+| Tata Usaha / Keuangan (`ADM`) | Siti Aminah, S.Kom. | `aminah.adm@stqduc.sch.id` | `password123` |
+| Musyrif Tahfizh (`MT`) | Ust. Razan Mufli, S.Pd | `razan.mt@stqduc.sch.id` | `password123` |
+| Musyrif Keasramaan (`MK`) | Ust. Mujaddid Zhohruddin | `mujaddid.mk@stqduc.sch.id` | `password123` |
+| Musyrifah Putri (`MT`) | Ustadzah Lisa Dwina Fitri | `lisa.mt@stqduc.sch.id` | `password123` |
+| Mudhabbir / Pembina Halaqoh (`PH`) | Ust. Kamal | `kamal.ph@stqduc.sch.id` | `password123` |
+| Mudhabbir / Pembina Halaqoh (`PH`) | Ust. Rizaldi | `rizaldi.ph@stqduc.sch.id` | `password123` |
+| Mudhabbir / Pembina Halaqoh (`PH`) | Ust. Abi Hudzaifah | `hudzaifah.ph@stqduc.sch.id` | `password123` |
+| Mudhabbir / Pembina Halaqoh (`PH`) | Ust. Alwan | `alwan.ph@stqduc.sch.id` | `password123` |
+| Guru Akademik (`GA`) | Ustzh. Nurul Hidayah, S.Pd. | `nurul.ga@stqduc.sch.id` | `password123` |
+| Pembina Yayasan (`YAY`) | Pembina Yayasan DUC | `yayasan@stqduc.sch.id` | `password123` |
+| Pengurus OSDA (`OSDA`) | Ketua OSDA Pesantren | `osda@stqduc.sch.id` | `password123` |
+| Wali Santri (`WS`) | Wali Obama Ozearld | `walisantri@stqduc.sch.id` | `password123` |
+| Santri Mandiri (`ST`) | Obama Ozearld Egberted Turizqi | `santri.obama@stqduc.sch.id` | `password123` |

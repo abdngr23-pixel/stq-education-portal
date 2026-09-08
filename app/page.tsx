@@ -47,9 +47,11 @@ import { catatKesehatanAction, updateStatusKesehatanAction } from "@/app/actions
 import { catatMutasiLogistikAction } from "@/app/actions/logistik";
 import { getAuditLogsAction, type AuditLogItem } from "@/app/actions/audit";
 import { exportToCSV } from "@/lib/export-csv";
+import { cn } from "@/lib/utils";
 import {
   Users,
   BookCheck,
+  BookOpen,
   TrendingUp,
   ShieldCheck,
   ShieldAlert,
@@ -291,16 +293,20 @@ export default function Home() {
   const [catatan, setCatatan] = useState("");
 
   // -------------------------------------------------------------
-  // TAB 2: AKADEMIK & RAPOR
+  // TAB 2: AKADEMIK & RAPOR (KURIKULUM RESMI BAB VI & VII)
   // -------------------------------------------------------------
-  const [selectedMapel, setSelectedMapel] = useState("MP-DIN-01");
+  const [selectedMapel, setSelectedMapel] = useState("MP-KP-01");
   const [inputNilaiAngka, setInputNilaiAngka] = useState("90");
   const [jenisNilai, setJenisNilai] = useState<"TUGAS" | "KEAKTIFAN" | "UTS" | "UAS" | "PBL">("UTS");
   const [nilaiAkademikList, setNilaiAkademikList] = useState([
-    { mapel: "Fiqih Ibadah", kategori: "Diniyah", angka: 92, huruf: "A", guru: "Ustzh. Nurul" },
-    { mapel: "Bahasa Arab & Nahwu", kategori: "Diniyah", angka: 88, huruf: "A", guru: "Ustzh. Nurul" },
-    { mapel: "Matematika Terapan", kategori: "Umum", angka: 85, huruf: "B", guru: "Ustzh. Nurul" },
-    { mapel: "Adab & Kepesantrenan", kategori: "Kepesantrenan", angka: 95, huruf: "A", guru: "Ust. H. Ahmad" },
+    { mapel: "Bahasa Arab", kategori: "Kepesantrenan", angka: 90, huruf: "A", guru: "Ustzh. Nurul Hidayah, S.Pd." },
+    { mapel: "Tafsir Al-Qur'an", kategori: "Kepesantrenan", angka: 94, huruf: "A", guru: "Ust. Razan Mufli, S.Pd" },
+    { mapel: "Fikih Ibadah & Muamalah", kategori: "Kepesantrenan", angka: 92, huruf: "A", guru: "Ust. Mujaddid Zhohruddin" },
+    { mapel: "Aqidah Islamiyyah", kategori: "Kepesantrenan", angka: 95, huruf: "A", guru: "Ust. Andi Quarzy Ayatullah, S.H, M.H" },
+    { mapel: "Ilmu Tajwid", kategori: "Kepesantrenan", angka: 91, huruf: "A", guru: "Ust. Razan Mufli, S.Pd" },
+    { mapel: "Matematika Terapan", kategori: "Studi Umum", angka: 86, huruf: "A", guru: "Ustzh. Nurul Hidayah, S.Pd." },
+    { mapel: "Bahasa Inggris", kategori: "Studi Umum", angka: 88, huruf: "A", guru: "Ustzh. Nurul Hidayah, S.Pd." },
+    { mapel: "Bahasa Indonesia (PBL)", kategori: "Studi Umum (PBL)", angka: 90, huruf: "A", guru: "Ustzh. Nurul Hidayah, S.Pd." },
   ]);
 
   // -------------------------------------------------------------
@@ -310,24 +316,24 @@ export default function Home() {
     {
       id: "iz_1",
       kodeIzin: "IZN-000001",
-      santriNama: "Zaidan Al-Farisi",
+      santriNama: "Obama Ozearld Egberted Turizqi",
       kelas: "7A",
       jenis: "SAKIT",
       durasi: "2 Hari",
       alasan: "Demam dan flu, istirahat di UKS pengawasan klinik pesantren",
       status: "DISETUJUI",
-      diverifikasiOleh: "Ust. Mujaddid (MK)",
+      diverifikasiOleh: "Ust. Mujaddid Zhohruddin (MK)",
     },
     {
       id: "iz_2",
       kodeIzin: "IZN-000002",
-      santriNama: "Muhammad Fatih",
+      santriNama: "M. Hafizh Dzulqarnain",
       kelas: "7A",
       jenis: "PULANG",
       durasi: "3 Hari",
-      alasan: "Acara pernikahan kakak kandung di luar kota",
+      alasan: "Acara pernikahan keluarga kandung di luar kota",
       status: "MENUNGGU_KS",
-      diverifikasiOleh: "Disetujui MK, Menunggu Eskalasi Mudir/KS",
+      diverifikasiOleh: "Disetujui MK, Menunggu Pengesahan Mudir (Ust. Andi Quarzy Ayatullah, S.H, M.H)",
     },
   ]);
   const [formIzinJenis, setFormIzinJenis] = useState<"PULANG" | "KELUAR_KOMPLEK" | "SAKIT">("PULANG");
@@ -541,21 +547,26 @@ export default function Home() {
   const [judulAgenda, setJudulAgenda] = useState("");
   const [tglAgenda, setTglAgenda] = useState("2026-09-25");
   const [katAgenda, setKatAgenda] = useState("TAHFIZH");
+  const [subTabAgenda, setSubTabAgenda] = useState<"ritmik" | "kalender">("ritmik");
 
   // -------------------------------------------------------------
-  // TAB 12: USER & STAFF MANAGEMENT (FASE 7)
+  // TAB 12: USER & STAFF MANAGEMENT (PENGURUS & ASATIDZ RIIL)
   // -------------------------------------------------------------
   const [usersList, setUsersList] = useState([
-    { id: "usr-01", username: "ahmad.yay", role: "YAY", nama: "Drs. H. Ahmad Dahlan", status: "AKTIF" },
-    { id: "usr-02", username: "ridwan.ks", role: "KS", nama: "Ust. H. M. Ridwan, Lc.", status: "AKTIF" },
-    { id: "usr-03", username: "aminah.adm", role: "ADM", nama: "Siti Aminah, S.Pd.I.", status: "AKTIF" },
-    { id: "usr-04", username: "faqih.mk", role: "MK", nama: "Ust. Abdullah Faqih", status: "AKTIF" },
-    { id: "usr-05", username: "salman.mt", role: "MT", nama: "Ust. Salman Al-Farisi", status: "AKTIF" },
-    { id: "usr-06", username: "nurul.ga", role: "GA", nama: "Ustadzah Nurul Hidayah", status: "AKTIF" },
-    { id: "usr-07", username: "miftah.ph", role: "PH", nama: "Ust. Miftah Farid", status: "AKTIF" },
-    { id: "usr-08", username: "fathir.osda", role: "OSDA", nama: "Fathir Rizky (OSDA)", status: "AKTIF" },
-    { id: "usr-09", username: "wali.faiz", role: "WS", nama: "Bambang Sudarmono (Wali)", status: "AKTIF" },
-    { id: "usr-10", username: "faiz.santri", role: "ST", nama: "Muhammad Faiz (Santri)", status: "AKTIF" },
+    { id: "usr-01", username: "mudir.ks", role: "KS", nama: "Ust. Andi Quarzy Ayatullah, S.H, M.H", status: "AKTIF" },
+    { id: "usr-02", username: "aminah.adm", role: "ADM", nama: "Siti Aminah, S.Kom.", status: "AKTIF" },
+    { id: "usr-03", username: "razan.mt", role: "MT", nama: "Ust. Razan Mufli, S.Pd", status: "AKTIF" },
+    { id: "usr-04", username: "mujaddid.mk", role: "MK", nama: "Ust. Mujaddid Zhohruddin", status: "AKTIF" },
+    { id: "usr-05", username: "lisa.mt", role: "MT", nama: "Ustadzah Lisa Dwina Fitri", status: "AKTIF" },
+    { id: "usr-06", username: "kamal.ph", role: "PH", nama: "Ust. Kamal", status: "AKTIF" },
+    { id: "usr-07", username: "rizaldi.ph", role: "PH", nama: "Ust. Rizaldi", status: "AKTIF" },
+    { id: "usr-08", username: "hudzaifah.ph", role: "PH", nama: "Ust. Abi Hudzaifah", status: "AKTIF" },
+    { id: "usr-09", username: "alwan.ph", role: "PH", nama: "Ust. Alwan", status: "AKTIF" },
+    { id: "usr-10", username: "nurul.ga", role: "GA", nama: "Ustzh. Nurul Hidayah, S.Pd.", status: "AKTIF" },
+    { id: "usr-11", username: "yayasan", role: "YAY", nama: "Pembina Yayasan DUC", status: "AKTIF" },
+    { id: "usr-12", username: "osda", role: "OSDA", nama: "Ketua OSDA Pesantren", status: "AKTIF" },
+    { id: "usr-13", username: "walisantri", role: "WS", nama: "Wali Obama Ozearld", status: "AKTIF" },
+    { id: "usr-14", username: "santri.obama", role: "ST", nama: "Obama Ozearld Egberted Turizqi", status: "AKTIF" },
   ]);
 
   // -------------------------------------------------------------
@@ -571,10 +582,10 @@ export default function Home() {
   }>>([
     {
       id: "srn-01",
-      nama: "Bambang Sudarmono (Wali Muhammad Fatih)",
+      nama: "Wali Santri Obama Ozearld",
       kategori: "Gizi & Katering",
       pesan: "Mohon porsi sayur mayur dan buah segar untuk santri dapat divariasikan setiap pekan.",
-      tanggapan: "Jazakallahu khairan atas masukannya Pak Bambang. Menu dapur santri telah kami koordinasikan dengan bagian logistik dapur untuk penambahan buah pepaya dan pisang 3x seminggu.",
+      tanggapan: "Jazakallahu khairan atas masukannya. Menu dapur santri telah kami koordinasikan dengan bagian logistik keasramaan untuk penambahan buah pepaya dan pisang 3x seminggu.",
       status: "DITANGGAPI",
     },
   ]);
@@ -590,34 +601,34 @@ export default function Home() {
       action: "INPUT_SETORAN_TAHFIZH",
       entity: "SetoranTahfizh",
       entityId: "SET-00192",
-      details: { santri: "Muhammad Fatih Al-Ayyubi", juz: 4, nilai: "MUMTAZ", jenis: "SABAQ" },
+      details: { santri: "Obama Ozearld Egberted Turizqi", juz: 4, nilai: "MUMTAZ", jenis: "SABAQ" },
       createdAt: new Date(),
-      user: { username: "salman.mt", email: "salman.mt@stqduc.sch.id", role: "MT" },
+      user: { username: "razan.mt", email: "razan.mt@stqduc.sch.id", role: "MT" },
     },
     {
       id: "log-2",
       action: "PENCATATAN_PELANGGARAN_X2",
       entity: "PelanggaranSantri",
       entityId: "PLG-00045",
-      details: { santri: "Zaidan Al-Farisi", poin: 20, isPengulangan: true, catatan: "Terlambat sholat (x2)" },
+      details: { santri: "M. Hafizh Dzulqarnain", poin: 10, isPengulangan: false, catatan: "Terlambat halaqoh" },
       createdAt: new Date(Date.now() - 1000 * 60 * 25),
-      user: { username: "faqih.mk", email: "faqih.mk@stqduc.sch.id", role: "MK" },
+      user: { username: "mujaddid.mk", email: "mujaddid.mk@stqduc.sch.id", role: "MK" },
     },
     {
       id: "log-3",
       action: "APPROVAL_PERIZINAN_KS",
       entity: "PerizinanSantri",
       entityId: "IZN-00088",
-      details: { santri: "Muhammad Fatih", jenis: "PULANG", status: "DISETUJUI" },
+      details: { santri: "Obama Ozearld Egberted Turizqi", jenis: "PULANG", status: "DISETUJUI" },
       createdAt: new Date(Date.now() - 1000 * 60 * 75),
-      user: { username: "ridwan.ks", email: "ridwan.ks@stqduc.sch.id", role: "KS" },
+      user: { username: "mudir.ks", email: "mudir.ks@stqduc.sch.id", role: "KS" },
     },
     {
       id: "log-4",
       action: "GENERASI_SURAT_RESMI_AI",
       entity: "SuratResmi",
       entityId: "SRT-00012",
-      details: { nomorSurat: "012/STQ-DUC/SP/IX/2026", perihal: "Surat Peringatan 1" },
+      details: { nomorSurat: "012/STQ-DUC/SP/IX/2026", perihal: "Surat Keterangan Aktif" },
       createdAt: new Date(Date.now() - 1000 * 60 * 150),
       user: { username: "aminah.adm", email: "aminah.adm@stqduc.sch.id", role: "ADM" },
     },
@@ -682,9 +693,34 @@ export default function Home() {
       if (angkaNum >= 90) huruf = "A";
       else if (angkaNum >= 80) huruf = "B";
 
-      const mapelName = selectedMapel === "MP-DIN-01" ? "Fiqih Ibadah" : selectedMapel === "MP-DIN-02" ? "Bahasa Arab & Nahwu" : selectedMapel === "MP-UM-01" ? "Matematika Terapan" : "Adab & Kepesantrenan";
-      setNilaiAkademikList((prev) => [{ mapel: mapelName, kategori: "Diniyah", angka: angkaNum, huruf, guru: "Ustzh. Nurul" }, ...prev.filter((i) => i.mapel !== mapelName)]);
-      setFeedback({ type: "success", text: `Nilai ${mapelName} (${huruf} - ${angkaNum}) berhasil disimpan.` });
+      const mapelMap: Record<string, { nama: string; kategori: string; guru: string }> = {
+        "MP-KP-01": { nama: "Bahasa Arab", kategori: "Kepesantrenan", guru: "Ustzh. Nurul Hidayah, S.Pd." },
+        "MP-KP-02": { nama: "Tafsir Al-Qur'an", kategori: "Kepesantrenan", guru: "Ust. Razan Mufli, S.Pd" },
+        "MP-KP-03": { nama: "Fikih Ibadah & Muamalah", kategori: "Kepesantrenan", guru: "Ust. Mujaddid Zhohruddin" },
+        "MP-KP-04": { nama: "Aqidah Islamiyyah", kategori: "Kepesantrenan", guru: "Ust. Andi Quarzy Ayatullah, S.H, M.H" },
+        "MP-KP-05": { nama: "Ilmu Tajwid", kategori: "Kepesantrenan", guru: "Ust. Razan Mufli, S.Pd" },
+        "MP-UM-01": { nama: "Matematika Terapan", kategori: "Studi Umum", guru: "Ustzh. Nurul Hidayah, S.Pd." },
+        "MP-UM-02": { nama: "Bahasa Inggris", kategori: "Studi Umum", guru: "Ustzh. Nurul Hidayah, S.Pd." },
+        "MP-PBL-01": { nama: "Bahasa Indonesia (PBL)", kategori: "Studi Umum (PBL)", guru: "Ustzh. Nurul Hidayah, S.Pd." },
+        "MP-PBL-02": { nama: "IPA (PBL)", kategori: "Studi Umum (PBL)", guru: "Ustzh. Nurul Hidayah, S.Pd." },
+        "MP-PBL-03": { nama: "IPS (PBL)", kategori: "Studi Umum (PBL)", guru: "Ustzh. Nurul Hidayah, S.Pd." },
+        "MP-PBL-04": { nama: "TIK & Literasi Digital (PBL)", kategori: "Studi Umum (PBL)", guru: "Ustzh. Nurul Hidayah, S.Pd." },
+        "MP-DIN-01": { nama: "Fikih Ibadah & Muamalah", kategori: "Kepesantrenan", guru: "Ust. Mujaddid Zhohruddin" },
+        "MP-DIN-02": { nama: "Bahasa Arab", kategori: "Kepesantrenan", guru: "Ustzh. Nurul Hidayah, S.Pd." },
+        "MP-PES-01": { nama: "Aqidah Islamiyyah", kategori: "Kepesantrenan", guru: "Ust. Andi Quarzy Ayatullah, S.H, M.H" },
+      };
+
+      const meta = mapelMap[selectedMapel] || {
+        nama: "Mata Pelajaran Resmi",
+        kategori: "Kepesantrenan",
+        guru: "Ustzh. Nurul Hidayah, S.Pd.",
+      };
+
+      setNilaiAkademikList((prev) => [
+        { mapel: meta.nama, kategori: meta.kategori, angka: angkaNum, huruf, guru: meta.guru },
+        ...prev.filter((i) => i.mapel !== meta.nama),
+      ]);
+      setFeedback({ type: "success", text: `Nilai ${meta.nama} (${huruf} - ${angkaNum}) berhasil disimpan oleh ${meta.guru}.` });
     });
   };
 
@@ -1660,10 +1696,21 @@ Mudir STQ Darul Ulum Cendekia,
                       onChange={(e) => setSelectedMapel(e.target.value)}
                       className="w-full min-h-[44px] px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-sm"
                     >
-                      <option value="MP-DIN-01">Fiqih Ibadah (Diniyah)</option>
-                      <option value="MP-DIN-02">Bahasa Arab & Nahwu (Diniyah)</option>
-                      <option value="MP-UM-01">Matematika Terapan (Umum)</option>
-                      <option value="MP-PES-01">Adab & Kepesantrenan</option>
+                      <optgroup label="Program Kepesantrenan (Senin–Jumat)">
+                        <option value="MP-KP-01">Bahasa Arab (Senin)</option>
+                        <option value="MP-KP-02">Tafsir Al-Qur'an (Selasa)</option>
+                        <option value="MP-KP-03">Fikih Ibadah &amp; Muamalah (Rabu)</option>
+                        <option value="MP-KP-04">Aqidah Islamiyyah (Kamis)</option>
+                        <option value="MP-KP-05">Ilmu Tajwid (Jumat)</option>
+                      </optgroup>
+                      <optgroup label="Program Studi Umum &amp; PBL (Sabtu)">
+                        <option value="MP-UM-01">Matematika Terapan (Mapel Tetap)</option>
+                        <option value="MP-UM-02">Bahasa Inggris (Mapel Tetap)</option>
+                        <option value="MP-PBL-01">Bahasa Indonesia (PBL Tematik)</option>
+                        <option value="MP-PBL-02">IPA / Sains (PBL Tematik)</option>
+                        <option value="MP-PBL-03">IPS / Sosial (PBL Tematik)</option>
+                        <option value="MP-PBL-04">TIK &amp; Literasi Digital (PBL)</option>
+                      </optgroup>
                     </select>
                   </div>
                   <Input label="Nilai Angka (0-100)" type="number" value={inputNilaiAngka} onChange={(e) => setInputNilaiAngka(e.target.value)} />
@@ -2722,7 +2769,7 @@ Mudir STQ Darul Ulum Cendekia,
                     <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
                       <div>
                         <span className="font-bold text-slate-800 text-xs">Ujian Ikhtibar Juz 4 (Tahap 1)</span>
-                        <p className="text-xs text-amber-700 font-semibold">Penguji: Ust. Salman Al-Farisi (MT)</p>
+                        <p className="text-xs text-amber-700 font-semibold">Penguji: Ust. Razan Mufli, S.Pd (MT)</p>
                         <p className="text-[11px] text-slate-400">Nilai: 92/100 • Siap Ujian Mudir</p>
                       </div>
                       <Badge variant="gold" size="sm">LULUS TAHAP 1</Badge>
@@ -2817,111 +2864,307 @@ Mudir STQ Darul Ulum Cendekia,
         )}
 
         {/* ========================================================= */}
-        {/* TAB 12: KALENDER AKADEMIK & AGENDA (FASE 7)                */}
+        {/* TAB 12: KALENDER AKADEMIK & JADWAL RITMIK (BAB V)          */}
         {/* ========================================================= */}
         {activeTab === "agenda" && (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Form Tambah Agenda */}
-              <div className="lg:col-span-1 space-y-6">
-                <Card rounded="3xl">
+            {/* Sub-navigasi Tab Agenda */}
+            <div className="flex items-center gap-2 p-1.5 bg-slate-100/80 rounded-2xl w-fit border border-slate-200/80">
+              <button
+                onClick={() => setSubTabAgenda("ritmik")}
+                className={cn(
+                  "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
+                  subTabAgenda === "ritmik"
+                    ? "bg-[#0E7C3A] text-white shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                )}
+              >
+                <Clock className="h-3.5 w-3.5" />
+                Jadwal Harian Ritmik Santri (Bab V)
+              </button>
+              <button
+                onClick={() => setSubTabAgenda("kalender")}
+                className={cn(
+                  "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
+                  subTabAgenda === "kalender"
+                    ? "bg-[#0E7C3A] text-white shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                )}
+              >
+                <Calendar className="h-3.5 w-3.5" />
+                Kalender Kegiatan &amp; Agenda Pesantren
+              </button>
+            </div>
+
+            {subTabAgenda === "ritmik" ? (
+              <div className="space-y-6">
+                {/* Header Kurikulum Bab V */}
+                <Card rounded="3xl" className="border-2 border-[#0E7C3A]/20 bg-gradient-to-r from-emerald-50/50 to-white">
                   <CardHeader>
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-5 w-5 text-[#0E7C3A]" />
-                      <CardTitle className="text-base">Tambah Agenda Kalender</CardTitle>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-5 w-5 text-[#0E7C3A]" />
+                        <CardTitle className="text-base sm:text-lg">
+                          Jadwal Harian Ritmik Santri — STQ Darul Ulum Cendekia
+                        </CardTitle>
+                      </div>
+                      <Badge variant="green" size="md">Standar Kurikulum Resmi</Badge>
                     </div>
-                    <CardDescription>Khusus Administrator (`ADM`) & Mudir (`KS`)</CardDescription>
+                    <CardDescription>
+                      Pola ritmik harian terintegrasi: Tahfiz Al-Qur&apos;an (Metode Al-Pakistani), Program Kepesantrenan Malam, dan Studi Umum / PBL Sabtu.
+                    </CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-700">Judul Kegiatan</label>
-                      <Input
-                        value={judulAgenda}
-                        onChange={(e) => setJudulAgenda(e.target.value)}
-                        placeholder="e.g. Ujian Tahfizh Semester Ganjil"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-700">Tanggal Kegiatan</label>
-                      <Input
-                        type="date"
-                        value={tglAgenda}
-                        onChange={(e) => setTglAgenda(e.target.value)}
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-700">Kategori Kegiatan</label>
-                      <select
-                        value={katAgenda}
-                        onChange={(e) => setKatAgenda(e.target.value)}
-                        className="w-full min-h-[44px] px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-sm"
-                      >
-                        <option value="TAHFIZH">Ketahfidzan / Ikhtibar</option>
-                        <option value="UJIAN">Ujian Akademik & Diniyah</option>
-                        <option value="KEGIATAN_SANTRI">Kegiatan Santri / Rihlah</option>
-                        <option value="LIBUR">Libur & Kepulangan Santri</option>
-                      </select>
-                    </div>
-                  </CardContent>
-                  <CardFooter>
-                    <Button
-                      className="w-full"
-                      isLoading={isPending}
-                      onClick={handleTambahAgenda}
-                      disabled={selectedRole !== "ADM" && selectedRole !== "KS"}
-                      leftIcon={<PlusCircle className="h-4 w-4" />}
-                    >
-                      {selectedRole === "ADM" || selectedRole === "KS"
-                        ? "Tambahkan Agenda"
-                        : `Role ${selectedRole} Tidak Berhak`}
-                    </Button>
-                  </CardFooter>
                 </Card>
-              </div>
 
-              {/* Daftar Agenda Kalender */}
-              <div className="lg:col-span-2 space-y-4">
-                <Card rounded="3xl">
-                  <CardHeader>
-                    <CardTitle className="text-base">Kalender Kegiatan Pesantren 2026/2027</CardTitle>
-                    <CardDescription>Jadwal penting yang dapat diakses oleh seluruh asatidz dan wali santri</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {agendaList.map((item) => (
-                      <div
-                        key={item.id}
-                        className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex items-start justify-between gap-4"
-                      >
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <Badge
-                              variant={
-                                item.kategori === "TAHFIZH"
-                                  ? "green"
-                                  : item.kategori === "LIBUR"
-                                  ? "gold"
-                                  : "sky"
-                              }
-                              size="sm"
-                            >
-                              {item.kategori.replace(/_/g, " ")}
-                            </Badge>
-                            <span className="text-xs text-slate-400">Lokasi: {item.lokasi}</span>
+                {/* Grid 3 Kolom: Senin-Jumat, Sabtu PBL, Ahad */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* Kolom 1: Senin s.d. Jumat */}
+                  <div className="lg:col-span-2 space-y-4">
+                    <Card rounded="3xl">
+                      <CardHeader className="pb-3 border-b border-slate-100">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-base text-[#0E7C3A] flex items-center gap-2">
+                            <BookOpen className="h-4 w-4" /> Senin s.d. Jumat (Tahfiz &amp; Kepesantrenan)
+                          </CardTitle>
+                          <Badge variant="green" size="sm">Halaqah Utama</Badge>
+                        </div>
+                        <CardDescription>Alur intensif 5 waktu halaqah Al-Qur&apos;an &amp; kajian diniyah malam</CardDescription>
+                      </CardHeader>
+                      <CardContent className="pt-4">
+                        <div className="relative border-l-2 border-emerald-200 ml-3 space-y-4 text-xs">
+                          {[
+                            { jam: "03.30 – 04.30", judul: "Qiyamul Lail & Sahur", desc: "Shalat Tahajjud mandiri/berjamaah & sahur puasa sunnah (Senin/Kamis)", badge: "Ibadah Malam" },
+                            { jam: "04.30 – 05.45", judul: "Shalat Shubuh & Dzikir Pagi", desc: "Shalat berjamaah di masjid, dzikir Al-Ma'tsurat, dan persiapan halaqah", badge: "Masjid" },
+                            { jam: "05.45 – 07.00", judul: "Halaqah Tahfiz Pagi (Sabaq, Sabqi, Manzil, Mufar)", desc: "Setoran hafalan baru (Sabaq) dan penguatan hafalan kemarin (Sabqi)", badge: "Halaqah 1", hl: true },
+                            { jam: "07.00 – 07.30", judul: "Tambahan Setoran Sabaq", desc: "Bimbingan intensif bagi santri yang membutuhkan perbaikan tajwid/kelancaran", badge: "Bimbingan" },
+                            { jam: "07.30 – 09.00", judul: "Sarapan Pagi, Piket & MCK", desc: "Makan pagi bersama, piket kebersihan asrama/kamar, persiapan mandi", badge: "Asrama" },
+                            { jam: "09.00 – 10.30", judul: "Halaqah Tahfiz Dhuha & Shalat Dhuha", desc: "Ziyadah hafalan baru serta sholat sunnah dhuha di masjid", badge: "Halaqah 2", hl: true },
+                            { jam: "10.30 – 13.00", judul: "Zhuhur, Makan Siang & Qailulah", desc: "Shalat Zhuhur berjamaah, makan siang gizi seimbang, dan tidur siang (sunnah qailulah)", badge: "Istirahat" },
+                            { jam: "13.00 – 15.00", judul: "Halaqah Tahfiz Siang", desc: "Murojaah Manzil (penguatan juz-juz lama agar mutqin)", badge: "Halaqah 3", hl: true },
+                            { jam: "15.00 – 16.00", judul: "Shalat Ashar & Dzikir Petang", desc: "Shalat Ashar berjamaah dan pembacaan wirid/dzikir petang", badge: "Masjid" },
+                            { jam: "16.00 – 17.00", judul: "Halaqah Tahfiz Sore", desc: "Mufar (sima'an berpasangan antar-santri & pemantapan hafalan)", badge: "Halaqah 4", hl: true },
+                            { jam: "17.00 – 18.00", judul: "Istirahat Sore, Mandi & MCK", desc: "Aktivitas mandiri, mandi sore, dan persiapan menuju masjid", badge: "Asrama" },
+                            { jam: "18.00 – 18.30", judul: "Shalat Maghrib Berjamaah", desc: "Shalat Maghrib berjamaah dan tilawah Al-Qur'an menjelang kajian", badge: "Masjid" },
+                            { jam: "18.30 – 19.30", judul: "Program Kepesantrenan (Senin–Jumat)", desc: "Senin: B. Arab • Selasa: Tafsir • Rabu: Fikih • Kamis: Aqidah • Jumat: Tajwid", badge: "Kajian Diniyah", hl: true },
+                            { jam: "19.30 – 20.00", judul: "Shalat Isya & Makan Malam", desc: "Shalat Isya berjamaah dilanjutkan makan malam bersama", badge: "Masjid & Dapur" },
+                            { jam: "20.00 – 21.30", judul: "Halaqah Tahfiz Malam / Murojaah Mandiri", desc: "Persiapan setoran sabaq esok hari di bawah bimbingan musyrif/mudhabbir", badge: "Halaqah 5", hl: true },
+                            { jam: "21.30 – 03.30", judul: "Istirahat Malam (Jam Wajib Tidur)", desc: "Lampu asrama dipadamkan, istirahat malam teratur demi stamina menghafal", badge: "Tidur Asrama" },
+                          ].map((item, idx) => (
+                            <div key={idx} className="relative pl-6">
+                              <div className={cn(
+                                "absolute -left-[9px] top-1.5 h-4 w-4 rounded-full border-2 bg-white",
+                                item.hl ? "border-emerald-600 bg-emerald-500" : "border-slate-300"
+                              )} />
+                              <div className={cn("p-2.5 rounded-xl border", item.hl ? "bg-emerald-50/50 border-emerald-200" : "bg-white border-slate-200/70")}>
+                                <div className="flex justify-between items-start gap-2">
+                                  <div>
+                                    <span className="font-bold text-slate-800 text-xs">{item.judul}</span>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">{item.desc}</p>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <span className="font-mono text-[11px] font-bold text-emerald-800 block">{item.jam}</span>
+                                    <Badge variant={item.hl ? "green" : "neutral"} size="sm">{item.badge}</Badge>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Kolom 2: Sabtu (Studi Umum & PBL) & Ahad */}
+                  <div className="space-y-6">
+                    {/* Sabtu: Studi Umum & PBL */}
+                    <Card rounded="3xl" className="border-2 border-sky-200">
+                      <CardHeader className="pb-3 border-b border-slate-100">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-base text-sky-800 flex items-center gap-2">
+                            <GraduationCap className="h-4 w-4" /> Sabtu: Studi Umum &amp; PBL
+                          </CardTitle>
+                          <Badge variant="sky" size="sm">08.00–15.30 WITA</Badge>
+                        </div>
+                        <CardDescription>Pemenuhan kurikulum nasional &amp; proyek berbasis masalah</CardDescription>
+                      </CardHeader>
+                      <CardContent className="pt-4 space-y-3 text-xs">
+                        <div className="p-3 rounded-2xl bg-sky-50/70 border border-sky-200 space-y-1">
+                          <div className="flex justify-between">
+                            <span className="font-bold text-slate-800">08.00 – 09.30 WITA</span>
+                            <Badge variant="sky" size="sm">Mapel Tetap</Badge>
                           </div>
-                          <h4 className="font-bold text-sm text-slate-800 mt-1">{item.judul}</h4>
-                          <p className="text-xs text-emerald-700 font-semibold flex items-center gap-1.5">
-                            <Clock className="h-3.5 w-3.5" />
-                            {item.tanggal}
+                          <p className="font-semibold text-sky-900">Matematika Terapan</p>
+                          <p className="text-[11px] text-slate-600">Pengampu: Ustzh. Nurul Hidayah, S.Pd.</p>
+                        </div>
+
+                        <div className="p-3 rounded-2xl bg-sky-50/70 border border-sky-200 space-y-1">
+                          <div className="flex justify-between">
+                            <span className="font-bold text-slate-800">09.30 – 11.00 WITA</span>
+                            <Badge variant="sky" size="sm">Mapel Tetap</Badge>
+                          </div>
+                          <p className="font-semibold text-sky-900">Bahasa Inggris (Komunikasi &amp; Gramatika)</p>
+                          <p className="text-[11px] text-slate-600">Pengampu: Ustzh. Nurul Hidayah, S.Pd.</p>
+                        </div>
+
+                        <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-1">
+                          <div className="flex justify-between">
+                            <span className="font-bold text-slate-800">11.00 – 12.30 WITA</span>
+                            <Badge variant="green" size="sm">PBL Sesi 1</Badge>
+                          </div>
+                          <p className="font-semibold text-emerald-900">Project-Based Learning (Rotasi Siklus)</p>
+                          <p className="text-[11px] text-slate-600">
+                            Bahasa Indonesia, IPA, IPS, dan TIK bergantian per siklus 5 pekan.
                           </p>
                         </div>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
+
+                        <div className="p-2.5 rounded-xl bg-slate-50 text-[11px] text-slate-500 border border-slate-200">
+                          <strong>12.30 – 14.00 WITA:</strong> Shalat Zhuhur Berjamaah &amp; Makan Siang
+                        </div>
+
+                        <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-1">
+                          <div className="flex justify-between">
+                            <span className="font-bold text-slate-800">14.00 – 15.30 WITA</span>
+                            <Badge variant="green" size="sm">PBL Sesi 2</Badge>
+                          </div>
+                          <p className="font-semibold text-emerald-900">Presentasi Karya &amp; Portofolio Proyek</p>
+                          <p className="text-[11px] text-slate-600">
+                            Evaluasi produk proyek, penulisan laporan ilmiah, dan asesmen guru.
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Ahad: Hari Mandiri */}
+                    <Card rounded="3xl" className="border border-amber-200 bg-amber-50/30">
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-base text-amber-900">Ahad: Hari Mandiri &amp; Wali</CardTitle>
+                          <Badge variant="gold" size="sm">Istirahat &amp; Olahraga</Badge>
+                        </div>
+                        <CardDescription>Kegiatan penyegaran dan kunjungan orang tua santri</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-xs text-slate-700">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-4 w-4 text-amber-600 shrink-0" />
+                          <span>08.00 – 11.00: Olahraga Sunnah (Memanah, Berenang, Beladiri)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-4 w-4 text-amber-600 shrink-0" />
+                          <span>11.00 – 17.00: Waktu Kunjungan Resmi Wali Santri</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-4 w-4 text-amber-600 shrink-0" />
+                          <span>17.00: Santri wajib kembali ke asrama &amp; persiapan Maghrib</span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
               </div>
-            </div>
+            ) : (
+              /* Tab Kalender Kegiatan */
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Form Tambah Agenda */}
+                <div className="lg:col-span-1 space-y-6">
+                  <Card rounded="3xl">
+                    <CardHeader>
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-5 w-5 text-[#0E7C3A]" />
+                        <CardTitle className="text-base">Tambah Agenda Kalender</CardTitle>
+                      </div>
+                      <CardDescription>Khusus Administrator (`ADM`) &amp; Mudir (`KS`)</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-700">Judul Kegiatan</label>
+                        <Input
+                          value={judulAgenda}
+                          onChange={(e) => setJudulAgenda(e.target.value)}
+                          placeholder="e.g. Ujian Tahfizh Semester Ganjil"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-700">Tanggal Kegiatan</label>
+                        <Input
+                          type="date"
+                          value={tglAgenda}
+                          onChange={(e) => setTglAgenda(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-700">Kategori Kegiatan</label>
+                        <select
+                          value={katAgenda}
+                          onChange={(e) => setKatAgenda(e.target.value)}
+                          className="w-full min-h-[44px] px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-sm"
+                        >
+                          <option value="TAHFIZH">Ketahfidzan / Ikhtibar</option>
+                          <option value="UJIAN">Ujian Akademik &amp; Diniyah</option>
+                          <option value="KEGIATAN_SANTRI">Kegiatan Santri / Rihlah</option>
+                          <option value="LIBUR">Libur &amp; Kepulangan Santri</option>
+                        </select>
+                      </div>
+                    </CardContent>
+                    <CardFooter>
+                      <Button
+                        className="w-full"
+                        isLoading={isPending}
+                        onClick={handleTambahAgenda}
+                        disabled={selectedRole !== "ADM" && selectedRole !== "KS"}
+                        leftIcon={<PlusCircle className="h-4 w-4" />}
+                      >
+                        {selectedRole === "ADM" || selectedRole === "KS"
+                          ? "Tambahkan Agenda"
+                          : `Role ${selectedRole} Tidak Berhak`}
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                </div>
+
+                {/* Daftar Agenda Kalender */}
+                <div className="lg:col-span-2 space-y-4">
+                  <Card rounded="3xl">
+                    <CardHeader>
+                      <CardTitle className="text-base">Kalender Kegiatan Pesantren 2026/2027</CardTitle>
+                      <CardDescription>Jadwal penting yang dapat diakses oleh seluruh asatidz dan wali santri</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {agendaList.map((item) => (
+                        <div
+                          key={item.id}
+                          className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex items-start justify-between gap-4"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant={
+                                  item.kategori === "TAHFIZH"
+                                    ? "green"
+                                    : item.kategori === "LIBUR"
+                                    ? "gold"
+                                    : "sky"
+                                }
+                                size="sm"
+                              >
+                                {item.kategori.replace(/_/g, " ")}
+                              </Badge>
+                              <span className="text-xs text-slate-400">Lokasi: {item.lokasi}</span>
+                            </div>
+                            <h4 className="font-bold text-sm text-slate-800 mt-1">{item.judul}</h4>
+                            <p className="text-xs text-emerald-700 font-semibold flex items-center gap-1.5">
+                              <Clock className="h-3.5 w-3.5" />
+                              {item.tanggal}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
