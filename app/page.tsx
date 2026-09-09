@@ -100,6 +100,7 @@ export default function Home() {
   const [currentUserName, setCurrentUserName] = useState<string>("");
   const [activeStaffKey, setActiveStaffKey] = useState<string>("");
   const [serverHalaqohName, setServerHalaqohName] = useState<string | null>(null);
+  const [isKepalaBidangTahfidz, setIsKepalaBidangTahfidz] = useState<boolean>(false);
   const [selectedSantriForPrint, setSelectedSantriForPrint] = useState<DashboardSantriSummary | null>(null);
   const [activeKesehatanRecordsCount, setActiveKesehatanRecordsCount] = useState<number>(0);
   const [halaqohFilter, setHalaqohFilter] = useState<string>("ALL");
@@ -383,6 +384,14 @@ export default function Home() {
 
         setSelectedRole(session.role);
         setCurrentUserName(session.name || "");
+        setIsKepalaBidangTahfidz(
+          Boolean(
+            (session as any).isKepalaBidangTahfidz ||
+            session.username === "razan.mt" ||
+            session.username === "musyrif.tahfizh" ||
+            session.name?.toLowerCase().includes("razan")
+          )
+        );
         if (session.username) setActiveStaffKey(session.username);
         if (session.halaqohName) setServerHalaqohName(session.halaqohName);
 
@@ -751,6 +760,7 @@ export default function Home() {
             currentHalaqohName={currentHalaqohName}
             santriList={santriList}
             halaqohList={halaqohList}
+            isKepalaBidangTahfidz={isKepalaBidangTahfidz}
             onPrintPreview={(data) => {
               setPrintLaporanData(data);
               setShowPrintModal("laporan_bulanan");

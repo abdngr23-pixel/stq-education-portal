@@ -113,6 +113,7 @@ export async function getCurrentSession(): Promise<UserSession | null> {
       santriId: payload.santriId,
       name: payload.name,
       halaqohName: payload.halaqohName,
+      isKepalaBidangTahfidz: payload.isKepalaBidangTahfidz ?? false,
     };
   } catch {
     return null;

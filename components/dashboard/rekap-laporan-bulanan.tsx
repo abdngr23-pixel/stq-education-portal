@@ -31,6 +31,7 @@ import {
 import {
   generateLaporanBulananMock,
   MASTER_HALAQOH_LIST,
+  hitungTargetMufar,
 } from "@/lib/laporan-bulanan";
 import { KategoriCapaian, NilaiSetoran, JenisUjiHafalan } from "@prisma/client";
 
@@ -54,6 +55,8 @@ export interface RekapLaporanBulananProps {
   initialHalaqohId?: string;
   userRole?: string;
   currentHalaqohName?: string | null;
+  currentUserName?: string | null;
+  isKepalaBidangTahfidz?: boolean;
   onPrintPreview?: (data: LaporanBulananData) => void;
 }
 
@@ -62,10 +65,20 @@ export function RekapLaporanBulanan({
   initialHalaqohId,
   userRole = "MT",
   currentHalaqohName,
+  currentUserName,
+  isKepalaBidangTahfidz,
   onPrintPreview,
 }: RekapLaporanBulananProps) {
-  const isMusyrifOrPembina = userRole === "MT" || userRole === "PH";
   const isManagerial = ["KS", "ADM", "YAY"].includes(userRole);
+  
+  // Otoritas Kepala Bidang Tahfidz (Ust. Razan Mufli): Dapat memilih seluruh halaqoh dan mode agregasi ALL
+  const isKabid =
+    Boolean(isKepalaBidangTahfidz) ||
+    (currentUserName && (currentUserName.toLowerCase().includes("razan") || currentUserName.toLowerCase() === "musyrif.tahfizh")) ||
+    (currentHalaqohName && currentHalaqohName.toLowerCase().includes("razan"));
+
+  const canSelectAnyHalaqoh = isManagerial || isKabid;
+  const isLockedMusyrif = (userRole === "MT" || userRole === "PH") && !isKabid;
 
   // Resolusi halaqoh binaan staf untuk role MT / PH (ABAC Enforced)
   const resolvedHalaqoh = useMemo(() => {
@@ -90,9 +103,9 @@ export function RekapLaporanBulanan({
     return MASTER_HALAQOH_LIST[0]; // HLQ-0001 (Ust. Razan Mufli)
   }, [initialHalaqohId, currentHalaqohName, userRole]);
 
-  // Role MT / PH DIKUNCI ke halaqoh sendiri; KS / ADM / YAY default ke "ALL" (Rekap Gabungan)
+  // Role MT / PH non-kabid DIKUNCI ke halaqoh sendiri; KS / ADM / YAY / Kabid bebas memilih halaqoh atau "ALL"
   const [selectedHalaqohId, setSelectedHalaqohId] = useState<string>(() => {
-    if (userRole === "MT" || userRole === "PH") {
+    if (isLockedMusyrif) {
       return resolvedHalaqoh.id;
     }
     return initialHalaqohId || "ALL";
@@ -102,13 +115,13 @@ export function RekapLaporanBulanan({
   useEffect(() => {
     if (prevRoleRef.current !== userRole) {
       prevRoleRef.current = userRole;
-      if (userRole === "MT" || userRole === "PH") {
+      if (isLockedMusyrif) {
         setSelectedHalaqohId(resolvedHalaqoh.id);
       } else {
         setSelectedHalaqohId(initialHalaqohId || "ALL");
       }
     }
-  }, [userRole, resolvedHalaqoh.id, initialHalaqohId]);
+  }, [userRole, resolvedHalaqoh.id, initialHalaqohId, isLockedMusyrif]);
 
   const [selectedBulan, setSelectedBulan] = useState<number>(9); // September (bulan berjalan di roadmap)
   const [selectedTahunAjaran, setSelectedTahunAjaran] = useState<string>("2026/2027");
@@ -155,7 +168,7 @@ export function RekapLaporanBulanan({
 
   useEffect(() => {
     let ignore = false;
-    const targetHalaqoh = isMusyrifOrPembina ? resolvedHalaqoh.id : selectedHalaqohId;
+    const targetHalaqoh = isLockedMusyrif ? resolvedHalaqoh.id : selectedHalaqohId;
     if (!targetHalaqoh) return;
 
     getLaporanBulananHalaqohAction(targetHalaqoh, selectedBulan, selectedTahunAjaran)
@@ -176,7 +189,7 @@ export function RekapLaporanBulanan({
     return () => {
       ignore = true;
     };
-  }, [selectedHalaqohId, selectedBulan, selectedTahunAjaran, isMusyrifOrPembina, resolvedHalaqoh.id]);
+  }, [selectedHalaqohId, selectedBulan, selectedTahunAjaran, isLockedMusyrif, resolvedHalaqoh.id]);
 
   const handleExportCSV = () => {
     if (!laporanData) return;
@@ -198,6 +211,7 @@ export function RekapLaporanBulanan({
         "% Kepatuhan Sabqi",
         "Manzil Total Freq",
         "% Kepatuhan Manzil",
+        "Target Mufar (Juz/Hari)",
         "Mufar Total Freq",
       ];
       const rows = laporanData.rekapSantri.map((r) => [
@@ -216,6 +230,7 @@ export function RekapLaporanBulanan({
         `${r.tahfizh.sabqi.persentase}%`,
         r.tahfizh.manzil.totalFrekuensi,
         `${r.tahfizh.manzil.persentase}%`,
+        (r.tahfizh.mufar as any).targetLabel || `${(r.tahfizh.mufar as any).targetHarianJuz || hitungTargetMufar(r.tahfizh.sabaq.konversiAkumulasi.juz || 1)} Juz/hari`,
         r.tahfizh.mufar.totalFrekuensi,
       ]);
       exportToCSV(`Laporan_Tahfizh_${BULAN_NAMES[selectedBulan - 1]}_${selectedTahunAjaran.replace("/", "_")}`, headers, rows);
@@ -380,7 +395,7 @@ export function RekapLaporanBulanan({
               <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 block">
                 Pilih Halaqoh
               </label>
-              {isMusyrifOrPembina ? (
+              {isLockedMusyrif ? (
                 <div className="space-y-1">
                   <div className="relative">
                     <select
@@ -418,9 +433,15 @@ export function RekapLaporanBulanan({
                       </option>
                     ))}
                   </select>
-                  <p className="text-[10px] text-emerald-700 font-medium">
-                    ✓ Akses Manajerial ({userRole}): Dapat memantau seluruh halaqoh maupun rekap gabungan.
-                  </p>
+                  {isKabid ? (
+                    <p className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                      ⭐ Akses Kepala Bidang Tahfidz (Ust. Razan Mufli): Dapat memantau seluruh halaqoh &amp; rekap gabungan.
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-emerald-700 font-medium">
+                      ✓ Akses Manajerial ({userRole}): Dapat memantau seluruh halaqoh maupun rekap gabungan.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -620,7 +641,7 @@ export function RekapLaporanBulanan({
                     MANZIL (Muroja&apos;ah Lama)
                   </th>
                   <th colSpan={2} className="px-3 py-2 text-center bg-purple-50/70 text-purple-900">
-                    MUFAR
+                    MUFAR (Muroja&apos;ah Harian)
                   </th>
                 </tr>
                 <tr className="bg-slate-50 text-[11px] text-slate-600 font-semibold border-b border-slate-200">
@@ -644,9 +665,9 @@ export function RekapLaporanBulanan({
                   <th className="px-2 py-1.5 text-center font-bold">Total</th>
                   <th className="px-2 py-1.5 text-center border-r border-slate-200">% Patuh</th>
 
-                  {/* Mufar */}
-                  <th className="px-2 py-1.5 text-center">Tgt</th>
-                  <th className="px-2 py-1.5 text-center font-bold">Total</th>
+                  {/* Mufar (Dinamis: Target Juz/Hari) */}
+                  <th className="px-2 py-1.5 text-center">Target (Juz/Hari)</th>
+                  <th className="px-2 py-1.5 text-center font-bold">Total Freq</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -723,8 +744,10 @@ export function RekapLaporanBulanan({
                         </span>
                       </td>
 
-                      {/* Mufar Data */}
-                      <td className="px-2 py-2 text-center text-slate-500">{mfr.targetBulanan}x</td>
+                      {/* Mufar Data (Target Juz/Hari Dinamis berdasarkan Total Hafalan) */}
+                      <td className="px-2 py-2 text-center font-bold text-purple-800 bg-purple-50/30">
+                        {(mfr as any).targetLabel || `${(mfr as any).targetHarianJuz || hitungTargetMufar(sbq.konversiAkumulasi.juz || 1)} Juz/hari`}
+                      </td>
                       <td className="px-2 py-2 text-center font-bold text-slate-900">{mfr.totalFrekuensi}x</td>
                     </tr>
                   );

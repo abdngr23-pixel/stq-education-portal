@@ -243,6 +243,7 @@ model Staff {
   noHp               String           @map("no_hp")
   roleStaff          Role             @map("role_staff")
   status             UserStatus       @default(AKTIF)
+  isKepalaBidangTahfidz Boolean        @default(false) @map("is_kepala_bidang_tahfidz")
   
   user               User?
   halaqohDipimpin    Halaqoh[]        @relation("PembinaHalaqoh")

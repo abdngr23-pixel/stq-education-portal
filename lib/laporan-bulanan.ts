@@ -171,6 +171,106 @@ export function hitungKepatuhanFrekuensi(
 }
 
 /**
+ * Target Mufar Dinamis berdasarkan Dokumen Acuan Program Tahfidz STQ DUC 2026.
+ * Diukur dalam jumlah Juz per HARI berdasarkan TOTAL hafalan santri saat ini:
+ * - 1-5 Juz   : 1 juz/hari
+ * - 6-10 Juz  : 2 juz/hari
+ * - 11-15 Juz : 3 juz/hari
+ * - 16-20 Juz : 4 juz/hari
+ * - 21-30 Juz : 5 juz/hari
+ *
+ * @param totalHafalanJuz - Jumlah juz total hafalan santri saat ini
+ * @returns Target Mufar dalam satuan juz per hari (1 sampai 5)
+ */
+export function hitungTargetMufar(totalHafalanJuz: number): number {
+  const juz = Math.max(0, Math.floor(totalHafalanJuz));
+  if (juz <= 0) return 1;
+  if (juz <= 5) return 1;
+  if (juz <= 10) return 2;
+  if (juz <= 15) return 3;
+  if (juz <= 20) return 4;
+  return 5; // 21-30 Juz
+}
+
+export interface ReferensiSabaqiKumulatif {
+  hariNama: string;       // e.g. "Senin", "Selasa", "Rabu", "Kamis", "Jumat"
+  polaKeterangan: string; // e.g. "Hafalan hari ini saja", "Kumulatif Senin–Rabu"
+  halamanMulai: number;
+  halamanSelesai: number;
+  totalHalaman: number;
+  labelLengkap: string;
+}
+
+/**
+ * Menghitung rentang referensi Sabaqi kumulatif harian (Senin - Jumat)
+ * Berdasarkan Dokumen Acuan Program Tahfidz STQ DUC 2026:
+ * - Senin : murojaah hafalan hari Senin saja
+ * - Selasa: murojaah hafalan Senin - Selasa
+ * - Rabu  : murojaah hafalan Senin - Rabu
+ * - Kamis : murojaah hafalan Senin - Kamis
+ * - Jumat : murojaah hafalan Senin - Jumat (seluruh pekan berjalan)
+ */
+export function hitungReferensiSabaqiKumulatif(params: {
+  tanggal?: Date;
+  modalAwalHalaman: number;
+  pekanBerjalanSabaqHalaman?: number;
+}): ReferensiSabaqiKumulatif {
+  const date = params.tanggal || new Date();
+  const dayIndex = date.getDay(); // 0: Ahad, 1: Senin, 2: Selasa, 3: Rabu, 4: Kamis, 5: Jumat, 6: Sabtu
+
+  let hariNama = "Senin";
+  let factorHari = 1;
+  const totalHariPekan = 5;
+
+  if (dayIndex === 1) {
+    hariNama = "Senin";
+    factorHari = 1;
+  } else if (dayIndex === 2) {
+    hariNama = "Selasa";
+    factorHari = 2;
+  } else if (dayIndex === 3) {
+    hariNama = "Rabu";
+    factorHari = 3;
+  } else if (dayIndex === 4) {
+    hariNama = "Kamis";
+    factorHari = 4;
+  } else if (dayIndex === 5) {
+    hariNama = "Jumat";
+    factorHari = 5;
+  } else {
+    // Akhir pekan (Sabtu/Ahad): evaluasi review kumulatif penuh 5 hari
+    hariNama = dayIndex === 6 ? "Sabtu (Review)" : "Ahad (Review)";
+    factorHari = 5;
+  }
+
+  const sabaqPekan = Math.max(1, params.pekanBerjalanSabaqHalaman || 5);
+  // Hitung akumulasi halaman dari hari Senin s.d. hari input saat ini
+  const halamanMurojaah = Math.max(1, Math.round((sabaqPekan / totalHariPekan) * factorHari));
+  
+  const halamanMulai = Math.max(1, params.modalAwalHalaman + 1);
+  const halamanSelesai = Math.min(604, halamanMulai + halamanMurojaah - 1);
+  const totalHalaman = Math.max(1, halamanSelesai - halamanMulai + 1);
+
+  const polaKeterangan =
+    dayIndex === 1
+      ? "Hafalan baru hari Senin saja"
+      : dayIndex === 5
+      ? "Kumulatif seluruh pekan berjalan (Senin–Jumat)"
+      : `Kumulatif hafalan baru Senin–${hariNama}`;
+
+  const labelLengkap = `Hlm ${halamanMulai}–${halamanSelesai} (${totalHalaman} Hlm, ${polaKeterangan})`;
+
+  return {
+    hariNama,
+    polaKeterangan,
+    halamanMulai,
+    halamanSelesai,
+    totalHalaman,
+    labelLengkap,
+  };
+}
+
+/**
  * Validasi ketuntasan 7 komponen non-tahfizh dengan carry-over HBL
  */
 export function evaluasiCapaianNonTahfizh(
@@ -380,8 +480,10 @@ export function generateLaporanBulananMock(
     const manzilFreq = { p1: 4, p2: 4, p3: 4, p4: 4 };
     const rekapManzil = hitungKepatuhanFrekuensi(manzilFreq, 16, 90.0);
 
-    const mufarFreq = { p1: 2, p2: 2, p3: 2, p4: 2 };
-    const rekapMufar = hitungKepatuhanFrekuensi(mufarFreq, 8, 90.0);
+    const totalJuzSantri = rekapSabaq.konversiAkumulasi.juz || 1;
+    const targetMufarJuzHarian = hitungTargetMufar(totalJuzSantri);
+    const mufarFreq = { p1: 5, p2: 5, p3: 5, p4: 5 };
+    const rekapMufar = hitungKepatuhanFrekuensi(mufarFreq, 20, 90.0);
 
     const nonTahfizh = [
       { kategori: "HAFALAN_HADITS" as const, label: "Hafalan Hadits", satuan: "Hadits", hbl: 78, p1: 1, p2: 1, p3: 1, p4: 1, penambahanBulanIni: 4, totalKumulatif: 82, targetMin: 4, isTuntas: true, statusLabel: "Tuntas (4/4)" },
@@ -429,7 +531,9 @@ export function generateLaporanBulananMock(
           ...rekapManzil,
         },
         mufar: {
-          targetBulanan: 8,
+          targetBulanan: 20,
+          targetHarianJuz: targetMufarJuzHarian,
+          targetLabel: `${targetMufarJuzHarian} Juz/hari`,
           pekan: mufarFreq,
           ...rekapMufar,
         },

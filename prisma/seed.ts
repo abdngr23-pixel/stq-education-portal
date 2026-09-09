@@ -70,6 +70,7 @@ async function main() {
       nama: "Ust. Razan Mufli, S.Pd",
       noHp: "081234567803",
       roleStaff: Role.MT,
+      isKepalaBidangTahfidz: true,
       status: UserStatus.AKTIF,
       createdBy: "SYSTEM",
     },

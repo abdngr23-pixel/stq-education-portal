@@ -6,8 +6,11 @@ import {
   hitungCapaianSabaq,
   hitungAkumulasiSabaqSantri,
   hitungKepatuhanFrekuensi,
+  hitungTargetMufar,
+  hitungReferensiSabaqiKumulatif,
   evaluasiCapaianNonTahfizh,
   generateRingkasanTasmiSimaan,
+  generateLaporanBulananMock,
 } from "../lib/laporan-bulanan";
 import { KategoriCapaian, JenisUjiHafalan } from "@prisma/client";
 
@@ -244,6 +247,154 @@ describe("Aturan Konversi & Laporan Bulanan (Roadmap v2)", () => {
         alwan.rekapSantri.length +
         lisa.rekapSantri.length;
       assert.equal(total, 57);
+    });
+  });
+
+  describe("8. Target Mufar Dinamis (ACUAN_PROGRAM_TAHFIDZ_STQ_DUC_2026.docx)", () => {
+    it("harus menghitung target Mufar 1 juz/hari untuk hafalan 1-5 Juz", () => {
+      assert.equal(hitungTargetMufar(0), 1);
+      assert.equal(hitungTargetMufar(1), 1);
+      assert.equal(hitungTargetMufar(3), 1);
+      assert.equal(hitungTargetMufar(5), 1);
+    });
+
+    it("harus menghitung target Mufar 2 juz/hari untuk hafalan 6-10 Juz", () => {
+      assert.equal(hitungTargetMufar(6), 2);
+      assert.equal(hitungTargetMufar(8), 2);
+      assert.equal(hitungTargetMufar(10), 2);
+    });
+
+    it("harus menghitung target Mufar 3 juz/hari untuk hafalan 11-15 Juz", () => {
+      assert.equal(hitungTargetMufar(11), 3);
+      assert.equal(hitungTargetMufar(14), 3);
+      assert.equal(hitungTargetMufar(15), 3);
+    });
+
+    it("harus menghitung target Mufar 4 juz/hari untuk hafalan 16-20 Juz", () => {
+      assert.equal(hitungTargetMufar(16), 4);
+      assert.equal(hitungTargetMufar(18), 4);
+      assert.equal(hitungTargetMufar(20), 4);
+    });
+
+    it("harus menghitung target Mufar 5 juz/hari untuk hafalan 21-30 Juz", () => {
+      assert.equal(hitungTargetMufar(21), 5);
+      assert.equal(hitungTargetMufar(25), 5);
+      assert.equal(hitungTargetMufar(30), 5);
+    });
+
+    it("harus otomatis menaikkan target saat hafalan santri bertambah (misal 5 juz ke 6 juz)", () => {
+      const targetSebelum = hitungTargetMufar(5);
+      const targetSesudah = hitungTargetMufar(6);
+      assert.equal(targetSebelum, 1);
+      assert.equal(targetSesudah, 2);
+    });
+
+    it("harus menghasilkan target dinamis dalam laporan bulanan mock per santri", () => {
+      const mock = generateLaporanBulananMock("HLQ-0001", 9, "2026/2027");
+      // Santri Obama (capaian 22 juz) -> target 5 juz/hari
+      const obama = mock.rekapSantri.find((s) => s.santri.nis === "SAN-0001");
+      assert.ok(obama);
+      assert.equal((obama.tahfizh.mufar as any).targetHarianJuz, 5);
+      assert.equal((obama.tahfizh.mufar as any).targetLabel, "5 Juz/hari");
+
+      // Santri Fardhan (capaian 16 juz) -> target 4 juz/hari
+      const fardhan = mock.rekapSantri.find((s) => s.santri.nis === "SAN-0002");
+      assert.ok(fardhan);
+      assert.equal((fardhan.tahfizh.mufar as any).targetHarianJuz, 4);
+      assert.equal((fardhan.tahfizh.mufar as any).targetLabel, "4 Juz/hari");
+    });
+  });
+
+  describe("9. Pola Setoran Sabaqi Kumulatif (Senin-Jumat)", () => {
+    it("harus menghitung referensi hari Senin (murojaah hafalan hari itu saja)", () => {
+      // Senin: 2026-09-07
+      const senin = new Date(2026, 8, 7);
+      const ref = hitungReferensiSabaqiKumulatif({
+        tanggal: senin,
+        modalAwalHalaman: 317,
+      });
+
+      assert.equal(ref.hariNama, "Senin");
+      assert.match(ref.polaKeterangan, /Senin saja/i);
+      assert.equal(ref.totalHalaman, 1);
+      assert.equal(ref.halamanMulai, 318);
+      assert.equal(ref.halamanSelesai, 318);
+    });
+
+    it("harus menghitung referensi hari Selasa (kumulatif Senin-Selasa)", () => {
+      // Selasa: 2026-09-08
+      const selasa = new Date(2026, 8, 8);
+      const ref = hitungReferensiSabaqiKumulatif({
+        tanggal: selasa,
+        modalAwalHalaman: 317,
+      });
+
+      assert.equal(ref.hariNama, "Selasa");
+      assert.match(ref.polaKeterangan, /Senin–Selasa/i);
+      assert.equal(ref.totalHalaman, 2);
+      assert.equal(ref.halamanMulai, 318);
+      assert.equal(ref.halamanSelesai, 319);
+    });
+
+    it("harus menghitung referensi hari Rabu (kumulatif Senin-Rabu)", () => {
+      // Rabu: 2026-09-09
+      const rabu = new Date(2026, 8, 9);
+      const ref = hitungReferensiSabaqiKumulatif({
+        tanggal: rabu,
+        modalAwalHalaman: 317,
+      });
+
+      assert.equal(ref.hariNama, "Rabu");
+      assert.match(ref.polaKeterangan, /Senin–Rabu/i);
+      assert.equal(ref.totalHalaman, 3);
+      assert.equal(ref.halamanMulai, 318);
+      assert.equal(ref.halamanSelesai, 320);
+    });
+
+    it("harus menghitung referensi hari Kamis (kumulatif Senin-Kamis)", () => {
+      // Kamis: 2026-09-10
+      const kamis = new Date(2026, 8, 10);
+      const ref = hitungReferensiSabaqiKumulatif({
+        tanggal: kamis,
+        modalAwalHalaman: 317,
+      });
+
+      assert.equal(ref.hariNama, "Kamis");
+      assert.match(ref.polaKeterangan, /Senin–Kamis/i);
+      assert.equal(ref.totalHalaman, 4);
+      assert.equal(ref.halamanMulai, 318);
+      assert.equal(ref.halamanSelesai, 321);
+    });
+
+    it("harus menghitung referensi hari Jumat (kumulatif seluruh pekan berjalan)", () => {
+      // Jumat: 2026-09-11
+      const jumat = new Date(2026, 8, 11);
+      const ref = hitungReferensiSabaqiKumulatif({
+        tanggal: jumat,
+        modalAwalHalaman: 317,
+      });
+
+      assert.equal(ref.hariNama, "Jumat");
+      assert.match(ref.polaKeterangan, /seluruh pekan/i);
+      assert.equal(ref.totalHalaman, 5);
+      assert.equal(ref.halamanMulai, 318);
+      assert.equal(ref.halamanSelesai, 322);
+    });
+  });
+
+  describe("10. Otoritas Kepala Bidang Tahfidz vs Musyrif Biasa (ABAC)", () => {
+    it("Ust. Razan Mufli (Kepala Bidang Tahfidz) harus memiliki flag isKepalaBidangTahfidz = true", () => {
+      const { ALL_MUSYRIF_TAHFIZH_ACCOUNTS } = require("../types/auth");
+      const razan = ALL_MUSYRIF_TAHFIZH_ACCOUNTS.find((a: any) => a.username === "razan.mt");
+      assert.ok(razan);
+      assert.equal(razan.isKepalaBidangTahfidz, true);
+    });
+
+    it("Musyrif selain Kepala Bidang Tahfidz (misal Lisa MT) tidak boleh memiliki flag isKepalaBidangTahfidz = true", () => {
+      const { ALL_MUSYRIF_TAHFIZH_ACCOUNTS } = require("../types/auth");
+      const lisa = ALL_MUSYRIF_TAHFIZH_ACCOUNTS.find((a: any) => a.username === "lisa.mt");
+      assert.ok(lisa);
+      assert.equal(Boolean(lisa.isKepalaBidangTahfidz), false);
     });
   });
 });

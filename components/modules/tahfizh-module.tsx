@@ -34,7 +34,12 @@ import {
   Calculator,
   Info,
 } from "lucide-react";
-import { konversiHalamanKeJuz, HALAMAN_PER_JUZ } from "@/lib/laporan-bulanan";
+import {
+  konversiHalamanKeJuz,
+  HALAMAN_PER_JUZ,
+  hitungTargetMufar,
+  hitungReferensiSabaqiKumulatif,
+} from "@/lib/laporan-bulanan";
 
 export interface TahfizhModuleProps {
   userRole: Role;
@@ -43,6 +48,7 @@ export interface TahfizhModuleProps {
   santriList: DashboardSantriSummary[];
   halaqohList: Array<{ id: string; nama: string }>;
   initialOpenForm?: boolean;
+  isKepalaBidangTahfidz?: boolean;
   onPrintPreview?: (data: LaporanBulananData) => void;
 }
 
@@ -53,6 +59,7 @@ export function TahfizhModule({
   santriList,
   halaqohList,
   initialOpenForm = false,
+  isKepalaBidangTahfidz,
   onPrintPreview,
 }: TahfizhModuleProps) {
   const [activeSubTab, setActiveSubTab] = useState<"setoran" | "laporan" | "ikhtibar">(
@@ -127,7 +134,7 @@ export function TahfizhModule({
     }
   };
 
-  // Handler saat santri dipilih: sinkronkan ke posisi lanjutan hafalan santri
+  // Handler saat santri dipilih: sinkronkan ke posisi lanjutan hafalan santri & target Mufar dinamis
   const handleSelectSantri = (nis: string) => {
     setSelectedSantriNis(nis);
     const targetSantri = santriList.find((s) => s.nis === nis);
@@ -139,6 +146,11 @@ export function TahfizhModule({
       const jml = parseFloat(jumlahHalaman) || 1;
       setHalamanSelesai(String(nextHlm + Math.ceil(jml) - 1));
       setJuz(String(nextJuz));
+
+      // Otomatis sinkronkan target Mufar dinamis sesuai capaian hafalan santri terkini
+      const mufarTgt = hitungTargetMufar(targetSantri.capaianJuz || Math.floor(modal / 20) || 1);
+      setJumlahJuzMufar(String(mufarTgt));
+      setRincianJuzMufar(`Juz 1 s/d ${mufarTgt}`);
     }
   };
 
@@ -204,6 +216,12 @@ export function TahfizhModule({
   // Santri yang sedang dipilih
   const activeSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
 
+  // Target Mufar Dinamis berdasarkan Total Capaian Hafalan Santri (Acuan Program Tahfidz STQ DUC 2026)
+  const dynamicMufarTarget = useMemo(() => {
+    const juzSantri = activeSantri ? (activeSantri.capaianJuz || Math.floor((activeSantri.totalHalaman || 0) / 20) || 1) : 1;
+    return hitungTargetMufar(juzSantri);
+  }, [activeSantri]);
+
   // Kalkulasi Cerdas Halaman & Konversi Juz Dinamis untuk Santri Manapun
   const santriModalAwal = useMemo(() => {
     if (!activeSantri) return 0;
@@ -211,6 +229,22 @@ export function TahfizhModule({
     if (activeSantri.totalHalaman !== undefined) return activeSantri.totalHalaman;
     return (activeSantri.capaianJuz || 0) * HALAMAN_PER_JUZ;
   }, [activeSantri]);
+
+  // Rentang Referensi Sabaqi Kumulatif Harian (Senin - Jumat)
+  const sabaqiKumulatifRef = useMemo(() => {
+    return hitungReferensiSabaqiKumulatif({
+      modalAwalHalaman: santriModalAwal,
+    });
+  }, [santriModalAwal]);
+
+  // Handler otomatis menerapkan rentang Sabaqi Kumulatif hari berjalan ke form input
+  const handleApplySabaqiReference = () => {
+    setHalamanMulai(String(sabaqiKumulatifRef.halamanMulai));
+    setHalamanSelesai(String(sabaqiKumulatifRef.halamanSelesai));
+    setJumlahHalaman(String(sabaqiKumulatifRef.totalHalaman));
+    const detected = getJuzByPage(sabaqiKumulatifRef.halamanMulai);
+    if (detected) setJuz(String(detected));
+  };
 
   const parsedTambahanHlm = useMemo(() => {
     const n = parseFloat(jumlahHalaman);
@@ -672,7 +706,15 @@ export function TahfizhModule({
                       <button
                         key={j}
                         type="button"
-                        onClick={() => setInputJenis(j)}
+                        onClick={() => {
+                          setInputJenis(j);
+                          if (j === "MUFAR") {
+                            setJumlahJuzMufar(String(dynamicMufarTarget));
+                            setRincianJuzMufar(`Juz 1 s/d ${dynamicMufarTarget}`);
+                          } else if (j === "SABQI") {
+                            handleApplySabaqiReference();
+                          }
+                        }}
                         className={`py-2.5 px-2 rounded-xl text-xs font-bold border transition-all text-center min-h-[42px] flex flex-col items-center justify-center ${
                           inputJenis === j
                             ? "bg-[#0E7C3A] text-white border-[#0E7C3A] shadow-xs"
@@ -703,7 +745,7 @@ export function TahfizhModule({
                 </div>
 
                 {/* FITUR PINTAR OTOMATIS: KALKULASI HALAMAN & JUZ (KHUSUS SABAQ) */}
-                {inputJenis === "SABAQ" ? (
+                {inputJenis === "SABAQ" && (
                   <div className="rounded-2xl p-4 bg-gradient-to-br from-emerald-50 via-teal-50/60 to-emerald-50 border border-emerald-300/80 shadow-xs space-y-3.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
@@ -806,24 +848,120 @@ export function TahfizhModule({
                       </div>
                     </div>
                   </div>
-                ) : (
+                )}
+
+                {/* FITUR PINTAR REFERENSI SABAQI KUMULATIF (SENIN - JUMAT) */}
+                {inputJenis === "SABQI" && (
+                  <div className="rounded-2xl p-4 bg-gradient-to-br from-sky-50 via-blue-50/60 to-sky-50 border border-sky-300/80 shadow-xs space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="p-1.5 bg-sky-600 text-white rounded-lg shadow-xs">
+                          <Clock className="h-4 w-4" />
+                        </span>
+                        <div>
+                          <span className="text-xs font-extrabold text-sky-950 block">
+                            Pola Siklus Sabaqi Kumulatif (Senin – Jumat)
+                          </span>
+                          <span className="text-[10px] text-sky-700 font-medium">
+                            Acuan Resmi DUC 2026: Hari {sabaqiKumulatifRef.hariNama} ({sabaqiKumulatifRef.polaKeterangan})
+                          </span>
+                        </div>
+                      </div>
+                      <Badge variant="sky" size="sm" className="font-semibold text-[10px]">
+                        Hari {sabaqiKumulatifRef.hariNama}
+                      </Badge>
+                    </div>
+
+                    <div className="bg-white/95 p-3 rounded-xl border border-sky-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">
+                          Rentang Halaman Referensi Hari Ini:
+                        </span>
+                        <span className="text-sm font-black text-sky-900 block mt-0.5">
+                          {sabaqiKumulatifRef.labelLengkap}
+                        </span>
+                        <span className="text-[10px] text-slate-500 block mt-0.5">
+                          Muroja&apos;ah kumulatif {sabaqiKumulatifRef.totalHalaman} halaman hafalan pekan berjalan
+                        </span>
+                      </div>
+
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={handleApplySabaqiReference}
+                        className="text-xs font-bold text-sky-800 border-sky-300 hover:bg-sky-50 min-h-[38px] shrink-0"
+                      >
+                        ✓ Terapkan ke Form Input
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* FITUR PINTAR TARGET MUFAR DINAMIS RESMI STQ DUC 2026 */}
+                {inputJenis === "MUFAR" && (
+                  <div className="rounded-2xl p-4 bg-gradient-to-br from-purple-50 via-violet-50/60 to-purple-50 border border-purple-300/80 shadow-xs space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="p-1.5 bg-purple-600 text-white rounded-lg shadow-xs">
+                          <Award className="h-4 w-4" />
+                        </span>
+                        <div>
+                          <span className="text-xs font-extrabold text-purple-950 block">
+                            Target Mufar Dinamis Resmi STQ DUC 2026
+                          </span>
+                          <span className="text-[10px] text-purple-700 font-medium">
+                            Target harian otomatis menyesuaikan total capaian hafalan santri (Bukan frekuensi tetap)
+                          </span>
+                        </div>
+                      </div>
+                      <Badge variant="purple" size="sm" className="font-semibold text-[10px]">
+                        Target: {dynamicMufarTarget} Juz/Hari
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center text-xs">
+                      <div className="bg-white/95 p-2.5 rounded-xl border border-purple-200/80 shadow-2xs">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Total Hafalan</span>
+                        <span className="text-sm font-black text-slate-900 block mt-0.5">
+                          {activeSantri?.capaianJuz || Math.floor(santriModalAwal / 20) || 1} Juz
+                        </span>
+                        <span className="text-[10px] text-slate-400 block mt-0.5">{smartKonversiAwal.label}</span>
+                      </div>
+                      <div className="bg-white/95 p-2.5 rounded-xl border border-purple-200/80 shadow-2xs">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Target Wajib</span>
+                        <span className="text-sm font-black text-purple-700 block mt-0.5">
+                          {dynamicMufarTarget} Juz / Hari
+                        </span>
+                        <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">Dinamis Otomatis</span>
+                      </div>
+                      <div className="col-span-2 sm:col-span-1 bg-gradient-to-br from-purple-700 to-indigo-700 p-2.5 rounded-xl text-white shadow-xs flex flex-col justify-center">
+                        <span className="text-[10px] uppercase font-bold text-purple-200 block">Kategori Acuan</span>
+                        <span className="text-xs font-black text-white block mt-0.5">
+                          {(activeSantri?.capaianJuz || 1) <= 5
+                            ? "1-5 Juz: 1 Juz/hari"
+                            : (activeSantri?.capaianJuz || 1) <= 10
+                            ? "6-10 Juz: 2 Juz/hari"
+                            : (activeSantri?.capaianJuz || 1) <= 15
+                            ? "11-15 Juz: 3 Juz/hari"
+                            : (activeSantri?.capaianJuz || 1) <= 20
+                            ? "16-20 Juz: 4 Juz/hari"
+                            : "21-30 Juz: 5 Juz/hari"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* INFORMASI METODE MANZIL */}
+                {inputJenis === "MANZIL" && (
                   <div className="rounded-2xl p-3.5 bg-slate-50 border border-slate-200/80 text-xs text-slate-700 space-y-1">
                     <div className="flex items-center gap-2 font-bold text-slate-900">
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-600"></span>
-                      Metode Al-Pakistani: {
-                        inputJenis === "SABQI"
-                          ? "Sabqi (Muroja'ah Hafalan Sepekan Terakhir)"
-                          : inputJenis === "MANZIL"
-                          ? "Manzil (Muroja'ah Hafalan Lama Hingga 1 Juz Penuh)"
-                          : "Mufar (Muroja'ah Harian 1–6 Juz Sesuai Jumlah Hafalan)"
-                      }
+                      Metode Al-Pakistani: Manzil (Muroja&apos;ah Hafalan Lama Hingga 1 Juz Penuh)
                     </div>
                     <p className="text-[11px] text-slate-500 leading-normal">
-                      {inputJenis === "SABQI"
-                        ? "Muroja'ah hafalan yang diperoleh selama satu pekan terakhir sebelum melanjutkan Sabaq baru."
-                        : inputJenis === "MANZIL"
-                        ? "Muroja'ah hafalan pada pekan-pekan sebelumnya secara bersiklus hingga mencapai satu juz penuh (20 halaman)."
-                        : "Muroja'ah harian sebanyak 1–6 juz sesuai jumlah hafalan yang telah dimiliki santri guna menjaga kualitas dan kekuatan hafalan."}
+                      Muroja&apos;ah hafalan pada pekan-pekan sebelumnya secara bersiklus hingga mencapai satu juz penuh (20 halaman).
                     </p>
                   </div>
                 )}
@@ -990,18 +1128,18 @@ export function TahfizhModule({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs font-bold text-slate-700 block mb-1">
-                        Target Muroja&apos;ah Harian
+                        Target Muroja&apos;ah Harian (Dinamis: {dynamicMufarTarget} Juz/hari)
                       </label>
                       <select
                         value={jumlahJuzMufar}
                         onChange={(e) => setJumlahJuzMufar(e.target.value)}
-                        className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500"
+                        className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-purple-500"
                       >
-                        <option value="1">1 Juz per hari</option>
-                        <option value="2">2 Juz per hari</option>
-                        <option value="3">3 Juz per hari</option>
-                        <option value="4">4 Juz per hari</option>
-                        <option value="5">5 Juz per hari</option>
+                        <option value="1">1 Juz per hari {dynamicMufarTarget === 1 ? "★ (Target Wajib Santri)" : ""}</option>
+                        <option value="2">2 Juz per hari {dynamicMufarTarget === 2 ? "★ (Target Wajib Santri)" : ""}</option>
+                        <option value="3">3 Juz per hari {dynamicMufarTarget === 3 ? "★ (Target Wajib Santri)" : ""}</option>
+                        <option value="4">4 Juz per hari {dynamicMufarTarget === 4 ? "★ (Target Wajib Santri)" : ""}</option>
+                        <option value="5">5 Juz per hari {dynamicMufarTarget === 5 ? "★ (Target Wajib Santri)" : ""}</option>
                         <option value="6">6 Juz per hari</option>
                       </select>
                     </div>
@@ -1168,6 +1306,8 @@ export function TahfizhModule({
           halaqohList={halaqohList}
           userRole={userRole}
           currentHalaqohName={currentHalaqohName}
+          currentUserName={currentUserName}
+          isKepalaBidangTahfidz={isKepalaBidangTahfidz}
           onPrintPreview={onPrintPreview}
         />
       )}

@@ -11,6 +11,7 @@ export interface UserSession {
   santriId?: string | null;
   name?: string;
   halaqohName?: string | null;
+  isKepalaBidangTahfidz?: boolean;
 }
 
 export interface AuthTokenPayload {
@@ -22,6 +23,7 @@ export interface AuthTokenPayload {
   santriId?: string | null;
   name?: string;
   halaqohName?: string | null;
+  isKepalaBidangTahfidz?: boolean;
   iat?: number;
   exp?: number;
 }
@@ -239,8 +241,8 @@ export const DEMO_ACCOUNTS: Record<Role, DemoAccount> = {
     email: "musyrif.tahfizh@duc-tahfizh.sch.id",
     password: "password123",
     name: "Ust. Razan Mufli, S.Pd",
-    roleTitle: "Musyrif Ketahfidzhan",
-    description: "Input setoran harian (Sabaq, Sabqi, Manzil), pengesahan ikhtibar tahap 1 & mutaba'ah",
+    roleTitle: "Musyrif Ketahfidzhan & Kepala Bidang Tahfidz",
+    description: "Input setoran harian (Sabaq, Sabqi, Manzil), pengesahan ikhtibar tahap 1 & mutaba'ah, Kepala Bidang Tahfidz (akses monitoring seluruh halaqoh)",
     badgeVariant: "green",
     defaultCluster: "tahfizh",
     defaultTab: "tahfizh",
@@ -393,6 +395,7 @@ export interface StaffAccountItem {
   staffCode: string;
   halaqohName?: string;
   santriCount?: number;
+  isKepalaBidangTahfidz?: boolean;
   description: string;
   badgeVariant: "green" | "gold" | "sky" | "orange" | "purple" | "neutral";
   defaultCluster: "tahfizh" | "kesantrian" | "manajemen" | "wali" | "sistem";
@@ -536,11 +539,12 @@ export const ALL_MUSYRIF_TAHFIZH_ACCOUNTS: StaffAccountItem[] = [
     password: "password123",
     name: "Ust. Razan Mufli, S.Pd",
     role: "MT",
-    roleTitle: "Musyrif Ketahfidzhan",
+    roleTitle: "Musyrif Ketahfidzhan & Kepala Bidang Tahfidz",
     staffCode: "STF-0003",
     halaqohName: "Halaqoh Ust. Razan Mufli, S.Pd",
     santriCount: 5,
-    description: "Musyrif Ketahfidzhan & Pembina Halaqoh Ust. Razan (5 Santri: SAN-0001 s.d. SAN-0005)",
+    isKepalaBidangTahfidz: true,
+    description: "Kepala Bidang Tahfidz & Pembina Halaqoh Ust. Razan (Akses Monitoring Seluruh Halaqoh)",
     badgeVariant: "green",
     defaultCluster: "tahfizh",
     defaultTab: "tahfizh",

@@ -78,7 +78,28 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
       const isValid = await verifyPassword(password, user.passwordHash);
       if (isValid) {
         const displayName = user.staff?.nama || user.santri?.nama || user.username;
-        const halaqohName = getHalaqohByStaff(user.staff?.nama || user.username);
+        let halaqohName: string | null = null;
+        if (user.staffId) {
+          try {
+            const h = await prisma.halaqoh.findFirst({
+              where: { pembinaId: user.staffId },
+              select: { nama: true },
+            });
+            if (h) halaqohName = h.nama;
+          } catch {
+            // DB fallback
+          }
+        }
+        if (!halaqohName && user.staff?.staffCode) {
+          halaqohName = getHalaqohByStaff(user.staff.staffCode);
+        }
+
+        const isKabid = Boolean(
+          (user.staff as any)?.isKepalaBidangTahfidz ||
+          displayName?.toLowerCase().includes("razan") ||
+          user.username === "razan.mt" ||
+          user.username === "musyrif.tahfizh"
+        );
 
         const token = await createSessionToken({
           sub: user.id,
@@ -89,6 +110,7 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
           santriId: user.santriId,
           name: displayName,
           halaqohName: halaqohName,
+          isKepalaBidangTahfidz: isKabid,
         });
 
         await setSessionCookie(token);
@@ -240,6 +262,13 @@ export async function quickDemoLoginAction(
       });
 
       if (user) {
+        const isKabid = Boolean(
+          matchedStaff.isKepalaBidangTahfidz ||
+          (user.staff as any)?.isKepalaBidangTahfidz ||
+          matchedStaff.name.toLowerCase().includes("razan") ||
+          matchedStaff.username === "razan.mt"
+        );
+
         const token = await createSessionToken({
           sub: user.id,
           username: user.username,
@@ -249,6 +278,7 @@ export async function quickDemoLoginAction(
           santriId: user.santriId,
           name: user.staff?.nama || matchedStaff.name,
           halaqohName: matchedStaff.halaqohName,
+          isKepalaBidangTahfidz: isKabid,
         });
 
         await setSessionCookie(token);
@@ -269,6 +299,12 @@ export async function quickDemoLoginAction(
     }
 
     // Fallback akun staf memory
+    const isKabidFallback = Boolean(
+      matchedStaff.isKepalaBidangTahfidz ||
+      matchedStaff.name.toLowerCase().includes("razan") ||
+      matchedStaff.username === "razan.mt"
+    );
+
     const token = await createSessionToken({
       sub: `user_${matchedStaff.id}`,
       username: matchedStaff.username,
@@ -278,6 +314,7 @@ export async function quickDemoLoginAction(
       santriId: null,
       name: matchedStaff.name,
       halaqohName: matchedStaff.halaqohName,
+      isKepalaBidangTahfidz: isKabidFallback,
     });
 
     await setSessionCookie(token);
@@ -308,6 +345,13 @@ export async function quickDemoLoginAction(
       const displayName = user.staff?.nama || user.santri?.nama || demo?.name || user.username;
       const halaqohName = getHalaqohByStaff(displayName);
 
+      const isKabidRole = Boolean(
+        (user.staff as any)?.isKepalaBidangTahfidz ||
+        displayName.toLowerCase().includes("razan") ||
+        user.username === "razan.mt" ||
+        user.username === "musyrif.tahfizh"
+      );
+
       const token = await createSessionToken({
         sub: user.id,
         username: user.username,
@@ -317,6 +361,7 @@ export async function quickDemoLoginAction(
         santriId: user.santriId,
         name: displayName,
         halaqohName: halaqohName,
+        isKepalaBidangTahfidz: isKabidRole,
       });
 
       await setSessionCookie(token);
@@ -347,6 +392,7 @@ export async function quickDemoLoginAction(
   // Fallback ke akun demo standar
   if (demo) {
     const halaqohName = getHalaqohByStaff(demo.name);
+    const isKabidDemo = demo.role === "MT" || demo.name.toLowerCase().includes("razan");
     const token = await createSessionToken({
       sub: `user_${demo.role.toLowerCase()}`,
       username: demo.username,
@@ -355,6 +401,7 @@ export async function quickDemoLoginAction(
       santriId: demo.role === "ST" ? "san_0001" : null,
       name: demo.name,
       halaqohName: halaqohName,
+      isKepalaBidangTahfidz: isKabidDemo,
     });
 
     await setSessionCookie(token);
@@ -386,6 +433,7 @@ export async function getCurrentUserAction(): Promise<{
   staffCode?: string | null;
   santriId?: string | null;
   halaqohName?: string | null;
+  isKepalaBidangTahfidz?: boolean;
 } | null> {
   try {
     const session = await getCurrentSession();
@@ -447,6 +495,7 @@ export async function getCurrentUserAction(): Promise<{
       staffCode: session.staffCode,
       santriId: session.santriId,
       halaqohName: halaqohName,
+      isKepalaBidangTahfidz: session.isKepalaBidangTahfidz ?? false,
     };
   } catch {
     return null;
