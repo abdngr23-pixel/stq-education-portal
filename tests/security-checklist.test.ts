@@ -141,10 +141,9 @@ describe('4. Input Validation (Zod) Security Tests', () => {
       santriId: 'san_01',
       jenis: 'SABAQ',
       juz: 35, // Juz di luar Al-Quran
-      surahMulai: 'An-Naba',
-      ayatMulai: 1,
-      surahSelesai: 'An-Naba',
-      ayatSelesai: 10,
+      halamanMulai: 582,
+      halamanSelesai: 582,
+      jumlahHalaman: 1,
       nilai: 'MUMTAZ',
     };
     const res = validateData(setoranSchema, invalidSetoran);

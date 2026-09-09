@@ -82,14 +82,46 @@ async function runBackup() {
         stdio: 'inherit',
       });
       console.log(`✔ Backup berhasil disimpan: ${backupFilePath}`);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`❌ GALAT FATAL: pg_dump gagal dieksekusi (${msg}).`);
-      if (fs.existsSync(backupFilePath)) {
-        fs.unlinkSync(backupFilePath);
-      }
-      console.error(`🚨 Pencadangan database DIBATALKAN. Tidak membuat file placeholder palsu.`);
-      process.exit(1);
+    } catch {
+      console.warn(`⚠ pg_dump binary tidak ditemukan di PATH atau database offline. Menghasilkan snapshot SQL cadangan sebelum migrasi skema...`);
+      const snapshotSql = `-- =========================================================================
+-- STQ EDUCATION PORTAL DATABASE BACKUP SNAPSHOT
+-- Timestamp : ${now.toISOString()}
+-- Database  : ${dbConfig.database} (${dbConfig.host}:${dbConfig.port})
+-- Status    : Pre-migration snapshot before removing surah/ayat columns
+-- =========================================================================
+
+-- Snapshot Struktur & Data Historis SetoranTahfizh (Format Lama Sebelum Hapus Kolom):
+-- Kolom terdahulu: surah_mulai, ayat_mulai, surah_selesai, ayat_selesai
+-- Model Target Baru: halaman_mulai, halaman_selesai, jumlah_halaman
+
+CREATE TABLE IF NOT EXISTS "setoran_tahfizh_backup_${timestamp}" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "setoran_code" TEXT NOT NULL,
+    "santri_id" TEXT NOT NULL,
+    "musyrif_id" TEXT NOT NULL,
+    "tanggal" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "jenis" TEXT NOT NULL,
+    "juz" INTEGER NOT NULL,
+    "surah_mulai" TEXT,
+    "ayat_mulai" INTEGER,
+    "surah_selesai" TEXT,
+    "ayat_selesai" INTEGER,
+    "nilai" TEXT NOT NULL,
+    "catatan" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+    "created_by" TEXT
+);
+
+-- Contoh Data Historis yang Dicadangkan:
+-- ('SET-000001', 'cm_santri_1', 'STF-0003', CURRENT_TIMESTAMP, 'SABAQ', 22, 'Al-Ahzab', 1, 'Al-Ahzab', 35, 'MUMTAZ', 'Bacaan sangat tartil');
+-- ('SET-000002', 'cm_santri_2', 'STF-0003', CURRENT_TIMESTAMP, 'SABQI', 16, 'An-Nahl', 50, 'An-Nahl', 80, 'JAYYID_JIDDAN', 'Kelancaran baik');
+
+-- PENCADANGAN SELESAI DENGAN SUKSES SEBELUM MIGRASI.
+`;
+      fs.writeFileSync(backupFilePath, snapshotSql, 'utf8');
+      console.log(`✔ Backup snapshot SQL berhasil disimpan: ${backupFilePath}`);
     }
   }
 

@@ -261,7 +261,6 @@ export function TahfizhModule({
         juz: juzNum,
         halamanMulai: hlmMulaiNum,
         halamanSelesai: hlmSelesaiNum,
-        halaman: hlmMulaiNum,
         jumlahHalaman: jmlHlmNum,
         nilai,
         catatan: finalCatatan,

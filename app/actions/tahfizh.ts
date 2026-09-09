@@ -8,15 +8,10 @@ import { generateSetoranCode } from "@/lib/sequence";
 export interface CreateSetoranInput {
   santriId: string;
   jenis: JenisSetoran;
-  juz?: number;
-  halamanMulai?: number;
-  halamanSelesai?: number;
-  halaman?: number;
-  jumlahHalaman?: number;
-  surahMulai?: string;
-  ayatMulai?: number;
-  surahSelesai?: string;
-  ayatSelesai?: number;
+  juz: number;
+  halamanMulai: number;
+  halamanSelesai: number;
+  jumlahHalaman: number;
   nilai: NilaiSetoran;
   catatan?: string;
 }
@@ -70,18 +65,7 @@ export async function createSetoranAction(input: CreateSetoranInput) {
     const count = await prisma.setoranTahfizh.count();
     const setoranCode = generateSetoranCode(count + 1);
 
-    // Hitung halaman dan juz yang efektif
-    const hlmMulai = input.halamanMulai || input.halaman || (input.juz ? (input.juz - 1) * 20 + 1 : 1);
-    const jmlHlm = input.jumlahHalaman || 1;
-    const hlmSelesai = input.halamanSelesai || (hlmMulai + Math.ceil(jmlHlm) - 1);
-    const effectiveJuz = input.juz || Math.floor((hlmMulai - 1) / 20) + 1;
-
-    // 5. Simpan Setoran ke PostgreSQL
-    const hlmPrefix = input.jumlahHalaman ? `[Hlm: ${input.jumlahHalaman}] ` : "";
-    const finalCatatan = input.catatan
-      ? `${hlmPrefix}${input.catatan}`.trim()
-      : (hlmPrefix.trim() || null);
-
+    // 5. Simpan Setoran ke PostgreSQL (Murni Berbasis Halaman)
     const newSetoran = await prisma.setoranTahfizh.create({
       data: {
         setoranCode,
@@ -89,13 +73,12 @@ export async function createSetoranAction(input: CreateSetoranInput) {
         musyrifId: musyrifStaff.id,
         tanggal: new Date(),
         jenis: input.jenis,
-        juz: Number(effectiveJuz),
-        surahMulai: input.surahMulai || `Hlm ${hlmMulai}`,
-        ayatMulai: Number(input.ayatMulai) || Number(hlmMulai),
-        surahSelesai: input.surahSelesai || `Hlm ${hlmSelesai}`,
-        ayatSelesai: Number(input.ayatSelesai) || Number(hlmSelesai),
+        juz: Number(input.juz),
+        halamanMulai: Number(input.halamanMulai),
+        halamanSelesai: Number(input.halamanSelesai),
+        jumlahHalaman: Number(input.jumlahHalaman),
         nilai: input.nilai,
-        catatan: finalCatatan,
+        catatan: input.catatan?.trim() || null,
         createdBy: session.username,
       },
       include: {
@@ -113,8 +96,9 @@ export async function createSetoranAction(input: CreateSetoranInput) {
       details: {
         setoranCode,
         santriNis: newSetoran.santri.nis,
-        juz: effectiveJuz,
-        halaman: `${hlmMulai}-${hlmSelesai}`,
+        juz: input.juz,
+        halaman: `${input.halamanMulai}-${input.halamanSelesai}`,
+        jumlahHalaman: input.jumlahHalaman,
         nilai: input.nilai,
       },
     });
@@ -218,11 +202,23 @@ export async function getSantriProgresAction(santriId: string) {
       where: { santriId },
     });
 
+    const sabaqAggregate = await prisma.setoranTahfizh.aggregate({
+      where: { santriId, jenis: "SABAQ" },
+      _sum: { jumlahHalaman: true },
+    });
+    const totalHalamanSabaq = sabaqAggregate._sum.jumlahHalaman || 0;
+    const totalJuzSabaq = Math.floor(totalHalamanSabaq / 20);
+    const sisaHalamanSabaq = totalHalamanSabaq % 20;
+
     return {
       success: true,
       data: {
         ...santri,
         totalSetoran,
+        totalHalamanSabaq,
+        totalJuzSabaq,
+        sisaHalamanSabaq,
+        capaianLabel: `${totalJuzSabaq} Juz ${sisaHalamanSabaq} Halaman`,
       },
     };
   } catch (error) {
@@ -230,3 +226,44 @@ export async function getSantriProgresAction(santriId: string) {
     return { success: false, message: "Gagal mengambil data progres" };
   }
 }
+
+/**
+ * Server Action: Hitung Total Halaman Kumulatif Santri dari seluruh Setoran SABAQ
+ * Sabqi / Manzil / Mufar tidak menambah total kumulatif (itu muroja'ah).
+ */
+export async function getSantriKumulatifHalamanAction(santriId: string) {
+  try {
+    const sabaqAggregate = await prisma.setoranTahfizh.aggregate({
+      where: {
+        santriId,
+        jenis: "SABAQ",
+      },
+      _sum: {
+        jumlahHalaman: true,
+      },
+    });
+
+    const totalHalaman = sabaqAggregate._sum.jumlahHalaman || 0;
+    const totalJuz = Math.floor(totalHalaman / 20);
+    const sisaHalaman = totalHalaman % 20;
+    const label = totalJuz > 0 && sisaHalaman > 0
+      ? `${totalJuz} Juz ${sisaHalaman} Halaman`
+      : totalJuz > 0
+      ? `${totalJuz} Juz`
+      : `${sisaHalaman} Halaman`;
+
+    return {
+      success: true,
+      data: {
+        totalHalaman,
+        totalJuz,
+        sisaHalaman,
+        label,
+      },
+    };
+  } catch (error) {
+    console.error("Gagal menghitung kumulatif santri:", error);
+    return { success: false, message: "Gagal menghitung kumulatif santri." };
+  }
+}
+

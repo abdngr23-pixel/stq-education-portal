@@ -110,7 +110,10 @@ export async function GET(
         })),
         riwayatTahfizh: santri.setoranList.map((s) => ({
           juz: s.juz,
-          surah: `${s.surahMulai}:${s.ayatMulai} - ${s.surahSelesai}:${s.ayatSelesai}`,
+          halamanMulai: s.halamanMulai,
+          halamanSelesai: s.halamanSelesai,
+          jumlahHalaman: s.jumlahHalaman,
+          halaman: `Hlm ${s.halamanMulai}–${s.halamanSelesai} (${s.jumlahHalaman} Hlm)`,
           jenis: s.jenis,
           nilai: s.nilai,
           tanggal: s.createdAt,

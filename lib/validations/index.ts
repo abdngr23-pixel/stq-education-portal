@@ -56,28 +56,29 @@ export type SantriInput = z.infer<typeof santriInputSchema>;
  * 3. Skema Validasi Input Setoran Tahfizh
  */
 export const setoranSchema = z.object({
-  santriId: z.string().min(1, { message: 'ID santri wajib dipilih' }),
-  jenis: z.enum(['SABAQ', 'SABQI', 'MANZIL'], {
-    message: 'Jenis setoran harus SABAQ, SABQI, atau MANZIL',
+  santriId: z.string().min(1, { message: 'Santri wajib dipilih' }),
+  jenis: z.enum(['SABAQ', 'SABQI', 'MANZIL', 'MUFAR'], {
+    message: 'Jenis setoran harus SABAQ, SABQI, MANZIL, atau MUFAR',
   }),
   juz: z.coerce
     .number()
     .int()
     .min(1, { message: 'Juz minimal 1' })
     .max(30, { message: 'Juz maksimal 30' }),
-  surahMulai: z.string().min(1, { message: 'Surah mulai wajib diisi' }).max(50),
-  ayatMulai: z.coerce
+  halamanMulai: z.coerce
     .number()
     .int()
-    .min(1, { message: 'Ayat mulai minimal 1' })
-    .max(500, { message: 'Nomor ayat tidak valid' }),
-  surahSelesai: z.string().min(1, { message: 'Surah selesai wajib diisi' }).max(50),
-  ayatSelesai: z.coerce
+    .min(1, { message: 'Halaman mulai minimal 1' })
+    .max(604, { message: 'Halaman mulai maksimal 604' }),
+  halamanSelesai: z.coerce
     .number()
     .int()
-    .min(1, { message: 'Ayat selesai minimal 1' })
-    .max(500, { message: 'Nomor ayat tidak valid' }),
-  nilai: z.enum(['MUMTAZ', 'JAYYID_JIDDAN', 'JAYYID', 'MAQBUL', 'RASIB'], {
+    .min(1, { message: 'Halaman selesai minimal 1' })
+    .max(604, { message: 'Halaman selesai maksimal 604' }),
+  jumlahHalaman: z.coerce
+    .number()
+    .min(0.5, { message: 'Jumlah halaman minimal 0.5' }),
+  nilai: z.enum(['MUMTAZ', 'JAYYID_JIDDAN', 'JAYYID', 'MAQBUL', 'DHOIF', 'RASIB'], {
     message: 'Nilai setoran tidak valid',
   }),
   catatan: z.string().max(500, { message: 'Catatan maksimal 500 karakter' }).optional().nullable(),

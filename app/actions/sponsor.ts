@@ -141,7 +141,7 @@ export async function generateLaporanSponsorAction(params: {
     });
 
     const setoranTerakhir = setoranBulanIni[0]
-      ? `${setoranBulanIni[0].surahMulai}: ${setoranBulanIni[0].ayatMulai}-${setoranBulanIni[0].ayatSelesai} (${setoranBulanIni[0].nilai})`
+      ? `Juz ${setoranBulanIni[0].juz} (Hlm ${setoranBulanIni[0].halamanMulai}–${setoranBulanIni[0].halamanSelesai}, ${setoranBulanIni[0].jumlahHalaman} Hlm, ${setoranBulanIni[0].nilai})`
       : "Belum ada setoran pada periode ini";
 
     const snapshotTahfizh = {

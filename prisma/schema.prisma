@@ -359,28 +359,23 @@ model Halaqoh {
 // ----------------------------------------------------
 
 model SetoranTahfizh {
-  id           String        @id @default(cuid())
-  setoranCode  String        @unique @map("setoran_code") // e.g. SET-000001
-  santriId     String        @map("santri_id")
-  santri       Santri        @relation(fields: [santriId], references: [id], onDelete: Restrict)
-  
-  musyrifId    String        @map("musyrif_id")
-  musyrif      Staff         @relation(fields: [musyrifId], references: [id], onDelete: Restrict)
-
-  tanggal      DateTime      @default(now())
-  jenis        JenisSetoran
-  juz          Int
-  surahMulai   String        @map("surah_mulai")
-  ayatMulai    Int           @map("ayat_mulai")
-  surahSelesai String        @map("surah_selesai")
-  ayatSelesai  Int           @map("ayat_selesai")
-  
-  nilai        NilaiSetoran
-  catatan      String?
-  
-  createdAt    DateTime      @default(now()) @map("created_at")
-  updatedAt    DateTime      @updatedAt @map("updated_at")
-  createdBy    String?       @map("created_by")
+  id             String        @id @default(cuid())
+  setoranCode    String        @unique @map("setoran_code")
+  santriId       String        @map("santri_id")
+  santri         Santri        @relation(fields: [santriId], references: [id], onDelete: Restrict)
+  musyrifId      String        @map("musyrif_id")
+  musyrif        Staff         @relation(fields: [musyrifId], references: [id], onDelete: Restrict)
+  tanggal        DateTime      @default(now())
+  jenis          JenisSetoran
+  juz            Int
+  halamanMulai   Int           @map("halaman_mulai")
+  halamanSelesai Int           @map("halaman_selesai")
+  jumlahHalaman  Float         @map("jumlah_halaman")
+  nilai          NilaiSetoran
+  catatan        String?
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  createdBy      String?       @map("created_by")
 
   @@index([santriId, tanggal])
   @@index([musyrifId])

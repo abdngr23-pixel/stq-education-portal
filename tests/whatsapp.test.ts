@@ -78,9 +78,8 @@ describe("WhatsApp Direct Link & Message Generator Tests", () => {
         namaWali: "H. Ridwan",
         jenisSetoran: "SABAQ",
         juz: 22,
-        surah: "Al-Ahzab",
-        ayatMulai: 1,
-        ayatSelesai: 35,
+        halamanMulai: 421,
+        halamanSelesai: 422,
         nilai: "MUMTAZ",
         catatan: "Makhraj huruf shad dan dhad sangat fasih",
         jumlahHalaman: 2,
@@ -90,7 +89,7 @@ describe("WhatsApp Direct Link & Message Generator Tests", () => {
       assert.ok(msg.includes("Obama Ozearld Egberted Turizqi"));
       assert.ok(msg.includes("SAN-0001"));
       assert.ok(msg.includes("Sabaq (Hafalan Baru)"));
-      assert.ok(msg.includes("QS. Al-Ahzab: 1–35"));
+      assert.ok(msg.includes("Hlm 421 s/d 422"));
       assert.ok(msg.includes("2 Halaman"));
       assert.ok(msg.includes("Mumtaz (Sempurna / A+)"));
       assert.ok(msg.includes("Ust. Razan Mufli, S.Pd"));

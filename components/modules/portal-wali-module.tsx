@@ -15,8 +15,9 @@ export interface SetoranItemWali {
   id: string;
   jenis: string;
   juz: number;
-  surahMulai: string;
-  surahSelesai: string;
+  halamanMulai: number;
+  halamanSelesai: number;
+  jumlahHalaman: number;
   catatan?: string | null;
   nilai: string;
 }
@@ -239,7 +240,7 @@ export function PortalWaliModule({
                   <div key={item.id} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
                     <div>
                       <span className="font-bold text-slate-800 text-xs">Setoran {item.jenis} (Juz {item.juz})</span>
-                      <p className="text-xs text-emerald-700 font-semibold">{item.surahMulai} s/d {item.surahSelesai}</p>
+                      <p className="text-xs text-emerald-700 font-semibold">Halaman {item.halamanMulai}–{item.halamanSelesai} ({item.jumlahHalaman} Hlm)</p>
                       <p className="text-[11px] text-slate-400">Catatan: {item.catatan || "Lancar dan tertib"}</p>
                     </div>
                     <Badge variant="green" size="sm">{item.nilai}</Badge>

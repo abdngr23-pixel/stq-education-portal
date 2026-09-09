@@ -14,11 +14,8 @@ export interface SetoranTahfizhWAParams {
   noHpWali?: string;
   jenisSetoran: "SABAQ" | "SABQI" | "MANZIL" | "MUFAR" | string;
   juz: number | string;
-  halamanMulai?: number | string;
-  halamanSelesai?: number | string;
-  surah?: string;
-  ayatMulai?: number | string;
-  ayatSelesai?: number | string;
+  halamanMulai: number | string;
+  halamanSelesai: number | string;
   nilai: string;
   catatan?: string;
   jumlahHalaman?: number | string;
@@ -187,13 +184,7 @@ export function buildSetoranTahfizhWAMessage(p: SetoranTahfizhWAParams): string 
   msg += `Yth. ${waliGreeting} dari ananda *${p.santriNama}* (${p.santriNis}, Kelas ${p.kelas}),\n\n`;
   msg += `Alhamdulillah, ananda telah selesai menyetorkan hafalan Al-Qur'an dengan rincian berikut:\n`;
   msg += `• *Jenis Setoran*: ${jenisLabel}\n`;
-  if (p.halamanMulai && p.halamanSelesai) {
-    msg += `• *Halaman Mushaf*: Hlm ${p.halamanMulai} s/d ${p.halamanSelesai}\n`;
-  } else if (p.halamanMulai) {
-    msg += `• *Halaman Mushaf*: Hlm ${p.halamanMulai}\n`;
-  } else if (p.surah && p.surah !== "-") {
-    msg += `• *Maqra'*: QS. ${p.surah}${p.ayatMulai ? `: ${p.ayatMulai}–${p.ayatSelesai}` : ""}\n`;
-  }
+  msg += `• *Halaman Mushaf*: Hlm ${p.halamanMulai} s/d ${p.halamanSelesai} (Juz ${p.juz})\n`;
   
   if (p.jumlahHalaman && String(p.jumlahHalaman) !== "0") {
     msg += `• *Volume*: ${p.jumlahHalaman} Halaman (Standar Madinah 20 Hlm/Juz)\n`;

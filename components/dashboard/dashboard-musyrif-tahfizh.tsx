@@ -5,16 +5,11 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { BookCheck, Award, PlusCircle, CheckCircle2, Download, FileSpreadsheet, Sparkles } from "lucide-react";
+import { BookCheck, Award, CheckCircle2, Download, FileSpreadsheet } from "lucide-react";
 import { exportToCSV } from "@/lib/export-csv";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
 import { buildSetoranTahfizhWAMessage, buildProgressSantriWAMessage } from "@/lib/whatsapp";
-import {
-  SURAH_LIST,
-  JUZ_LIST,
-  getSurahListByJuz,
-  detectSurahByJuzPageVerse,
-} from "@/lib/quran-metadata";
+import { JUZ_LIST } from "@/lib/quran-metadata";
 
 export interface DashboardMusyrifTahfizhProps {
   santriList: Array<{
@@ -40,14 +35,10 @@ export interface DashboardMusyrifTahfizhProps {
   onSetJumlahHalaman?: (hlm: string) => void;
   juz: string;
   onSetJuz: (juz: string) => void;
-  surahMulai: string;
-  onSetSurahMulai: (surah: string) => void;
-  ayatMulai: string;
-  onSetAyatMulai: (ayat: string) => void;
-  surahSelesai: string;
-  onSetSurahSelesai: (surah: string) => void;
-  ayatSelesai: string;
-  onSetAyatSelesai: (ayat: string) => void;
+  halamanMulai?: string;
+  onSetHalamanMulai?: (hlm: string) => void;
+  halamanSelesai?: string;
+  onSetHalamanSelesai?: (hlm: string) => void;
   nilai: "MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "DHOIF";
   onSetNilai: (nilai: "MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "DHOIF") => void;
   catatan: string;
@@ -68,13 +59,10 @@ export function DashboardMusyrifTahfizh({
   onSetJumlahHalaman,
   juz,
   onSetJuz,
-  surahMulai,
-  onSetSurahMulai,
-  ayatMulai,
-  onSetAyatMulai,
-  onSetSurahSelesai,
-  ayatSelesai,
-  onSetAyatSelesai,
+  halamanMulai = "1",
+  onSetHalamanMulai,
+  halamanSelesai = "1",
+  onSetHalamanSelesai,
   nilai,
   onSetNilai,
   catatan,
@@ -85,12 +73,6 @@ export function DashboardMusyrifTahfizh({
   isPending = false,
 }: DashboardMusyrifTahfizhProps) {
   const selectedSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
-
-  // Daftar surah di juz terpilih untuk auto-select
-  const availableSurahs = React.useMemo(() => {
-    const juzNum = parseInt(juz, 10);
-    return getSurahListByJuz(!isNaN(juzNum) ? juzNum : 30);
-  }, [juz]);
 
   const [waDialog, setWaDialog] = useState<{
     isOpen: boolean;
@@ -174,7 +156,7 @@ export function DashboardMusyrifTahfizh({
         />
       </div>
 
-      {/* 2. Grid Dua Kolom: Form Input Cepat (Screen 2) & Daftar Santri (Screen 1) */}
+      {/* 2. Grid Dua Kolom: Form Input Cepat & Daftar Santri */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Kolom Form Input Cepat Setoran (Lg: 7 col) */}
         <div className="lg:col-span-7">
@@ -184,7 +166,7 @@ export function DashboardMusyrifTahfizh({
                 <div>
                   <CardTitle className="text-base sm:text-lg flex items-center gap-2">
                     <BookCheck className="h-5 w-5 text-[#0E7C3A]" />
-                    Form Input Cepat Setoran
+                    Form Input Cepat Setoran (Murni Berbasis Halaman)
                   </CardTitle>
                   <CardDescription>
                     Pencatatan ziyadah &amp; murojaah langsung saat halaqoh
@@ -240,39 +222,13 @@ export function DashboardMusyrifTahfizh({
                 </div>
               </div>
 
-              {/* Input Jumlah Halaman jika Sabaq */}
-              {inputJenis === "SABAQ" && onSetJumlahHalaman && (
-                <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-200">
-                  <Input
-                    label="Jumlah Halaman Sabaq (Standar 20 Hlm/Juz)"
-                    type="number"
-                    value={jumlahHalaman}
-                    onChange={(e) => onSetJumlahHalaman(e.target.value)}
-                    placeholder="1"
-                    className="bg-white"
-                  />
-                  <p className="text-[10px] text-emerald-800 mt-1">
-                    Akumulasi halaman akan dikonversi ke format <em>&ldquo;X Juz Y Halaman&rdquo;</em> pada laporan bulanan.
-                  </p>
-                </div>
-              )}
-
-              {/* Parameter Ayat & Juz dengan Deteksi Pintar Surah */}
+              {/* Parameter Halaman & Volume Setoran (Murni Berbasis Halaman) */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-slate-700">Juz (1-30)</label>
                   <select
                     value={juz}
-                    onChange={(e) => {
-                      const newJuz = e.target.value;
-                      onSetJuz(newJuz);
-                      const parsed = parseInt(newJuz, 10);
-                      if (!isNaN(parsed) && parsed >= 1 && parsed <= 30) {
-                        const det = detectSurahByJuzPageVerse({ juz: parsed, ayatMulai, ayatSelesai });
-                        onSetSurahMulai(det.surahMulai);
-                        onSetSurahSelesai(det.surahSelesai);
-                      }
-                    }}
+                    onChange={(e) => onSetJuz(e.target.value)}
                     className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
                     {JUZ_LIST.map((j) => (
@@ -282,66 +238,33 @@ export function DashboardMusyrifTahfizh({
                     ))}
                   </select>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700">Nama Surah (Otomatis)</label>
-                  <select
-                    value={surahMulai}
-                    onChange={(e) => {
-                      onSetSurahMulai(e.target.value);
-                      onSetSurahSelesai(e.target.value);
-                    }}
-                    className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    <optgroup label={`Surah dalam Juz ${juz}`}>
-                      {availableSurahs.map((s) => (
-                        <option key={s.number} value={s.name}>
-                          {s.number}. {s.name} ({s.arabicName})
-                        </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Semua Surah">
-                      {SURAH_LIST.map((s) => (
-                        <option key={s.number} value={s.name}>
-                          {s.number}. {s.name} ({s.arabicName})
-                        </option>
-                      ))}
-                    </optgroup>
-                  </select>
-                </div>
                 <Input
-                  label="Ayat Dari"
+                  label="Halaman Mulai"
                   type="number"
                   min={1}
-                  value={ayatMulai}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    onSetAyatMulai(val);
-                    const det = detectSurahByJuzPageVerse({ juz, ayatMulai: val, ayatSelesai });
-                    onSetSurahMulai(det.surahMulai);
-                    onSetSurahSelesai(det.surahSelesai);
-                  }}
+                  max={604}
+                  value={halamanMulai}
+                  onChange={(e) => onSetHalamanMulai?.(e.target.value)}
+                  placeholder="Contoh: 318"
                 />
                 <Input
-                  label="Ayat Sampai"
+                  label="Jumlah Halaman"
+                  type="number"
+                  step="0.5"
+                  min={0.5}
+                  value={jumlahHalaman}
+                  onChange={(e) => onSetJumlahHalaman?.(e.target.value)}
+                  placeholder="1"
+                />
+                <Input
+                  label="Halaman Selesai"
                   type="number"
                   min={1}
-                  value={ayatSelesai}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    onSetAyatSelesai(val);
-                    const det = detectSurahByJuzPageVerse({ juz, ayatMulai, ayatSelesai: val });
-                    onSetSurahMulai(det.surahMulai);
-                    onSetSurahSelesai(det.surahSelesai);
-                  }}
+                  max={604}
+                  value={halamanSelesai}
+                  onChange={(e) => onSetHalamanSelesai?.(e.target.value)}
+                  placeholder="Contoh: 320"
                 />
-              </div>
-
-              {/* Badge Deteksi Pintar */}
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
-                <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>
-                  <strong>✨ Deteksi Pintar Surah:</strong> Terpilih otomatis <strong>QS. {surahMulai}</strong> untuk Juz {juz}
-                </span>
               </div>
 
               {/* Penilaian Kualitas Bacaan */}
@@ -361,10 +284,10 @@ export function DashboardMusyrifTahfizh({
                       key={k.key}
                       type="button"
                       onClick={() => onSetNilai(k.key)}
-                      className={`min-h-[44px] rounded-2xl text-xs font-bold border transition-all ${
+                      className={`min-h-[40px] px-2 rounded-xl text-xs font-semibold border transition-all ${
                         nilai === k.key
-                          ? "bg-[#0E7C3A] text-white border-[#0E7C3A] shadow-2xs"
-                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                          ? "bg-slate-900 text-white border-slate-900 shadow-2xs"
+                          : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
                       }`}
                     >
                       {k.label}
@@ -374,17 +297,22 @@ export function DashboardMusyrifTahfizh({
               </div>
 
               {/* Catatan Musyrif */}
-              <Input
-                label="Catatan Tajwid / Makharijul Huruf (Opsional)"
-                value={catatan}
-                onChange={(e) => onSetCatatan(e.target.value)}
-                placeholder="misal: Dengung ikhfa di ayat 15 perlu diperpanjang 2 harakat"
-              />
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-700">Catatan Tajwid / Evaluasi Santri</label>
+                <textarea
+                  rows={2}
+                  value={catatan}
+                  onChange={(e) => onSetCatatan(e.target.value)}
+                  placeholder="Contoh: Perhatikan ghunnah nun bertasydid dan mad thobi'i..."
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-white border border-slate-200 text-xs sm:text-sm font-medium focus:ring-2 focus:ring-[#0E7C3A]/20 focus:border-[#0E7C3A]"
+                />
+              </div>
             </CardContent>
 
-            <CardFooter className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-4">
+            <CardFooter className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               <div className="text-xs text-slate-500">
-                Santri: <strong className="text-slate-800">{selectedSantri.nama}</strong>
+                Santri: <strong className="text-slate-800">{selectedSantri.nama}</strong> | Setoran:{" "}
+                <strong className="text-[#0E7C3A]">{inputJenis}</strong>
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -400,12 +328,11 @@ export function DashboardMusyrifTahfizh({
                       noHpWali: selectedSantri.noHpWali,
                       jenisSetoran: inputJenis,
                       juz,
-                      surah: surahMulai,
-                      ayatMulai,
-                      ayatSelesai,
+                      halamanMulai,
+                      halamanSelesai,
+                      jumlahHalaman,
                       nilai,
                       catatan,
-                      jumlahHalaman: inputJenis === "SABAQ" ? jumlahHalaman : undefined,
                       pembinaNama: halaqohName || "Musyrif Tahfizh STQ DUC",
                     });
                     setWaDialog({
@@ -448,81 +375,99 @@ export function DashboardMusyrifTahfizh({
             <Button
               variant="secondary"
               size="sm"
-              leftIcon={<Download className="h-3.5 w-3.5 text-[#0E7C3A]" />}
-              onClick={() =>
+              onClick={() => {
+                const headers = [
+                  "NIS",
+                  "Nama",
+                  "Kelas",
+                  "Halaqoh",
+                  "Capaian (Juz)",
+                  "Target (Juz)",
+                  "Setoran Terakhir",
+                  "Nilai",
+                  "Poin Pelanggaran",
+                  "Wali Santri",
+                  "No HP Wali",
+                ];
+                const rows = santriList.map((s) => [
+                  s.nis,
+                  s.nama,
+                  s.kelas,
+                  s.halaqoh,
+                  s.capaianJuz,
+                  s.targetJuz,
+                  s.setoranTerakhir,
+                  s.nilaiTerakhir,
+                  s.poinPelanggaran,
+                  s.namaWali || "-",
+                  s.noHpWali || "-",
+                ]);
                 exportToCSV(
-                  "Rekap_Tahfizh_Halaqoh",
-                  ["Nama Santri", "NIS", "Kelas", "Halaqoh", "Capaian Juz", "Target Juz", "Setoran Terakhir", "Nilai Terakhir"],
-                  santriList.map((s) => [s.nama, s.nis, s.kelas, s.halaqoh, s.capaianJuz, s.targetJuz, s.setoranTerakhir, s.nilaiTerakhir])
-                )
-              }
+                  `rekap_tahfizh_halaqoh_${new Date().toISOString().split("T")[0]}`,
+                  headers,
+                  rows
+                );
+              }}
+              leftIcon={<Download className="h-3.5 w-3.5" />}
+              className="text-xs"
             >
               Ekspor CSV
             </Button>
           </div>
 
           <div className="space-y-3 max-h-[620px] overflow-y-auto pr-1">
-            {santriList.map((s) => {
-              const isSelected = s.nis === selectedSantriNis;
-              return (
+            {santriList.map((santri) => (
+              <div
+                key={santri.id}
+                onClick={() => onSelectSantriNis(santri.nis)}
+                className={`cursor-pointer transition-all rounded-3xl ${
+                  selectedSantriNis === santri.nis ? "ring-2 ring-[#0E7C3A] shadow-sm" : ""
+                }`}
+              >
                 <SantriCard
-                  key={s.nis}
-                  nama={s.nama}
-                  nis={s.nis}
-                  kelas={s.kelas}
-                  halaqoh={s.halaqoh}
-                  capaianJuz={s.capaianJuz}
-                  targetJuz={s.targetJuz}
-                  setoranTerakhir={s.setoranTerakhir}
-                  nilaiTerakhir={s.nilaiTerakhir}
-                  poinPelanggaran={s.poinPelanggaran}
-                  bintangKebaikan={s.bintangKebaikan}
-                  highlight={isSelected}
-                  onClick={() => onSelectSantriNis(s.nis)}
+                  nama={santri.nama}
+                  nis={santri.nis}
+                  kelas={santri.kelas}
+                  halaqoh={santri.halaqoh}
+                  capaianJuz={santri.capaianJuz}
+                  targetJuz={santri.targetJuz}
+                  setoranTerakhir={santri.setoranTerakhir}
+                  nilaiTerakhir={santri.nilaiTerakhir}
+                  poinPelanggaran={santri.poinPelanggaran}
+                  bintangKebaikan={santri.bintangKebaikan}
+                  highlight={selectedSantriNis === santri.nis}
+                  onClick={() => onSelectSantriNis(santri.nis)}
                   onShareWA={() => {
                     const msg = buildProgressSantriWAMessage({
-                      santriNama: s.nama,
-                      santriNis: s.nis,
-                      kelas: s.kelas,
-                      halaqoh: s.halaqoh,
-                      namaWali: s.namaWali,
-                      noHpWali: s.noHpWali,
-                      capaianJuz: s.capaianJuz,
-                      targetJuz: s.targetJuz,
-                      setoranTerakhir: s.setoranTerakhir,
-                      nilaiTerakhir: s.nilaiTerakhir,
+                      santriNama: santri.nama,
+                      santriNis: santri.nis,
+                      kelas: santri.kelas,
+                      halaqoh: santri.halaqoh,
+                      namaWali: santri.namaWali,
+                      noHpWali: santri.noHpWali,
+                      capaianJuz: santri.capaianJuz,
+                      targetJuz: santri.targetJuz,
+                      setoranTerakhir: santri.setoranTerakhir,
+                      nilaiTerakhir: santri.nilaiTerakhir,
                       pembinaNama: halaqohName || "Musyrif Tahfizh STQ DUC",
                     });
                     setWaDialog({
                       isOpen: true,
-                      phone: s.noHpWali || "",
-                      recipientName: s.namaWali || `Wali ${s.nama}`,
+                      phone: santri.noHpWali || "",
+                      recipientName: santri.namaWali || `Wali ${santri.nama}`,
                       message: msg,
-                      title: `Kirim Progres Hafalan ${s.nama}`,
-                      description: "Ringkasan capaian juz dan hafalan santri akan dikirim via WhatsApp.",
+                      title: `Kirim Mutaba'ah ke Wali ${santri.nama}`,
+                      description: "Pesan mutaba'ah berkala langsung disiapkan untuk dikirim ke nomor orang tua santri.",
                     });
                   }}
-                  actionButton={
-                    <Button
-                      variant={isSelected ? "primary" : "secondary"}
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectSantriNis(s.nis);
-                      }}
-                      leftIcon={<PlusCircle className="h-3.5 w-3.5" />}
-                    >
-                      {isSelected ? "Sedang Diisi" : "+ Setor"}
-                    </Button>
-                  }
                 />
-              );
-            })}
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Modal Dialog WhatsApp Direct */}
+      {/* WhatsApp Modal Dialog (Universal Multi-Platform) */}
       <WhatsAppDialog
         isOpen={waDialog.isOpen}
         onClose={() => setWaDialog((prev) => ({ ...prev, isOpen: false }))}

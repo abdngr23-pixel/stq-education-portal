@@ -50,10 +50,9 @@ interface LegacySetoranRow {
   NIS: string;
   Jenis: string; // SABAQ, SABQI, MANZIL, MUFAR
   Juz: number;
-  SurahMulai: string;
-  AyatMulai: number;
-  SurahSelesai: string;
-  AyatSelesai: number;
+  HalamanMulai: number;
+  HalamanSelesai: number;
+  JumlahHalaman: number;
   Nilai: string; // MUMTAZ, JAYYID_JIDDAN, JAYYID, MAQBUL, DHOIF
   Catatan?: string;
 }
@@ -214,10 +213,9 @@ export async function migrateLegacyData(options: {
       NIS: 'SAN-2026-001',
       Jenis: 'SABAQ',
       Juz: 4,
-      SurahMulai: "Ali 'Imran",
-      AyatMulai: 1,
-      SurahSelesai: "Ali 'Imran",
-      AyatSelesai: 20,
+      HalamanMulai: 62,
+      HalamanSelesai: 62,
+      JumlahHalaman: 1,
       Nilai: 'MUMTAZ',
       Catatan: 'Makhraj huruf shad dan dha sudah bersih.',
     },
@@ -247,10 +245,9 @@ export async function migrateLegacyData(options: {
         musyrifId: musyrif.id,
         jenis,
         juz: item.Juz,
-        surahMulai: item.SurahMulai,
-        ayatMulai: item.AyatMulai,
-        surahSelesai: item.SurahSelesai,
-        ayatSelesai: item.AyatSelesai,
+        halamanMulai: item.HalamanMulai,
+        halamanSelesai: item.HalamanSelesai,
+        jumlahHalaman: item.JumlahHalaman,
         nilai,
         catatan: item.Catatan,
       },
@@ -260,10 +257,9 @@ export async function migrateLegacyData(options: {
         musyrifId: musyrif.id,
         jenis,
         juz: item.Juz,
-        surahMulai: item.SurahMulai,
-        ayatMulai: item.AyatMulai,
-        surahSelesai: item.SurahSelesai,
-        ayatSelesai: item.AyatSelesai,
+        halamanMulai: item.HalamanMulai,
+        halamanSelesai: item.HalamanSelesai,
+        jumlahHalaman: item.JumlahHalaman,
         nilai,
         catatan: item.Catatan,
         createdAt: new Date(item.Timestamp),

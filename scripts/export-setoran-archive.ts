@@ -67,10 +67,9 @@ async function exportSetoranArchive() {
       'Nama_Musyrif',
       'Jenis_Setoran',
       'Juz',
-      'Surah_Mulai',
-      'Ayat_Mulai',
-      'Surah_Selesai',
-      'Ayat_Selesai',
+      'Halaman_Mulai',
+      'Halaman_Selesai',
+      'Jumlah_Halaman',
       'Nilai',
       'Catatan',
     ];
@@ -87,10 +86,9 @@ async function exportSetoranArchive() {
       `"${(s.musyrif?.nama || '').replace(/"/g, '""')}"`,
       `"${s.jenis}"`,
       s.juz,
-      `"${s.surahMulai}"`,
-      s.ayatMulai,
-      `"${s.surahSelesai}"`,
-      s.ayatSelesai,
+      s.halamanMulai,
+      s.halamanSelesai,
+      s.jumlahHalaman,
       `"${s.nilai}"`,
       `"${(s.catatan || '').replace(/"/g, '""')}"`,
     ]);
@@ -103,7 +101,7 @@ async function exportSetoranArchive() {
   } catch (error) {
     console.warn(`⚠ Tidak dapat terhubung ke database langsung atau tabel kosong:`, error instanceof Error ? error.message : error);
     console.log(`ℹ Membuat template arsip CSV baseline...`);
-    const dummyHeaders = 'ID_Setoran,Kode_Setoran,Tanggal,NIS,Nama_Santri,Kelas,Halaqoh,Kode_Musyrif,Nama_Musyrif,Jenis_Setoran,Juz,Surah_Mulai,Ayat_Mulai,Surah_Selesai,Ayat_Selesai,Nilai,Catatan\n';
+    const dummyHeaders = 'ID_Setoran,Kode_Setoran,Tanggal,NIS,Nama_Santri,Kelas,Halaqoh,Kode_Musyrif,Nama_Musyrif,Jenis_Setoran,Juz,Halaman_Mulai,Halaman_Selesai,Jumlah_Halaman,Nilai,Catatan\n';
     fs.writeFileSync(filePath, dummyHeaders, 'utf-8');
     console.log(`✔ File template arsip dicatat: ${filePath}`);
   } finally {

@@ -97,7 +97,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const { santriId, jenis, juz, surahMulai, ayatMulai, surahSelesai, ayatSelesai, nilai, catatan } = validation.data;
+    const { santriId, jenis, juz, halamanMulai, halamanSelesai, jumlahHalaman, nilai, catatan } = validation.data;
 
     const santri = await prisma.santri.findUnique({ where: { id: santriId } });
     if (!santri) {
@@ -158,10 +158,9 @@ export async function POST(req: Request) {
         musyrifId: musyrifStaff.id,
         jenis: jenis as JenisSetoran,
         juz: parseInt(String(juz)),
-        surahMulai,
-        ayatMulai: parseInt(String(ayatMulai)),
-        surahSelesai,
-        ayatSelesai: parseInt(String(ayatSelesai)),
+        halamanMulai: parseInt(String(halamanMulai)),
+        halamanSelesai: parseInt(String(halamanSelesai)),
+        jumlahHalaman: parseFloat(String(jumlahHalaman)),
         nilai: nilai as NilaiSetoran,
         catatan,
         createdBy: session.username,
@@ -177,7 +176,14 @@ export async function POST(req: Request) {
       action: 'API_CREATE_SETORAN',
       entity: 'SetoranTahfizh',
       entityId: newSetoran.id,
-      details: { setoranCode, santri: santri.nama, juz, nilai },
+      details: {
+        setoranCode,
+        santri: santri.nama,
+        juz,
+        halaman: `${halamanMulai}-${halamanSelesai}`,
+        jumlahHalaman,
+        nilai,
+      },
     });
 
     return NextResponse.json(
