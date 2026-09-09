@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   BookOpen,
   Calendar,
@@ -72,21 +73,23 @@ export default function ProfilPublicPage() {
           <Link href="/profil" className="flex items-center gap-3 group shrink-0">
             <div className="flex items-center gap-2">
               <div className="h-11 w-11 rounded-2xl bg-white p-1 border border-slate-200 shadow-xs flex items-center justify-center">
-                <img
+                <Image
                   src="/logo-yayasan.png"
                   alt="Logo Yayasan Infak Medika Nusantara"
                   width={40}
                   height={40}
                   className="h-full w-full object-contain"
+                  priority
                 />
               </div>
               <div className="h-11 w-11 rounded-2xl bg-white p-1 border border-slate-200 shadow-xs flex items-center justify-center">
-                <img
+                <Image
                   src="/logo.png"
                   alt="Logo STQ Darul Ulum Cendekia"
                   width={40}
                   height={40}
                   className="h-full w-full object-contain"
+                  priority
                 />
               </div>
             </div>
@@ -187,9 +190,11 @@ export default function ProfilPublicPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <div className="p-6 rounded-3xl bg-slate-50 border border-slate-200 space-y-3">
               <div className="h-12 w-12 rounded-2xl bg-white p-1 border border-slate-200 shadow-xs flex items-center justify-center">
-                <img
+                <Image
                   src="/logo-yayasan.png"
                   alt="Logo Yayasan Infak Medika Nusantara"
+                  width={48}
+                  height={48}
                   className="h-full w-full object-contain"
                 />
               </div>
@@ -728,7 +733,7 @@ export default function ProfilPublicPage() {
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
                 <div className="h-11 w-11 rounded-2xl bg-white p-1 shadow-xs shrink-0 flex items-center justify-center">
-                  <img
+                  <Image
                     src="/logo-yayasan.png"
                     alt="Logo Yayasan Infak Medika Nusantara - Alumni FKUH"
                     width={40}
@@ -737,7 +742,7 @@ export default function ProfilPublicPage() {
                   />
                 </div>
                 <div className="h-11 w-11 rounded-2xl bg-white p-1 shadow-xs shrink-0 flex items-center justify-center">
-                  <img
+                  <Image
                     src="/logo.png"
                     alt="Logo STQ Darul Ulum Cendekia"
                     width={40}

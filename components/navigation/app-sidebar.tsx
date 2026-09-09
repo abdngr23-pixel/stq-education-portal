@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   AppNavId,
   NavCategory,
@@ -70,7 +71,7 @@ export function AppSidebar({
           title={`${INSTITUTION_CONFIG.schoolName} — ${INSTITUTION_CONFIG.yayasanName}`}
         >
           <div className="h-10 w-10 rounded-xl bg-white border border-slate-200/80 p-1 flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform">
-            <img
+            <Image
               src="/logo.png"
               alt="Logo DUC"
               width={36}

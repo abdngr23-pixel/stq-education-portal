@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useTransition } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { User as UserIcon, LogOut, LogIn, ChevronDown, ShieldCheck, Check, BookOpen } from "lucide-react";
@@ -78,7 +79,7 @@ export function TopNavbar({
         {/* Brand Logo & Title */}
         <Link href="/" className="flex items-center gap-2 sm:gap-3 group shrink-0">
           <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl sm:rounded-2xl bg-white border border-slate-200/80 p-0.5 sm:p-1 flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform duration-200 shrink-0">
-            <img src="/logo.png" alt={`Logo ${INSTITUTION_CONFIG.schoolName}`} width={40} height={40} className="h-full w-full object-contain" />
+            <Image src="/logo.png" alt={`Logo ${INSTITUTION_CONFIG.schoolName}`} width={40} height={40} className="h-full w-full object-contain" priority />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">

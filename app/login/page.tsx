@@ -2,6 +2,7 @@
 
 import React, { useState, useTransition } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { loginAction, quickDemoLoginAction } from "@/app/actions/auth";
 import { Role, DEMO_ACCOUNTS } from "@/types/auth";
@@ -87,21 +88,23 @@ export default function LoginPage() {
           <Link href="/profil" className="flex items-center gap-3 group">
             <div className="flex items-center gap-2">
               <div className="h-11 w-11 rounded-2xl bg-white p-1 shadow-xs flex items-center justify-center shrink-0">
-                <img
+                <Image
                   src="/logo-yayasan.png"
                   alt="Logo Yayasan Infak Medika Nusantara"
                   width={36}
                   height={36}
                   className="h-full w-full object-contain"
+                  priority
                 />
               </div>
               <div className="h-11 w-11 rounded-2xl bg-white p-1 shadow-xs flex items-center justify-center shrink-0">
-                <img
+                <Image
                   src="/logo.png"
                   alt={`Logo ${INSTITUTION_CONFIG.schoolName}`}
                   width={36}
                   height={36}
                   className="h-full w-full object-contain"
+                  priority
                 />
               </div>
             </div>

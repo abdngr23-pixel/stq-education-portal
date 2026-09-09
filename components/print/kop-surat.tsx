@@ -22,6 +22,7 @@ export function KopSurat({ className, showDivider = true }: KopSuratProps) {
       <div className="flex items-center justify-between gap-3 sm:gap-4">
         {/* 1. Logo Kiri: Yayasan Infak Medika Nusantara - Alumni FKUH */}
         <div className="h-16 w-16 sm:h-20 sm:w-20 shrink-0 flex items-center justify-center">
+          {/* eslint-disable-next-line @next/next/no-img-element -- Diperlukan elemen img murni untuk kompatibilitas cetak browser & PDF export */}
           <img
             src="/logo-yayasan.png"
             alt="Logo Yayasan Infak Medika Nusantara - Alumni FKUH"
@@ -49,6 +50,7 @@ export function KopSurat({ className, showDivider = true }: KopSuratProps) {
 
         {/* 3. Logo Kanan: STQ Darul Ulum Cendekia */}
         <div className="h-16 w-16 sm:h-20 sm:w-20 shrink-0 flex items-center justify-center">
+          {/* eslint-disable-next-line @next/next/no-img-element -- Diperlukan elemen img murni untuk kompatibilitas cetak browser & PDF export */}
           <img
             src="/logo.png"
             alt="Logo STQ Darul Ulum Cendekia"

@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import { AppNavId, ALL_NAV_ITEMS } from "@/types/navigation";
 import { Role, ROLE_LABELS } from "@/types/auth";
 import { INSTITUTION_CONFIG } from "@/lib/institution-config";
@@ -59,7 +60,7 @@ export function AppHeader({
 
         {/* Brand logo di HP */}
         <div className="md:hidden flex items-center gap-2 shrink-0">
-          <img
+          <Image
             src="/logo.png"
             alt="Logo DUC"
             width={28}
