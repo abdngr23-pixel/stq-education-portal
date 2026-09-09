@@ -109,9 +109,21 @@ describe('Aturan Ujian Ikhtibar Tahfizh 2 Tahap', () => {
   });
 
   it('santri yang lulus Tahap 1 dan mendapat nilai Tahap 2 >= 75 dinyatakan Lulus Munaqasyah', () => {
-    const res = validasiIkhtibarTahap2('LULUS_TAHAP_1', 88);
+    const res = validasiIkhtibarTahap2('LULUS_TAHAP_1', 88, 'LULUS');
     assert.equal(res.lulus, true);
     assert.equal(res.status, 'LULUS_SEMPURNA_TAHAP_2');
+  });
+
+  it('santri yang dinilai Mudir mengulang sebagian maqra mendapatkan status MENGULANG_SEBAGIAN', () => {
+    const res = validasiIkhtibarTahap2('LULUS_TAHAP_1', 70, 'MENGULANG_SEBAGIAN');
+    assert.equal(res.lulus, false);
+    assert.equal(res.status, 'MENGULANG_SEBAGIAN');
+  });
+
+  it('santri yang dinilai Mudir mengulang satu juz penuh mendapatkan status MENGULANG_SATU_JUZ', () => {
+    const res = validasiIkhtibarTahap2('LULUS_TAHAP_1', 55, 'MENGULANG_SATU_JUZ');
+    assert.equal(res.lulus, false);
+    assert.equal(res.status, 'MENGULANG_SATU_JUZ');
   });
 });
 

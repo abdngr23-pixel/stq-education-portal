@@ -134,9 +134,12 @@ export function validasiIkhtibarTahap1(
   };
 }
 
+export type HasilTahap2Type = 'LULUS' | 'MENGULANG_SEBAGIAN' | 'MENGULANG_SATU_JUZ';
+
 export function validasiIkhtibarTahap2(
   currentStatus: string,
-  nilaiTahap2: number
+  nilaiTahap2: number,
+  jenisHasil?: HasilTahap2Type
 ): ValidasiIkhtibarResult {
   if (currentStatus !== 'LULUS_TAHAP_1') {
     return {
@@ -156,7 +159,8 @@ export function validasiIkhtibarTahap2(
     };
   }
 
-  if (nilaiTahap2 >= MIN_NILAI_IKHTIBAR) {
+  // Jika Mudir menentukan eksplisit jenis hasil ujian
+  if (jenisHasil === 'LULUS' || (!jenisHasil && nilaiTahap2 >= MIN_NILAI_IKHTIBAR)) {
     return {
       lulus: true,
       status: 'LULUS_SEMPURNA_TAHAP_2',
@@ -164,9 +168,29 @@ export function validasiIkhtibarTahap2(
     };
   }
 
+  if (jenisHasil === 'MENGULANG_SEBAGIAN') {
+    return {
+      lulus: false,
+      status: 'MENGULANG_SEBAGIAN',
+      pesan: `Hasil Ujian Tahap II: Santri diminta mengulang sebagian maqra/halaman pada Juz tersebut.`,
+    };
+  }
+
+  if (jenisHasil === 'MENGULANG_SATU_JUZ') {
+    return {
+      lulus: false,
+      status: 'MENGULANG_SATU_JUZ',
+      pesan: `Hasil Ujian Tahap II: Santri diminta mengulang satu juz penuh sebelum mendaftar ikhtibar kembali.`,
+    };
+  }
+
+  // Fallback proporsional jika belum mencapai 75 dan tidak ditentukan spesifik
+  const autoStatus = nilaiTahap2 >= 60 ? 'MENGULANG_SEBAGIAN' : 'MENGULANG_SATU_JUZ';
   return {
     lulus: false,
-    status: 'MENGULANG',
-    pesan: `Nilai (${nilaiTahap2}) di bawah standar kelulusan (${MIN_NILAI_IKHTIBAR}). Santri diminta mengulang Ujian Tahap 2.`,
+    status: autoStatus,
+    pesan: `Nilai (${nilaiTahap2}) di bawah standar kelulusan (${MIN_NILAI_IKHTIBAR}). Keputusan: ${
+      autoStatus === 'MENGULANG_SEBAGIAN' ? 'Mengulang Sebagian Maqra' : 'Mengulang Satu Juz Penuh'
+    }.`,
   };
 }

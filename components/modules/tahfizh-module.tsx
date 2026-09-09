@@ -439,6 +439,7 @@ export function TahfizhModule({
 
   const [inputNilaiIkhtibar, setInputNilaiIkhtibar] = useState("");
   const [inputCatatanIkhtibar, setInputCatatanIkhtibar] = useState("");
+  const [inputHasilTahap2, setInputHasilTahap2] = useState<"LULUS" | "MENGULANG_SEBAGIAN" | "MENGULANG_SATU_JUZ">("LULUS");
 
   const handleAjukanIkhtibar = () => {
     const target = santriList.find((s) => s.nis === ajukanSantriNis);
@@ -497,9 +498,15 @@ export function TahfizhModule({
       tahap: item.tahap,
       penguji: item.penguji,
     });
-    // Tahap 7: Bersihkan dan muat nilai spesifik peserta tersebut, JANGAN membawa isian kandidat lain
     setInputNilaiIkhtibar(item.nilai !== null ? String(item.nilai) : "");
     setInputCatatanIkhtibar(item.catatan || "");
+    setInputHasilTahap2(
+      item.status === "MENGULANG_SEBAGIAN"
+        ? "MENGULANG_SEBAGIAN"
+        : item.status === "MENGULANG_SATU_JUZ"
+        ? "MENGULANG_SATU_JUZ"
+        : "LULUS"
+    );
   };
 
   const handleSimpanNilaiIkhtibar = () => {
@@ -509,7 +516,7 @@ export function TahfizhModule({
       return;
     }
     const numNilai = parseFloat(inputNilaiIkhtibar) || 0;
-    const isLulus = numNilai >= 75;
+    const isLulusTahap1 = numNilai >= 75;
 
     startTransition(async () => {
       let res;
@@ -518,34 +525,37 @@ export function TahfizhModule({
           ikhtibarId: gradingUjian.id,
           nilai: numNilai,
           catatan: inputCatatanIkhtibar,
-          lulus: isLulus,
+          lulus: isLulusTahap1,
         });
       } else {
         res = await inputHasilTahap2Action({
           ikhtibarId: gradingUjian.id,
           nilai: numNilai,
           catatan: inputCatatanIkhtibar,
-          lulus: isLulus,
+          lulus: inputHasilTahap2 === "LULUS",
+          hasilTahap2: inputHasilTahap2,
         });
       }
 
       if (res.success) {
+        const resultLabel = gradingUjian.tahap === 1
+          ? (isLulusTahap1 ? "LULUS TAHAP 1" : "MENGULANG")
+          : (inputHasilTahap2 === "LULUS" ? "LULUS SEMPURNA" : inputHasilTahap2 === "MENGULANG_SEBAGIAN" ? "MENGULANG SEBAGIAN" : "MENGULANG 1 JUZ");
+
         setFeedback({
           type: "success",
-          message: `Nilai ujian Juz ${gradingUjian.juz} untuk ${gradingUjian.santriNama} berhasil disimpan (${isLulus ? "LULUS" : "MENGULANG"}).`,
+          message: `Nilai ujian Juz ${gradingUjian.juz} untuk ${gradingUjian.santriNama} berhasil disimpan (${resultLabel}).`,
         });
         setIkhtibarList((prev) =>
           prev.map((item) =>
             item.id === gradingUjian.id
               ? {
                   ...item,
-                  status: isLulus
-                    ? gradingUjian.tahap === 1
-                      ? "LULUS_TAHAP_1"
-                      : "LULUS_SEMPURNA_TAHAP_2"
-                    : "MENGULANG",
-                  tahap: isLulus && gradingUjian.tahap === 1 ? 2 : gradingUjian.tahap,
-                  penguji: isLulus && gradingUjian.tahap === 1 ? "Mudir Pesantren (KS)" : item.penguji,
+                  status: gradingUjian.tahap === 1
+                    ? (isLulusTahap1 ? "LULUS_TAHAP_1" : "MENGULANG")
+                    : (inputHasilTahap2 === "LULUS" ? "LULUS_SEMPURNA_TAHAP_2" : inputHasilTahap2),
+                  tahap: isLulusTahap1 && gradingUjian.tahap === 1 ? 2 : gradingUjian.tahap,
+                  penguji: isLulusTahap1 && gradingUjian.tahap === 1 ? "Mudir Pesantren (KS)" : item.penguji,
                   nilai: numNilai,
                   catatan: inputCatatanIkhtibar,
                 }
@@ -1121,13 +1131,19 @@ export function TahfizhModule({
                               variant={
                                 item.status === "LULUS_TAHAP_1"
                                   ? "gold"
-                                  : item.status === "MENGULANG"
+                                  : item.status === "MENGULANG_SEBAGIAN"
+                                  ? "gold"
+                                  : item.status === "MENGULANG_SATU_JUZ" || item.status === "MENGULANG"
                                   ? "orange"
                                   : "sky"
                               }
                               size="sm"
                             >
-                              {item.status.replace(/_/g, " ")}
+                              {item.status === "MENGULANG_SEBAGIAN"
+                                ? "MENGULANG SEBAGIAN"
+                                : item.status === "MENGULANG_SATU_JUZ"
+                                ? "MENGULANG 1 JUZ"
+                                : item.status.replace(/_/g, " ")}
                             </Badge>
                           </td>
                           <td className="px-3 py-3 text-center font-bold text-slate-800">
@@ -1366,10 +1382,77 @@ export function TahfizhModule({
                   min={0}
                   max={100}
                   value={inputNilaiIkhtibar}
-                  onChange={(e) => setInputNilaiIkhtibar(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setInputNilaiIkhtibar(val);
+                    const n = parseFloat(val);
+                    if (!isNaN(n) && gradingUjian.tahap === 2) {
+                      if (n >= 75) setInputHasilTahap2("LULUS");
+                      else if (n >= 60) setInputHasilTahap2("MENGULANG_SEBAGIAN");
+                      else setInputHasilTahap2("MENGULANG_SATU_JUZ");
+                    }
+                  }}
                   className="min-h-[44px] text-base font-bold"
                 />
               </div>
+
+              {/* Khusus Tahap 2 (Mudir): 3 Pilihan Keputusan Resmi Kurikulum STQ */}
+              {gradingUjian.tahap === 2 && (
+                <div className="space-y-2 p-3 bg-slate-50/80 rounded-2xl border border-slate-200">
+                  <label className="text-xs font-bold text-slate-800 block">
+                    Keputusan Munaqasyah Mudir Pesantren:
+                  </label>
+                  <div className="space-y-1.5">
+                    <label className={`flex items-start gap-2.5 p-2 rounded-xl border cursor-pointer text-xs transition-all ${
+                      inputHasilTahap2 === "LULUS" ? "bg-emerald-50 border-emerald-300 font-bold text-emerald-900" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                    }`}>
+                      <input
+                        type="radio"
+                        name="hasilTahap2"
+                        checked={inputHasilTahap2 === "LULUS"}
+                        onChange={() => setInputHasilTahap2("LULUS")}
+                        className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <div>
+                        <span className="block">✅ Lulus Sempurna (Sah Munaqasyah Tuntas)</span>
+                        <span className="block text-[11px] font-normal text-slate-500">Santri disahkan tuntas Juz {gradingUjian.juz} oleh Mudir STQ</span>
+                      </div>
+                    </label>
+
+                    <label className={`flex items-start gap-2.5 p-2 rounded-xl border cursor-pointer text-xs transition-all ${
+                      inputHasilTahap2 === "MENGULANG_SEBAGIAN" ? "bg-amber-50 border-amber-300 font-bold text-amber-900" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                    }`}>
+                      <input
+                        type="radio"
+                        name="hasilTahap2"
+                        checked={inputHasilTahap2 === "MENGULANG_SEBAGIAN"}
+                        onChange={() => setInputHasilTahap2("MENGULANG_SEBAGIAN")}
+                        className="mt-0.5 text-amber-600 focus:ring-amber-500"
+                      />
+                      <div>
+                        <span className="block">⚠️ Mengulang Sebagian (Maqra'/Halaman Tertentu)</span>
+                        <span className="block text-[11px] font-normal text-slate-500">Beberapa halaman perlu pemantapan tajwid/kelancaran</span>
+                      </div>
+                    </label>
+
+                    <label className={`flex items-start gap-2.5 p-2 rounded-xl border cursor-pointer text-xs transition-all ${
+                      inputHasilTahap2 === "MENGULANG_SATU_JUZ" ? "bg-red-50 border-red-300 font-bold text-red-900" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                    }`}>
+                      <input
+                        type="radio"
+                        name="hasilTahap2"
+                        checked={inputHasilTahap2 === "MENGULANG_SATU_JUZ"}
+                        onChange={() => setInputHasilTahap2("MENGULANG_SATU_JUZ")}
+                        className="mt-0.5 text-red-600 focus:ring-red-500"
+                      />
+                      <div>
+                        <span className="block">🔄 Mengulang Satu Juz Penuh</span>
+                        <span className="block text-[11px] font-normal text-slate-500">Memerlukan murojaah dan tasmi' ulang satu juz secara keseluruhan</span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">

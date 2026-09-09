@@ -151,7 +151,9 @@ enum StatusIkhtibar {
   PENGAJUAN
   LULUS_TAHAP_1
   LULUS_SEMPURNA_TAHAP_2
-  MENGULANG
+  MENGULANG_SEBAGIAN      // Hasil Ujian Tahap II: Mengulang sebagian maqra/halaman
+  MENGULANG_SATU_JUZ      // Hasil Ujian Tahap II: Mengulang satu juz penuh
+  MENGULANG               // Legacy / Tahap 1 belum lulus
 }
 
 enum StatusKesehatan {
