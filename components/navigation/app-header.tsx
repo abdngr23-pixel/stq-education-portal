@@ -110,9 +110,13 @@ export function AppHeader({
           >
             {roleInfo.title}
           </Badge>
-          <span className="text-xs font-bold text-slate-700 hidden sm:inline max-w-[140px] truncate">
-            {userName.split(" ")[0]}
-          </span>
+          {userName && !userName.startsWith("Memuat") ? (
+            <span className="text-xs font-bold text-slate-700 hidden sm:inline max-w-[140px] truncate">
+              {userName.split(" ")[0]}
+            </span>
+          ) : (
+            <span className="inline-block h-3.5 w-16 bg-slate-200 animate-pulse rounded hidden sm:inline" />
+          )}
         </div>
 
         {/* Tombol Logout Ramping */}

@@ -84,8 +84,13 @@ export function BerandaModule({
             <Sparkles className="h-3.5 w-3.5 text-[#C9990E]" />
             <span>Portal Pendidikan Pesantren STQ DUC</span>
           </div>
-          <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight font-heading text-white">
-            Assalamu&apos;alaikum, {userName.split(" ")[0]}
+          <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight font-heading text-white flex items-center gap-2 flex-wrap min-h-[36px]">
+            <span>Assalamu&apos;alaikum</span>
+            {userName && !userName.startsWith("Memuat") ? (
+              <span>, {userName.split(" ")[0]}</span>
+            ) : (
+              <span className="inline-block h-7 w-28 bg-white/20 animate-pulse rounded-lg align-middle" />
+            )}
           </h2>
           <p className="text-xs sm:text-sm text-emerald-100 leading-relaxed">
             Anda masuk sebagai <strong>{roleInfo.title}</strong> di{" "}

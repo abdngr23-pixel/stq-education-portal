@@ -394,13 +394,17 @@ export async function getCurrentUserAction(): Promise<{
     let halaqohName = session.halaqohName || null;
     let displayName = session.name || null;
 
-    // Ambil data relasi riil dari PostgreSQL via Prisma jika tersedia
+    // Ambil data relasi riil dari PostgreSQL via Prisma jika tersedia (dengan batas waktu 2 detik)
     try {
       if (session.staffId) {
-        const staff = await prisma.staff.findUnique({
+        const dbStaffPromise = prisma.staff.findUnique({
           where: { id: session.staffId },
           include: { halaqohDipimpin: true },
         });
+        const timeoutPromise = new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error("DB_TIMEOUT")), 2000)
+        );
+        const staff = await Promise.race([dbStaffPromise, timeoutPromise]);
         if (staff) {
           if (!displayName) displayName = staff.nama;
           if (staff.halaqohDipimpin && staff.halaqohDipimpin.length > 0) {
@@ -408,17 +412,21 @@ export async function getCurrentUserAction(): Promise<{
           }
         }
       } else if (session.santriId) {
-        const santri = await prisma.santri.findUnique({
+        const dbSantriPromise = prisma.santri.findUnique({
           where: { id: session.santriId },
           include: { halaqoh: true },
         });
+        const timeoutPromise = new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error("DB_TIMEOUT")), 2000)
+        );
+        const santri = await Promise.race([dbSantriPromise, timeoutPromise]);
         if (santri) {
           if (!displayName) displayName = santri.nama;
           if (santri.halaqoh) halaqohName = santri.halaqoh.nama;
         }
       }
     } catch {
-      // Abaikan galat Prisma jika berjalan di lingkungan memori pengujian
+      // Abaikan galat Prisma jika berjalan di lingkungan memori pengujian atau database timeout
     }
 
     if (!displayName) {
@@ -451,5 +459,12 @@ export async function getCurrentUserAction(): Promise<{
 export async function logoutAction() {
   const cookieStore = await cookies();
   cookieStore.delete(SESSION_COOKIE_NAME);
+  cookieStore.set(SESSION_COOKIE_NAME, "", {
+    httpOnly: true,
+    secure: isProductionEnv(),
+    sameSite: "lax",
+    maxAge: 0,
+    path: "/",
+  });
   return { success: true };
 }

@@ -72,27 +72,35 @@ export async function getCurrentSession(): Promise<UserSession | null> {
     const payload = await verifySessionToken(token);
     if (!payload) return null;
 
-    // Tolak token demo di lingkungan produksi
-    if (process.env.NODE_ENV === "production" && payload.sub && payload.sub.startsWith("user_")) {
+    // Tolak token demo tanpa autentikasi di mode produksi jika demo dinonaktifkan
+    if (
+      process.env.NODE_ENV === "production" &&
+      process.env.NEXT_PUBLIC_ENABLE_DEMO !== "true" &&
+      payload.sub &&
+      payload.sub.startsWith("user_demo_")
+    ) {
       return null;
     }
 
-    // Verifikasi status akun aktif di DB untuk akun non-memory
+    // Verifikasi status akun aktif di DB untuk akun non-memory dengan batas waktu 2 detik
     if (payload.sub && !payload.sub.startsWith("user_")) {
       try {
-        const user = await prisma.user.findUnique({
+        const dbPromise = prisma.user.findUnique({
           where: { id: payload.sub },
           select: { id: true, status: true, role: true },
         });
+        const timeoutPromise = new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error("DB_TIMEOUT")), 2000)
+        );
+        const user = await Promise.race([dbPromise, timeoutPromise]);
 
-        // Jika user tidak ditemukan, akun dinonaktifkan, atau role diubah -> batalkan sesi
-        if (!user || user.status !== "AKTIF" || user.role !== payload.role) {
+        // Jika user ditemukan dan statusnya nonaktif atau role berubah -> batalkan sesi
+        if (user && (user.status !== "AKTIF" || user.role !== payload.role)) {
           return null;
         }
-      } catch {
-        if (process.env.NODE_ENV === "production") {
-          return null;
-        }
+      } catch (dbErr) {
+        // Jika database offline atau timeout, pertahankan sesi berdasarkan integritas kriptografis token JWT
+        console.warn("Verifikasi status DB sesi pengguna dilewati karena timeout/offline:", dbErr);
       }
     }
 

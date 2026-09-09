@@ -35,7 +35,7 @@ export async function POST(req: Request) {
       include: { staff: true; santri: true };
     }> | null = null;
     try {
-      user = await prisma.user.findFirst({
+      const dbPromise = prisma.user.findFirst({
         where: {
           OR: [
             { username: identifier },
@@ -48,6 +48,10 @@ export async function POST(req: Request) {
           santri: true,
         },
       });
+      const timeoutPromise = new Promise<null>((_, reject) =>
+        setTimeout(() => reject(new Error("DB_OFFLINE_TIMEOUT")), 2000)
+      );
+      user = await Promise.race([dbPromise, timeoutPromise]);
     } catch {
       // Database offline fallback
     }
@@ -126,6 +130,8 @@ export async function POST(req: Request) {
         (acc) =>
           acc.username.toLowerCase() === q ||
           acc.email.toLowerCase() === q ||
+          (acc.role === "KS" && (q === "mudir.ks" || q === "mudir")) ||
+          (acc.role === "ADM" && (q === "aminah.adm" || q === "admin")) ||
           (acc.role === "MT" && (q === "razan.mt" || q === "musyrif.tahfizh")) ||
           (acc.role === "PH" && (q === "kamal.ph" || q === "pembina.halaqoh"))
       ) ||
@@ -133,7 +139,9 @@ export async function POST(req: Request) {
         (acc) =>
           acc.username.toLowerCase() === q ||
           acc.email.toLowerCase() === q ||
-          acc.staffCode.toLowerCase() === q
+          acc.staffCode.toLowerCase() === q ||
+          (acc.role === "KS" && (q === "mudir.ks" || q === "mudir")) ||
+          (acc.role === "ADM" && (q === "aminah.adm" || q === "admin"))
       );
 
     if (matchedAccount) {
@@ -146,7 +154,7 @@ export async function POST(req: Request) {
           santriId: matchedAccount.role === 'ST' ? 'san_0001' : undefined,
         });
 
-        return NextResponse.json(
+        const res = NextResponse.json(
           {
             success: true,
             message: 'Login berhasil (Katalog Akun Resmi Non-Produksi).',
@@ -163,6 +171,14 @@ export async function POST(req: Request) {
           },
           { status: 200 }
         );
+        res.cookies.set("stq_session_token", token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production" && process.env.NEXT_PUBLIC_ENABLE_DEMO !== "true",
+          sameSite: "lax",
+          maxAge: 7 * 24 * 60 * 60,
+          path: "/",
+        });
+        return res;
       } else {
         return NextResponse.json(
           {

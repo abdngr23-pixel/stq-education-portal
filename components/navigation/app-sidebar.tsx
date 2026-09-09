@@ -178,7 +178,11 @@ export function AppSidebar({
           {!isCollapsed && (
             <div className="min-w-0 flex-1">
               <p className="text-xs font-bold text-slate-800 truncate">
-                {userName}
+                {userName && !userName.startsWith("Memuat") ? (
+                  userName
+                ) : (
+                  <span className="inline-block h-3.5 w-24 bg-slate-200 animate-pulse rounded" />
+                )}
               </p>
               <p className="text-[11px] text-slate-500 truncate">
                 Role: {userRole}

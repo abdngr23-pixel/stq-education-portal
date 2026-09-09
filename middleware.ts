@@ -148,9 +148,16 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Jika sudah login dan membuka halaman /login, alihkan ke dashboard /
-  if (pathname === "/login" && sessionPayload) {
-    return NextResponse.redirect(new URL("/", request.url));
+  // Jika sudah login dan membuka halaman /login, alihkan ke dashboard / (kecuali ada instruksi logout/session_required)
+  if (pathname === "/login") {
+    if (search.includes("session_required") || search.includes("logout") || search.includes("msg=")) {
+      const response = NextResponse.next();
+      response.cookies.delete(SESSION_COOKIE_NAME);
+      return response;
+    }
+    if (sessionPayload) {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
   }
 
   // Jika membuka root dashboard / tanpa sesi yang sah, alihkan ke /login

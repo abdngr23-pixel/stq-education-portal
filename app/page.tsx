@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useTransition, useMemo } from "react";
+import React, { useState, useEffect, useTransition, useMemo, useRef } from "react";
 import { AppSidebar } from "@/components/navigation/app-sidebar";
 import { AppHeader } from "@/components/navigation/app-header";
 import { MobileBottomNav } from "@/components/navigation/mobile-bottom-nav";
@@ -13,10 +13,9 @@ import {
 } from "@/types/navigation";
 import {
   Role,
-  DEMO_ACCOUNTS,
   getHalaqohByStaff,
 } from "@/types/auth";
-import { getCurrentUserAction } from "@/app/actions/auth";
+import { getCurrentUserAction, logoutAction } from "@/app/actions/auth";
 import { getSantriListAction } from "@/app/actions/santri";
 import { getHalaqohListAction } from "@/app/actions/halaqoh";
 import { getDaftarKesehatanAction } from "@/app/actions/kesehatan";
@@ -98,7 +97,7 @@ const INITIAL_AUDIT_LOGS: AuditLogItem[] = [
 export default function Home() {
   const [isSessionLoading, setIsSessionLoading] = useState<boolean>(true);
   const [selectedRole, setSelectedRole] = useState<Role>("MT");
-  const [currentUserName, setCurrentUserName] = useState<string>("Memuat profil...");
+  const [currentUserName, setCurrentUserName] = useState<string>("");
   const [activeStaffKey, setActiveStaffKey] = useState<string>("");
   const [serverHalaqohName, setServerHalaqohName] = useState<string | null>(null);
   const [selectedSantriForPrint, setSelectedSantriForPrint] = useState<DashboardSantriSummary | null>(null);
@@ -357,22 +356,33 @@ export default function Home() {
     }
   };
 
+  // Ref stabil untuk selectedRole agar tidak memicu re-render / re-fetch pada popstate listener
+  const selectedRoleRef = useRef<Role>(selectedRole);
+  useEffect(() => {
+    selectedRoleRef.current = selectedRole;
+  }, [selectedRole]);
+
   // -------------------------------------------------------------
-  // SYNC DENGAN SESI SERVER RESMI (Eliminasi parameter URL role)
+  // SYNC DENGAN SESI SERVER RESMI (Hanya dieksekusi 1x saat mount)
   // -------------------------------------------------------------
   useEffect(() => {
+    let isMounted = true;
+
     const initApp = async () => {
       try {
         const session = await getCurrentUserAction();
+        if (!isMounted) return;
+
         if (!session) {
+          // Jangan matikan state loading agar dashboard tidak sempat berkedip sebelum browser berpindah halaman
           if (typeof window !== "undefined") {
-            window.location.href = "/login?msg=session_required";
+            window.location.replace("/login?msg=session_required");
           }
           return;
         }
 
         setSelectedRole(session.role);
-        setCurrentUserName(session.name);
+        setCurrentUserName(session.name || "");
         if (session.username) setActiveStaffKey(session.username);
         if (session.halaqohName) setServerHalaqohName(session.halaqohName);
 
@@ -399,7 +409,7 @@ export default function Home() {
         // Sinkronisasi data server sekunder (halaqoh, santri, rekam medis)
         try {
           const hlqRes = await getHalaqohListAction();
-          if (hlqRes.success && hlqRes.data && hlqRes.data.length > 0) {
+          if (isMounted && hlqRes.success && hlqRes.data && hlqRes.data.length > 0) {
             setDynamicHalaqohList(
               hlqRes.data.map((h) => ({
                 id: h.id,
@@ -414,7 +424,7 @@ export default function Home() {
 
         try {
           const kesRes = await getDaftarKesehatanAction();
-          if (kesRes.success && kesRes.data && Array.isArray(kesRes.data)) {
+          if (isMounted && kesRes.success && kesRes.data && Array.isArray(kesRes.data)) {
             const activePatients = kesRes.data.filter(
               (k: { status: string }) => k.status === "RAWAT_PONDOK" || k.status === "DIRUJUK_PUSKESMAS" || k.status === "DIRUJUK_RS"
             );
@@ -424,16 +434,30 @@ export default function Home() {
           // ignore
         }
 
-        await fetchSantriData();
+        if (isMounted) {
+          await fetchSantriData();
+        }
+
+        if (isMounted) {
+          setIsSessionLoading(false);
+        }
       } catch (err) {
         console.error("Gagal menginisialisasi sesi:", err);
-      } finally {
-        setIsSessionLoading(false);
+        if (isMounted) {
+          setIsSessionLoading(false);
+        }
       }
     };
 
     void initApp();
 
+    return () => {
+      isMounted = false;
+    };
+  }, []); // Run strictly once on mount
+
+  // Listener navigasi popstate browser (Back/Forward) secara terpisah
+  useEffect(() => {
     const handlePopState = () => {
       if (typeof window === "undefined") return;
       const p = new URLSearchParams(window.location.search);
@@ -443,7 +467,7 @@ export default function Home() {
       // Validasi izin akses tab pada navigasi browser Back / Forward
       if (t) {
         const normalized = normalizeNavTab(t);
-        if (isNavPermitted(normalized, selectedRole)) {
+        if (isNavPermitted(normalized, selectedRoleRef.current)) {
           setActiveTab(normalized);
         } else {
           setActiveTab("beranda");
@@ -454,7 +478,7 @@ export default function Home() {
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [selectedRole]);
+  }, []);
 
   // Sync state back to URL secara aman (TIDAK PERNAH menulis role ke URL)
   useEffect(() => {
@@ -527,12 +551,17 @@ export default function Home() {
   // Logout Handler
   const handleLogout = async () => {
     try {
+      await logoutAction();
+    } catch (e) {
+      console.error("Gagal memanggil logoutAction:", e);
+    }
+    try {
       await fetch("/api/v1/auth/logout", { method: "POST" });
     } catch {
       // ignore
     }
     if (typeof window !== "undefined") {
-      window.location.href = "/login";
+      window.location.replace("/login");
     }
   };
 
