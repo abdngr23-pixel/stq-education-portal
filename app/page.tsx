@@ -187,7 +187,7 @@ export default function Home() {
   // -------------------------------------------------------------
   // PERIZINAN, DISIPLIN, AGENDA, USERS, AUDIT, KOTAK SARAN
   // -------------------------------------------------------------
-  const [izinList, setIzinList] = useState<IzinItem[]>([
+  const [izinList] = useState<IzinItem[]>([
     {
       id: "iz_1",
       kodeIzin: "IZN-000001",
@@ -214,7 +214,7 @@ export default function Home() {
     },
   ]);
 
-  const [pelanggaranHistory, setPelanggaranHistory] = useState<PelanggaranRecord[]>([
+  const [pelanggaranHistory] = useState<PelanggaranRecord[]>([
     {
       id: "p_1",
       kode: "PLG-000001",
@@ -237,7 +237,7 @@ export default function Home() {
     },
   ]);
 
-  const [spList, setSpList] = useState<SPRecord[]>([
+  const [spList] = useState<SPRecord[]>([
     {
       id: "sp_1",
       nomorSP: "001/SP-1/DUC/2026",

@@ -1430,7 +1430,7 @@ export function TahfizhModule({
                         className="mt-0.5 text-amber-600 focus:ring-amber-500"
                       />
                       <div>
-                        <span className="block">⚠️ Mengulang Sebagian (Maqra'/Halaman Tertentu)</span>
+                        <span className="block">⚠️ Mengulang Sebagian (Maqra&apos;/Halaman Tertentu)</span>
                         <span className="block text-[11px] font-normal text-slate-500">Beberapa halaman perlu pemantapan tajwid/kelancaran</span>
                       </div>
                     </label>
@@ -1447,7 +1447,7 @@ export function TahfizhModule({
                       />
                       <div>
                         <span className="block">🔄 Mengulang Satu Juz Penuh</span>
-                        <span className="block text-[11px] font-normal text-slate-500">Memerlukan murojaah dan tasmi' ulang satu juz secara keseluruhan</span>
+                        <span className="block text-[11px] font-normal text-slate-500">Memerlukan murojaah dan tasmi&apos; ulang satu juz secara keseluruhan</span>
                       </div>
                     </label>
                   </div>
