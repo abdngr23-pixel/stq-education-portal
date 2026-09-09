@@ -173,4 +173,77 @@ describe("Aturan Konversi & Laporan Bulanan (Roadmap v2)", () => {
       assert.match(res.ringkasanTeks, /Belum melaksanakan/);
     });
   });
+
+  describe("6. Master Halaqoh & Distribusi 57 Santri Riil DUC", () => {
+    // Import helper
+    const {
+      generateLaporanBulananMock,
+      MASTER_HALAQOH_LIST,
+      MASTER_SANTRI_57,
+    } = require("../lib/laporan-bulanan");
+
+    it("harus memiliki 6 master halaqoh resmi STQ DUC", () => {
+      assert.equal(MASTER_HALAQOH_LIST.length, 6);
+      assert.equal(MASTER_HALAQOH_LIST[0].id, "HLQ-0001");
+      assert.equal(MASTER_HALAQOH_LIST[1].id, "HLQ-0002");
+      assert.equal(MASTER_HALAQOH_LIST[2].id, "HLQ-0003");
+      assert.equal(MASTER_HALAQOH_LIST[3].id, "HLQ-0004");
+      assert.equal(MASTER_HALAQOH_LIST[4].id, "HLQ-0005");
+      assert.equal(MASTER_HALAQOH_LIST[5].id, "HLQ-0006");
+    });
+
+    it("harus memiliki tepat 57 santri pada master database", () => {
+      assert.equal(MASTER_SANTRI_57.length, 57);
+    });
+
+    it("harus mengembalikan seluruh 57 santri ketika halaqohId = 'ALL'", () => {
+      const allReport = generateLaporanBulananMock("ALL", 9, "2026/2027");
+      assert.equal(allReport.halaqoh.id, "ALL");
+      assert.match(allReport.halaqoh.nama, /Semua Halaqoh/);
+      assert.equal(allReport.rekapSantri.length, 57);
+    });
+
+    it("harus memfilter santri secara akurat per-halaqoh saat dipilih", () => {
+      // HLQ-0001: Ust. Razan Mufli (5 santri)
+      const razan = generateLaporanBulananMock("HLQ-0001", 9, "2026/2027");
+      assert.equal(razan.rekapSantri.length, 5);
+      assert.equal(razan.rekapSantri[0].santri.nis, "SAN-0001");
+      assert.equal(razan.rekapSantri[1].santri.nis, "SAN-0002");
+
+      // HLQ-0002: Ust. Kamal (9 santri)
+      const kamal = generateLaporanBulananMock("HLQ-0002", 9, "2026/2027");
+      assert.equal(kamal.rekapSantri.length, 9);
+      assert.equal(kamal.rekapSantri[0].santri.nis, "SAN-0006");
+
+      // HLQ-0003: Ust. Rizaldi (10 santri)
+      const rizaldi = generateLaporanBulananMock("HLQ-0003", 9, "2026/2027");
+      assert.equal(rizaldi.rekapSantri.length, 10);
+      assert.equal(rizaldi.rekapSantri[0].santri.nis, "SAN-0015");
+
+      // HLQ-0004: Ust. Abi Hudzaifah (10 santri)
+      const hudzaifah = generateLaporanBulananMock("HLQ-0004", 9, "2026/2027");
+      assert.equal(hudzaifah.rekapSantri.length, 10);
+      assert.equal(hudzaifah.rekapSantri[0].santri.nis, "SAN-0025");
+
+      // HLQ-0005: Ust. Alwan (13 santri)
+      const alwan = generateLaporanBulananMock("HLQ-0005", 9, "2026/2027");
+      assert.equal(alwan.rekapSantri.length, 13);
+      assert.equal(alwan.rekapSantri[0].santri.nis, "SAN-0035");
+
+      // HLQ-0006: Ustadzah Lisa Dwina Fitri (10 santri)
+      const lisa = generateLaporanBulananMock("HLQ-0006", 9, "2026/2027");
+      assert.equal(lisa.rekapSantri.length, 10);
+      assert.equal(lisa.rekapSantri[0].santri.nis, "SAN-0048");
+
+      // Total kumulatif harus tepat 57 santri
+      const total =
+        razan.rekapSantri.length +
+        kamal.rekapSantri.length +
+        rizaldi.rekapSantri.length +
+        hudzaifah.rekapSantri.length +
+        alwan.rekapSantri.length +
+        lisa.rekapSantri.length;
+      assert.equal(total, 57);
+    });
+  });
 });

@@ -1167,6 +1167,7 @@ export function TahfizhModule({
         <RekapLaporanBulanan
           halaqohList={halaqohList}
           userRole={userRole}
+          currentHalaqohName={currentHalaqohName}
           onPrintPreview={onPrintPreview}
         />
       )}

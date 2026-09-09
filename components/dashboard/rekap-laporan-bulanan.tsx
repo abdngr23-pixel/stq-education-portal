@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useTransition } from "react";
+import React, { useState, useEffect, useTransition, useMemo, useRef } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,7 @@ import {
   TrendingUp,
   PlusCircle,
   ChevronRight,
+  Lock,
 } from "lucide-react";
 import { exportToCSV } from "@/lib/export-csv";
 import {
@@ -27,6 +28,10 @@ import {
   type LaporanBulananData,
   type RekapSantriBulananItem,
 } from "@/app/actions/laporan-bulanan";
+import {
+  generateLaporanBulananMock,
+  MASTER_HALAQOH_LIST,
+} from "@/lib/laporan-bulanan";
 import { KategoriCapaian, NilaiSetoran, JenisUjiHafalan } from "@prisma/client";
 
 const BULAN_NAMES = [
@@ -48,6 +53,7 @@ export interface RekapLaporanBulananProps {
   halaqohList?: Array<{ id: string; nama: string }>;
   initialHalaqohId?: string;
   userRole?: string;
+  currentHalaqohName?: string | null;
   onPrintPreview?: (data: LaporanBulananData) => void;
 }
 
@@ -55,11 +61,55 @@ export function RekapLaporanBulanan({
   halaqohList = [],
   initialHalaqohId,
   userRole = "MT",
+  currentHalaqohName,
   onPrintPreview,
 }: RekapLaporanBulananProps) {
-  const [selectedHalaqohId, setSelectedHalaqohId] = useState<string>(
-    initialHalaqohId || (halaqohList[0]?.id ?? "")
-  );
+  const isMusyrifOrPembina = userRole === "MT" || userRole === "PH";
+  const isManagerial = ["KS", "ADM", "YAY"].includes(userRole);
+
+  // Resolusi halaqoh binaan staf untuk role MT / PH (ABAC Enforced)
+  const resolvedHalaqoh = useMemo(() => {
+    if (initialHalaqohId && initialHalaqohId !== "ALL") {
+      const match = MASTER_HALAQOH_LIST.find(
+        (h) => h.id === initialHalaqohId || h.code === initialHalaqohId
+      );
+      if (match) return match;
+    }
+    if (currentHalaqohName) {
+      const match = MASTER_HALAQOH_LIST.find(
+        (h) =>
+          h.nama.toLowerCase().includes(currentHalaqohName.toLowerCase()) ||
+          currentHalaqohName.toLowerCase().includes(h.pembina.toLowerCase()) ||
+          currentHalaqohName.toLowerCase().includes(h.nama.toLowerCase())
+      );
+      if (match) return match;
+    }
+    if (userRole === "PH") {
+      return MASTER_HALAQOH_LIST.find((h) => h.id === "HLQ-0002") || MASTER_HALAQOH_LIST[1];
+    }
+    return MASTER_HALAQOH_LIST[0]; // HLQ-0001 (Ust. Razan Mufli)
+  }, [initialHalaqohId, currentHalaqohName, userRole]);
+
+  // Role MT / PH DIKUNCI ke halaqoh sendiri; KS / ADM / YAY default ke "ALL" (Rekap Gabungan)
+  const [selectedHalaqohId, setSelectedHalaqohId] = useState<string>(() => {
+    if (userRole === "MT" || userRole === "PH") {
+      return resolvedHalaqoh.id;
+    }
+    return initialHalaqohId || "ALL";
+  });
+
+  const prevRoleRef = useRef(userRole);
+  useEffect(() => {
+    if (prevRoleRef.current !== userRole) {
+      prevRoleRef.current = userRole;
+      if (userRole === "MT" || userRole === "PH") {
+        setSelectedHalaqohId(resolvedHalaqoh.id);
+      } else {
+        setSelectedHalaqohId(initialHalaqohId || "ALL");
+      }
+    }
+  }, [userRole, resolvedHalaqoh.id, initialHalaqohId]);
+
   const [selectedBulan, setSelectedBulan] = useState<number>(9); // September (bulan berjalan di roadmap)
   const [selectedTahunAjaran, setSelectedTahunAjaran] = useState<string>("2026/2027");
   const [activeSubTab, setActiveSubTab] = useState<"tahfizh" | "mutabaah" | "tasmi_simaan">("tahfizh");
@@ -87,103 +137,6 @@ export function RekapLaporanBulanan({
   const [testPredikat, setTestPredikat] = useState<NilaiSetoran>("MUMTAZ");
   const [testCatatan, setTestCatatan] = useState<string>("");
 
-  const generateMockFallback = React.useCallback((hId: string, bln: number, ta: string): LaporanBulananData => {
-    const mockSantriList = [
-      { id: "SAN-0001", nis: "SAN-0001", nama: "Obama Ozearld Egberted Turizqi", kelas: "9A" },
-      { id: "SAN-0002", nis: "SAN-0002", nama: "Muhammad Fardhan", kelas: "9A" },
-      { id: "SAN-0003", nis: "SAN-0003", nama: "Muh. Fauzan", kelas: "9A" },
-      { id: "SAN-0004", nis: "SAN-0004", nama: "Khubaib", kelas: "9A" },
-      { id: "SAN-0005", nis: "SAN-0005", nama: "Abd. Riziq Ardi", kelas: "9A" },
-      { id: "SAN-0048", nis: "SAN-0048", nama: "Habiba Asri", kelas: "9C Putri" },
-    ];
-
-    const rekap: RekapSantriBulananItem[] = mockSantriList.map((s, idx) => {
-      const isFardhan = s.nis === "SAN-0002";
-      const fardhanPekan = { p1: 3, p2: 3, p3: 3, p4: 7 }; // 16 Halaman
-      const normalPekan = { p1: idx === 0 ? 8 : 5, p2: 5, p3: 6, p4: 5 };
-      const sabaqPekan = isFardhan ? fardhanPekan : normalPekan;
-      const totalHlm = isFardhan ? 16 : (idx === 0 ? 24 : 21);
-      const modalAwal = isFardhan ? 317 : (idx === 0 ? 420 : 360);
-      const akumulasiHlm = modalAwal + totalHlm; // Fardhan: 317 + 16 = 333 Hlm
-
-      return {
-        santri: s,
-        tahfizh: {
-          sabaq: {
-            targetBulanan: 20,
-            pekan: sabaqPekan,
-            totalHalaman: totalHlm,
-            modalAwalHalaman: modalAwal,
-            akumulasiTotalHalaman: akumulasiHlm,
-            konversi: isFardhan
-              ? { juz: 16, sisaHalaman: 13, label: "16 Juz 13 Halaman" }
-              : (idx === 0 ? { juz: 22, sisaHalaman: 4, label: "22 Juz 4 Halaman" } : { juz: 19, sisaHalaman: 1, label: "19 Juz 1 Halaman" }),
-            konversiAkumulasi: isFardhan
-              ? { juz: 16, sisaHalaman: 13, label: "16 Juz 13 Halaman" }
-              : (idx === 0 ? { juz: 22, sisaHalaman: 4, label: "22 Juz 4 Halaman" } : { juz: 19, sisaHalaman: 1, label: "19 Juz 1 Halaman" }),
-            persentase: isFardhan ? 80.0 : (idx === 0 ? 120.0 : 105.0),
-            isTercapai: true,
-          },
-        sabqi: {
-          targetBulanan: 16,
-          pekan: { p1: 4, p2: 4, p3: 4, p4: 4 },
-          totalFrekuensi: 16,
-          persentase: 100.0,
-          isPatuh: true,
-        },
-        manzil: {
-          targetBulanan: 16,
-          pekan: { p1: 4, p2: 4, p3: 4, p4: 4 },
-          totalFrekuensi: 16,
-          persentase: 100.0,
-          isPatuh: true,
-        },
-        mufar: {
-          targetBulanan: 8,
-          pekan: { p1: 2, p2: 2, p3: 2, p4: 2 },
-          totalFrekuensi: 8,
-          persentase: 100.0,
-          isPatuh: true,
-        },
-      },
-      nonTahfizh: [
-        { kategori: "HAFALAN_HADITS" as const, label: "Hafalan Hadits", satuan: "Hadits", hbl: 78, p1: 1, p2: 1, p3: 1, p4: 1, penambahanBulanIni: 4, totalKumulatif: 82, targetMin: 4, isTuntas: true, statusLabel: "Tuntas (4/4)" },
-        { kategori: "HAFALAN_MUFRODAT" as const, label: "Mufrodat (B. Arab)", satuan: "Kosakata", hbl: 250, p1: 3, p2: 3, p3: 3, p4: 3, penambahanBulanIni: 12, totalKumulatif: 262, targetMin: 12, isTuntas: true, statusLabel: "Tuntas (12/12)" },
-        { kategori: "HAFALAN_VOCABULARY" as const, label: "Vocabulary (B. Inggris)", satuan: "Vocab", hbl: 250, p1: 3, p2: 3, p3: 3, p4: 3, penambahanBulanIni: 12, totalKumulatif: 262, targetMin: 12, isTuntas: true, statusLabel: "Tuntas (12/12)" },
-        { kategori: "SHOLAT_TAHAJJUD" as const, label: "Sholat Tahajjud", satuan: "Malam", hbl: 0, p1: 4, p2: 4, p3: 4, p4: 4, penambahanBulanIni: 16, totalKumulatif: 16, targetMin: 15, isTuntas: true, statusLabel: "Tuntas (16/15)" },
-        { kategori: "SHOLAT_DHUHA" as const, label: "Sholat Dhuha", satuan: "Pagi", hbl: 0, p1: 4, p2: 4, p3: 4, p4: 4, penambahanBulanIni: 16, totalKumulatif: 16, targetMin: 15, isTuntas: true, statusLabel: "Tuntas (16/15)" },
-        { kategori: "PUASA_SUNNAH" as const, label: "Puasa Sunnah", satuan: "Hari", hbl: 0, p1: 2, p2: 2, p3: 1, p4: 2, penambahanBulanIni: 7, totalKumulatif: 7, targetMin: 6, isTuntas: true, statusLabel: "Tuntas (7/6)" },
-        { kategori: "LITERASI" as const, label: "Literasi Kitab/Buku", satuan: "Halaman", hbl: 0, p1: 20, p2: 25, p3: 20, p4: 20, penambahanBulanIni: 85, totalKumulatif: 85, targetMin: 80, isTuntas: true, statusLabel: "Tuntas (85/80)" },
-      ],
-      tasmiSimaan: {
-        countTasmi: 17,
-        countSimaan: 2,
-        rataRataNilai: 91.26,
-        ringkasanTeks: "Telah melakukan 2 kali Simaan, 17 Kali Tasmi' dengan rata-rata nilai 91.26 (Mumtaz).",
-        riwayat: [
-          { jenis: "SIMAAN" as const, juz: 30, nilai: 95, predikat: "MUMTAZ" as const, tanggal: new Date() },
-          { jenis: "TASMI" as const, juz: 22, nilai: 91, predikat: "MUMTAZ" as const, tanggal: new Date() },
-        ] as unknown as RekapSantriBulananItem["tasmiSimaan"]["riwayat"],
-      },
-    };
-  });
-
-    return {
-      halaqoh: {
-        id: hId,
-        nama: "Halaqoh Ust. Razan Mufli, S.Pd",
-        pembina: "Ust. Razan Mufli, S.Pd (Musyrif Ketahfidzhan)",
-        tahunAjaran: ta,
-      },
-      periode: {
-        bulan: bln,
-        tahunAjaran: ta,
-        tahunKalender: 2026,
-      },
-      rekapSantri: rekap,
-    };
-  }, []);
-
   // Fetch report data
   const loadData = React.useCallback(async (hId: string, bln: number, ta: string) => {
     if (!hId) return;
@@ -192,37 +145,38 @@ export function RekapLaporanBulanan({
       if (res.success && res.data) {
         setLaporanData(res.data);
       } else {
-        setLaporanData(generateMockFallback(hId, bln, ta));
+        setLaporanData(generateLaporanBulananMock(hId, bln, ta));
       }
     } catch (err) {
-      console.error(err);
-      setLaporanData(generateMockFallback(hId, bln, ta));
+      console.error("Gagal memuat rekap laporan bulanan:", err);
+      setLaporanData(generateLaporanBulananMock(hId, bln, ta));
     }
-  }, [generateMockFallback]);
+  }, []);
 
   useEffect(() => {
     let ignore = false;
-    if (!selectedHalaqohId) return;
+    const targetHalaqoh = isMusyrifOrPembina ? resolvedHalaqoh.id : selectedHalaqohId;
+    if (!targetHalaqoh) return;
 
-    getLaporanBulananHalaqohAction(selectedHalaqohId, selectedBulan, selectedTahunAjaran)
+    getLaporanBulananHalaqohAction(targetHalaqoh, selectedBulan, selectedTahunAjaran)
       .then((res) => {
         if (ignore) return;
         if (res.success && res.data) {
           setLaporanData(res.data);
         } else {
-          setLaporanData(generateMockFallback(selectedHalaqohId, selectedBulan, selectedTahunAjaran));
+          setLaporanData(generateLaporanBulananMock(targetHalaqoh, selectedBulan, selectedTahunAjaran));
         }
       })
       .catch((err) => {
         if (ignore) return;
-        console.error(err);
-        setLaporanData(generateMockFallback(selectedHalaqohId, selectedBulan, selectedTahunAjaran));
+        console.error("Gagal mengambil data laporan bulanan:", err);
+        setLaporanData(generateLaporanBulananMock(targetHalaqoh, selectedBulan, selectedTahunAjaran));
       });
 
     return () => {
       ignore = true;
     };
-  }, [selectedHalaqohId, selectedBulan, selectedTahunAjaran, generateMockFallback]);
+  }, [selectedHalaqohId, selectedBulan, selectedTahunAjaran, isMusyrifOrPembina, resolvedHalaqoh.id]);
 
   const handleExportCSV = () => {
     if (!laporanData) return;
@@ -426,28 +380,49 @@ export function RekapLaporanBulanan({
               <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 block">
                 Pilih Halaqoh
               </label>
-              <select
-                value={selectedHalaqohId}
-                onChange={(e) => setSelectedHalaqohId(e.target.value)}
-                className="w-full min-h-[42px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-[#0E7C3A]/20 focus:border-[#0E7C3A]"
-              >
-                {halaqohList.length > 0 ? (
-                  halaqohList.map((h) => (
-                    <option key={h.id} value={h.id}>
-                      {h.nama}
+              {isMusyrifOrPembina ? (
+                <div className="space-y-1">
+                  <div className="relative">
+                    <select
+                      id="filter-pilih-halaqoh"
+                      disabled
+                      value={resolvedHalaqoh.id}
+                      className="w-full min-h-[42px] px-3 py-2 pr-8 rounded-xl bg-slate-100 border border-slate-300 text-xs sm:text-sm font-semibold text-slate-700 cursor-not-allowed opacity-90 select-none"
+                    >
+                      <option value={resolvedHalaqoh.id}>
+                        🔒 {resolvedHalaqoh.nama}
+                      </option>
+                    </select>
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                      <Lock className="h-4 w-4" />
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-amber-700 font-medium flex items-center gap-1">
+                    <span>🔒 Akses Terkunci (ABAC):</span> Musyrif/Pembina hanya dapat mengakses halaqoh binaan sendiri.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <select
+                    id="filter-pilih-halaqoh"
+                    value={selectedHalaqohId}
+                    onChange={(e) => setSelectedHalaqohId(e.target.value)}
+                    className="w-full min-h-[42px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-[#0E7C3A]/20 focus:border-[#0E7C3A] cursor-pointer"
+                  >
+                    <option value="ALL">
+                      📊 Semua Halaqoh (Rekap Gabungan Seluruh Pesantren)
                     </option>
-                  ))
-                ) : (
-                  <>
-                    <option value="HLQ-0001">Halaqoh Ust. Razan Mufli, S.Pd (Musyrif Ketahfidzhan)</option>
-                    <option value="HLQ-0002">Halaqoh Ust. Kamal (Mudhabbir)</option>
-                    <option value="HLQ-0003">Halaqoh Ust. Rizaldi (Mudhabbir)</option>
-                    <option value="HLQ-0004">Halaqoh Ust. Abi Hudzaifah (Mudhabbir)</option>
-                    <option value="HLQ-0005">Halaqoh Ust. Alwan (Mudhabbir)</option>
-                    <option value="HLQ-0006">Halaqoh Ustadzah Lisa Dwina Fitri (Musyrifah Putri)</option>
-                  </>
-                )}
-              </select>
+                    {MASTER_HALAQOH_LIST.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.nama}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-emerald-700 font-medium">
+                    ✓ Akses Manajerial ({userRole}): Dapat memantau seluruh halaqoh maupun rekap gabungan.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div>
@@ -691,6 +666,11 @@ export function RekapLaporanBulanan({
                         <div className="text-[10px] text-slate-400">
                           {item.santri.nis} • Kelas {item.santri.kelas}
                         </div>
+                        {selectedHalaqohId === "ALL" && (item.santri as any).halaqoh && (
+                          <div className="text-[9px] text-[#0E7C3A] font-semibold mt-0.5">
+                            {(item.santri as any).halaqoh}
+                          </div>
+                        )}
                       </td>
 
                       {/* Sabaq Data */}
@@ -832,6 +812,11 @@ export function RekapLaporanBulanan({
                       <td className="px-3 py-2.5 border-r border-slate-100">
                         <div className="font-bold text-slate-900">{item.santri.nama}</div>
                         <div className="text-[10px] text-slate-400">NIS: {item.santri.nis}</div>
+                        {selectedHalaqohId === "ALL" && (item.santri as any).halaqoh && (
+                          <div className="text-[9px] text-[#0E7C3A] font-semibold mt-0.5">
+                            {(item.santri as any).halaqoh}
+                          </div>
+                        )}
                       </td>
 
                       {/* Hadits */}
@@ -943,6 +928,11 @@ export function RekapLaporanBulanan({
                       <Badge variant="sky" size="sm">
                         {item.santri.nis}
                       </Badge>
+                      {selectedHalaqohId === "ALL" && (item.santri as any).halaqoh && (
+                        <Badge variant="green" size="sm">
+                          {(item.santri as any).halaqoh}
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-xs text-slate-700 italic font-medium">
                       &ldquo;{item.tasmiSimaan.ringkasanTeks}&rdquo;
