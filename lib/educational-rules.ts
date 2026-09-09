@@ -9,6 +9,13 @@
  */
 
 /**
+ * Status Formal Konsolidasi Aturan Pendidikan:
+ * Seluruh ambang batas yang memerlukan payung hukum formal diberi status eksplisit
+ * MENUNGGU KONFIRMASI PENGURUS hingga terbit SK resmi Mudir / Pengurus Yayasan.
+ */
+export const STATUS_ATURAN = 'MENUNGGU KONFIRMASI PENGURUS' as const;
+
+/**
  * 1. Ambang Batas Poin Surat Peringatan (SP)
  * STATUS: MENUNGGU KONFIRMASI PENGURUS
  * Catatan: Dokumen README lama menyebut SP1/SP2/SP3 pada 30/60/100 poin,
@@ -20,6 +27,24 @@ export const SP_THRESHOLDS = {
   SP1: 20,
   SP2: 40,
   SP3: 60,
+} as const;
+
+export const STATUS_ATURAN_PENDIDIKAN = {
+  status: STATUS_ATURAN,
+  sp: {
+    status: STATUS_ATURAN,
+    thresholds: SP_THRESHOLDS,
+    keterangan: 'Ambang batas 20 (SP1), 40 (SP2), 60 (SP3) poin menunggu SK resmi Mudir / Pengurus Yayasan.',
+  },
+  nilai: {
+    status: STATUS_ATURAN,
+    thresholds: {
+      A: 90,
+      B: 80,
+      C: 70,
+    } as const,
+    keterangan: 'Skala predikat A (>=90), B (>=80), C (>=70), D (<70) menunggu pengesahan KKM kurikulum definitif.',
+  },
 } as const;
 
 export function evaluasiLevelSP(totalPoin: number): 'SP3' | 'SP2' | 'SP1' | null {

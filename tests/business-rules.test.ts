@@ -6,6 +6,10 @@ import {
   konversiPredikatNilai,
   validasiAlurPerizinan,
   validasiIkhtibarTahap2,
+  STATUS_ATURAN,
+  STATUS_ATURAN_PENDIDIKAN,
+  SP_THRESHOLDS,
+  NILAI_THRESHOLDS,
 } from '../lib/educational-rules';
 
 /**
@@ -54,6 +58,18 @@ describe('Aturan Bisnis Kedisiplinan & Pelanggaran', () => {
     assert.equal(evaluasiLevelSP(15), null);
     assert.equal(evaluasiLevelSP(0), null);
   });
+
+  it('harus memvalidasi status formal ambang batas SP sebagai MENUNGGU KONFIRMASI PENGURUS', () => {
+    assert.equal(STATUS_ATURAN, 'MENUNGGU KONFIRMASI PENGURUS');
+    assert.equal(STATUS_ATURAN_PENDIDIKAN.status, 'MENUNGGU KONFIRMASI PENGURUS');
+    assert.equal(STATUS_ATURAN_PENDIDIKAN.sp.status, 'MENUNGGU KONFIRMASI PENGURUS');
+    assert.equal(STATUS_ATURAN_PENDIDIKAN.sp.thresholds.SP1, 20);
+    assert.equal(STATUS_ATURAN_PENDIDIKAN.sp.thresholds.SP2, 40);
+    assert.equal(STATUS_ATURAN_PENDIDIKAN.sp.thresholds.SP3, 60);
+    assert.equal(SP_THRESHOLDS.SP1, 20);
+    assert.equal(SP_THRESHOLDS.SP2, 40);
+    assert.equal(SP_THRESHOLDS.SP3, 60);
+  });
 });
 
 describe('Aturan Akademik & Penilaian', () => {
@@ -76,6 +92,16 @@ describe('Aturan Akademik & Penilaian', () => {
     assert.equal(konversiPredikatNilai(69), 'D');
     assert.equal(konversiPredikatNilai(55), 'D');
     assert.equal(konversiPredikatNilai(0), 'D');
+  });
+
+  it('harus memvalidasi status formal skala nilai akademik sebagai MENUNGGU KONFIRMASI PENGURUS', () => {
+    assert.equal(STATUS_ATURAN_PENDIDIKAN.nilai.status, 'MENUNGGU KONFIRMASI PENGURUS');
+    assert.equal(STATUS_ATURAN_PENDIDIKAN.nilai.thresholds.A, 90);
+    assert.equal(STATUS_ATURAN_PENDIDIKAN.nilai.thresholds.B, 80);
+    assert.equal(STATUS_ATURAN_PENDIDIKAN.nilai.thresholds.C, 70);
+    assert.equal(NILAI_THRESHOLDS.A, 90);
+    assert.equal(NILAI_THRESHOLDS.B, 80);
+    assert.equal(NILAI_THRESHOLDS.C, 70);
   });
 });
 

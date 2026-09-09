@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { catatPelanggaranAction, putihkanSPAction, getPelanggaranListAction, getSPListAction } from "@/app/actions/kedisiplinan";
-import { evaluasiLevelSP } from "@/lib/educational-rules";
+import { evaluasiLevelSP, STATUS_ATURAN_PENDIDIKAN } from "@/lib/educational-rules";
 import { PrintSP } from "@/components/print/print-sp";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
 import { buildPelanggaranSPWAMessage } from "@/lib/whatsapp";
@@ -354,10 +354,16 @@ export function KedisiplinanModule({
       {/* 2. Kartu Surat Peringatan (SP) Aktif */}
       {spList.length > 0 && (
         <div className="space-y-3">
-          <h3 className="text-sm font-bold text-slate-800 font-heading flex items-center gap-2">
-            <ShieldAlert className="h-4 w-4 text-rose-600" />
-            Daftar Surat Peringatan (SP) Diterbitkan
-          </h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <h3 className="text-sm font-bold text-slate-800 font-heading flex items-center gap-2">
+              <ShieldAlert className="h-4 w-4 text-rose-600" />
+              Daftar Surat Peringatan (SP) Diterbitkan
+            </h3>
+            <span className="text-[11px] font-medium text-amber-800 bg-amber-50 border border-amber-200/80 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1.5 self-start sm:self-auto">
+              <span>Ambang Batas: SP1 (20p), SP2 (40p), SP3 (60p)</span>
+              <span className="text-[10px] text-amber-900 font-bold">• {STATUS_ATURAN_PENDIDIKAN.sp.status}</span>
+            </span>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {spList.map((sp) => (
               <Card key={sp.id} rounded="2xl" className="border border-rose-200 bg-rose-50/40">

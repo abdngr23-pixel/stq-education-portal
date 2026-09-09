@@ -199,6 +199,10 @@ export function PrintRapor({
             )}
           </tbody>
         </table>
+        <div className="mt-1 flex items-center justify-between text-[9px] text-gray-600 italic">
+          <span>Skala Predikat: A (&ge;90 Sangat Baik) | B (80–89 Baik) | C (70–79 Cukup) | D (&lt;70 Perlu Bimbingan/Remedial)</span>
+          <span>Status Standar: Menunggu Konfirmasi Pengurus</span>
+        </div>
       </div>
 
       {/* Aspek 4: Kriteria Kenaikan Semester (6 Faktor Pertimbangan Bab VIII) */}
