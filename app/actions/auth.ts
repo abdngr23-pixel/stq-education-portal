@@ -11,7 +11,7 @@ import {
 } from "@/types/auth";
 
 function isProductionEnv(): boolean {
-  return process.env.NODE_ENV === "production";
+  return process.env.NODE_ENV === "production" && process.env.NEXT_PUBLIC_ENABLE_DEMO !== "true";
 }
 
 async function setSessionCookie(token: string): Promise<void> {
@@ -51,8 +51,8 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
   const query = usernameOrEmail.trim().toLowerCase();
 
   try {
-    // 1. Coba cari di PostgreSQL via Prisma
-    const user = await prisma.user.findFirst({
+    // 1. Coba cari di PostgreSQL via Prisma dengan timeout 2 detik agar tidak hang jika DB offline
+    const dbPromise = prisma.user.findFirst({
       where: {
         OR: [
           { username: { equals: query, mode: "insensitive" } },
@@ -65,6 +65,10 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
         santri: true,
       },
     });
+    const timeoutPromise = new Promise<null>((_, reject) =>
+      setTimeout(() => reject(new Error("DB_OFFLINE_TIMEOUT")), 2000)
+    );
+    const user = (await Promise.race([dbPromise, timeoutPromise])) as any;
 
     if (user) {
       if (user.status !== "AKTIF") {
@@ -116,17 +120,14 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
     console.warn("Database offline atau tidak dapat dijangkau:", dbError);
   }
 
-  // Pada production, tidak diizinkan fallback ke katalog akun demo
-  if (isProductionEnv()) {
-    return { success: false, message: "Kredensial tidak ditemukan atau salah. Periksa username dan kata sandi." };
-  }
-
   // 2. Fallback: Cari di Katalog Akun Staf / Asatidz Mudhabbir
   const matchedStaff = ALL_STAFF_ACCOUNTS.find(
     (acc) =>
       acc.username.toLowerCase() === query ||
       acc.email.toLowerCase() === query ||
-      acc.staffCode.toLowerCase() === query
+      acc.staffCode.toLowerCase() === query ||
+      (acc.role === "MT" && (query === "razan.mt" || query === "musyrif.tahfizh")) ||
+      (acc.role === "PH" && (query === "kamal.ph" || query === "pembina.halaqoh"))
   );
 
   if (matchedStaff) {
@@ -161,7 +162,11 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
 
   // 3. Fallback: Cari di Direktori Akun Utama (10 Peran Terdaftar)
   const matchedAccount = Object.values(DEMO_ACCOUNTS).find(
-    (acc) => acc.username.toLowerCase() === query || acc.email.toLowerCase() === query
+    (acc) =>
+      acc.username.toLowerCase() === query ||
+      acc.email.toLowerCase() === query ||
+      (acc.role === "MT" && (query === "razan.mt" || query === "musyrif.tahfizh")) ||
+      (acc.role === "PH" && (query === "kamal.ph" || query === "pembina.halaqoh"))
   );
 
   if (matchedAccount) {

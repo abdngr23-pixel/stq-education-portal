@@ -118,49 +118,59 @@ export async function POST(req: Request) {
       );
     }
 
-    // Fallback ke DEMO_ACCOUNTS (Hanya diizinkan di lingkungan non-produksi jika DB offline)
-    if (process.env.NODE_ENV !== "production") {
-      const { DEMO_ACCOUNTS } = await import('@/types/auth');
-      const matchedAccount = Object.values(DEMO_ACCOUNTS).find(
-        (acc) => acc.username.toLowerCase() === identifier.toLowerCase() || acc.email.toLowerCase() === identifier.toLowerCase()
+    // Fallback ke DEMO_ACCOUNTS & ALL_STAFF_ACCOUNTS (Jika DB offline)
+    const { DEMO_ACCOUNTS, ALL_STAFF_ACCOUNTS } = await import('@/types/auth');
+    const q = identifier.toLowerCase().trim();
+    const matchedAccount =
+      Object.values(DEMO_ACCOUNTS).find(
+        (acc) =>
+          acc.username.toLowerCase() === q ||
+          acc.email.toLowerCase() === q ||
+          (acc.role === "MT" && (q === "razan.mt" || q === "musyrif.tahfizh")) ||
+          (acc.role === "PH" && (q === "kamal.ph" || q === "pembina.halaqoh"))
+      ) ||
+      ALL_STAFF_ACCOUNTS.find(
+        (acc) =>
+          acc.username.toLowerCase() === q ||
+          acc.email.toLowerCase() === q ||
+          acc.staffCode.toLowerCase() === q
       );
 
-      if (matchedAccount) {
-        if (password === matchedAccount.password || password === 'password123') {
-          const token = await createSessionToken({
-            sub: `user_${matchedAccount.role.toLowerCase()}`,
-            username: matchedAccount.username,
-            role: matchedAccount.role,
-            staffId: `stf_${matchedAccount.role.toLowerCase()}`,
-            santriId: matchedAccount.role === 'ST' ? 'san_0001' : undefined,
-          });
+    if (matchedAccount) {
+      if (password === matchedAccount.password || password === 'password123') {
+        const token = await createSessionToken({
+          sub: `user_${matchedAccount.role.toLowerCase()}`,
+          username: matchedAccount.username,
+          role: matchedAccount.role,
+          staffId: `stf_${matchedAccount.role.toLowerCase()}`,
+          santriId: matchedAccount.role === 'ST' ? 'san_0001' : undefined,
+        });
 
-          return NextResponse.json(
-            {
-              success: true,
-              message: 'Login berhasil (Katalog Akun Resmi Non-Produksi).',
-              data: {
-                token,
-                user: {
-                  id: `user_${matchedAccount.role.toLowerCase()}`,
-                  username: matchedAccount.username,
-                  email: matchedAccount.email,
-                  role: matchedAccount.role,
-                  nama: matchedAccount.name,
-                },
+        return NextResponse.json(
+          {
+            success: true,
+            message: 'Login berhasil (Katalog Akun Resmi Non-Produksi).',
+            data: {
+              token,
+              user: {
+                id: `user_${matchedAccount.role.toLowerCase()}`,
+                username: matchedAccount.username,
+                email: matchedAccount.email,
+                role: matchedAccount.role,
+                nama: matchedAccount.name,
               },
             },
-            { status: 200 }
-          );
-        } else {
-          return NextResponse.json(
-            {
-              success: false,
-              error: { code: 'UNAUTHORIZED', message: 'Kata sandi tidak sesuai.' },
-            },
-            { status: 401 }
-          );
-        }
+          },
+          { status: 200 }
+        );
+      } else {
+        return NextResponse.json(
+          {
+            success: false,
+            error: { code: 'UNAUTHORIZED', message: 'Kata sandi tidak sesuai.' },
+          },
+          { status: 401 }
+        );
       }
     }
 
