@@ -143,11 +143,14 @@ $$\text{Total Juz Penuh} = \left\lfloor \frac{\text{Total Halaman}}{20} \right\r
 $$\text{Sisa Halaman} = \text{Total Halaman} \pmod{20}$$
 Sistem merangkumnya menjadi teks format resmi: `"[Juz] Juz [Sisa] Halaman"`.
 
-### 3.4 Fitur Deteksi Pintar Surah Al-Qur'an
-Sebagai penunjang ketepatan maqra' tilawah:
-- Saat Musyrif memasukkan **Nomor Halaman Mushaf (1–604)**, sistem secara otomatis mendeteksi nama surah pembuka beserta teks Arabnya dan ayat awalnya (contoh: Halaman 582 otomatis terdeteksi sebagai *QS. An-Naba' [النبأ]*).
-- Jika pada halaman tersebut terdapat batas peralihan dua surah, sistem menyediakan pemilih dropdown pintar yang memuat surah-surah yang ada di halaman tersebut.
-- Musyrif tetap dapat mengaktifkan **Mode Ketik Manual** apabila diperlukan situasi khusus.
+### 3.4 Parameter Setoran Berbasis Halaman & Juz (Standar Mushaf Madinah)
+Sesuai fakta dan alur di lapangan, santri menyetorkan hafalan dengan parameter **Halaman** dan **Juz** (Standar Mushaf Madinah 1 Juz = 20 Halaman, 604 Halaman):
+- **Sabaq (Hafalan Baru)**: Musyrif memilih Juz, memasukkan Nomor Halaman Mulai, Jumlah Halaman yang disetor (misal: 0.5, 1, 2, 3, 5, 7 hlm), dan sistem otomatis menghitung Halaman Selesai serta akumulasi capaian.
+- **Sabqi (Muroja'ah Sepekan)**: Musyrif menentukan Juz dan rentang halaman hafalan sepekan terakhir yang dimuroja'ah.
+- **Manzil (Muroja'ah 1 Juz Penuh)**: Musyrif memilih Juz yang dimuroja'ah secara bersiklus (1 juz penuh = 20 halaman).
+- **Mufar (Muroja'ah Harian 1–6 Juz)**: Musyrif memilih volume target harian (1 s/d 6 juz) beserta rincian juz yang disetor.
+
+*Seluruh pengisian setoran berfokus pada halaman dan juz tanpa pembebanan input manual via surah/ayat, selaras dengan metode hafalan Al-Pakistani.*
 
 ### 3.5 Standar Penilaian Kelancaran Setoran
 Musyrif memberikan predikat mutu tajwid dan kelancaran:
@@ -163,7 +166,7 @@ Setelah setoran disimpan:
 2. Pesan resmi mencantumkan:
    - Identitas santri (Nama, NIS, Kelas, Halaqoh).
    - Jenis setoran (Metode Al-Pakistani: Sabaq / Sabqi / Manzil / Mufar).
-   - Lokasi maqra' (Juz, QS. Surah dan Rentang Ayat).
+   - **Lokasi Maqra' Halaman Mushaf** (Juz dan Rentang Halaman).
    - **Volume Halaman Disetor** (Standar Madinah 20 Hlm/Juz).
    - **Total Akumulasi Terkini** (contoh: *333 Halaman [16 Juz 13 Halaman]*).
    - Predikat nilai dan catatan pembina halaqoh.

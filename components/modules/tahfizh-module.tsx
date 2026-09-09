@@ -18,11 +18,8 @@ import { type LaporanBulananData } from "@/app/actions/laporan-bulanan";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
 import { buildSetoranTahfizhWAMessage } from "@/lib/whatsapp";
 import {
-  SURAH_LIST,
   JUZ_LIST,
-  getSurahListByJuz,
   getJuzByPage,
-  detectSurahByJuzPageVerse,
 } from "@/lib/quran-metadata";
 import {
   BookCheck,
@@ -34,7 +31,6 @@ import {
   Clock,
   X,
   PlusCircle,
-  Sparkles,
   Calculator,
   Info,
 } from "lucide-react";
@@ -67,158 +63,82 @@ export function TahfizhModule({
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // -------------------------------------------------------------
-  // FORM INPUT SETORAN TUNGGAL
+  // FORM INPUT SETORAN TUNGGAL BERBASIS HALAMAN & JUZ
   // -------------------------------------------------------------
   const [selectedSantriNis, setSelectedSantriNis] = useState<string>(
     santriList[0]?.nis || ""
   );
   const [inputJenis, setInputJenis] = useState<"SABAQ" | "SABQI" | "MANZIL" | "MUFAR">("SABAQ");
   const [juz, setJuz] = useState("30");
+  const [halamanMulai, setHalamanMulai] = useState("582");
+  const [halamanSelesai, setHalamanSelesai] = useState("582");
   const [jumlahHalaman, setJumlahHalaman] = useState("1");
-  const [halamanMushaf, setHalamanMushaf] = useState("582");
-  const [surahMulai, setSurahMulai] = useState("An-Naba'");
-  const [ayatMulai, setAyatMulai] = useState("1");
-  const [surahSelesai, setSurahSelesai] = useState("An-Naba'");
-  const [ayatSelesai, setAyatSelesai] = useState("20");
+  const [jumlahJuzMufar, setJumlahJuzMufar] = useState("2");
+  const [rincianJuzMufar, setRincianJuzMufar] = useState("Juz 1, 2");
   const [nilai, setNilai] = useState<"MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "DHOIF">("MUMTAZ");
   const [catatan, setCatatan] = useState("");
-  const [isManualSurah, setIsManualSurah] = useState(false);
-  const [detectedBadge, setDetectedBadge] = useState<{
-    text: string;
-    arabic: string;
-    page: number;
-    juz: number;
-  } | null>({
-    text: "QS. An-Naba'",
-    arabic: "النبأ",
-    page: 582,
-    juz: 30,
-  });
 
-  // Daftar surah di juz terpilih untuk dropdown pintar
-  const availableSurahsInJuz = useMemo(() => {
-    const juzNum = parseInt(juz, 10);
-    return getSurahListByJuz(!isNaN(juzNum) ? juzNum : 30);
-  }, [juz]);
-
-  // Handler cerdas saat Juz diubah
+  // Handler cerdas saat Juz diubah (otomatis sesuaikan Halaman Mulai & Selesai)
   const handleJuzChange = (val: string) => {
     setJuz(val);
     const parsedJuz = parseInt(val, 10);
     if (!isNaN(parsedJuz) && parsedJuz >= 1 && parsedJuz <= 30) {
       const juzMeta = JUZ_LIST.find((j) => j.juz === parsedJuz);
-      const newPage = juzMeta ? String(juzMeta.startPage) : halamanMushaf;
-      setHalamanMushaf(newPage);
-
-      if (!isManualSurah) {
-        const detected = detectSurahByJuzPageVerse({
-          juz: parsedJuz,
-          halaman: newPage,
-          ayatMulai,
-          ayatSelesai,
-        });
-        setSurahMulai(detected.surahMulai);
-        setSurahSelesai(detected.surahSelesai);
-        setDetectedBadge({
-          text: `QS. ${detected.surahMulaiMeta.name}`,
-          arabic: detected.surahMulaiMeta.arabicName,
-          page: detected.halamanMushaf,
-          juz: detected.detectedJuz,
-        });
+      if (juzMeta) {
+        setHalamanMulai(String(juzMeta.startPage));
+        const jml = parseFloat(jumlahHalaman) || 1;
+        setHalamanSelesai(String(juzMeta.startPage + Math.ceil(jml) - 1));
       }
     }
   };
 
-  // Handler cerdas saat Halaman diubah (otomatis deteksi Juz & Surah)
-  const handleHalamanChange = (val: string) => {
-    setHalamanMushaf(val);
-    const parsedPage = parseInt(val, 10);
-    if (!isNaN(parsedPage) && parsedPage >= 1) {
-      const currentJuzNum = parseInt(juz, 10) || 30;
-      let effectiveJuz = currentJuzNum;
-
-      if (parsedPage > 20 && parsedPage <= 604) {
-        effectiveJuz = getJuzByPage(parsedPage);
-        if (effectiveJuz !== currentJuzNum) {
-          setJuz(String(effectiveJuz));
-        }
+  // Handler cerdas saat Halaman Mulai diubah (otomatis deteksi Juz & sinkronkan Halaman Selesai)
+  const handleHalamanMulaiChange = (val: string) => {
+    setHalamanMulai(val);
+    const start = parseInt(val, 10);
+    if (!isNaN(start) && start >= 1 && start <= 604) {
+      const detectedJuz = getJuzByPage(start);
+      if (detectedJuz && String(detectedJuz) !== juz) {
+        setJuz(String(detectedJuz));
       }
-
-      if (!isManualSurah) {
-        const detected = detectSurahByJuzPageVerse({
-          juz: effectiveJuz,
-          halaman: parsedPage,
-          ayatMulai,
-          ayatSelesai,
-        });
-        setSurahMulai(detected.surahMulai);
-        setSurahSelesai(detected.surahSelesai);
-        setDetectedBadge({
-          text: `QS. ${detected.surahMulaiMeta.name}`,
-          arabic: detected.surahMulaiMeta.arabicName,
-          page: detected.halamanMushaf,
-          juz: detected.detectedJuz,
-        });
-      }
+      const jml = parseFloat(jumlahHalaman) || 1;
+      setHalamanSelesai(String(start + Math.ceil(jml) - 1));
     }
   };
 
-  // Handler cerdas saat Ayat Mulai diubah
-  const handleAyatMulaiChange = (val: string) => {
-    setAyatMulai(val);
-    if (!isManualSurah) {
-      const detected = detectSurahByJuzPageVerse({
-        juz,
-        halaman: halamanMushaf,
-        ayatMulai: val,
-        ayatSelesai,
-      });
-      setSurahMulai(detected.surahMulai);
-      setSurahSelesai(detected.surahSelesai);
-      setDetectedBadge({
-        text: `QS. ${detected.surahMulaiMeta.name}`,
-        arabic: detected.surahMulaiMeta.arabicName,
-        page: detected.halamanMushaf,
-        juz: detected.detectedJuz,
-      });
+  // Handler cerdas saat Jumlah Halaman diubah (otomatis sesuaikan Halaman Selesai)
+  const handleJumlahHalamanChange = (val: string) => {
+    setJumlahHalaman(val);
+    const jml = parseFloat(val);
+    const start = parseInt(halamanMulai, 10) || 1;
+    if (!isNaN(jml) && jml > 0) {
+      setHalamanSelesai(String(start + Math.ceil(jml) - 1));
     }
   };
 
-  // Handler cerdas saat Ayat Selesai diubah
-  const handleAyatSelesaiChange = (val: string) => {
-    setAyatSelesai(val);
-    if (!isManualSurah) {
-      const detected = detectSurahByJuzPageVerse({
-        juz,
-        halaman: halamanMushaf,
-        ayatMulai,
-        ayatSelesai: val,
-      });
-      setSurahMulai(detected.surahMulai);
-      setSurahSelesai(detected.surahSelesai);
-      setDetectedBadge({
-        text: `QS. ${detected.surahMulaiMeta.name}`,
-        arabic: detected.surahMulaiMeta.arabicName,
-        page: detected.halamanMushaf,
-        juz: detected.detectedJuz,
-      });
+  // Handler saat Halaman Selesai diubah secara manual (otomatis hitung Jumlah Halaman)
+  const handleHalamanSelesaiChange = (val: string) => {
+    setHalamanSelesai(val);
+    const end = parseInt(val, 10);
+    const start = parseInt(halamanMulai, 10) || 1;
+    if (!isNaN(end) && end >= start) {
+      const count = end - start + 1;
+      setJumlahHalaman(String(count));
     }
   };
 
-  // Handler memilih Surah secara cepat dari Dropdown Pintar
-  const handleSelectSurahMulai = (selectedName: string) => {
-    setSurahMulai(selectedName);
-    setSurahSelesai(selectedName);
-    const surahMeta = SURAH_LIST.find((s) => s.name === selectedName);
-    if (surahMeta) {
-      setHalamanMushaf(String(surahMeta.startPage));
-      setJuz(String(surahMeta.juzStart));
-      setDetectedBadge({
-        text: `QS. ${surahMeta.name}`,
-        arabic: surahMeta.arabicName,
-        page: surahMeta.startPage,
-        juz: surahMeta.juzStart,
-      });
+  // Handler saat santri dipilih: sinkronkan ke posisi lanjutan hafalan santri
+  const handleSelectSantri = (nis: string) => {
+    setSelectedSantriNis(nis);
+    const targetSantri = santriList.find((s) => s.nis === nis);
+    if (targetSantri) {
+      const modal = targetSantri.modalHalamanAwal ?? targetSantri.totalHalaman ?? ((targetSantri.capaianJuz || 0) * HALAMAN_PER_JUZ);
+      const nextHlm = Math.min(604, Math.max(1, modal + 1));
+      const nextJuz = getJuzByPage(nextHlm);
+      setHalamanMulai(String(nextHlm));
+      const jml = parseFloat(jumlahHalaman) || 1;
+      setHalamanSelesai(String(nextHlm + Math.ceil(jml) - 1));
+      setJuz(String(nextJuz));
     }
   };
 
@@ -230,8 +150,9 @@ export function TahfizhModule({
     kelas: string;
     jenis: string;
     juz: number;
-    surah: string;
-    ayat: string;
+    halamanMulai?: number;
+    halamanSelesai?: number;
+    jumlahHalaman?: number;
     nilai: string;
     tanggal: string;
   }>>([
@@ -242,8 +163,9 @@ export function TahfizhModule({
       kelas: santriList[0]?.kelas || "9A",
       jenis: "SABAQ",
       juz: 22,
-      surah: "Al-Ahzab",
-      ayat: "1 - 35",
+      halamanMulai: 421,
+      halamanSelesai: 421,
+      jumlahHalaman: 1,
       nilai: "MUMTAZ",
       tanggal: "Hari Ini, 07:15 WITA",
     },
@@ -254,8 +176,9 @@ export function TahfizhModule({
       kelas: santriList[1]?.kelas || "9A",
       jenis: "SABQI",
       juz: 16,
-      surah: "An-Nahl",
-      ayat: "50 - 80",
+      halamanMulai: 318,
+      halamanSelesai: 320,
+      jumlahHalaman: 3,
       nilai: "JAYYID_JIDDAN",
       tanggal: "Hari Ini, 07:40 WITA",
     },
@@ -281,18 +204,13 @@ export function TahfizhModule({
   // Santri yang sedang dipilih
   const activeSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
 
-  // Kalkulasi Cerdas Halaman & Konversi Juz (Standar Mushaf Madinah: 1 Juz = 20 Halaman)
-  const santriTotalHalaman = useMemo(() => {
-    if (!activeSantri) return 0;
-    if (activeSantri.totalHalaman !== undefined) return activeSantri.totalHalaman;
-    return (activeSantri.capaianJuz || 0) * HALAMAN_PER_JUZ;
-  }, [activeSantri]);
-
+  // Kalkulasi Cerdas Halaman & Konversi Juz Dinamis untuk Santri Manapun
   const santriModalAwal = useMemo(() => {
     if (!activeSantri) return 0;
     if (activeSantri.modalHalamanAwal !== undefined) return activeSantri.modalHalamanAwal;
-    return Math.max(0, santriTotalHalaman - (activeSantri.nis === "SAN-0002" ? 16 : 0));
-  }, [activeSantri, santriTotalHalaman]);
+    if (activeSantri.totalHalaman !== undefined) return activeSantri.totalHalaman;
+    return (activeSantri.capaianJuz || 0) * HALAMAN_PER_JUZ;
+  }, [activeSantri]);
 
   const parsedTambahanHlm = useMemo(() => {
     const n = parseFloat(jumlahHalaman);
@@ -319,25 +237,40 @@ export function TahfizhModule({
     }
 
     startTransition(async () => {
+      const hlmMulaiNum = parseInt(halamanMulai, 10) || 1;
+      const jmlHlmNum = parseFloat(jumlahHalaman) || 1;
+      const hlmSelesaiNum = parseInt(halamanSelesai, 10) || (hlmMulaiNum + Math.ceil(jmlHlmNum) - 1);
+      const juzNum = parseInt(juz, 10) || getJuzByPage(hlmMulaiNum) || 1;
+
+      let catatanRincian = "";
+      if (inputJenis === "SABAQ") {
+        catatanRincian = `[Sabaq: ${jmlHlmNum} Hlm (Hlm ${hlmMulaiNum}–${hlmSelesaiNum}) | Akumulasi: ${akumulasiHalamanBaru} Hlm (${smartKonversiAkumulasi.label})]`;
+      } else if (inputJenis === "SABQI") {
+        catatanRincian = `[Sabqi: Hlm ${hlmMulaiNum}–${hlmSelesaiNum} (${jmlHlmNum} Hlm, Juz ${juzNum})]`;
+      } else if (inputJenis === "MANZIL") {
+        catatanRincian = `[Manzil: 1 Juz Penuh (Juz ${juzNum}, 20 Halaman)]`;
+      } else {
+        catatanRincian = `[Mufar: ${jumlahJuzMufar} Juz (${rincianJuzMufar || `Juz ${juzNum}`})]`;
+      }
+
+      const finalCatatan = catatan ? `${catatanRincian}. ${catatan}`.trim() : catatanRincian;
+
       const res = await createSetoranAction({
         santriId: activeSantri.id,
         jenis: inputJenis,
-        juz: parseInt(juz) || 1,
-        surahMulai,
-        ayatMulai: parseInt(ayatMulai) || 1,
-        surahSelesai,
-        ayatSelesai: parseInt(ayatSelesai) || 1,
+        juz: juzNum,
+        halamanMulai: hlmMulaiNum,
+        halamanSelesai: hlmSelesaiNum,
+        halaman: hlmMulaiNum,
+        jumlahHalaman: jmlHlmNum,
         nilai,
-        catatan: inputJenis === "SABAQ"
-          ? `[Sabaq: ${jumlahHalaman} Hlm | Akumulasi: ${akumulasiHalamanBaru} Hlm (${smartKonversiAkumulasi.label})]. ${catatan}`.trim()
-          : (halamanMushaf ? `(Mushaf Hlm ${halamanMushaf}). ${catatan}`.trim() : catatan),
-        jumlahHalaman: inputJenis === "SABAQ" ? Number(jumlahHalaman) || 1 : undefined,
+        catatan: finalCatatan,
       });
 
       if (res.success) {
         setFeedback({
           type: "success",
-          message: `Alhamdulillah! Setoran ${inputJenis} untuk ${activeSantri.nama} (Juz ${juz}) berhasil disimpan di server.`,
+          message: `Alhamdulillah! Setoran ${inputJenis} untuk ${activeSantri.nama} (${jmlHlmNum} Hlm, Juz ${juzNum}) berhasil disimpan ke server.`,
         });
 
         const setoranId = res.data?.id || `set-${Date.now()}`;
@@ -348,34 +281,34 @@ export function TahfizhModule({
             santriNis: activeSantri.nis,
             kelas: activeSantri.kelas,
             jenis: inputJenis,
-            juz: parseInt(juz) || 1,
-            surah: `${surahMulai} - ${surahSelesai}`,
-            ayat: `${ayatMulai} - ${ayatSelesai}`,
+            juz: juzNum,
+            halamanMulai: hlmMulaiNum,
+            halamanSelesai: hlmSelesaiNum,
+            jumlahHalaman: jmlHlmNum,
             nilai,
             tanggal: "Baru saja",
           },
           ...prev,
         ]);
 
-        // Siapkan pesan WA resmi dengan metrik halaman cerdas
+        // Siapkan pesan WA resmi dengan metrik halaman cerdas (Tanpa kolom Surah)
         const waMsg = buildSetoranTahfizhWAMessage({
           santriNama: activeSantri.nama,
           santriNis: activeSantri.nis,
           kelas: activeSantri.kelas,
           pembinaNama: currentUserName,
           jenisSetoran: inputJenis,
-          juz: parseInt(juz) || 1,
-          surah: surahMulai === surahSelesai ? surahMulai : `${surahMulai} s/d ${surahSelesai}`,
-          ayatMulai: parseInt(ayatMulai) || 1,
-          ayatSelesai: parseInt(ayatSelesai) || 1,
+          juz: juzNum,
+          halamanMulai: hlmMulaiNum,
+          halamanSelesai: hlmSelesaiNum,
           nilai,
           catatan,
-          jumlahHalaman: inputJenis === "SABAQ" ? parseInt(jumlahHalaman) || 1 : undefined,
+          jumlahHalaman: jmlHlmNum,
           totalHalamanKumulatif: inputJenis === "SABAQ" ? akumulasiHalamanBaru : undefined,
           konversiLabel: inputJenis === "SABAQ" ? smartKonversiAkumulasi.label : undefined,
         });
 
-        // Ambil nomor kontak wali riil dari santri terpilih (Eliminasi nomor statis 081299887766)
+        // Ambil nomor kontak wali riil dari santri terpilih
         const guardianPhone = (res.data?.santri as unknown as { noHpWali?: string })?.noHpWali || (activeSantri as unknown as { noHpWali?: string })?.noHpWali || "";
         if (guardianPhone) {
           setWaDialog({
@@ -687,38 +620,38 @@ export function TahfizhModule({
         </div>
       )}
 
-      {/* 2. TAB 1: FORM INPUT SETORAN & RIWAYAT TERKINI */}
+      {/* 2. TAB 1: FORM INPUT SETORAN & RIWAYAT TERKINI (PROPORSI HARMONIS 7 : 5) */}
       {activeSubTab === "setoran" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Kolom Kiri: Formulir Setoran Terpadu (Satu Lokasi Utama) */}
-          <div className="lg:col-span-1">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Kolom Kiri: Formulir Setoran Terpadu (Spacious & Proporsional: lg:col-span-7) */}
+          <div className="lg:col-span-7 space-y-4">
             <Card rounded="3xl" className="border border-slate-200 shadow-xs">
-              <CardHeader className="pb-3 border-b border-slate-100">
+              <CardHeader className="pb-4 border-b border-slate-100">
                 <CardTitle className="text-base font-bold text-slate-900 font-heading flex items-center gap-2">
                   <BookCheck className="h-5 w-5 text-[#0E7C3A]" />
                   Catat Setoran Hafalan
                 </CardTitle>
                 <CardDescription className="text-xs text-slate-500">
-                  Input setoran sabaq, sabqi, manzil, atau mufar santri
+                  Input setoran berbasis halaman standar Mushaf Madinah (Metode Al-Pakistani)
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4 pt-4">
+              <CardContent className="space-y-5 pt-5">
                 {/* Pilih Santri */}
                 <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                  <label className="text-xs font-bold text-slate-700 block mb-1.5">
                     Nama Santri
                   </label>
                   <select
                     value={selectedSantriNis}
-                    onChange={(e) => setSelectedSantriNis(e.target.value)}
-                    className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-[#0E7C3A]/20"
+                    onChange={(e) => handleSelectSantri(e.target.value)}
+                    className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-[#0E7C3A]/20 transition-colors"
                   >
                     {santriList.map((s) => {
-                      const totalHlm = s.totalHalaman || (s.capaianJuz * 20);
+                      const totalHlm = s.modalHalamanAwal ?? s.totalHalaman ?? (s.capaianJuz * 20);
                       const konv = konversiHalamanKeJuz(totalHlm);
                       return (
                         <option key={s.nis} value={s.nis}>
-                          {s.nama} ({s.kelas}) — {totalHlm} Hlm ({konv.label})
+                          {s.nama} ({s.kelas}) — Modal: {totalHlm} Hlm ({konv.label})
                         </option>
                       );
                     })}
@@ -727,44 +660,55 @@ export function TahfizhModule({
 
                 {/* Jenis Setoran (Metode Al-Pakistani) */}
                 <div>
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center justify-between mb-1.5">
                     <label className="text-xs font-bold text-slate-700 block">
                       Metode Setoran (Al-Pakistani)
                     </label>
-                    <span className="text-[10px] text-emerald-700 font-semibold">
+                    <span className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
                       Kurikulum Inti STQ
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {(["SABAQ", "SABQI", "MANZIL", "MUFAR"] as const).map((j) => (
                       <button
                         key={j}
                         type="button"
                         onClick={() => setInputJenis(j)}
-                        className={`py-2 px-2 rounded-xl text-xs font-bold border transition-all text-center min-h-[40px] ${
+                        className={`py-2.5 px-2 rounded-xl text-xs font-bold border transition-all text-center min-h-[42px] flex flex-col items-center justify-center ${
                           inputJenis === j
                             ? "bg-[#0E7C3A] text-white border-[#0E7C3A] shadow-xs"
                             : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
                         }`}
                       >
-                        {j === "SABAQ"
-                          ? "1. Sabaq (Hafalan Baru)"
-                          : j === "SABQI"
-                          ? "2. Sabqi (Muroja'ah Sepekan)"
-                          : j === "MANZIL"
-                          ? "3. Manzil (Muroja'ah 1 Juz)"
-                          : "4. Mufar (Harian 1-6 Juz)"}
+                        <span>
+                          {j === "SABAQ"
+                            ? "1. Sabaq"
+                            : j === "SABQI"
+                            ? "2. Sabqi"
+                            : j === "MANZIL"
+                            ? "3. Manzil"
+                            : "4. Mufar"}
+                        </span>
+                        <span className="text-[10px] font-normal opacity-90 mt-0.5">
+                          {j === "SABAQ"
+                            ? "Hafalan Baru"
+                            : j === "SABQI"
+                            ? "Muroja'ah Sepekan"
+                            : j === "MANZIL"
+                            ? "Muroja'ah 1 Juz"
+                            : "Harian 1-6 Juz"}
+                        </span>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* FITUR PINTAR OTOMATIS: KALKULASI HALAMAN & JUZ */}
+                {/* FITUR PINTAR OTOMATIS: KALKULASI HALAMAN & JUZ (KHUSUS SABAQ) */}
                 {inputJenis === "SABAQ" ? (
-                  <div className="rounded-2xl p-3.5 bg-gradient-to-br from-emerald-50 via-teal-50/60 to-emerald-50 border border-emerald-300/80 shadow-xs space-y-3">
+                  <div className="rounded-2xl p-4 bg-gradient-to-br from-emerald-50 via-teal-50/60 to-emerald-50 border border-emerald-300/80 shadow-xs space-y-3.5">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="p-1.5 bg-emerald-600 text-white rounded-lg">
+                      <div className="flex items-center gap-2.5">
+                        <span className="p-1.5 bg-emerald-600 text-white rounded-lg shadow-xs">
                           <Calculator className="h-4 w-4" />
                         </span>
                         <div>
@@ -781,72 +725,72 @@ export function TahfizhModule({
                       </Badge>
                     </div>
 
-                    {/* Metric Cards Grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-                      <div className="bg-white/90 p-2 rounded-xl border border-emerald-100 text-center">
+                    {/* Metric Cards Grid: 4 Kolom Proporsional */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                      <div className="bg-white/95 p-2.5 rounded-xl border border-emerald-200/80 text-center shadow-2xs">
                         <span className="text-[10px] uppercase font-bold text-slate-500 block">
                           Modal Awal
                         </span>
-                        <span className="text-sm font-black text-slate-900 block mt-0.5">
+                        <span className="text-base font-black text-slate-900 block mt-0.5">
                           {santriModalAwal} Hlm
                         </span>
-                        <span className="text-[10px] text-emerald-700 font-medium block">
+                        <span className="text-[10px] text-emerald-700 font-semibold block mt-0.5">
                           {smartKonversiAwal.label}
                         </span>
                       </div>
 
-                      <div className="bg-white/90 p-2 rounded-xl border border-emerald-100 text-center">
+                      <div className="bg-white/95 p-2.5 rounded-xl border border-emerald-200/80 text-center shadow-2xs">
                         <span className="text-[10px] uppercase font-bold text-slate-500 block">
                           Tambah Hari Ini
                         </span>
-                        <span className="text-sm font-black text-emerald-700 block mt-0.5">
+                        <span className="text-base font-black text-emerald-700 block mt-0.5">
                           +{parsedTambahanHlm} Hlm
                         </span>
-                        <span className="text-[10px] text-slate-500 block">
+                        <span className="text-[10px] text-slate-500 block mt-0.5">
                           Sabaq Baru
                         </span>
                       </div>
 
-                      <div className="bg-white/90 p-2 rounded-xl border border-emerald-100 text-center">
+                      <div className="bg-white/95 p-2.5 rounded-xl border border-emerald-200/80 text-center shadow-2xs">
                         <span className="text-[10px] uppercase font-bold text-slate-500 block">
                           Total Akumulasi
                         </span>
-                        <span className="text-sm font-black text-slate-900 block mt-0.5">
+                        <span className="text-base font-black text-slate-900 block mt-0.5">
                           {akumulasiHalamanBaru} Hlm
                         </span>
-                        <span className="text-[10px] text-slate-500 block">
+                        <span className="text-[10px] text-slate-500 block mt-0.5">
                           {santriModalAwal} + {parsedTambahanHlm}
                         </span>
                       </div>
 
-                      <div className="bg-gradient-to-br from-[#0E7C3A] to-emerald-700 p-2 rounded-xl text-white text-center shadow-xs flex flex-col justify-center">
+                      <div className="bg-gradient-to-br from-[#0E7C3A] to-emerald-700 p-2.5 rounded-xl text-white text-center shadow-xs flex flex-col justify-center">
                         <span className="text-[10px] uppercase font-bold text-emerald-100 block">
                           Otomatis Menjadi
                         </span>
                         <span className="text-xs sm:text-sm font-black text-white block mt-0.5">
                           {smartKonversiAkumulasi.label}
                         </span>
-                        <span className="text-[9px] text-emerald-200 block">
+                        <span className="text-[9px] text-emerald-200 block mt-0.5">
                           {Math.floor(akumulasiHalamanBaru / 20)} Juz {akumulasiHalamanBaru % 20} Hlm
                         </span>
                       </div>
                     </div>
 
                     {/* Quick addition buttons */}
-                    <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-emerald-200/60">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-emerald-200/60">
                       <span className="text-[11px] font-semibold text-slate-600">
                         Pilihan Cepat Tambah:
                       </span>
-                      <div className="flex items-center gap-1">
-                        {["0.5", "1", "2", "3", "7"].map((val) => (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {["0.5", "1", "2", "3", "5", "7"].map((val) => (
                           <button
                             key={val}
                             type="button"
-                            onClick={() => setJumlahHalaman(val)}
-                            className={`px-2 py-0.5 rounded-lg text-xs font-bold transition-all ${
+                            onClick={() => handleJumlahHalamanChange(val)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                               jumlahHalaman === val
                                 ? "bg-[#0E7C3A] text-white shadow-xs"
-                                : "bg-white text-emerald-800 border border-emerald-200 hover:bg-emerald-100/50"
+                                : "bg-white text-emerald-800 border border-emerald-200 hover:bg-emerald-100/60"
                             }`}
                           >
                             +{val} Hlm
@@ -855,19 +799,18 @@ export function TahfizhModule({
                       </div>
                     </div>
 
-                    {/* Edukasi Fakta Lapangan */}
-                    <div className="p-2 rounded-xl bg-white/70 border border-emerald-200/70 text-[11px] text-slate-700 leading-relaxed flex items-start gap-2">
+                    {/* Keterangan Sistem Dinamis (Tanpa teks nama santri statis) */}
+                    <div className="p-2.5 rounded-xl bg-white/70 border border-emerald-200/70 text-[11px] text-slate-700 leading-relaxed flex items-start gap-2">
                       <Info className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
                       <div>
-                        <span className="font-bold text-emerald-950">Fakta Lapangan: </span>
-                        Santri menyetor hafalan berbasis <span className="font-semibold text-emerald-800">Halaman</span> (1 Juz = 20 Hlm). Contoh ananda <strong>Muhammad Fardhan</strong> (modal awal 317 hlm), penambahan 16 hlm (Pekan 1: 3, Pekan 2: 3, Pekan 3: 3, Pekan 4: 7) menjadikan total hafalan bulan ini <strong>333 Halaman</strong>, otomatis dikonversi sistem menjadi <strong>16 Juz 13 Halaman</strong>.
+                        Standar mushaf: <span className="font-semibold text-emerald-900">1 Juz = 20 Halaman</span>. Akumulasi hafalan dan konversi ke satuan Juz & Halaman dihitung otomatis oleh sistem secara dinamis untuk santri yang dipilih.
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-2xl p-3 bg-slate-50 border border-slate-200/80 text-xs text-slate-700 space-y-1">
+                  <div className="rounded-2xl p-3.5 bg-slate-50 border border-slate-200/80 text-xs text-slate-700 space-y-1">
                     <div className="flex items-center gap-2 font-bold text-slate-900">
-                      <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-600"></span>
                       Metode Al-Pakistani: {
                         inputJenis === "SABQI"
                           ? "Sabqi (Muroja'ah Hafalan Sepekan Terakhir)"
@@ -880,245 +823,238 @@ export function TahfizhModule({
                       {inputJenis === "SABQI"
                         ? "Muroja'ah hafalan yang diperoleh selama satu pekan terakhir sebelum melanjutkan Sabaq baru."
                         : inputJenis === "MANZIL"
-                        ? "Muroja'ah hafalan pada pekan-pekan sebelumnya secara bersiklus hingga mencapai satu juz penuh."
+                        ? "Muroja'ah hafalan pada pekan-pekan sebelumnya secara bersiklus hingga mencapai satu juz penuh (20 halaman)."
                         : "Muroja'ah harian sebanyak 1–6 juz sesuai jumlah hafalan yang telah dimiliki santri guna menjaga kualitas dan kekuatan hafalan."}
                     </p>
                   </div>
                 )}
-                
-                {/* Parameter Al-Qur'an: Juz & Halaman Mushaf & Jumlah Halaman */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">
-                      Juz (1 - 30)
-                    </label>
-                    <select
-                      value={juz}
-                      onChange={(e) => handleJuzChange(e.target.value)}
-                      className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    >
-                      {JUZ_LIST.map((j) => (
-                        <option key={j.juz} value={j.juz}>
-                          Juz {j.juz} (Hlm {j.startPage} - {j.endPage})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
 
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-bold text-slate-700 block">
-                        Halaman Mushaf
-                      </label>
-                      <span className="text-[10px] text-slate-500 font-medium">1 - 604</span>
-                    </div>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={604}
-                      value={halamanMushaf}
-                      onChange={(e) => handleHalamanChange(e.target.value)}
-                      placeholder="e.g. 582"
-                      className="min-h-[44px] font-semibold text-sm"
-                    />
-                  </div>
-
-                  {inputJenis === "SABAQ" ? (
+                {/* PARAMETER SETORAN BERBASIS HALAMAN & JUZ (TANPA SURAH) */}
+                {inputJenis === "SABAQ" && (
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                     <div>
                       <label className="text-xs font-bold text-slate-700 block mb-1">
-                        Jumlah Halaman Disetor
+                        Juz
+                      </label>
+                      <select
+                        value={juz}
+                        onChange={(e) => handleJuzChange(e.target.value)}
+                        className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500"
+                      >
+                        {JUZ_LIST.map((j) => (
+                          <option key={j.juz} value={j.juz}>
+                            Juz {j.juz} (Hlm {j.startPage}–{j.endPage})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-bold text-slate-700 block">
+                          Halaman Mulai
+                        </label>
+                        <span className="text-[10px] text-slate-400 font-medium">1–604</span>
+                      </div>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={604}
+                        value={halamanMulai}
+                        onChange={(e) => handleHalamanMulaiChange(e.target.value)}
+                        placeholder="e.g. 582"
+                        className="min-h-[44px] font-semibold text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Jumlah Halaman
                       </label>
                       <Input
                         type="number"
                         min={0.5}
                         step={0.5}
                         value={jumlahHalaman}
-                        onChange={(e) => setJumlahHalaman(e.target.value)}
+                        onChange={(e) => handleJumlahHalamanChange(e.target.value)}
+                        placeholder="1"
                         className="min-h-[44px] font-semibold text-sm"
                       />
                     </div>
-                  ) : (
-                    <div className="hidden sm:flex flex-col justify-center">
-                      <span className="text-[11px] text-slate-500">Jenis Setoran:</span>
-                      <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200 inline-block w-fit mt-0.5">
-                        {inputJenis === "SABQI" ? "Sabqi (Muroja'ah Baru)" : inputJenis === "MANZIL" ? "Manzil (Muroja'ah Lama)" : "Mufar (Ujian)"}
-                      </span>
-                    </div>
-                  )}
-                </div>
 
-                {/* Banner Deteksi Pintar Surah */}
-                <div className="rounded-xl p-3 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50/70 border border-emerald-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 shadow-xs">
-                  <div className="flex items-start sm:items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                      <Sparkles className="w-4 h-4 text-amber-200 animate-pulse" />
-                    </div>
                     <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">
-                          Deteksi Pintar Surah
-                        </span>
-                        <span className="text-[10px] px-1.5 py-0.5 bg-emerald-600 text-white rounded font-medium">
-                          Otomatis
-                        </span>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-bold text-slate-700 block">
+                          Halaman Selesai
+                        </label>
+                        <span className="text-[10px] text-slate-400 font-medium">1–604</span>
                       </div>
-                      <p className="text-sm font-bold text-slate-900 mt-0.5">
-                        {detectedBadge?.text || `QS. ${surahMulai}`}{" "}
-                        {detectedBadge?.arabic && (
-                          <span className="text-emerald-700 font-serif font-normal text-base ml-1">
-                            ({detectedBadge.arabic})
-                          </span>
-                        )}
-                        <span className="text-xs font-normal text-slate-600 ml-1.5">
-                          • Hlm {halamanMushaf} (Juz {juz})
-                        </span>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={604}
+                        value={halamanSelesai}
+                        onChange={(e) => handleHalamanSelesaiChange(e.target.value)}
+                        placeholder="e.g. 582"
+                        className="min-h-[44px] font-semibold text-sm"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {inputJenis === "SABQI" && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Juz (1 - 30)
+                      </label>
+                      <select
+                        value={juz}
+                        onChange={(e) => handleJuzChange(e.target.value)}
+                        className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500"
+                      >
+                        {JUZ_LIST.map((j) => (
+                          <option key={j.juz} value={j.juz}>
+                            Juz {j.juz} (Hlm {j.startPage}–{j.endPage})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-bold text-slate-700 block">
+                          Halaman Mulai
+                        </label>
+                        <span className="text-[10px] text-slate-400 font-medium">1–604</span>
+                      </div>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={604}
+                        value={halamanMulai}
+                        onChange={(e) => handleHalamanMulaiChange(e.target.value)}
+                        className="min-h-[44px] font-semibold text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-bold text-slate-700 block">
+                          Halaman Selesai
+                        </label>
+                        <span className="text-[10px] text-slate-400 font-medium">1–604</span>
+                      </div>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={604}
+                        value={halamanSelesai}
+                        onChange={(e) => handleHalamanSelesaiChange(e.target.value)}
+                        className="min-h-[44px] font-semibold text-sm"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {inputJenis === "MANZIL" && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Juz Dimuroja&apos;ah (1 Juz Penuh)
+                      </label>
+                      <select
+                        value={juz}
+                        onChange={(e) => handleJuzChange(e.target.value)}
+                        className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500"
+                      >
+                        {JUZ_LIST.map((j) => (
+                          <option key={j.juz} value={j.juz}>
+                            Juz {j.juz} (Halaman {j.startPage}–{j.endPage})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex flex-col justify-center bg-emerald-50/70 border border-emerald-200 rounded-xl p-3">
+                      <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">
+                        Standar Manzil STQ
+                      </span>
+                      <p className="text-xs font-semibold text-emerald-950 mt-0.5">
+                        1 Juz Penuh = 20 Halaman Mushaf Madinah
                       </p>
                     </div>
                   </div>
+                )}
 
-                  <button
-                    type="button"
-                    onClick={() => setIsManualSurah(!isManualSurah)}
-                    className="text-xs font-medium text-emerald-700 hover:text-emerald-900 hover:underline self-start sm:self-center px-2 py-1 rounded bg-white/70 border border-emerald-200 transition-colors"
-                  >
-                    {isManualSurah ? "✨ Aktifkan Deteksi Otomatis" : "✏️ Mode Ketik Manual"}
-                  </button>
-                </div>
+                {inputJenis === "MUFAR" && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Target Muroja&apos;ah Harian
+                      </label>
+                      <select
+                        value={jumlahJuzMufar}
+                        onChange={(e) => setJumlahJuzMufar(e.target.value)}
+                        className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500"
+                      >
+                        <option value="1">1 Juz per hari</option>
+                        <option value="2">2 Juz per hari</option>
+                        <option value="3">3 Juz per hari</option>
+                        <option value="4">4 Juz per hari</option>
+                        <option value="5">5 Juz per hari</option>
+                        <option value="6">6 Juz per hari</option>
+                      </select>
+                    </div>
 
-                {/* Surah & Ayat Mulai */}
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Rincian Juz yang Disetor
+                      </label>
+                      <Input
+                        value={rincianJuzMufar}
+                        onChange={(e) => setRincianJuzMufar(e.target.value)}
+                        placeholder="Contoh: Juz 1 s/d 2, atau Juz 16, 17"
+                        className="min-h-[44px] font-semibold text-sm"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Nilai Setoran & Catatan */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-bold text-slate-700 block mb-1">
-                      Surah Mulai {isManualSurah ? "(Manual)" : "(Otomatis / Pilihan)"}
+                      Predikat Kelancaran
                     </label>
-                    {isManualSurah ? (
-                      <Input
-                        value={surahMulai}
-                        onChange={(e) => setSurahMulai(e.target.value)}
-                        placeholder="e.g. Al-Baqarah"
-                        className="min-h-[44px] text-sm"
-                      />
-                    ) : (
-                      <select
-                        value={surahMulai}
-                        onChange={(e) => handleSelectSurahMulai(e.target.value)}
-                        className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      >
-                        <optgroup label={`Surah dalam Juz ${juz}`}>
-                          {availableSurahsInJuz.map((s) => (
-                            <option key={s.number} value={s.name}>
-                              {s.number}. {s.name} ({s.arabicName}) - {s.totalAyat} ayat
-                            </option>
-                          ))}
-                        </optgroup>
-                        <optgroup label="Semua 114 Surah">
-                          {SURAH_LIST.map((s) => (
-                            <option key={s.number} value={s.name}>
-                              {s.number}. {s.name} ({s.arabicName})
-                            </option>
-                          ))}
-                        </optgroup>
-                      </select>
-                    )}
+                    <select
+                      value={nilai}
+                      onChange={(e) =>
+                        setNilai(
+                          e.target.value as "MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "DHOIF"
+                        )
+                      }
+                      className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="MUMTAZ">Mumtaz (Istimewa / Sangat Lancar)</option>
+                      <option value="JAYYID_JIDDAN">Jayyid Jiddan (Baik Sekali)</option>
+                      <option value="JAYYID">Jayyid (Baik)</option>
+                      <option value="MAQBUL">Maqbul (Cukup)</option>
+                      <option value="DHOIF">Dhoif (Perlu Mengulang)</option>
+                    </select>
                   </div>
+
                   <div>
                     <label className="text-xs font-bold text-slate-700 block mb-1">
-                      Ayat Mulai
+                      Catatan Pembina (Opsional)
                     </label>
                     <Input
-                      type="number"
-                      min={1}
-                      value={ayatMulai}
-                      onChange={(e) => handleAyatMulaiChange(e.target.value)}
+                      value={catatan}
+                      onChange={(e) => setCatatan(e.target.value)}
+                      placeholder="Contoh: Makhraj huruf fa' dan kelancaran sangat tartil..."
                       className="min-h-[44px] text-sm"
                     />
                   </div>
-                </div>
-
-                {/* Surah & Ayat Selesai */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">
-                      Surah Selesai {isManualSurah ? "(Manual)" : "(Otomatis / Pilihan)"}
-                    </label>
-                    {isManualSurah ? (
-                      <Input
-                        value={surahSelesai}
-                        onChange={(e) => setSurahSelesai(e.target.value)}
-                        placeholder="e.g. Al-Baqarah"
-                        className="min-h-[44px] text-sm"
-                      />
-                    ) : (
-                      <select
-                        value={surahSelesai}
-                        onChange={(e) => setSurahSelesai(e.target.value)}
-                        className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      >
-                        <optgroup label={`Surah dalam Juz ${juz}`}>
-                          {availableSurahsInJuz.map((s) => (
-                            <option key={s.number} value={s.name}>
-                              {s.number}. {s.name} ({s.arabicName}) - {s.totalAyat} ayat
-                            </option>
-                          ))}
-                        </optgroup>
-                        <optgroup label="Semua 114 Surah">
-                          {SURAH_LIST.map((s) => (
-                            <option key={s.number} value={s.name}>
-                              {s.number}. {s.name} ({s.arabicName})
-                            </option>
-                          ))}
-                        </optgroup>
-                      </select>
-                    )}
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">
-                      Ayat Selesai
-                    </label>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={ayatSelesai}
-                      onChange={(e) => handleAyatSelesaiChange(e.target.value)}
-                      className="min-h-[44px] text-sm"
-                    />
-                  </div>
-                </div>
-
-                {/* Nilai Setoran */}
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
-                    Predikat Kelancaran
-                  </label>
-                  <select
-                    value={nilai}
-                    onChange={(e) =>
-                      setNilai(
-                        e.target.value as "MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "DHOIF"
-                      )
-                    }
-                    className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white"
-                  >
-                    <option value="MUMTAZ">Mumtaz (Istimewa / Sangat Lancar)</option>
-                    <option value="JAYYID_JIDDAN">Jayyid Jiddan (Baik Sekali)</option>
-                    <option value="JAYYID">Jayyid (Baik)</option>
-                    <option value="MAQBUL">Maqbul (Cukup)</option>
-                    <option value="DHOIF">Dhoif (Perlu Mengulang)</option>
-                  </select>
-                </div>
-
-                {/* Catatan Musyrif */}
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
-                    Catatan Pembina (Opsional)
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={catatan}
-                    onChange={(e) => setCatatan(e.target.value)}
-                    placeholder="Contoh: Makhraj huruf fa' dan kelancaran sangat tartil..."
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-800 focus:bg-white"
-                  />
                 </div>
 
                 <Button
@@ -1134,26 +1070,29 @@ export function TahfizhModule({
             </Card>
           </div>
 
-          {/* Kolom Kanan: Feed Riwayat Setoran Terkini */}
-          <div className="lg:col-span-2 space-y-4">
+          {/* Kolom Kanan: Feed Riwayat Setoran Terkini (Proporsional: lg:col-span-5) */}
+          <div className="lg:col-span-5 space-y-4">
             <Card rounded="3xl" className="border border-slate-200 shadow-xs">
               <CardHeader className="pb-3 border-b border-slate-100">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
                     <CardTitle className="text-base font-bold text-slate-900 font-heading">
                       Riwayat Setoran Terkini
                     </CardTitle>
-                    <CardDescription className="text-xs text-slate-500">
-                      Daftar hafalan santri yang telah direkam ke server
-                    </CardDescription>
+                    <span className="text-xs text-slate-400 font-medium">
+                      {filteredRecentSetoran.length} Catatan
+                    </span>
                   </div>
-                  <div className="relative w-full sm:w-64">
+                  <CardDescription className="text-xs text-slate-500">
+                    Daftar hafalan santri yang telah direkam ke server
+                  </CardDescription>
+                  <div className="relative w-full mt-1">
                     <Search className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <Input
                       value={searchFilter}
                       onChange={(e) => setSearchFilter(e.target.value)}
                       placeholder="Cari santri..."
-                      className="pl-9 min-h-[38px] text-xs"
+                      className="pl-9 min-h-[38px] text-xs w-full"
                     />
                   </div>
                 </div>
@@ -1164,32 +1103,38 @@ export function TahfizhModule({
                     {filteredRecentSetoran.map((item) => (
                       <div
                         key={item.id}
-                        className="p-4 hover:bg-slate-50/80 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                        className="p-3.5 hover:bg-slate-50/80 transition-colors flex items-start justify-between gap-3"
                       >
-                        <div className="flex items-start gap-3">
-                          <div className="p-2.5 rounded-2xl bg-emerald-50 text-[#0E7C3A] font-bold text-xs shrink-0 border border-emerald-100">
+                        <div className="flex items-start gap-2.5">
+                          <div className="p-2 rounded-xl bg-emerald-50 text-[#0E7C3A] font-bold text-xs shrink-0 border border-emerald-100 mt-0.5">
                             Juz {item.juz}
                           </div>
                           <div>
-                            <div className="flex items-center gap-2">
-                              <h4 className="text-sm font-bold text-slate-900">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <h4 className="text-xs sm:text-sm font-bold text-slate-900">
                                 {item.santriNama}
                               </h4>
-                              <Badge variant="green" size="sm">
+                              <Badge variant="green" size="sm" className="text-[10px] py-0 px-1.5">
                                 {item.jenis}
                               </Badge>
                             </div>
-                            <p className="text-xs text-slate-600 mt-0.5">
-                              {item.surah} (Ayat {item.ayat})
+                            <p className="text-xs font-semibold text-slate-700 mt-0.5">
+                              {item.jenis === "MANZIL"
+                                ? `1 Juz Penuh (20 Halaman)`
+                                : item.jenis === "MUFAR"
+                                ? `Muroja'ah Harian`
+                                : item.halamanMulai && item.halamanSelesai && item.halamanMulai !== item.halamanSelesai
+                                ? `Hlm ${item.halamanMulai}–${item.halamanSelesai} (${item.jumlahHalaman || 1} Halaman)`
+                                : `Halaman ${item.halamanMulai || item.juz * 20} (${item.jumlahHalaman || 1} Halaman)`}
                             </p>
-                            <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1.5">
+                            <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
                               <Clock className="h-3 w-3" />
                               {item.tanggal}
                             </p>
                           </div>
                         </div>
 
-                        <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-1.5 shrink-0">
+                        <div className="shrink-0">
                           <Badge
                             variant={
                               item.nilai === "MUMTAZ"
@@ -1199,7 +1144,7 @@ export function TahfizhModule({
                                 : "gold"
                             }
                             size="sm"
-                            className="font-bold"
+                            className="font-bold text-[10px]"
                           >
                             {item.nilai}
                           </Badge>

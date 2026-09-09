@@ -8,14 +8,17 @@ import { generateSetoranCode } from "@/lib/sequence";
 export interface CreateSetoranInput {
   santriId: string;
   jenis: JenisSetoran;
-  juz: number;
-  surahMulai: string;
-  ayatMulai: number;
-  surahSelesai: string;
-  ayatSelesai: number;
+  juz?: number;
+  halamanMulai?: number;
+  halamanSelesai?: number;
+  halaman?: number;
+  jumlahHalaman?: number;
+  surahMulai?: string;
+  ayatMulai?: number;
+  surahSelesai?: string;
+  ayatSelesai?: number;
   nilai: NilaiSetoran;
   catatan?: string;
-  jumlahHalaman?: number;
 }
 
 /**
@@ -67,6 +70,12 @@ export async function createSetoranAction(input: CreateSetoranInput) {
     const count = await prisma.setoranTahfizh.count();
     const setoranCode = generateSetoranCode(count + 1);
 
+    // Hitung halaman dan juz yang efektif
+    const hlmMulai = input.halamanMulai || input.halaman || (input.juz ? (input.juz - 1) * 20 + 1 : 1);
+    const jmlHlm = input.jumlahHalaman || 1;
+    const hlmSelesai = input.halamanSelesai || (hlmMulai + Math.ceil(jmlHlm) - 1);
+    const effectiveJuz = input.juz || Math.floor((hlmMulai - 1) / 20) + 1;
+
     // 5. Simpan Setoran ke PostgreSQL
     const hlmPrefix = input.jumlahHalaman ? `[Hlm: ${input.jumlahHalaman}] ` : "";
     const finalCatatan = input.catatan
@@ -80,11 +89,11 @@ export async function createSetoranAction(input: CreateSetoranInput) {
         musyrifId: musyrifStaff.id,
         tanggal: new Date(),
         jenis: input.jenis,
-        juz: Number(input.juz),
-        surahMulai: input.surahMulai,
-        ayatMulai: Number(input.ayatMulai),
-        surahSelesai: input.surahSelesai,
-        ayatSelesai: Number(input.ayatSelesai),
+        juz: Number(effectiveJuz),
+        surahMulai: input.surahMulai || `Hlm ${hlmMulai}`,
+        ayatMulai: Number(input.ayatMulai) || Number(hlmMulai),
+        surahSelesai: input.surahSelesai || `Hlm ${hlmSelesai}`,
+        ayatSelesai: Number(input.ayatSelesai) || Number(hlmSelesai),
         nilai: input.nilai,
         catatan: finalCatatan,
         createdBy: session.username,
@@ -104,8 +113,8 @@ export async function createSetoranAction(input: CreateSetoranInput) {
       details: {
         setoranCode,
         santriNis: newSetoran.santri.nis,
-        juz: input.juz,
-        surah: `${input.surahMulai}:${input.ayatMulai}-${input.surahSelesai}:${input.ayatSelesai}`,
+        juz: effectiveJuz,
+        halaman: `${hlmMulai}-${hlmSelesai}`,
         nilai: input.nilai,
       },
     });
