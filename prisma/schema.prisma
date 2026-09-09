@@ -326,6 +326,7 @@ model Santri {
 
   @@index([kelas])
   @@index([status])
+  @@index([halaqohId])
   @@map("santri")
 }
 
@@ -348,6 +349,8 @@ model Halaqoh {
   updatedAt   DateTime       @updatedAt @map("updated_at")
   createdBy   String?        @map("created_by")
 
+  @@index([pembinaId])
+  @@index([status])
   @@map("halaqoh")
 }
 
@@ -400,6 +403,7 @@ model MataPelajaran {
   nilaiList   NilaiAkademik[]
   createdAt   DateTime       @default(now()) @map("created_at")
 
+  @@index([guruId])
   @@map("mata_pelajaran")
 }
 
@@ -423,6 +427,8 @@ model NilaiAkademik {
   updatedAt   DateTime      @updatedAt @map("updated_at")
 
   @@index([santriId, mapelId])
+  @@index([santriId, semester, tahunAjaran])
+  @@index([mapelId])
   @@map("nilai_akademik")
 }
 
@@ -487,6 +493,7 @@ model KategoriPelanggaran {
   pelanggaranList PelanggaranSantri[]
   createdAt       DateTime           @default(now()) @map("created_at")
 
+  @@index([tingkat])
   @@map("kategori_pelanggaran")
 }
 
@@ -674,6 +681,7 @@ model IkhtibarTahfizh {
   updatedAt       DateTime       @updatedAt @map("updated_at")
 
   @@index([santriId, juz])
+  @@index([status])
   @@map("ikhtibar_tahfizh")
 }
 
@@ -693,6 +701,7 @@ model CatatanKesehatan {
   updatedAt   DateTime        @updatedAt @map("updated_at")
 
   @@index([santriId, status])
+  @@index([santriId, tanggal])
   @@map("catatan_kesehatan")
 }
 
@@ -728,6 +737,7 @@ model MutasiLogistik {
   createdAt       DateTime            @default(now()) @map("created_at")
 
   @@index([logistikId])
+  @@index([tanggal])
   @@map("mutasi_logistik")
 }
 
@@ -858,5 +868,6 @@ model TasmiSimaan {
   updatedAt   DateTime         @updatedAt @map("updated_at")
 
   @@index([santriId, tanggal])
+  @@index([musyrifId])
   @@map("tasmi_simaan")
 }
