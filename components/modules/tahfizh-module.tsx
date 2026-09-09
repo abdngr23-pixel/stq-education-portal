@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useState, useTransition, useMemo } from "react";
 import { Role } from "@/types/auth";
 import { DashboardSantriSummary } from "./beranda-module";
 import { RekapLaporanBulanan } from "@/components/dashboard/rekap-laporan-bulanan";
@@ -18,6 +18,13 @@ import { type LaporanBulananData } from "@/app/actions/laporan-bulanan";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
 import { buildSetoranTahfizhWAMessage } from "@/lib/whatsapp";
 import {
+  SURAH_LIST,
+  JUZ_LIST,
+  getSurahListByJuz,
+  getJuzByPage,
+  detectSurahByJuzPageVerse,
+} from "@/lib/quran-metadata";
+import {
   BookCheck,
   Award,
   Search,
@@ -27,6 +34,7 @@ import {
   Clock,
   X,
   PlusCircle,
+  Sparkles,
 } from "lucide-react";
 
 export interface TahfizhModuleProps {
@@ -64,12 +72,152 @@ export function TahfizhModule({
   const [inputJenis, setInputJenis] = useState<"SABAQ" | "SABQI" | "MANZIL" | "MUFAR">("SABAQ");
   const [juz, setJuz] = useState("30");
   const [jumlahHalaman, setJumlahHalaman] = useState("1");
+  const [halamanMushaf, setHalamanMushaf] = useState("582");
   const [surahMulai, setSurahMulai] = useState("An-Naba'");
   const [ayatMulai, setAyatMulai] = useState("1");
   const [surahSelesai, setSurahSelesai] = useState("An-Naba'");
   const [ayatSelesai, setAyatSelesai] = useState("20");
   const [nilai, setNilai] = useState<"MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "DHOIF">("MUMTAZ");
   const [catatan, setCatatan] = useState("");
+  const [isManualSurah, setIsManualSurah] = useState(false);
+  const [detectedBadge, setDetectedBadge] = useState<{
+    text: string;
+    arabic: string;
+    page: number;
+    juz: number;
+  } | null>({
+    text: "QS. An-Naba'",
+    arabic: "النبأ",
+    page: 582,
+    juz: 30,
+  });
+
+  // Daftar surah di juz terpilih untuk dropdown pintar
+  const availableSurahsInJuz = useMemo(() => {
+    const juzNum = parseInt(juz, 10);
+    return getSurahListByJuz(!isNaN(juzNum) ? juzNum : 30);
+  }, [juz]);
+
+  // Handler cerdas saat Juz diubah
+  const handleJuzChange = (val: string) => {
+    setJuz(val);
+    const parsedJuz = parseInt(val, 10);
+    if (!isNaN(parsedJuz) && parsedJuz >= 1 && parsedJuz <= 30) {
+      const juzMeta = JUZ_LIST.find((j) => j.juz === parsedJuz);
+      const newPage = juzMeta ? String(juzMeta.startPage) : halamanMushaf;
+      setHalamanMushaf(newPage);
+
+      if (!isManualSurah) {
+        const detected = detectSurahByJuzPageVerse({
+          juz: parsedJuz,
+          halaman: newPage,
+          ayatMulai,
+          ayatSelesai,
+        });
+        setSurahMulai(detected.surahMulai);
+        setSurahSelesai(detected.surahSelesai);
+        setDetectedBadge({
+          text: `QS. ${detected.surahMulaiMeta.name}`,
+          arabic: detected.surahMulaiMeta.arabicName,
+          page: detected.halamanMushaf,
+          juz: detected.detectedJuz,
+        });
+      }
+    }
+  };
+
+  // Handler cerdas saat Halaman diubah (otomatis deteksi Juz & Surah)
+  const handleHalamanChange = (val: string) => {
+    setHalamanMushaf(val);
+    const parsedPage = parseInt(val, 10);
+    if (!isNaN(parsedPage) && parsedPage >= 1) {
+      const currentJuzNum = parseInt(juz, 10) || 30;
+      let effectiveJuz = currentJuzNum;
+
+      if (parsedPage > 20 && parsedPage <= 604) {
+        effectiveJuz = getJuzByPage(parsedPage);
+        if (effectiveJuz !== currentJuzNum) {
+          setJuz(String(effectiveJuz));
+        }
+      }
+
+      if (!isManualSurah) {
+        const detected = detectSurahByJuzPageVerse({
+          juz: effectiveJuz,
+          halaman: parsedPage,
+          ayatMulai,
+          ayatSelesai,
+        });
+        setSurahMulai(detected.surahMulai);
+        setSurahSelesai(detected.surahSelesai);
+        setDetectedBadge({
+          text: `QS. ${detected.surahMulaiMeta.name}`,
+          arabic: detected.surahMulaiMeta.arabicName,
+          page: detected.halamanMushaf,
+          juz: detected.detectedJuz,
+        });
+      }
+    }
+  };
+
+  // Handler cerdas saat Ayat Mulai diubah
+  const handleAyatMulaiChange = (val: string) => {
+    setAyatMulai(val);
+    if (!isManualSurah) {
+      const detected = detectSurahByJuzPageVerse({
+        juz,
+        halaman: halamanMushaf,
+        ayatMulai: val,
+        ayatSelesai,
+      });
+      setSurahMulai(detected.surahMulai);
+      setSurahSelesai(detected.surahSelesai);
+      setDetectedBadge({
+        text: `QS. ${detected.surahMulaiMeta.name}`,
+        arabic: detected.surahMulaiMeta.arabicName,
+        page: detected.halamanMushaf,
+        juz: detected.detectedJuz,
+      });
+    }
+  };
+
+  // Handler cerdas saat Ayat Selesai diubah
+  const handleAyatSelesaiChange = (val: string) => {
+    setAyatSelesai(val);
+    if (!isManualSurah) {
+      const detected = detectSurahByJuzPageVerse({
+        juz,
+        halaman: halamanMushaf,
+        ayatMulai,
+        ayatSelesai: val,
+      });
+      setSurahMulai(detected.surahMulai);
+      setSurahSelesai(detected.surahSelesai);
+      setDetectedBadge({
+        text: `QS. ${detected.surahMulaiMeta.name}`,
+        arabic: detected.surahMulaiMeta.arabicName,
+        page: detected.halamanMushaf,
+        juz: detected.detectedJuz,
+      });
+    }
+  };
+
+  // Handler memilih Surah secara cepat dari Dropdown Pintar
+  const handleSelectSurahMulai = (selectedName: string) => {
+    setSurahMulai(selectedName);
+    setSurahSelesai(selectedName);
+    const surahMeta = SURAH_LIST.find((s) => s.name === selectedName);
+    if (surahMeta) {
+      setHalamanMushaf(String(surahMeta.startPage));
+      setJuz(String(surahMeta.juzStart));
+      setDetectedBadge({
+        text: `QS. ${surahMeta.name}`,
+        arabic: surahMeta.arabicName,
+        page: surahMeta.startPage,
+        juz: surahMeta.juzStart,
+      });
+    }
+  };
 
   // Riwayat setoran lokal dalam memori (disinkronkan dengan server)
   const [recentSetoran, setRecentSetoran] = useState<Array<{
@@ -152,7 +300,10 @@ export function TahfizhModule({
         surahSelesai,
         ayatSelesai: parseInt(ayatSelesai) || 1,
         nilai,
-        catatan: inputJenis === "SABAQ" ? `hlm: ${jumlahHalaman}. ${catatan}` : catatan,
+        catatan: inputJenis === "SABAQ"
+          ? `hlm: ${jumlahHalaman} (Mushaf Hlm ${halamanMushaf}). ${catatan}`.trim()
+          : (halamanMushaf ? `(Mushaf Hlm ${halamanMushaf}). ${catatan}`.trim() : catatan),
+        jumlahHalaman: inputJenis === "SABAQ" ? Number(jumlahHalaman) || 1 : undefined,
       });
 
       if (res.success) {
@@ -558,23 +709,45 @@ export function TahfizhModule({
                     ))}
                   </div>
                 </div>
-
-                {/* Juz & Jumlah Halaman (Khusus Sabaq) */}
-                <div className="grid grid-cols-2 gap-3">
+                
+                {/* Parameter Al-Qur'an: Juz & Halaman Mushaf & Jumlah Halaman */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="text-xs font-bold text-slate-700 block mb-1">
                       Juz (1 - 30)
                     </label>
+                    <select
+                      value={juz}
+                      onChange={(e) => handleJuzChange(e.target.value)}
+                      className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      {JUZ_LIST.map((j) => (
+                        <option key={j.juz} value={j.juz}>
+                          Juz {j.juz} (Hlm {j.startPage} - {j.endPage})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-bold text-slate-700 block">
+                        Halaman Mushaf
+                      </label>
+                      <span className="text-[10px] text-slate-500 font-medium">1 - 604</span>
+                    </div>
                     <Input
                       type="number"
                       min={1}
-                      max={30}
-                      value={juz}
-                      onChange={(e) => setJuz(e.target.value)}
+                      max={604}
+                      value={halamanMushaf}
+                      onChange={(e) => handleHalamanChange(e.target.value)}
+                      placeholder="e.g. 582"
                       className="min-h-[44px] font-semibold text-sm"
                     />
                   </div>
-                  {inputJenis === "SABAQ" && (
+
+                  {inputJenis === "SABAQ" ? (
                     <div>
                       <label className="text-xs font-bold text-slate-700 block mb-1">
                         Jumlah Halaman
@@ -588,21 +761,89 @@ export function TahfizhModule({
                         className="min-h-[44px] font-semibold text-sm"
                       />
                     </div>
+                  ) : (
+                    <div className="hidden sm:flex flex-col justify-center">
+                      <span className="text-[11px] text-slate-500">Jenis Setoran:</span>
+                      <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200 inline-block w-fit mt-0.5">
+                        {inputJenis === "SABQI" ? "Sabqi (Muroja'ah Baru)" : inputJenis === "MANZIL" ? "Manzil (Muroja'ah Lama)" : "Mufar (Ujian)"}
+                      </span>
+                    </div>
                   )}
                 </div>
 
+                {/* Banner Deteksi Pintar Surah */}
+                <div className="rounded-xl p-3 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50/70 border border-emerald-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 shadow-xs">
+                  <div className="flex items-start sm:items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                      <Sparkles className="w-4 h-4 text-amber-200 animate-pulse" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">
+                          Deteksi Pintar Surah
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.5 bg-emerald-600 text-white rounded font-medium">
+                          Otomatis
+                        </span>
+                      </div>
+                      <p className="text-sm font-bold text-slate-900 mt-0.5">
+                        {detectedBadge?.text || `QS. ${surahMulai}`}{" "}
+                        {detectedBadge?.arabic && (
+                          <span className="text-emerald-700 font-serif font-normal text-base ml-1">
+                            ({detectedBadge.arabic})
+                          </span>
+                        )}
+                        <span className="text-xs font-normal text-slate-600 ml-1.5">
+                          • Hlm {halamanMushaf} (Juz {juz})
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsManualSurah(!isManualSurah)}
+                    className="text-xs font-medium text-emerald-700 hover:text-emerald-900 hover:underline self-start sm:self-center px-2 py-1 rounded bg-white/70 border border-emerald-200 transition-colors"
+                  >
+                    {isManualSurah ? "✨ Aktifkan Deteksi Otomatis" : "✏️ Mode Ketik Manual"}
+                  </button>
+                </div>
+
                 {/* Surah & Ayat Mulai */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-bold text-slate-700 block mb-1">
-                      Surah Mulai
+                      Surah Mulai {isManualSurah ? "(Manual)" : "(Otomatis / Pilihan)"}
                     </label>
-                    <Input
-                      value={surahMulai}
-                      onChange={(e) => setSurahMulai(e.target.value)}
-                      placeholder="e.g. Al-Baqarah"
-                      className="min-h-[44px] text-sm"
-                    />
+                    {isManualSurah ? (
+                      <Input
+                        value={surahMulai}
+                        onChange={(e) => setSurahMulai(e.target.value)}
+                        placeholder="e.g. Al-Baqarah"
+                        className="min-h-[44px] text-sm"
+                      />
+                    ) : (
+                      <select
+                        value={surahMulai}
+                        onChange={(e) => handleSelectSurahMulai(e.target.value)}
+                        className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      >
+                        <optgroup label={`Surah dalam Juz ${juz}`}>
+                          {availableSurahsInJuz.map((s) => (
+                            <option key={s.number} value={s.name}>
+                              {s.number}. {s.name} ({s.arabicName}) - {s.totalAyat} ayat
+                            </option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="Semua 114 Surah">
+                          {SURAH_LIST.map((s) => (
+                            <option key={s.number} value={s.name}>
+                              {s.number}. {s.name} ({s.arabicName})
+                            </option>
+                          ))}
+                        </optgroup>
+                      </select>
+                    )}
                   </div>
                   <div>
                     <label className="text-xs font-bold text-slate-700 block mb-1">
@@ -610,24 +851,49 @@ export function TahfizhModule({
                     </label>
                     <Input
                       type="number"
+                      min={1}
                       value={ayatMulai}
-                      onChange={(e) => setAyatMulai(e.target.value)}
+                      onChange={(e) => handleAyatMulaiChange(e.target.value)}
                       className="min-h-[44px] text-sm"
                     />
                   </div>
                 </div>
 
                 {/* Surah & Ayat Selesai */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-bold text-slate-700 block mb-1">
-                      Surah Selesai
+                      Surah Selesai {isManualSurah ? "(Manual)" : "(Otomatis / Pilihan)"}
                     </label>
-                    <Input
-                      value={surahSelesai}
-                      onChange={(e) => setSurahSelesai(e.target.value)}
-                      className="min-h-[44px] text-sm"
-                    />
+                    {isManualSurah ? (
+                      <Input
+                        value={surahSelesai}
+                        onChange={(e) => setSurahSelesai(e.target.value)}
+                        placeholder="e.g. Al-Baqarah"
+                        className="min-h-[44px] text-sm"
+                      />
+                    ) : (
+                      <select
+                        value={surahSelesai}
+                        onChange={(e) => setSurahSelesai(e.target.value)}
+                        className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      >
+                        <optgroup label={`Surah dalam Juz ${juz}`}>
+                          {availableSurahsInJuz.map((s) => (
+                            <option key={s.number} value={s.name}>
+                              {s.number}. {s.name} ({s.arabicName}) - {s.totalAyat} ayat
+                            </option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="Semua 114 Surah">
+                          {SURAH_LIST.map((s) => (
+                            <option key={s.number} value={s.name}>
+                              {s.number}. {s.name} ({s.arabicName})
+                            </option>
+                          ))}
+                        </optgroup>
+                      </select>
+                    )}
                   </div>
                   <div>
                     <label className="text-xs font-bold text-slate-700 block mb-1">
@@ -635,8 +901,9 @@ export function TahfizhModule({
                     </label>
                     <Input
                       type="number"
+                      min={1}
                       value={ayatSelesai}
-                      onChange={(e) => setAyatSelesai(e.target.value)}
+                      onChange={(e) => handleAyatSelesaiChange(e.target.value)}
                       className="min-h-[44px] text-sm"
                     />
                   </div>

@@ -5,10 +5,16 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { BookCheck, Award, PlusCircle, CheckCircle2, Download, FileSpreadsheet } from "lucide-react";
+import { BookCheck, Award, PlusCircle, CheckCircle2, Download, FileSpreadsheet, Sparkles } from "lucide-react";
 import { exportToCSV } from "@/lib/export-csv";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
 import { buildSetoranTahfizhWAMessage, buildProgressSantriWAMessage } from "@/lib/whatsapp";
+import {
+  SURAH_LIST,
+  JUZ_LIST,
+  getSurahListByJuz,
+  detectSurahByJuzPageVerse,
+} from "@/lib/quran-metadata";
 
 export interface DashboardMusyrifTahfizhProps {
   santriList: Array<{
@@ -79,6 +85,12 @@ export function DashboardMusyrifTahfizh({
   isPending = false,
 }: DashboardMusyrifTahfizhProps) {
   const selectedSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
+
+  // Daftar surah di juz terpilih untuk auto-select
+  const availableSurahs = React.useMemo(() => {
+    const juzNum = parseInt(juz, 10);
+    return getSurahListByJuz(!isNaN(juzNum) ? juzNum : 30);
+  }, [juz]);
 
   const [waDialog, setWaDialog] = useState<{
     isOpen: boolean;
@@ -245,34 +257,91 @@ export function DashboardMusyrifTahfizh({
                 </div>
               )}
 
-              {/* Parameter Ayat & Juz */}
+              {/* Parameter Ayat & Juz dengan Deteksi Pintar Surah */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Input
-                  label="Juz (1-30)"
-                  type="number"
-                  value={juz}
-                  onChange={(e) => onSetJuz(e.target.value)}
-                />
-                <Input
-                  label="Nama Surah"
-                  value={surahMulai}
-                  onChange={(e) => {
-                    onSetSurahMulai(e.target.value);
-                    onSetSurahSelesai(e.target.value);
-                  }}
-                />
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Juz (1-30)</label>
+                  <select
+                    value={juz}
+                    onChange={(e) => {
+                      const newJuz = e.target.value;
+                      onSetJuz(newJuz);
+                      const parsed = parseInt(newJuz, 10);
+                      if (!isNaN(parsed) && parsed >= 1 && parsed <= 30) {
+                        const det = detectSurahByJuzPageVerse({ juz: parsed, ayatMulai, ayatSelesai });
+                        onSetSurahMulai(det.surahMulai);
+                        onSetSurahSelesai(det.surahSelesai);
+                      }
+                    }}
+                    className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    {JUZ_LIST.map((j) => (
+                      <option key={j.juz} value={j.juz}>
+                        Juz {j.juz} ({j.startSurah})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Nama Surah (Otomatis)</label>
+                  <select
+                    value={surahMulai}
+                    onChange={(e) => {
+                      onSetSurahMulai(e.target.value);
+                      onSetSurahSelesai(e.target.value);
+                    }}
+                    className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <optgroup label={`Surah dalam Juz ${juz}`}>
+                      {availableSurahs.map((s) => (
+                        <option key={s.number} value={s.name}>
+                          {s.number}. {s.name} ({s.arabicName})
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Semua Surah">
+                      {SURAH_LIST.map((s) => (
+                        <option key={s.number} value={s.name}>
+                          {s.number}. {s.name} ({s.arabicName})
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </div>
                 <Input
                   label="Ayat Dari"
                   type="number"
+                  min={1}
                   value={ayatMulai}
-                  onChange={(e) => onSetAyatMulai(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    onSetAyatMulai(val);
+                    const det = detectSurahByJuzPageVerse({ juz, ayatMulai: val, ayatSelesai });
+                    onSetSurahMulai(det.surahMulai);
+                    onSetSurahSelesai(det.surahSelesai);
+                  }}
                 />
                 <Input
                   label="Ayat Sampai"
                   type="number"
+                  min={1}
                   value={ayatSelesai}
-                  onChange={(e) => onSetAyatSelesai(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    onSetAyatSelesai(val);
+                    const det = detectSurahByJuzPageVerse({ juz, ayatMulai, ayatSelesai: val });
+                    onSetSurahMulai(det.surahMulai);
+                    onSetSurahSelesai(det.surahSelesai);
+                  }}
                 />
+              </div>
+
+              {/* Badge Deteksi Pintar */}
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
+                <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  <strong>✨ Deteksi Pintar Surah:</strong> Terpilih otomatis <strong>QS. {surahMulai}</strong> untuk Juz {juz}
+                </span>
               </div>
 
               {/* Penilaian Kualitas Bacaan */}
