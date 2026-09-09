@@ -31,11 +31,42 @@ export async function GET(req: Request) {
       ];
     }
 
-    // Role-based scoping: jika wali santri, hanya anaknya
-    if (session.role === 'WS' && session.santriId) {
+    // Role-based scoping (ABAC) sesuai rbac-abac-audit-skill
+    if (session.role === 'WS' || session.role === 'ST') {
+      if (!session.santriId) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'FORBIDDEN',
+              message: 'Akun Anda belum terhubung dengan data santri terdaftar. Silakan hubungi administrator.',
+            },
+          },
+          { status: 403 }
+        );
+      }
       where.id = session.santriId;
-    } else if (session.role === 'ST' && session.santriId) {
-      where.id = session.santriId;
+    } else if (session.role === 'MT' || session.role === 'PH') {
+      if (!session.staffId) {
+        return NextResponse.json({
+          success: true,
+          data: [],
+          meta: { page: 1, per_page: perPage, total: 0, total_pages: 0 },
+        });
+      }
+      const halaqohDibina = await prisma.halaqoh.findMany({
+        where: { pembinaId: session.staffId },
+        select: { id: true },
+      });
+      const halaqohIds = halaqohDibina.map((h) => h.id);
+      if (halaqohIds.length === 0) {
+        return NextResponse.json({
+          success: true,
+          data: [],
+          meta: { page: 1, per_page: perPage, total: 0, total_pages: 0 },
+        });
+      }
+      where.halaqohId = { in: halaqohIds };
     }
 
     const total = await prisma.santri.count({ where });

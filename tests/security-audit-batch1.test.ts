@@ -85,4 +85,52 @@ describe("Audit STQ 2026-09-08 — Remediasi Batch 1 (P0 Security & Access Contr
       }
     });
   });
+
+  describe("4. ABAC Scoping: Isolasi Data Santri & Setoran pada Endpoint REST API", () => {
+    it("GET /api/v1/santri harus menolak wali santri tanpa santriId dengan status 403", async () => {
+      const { createSessionToken } = await import("../lib/auth");
+      const { GET: getSantriApi } = await import("../app/api/v1/santri/route");
+
+      const token = await createSessionToken({
+        sub: "user_ws_unmapped",
+        username: "wali.unmapped",
+        role: "WS",
+      });
+
+      const req = new Request("http://localhost:3000/api/v1/santri", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const res = await getSantriApi(req);
+      assert.equal(res.status, 403);
+      const json = await res.json();
+      assert.equal(json.success, false);
+      assert.equal(json.error.code, "FORBIDDEN");
+    });
+
+    it("GET /api/v1/setoran harus menolak wali santri tanpa santriId dengan status 403", async () => {
+      const { createSessionToken } = await import("../lib/auth");
+      const { GET: getSetoranApi } = await import("../app/api/v1/setoran/route");
+
+      const token = await createSessionToken({
+        sub: "user_ws_unmapped",
+        username: "wali.unmapped",
+        role: "WS",
+      });
+
+      const req = new Request("http://localhost:3000/api/v1/setoran", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const res = await getSetoranApi(req);
+      assert.equal(res.status, 403);
+      const json = await res.json();
+      assert.equal(json.success, false);
+      assert.equal(json.error.code, "FORBIDDEN");
+    });
+  });
 });

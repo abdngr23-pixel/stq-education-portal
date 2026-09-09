@@ -35,11 +35,16 @@ export async function GET(req: Request) {
       }
       where.santriId = session.santriId;
     } else if (session.role === 'MT' || session.role === 'PH') {
-      if (session.staffId) {
-        where.santri = {
-          halaqoh: { pembinaId: session.staffId },
-        };
+      if (!session.staffId) {
+        return NextResponse.json({
+          success: true,
+          data: [],
+          meta: { total: 0 },
+        });
       }
+      where.santri = {
+        halaqoh: { pembinaId: session.staffId },
+      };
     }
 
     const setoranList = await prisma.setoranTahfizh.findMany({
