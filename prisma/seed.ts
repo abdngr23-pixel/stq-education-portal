@@ -474,9 +474,9 @@ async function main() {
     { username: "yayasan", email: "yayasan@duc-tahfizh.sch.id", role: Role.YAY },
 
     // Musyrif Ketahfidzhan
-    { username: "musyrif.tahfizh", email: "musyrif.tahfizh@duc-tahfizh.sch.id", role: Role.MT, staffId: staffMT1.id },
+    { username: "musyrif.tahfizh", email: "musyrif.tahfizh@duc-tahfizh.sch.id", role: Role.MT },
     { username: "razan.mt", email: "razan.tahfizh@duc-tahfizh.sch.id", role: Role.MT, staffId: staffMT1.id },
-    { username: "musyrifah.putri", email: "musyrifah@duc-tahfizh.sch.id", role: Role.MT, staffId: staffMTPutri.id },
+    { username: "musyrifah.putri", email: "musyrifah@duc-tahfizh.sch.id", role: Role.MT },
     { username: "lisa.mt", email: "lisa.putri@duc-tahfizh.sch.id", role: Role.MT, staffId: staffMTPutri.id },
 
     // Keasramaan & Organisasi
@@ -487,7 +487,7 @@ async function main() {
     { username: "guru.akademik", email: "guru@duc-tahfizh.sch.id", role: Role.GA, staffId: staffGA.id },
 
     // 4 Ustadz Mudhabbir (Pembina Halaqoh)
-    { username: "pembina.halaqoh", email: "pembina@duc-tahfizh.sch.id", role: Role.PH, staffId: staffPH1.id },
+    { username: "pembina.halaqoh", email: "pembina@duc-tahfizh.sch.id", role: Role.PH },
     { username: "kamal.ph", email: "kamal.mudhabbir@duc-tahfizh.sch.id", role: Role.PH, staffId: staffPH1.id },
     { username: "rizaldi.ph", email: "rizaldi.mudhabbir@duc-tahfizh.sch.id", role: Role.PH, staffId: staffPH2.id },
     { username: "hudzaifah.ph", email: "hudzaifah.mudhabbir@duc-tahfizh.sch.id", role: Role.PH, staffId: staffPH3.id },
@@ -496,7 +496,7 @@ async function main() {
     // Wali & Santri
     { username: "walisantri", email: "wali.obama@gmail.com", role: Role.WS },
     { username: "santri.obama", email: "santri.obama@stqduc.sch.id", role: Role.ST, santriId: santriUtama.id },
-    { username: "santri.fatih", email: "obama@duc-tahfizh.sch.id", role: Role.ST, santriId: santriUtama.id },
+    { username: "santri.fatih", email: "obama@duc-tahfizh.sch.id", role: Role.ST, santriId: createdSantriMap["SAN-0006"]?.id },
   ];
 
   for (const u of usersData) {
