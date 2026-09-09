@@ -60,24 +60,93 @@ export function getPekanDariTanggal(date: Date): 1 | 2 | 3 | 4 {
 
 /**
  * Hitung kepatuhan target mingguan & bulanan untuk Sabaq (halaman)
+ * Mendukung modal awal halaman (HBL) santri dan kalkulasi akumulasi pintar
  */
 export function hitungCapaianSabaq(
   realisasiHalaman: { p1: number; p2: number; p3: number; p4: number },
-  targetBulananHalaman: number
+  targetBulananHalaman: number,
+  modalAwalHalaman: number = 0
 ): {
   totalHalaman: number;
+  modalAwalHalaman: number;
+  akumulasiTotalHalaman: number;
   konversi: { juz: number; sisaHalaman: number; label: string };
+  konversiAkumulasi: { juz: number; sisaHalaman: number; label: string };
   persentase: number;
   isTercapai: boolean;
 } {
+  const safeModal = Math.max(0, Math.round(modalAwalHalaman));
   const totalHalaman =
     realisasiHalaman.p1 + realisasiHalaman.p2 + realisasiHalaman.p3 + realisasiHalaman.p4;
+  const akumulasiTotalHalaman = safeModal + totalHalaman;
   const konversi = konversiHalamanKeJuz(totalHalaman);
+  const konversiAkumulasi = konversiHalamanKeJuz(akumulasiTotalHalaman);
   const target = Math.max(1, targetBulananHalaman);
   const persentase = Math.min(200, parseFloat(((totalHalaman / target) * 100).toFixed(1)));
   const isTercapai = persentase >= 100;
 
-  return { totalHalaman, konversi, persentase, isTercapai };
+  return {
+    totalHalaman,
+    modalAwalHalaman: safeModal,
+    akumulasiTotalHalaman,
+    konversi,
+    konversiAkumulasi,
+    persentase,
+    isTercapai,
+  };
+}
+
+/**
+ * Fitur Pintar Otomatis: Hitung Akumulasi Setoran Sabaq Santri
+ * Berdasarkan standar Mushaf Madinah: 1 Juz = 20 Halaman.
+ * Parameter utama hafalan adalah HALAMAN.
+ *
+ * Contoh Riil Lapangan (Muhammad Fardhan):
+ * - Modal Hafalan Awal: 317 Halaman (15 Juz 17 Halaman)
+ * - Pekan 1: +3 Halaman
+ * - Pekan 2: +3 Halaman
+ * - Pekan 3: +3 Halaman
+ * - Pekan 4: +7 Halaman
+ * - Total Tambahan Bulan Ini: 16 Halaman
+ * - Total Akumulasi Terkini: 333 Halaman
+ * - Fitur Pintar Otomatis Mengonversi: 16 Juz 13 Halaman (333 / 20 = 16 sisa 13)
+ */
+export function hitungAkumulasiSabaqSantri(params: {
+  modalAwalHalaman: number;
+  pekan: { p1: number; p2: number; p3: number; p4: number };
+  targetBulananHalaman?: number;
+}): {
+  modalAwalHalaman: number;
+  konversiAwal: { juz: number; sisaHalaman: number; label: string };
+  tambahanBulanIni: number;
+  konversiTambahan: { juz: number; sisaHalaman: number; label: string };
+  totalAkumulasiHalaman: number;
+  konversiAkumulasi: { juz: number; sisaHalaman: number; label: string };
+  persentaseTarget: number;
+  isTercapai: boolean;
+} {
+  const modalAwal = Math.max(0, Math.round(params.modalAwalHalaman));
+  const p1 = Math.max(0, Number(params.pekan.p1) || 0);
+  const p2 = Math.max(0, Number(params.pekan.p2) || 0);
+  const p3 = Math.max(0, Number(params.pekan.p3) || 0);
+  const p4 = Math.max(0, Number(params.pekan.p4) || 0);
+  const tambahanBulanIni = p1 + p2 + p3 + p4;
+  const totalAkumulasiHalaman = modalAwal + tambahanBulanIni;
+
+  const target = Math.max(1, params.targetBulananHalaman || 20);
+  const persentaseTarget = Math.min(200, parseFloat(((tambahanBulanIni / target) * 100).toFixed(1)));
+  const isTercapai = persentaseTarget >= 100;
+
+  return {
+    modalAwalHalaman: modalAwal,
+    konversiAwal: konversiHalamanKeJuz(modalAwal),
+    tambahanBulanIni,
+    konversiTambahan: konversiHalamanKeJuz(tambahanBulanIni),
+    totalAkumulasiHalaman,
+    konversiAkumulasi: konversiHalamanKeJuz(totalAkumulasiHalaman),
+    persentaseTarget,
+    isTercapai,
+  };
 }
 
 /**

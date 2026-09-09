@@ -4,6 +4,7 @@ import {
   konversiHalamanKeJuz,
   getPekanDariTanggal,
   hitungCapaianSabaq,
+  hitungAkumulasiSabaqSantri,
   hitungKepatuhanFrekuensi,
   evaluasiCapaianNonTahfizh,
   generateRingkasanTasmiSimaan,
@@ -79,6 +80,33 @@ describe("Aturan Konversi & Laporan Bulanan (Roadmap v2)", () => {
       assert.equal(hasil.konversi.label, "2 Juz 5 Halaman");
       assert.equal(hasil.persentase, 112.5);
       assert.equal(hasil.isTercapai, true);
+    });
+
+    it("harus menghitung fitur pintar otomatis santri Muhammad Fardhan (317 + 16 = 333 Hlm -> 16 Juz 13 Halaman)", () => {
+      // Kasus riil santri Muhammad Fardhan:
+      // Modal awal: 317 Halaman (15 Juz 17 Halaman)
+      // Pekan 1: +3, Pekan 2: +3, Pekan 3: +3, Pekan 4: +7 (Total tambahan = 16 Halaman)
+      // Total hafalan bulan ini: 333 Halaman -> Otomatis tampilkan 16 Juz 13 Halaman
+      const hasil = hitungAkumulasiSabaqSantri({
+        modalAwalHalaman: 317,
+        pekan: { p1: 3, p2: 3, p3: 3, p4: 7 },
+        targetBulananHalaman: 20,
+      });
+
+      assert.equal(hasil.modalAwalHalaman, 317);
+      assert.equal(hasil.konversiAwal.label, "15 Juz 17 Halaman");
+      assert.equal(hasil.tambahanBulanIni, 16);
+      assert.equal(hasil.totalAkumulasiHalaman, 333);
+      assert.equal(hasil.konversiAkumulasi.juz, 16);
+      assert.equal(hasil.konversiAkumulasi.sisaHalaman, 13);
+      assert.equal(hasil.konversiAkumulasi.label, "16 Juz 13 Halaman");
+
+      // Verifikasi juga melalui hitungCapaianSabaq dengan modal awal
+      const hasilSabaq = hitungCapaianSabaq({ p1: 3, p2: 3, p3: 3, p4: 7 }, 20, 317);
+      assert.equal(hasilSabaq.totalHalaman, 16);
+      assert.equal(hasilSabaq.modalAwalHalaman, 317);
+      assert.equal(hasilSabaq.akumulasiTotalHalaman, 333);
+      assert.equal(hasilSabaq.konversiAkumulasi.label, "16 Juz 13 Halaman");
     });
 
     it("harus mengevaluasi kepatuhan frekuensi Sabqi dengan ambang 90%", () => {

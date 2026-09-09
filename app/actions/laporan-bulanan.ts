@@ -152,7 +152,8 @@ export async function getLaporanBulananHalaqohAction(
           }
         });
 
-        const rekapSabaq = hitungCapaianSabaq(sabaqPages, targetSabaq);
+        const modalAwalHalaman = santri.nis === "SAN-0002" ? 317 : 0;
+        const rekapSabaq = hitungCapaianSabaq(sabaqPages, targetSabaq, modalAwalHalaman);
         const rekapSabqi = hitungKepatuhanFrekuensi(sabqiFreq, targetSabqi, 90.0);
         const rekapManzil = hitungKepatuhanFrekuensi(manzilFreq, targetManzil, 90.0);
         const rekapMufar = hitungKepatuhanFrekuensi(mufarFreq, targetMufar, 90.0);

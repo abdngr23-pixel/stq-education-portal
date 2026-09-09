@@ -97,17 +97,33 @@ export function RekapLaporanBulanan({
       { id: "SAN-0048", nis: "SAN-0048", nama: "Habiba Asri", kelas: "9C Putri" },
     ];
 
-    const rekap: RekapSantriBulananItem[] = mockSantriList.map((s, idx) => ({
-      santri: s,
-      tahfizh: {
-        sabaq: {
-          targetBulanan: 20,
-          pekan: { p1: idx === 0 ? 8 : 5, p2: 5, p3: 6, p4: 5 },
-          totalHalaman: idx === 0 ? 24 : 21,
-          konversi: idx === 0 ? { juz: 1, sisaHalaman: 4, label: "1 Juz 4 Halaman" } : { juz: 1, sisaHalaman: 1, label: "1 Juz 1 Halaman" },
-          persentase: idx === 0 ? 120.0 : 105.0,
-          isTercapai: true,
-        },
+    const rekap: RekapSantriBulananItem[] = mockSantriList.map((s, idx) => {
+      const isFardhan = s.nis === "SAN-0002";
+      const fardhanPekan = { p1: 3, p2: 3, p3: 3, p4: 7 }; // 16 Halaman
+      const normalPekan = { p1: idx === 0 ? 8 : 5, p2: 5, p3: 6, p4: 5 };
+      const sabaqPekan = isFardhan ? fardhanPekan : normalPekan;
+      const totalHlm = isFardhan ? 16 : (idx === 0 ? 24 : 21);
+      const modalAwal = isFardhan ? 317 : (idx === 0 ? 420 : 360);
+      const akumulasiHlm = modalAwal + totalHlm; // Fardhan: 317 + 16 = 333 Hlm
+
+      return {
+        santri: s,
+        tahfizh: {
+          sabaq: {
+            targetBulanan: 20,
+            pekan: sabaqPekan,
+            totalHalaman: totalHlm,
+            modalAwalHalaman: modalAwal,
+            akumulasiTotalHalaman: akumulasiHlm,
+            konversi: isFardhan
+              ? { juz: 16, sisaHalaman: 13, label: "16 Juz 13 Halaman" }
+              : (idx === 0 ? { juz: 22, sisaHalaman: 4, label: "22 Juz 4 Halaman" } : { juz: 19, sisaHalaman: 1, label: "19 Juz 1 Halaman" }),
+            konversiAkumulasi: isFardhan
+              ? { juz: 16, sisaHalaman: 13, label: "16 Juz 13 Halaman" }
+              : (idx === 0 ? { juz: 22, sisaHalaman: 4, label: "22 Juz 4 Halaman" } : { juz: 19, sisaHalaman: 1, label: "19 Juz 1 Halaman" }),
+            persentase: isFardhan ? 80.0 : (idx === 0 ? 120.0 : 105.0),
+            isTercapai: true,
+          },
         sabqi: {
           targetBulanan: 16,
           pekan: { p1: 4, p2: 4, p3: 4, p4: 4 },
@@ -149,7 +165,8 @@ export function RekapLaporanBulanan({
           { jenis: "TASMI" as const, juz: 22, nilai: 91, predikat: "MUMTAZ" as const, tanggal: new Date() },
         ] as unknown as RekapSantriBulananItem["tasmiSimaan"]["riwayat"],
       },
-    }));
+    };
+  });
 
     return {
       halaqoh: {

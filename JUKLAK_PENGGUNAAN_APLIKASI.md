@@ -53,7 +53,7 @@ Sistem membagi tugas operasional ke dalam **10 Peran (Role)** agar tidak terjadi
 | No | Peran / Singkatan | Pejabat / Pengguna | Tanggung Jawab & Wewenang Utama |
 |---|---|---|---|
 | 1 | **KS** (Kepala Sekolah) | Mudir Pesantren | Penentu kebijakan tertinggi: menguji Ikhtibar Tahap II, mengesahkan izin kepulangan santri, menyetujui anggaran belanja operasional, dan memberikan pemutihan SP santri. |
-| 2 | **MT** (Musyrif Tahfizh) | Asatidz Halaqoh Quran | Mengampu halaqoh santri: mencatat setoran harian (Ziyadah & Murojaah), menguji Ikhtibar Tahap I, dan mengirimkan mutaba'ah hafalan ke WhatsApp wali santri. |
+| 2 | **MT** (Musyrif Tahfizh) | Asatidz Halaqoh Quran | Mengampu halaqoh santri: mencatat setoran harian berbasis halaman (Metode Al-Pakistani: Sabaq, Sabqi, Manzil, Mufar), menguji Ikhtibar Tahap I, dan mengirimkan mutaba'ah hafalan ke WhatsApp wali santri. |
 | 3 | **MK** (Musyrif Kesantrian) | Bagian Kesantrian Pondok | Mengawal disiplin harian: presensi sholat berjamaah 3 waktu, verifikasi awal izin keluar kompleks, dan pencatatan pelanggaran adab santri. |
 | 4 | **PH** (Pembina Asrama) | Mudhabbir / Pengasuh Asrama | Pengawasan kehidupan asrama: monitoring ketertiban kamar, piket santri, penanganan kesehatan Poskestren, dan anugerah Bintang Kebaikan. |
 | 5 | **GA** (Guru Akademik) | Pengajar Kelas / Mapel | Input nilai akademik kurikulum kepesantrenan (Diniyah) dan studi umum/PBL, serta pemberian catatan evaluasi belajar. |
@@ -67,57 +67,107 @@ Sistem membagi tugas operasional ke dalam **10 Peran (Role)** agar tidak terjadi
 
 ## BAB III: Alur & Mekanisme Modul Tahfizh Al-Qur'an
 
-Modul Tahfizh adalah jantung utama kegiatan pembelajaran di STQ Darul Ulum Cendekia.
+Modul Tahfizh adalah kurikulum inti dan jantung kegiatan pendidikan di Sekolah Tahfizhul Qur'an Darul Ulum Cendekia.
+
+### 3.1 Fakta Dasar: Parameter Setoran Berbasis HALAMAN (Bukan Surah)
+Sesuai fakta penerapan riil di lapangan pesantren:
+1. **Parameter Utama Setoran adalah HALAMAN**:
+   Tolak ukur volume hafalan santri dihitung berdasarkan **jumlah halaman**, bukan nama surah. Hal ini karena panjang surah di dalam Al-Qur'an sangat bervariasi (mulai dari Surah Al-Baqarah yang membentang hingga 48 halaman hingga surah pendek yang hanya 3–4 baris).
+2. **Kaidah Standar Mushaf: 1 Juz = 20 Halaman**:
+   Mengacu pada versi mushaf standar (Mushaf Madinah / Rasm Utsmani Standar Pojok), **setiap 1 Juz Al-Qur'an memiliki jumlah halaman yang persis sama, yaitu 20 Halaman**.
+3. **Fungsi Surah & Ayat**:
+   Nama surah dan nomor ayat tetap dicatat sebagai metadata penanda lokasi maqra' bacaan santri yang **dideteksi secara otomatis oleh fitur pintar sistem** saat musyrif memasukkan nomor halaman mushaf (1–604), namun akumulasi capaian hakiki santri mutlak dikonversi dari satuan halaman.
 
 ```
-+-------------------------------------------------------------------+
-|               ALUR SETORAN HARIAN AL-QUR'AN                      |
-+-------------------------------------------------------------------+
-  [Santri Maju Setoran] 
++-------------------------------------------------------------------------------+
+|               ALUR SETORAN HARIAN METODE AL-PAKISTANI                         |
++-------------------------------------------------------------------------------+
+  [Santri Maju ke Halaqoh Membawa Mushaf]
           |
           v
-  [Musyrif Membuka Form Input Setoran di Portal]
+  [Musyrif Memilih Santri & Metode: Sabaq / Sabqi / Manzil / Mufar]
           |
           v
-  [Input Juz, Hal / Ayat] ----> (Fitur Cerdas Mendeteksi Nama Surah)
+  [Input Parameter: Jumlah Halaman Disetor & Halaman Mushaf]
+          |
+          +---> Fitur Pintar Mendeteksi Otomatis Nama Surah & Ayat
+          |
+          +---> [FITUR PINTAR OTOMATIS KONVERSI HAFALAN]:
+          |     Sistem Menghitung: Modal Awal Halaman + Tambahan Setoran
+          |     Otomatis Dikonversi Menjadi: "[X] Juz [Y] Halaman"
           |
           v
-  [Pilih Jenis: Ziyadah / Murojaah & Beri Nilai: Mumtaz s/d Rasyid]
+  [Beri Nilai Mutu: Mumtaz, Jayyid Jiddan, Jayyid, Maqbul, Dhoif]
           |
           v
   [Klik Simpan Setoran]
           |
-          +---> Database Server Menyimpan Riwayat Setoran
+          +---> Pangkalan Data Server Memperbarui Akumulasi Halaman Santri
           |
-          +---> Generator Tautan WhatsApp Aktif Terisi Pesan Rapi
+          +---> Generator WhatsApp Otomatis Mengisi Pesan Berformat Resmi
+          |     (Memuat volume halaman & hasil konversi "X Juz Y Halaman")
           |
           v
-  [Musyrif Mengirim Laporan Langsung ke WhatsApp Wali Santri]
+  [Musyrif Mengirim Laporan Instan 1-Klik ke WhatsApp Wali Santri]
 ```
 
-### 3.1 Jenis Setoran Harian
-1. **Ziyadah (Hafalan Baru)**: Santri menyetorkan penambahan hafalan baru sesuai target kurikulum.
-2. **Murojaah Sabqi (Ujaran Hafalan Baru yang Lalu)**: Pengulangan 1-5 halaman sebelum hafalan hari ini agar tetap melekat kuat.
-3. **Murojaah Manzil (Hafalan Lama)**: Pengulangan juz-juz lama yang telah diselesaikan untuk menjaga kemutqinan.
+### 3.2 Empat Metode Setor Hafalan (Kurikulum Inti: Metode Al-Pakistani)
+Sesuai dokumen kurikulum resmi **Alur Pendidikan STQ Darul Ulum Cendekia**, metode setor hafalan menggunakan **Metode Al-Pakistani** yang terdiri dari 4 komponen terstruktur:
 
-### 3.2 Fitur Deteksi Pintar Surah Al-Qur'an
-Asatidz tidak perlu mengetik nama surah secara manual satu per satu:
-- Ketika Musyrif memilih **Juz**, lalu menginput **Nomor Halaman** (baik halaman 1–20 dalam juz maupun halaman mushaf standar Madinah 1–604) atau **Nomor Ayat**, sistem akan **otomatis mengisi nama surah yang sesuai**.
-- Jika dalam satu halaman terdapat peralihan dua surah, sistem akan menampilkan pilihan surah yang relevan pada halaman tersebut.
+| No | Metode Setoran | Definisi & Tujuan Pembelajaran | Parameter & Tolak Ukur |
+|---|---|---|---|
+| 1 | **Sabaq** | **Penambahan hafalan baru** yang wajib disetorkan setiap hari kepada musyrif halaqoh pada sesi shubuh/pagi. | **Jumlah Halaman Baru Disetor** (misal 0.5, 1, 2, 3 hlm). Diakumulasikan ke total hafalan santri. |
+| 2 | **Sabqi** | **Muroja'ah hafalan yang diperoleh selama satu pekan terakhir** guna memantapkan hafalan baru sebelum berpindah halaman. | Frekuensi kelancaran sepekan (Target minimal 16 kali / 4 sesi per pekan). |
+| 3 | **Manzil** | **Muroja'ah hafalan pada pekan-pekan sebelumnya** secara berurutan dan bersiklus hingga mencapai satu juz penuh. | Frekuensi putaran juz mutqin (Target minimal 16 kali / 4 sesi per pekan). |
+| 4 | **Mufar** | **Muroja'ah harian sebanyak 1–6 juz** sesuai dengan jumlah hafalan yang telah dimiliki santri guna menjaga kualitas dan kemutqinan hafalan lama. | Frekuensi harian (1–6 juz/hari sesuai tingkatan santri). |
 
-### 3.3 Standar Penilaian Kelancaran Setoran
-Musyrif memberikan predikat kelancaran berdasarkan kaidah tajwid dan kelancaran:
-- **MUMTAZ (Istimewa)**: Sangat lancar, tanpa salah tajwid, makhraj sempurna.
-- **JAYYID JIDDAN (Sangat Baik)**: Lancar, ada 1-2 kali perbaikan ringan yang langsung diperbaiki santri.
-- **JAYYID (Baik)**: Cukup lancar, ada beberapa perbaikan tajwid/panjang-pendek.
-- **MAQBUL (Cukup)**: Kurang lancar, memerlukan bantuan musyrif beberapa kali.
-- **RASYID (Perlu Murojaah Ulang)**: Belum siap, diinstruksikan mengulang sebelum menambah hafalan baru.
+### 3.3 Fitur Pintar Otomatis: Konversi Halaman ke Juz & Halaman
+Aplikasi dilengkapi mesin kalkulasi otomatis (*Smart Auto-Calculation Engine*) yang menghitung konversi halaman secara seketika (*real-time*).
 
-### 3.4 Mekanisme Pengiriman WhatsApp ke Wali Santri
+#### Contoh Riil Kasus Lapangan (Santri Muhammad Fardhan):
+- **Modal Hafalan Awal**: Santri atas nama **Muhammad Fardhan** telah memiliki modal hafalan sebelumnya sebanyak **317 Halaman** (Setara **15 Juz 17 Halaman**, karena $317 = (15 \times 20) + 17$).
+- **Realisasi Penambahan Sabaq Bulan Ini**:
+  - Pekan 1: Tambah **3 Halaman** $\rightarrow$ Total: 320 Halaman (**16 Juz 0 Halaman**)
+  - Pekan 2: Tambah **3 Halaman** $\rightarrow$ Total: 323 Halaman (**16 Juz 3 Halaman**)
+  - Pekan 3: Tambah **3 Halaman** $\rightarrow$ Total: 326 Halaman (**16 Juz 6 Halaman**)
+  - Pekan 4: Tambah **7 Halaman** $\rightarrow$ Total penambahan Sabaq bulan ini: **16 Halaman**.
+- **Akumulasi Hafalan Bulan Ini**:
+  $$\text{Total Halaman} = 317 + 16 = \mathbf{333\ \text{Halaman}}$$
+- **Hasil Konversi Pintar Otomatis Sistem**:
+  Tanpa perlu dihitung manual oleh Musyrif, sistem langsung menampilkan:
+  $$\mathbf{16\ \text{Juz}\ 13\ \text{Halaman}}$$
+  *(Rumus: $333 \div 20 = 16$ Juz sisa $13$ Halaman).*
+
+#### Rumus Konversi Sistem:
+$$\text{Total Juz Penuh} = \left\lfloor \frac{\text{Total Halaman}}{20} \right\rfloor$$
+$$\text{Sisa Halaman} = \text{Total Halaman} \pmod{20}$$
+Sistem merangkumnya menjadi teks format resmi: `"[Juz] Juz [Sisa] Halaman"`.
+
+### 3.4 Fitur Deteksi Pintar Surah Al-Qur'an
+Sebagai penunjang ketepatan maqra' tilawah:
+- Saat Musyrif memasukkan **Nomor Halaman Mushaf (1–604)**, sistem secara otomatis mendeteksi nama surah pembuka beserta teks Arabnya dan ayat awalnya (contoh: Halaman 582 otomatis terdeteksi sebagai *QS. An-Naba' [النبأ]*).
+- Jika pada halaman tersebut terdapat batas peralihan dua surah, sistem menyediakan pemilih dropdown pintar yang memuat surah-surah yang ada di halaman tersebut.
+- Musyrif tetap dapat mengaktifkan **Mode Ketik Manual** apabila diperlukan situasi khusus.
+
+### 3.5 Standar Penilaian Kelancaran Setoran
+Musyrif memberikan predikat mutu tajwid dan kelancaran:
+- **MUMTAZ (Istimewa / A+)**: Lancar sempurna, fashahah dan makharijul huruf tepat, waqaf/ibtida' benar.
+- **JAYYID JIDDAN (Sangat Baik / A)**: Lancar, ada 1–2 kali perbaikan ringan yang langsung disempurnakan santri.
+- **JAYYID (Baik / B)**: Cukup lancar, terdapat beberapa perbaikan hukum tajwid/mad.
+- **MAQBUL (Cukup / C)**: Kurang lancar, musyrif memberikan tuntunan beberapa kali.
+- **DHOIF (Perlu Mengulang / D)**: Belum menguasai maqra' dengan baik, wajib mengulang sebelum menambah halaman baru.
+
+### 3.6 Mekanisme Laporan WhatsApp ke Wali Santri
 Setelah setoran disimpan:
-1. Tombol **"Kirim Laporan WA"** akan aktif otomatis jika nomor handphone wali santri valid di sistem.
-2. Saat diklik, sistem membuka percakapan WhatsApp resmi dengan pesan yang telah disusun secara santun dan terstruktur (memuat nama santri, waktu setoran, juz, surah, ayat/halaman, predikat, dan doa/catatan pembina).
-3. **Proteksi Anti-Nyasar**: Jika wali santri belum memiliki nomor HP yang valid di sistem, tombol WhatsApp dinonaktifkan secara aman, mencegah pesan santri terkirim ke orang yang salah.
+1. Tombol **"Kirim Laporan WA"** aktif secara otomatis apabila nomor kontak wali santri sah dan terdaftar di sistem.
+2. Pesan resmi mencantumkan:
+   - Identitas santri (Nama, NIS, Kelas, Halaqoh).
+   - Jenis setoran (Metode Al-Pakistani: Sabaq / Sabqi / Manzil / Mufar).
+   - Lokasi maqra' (Juz, QS. Surah dan Rentang Ayat).
+   - **Volume Halaman Disetor** (Standar Madinah 20 Hlm/Juz).
+   - **Total Akumulasi Terkini** (contoh: *333 Halaman [16 Juz 13 Halaman]*).
+   - Predikat nilai dan catatan pembina halaqoh.
+3. **Keamanan Anti-Nyasar**: Sistem melarang pengiriman pesan ke nomor acak/palsu jika kontak wali belum terverifikasi di pangkalan data.
 
 ---
 

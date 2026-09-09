@@ -20,6 +20,8 @@ export interface SetoranTahfizhWAParams {
   nilai: string;
   catatan?: string;
   jumlahHalaman?: number | string;
+  totalHalamanKumulatif?: number | string;
+  konversiLabel?: string;
   pembinaNama: string;
   tanggal?: string;
 }
@@ -187,7 +189,10 @@ export function buildSetoranTahfizhWAMessage(p: SetoranTahfizhWAParams): string 
   msg += `• *Surah & Ayat*: QS. ${p.surah}: ${p.ayatMulai}–${p.ayatSelesai}\n`;
   
   if (p.jumlahHalaman && String(p.jumlahHalaman) !== "0") {
-    msg += `• *Volume*: ${p.jumlahHalaman} Halaman (Standar Madinah)\n`;
+    msg += `• *Volume*: ${p.jumlahHalaman} Halaman (Standar Madinah 20 Hlm/Juz)\n`;
+  }
+  if (p.totalHalamanKumulatif && p.konversiLabel) {
+    msg += `• *Total Akumulasi*: ${p.totalHalamanKumulatif} Halaman (${p.konversiLabel})\n`;
   }
   
   msg += `• *Predikat Nilai*: ${nilaiLabel}\n`;

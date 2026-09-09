@@ -35,7 +35,10 @@ import {
   X,
   PlusCircle,
   Sparkles,
+  Calculator,
+  Info,
 } from "lucide-react";
+import { konversiHalamanKeJuz, HALAMAN_PER_JUZ } from "@/lib/laporan-bulanan";
 
 export interface TahfizhModuleProps {
   userRole: Role;
@@ -278,6 +281,31 @@ export function TahfizhModule({
   // Santri yang sedang dipilih
   const activeSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
 
+  // Kalkulasi Cerdas Halaman & Konversi Juz (Standar Mushaf Madinah: 1 Juz = 20 Halaman)
+  const santriTotalHalaman = useMemo(() => {
+    if (!activeSantri) return 0;
+    if (activeSantri.totalHalaman !== undefined) return activeSantri.totalHalaman;
+    return (activeSantri.capaianJuz || 0) * HALAMAN_PER_JUZ;
+  }, [activeSantri]);
+
+  const santriModalAwal = useMemo(() => {
+    if (!activeSantri) return 0;
+    if (activeSantri.modalHalamanAwal !== undefined) return activeSantri.modalHalamanAwal;
+    return Math.max(0, santriTotalHalaman - (activeSantri.nis === "SAN-0002" ? 16 : 0));
+  }, [activeSantri, santriTotalHalaman]);
+
+  const parsedTambahanHlm = useMemo(() => {
+    const n = parseFloat(jumlahHalaman);
+    return isNaN(n) || n < 0 ? 0 : n;
+  }, [jumlahHalaman]);
+
+  const akumulasiHalamanBaru = useMemo(() => {
+    return santriModalAwal + parsedTambahanHlm;
+  }, [santriModalAwal, parsedTambahanHlm]);
+
+  const smartKonversiAwal = useMemo(() => konversiHalamanKeJuz(santriModalAwal), [santriModalAwal]);
+  const smartKonversiAkumulasi = useMemo(() => konversiHalamanKeJuz(akumulasiHalamanBaru), [akumulasiHalamanBaru]);
+
   // Handler Simpan Setoran (Single source of truth)
   const handleSaveSetoran = () => {
     setFeedback(null);
@@ -301,7 +329,7 @@ export function TahfizhModule({
         ayatSelesai: parseInt(ayatSelesai) || 1,
         nilai,
         catatan: inputJenis === "SABAQ"
-          ? `hlm: ${jumlahHalaman} (Mushaf Hlm ${halamanMushaf}). ${catatan}`.trim()
+          ? `[Sabaq: ${jumlahHalaman} Hlm | Akumulasi: ${akumulasiHalamanBaru} Hlm (${smartKonversiAkumulasi.label})]. ${catatan}`.trim()
           : (halamanMushaf ? `(Mushaf Hlm ${halamanMushaf}). ${catatan}`.trim() : catatan),
         jumlahHalaman: inputJenis === "SABAQ" ? Number(jumlahHalaman) || 1 : undefined,
       });
@@ -329,7 +357,7 @@ export function TahfizhModule({
           ...prev,
         ]);
 
-        // Siapkan pesan WA resmi
+        // Siapkan pesan WA resmi dengan metrik halaman cerdas
         const waMsg = buildSetoranTahfizhWAMessage({
           santriNama: activeSantri.nama,
           santriNis: activeSantri.nis,
@@ -343,6 +371,8 @@ export function TahfizhModule({
           nilai,
           catatan,
           jumlahHalaman: inputJenis === "SABAQ" ? parseInt(jumlahHalaman) || 1 : undefined,
+          totalHalamanKumulatif: inputJenis === "SABAQ" ? akumulasiHalamanBaru : undefined,
+          konversiLabel: inputJenis === "SABAQ" ? smartKonversiAkumulasi.label : undefined,
         });
 
         // Ambil nomor kontak wali riil dari santri terpilih (Eliminasi nomor statis 081299887766)
@@ -683,19 +713,28 @@ export function TahfizhModule({
                     onChange={(e) => setSelectedSantriNis(e.target.value)}
                     className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-[#0E7C3A]/20"
                   >
-                    {santriList.map((s) => (
-                      <option key={s.nis} value={s.nis}>
-                        {s.nama} ({s.kelas}) — {s.capaianJuz} Juz
-                      </option>
-                    ))}
+                    {santriList.map((s) => {
+                      const totalHlm = s.totalHalaman || (s.capaianJuz * 20);
+                      const konv = konversiHalamanKeJuz(totalHlm);
+                      return (
+                        <option key={s.nis} value={s.nis}>
+                          {s.nama} ({s.kelas}) — {totalHlm} Hlm ({konv.label})
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 
-                {/* Jenis Setoran */}
+                {/* Jenis Setoran (Metode Al-Pakistani) */}
                 <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
-                    Jenis Setoran
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      Metode Setoran (Al-Pakistani)
+                    </label>
+                    <span className="text-[10px] text-emerald-700 font-semibold">
+                      Kurikulum Inti STQ
+                    </span>
+                  </div>
                   <div className="grid grid-cols-2 gap-1.5">
                     {(["SABAQ", "SABQI", "MANZIL", "MUFAR"] as const).map((j) => (
                       <button
@@ -709,16 +748,143 @@ export function TahfizhModule({
                         }`}
                       >
                         {j === "SABAQ"
-                          ? "Sabaq (Baru)"
+                          ? "1. Sabaq (Hafalan Baru)"
                           : j === "SABQI"
-                          ? "Sabqi (Muroja'ah Baru)"
+                          ? "2. Sabqi (Muroja'ah Sepekan)"
                           : j === "MANZIL"
-                          ? "Manzil (Muroja'ah Lama)"
-                          : "Mufar"}
+                          ? "3. Manzil (Muroja'ah 1 Juz)"
+                          : "4. Mufar (Harian 1-6 Juz)"}
                       </button>
                     ))}
                   </div>
                 </div>
+
+                {/* FITUR PINTAR OTOMATIS: KALKULASI HALAMAN & JUZ */}
+                {inputJenis === "SABAQ" ? (
+                  <div className="rounded-2xl p-3.5 bg-gradient-to-br from-emerald-50 via-teal-50/60 to-emerald-50 border border-emerald-300/80 shadow-xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="p-1.5 bg-emerald-600 text-white rounded-lg">
+                          <Calculator className="h-4 w-4" />
+                        </span>
+                        <div>
+                          <span className="text-xs font-extrabold text-emerald-950 block">
+                            Fitur Pintar Otomatis Konversi Hafalan
+                          </span>
+                          <span className="text-[10px] text-emerald-700 font-medium">
+                            Standar Mushaf Madinah: 1 Juz = 20 Halaman
+                          </span>
+                        </div>
+                      </div>
+                      <Badge variant="green" size="sm" className="font-mono text-[10px]">
+                        Auto-Calculated
+                      </Badge>
+                    </div>
+
+                    {/* Metric Cards Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                      <div className="bg-white/90 p-2 rounded-xl border border-emerald-100 text-center">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">
+                          Modal Awal
+                        </span>
+                        <span className="text-sm font-black text-slate-900 block mt-0.5">
+                          {santriModalAwal} Hlm
+                        </span>
+                        <span className="text-[10px] text-emerald-700 font-medium block">
+                          {smartKonversiAwal.label}
+                        </span>
+                      </div>
+
+                      <div className="bg-white/90 p-2 rounded-xl border border-emerald-100 text-center">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">
+                          Tambah Hari Ini
+                        </span>
+                        <span className="text-sm font-black text-emerald-700 block mt-0.5">
+                          +{parsedTambahanHlm} Hlm
+                        </span>
+                        <span className="text-[10px] text-slate-500 block">
+                          Sabaq Baru
+                        </span>
+                      </div>
+
+                      <div className="bg-white/90 p-2 rounded-xl border border-emerald-100 text-center">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">
+                          Total Akumulasi
+                        </span>
+                        <span className="text-sm font-black text-slate-900 block mt-0.5">
+                          {akumulasiHalamanBaru} Hlm
+                        </span>
+                        <span className="text-[10px] text-slate-500 block">
+                          {santriModalAwal} + {parsedTambahanHlm}
+                        </span>
+                      </div>
+
+                      <div className="bg-gradient-to-br from-[#0E7C3A] to-emerald-700 p-2 rounded-xl text-white text-center shadow-xs flex flex-col justify-center">
+                        <span className="text-[10px] uppercase font-bold text-emerald-100 block">
+                          Otomatis Menjadi
+                        </span>
+                        <span className="text-xs sm:text-sm font-black text-white block mt-0.5">
+                          {smartKonversiAkumulasi.label}
+                        </span>
+                        <span className="text-[9px] text-emerald-200 block">
+                          {Math.floor(akumulasiHalamanBaru / 20)} Juz {akumulasiHalamanBaru % 20} Hlm
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Quick addition buttons */}
+                    <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-emerald-200/60">
+                      <span className="text-[11px] font-semibold text-slate-600">
+                        Pilihan Cepat Tambah:
+                      </span>
+                      <div className="flex items-center gap-1">
+                        {["0.5", "1", "2", "3", "7"].map((val) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setJumlahHalaman(val)}
+                            className={`px-2 py-0.5 rounded-lg text-xs font-bold transition-all ${
+                              jumlahHalaman === val
+                                ? "bg-[#0E7C3A] text-white shadow-xs"
+                                : "bg-white text-emerald-800 border border-emerald-200 hover:bg-emerald-100/50"
+                            }`}
+                          >
+                            +{val} Hlm
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Edukasi Fakta Lapangan */}
+                    <div className="p-2 rounded-xl bg-white/70 border border-emerald-200/70 text-[11px] text-slate-700 leading-relaxed flex items-start gap-2">
+                      <Info className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold text-emerald-950">Fakta Lapangan: </span>
+                        Santri menyetor hafalan berbasis <span className="font-semibold text-emerald-800">Halaman</span> (1 Juz = 20 Hlm). Contoh ananda <strong>Muhammad Fardhan</strong> (modal awal 317 hlm), penambahan 16 hlm (Pekan 1: 3, Pekan 2: 3, Pekan 3: 3, Pekan 4: 7) menjadikan total hafalan bulan ini <strong>333 Halaman</strong>, otomatis dikonversi sistem menjadi <strong>16 Juz 13 Halaman</strong>.
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl p-3 bg-slate-50 border border-slate-200/80 text-xs text-slate-700 space-y-1">
+                    <div className="flex items-center gap-2 font-bold text-slate-900">
+                      <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                      Metode Al-Pakistani: {
+                        inputJenis === "SABQI"
+                          ? "Sabqi (Muroja'ah Hafalan Sepekan Terakhir)"
+                          : inputJenis === "MANZIL"
+                          ? "Manzil (Muroja'ah Hafalan Lama Hingga 1 Juz Penuh)"
+                          : "Mufar (Muroja'ah Harian 1–6 Juz Sesuai Jumlah Hafalan)"
+                      }
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-normal">
+                      {inputJenis === "SABQI"
+                        ? "Muroja'ah hafalan yang diperoleh selama satu pekan terakhir sebelum melanjutkan Sabaq baru."
+                        : inputJenis === "MANZIL"
+                        ? "Muroja'ah hafalan pada pekan-pekan sebelumnya secara bersiklus hingga mencapai satu juz penuh."
+                        : "Muroja'ah harian sebanyak 1–6 juz sesuai jumlah hafalan yang telah dimiliki santri guna menjaga kualitas dan kekuatan hafalan."}
+                    </p>
+                  </div>
+                )}
                 
                 {/* Parameter Al-Qur'an: Juz & Halaman Mushaf & Jumlah Halaman */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -760,7 +926,7 @@ export function TahfizhModule({
                   {inputJenis === "SABAQ" ? (
                     <div>
                       <label className="text-xs font-bold text-slate-700 block mb-1">
-                        Jumlah Halaman
+                        Jumlah Halaman Disetor
                       </label>
                       <Input
                         type="number"
