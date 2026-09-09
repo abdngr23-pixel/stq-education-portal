@@ -68,7 +68,7 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
     const timeoutPromise = new Promise<null>((_, reject) =>
       setTimeout(() => reject(new Error("DB_OFFLINE_TIMEOUT")), 2000)
     );
-    const user = (await Promise.race([dbPromise, timeoutPromise])) as any;
+    const user = await Promise.race([dbPromise, timeoutPromise]);
 
     if (user) {
       if (user.status !== "AKTIF") {
