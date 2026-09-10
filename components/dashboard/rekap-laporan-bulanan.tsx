@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useTransition, useMemo, useRef } from "react";
+import React, { useState, useEffect, useTransition, useMemo } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +26,6 @@ import {
   inputCapaianPekananAction,
   recordTasmiSimaanAction,
   type LaporanBulananData,
-  type RekapSantriBulananItem,
 } from "@/app/actions/laporan-bulanan";
 import {
   generateLaporanBulananMock,
@@ -61,23 +60,14 @@ export interface RekapLaporanBulananProps {
 }
 
 export function RekapLaporanBulanan({
-  halaqohList = [],
   initialHalaqohId,
   userRole = "MT",
   currentHalaqohName,
-  currentUserName,
   isKepalaBidangTahfidz,
   onPrintPreview,
 }: RekapLaporanBulananProps) {
-  const isManagerial = ["KS", "ADM", "YAY"].includes(userRole);
-  
-  // Otoritas Kepala Bidang Tahfidz (Ust. Razan Mufli): Dapat memilih seluruh halaqoh dan mode agregasi ALL
-  const isKabid =
-    Boolean(isKepalaBidangTahfidz) ||
-    (currentUserName && (currentUserName.toLowerCase().includes("razan") || currentUserName.toLowerCase() === "musyrif.tahfizh")) ||
-    (currentHalaqohName && currentHalaqohName.toLowerCase().includes("razan"));
-
-  const canSelectAnyHalaqoh = isManagerial || isKabid;
+  // Otoritas Kepala Bidang Tahfidz: Ditentukan murni dari flag database isKepalaBidangTahfidz
+  const isKabid = Boolean(isKepalaBidangTahfidz);
   const isLockedMusyrif = (userRole === "MT" || userRole === "PH") && !isKabid;
 
   // Resolusi halaqoh binaan staf untuk role MT / PH (ABAC Enforced)
@@ -111,17 +101,15 @@ export function RekapLaporanBulanan({
     return initialHalaqohId || "ALL";
   });
 
-  const prevRoleRef = useRef(userRole);
-  useEffect(() => {
-    if (prevRoleRef.current !== userRole) {
-      prevRoleRef.current = userRole;
-      if (isLockedMusyrif) {
-        setSelectedHalaqohId(resolvedHalaqoh.id);
-      } else {
-        setSelectedHalaqohId(initialHalaqohId || "ALL");
-      }
+  const [prevRole, setPrevRole] = useState(userRole);
+  if (prevRole !== userRole) {
+    setPrevRole(userRole);
+    if (isLockedMusyrif) {
+      setSelectedHalaqohId(resolvedHalaqoh.id);
+    } else {
+      setSelectedHalaqohId(initialHalaqohId || "ALL");
     }
-  }, [userRole, resolvedHalaqoh.id, initialHalaqohId, isLockedMusyrif]);
+  }
 
   const [selectedBulan, setSelectedBulan] = useState<number>(9); // September (bulan berjalan di roadmap)
   const [selectedTahunAjaran, setSelectedTahunAjaran] = useState<string>("2026/2027");
@@ -230,7 +218,8 @@ export function RekapLaporanBulanan({
         `${r.tahfizh.sabqi.persentase}%`,
         r.tahfizh.manzil.totalFrekuensi,
         `${r.tahfizh.manzil.persentase}%`,
-        (r.tahfizh.mufar as any).targetLabel || `${(r.tahfizh.mufar as any).targetHarianJuz || hitungTargetMufar(r.tahfizh.sabaq.konversiAkumulasi.juz || 1)} Juz/hari`,
+        (r.tahfizh.mufar as { targetLabel?: string; targetHarianJuz?: number }).targetLabel ||
+          `${(r.tahfizh.mufar as { targetLabel?: string; targetHarianJuz?: number }).targetHarianJuz || hitungTargetMufar(r.tahfizh.sabaq.konversiAkumulasi.juz || 1)} Juz/hari`,
         r.tahfizh.mufar.totalFrekuensi,
       ]);
       exportToCSV(`Laporan_Tahfizh_${BULAN_NAMES[selectedBulan - 1]}_${selectedTahunAjaran.replace("/", "_")}`, headers, rows);
@@ -687,9 +676,9 @@ export function RekapLaporanBulanan({
                         <div className="text-[10px] text-slate-400">
                           {item.santri.nis} • Kelas {item.santri.kelas}
                         </div>
-                        {selectedHalaqohId === "ALL" && (item.santri as any).halaqoh && (
+                        {selectedHalaqohId === "ALL" && (item.santri as { halaqoh?: string }).halaqoh && (
                           <div className="text-[9px] text-[#0E7C3A] font-semibold mt-0.5">
-                            {(item.santri as any).halaqoh}
+                            {(item.santri as { halaqoh?: string }).halaqoh}
                           </div>
                         )}
                       </td>
@@ -746,7 +735,8 @@ export function RekapLaporanBulanan({
 
                       {/* Mufar Data (Target Juz/Hari Dinamis berdasarkan Total Hafalan) */}
                       <td className="px-2 py-2 text-center font-bold text-purple-800 bg-purple-50/30">
-                        {(mfr as any).targetLabel || `${(mfr as any).targetHarianJuz || hitungTargetMufar(sbq.konversiAkumulasi.juz || 1)} Juz/hari`}
+                        {(mfr as { targetLabel?: string; targetHarianJuz?: number }).targetLabel ||
+                          `${(mfr as { targetLabel?: string; targetHarianJuz?: number }).targetHarianJuz || hitungTargetMufar(sbq.konversiAkumulasi.juz || 1)} Juz/hari`}
                       </td>
                       <td className="px-2 py-2 text-center font-bold text-slate-900">{mfr.totalFrekuensi}x</td>
                     </tr>
@@ -835,9 +825,9 @@ export function RekapLaporanBulanan({
                       <td className="px-3 py-2.5 border-r border-slate-100">
                         <div className="font-bold text-slate-900">{item.santri.nama}</div>
                         <div className="text-[10px] text-slate-400">NIS: {item.santri.nis}</div>
-                        {selectedHalaqohId === "ALL" && (item.santri as any).halaqoh && (
+                        {selectedHalaqohId === "ALL" && (item.santri as { halaqoh?: string }).halaqoh && (
                           <div className="text-[9px] text-[#0E7C3A] font-semibold mt-0.5">
-                            {(item.santri as any).halaqoh}
+                            {(item.santri as { halaqoh?: string }).halaqoh}
                           </div>
                         )}
                       </td>
@@ -951,9 +941,9 @@ export function RekapLaporanBulanan({
                       <Badge variant="sky" size="sm">
                         {item.santri.nis}
                       </Badge>
-                      {selectedHalaqohId === "ALL" && (item.santri as any).halaqoh && (
+                      {selectedHalaqohId === "ALL" && (item.santri as { halaqoh?: string }).halaqoh && (
                         <Badge variant="green" size="sm">
-                          {(item.santri as any).halaqoh}
+                          {(item.santri as { halaqoh?: string }).halaqoh}
                         </Badge>
                       )}
                     </div>

@@ -31,8 +31,25 @@ export async function simpanBatchPresensiAction(input: SimpanBatchPresensiInput)
     return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
   }
 
-  // 1. Verifikasi Wewenang: MK, MT, PH, OSDA, KS, ADM berhak mencatat presensi
-  if (!["MK", "MT", "PH", "OSDA", "KS", "ADM"].includes(session.role)) {
+  // 1. Verifikasi Wewenang: MK, MT, PH, OSDA, KS, ADM atau Petugas Presensi Putri (ST berstatus perempuan)
+  const isStaffPresensi = ["MK", "MT", "PH", "OSDA", "KS", "ADM"].includes(session.role);
+  let isPetugasPutri = Boolean(session.isPetugasPresensiPutri);
+
+  if (!isPetugasPutri && session.role === "ST" && session.userId && !session.userId.startsWith("user_")) {
+    try {
+      const userDb = await prisma.user.findUnique({
+        where: { id: session.userId },
+        select: { isPetugasPresensiPutri: true, santri: { select: { jenisKelamin: true } } },
+      });
+      if (userDb?.isPetugasPresensiPutri && userDb?.santri?.jenisKelamin === "P") {
+        isPetugasPutri = true;
+      }
+    } catch {
+      // DB offline fallback
+    }
+  }
+
+  if (!isStaffPresensi && !isPetugasPutri) {
     return {
       success: false,
       message: `Peran '${session.role}' tidak memiliki kewenangan mencatat presensi jamaah/halaqoh.`,
@@ -47,6 +64,21 @@ export async function simpanBatchPresensiAction(input: SimpanBatchPresensiInput)
   }
 
   const { kegiatan, items } = validation.data;
+
+  // Proteksi Fail-Closed Petugas Presensi Putri: HANYA santriwati (P), tolak keras jika ada santri ikhwan (L)
+  if (isPetugasPutri && !isStaffPresensi) {
+    const santriTargets = await prisma.santri.findMany({
+      where: { id: { in: items.map((i) => i.santriId) } },
+      select: { id: true, nama: true, jenisKelamin: true },
+    });
+    const santriLakiLaki = santriTargets.filter((s) => s.jenisKelamin === "L");
+    if (santriLakiLaki.length > 0) {
+      return {
+        success: false,
+        message: `Akses Ditolak: Petugas Presensi Putri hanya berwenang mencatat presensi santriwati (perempuan). Ditemukan santri laki-laki (${santriLakiLaki.map((s) => s.nama).join(", ")}).`,
+      };
+    }
+  }
 
   // ABAC Scoping: MT/PH hanya boleh mencatat santri di halaqoh binaannya saat kegiatan halaqoh
   if ((session.role === "MT" || session.role === "PH") && kegiatan.toLowerCase().includes("halaqoh")) {

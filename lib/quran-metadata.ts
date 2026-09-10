@@ -351,3 +351,22 @@ export function detectSurahByJuzPageVerse(input: DetectionInput): DetectionResul
     confidence: "juz_default",
   };
 }
+
+/**
+ * Validasi apakah nomor halaman berada dalam rentang resmi Mushaf Madinah (1–604)
+ */
+export function isPageWithinBounds(page: number): boolean {
+  return typeof page === "number" && !isNaN(page) && page >= 1 && page <= 604;
+}
+
+/**
+ * Validasi apakah rentang halaman mulai dan selesai sesuai dengan Juz yang ditentukan
+ */
+export function isPageRangeValidForJuz(juz: number, startPage: number, endPage: number): boolean {
+  if (!isPageWithinBounds(startPage) || !isPageWithinBounds(endPage) || startPage > endPage) {
+    return false;
+  }
+  const juzInfo = JUZ_LIST.find((j) => j.juz === juz);
+  if (!juzInfo) return false;
+  return startPage >= juzInfo.startPage && endPage <= juzInfo.endPage;
+}

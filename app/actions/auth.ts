@@ -94,12 +94,8 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
           halaqohName = getHalaqohByStaff(user.staff.staffCode);
         }
 
-        const isKabid = Boolean(
-          (user.staff as any)?.isKepalaBidangTahfidz ||
-          displayName?.toLowerCase().includes("razan") ||
-          user.username === "razan.mt" ||
-          user.username === "musyrif.tahfizh"
-        );
+        const isKabid = Boolean(user.staff?.isKepalaBidangTahfidz);
+        const isPetugasPresensiPutri = Boolean(user.isPetugasPresensiPutri);
 
         const token = await createSessionToken({
           sub: user.id,
@@ -111,6 +107,7 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
           name: displayName,
           halaqohName: halaqohName,
           isKepalaBidangTahfidz: isKabid,
+          isPetugasPresensiPutri: isPetugasPresensiPutri,
         });
 
         await setSessionCookie(token);
@@ -262,12 +259,8 @@ export async function quickDemoLoginAction(
       });
 
       if (user) {
-        const isKabid = Boolean(
-          matchedStaff.isKepalaBidangTahfidz ||
-          (user.staff as any)?.isKepalaBidangTahfidz ||
-          matchedStaff.name.toLowerCase().includes("razan") ||
-          matchedStaff.username === "razan.mt"
-        );
+        const isKabid = Boolean(user.staff?.isKepalaBidangTahfidz ?? matchedStaff.isKepalaBidangTahfidz);
+        const isPetugasPresensiPutri = Boolean(user.isPetugasPresensiPutri);
 
         const token = await createSessionToken({
           sub: user.id,
@@ -279,6 +272,7 @@ export async function quickDemoLoginAction(
           name: user.staff?.nama || matchedStaff.name,
           halaqohName: matchedStaff.halaqohName,
           isKepalaBidangTahfidz: isKabid,
+          isPetugasPresensiPutri: isPetugasPresensiPutri,
         });
 
         await setSessionCookie(token);
@@ -299,11 +293,7 @@ export async function quickDemoLoginAction(
     }
 
     // Fallback akun staf memory
-    const isKabidFallback = Boolean(
-      matchedStaff.isKepalaBidangTahfidz ||
-      matchedStaff.name.toLowerCase().includes("razan") ||
-      matchedStaff.username === "razan.mt"
-    );
+    const isKabidFallback = Boolean(matchedStaff.isKepalaBidangTahfidz);
 
     const token = await createSessionToken({
       sub: `user_${matchedStaff.id}`,
@@ -315,6 +305,7 @@ export async function quickDemoLoginAction(
       name: matchedStaff.name,
       halaqohName: matchedStaff.halaqohName,
       isKepalaBidangTahfidz: isKabidFallback,
+      isPetugasPresensiPutri: false,
     });
 
     await setSessionCookie(token);
@@ -345,12 +336,8 @@ export async function quickDemoLoginAction(
       const displayName = user.staff?.nama || user.santri?.nama || demo?.name || user.username;
       const halaqohName = getHalaqohByStaff(displayName);
 
-      const isKabidRole = Boolean(
-        (user.staff as any)?.isKepalaBidangTahfidz ||
-        displayName.toLowerCase().includes("razan") ||
-        user.username === "razan.mt" ||
-        user.username === "musyrif.tahfizh"
-      );
+      const isKabidRole = Boolean(user.staff?.isKepalaBidangTahfidz);
+      const isPetugasPresensiPutri = Boolean(user.isPetugasPresensiPutri);
 
       const token = await createSessionToken({
         sub: user.id,
@@ -362,6 +349,7 @@ export async function quickDemoLoginAction(
         name: displayName,
         halaqohName: halaqohName,
         isKepalaBidangTahfidz: isKabidRole,
+        isPetugasPresensiPutri: isPetugasPresensiPutri,
       });
 
       await setSessionCookie(token);
@@ -392,7 +380,7 @@ export async function quickDemoLoginAction(
   // Fallback ke akun demo standar
   if (demo) {
     const halaqohName = getHalaqohByStaff(demo.name);
-    const isKabidDemo = demo.role === "MT" || demo.name.toLowerCase().includes("razan");
+    const isKabidDemo = Boolean((demo as { isKepalaBidangTahfidz?: boolean }).isKepalaBidangTahfidz);
     const token = await createSessionToken({
       sub: `user_${demo.role.toLowerCase()}`,
       username: demo.username,

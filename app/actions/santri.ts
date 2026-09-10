@@ -92,7 +92,14 @@ export async function getSantriListAction(params?: {
       },
     });
 
-    return { success: true, data: list };
+    // Aturan Pengurutan: Santriwati (P) WAJIB diurutkan secara alfabetis A-Z (locale Indonesia).
+    // Santri ikhwan (L) mempertahankan urutan aslinya.
+    const ikhwanList = list.filter((s) => s.jenisKelamin === "L");
+    const akhwatList = list
+      .filter((s) => s.jenisKelamin === "P")
+      .sort((a, b) => a.nama.localeCompare(b.nama, "id", { sensitivity: "base" }));
+
+    return { success: true, data: [...ikhwanList, ...akhwatList] };
   } catch (error) {
     console.error("Gagal mengambil data santri:", error);
     return { success: false, message: "Gagal mengambil data santri.", data: [] };

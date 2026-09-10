@@ -96,9 +96,33 @@ enum StatusAbsensi {
 
 // Enums Fase 3: Kedisiplinan & Administrasi
 enum TingkatPelanggaran {
-  RINGAN
-  SEDANG
-  BERAT
+  KATEGORI_1
+  KATEGORI_2
+  KATEGORI_3
+  RINGAN // Legacy
+  SEDANG // Legacy
+  BERAT  // Legacy
+}
+
+enum StatusHakLibur {
+  TERSEDIA
+  DIJADWALKAN
+  DIGUNAKAN
+  DIBATALKAN
+}
+
+enum JenisTransaksiBintang {
+  REWARD_TASMI
+  REWARD_SIMAAN
+  PRESTASI
+  PENYESUAIAN
+  PEMBATALAN
+}
+
+enum StatusSanksiKunjungan {
+  BEBAS
+  KEHILANGAN_KUNJUNGAN
+  DIKECUALIKAN
 }
 
 enum StatusSP {
@@ -212,6 +236,8 @@ model User {
   santriId     String?     @unique @map("santri_id")
   santri       Santri?     @relation(fields: [santriId], references: [id])
 
+  isPetugasPresensiPutri Boolean @default(false) @map("is_petugas_presensi_putri")
+
   sessions     Session[]
   auditLogs    AuditLog[]
 
@@ -284,6 +310,7 @@ model Santri {
   jenisKelamin  JenisKelamin     @map("jenis_kelamin")
   status        SantriStatus     @default(AKTIF)
   isYatimDhuafa Boolean          @default(false) @map("is_yatim_dhuafa")
+  targetAkhirProgramJuz Int      @default(30) @map("target_akhir_program_juz")
   
   namaWali      String?          @map("nama_wali")
   noHpWali      String?          @map("no_hp_wali")
@@ -320,6 +347,10 @@ model Santri {
   targetList         TargetSantri[]
   capaianBulananList CapaianBulanan[]
   tasmiSimaanList    TasmiSimaan[]
+  mutabaahHarianList    CatatanMutabaahHarian[]
+  hakLiburList          HakLiburSantri[]
+  transaksiBintangList  TransaksiBintang[]
+  finalisasiBulananList FinalisasiBulananSantri[]
 
   createdAt     DateTime         @default(now()) @map("created_at")
   updatedAt     DateTime         @updatedAt @map("updated_at")
@@ -481,10 +512,11 @@ model Absensi {
 
 model KategoriPelanggaran {
   id              String             @id @default(cuid())
-  kode            String             @unique // e.g. "PLG-DIS-01"
-  nama            String             // e.g. "Terlambat Sholat", "Membawa Gadget Ilegal"
+  kode            String             @unique // e.g. "PLG-KAT1-01"
+  nama            String             // e.g. "Main main dalam sholat"
   tingkat         TingkatPelanggaran
-  poinDasar       Int                @map("poin_dasar") // e.g. 5, 10, 25
+  poinDasar       Int?               @map("poin_dasar") // Null jika belum ditetapkan
+  sanksi          String?            // Sanksi standar (misal rotan 3x, push-up)
   
   pelanggaranList PelanggaranSantri[]
   createdAt       DateTime           @default(now()) @map("created_at")
@@ -494,22 +526,27 @@ model KategoriPelanggaran {
 }
 
 model PelanggaranSantri {
-  id              String              @id @default(cuid())
-  kodePelanggaran String              @unique @map("kode_pelanggaran") // e.g. "PLG-000001"
-  santriId        String              @map("santri_id")
-  santri          Santri              @relation(fields: [santriId], references: [id], onDelete: Cascade)
-  kategoriId      String              @map("kategori_id")
-  kategori        KategoriPelanggaran @relation(fields: [kategoriId], references: [id])
+  id                      String              @id @default(cuid())
+  kodePelanggaran         String              @unique @map("kode_pelanggaran") // e.g. "PLG-000001"
+  santriId                String              @map("santri_id")
+  santri                  Santri              @relation(fields: [santriId], references: [id], onDelete: Cascade)
+  kategoriId              String              @map("kategori_id")
+  kategori                KategoriPelanggaran @relation(fields: [kategoriId], references: [id])
   
-  tanggal         DateTime            @default(now())
-  poinFinal       Int                 @map("poin_final") // Hasil setelah pengulangan (x2 jika berulang)
-  isPengulangan   Boolean             @default(false) @map("is_pengulangan")
-  kronologi       String
-  
-  pencatatId      String              @map("pencatat_id")
-  pencatat        Staff               @relation("PelanggaranDicatat", fields: [pencatatId], references: [id])
+  // Snapshot data pelanggaran saat kejadian
+  namaPelanggaranSnapshot String?             @map("nama_pelanggaran_snapshot")
+  kategoriSnapshot        TingkatPelanggaran? @map("kategori_snapshot")
+  sanksiSnapshot          String?             @map("sanksi_snapshot")
 
-  createdAt       DateTime            @default(now()) @map("created_at")
+  tanggal                 DateTime            @default(now())
+  poinFinal               Int                 @default(0) @map("poin_final") // 0 jika Kategori 1 atau sanksi fisik
+  isPengulangan           Boolean             @default(false) @map("is_pengulangan")
+  kronologi               String
+  
+  pencatatId              String              @map("pencatat_id")
+  pencatat                Staff               @relation("PelanggaranDicatat", fields: [pencatatId], references: [id])
+
+  createdAt               DateTime            @default(now()) @map("created_at")
 
   @@index([santriId, tanggal])
   @@map("pelanggaran_santri")
@@ -860,6 +897,9 @@ model TasmiSimaan {
   predikat    NilaiSetoran
   catatan     String?
 
+  hakLiburList         HakLiburSantri[]
+  transaksiBintangList TransaksiBintang[]
+
   createdAt   DateTime         @default(now()) @map("created_at")
   updatedAt   DateTime         @updatedAt @map("updated_at")
 
@@ -867,3 +907,104 @@ model TasmiSimaan {
   @@index([musyrifId])
   @@map("tasmi_simaan")
 }
+
+// ----------------------------------------------------
+// ROADMAP V2: MODUL KEBIJAKAN REWARD & SANKSI BULANAN
+// ----------------------------------------------------
+
+model KebijakanRewardSanksi {
+  id                           String   @id @default(cuid())
+  nama                         String   @default("Kebijakan Standar Pesantren")
+  minNilaiTasmi                Float    @default(80.0) @map("min_nilai_tasmi")
+  minNilaiSimaan               Float    @default(85.0) @map("min_nilai_simaan")
+  bintangTasmi                 Int      @default(1) @map("bintang_tasmi")
+  bintangSimaan                Int      @default(2) @map("bintang_simaan")
+  hakLiburTasmiHari            Int      @default(1) @map("hak_libur_tasmi_hari")
+  hakLiburSimaanHari           Int      @default(2) @map("hak_libur_simaan_hari")
+  minPersenTargetBulanan       Float    @default(100.0) @map("min_persen_target_bulanan")
+  durasiKehilanganKunjunganHari Int     @default(30) @map("durasi_kehilangan_kunjungan_hari")
+  isActive                     Boolean  @default(true) @map("is_active")
+  createdBy                    String?  @map("created_by")
+  createdAt                    DateTime @default(now()) @map("created_at")
+  updatedAt                    DateTime @updatedAt @map("updated_at")
+
+  @@map("kebijakan_reward_sanksi")
+}
+
+model HakLiburSantri {
+  id                 String         @id @default(cuid())
+  santriId           String         @map("santri_id")
+  santri             Santri         @relation(fields: [santriId], references: [id], onDelete: Cascade)
+  tasmiSimaanId      String?        @map("tasmi_simaan_id")
+  tasmiSimaan        TasmiSimaan?   @relation(fields: [tasmiSimaanId], references: [id], onDelete: SetNull)
+  jumlahHari         Int            @map("jumlah_hari")
+  status             StatusHakLibur @default(TERSEDIA)
+  tanggalMulai       DateTime?      @map("tanggal_mulai")
+  tanggalSelesai     DateTime?      @map("tanggal_selesai")
+  diverifikasiOlehId String?        @map("diverifikasi_oleh_id")
+  catatan            String?
+  alasanPembatalan   String?        @map("alasan_pembatalan")
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  @@index([santriId, status])
+  @@map("hak_libur_santri")
+}
+
+model TransaksiBintang {
+  id                 String                @id @default(cuid())
+  santriId           String                @map("santri_id")
+  santri             Santri                @relation(fields: [santriId], references: [id], onDelete: Cascade)
+  tasmiSimaanId      String?               @map("tasmi_simaan_id")
+  tasmiSimaan        TasmiSimaan?          @relation(fields: [tasmiSimaanId], references: [id], onDelete: SetNull)
+  jumlahBintang      Int                   @map("jumlah_bintang")
+  jenis              JenisTransaksiBintang
+  keterangan         String
+  diverifikasiOlehId String?               @map("diverifikasi_oleh_id")
+  createdAt          DateTime              @default(now()) @map("created_at")
+
+  @@index([santriId, jenis])
+  @@map("transaksi_bintang")
+}
+
+model FinalisasiBulananSantri {
+  id                    String                @id @default(cuid())
+  santriId              String                @map("santri_id")
+  santri                Santri                @relation(fields: [santriId], references: [id], onDelete: Cascade)
+  bulan                 Int                   // 1 - 12
+  tahunAjaran           String                @map("tahun_ajaran") // e.g. "2026/2027"
+  targetHalaman         Float                 @map("target_halaman")
+  capaianHalaman        Float                 @map("capaian_halaman")
+  persentase            Float
+  isTercapai            Boolean               @map("is_tercapai")
+  statusSanksiKunjungan StatusSanksiKunjungan @default(BEBAS) @map("status_sanksi_kunjungan")
+  tanggalMulaiSanksi    DateTime?             @map("tanggal_mulai_sanksi")
+  tanggalSelesaiSanksi  DateTime?             @map("tanggal_selesai_sanksi")
+  isOverride            Boolean               @default(false) @map("is_override")
+  alasanOverride        String?               @map("alasan_override")
+  difinalisasiOlehId    String?               @map("difinalisasi_oleh_id")
+  createdAt             DateTime              @default(now()) @map("created_at")
+  updatedAt             DateTime              @updatedAt @map("updated_at")
+
+  @@unique([santriId, bulan, tahunAjaran])
+  @@index([bulan, tahunAjaran])
+  @@map("finalisasi_bulanan_santri")
+}
+
+model CatatanMutabaahHarian {
+  id          String          @id @default(cuid())
+  santriId    String          @map("santri_id")
+  santri      Santri          @relation(fields: [santriId], references: [id], onDelete: Cascade)
+  kategori    KategoriCapaian
+  tanggal     DateTime        @default(now())
+  nilai       Float           // Halaman (Literasi) atau capaian/frekuensi
+  catatan     String?
+  dicatatOleh String          @map("dicatat_oleh")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  @@unique([santriId, kategori, tanggal])
+  @@index([santriId, tanggal])
+  @@map("catatan_mutabaah_harian")
+}
+

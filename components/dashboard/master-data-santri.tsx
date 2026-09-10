@@ -437,7 +437,7 @@ export function MasterDataSantri({
                             {santri.capaianJuz} Juz
                           </span>
                           <span className="text-[10px] text-slate-400">
-                            / {santri.targetJuz} Juz
+                            / 30 Juz (Target Akhir)
                           </span>
                         </div>
                       </td>
@@ -545,9 +545,9 @@ export function MasterDataSantri({
                   </p>
                 </div>
                 <div className="p-3 rounded-2xl bg-amber-50/60 border border-amber-100">
-                  <span className="text-[10px] uppercase font-bold text-amber-800">Target Belajar</span>
+                  <span className="text-[10px] uppercase font-bold text-amber-800">Target Akhir Program</span>
                   <p className="font-extrabold text-amber-700 text-base mt-0.5">
-                    {selectedSantriDetail.targetJuz} Juz
+                    30 Juz
                   </p>
                 </div>
               </div>

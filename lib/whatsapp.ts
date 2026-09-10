@@ -291,7 +291,7 @@ export function buildProgressSantriWAMessage(p: ProgressSantriWAParams): string 
   msg += `Yth. ${waliGreeting} dari ananda *${p.santriNama}* (${p.santriNis}, Kelas ${p.kelas}),\n\n`;
   msg += `Berikut ringkasan capaian tahfizh Al-Qur'an ananda saat ini:\n`;
   msg += `• *Kelompok Halaqoh*: ${p.halaqoh}\n`;
-  msg += `• *Capaian Hafalan*: *${p.capaianJuz} Juz* dari target ${p.targetJuz} Juz (${persentase}%)\n`;
+  msg += `• *Capaian Hafalan*: *${p.capaianJuz} Juz* dari target ${p.targetJuz || 30} Juz (${persentase}%) — Target Akhir 30 Juz\n`;
 
   if (p.setoranTerakhir) {
     msg += `• *Setoran Terakhir*: ${p.setoranTerakhir}\n`;

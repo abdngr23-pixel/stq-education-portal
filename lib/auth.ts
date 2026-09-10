@@ -114,6 +114,7 @@ export async function getCurrentSession(): Promise<UserSession | null> {
       name: payload.name,
       halaqohName: payload.halaqohName,
       isKepalaBidangTahfidz: payload.isKepalaBidangTahfidz ?? false,
+      isPetugasPresensiPutri: payload.isPetugasPresensiPutri ?? false,
     };
   } catch {
     return null;
@@ -159,6 +160,8 @@ export async function getAuthFromRequest(req: Request): Promise<UserSession | nu
           santriId: payload.santriId,
           name: payload.name,
           halaqohName: payload.halaqohName,
+          isKepalaBidangTahfidz: payload.isKepalaBidangTahfidz ?? false,
+          isPetugasPresensiPutri: payload.isPetugasPresensiPutri ?? false,
         };
       }
     }

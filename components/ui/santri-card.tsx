@@ -116,11 +116,11 @@ export function SantriCard({
           </div>
         </div>
 
-        {/* Badge Capaian / Target */}
+        {/* Badge Capaian / Target Akhir 30 Juz */}
         {capaianJuz !== undefined && (
           <div className="shrink-0 text-right">
             <Badge variant="green" size="sm" className="font-bold">
-              {capaianJuz} / {targetJuz || 30} Juz
+              {capaianJuz} dari Target Akhir {targetJuz ?? 30} Juz
             </Badge>
           </div>
         )}

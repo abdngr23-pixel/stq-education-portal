@@ -95,7 +95,7 @@ export function DashboardWaliSantri({
         <StatCard
           title="Hafalan Mutqin"
           value={`${santri.capaianJuz} Juz`}
-          description={`Target ${santri.targetJuz} Juz`}
+          description="Capaian dari Target Akhir 30 Juz"
           icon={<BookCheck className="h-5 w-5" />}
           badgeText="Istiqomah"
           badgeVariant="green"

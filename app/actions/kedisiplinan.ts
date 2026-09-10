@@ -2,8 +2,8 @@
 
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
-import { StatusSP, KategoriBintang } from "@prisma/client";
-import { hitungPoinPelanggaran, evaluasiLevelSP } from "@/lib/educational-rules";
+import { StatusSP, KategoriBintang, TingkatPelanggaran } from "@prisma/client";
+import { hitungPoinPelanggaran } from "@/lib/educational-rules";
 
 export interface CatatPelanggaranData {
   santriId: string;
@@ -51,7 +51,12 @@ export async function catatPelanggaranAction(input: CatatPelanggaranData) {
 
     const isPengulangan = existingCount > 0;
     // Aturan Bisnis: jika berulang, poin dikalikan dua sesuai educational-rules
-    const poinFinal = hitungPoinPelanggaran(kategori.poinDasar, isPengulangan);
+    const poinDasarVal = kategori.poinDasar ?? 0;
+    const poinFinal = hitungPoinPelanggaran(poinDasarVal, isPengulangan);
+
+    const sanksiSnapshot =
+      kategori.sanksi ||
+      (poinFinal > 0 ? `${poinFinal} Poin` : "Hukuman Langsung / Pembinaan");
 
     // Pencatat staff
     const pencatatStaff = session.staffId
@@ -65,12 +70,15 @@ export async function catatPelanggaranAction(input: CatatPelanggaranData) {
     const count = await prisma.pelanggaranSantri.count();
     const kodePelanggaran = `PLG-${String(count + 1).padStart(6, "0")}`;
 
-    // Simpan pelanggaran
+    // Simpan pelanggaran dengan snapshot identitas
     const newPelanggaran = await prisma.pelanggaranSantri.create({
       data: {
         kodePelanggaran,
         santriId: input.santriId,
         kategoriId: input.kategoriId,
+        namaPelanggaranSnapshot: kategori.nama,
+        kategoriSnapshot: kategori.tingkat,
+        sanksiSnapshot: sanksiSnapshot,
         poinFinal,
         isPengulangan,
         kronologi: input.kronologi,
@@ -89,11 +97,45 @@ export async function catatPelanggaranAction(input: CatatPelanggaranData) {
     const totalPoin = allPelanggaran.reduce((acc, curr) => acc + curr.poinFinal, 0);
 
     let spNotice = "";
-    const spGrade = evaluasiLevelSP(totalPoin);
-    const spLevel = spGrade === "SP3" ? 3 : spGrade === "SP2" ? 2 : spGrade === "SP1" ? 1 : 0;
+    // Evaluasi SP HANYA untuk Kategori 3
+    // Aturan: Kategori 1 (hukuman langsung) dan Kategori 2 (pemberian point) TIDAK BOLEH memicu SP!
+    const isKategori3 =
+      kategori.tingkat === TingkatPelanggaran.KATEGORI_3 ||
+      kategori.tingkat === TingkatPelanggaran.BERAT;
 
-    if (spLevel > 0) {
-      // Cek apakah SP pada tingkat ini sudah ada
+    if (isKategori3) {
+      const now = new Date();
+      const oneYearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+      const threeYearsAgo = new Date(now.getTime() - 3 * 365 * 24 * 60 * 60 * 1000);
+
+      // Ambil seluruh pelanggaran Kategori 3 yang pernah dilakukan santri ini
+      const historicalKat3 = await prisma.pelanggaranSantri.findMany({
+        where: {
+          santriId: input.santriId,
+          kategori: {
+            tingkat: { in: [TingkatPelanggaran.KATEGORI_3, TingkatPelanggaran.BERAT] },
+          },
+          id: { not: newPelanggaran.id },
+        },
+        select: { id: true, kategoriId: true, createdAt: true },
+      });
+
+      // Filter berdasarkan aturan pemutihan:
+      // - Pelanggaran sejenis (kategoriId sama): masa aktif 3 tahun
+      // - Pelanggaran umum (kategoriId beda): masa aktif 1 tahun
+      const activePriorKat3 = historicalKat3.filter((p) => {
+        if (p.kategoriId === input.kategoriId) {
+          return p.createdAt >= threeYearsAgo;
+        } else {
+          return p.createdAt >= oneYearAgo;
+        }
+      });
+
+      // Total Kategori 3 aktif termasuk yang baru dicatat
+      const totalActiveKat3 = activePriorKat3.length + 1;
+      const spLevel = Math.min(totalActiveKat3, 3); // SP 1, 2, atau 3
+
+      // Cek apakah SP tingkat ini sudah diterbitkan
       const existingSP = await prisma.suratPeringatan.findFirst({
         where: {
           santriId: input.santriId,
@@ -115,7 +157,7 @@ export async function catatPelanggaranAction(input: CatatPelanggaranData) {
             status: StatusSP.AKTIF,
           },
         });
-        spNotice = ` PERINGATAN: Akumulasi poin mencapai ${totalPoin} poin! ${nomorSP} (SP ${spLevel}) otomatis diterbitkan.`;
+        spNotice = ` PERINGATAN: Pelanggaran Kategori 3 ke-${totalActiveKat3}! ${nomorSP} (SP ${spLevel}) otomatis diterbitkan.`;
       }
     }
 
@@ -295,8 +337,10 @@ export async function getPelanggaranListAction(santriId?: string) {
         santriNama: r.santri?.nama || "Santri",
         santriNis: r.santri?.nis || "",
         santriKelas: r.santri?.kelas || "",
-        kategori: r.kategori?.nama || "Pelanggaran",
+        kategori: r.namaPelanggaranSnapshot || r.kategori?.nama || "Pelanggaran",
         kategoriId: r.kategoriId,
+        tingkat: r.kategoriSnapshot || r.kategori?.tingkat || "KATEGORI_2",
+        sanksi: r.sanksiSnapshot || (r.poinFinal > 0 ? `${r.poinFinal} Poin` : "-"),
         poin: r.poinFinal,
         isPengulangan: r.isPengulangan,
         kronologi: r.kronologi,

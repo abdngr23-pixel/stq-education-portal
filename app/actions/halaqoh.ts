@@ -51,7 +51,12 @@ export async function getHalaqohDetailAction(halaqohId: string) {
       return { success: false, message: "Halaqoh tidak ditemukan" };
     }
 
-    return { success: true, data: halaqoh };
+    const ikhwanList = halaqoh.santriList.filter((s) => s.jenisKelamin === "L");
+    const akhwatList = halaqoh.santriList
+      .filter((s) => s.jenisKelamin === "P")
+      .sort((a, b) => a.nama.localeCompare(b.nama, "id", { sensitivity: "base" }));
+
+    return { success: true, data: { ...halaqoh, santriList: [...ikhwanList, ...akhwatList] } };
   } catch (error) {
     console.error("Gagal mengambil detail halaqoh:", error);
     return { success: false, message: "Terjadi kesalahan saat memuat detail halaqoh" };

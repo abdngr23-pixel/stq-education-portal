@@ -16,7 +16,6 @@ import {
   evaluasiCapaianNonTahfizh,
   generateRingkasanTasmiSimaan,
   generateLaporanBulananMock,
-  MASTER_HALAQOH_LIST,
   TARGET_MIN_KOMPONEN,
 } from "@/lib/laporan-bulanan";
 
@@ -90,18 +89,14 @@ export async function getLaporanBulananHalaqohAction(
     // 1. ABAC Role Enforcement
     let effectiveHalaqohId = halaqohId || "ALL";
 
-    const isKabidTahfidz =
-      Boolean(session.isKepalaBidangTahfidz) ||
-      session.username === "razan.mt" ||
-      session.username === "musyrif.tahfizh" ||
-      (session.name && session.name.toLowerCase().includes("razan"));
+    const isKabidTahfidz = Boolean(session.isKepalaBidangTahfidz);
 
     if (["KS", "ADM", "YAY"].includes(session.role) || isKabidTahfidz) {
-      // KS, ADM, YAY, dan Kepala Bidang Tahfidz (Ust. Razan Mufli): Memiliki otoritas manajerial untuk melihat halaqoh manapun atau agregasi seluruh halaqoh
+      // KS, ADM, YAY, dan Kepala Bidang Tahfidz: Memiliki otoritas manajerial untuk melihat halaqoh manapun atau agregasi seluruh halaqoh
       effectiveHalaqohId = halaqohId || "ALL";
     } else if (session.role === "MT" || session.role === "PH") {
-      // Role Musyrif/Pembina biasa (selain Kabid): PAKSA selalu memakai halaqoh milik sendiri (Cegah IDOR / request manipulation)
-      let staffHalaqohId = "HLQ-0001";
+      // Role Musyrif/Pembina biasa (selain Kabid): PAKSA selalu memakai halaqoh milik sendiri (Fail-closed)
+      let staffHalaqohId: string | null = null;
 
       if (session.staffId) {
         try {
@@ -115,14 +110,12 @@ export async function getLaporanBulananHalaqohAction(
         }
       }
 
-      // Pemetaan pasti berbasis akun pembina yang sedang aktif
-      if (session.username === "lisa.mt") staffHalaqohId = "HLQ-0006";
-      else if (session.username === "kamal.ph") staffHalaqohId = "HLQ-0002";
-      else if (session.username === "rizaldi.ph") staffHalaqohId = "HLQ-0003";
-      else if (session.username === "hudzaifah.ph") staffHalaqohId = "HLQ-0004";
-      else if (session.username === "alwan.ph") staffHalaqohId = "HLQ-0005";
-      else if (session.role === "MT") staffHalaqohId = "HLQ-0006";
-      else if (session.role === "PH") staffHalaqohId = "HLQ-0002";
+      if (!staffHalaqohId) {
+        return {
+          success: false,
+          message: "Akun belum ditugaskan ke halaqoh mana pun. Hubungi Admin.",
+        };
+      }
 
       effectiveHalaqohId = staffHalaqohId;
     } else {

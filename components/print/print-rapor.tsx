@@ -101,7 +101,7 @@ export function PrintRapor({
           <thead>
             <tr className="bg-gray-50 border border-black">
               <th className="border border-black py-1 px-2">Capaian Mutqin</th>
-              <th className="border border-black py-1 px-2">Target Semester</th>
+              <th className="border border-black py-1 px-2">Target Akhir Program</th>
               <th className="border border-black py-1 px-2">Setoran Sabaq Terakhir</th>
               <th className="border border-black py-1 px-2">Kepatuhan Sabqi &amp; Manzil</th>
               <th className="border border-black py-1 px-2">Tajwid &amp; Fashahah</th>
@@ -109,8 +109,8 @@ export function PrintRapor({
           </thead>
           <tbody>
             <tr>
-              <td className="border border-black py-1.5 px-2 font-bold text-emerald-800">{santri.capaianJuz} Juz</td>
-              <td className="border border-black py-1.5 px-2">{santri.targetJuz} Juz</td>
+              <td className="border border-black py-1.5 px-2 font-bold text-emerald-800">Capaian {santri.capaianJuz} Juz dari Target Akhir 30 Juz</td>
+              <td className="border border-black py-1.5 px-2 font-bold">30 Juz</td>
               <td className="border border-black py-1.5 px-2 font-medium">{santri.setoranTerakhir || "Ali 'Imran: 1-20"}</td>
               <td className="border border-black py-1.5 px-2 text-emerald-700 font-semibold">Tuntas 100%</td>
               <td className="border border-black py-1.5 px-2 font-semibold">

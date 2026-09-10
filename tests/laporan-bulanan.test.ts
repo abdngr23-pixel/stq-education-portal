@@ -11,7 +11,10 @@ import {
   evaluasiCapaianNonTahfizh,
   generateRingkasanTasmiSimaan,
   generateLaporanBulananMock,
+  MASTER_HALAQOH_LIST,
+  MASTER_SANTRI_57,
 } from "../lib/laporan-bulanan";
+import { ALL_MUSYRIF_TAHFIZH_ACCOUNTS } from "../types/auth";
 import { KategoriCapaian, JenisUjiHafalan } from "@prisma/client";
 
 describe("Aturan Konversi & Laporan Bulanan (Roadmap v2)", () => {
@@ -178,13 +181,6 @@ describe("Aturan Konversi & Laporan Bulanan (Roadmap v2)", () => {
   });
 
   describe("6. Master Halaqoh & Distribusi 57 Santri Riil DUC", () => {
-    // Import helper
-    const {
-      generateLaporanBulananMock,
-      MASTER_HALAQOH_LIST,
-      MASTER_SANTRI_57,
-    } = require("../lib/laporan-bulanan");
-
     it("harus memiliki 6 master halaqoh resmi STQ DUC", () => {
       assert.equal(MASTER_HALAQOH_LIST.length, 6);
       assert.equal(MASTER_HALAQOH_LIST[0].id, "HLQ-0001");
@@ -294,14 +290,16 @@ describe("Aturan Konversi & Laporan Bulanan (Roadmap v2)", () => {
       // Santri Obama (capaian 22 juz) -> target 5 juz/hari
       const obama = mock.rekapSantri.find((s) => s.santri.nis === "SAN-0001");
       assert.ok(obama);
-      assert.equal((obama.tahfizh.mufar as any).targetHarianJuz, 5);
-      assert.equal((obama.tahfizh.mufar as any).targetLabel, "5 Juz/hari");
+      const obamaMufar = obama.tahfizh.mufar as { targetHarianJuz: number; targetLabel: string };
+      assert.equal(obamaMufar.targetHarianJuz, 5);
+      assert.equal(obamaMufar.targetLabel, "5 Juz/hari");
 
       // Santri Fardhan (capaian 16 juz) -> target 4 juz/hari
       const fardhan = mock.rekapSantri.find((s) => s.santri.nis === "SAN-0002");
       assert.ok(fardhan);
-      assert.equal((fardhan.tahfizh.mufar as any).targetHarianJuz, 4);
-      assert.equal((fardhan.tahfizh.mufar as any).targetLabel, "4 Juz/hari");
+      const fardhanMufar = fardhan.tahfizh.mufar as { targetHarianJuz: number; targetLabel: string };
+      assert.equal(fardhanMufar.targetHarianJuz, 4);
+      assert.equal(fardhanMufar.targetLabel, "4 Juz/hari");
     });
   });
 
@@ -384,15 +382,13 @@ describe("Aturan Konversi & Laporan Bulanan (Roadmap v2)", () => {
 
   describe("10. Otoritas Kepala Bidang Tahfidz vs Musyrif Biasa (ABAC)", () => {
     it("Ust. Razan Mufli (Kepala Bidang Tahfidz) harus memiliki flag isKepalaBidangTahfidz = true", () => {
-      const { ALL_MUSYRIF_TAHFIZH_ACCOUNTS } = require("../types/auth");
-      const razan = ALL_MUSYRIF_TAHFIZH_ACCOUNTS.find((a: any) => a.username === "razan.mt");
+      const razan = ALL_MUSYRIF_TAHFIZH_ACCOUNTS.find((a) => a.username === "razan.mt");
       assert.ok(razan);
       assert.equal(razan.isKepalaBidangTahfidz, true);
     });
 
     it("Musyrif selain Kepala Bidang Tahfidz (misal Lisa MT) tidak boleh memiliki flag isKepalaBidangTahfidz = true", () => {
-      const { ALL_MUSYRIF_TAHFIZH_ACCOUNTS } = require("../types/auth");
-      const lisa = ALL_MUSYRIF_TAHFIZH_ACCOUNTS.find((a: any) => a.username === "lisa.mt");
+      const lisa = ALL_MUSYRIF_TAHFIZH_ACCOUNTS.find((a) => a.username === "lisa.mt");
       assert.ok(lisa);
       assert.equal(Boolean(lisa.isKepalaBidangTahfidz), false);
     });

@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import {
   hitungTargetMufar,
   hitungReferensiSabaqiKumulatif,
-  generateLaporanBulananMock,
 } from "../lib/laporan-bulanan";
 import { ALL_MUSYRIF_TAHFIZH_ACCOUNTS, DEMO_ACCOUNTS } from "../types/auth";
 

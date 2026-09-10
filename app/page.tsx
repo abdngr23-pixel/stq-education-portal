@@ -384,14 +384,7 @@ export default function Home() {
 
         setSelectedRole(session.role);
         setCurrentUserName(session.name || "");
-        setIsKepalaBidangTahfidz(
-          Boolean(
-            (session as any).isKepalaBidangTahfidz ||
-            session.username === "razan.mt" ||
-            session.username === "musyrif.tahfizh" ||
-            session.name?.toLowerCase().includes("razan")
-          )
-        );
+        setIsKepalaBidangTahfidz(Boolean(session.isKepalaBidangTahfidz));
         if (session.username) setActiveStaffKey(session.username);
         if (session.halaqohName) setServerHalaqohName(session.halaqohName);
 

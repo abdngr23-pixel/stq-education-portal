@@ -220,6 +220,14 @@ export function DashboardMusyrifTahfizh({
                     </button>
                   ))}
                 </div>
+                {inputJenis === "SABQI" && (
+                  <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
+                    <p className="font-semibold">💡 Rekomendasi Sabaqi Pekan Berjalan (WITA):</p>
+                    <p className="text-[11px] text-emerald-700 mt-0.5">
+                      Muroja&apos;ah kumulatif seluruh Sabaq nyata yang telah tersimpan sejak Senin pekan ini (WITA).
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Parameter Halaman & Volume Setoran (Murni Berbasis Halaman) */}

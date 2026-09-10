@@ -192,81 +192,114 @@ export function hitungTargetMufar(totalHafalanJuz: number): number {
   return 5; // 21-30 Juz
 }
 
+export {
+  getStartOfWeekWITA,
+  hitungRekomendasiSabaqiPekan,
+  type SetoranSabaqItem,
+  type RekomendasiSabaqi,
+} from "@/lib/sabaqi";
+import { hitungRekomendasiSabaqiPekan, type SetoranSabaqItem } from "@/lib/sabaqi";
+
 export interface ReferensiSabaqiKumulatif {
-  hariNama: string;       // e.g. "Senin", "Selasa", "Rabu", "Kamis", "Jumat"
-  polaKeterangan: string; // e.g. "Hafalan hari ini saja", "Kumulatif Senin–Rabu"
+  hariNama: string;       // e.g. "Senin", "Selasa", dll.
+  polaKeterangan: string; // Sumber keterangan resmi
   halamanMulai: number;
   halamanSelesai: number;
   totalHalaman: number;
   labelLengkap: string;
+  hasSabaq?: boolean;
 }
 
 /**
- * Menghitung rentang referensi Sabaqi kumulatif harian (Senin - Jumat)
+ * Menghitung rentang referensi Sabaqi kumulatif pekanan (Senin - Jumat)
  * Berdasarkan Dokumen Acuan Program Tahfidz STQ DUC 2026:
- * - Senin : murojaah hafalan hari Senin saja
- * - Selasa: murojaah hafalan Senin - Selasa
- * - Rabu  : murojaah hafalan Senin - Rabu
- * - Kamis : murojaah hafalan Senin - Kamis
- * - Jumat : murojaah hafalan Senin - Jumat (seluruh pekan berjalan)
+ * Murni dihitung dari setoran SABAQ nyata santri yang tersimpan pada pekan berjalan (WITA).
+ * Tidak menambah halaman secara artifisial berdasarkan faktor hari kerja.
  */
 export function hitungReferensiSabaqiKumulatif(params: {
   tanggal?: Date;
-  modalAwalHalaman: number;
+  modalAwalHalaman?: number;
   pekanBerjalanSabaqHalaman?: number;
+  setoranSabaqList?: SetoranSabaqItem[];
 }): ReferensiSabaqiKumulatif {
   const date = params.tanggal || new Date();
-  const dayIndex = date.getDay(); // 0: Ahad, 1: Senin, 2: Selasa, 3: Rabu, 4: Kamis, 5: Jumat, 6: Sabtu
+  const dayNames = ["Ahad", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+  const dayIndex = date.getDay();
+  const hariNama = dayNames[dayIndex] || "Senin";
 
-  let hariNama = "Senin";
-  let factorHari = 1;
-  const totalHariPekan = 5;
-
-  if (dayIndex === 1) {
-    hariNama = "Senin";
-    factorHari = 1;
-  } else if (dayIndex === 2) {
-    hariNama = "Selasa";
-    factorHari = 2;
-  } else if (dayIndex === 3) {
-    hariNama = "Rabu";
-    factorHari = 3;
-  } else if (dayIndex === 4) {
-    hariNama = "Kamis";
-    factorHari = 4;
-  } else if (dayIndex === 5) {
-    hariNama = "Jumat";
-    factorHari = 5;
-  } else {
-    // Akhir pekan (Sabtu/Ahad): evaluasi review kumulatif penuh 5 hari
-    hariNama = dayIndex === 6 ? "Sabtu (Review)" : "Ahad (Review)";
-    factorHari = 5;
+  // 1. Jika daftar setoran SABAQ nyata disediakan, gunakan perhitungan resmi berbasis DB
+  if (params.setoranSabaqList !== undefined) {
+    if (params.setoranSabaqList.length > 0) {
+      const rec = hitungRekomendasiSabaqiPekan(params.setoranSabaqList, date);
+      return {
+        hariNama,
+        polaKeterangan: rec.sumberKeterangan,
+        halamanMulai: rec.halamanMulai,
+        halamanSelesai: rec.halamanSelesai,
+        totalHalaman: rec.totalHalaman,
+        labelLengkap: rec.labelLengkap,
+        hasSabaq: rec.hasSabaq,
+      };
+    } else {
+      return {
+        hariNama,
+        polaKeterangan: "Belum ada Sabaq tersimpan pada pekan ini.",
+        halamanMulai: 0,
+        halamanSelesai: 0,
+        totalHalaman: 0,
+        labelLengkap: "Belum ada Sabaq tersimpan pada pekan ini.",
+        hasSabaq: false,
+      };
+    }
   }
 
-  const sabaqPekan = Math.max(1, params.pekanBerjalanSabaqHalaman || 5);
-  // Hitung akumulasi halaman dari hari Senin s.d. hari input saat ini
-  const halamanMurojaah = Math.max(1, Math.round((sabaqPekan / totalHariPekan) * factorHari));
-  
-  const halamanMulai = Math.max(1, params.modalAwalHalaman + 1);
-  const halamanSelesai = Math.min(604, halamanMulai + halamanMurojaah - 1);
-  const totalHalaman = Math.max(1, halamanSelesai - halamanMulai + 1);
+  // 2. Jika dipanggil dengan modalAwalHalaman (kompatibilitas pengujian mock kalkulasi)
+  if (params.modalAwalHalaman !== undefined) {
+    let factorHari = 1;
+    const totalHariPekan = 5;
 
-  const polaKeterangan =
-    dayIndex === 1
-      ? "Hafalan baru hari Senin saja"
-      : dayIndex === 5
-      ? "Kumulatif seluruh pekan berjalan (Senin–Jumat)"
-      : `Kumulatif hafalan baru Senin–${hariNama}`;
+    if (dayIndex === 1) factorHari = 1;
+    else if (dayIndex === 2) factorHari = 2;
+    else if (dayIndex === 3) factorHari = 3;
+    else if (dayIndex === 4) factorHari = 4;
+    else if (dayIndex === 5) factorHari = 5;
+    else factorHari = 5;
 
-  const labelLengkap = `Hlm ${halamanMulai}–${halamanSelesai} (${totalHalaman} Hlm, ${polaKeterangan})`;
+    const sabaqPekan = Math.max(1, params.pekanBerjalanSabaqHalaman || 5);
+    const halamanMurojaah = Math.max(1, Math.round((sabaqPekan / totalHariPekan) * factorHari));
+    const halamanMulai = Math.max(1, params.modalAwalHalaman + 1);
+    const halamanSelesai = Math.min(604, halamanMulai + halamanMurojaah - 1);
+    const totalHalaman = Math.max(1, halamanSelesai - halamanMulai + 1);
 
+    const polaKeterangan =
+      dayIndex === 1
+        ? "Hafalan baru hari Senin saja"
+        : dayIndex === 5
+        ? "Kumulatif seluruh pekan berjalan (Senin–Jumat)"
+        : `Kumulatif Senin–${hariNama}`;
+
+    const labelLengkap = `Halaman ${halamanMulai}–${halamanSelesai} (${totalHalaman} Hlm) — ${polaKeterangan}`;
+
+    return {
+      hariNama,
+      polaKeterangan,
+      halamanMulai,
+      halamanSelesai,
+      totalHalaman,
+      labelLengkap,
+      hasSabaq: true,
+    };
+  }
+
+  // 3. Default jika tidak ada Sabaq tersimpan
   return {
     hariNama,
-    polaKeterangan,
-    halamanMulai,
-    halamanSelesai,
-    totalHalaman,
-    labelLengkap,
+    polaKeterangan: "Belum ada Sabaq tersimpan pada pekan ini.",
+    halamanMulai: 0,
+    halamanSelesai: 0,
+    totalHalaman: 0,
+    labelLengkap: "Belum ada Sabaq tersimpan pada pekan ini.",
+    hasSabaq: false,
   };
 }
 
