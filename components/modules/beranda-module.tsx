@@ -43,6 +43,7 @@ export interface DashboardSantriSummary {
   tambahanSabaq?: number;
   totalHafalan?: number;
   posisiTerakhirHalaman?: number;
+  isHalamanTerakhirParsial?: boolean;
   bintangKebaikan?: number;
 }
 

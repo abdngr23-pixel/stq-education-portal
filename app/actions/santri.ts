@@ -97,7 +97,7 @@ export async function getSantriListAction(params?: {
         },
         setoranList: {
           where: { status: { not: "DIBATALKAN" } },
-          orderBy: { tanggal: "desc" },
+          orderBy: [{ tanggal: "desc" }, { createdAt: "desc" }],
           select: {
             id: true,
             jenis: true,
@@ -107,6 +107,7 @@ export async function getSantriListAction(params?: {
             jumlahHalaman: true,
             nilai: true,
             tanggal: true,
+            createdAt: true,
           },
         },
         _count: {
@@ -141,16 +142,26 @@ export async function getSantriListAction(params?: {
       const totalHafalan = modalAwal + tambahanSabaq;
       const capaianJuz = Math.floor(totalHafalan / 20);
 
-      // Setoran terakhir riil dari DB
+      // Setoran terakhir riil dari DB (untuk ringkasan aktivitas terbaru)
       const latestSetoran = s.setoranList?.[0] || null;
       const nilaiTerakhir = latestSetoran ? latestSetoran.nilai : "Belum ada data";
 
-      // Posisi halaman terakhir Mushaf santri
-      const latestHalaman = latestSetoran
-        ? latestSetoran.halamanSelesai
-        : modalAwal > 0
-        ? modalAwal
-        : 1;
+      // Sesuai Instruksi P0 Lanjutan Section 2:
+      // Posisi terakhir Tahfizh HANYA boleh berasal dari SABAQ aktif pasca-baseline.
+      // Jika ada Sabaq aktif: posisi terakhir = halamanSelesai Sabaq aktif terbaru
+      // Jika belum ada Sabaq setelah baseline: posisi terakhir = modalHafalanAwalHalaman
+      const latestSabaq = sabaqAfterBaseline[0] || null;
+      let posisiTerakhirHalaman = modalAwal;
+      let isHalamanTerakhirParsial = false;
+
+      if (latestSabaq) {
+        posisiTerakhirHalaman = latestSabaq.halamanSelesai;
+        // Hitung total akumulasi pada halaman terakhir tersebut untuk mendeteksi setoran 0.5 halaman
+        const totalOnLatestPage = sabaqAfterBaseline
+          .filter((st) => st.halamanMulai <= latestSabaq.halamanSelesai && st.halamanSelesai >= latestSabaq.halamanSelesai)
+          .reduce((acc, cur) => acc + (cur.jumlahHalaman || 0), 0);
+        isHalamanTerakhirParsial = totalOnLatestPage > 0 && totalOnLatestPage < 1.0;
+      }
 
       // Hitung akumulasi bintang riil dari DB
       const totalBintang = s._count.bintangList || 0;
@@ -176,7 +187,8 @@ export async function getSantriListAction(params?: {
         capaianHalaman: totalHafalan,
         totalHalaman: totalHafalan,
         capaianJuz,
-        posisiTerakhirHalaman: latestHalaman,
+        posisiTerakhirHalaman,
+        isHalamanTerakhirParsial,
         targetAkhirProgramJuz: s.targetAkhirProgramJuz || 30,
         targetJuz: s.targetAkhirProgramJuz || 30,
         setoranTerakhir: latestSetoran

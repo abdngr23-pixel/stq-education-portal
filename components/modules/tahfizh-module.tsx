@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useTransition, useMemo } from "react";
+import React, { useState, useEffect, useTransition, useMemo, useRef, useCallback } from "react";
 import { Role } from "@/types/auth";
 import { DashboardSantriSummary } from "./beranda-module";
 import { RekapLaporanBulanan } from "@/components/dashboard/rekap-laporan-bulanan";
@@ -21,8 +21,6 @@ import {
   getDaftarIkhtibarAction,
 } from "@/app/actions/ikhtibar";
 import { type LaporanBulananData } from "@/app/actions/laporan-bulanan";
-import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
-import { buildSetoranTahfizhWAMessage } from "@/lib/whatsapp";
 import {
   JUZ_LIST,
   getJuzByPage,
@@ -45,7 +43,6 @@ import {
 } from "lucide-react";
 import {
   konversiHalamanKeJuz,
-  HALAMAN_PER_JUZ,
   hitungTargetMufar,
   hitungReferensiSabaqiKumulatif,
 } from "@/lib/laporan-bulanan";
@@ -81,22 +78,27 @@ export function TahfizhModule({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  // Modal Peringatan Lompatan Urutan Hafalan (Sequence Jump Warning)
+  // Modal Peringatan Lompatan Urutan Hafalan (Sequence Jump Warning - Poin 6)
   const [jumpWarningModal, setJumpWarningModal] = useState<{
     isOpen: boolean;
     posisiTerakhir: number;
+    saranHalaman: number;
     halamanInput: number;
+    tipePerbedaan: "LOMPAT_MAJU" | "PENGULANGAN" | "MUNDUR";
     alasan: string;
   }>({
     isOpen: false,
     posisiTerakhir: 1,
+    saranHalaman: 1,
     halamanInput: 1,
+    tipePerbedaan: "LOMPAT_MAJU",
     alasan: "",
   });
 
   // -------------------------------------------------------------
   // FORM INPUT SETORAN TUNGGAL BERBASIS HALAMAN & JUZ
   // Menggunakan Primary Key database riil (CUID)
+  // Nilai awal kosong / null-safe (P0 Lanjutan)
   // -------------------------------------------------------------
   const [selectedSantriId, setSelectedSantriId] = useState<string>("");
   const effectiveSantriId =
@@ -105,25 +107,93 @@ export function TahfizhModule({
       : santriList[0]?.id || "";
 
   const [inputJenis, setInputJenis] = useState<"SABAQ" | "SABQI" | "MANZIL" | "MUFAR">("SABAQ");
-  const [juz, setJuz] = useState("30");
-  const [halamanMulai, setHalamanMulai] = useState("582");
-  const [halamanSelesai, setHalamanSelesai] = useState("582");
+  const [juz, setJuz] = useState("");
+  const [halamanMulai, setHalamanMulai] = useState("");
+  const [halamanSelesai, setHalamanSelesai] = useState("");
   const [jumlahHalaman, setJumlahHalaman] = useState("1");
   const [jumlahJuzMufar, setJumlahJuzMufar] = useState("2");
   const [rincianJuzMufar, setRincianJuzMufar] = useState("Juz 1, 2");
   const [nilai, setNilai] = useState<"MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "DHOIF">("MUMTAZ");
   const [catatan, setCatatan] = useState("");
 
+  // Synchronous submit lock & Idempotency Key Ref & Tracking Saran Posisi
+  const submitLockRef = useRef(false);
+  const pendingRequestIdRef = useRef<string | null>(null);
+  const suggestedPageRef = useRef<number | null>(null);
+  const suggestedJmlRef = useRef<number>(1);
+  const prevSantriIdRef = useRef<string>("");
+
+  // -------------------------------------------------------------
+  // SINKRONISASI SATU FUNGSI TERPUSAT POSISI SABAQ (P0 LANJUTAN)
+  // -------------------------------------------------------------
+  const applySuggestedSabaqPosition = useCallback((santri: DashboardSantriSummary | null | undefined) => {
+    if (!santri) {
+      setHalamanMulai("");
+      setHalamanSelesai("");
+      setJuz("");
+      setJumlahHalaman("1");
+      suggestedPageRef.current = null;
+      suggestedJmlRef.current = 1;
+      return;
+    }
+
+    const modalAwal = santri.modalHafalanAwalHalaman ?? santri.modalHalamanAwal ?? 0;
+    const posisiTerakhir = santri.posisiTerakhirHalaman ?? modalAwal;
+    const isParsial = Boolean(santri.isHalamanTerakhirParsial);
+
+    let saranHlm: number;
+    let saranJml: number;
+
+    if (isParsial && posisiTerakhir > 0) {
+      // Masih ada sisa 0.5 halaman pada nomor halaman yang sama
+      saranHlm = posisiTerakhir;
+      saranJml = 0.5;
+    } else if (posisiTerakhir >= 604) {
+      // Santri telah mencapai halaman akhir Mushaf (khatam 604)
+      saranHlm = 604;
+      saranJml = 1;
+    } else if (posisiTerakhir === 0) {
+      // Belum ada modal dan belum ada sabaq
+      saranHlm = 1;
+      saranJml = 1;
+    } else {
+      // Posisi normal: posisiTerakhir + 1
+      saranHlm = Math.min(604, posisiTerakhir + 1);
+      saranJml = 1;
+    }
+
+    suggestedPageRef.current = saranHlm;
+    suggestedJmlRef.current = saranJml;
+
+    setHalamanMulai(String(saranHlm));
+    const hlmSelesai = saranJml === 0.5 ? saranHlm : (saranHlm + Math.ceil(saranJml) - 1);
+    setHalamanSelesai(String(hlmSelesai));
+    setJumlahHalaman(String(saranJml));
+
+    const detectedJuz = getJuzByPage(saranHlm) || 1;
+    setJuz(String(detectedJuz));
+
+    // Otomatis sinkronkan target Mufar dinamis sesuai capaian santri
+    const mufarTgt = hitungTargetMufar(santri.capaianJuz || Math.floor(posisiTerakhir / 20) || 1);
+    setJumlahJuzMufar(String(mufarTgt));
+    setRincianJuzMufar(`Juz 1 s/d ${mufarTgt}`);
+
+    // Reset requestId untuk form draft baru
+    pendingRequestIdRef.current = null;
+  }, []);
+
   // Handler cerdas saat Juz diubah (otomatis sesuaikan Halaman Mulai & Selesai)
   const handleJuzChange = (val: string) => {
     setJuz(val);
+    pendingRequestIdRef.current = null;
     const parsedJuz = parseInt(val, 10);
     if (!isNaN(parsedJuz) && parsedJuz >= 1 && parsedJuz <= 30) {
       const juzMeta = JUZ_LIST.find((j) => j.juz === parsedJuz);
       if (juzMeta) {
         setHalamanMulai(String(juzMeta.startPage));
         const jml = parseFloat(jumlahHalaman) || 1;
-        setHalamanSelesai(String(juzMeta.startPage + Math.ceil(jml) - 1));
+        const end = jml === 0.5 ? juzMeta.startPage : (juzMeta.startPage + Math.ceil(jml) - 1);
+        setHalamanSelesai(String(end));
       }
     }
   };
@@ -131,6 +201,7 @@ export function TahfizhModule({
   // Handler cerdas saat Halaman Mulai diubah (otomatis deteksi Juz & sinkronkan Halaman Selesai)
   const handleHalamanMulaiChange = (val: string) => {
     setHalamanMulai(val);
+    pendingRequestIdRef.current = null;
     const start = parseInt(val, 10);
     if (!isNaN(start) && start >= 1 && start <= 604) {
       const detectedJuz = getJuzByPage(start);
@@ -138,23 +209,27 @@ export function TahfizhModule({
         setJuz(String(detectedJuz));
       }
       const jml = parseFloat(jumlahHalaman) || 1;
-      setHalamanSelesai(String(start + Math.ceil(jml) - 1));
+      const end = jml === 0.5 ? start : (start + Math.ceil(jml) - 1);
+      setHalamanSelesai(String(end));
     }
   };
 
   // Handler cerdas saat Jumlah Halaman diubah (otomatis sesuaikan Halaman Selesai)
   const handleJumlahHalamanChange = (val: string) => {
     setJumlahHalaman(val);
+    pendingRequestIdRef.current = null;
     const jml = parseFloat(val);
     const start = parseInt(halamanMulai, 10) || 1;
     if (!isNaN(jml) && jml > 0) {
-      setHalamanSelesai(String(start + Math.ceil(jml) - 1));
+      const end = jml === 0.5 ? start : (start + Math.ceil(jml) - 1);
+      setHalamanSelesai(String(end));
     }
   };
 
   // Handler saat Halaman Selesai diubah secara manual (otomatis hitung Jumlah Halaman)
   const handleHalamanSelesaiChange = (val: string) => {
     setHalamanSelesai(val);
+    pendingRequestIdRef.current = null;
     const end = parseInt(val, 10);
     const start = parseInt(halamanMulai, 10) || 1;
     if (!isNaN(end) && end >= start) {
@@ -163,27 +238,31 @@ export function TahfizhModule({
     }
   };
 
-  // Handler saat santri dipilih: sinkronkan ke posisi lanjutan hafalan santri & target Mufar dinamis
+  // Handler saat santri dipilih: sinkronkan ke posisi lanjutan hafalan santri
   const handleSelectSantri = (id: string) => {
     setSelectedSantriId(id);
     setIsManualSabaqi(false);
     setAlasanManualSabaqi("");
     const targetSantri = santriList.find((s) => s.id === id);
-    if (targetSantri) {
-      const modal = targetSantri.modalHalamanAwal ?? targetSantri.totalHalaman ?? ((targetSantri.capaianJuz || 0) * HALAMAN_PER_JUZ);
-      const nextHlm = Math.min(604, Math.max(1, modal + 1));
-      const nextJuz = getJuzByPage(nextHlm);
-      setHalamanMulai(String(nextHlm));
-      const jml = parseFloat(jumlahHalaman) || 1;
-      setHalamanSelesai(String(nextHlm + Math.ceil(jml) - 1));
-      setJuz(String(nextJuz));
-
-      // Otomatis sinkronkan target Mufar dinamis sesuai capaian hafalan santri terkini
-      const mufarTgt = hitungTargetMufar(targetSantri.capaianJuz || Math.floor(modal / 20) || 1);
-      setJumlahJuzMufar(String(mufarTgt));
-      setRincianJuzMufar(`Juz 1 s/d ${mufarTgt}`);
+    if (targetSantri && inputJenis === "SABAQ") {
+      applySuggestedSabaqPosition(targetSantri);
     }
   };
+
+  // Efek sinkronisasi santri pertama kali / ketika berganti santri terpilih
+  useEffect(() => {
+    if (!effectiveSantriId) return;
+    const targetSantri = santriList.find((s) => s.id === effectiveSantriId);
+    if (targetSantri && (prevSantriIdRef.current !== effectiveSantriId || !halamanMulai)) {
+      prevSantriIdRef.current = effectiveSantriId;
+      if (inputJenis === "SABAQ") {
+        const timer = setTimeout(() => {
+          applySuggestedSabaqPosition(targetSantri);
+        }, 0);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [effectiveSantriId, santriList, inputJenis, halamanMulai, applySuggestedSabaqPosition]);
 
   // -------------------------------------------------------------
   // REKOMENDASI SABAQI PEKAN INI DARI DATABASE POSTGRESQL RIIL
@@ -334,23 +413,6 @@ export function TahfizhModule({
     };
   }, []);
 
-  // WhatsApp Dialog State
-  const [waDialog, setWaDialog] = useState<{
-    isOpen: boolean;
-    phone: string;
-    recipientName: string;
-    message: string;
-    title: string;
-    description: string;
-  }>({
-    isOpen: false,
-    phone: "",
-    recipientName: "Wali Santri",
-    message: "",
-    title: "Kirim Laporan Setoran via WhatsApp",
-    description: "Format laporan resmi DUC akan dikirimkan kepada wali santri.",
-  });
-
   // Santri yang sedang dipilih (Strict: Jangan fallback palsu ke index 0 jika belum ada yang terpilih)
   const activeSantri = santriList.find((s) => s.id === effectiveSantriId) || null;
 
@@ -421,9 +483,12 @@ export function TahfizhModule({
   const smartKonversiTotal = useMemo(() => konversiHalamanKeJuz(santriTotalHafalan), [santriTotalHafalan]);
   const smartKonversiAkumulasi = useMemo(() => konversiHalamanKeJuz(akumulasiHalamanBaru), [akumulasiHalamanBaru]);
 
-  // Handler Simpan Setoran: Pemeriksaan Otorisasi & Deteksi Lompatan Urutan
+  // Handler Simpan Setoran: Pemeriksaan Otorisasi, Lock, Validasi & Deteksi Perbedaan dari Saran
   const handleSaveSetoran = () => {
     setFeedback(null);
+    if (submitLockRef.current || isSubmitting) {
+      return;
+    }
     if (!["MT", "PH", "KS"].includes(userRole)) {
       setFeedback({ type: "error", message: `Role '${userRole}' tidak berhak input setoran tahfizh.` });
       return;
@@ -444,38 +509,63 @@ export function TahfizhModule({
       }
     }
 
-    const hlmMulaiNum = parseInt(halamanMulai, 10) || 1;
-
-    // Sesuai Poin 8: Deteksi Lompatan Urutan Hafalan (Sequence Jump Warning)
-    // Jika posisi terakhir santri (misal Obama hlm 421) melompat jauh ke 582, minta konfirmasi dan alasan
-    if (inputJenis === "SABAQ" && santriPosisiTerakhir > 0 && hlmMulaiNum > santriPosisiTerakhir + 1) {
-      setJumpWarningModal({
-        isOpen: true,
-        posisiTerakhir: santriPosisiTerakhir,
-        halamanInput: hlmMulaiNum,
-        alasan: "",
-      });
+    const hlmMulaiNum = parseInt(halamanMulai, 10);
+    if (isNaN(hlmMulaiNum) || hlmMulaiNum < 1 || hlmMulaiNum > 604) {
+      setFeedback({ type: "error", message: "Halaman mulai harus antara 1 sampai 604." });
       return;
+    }
+
+    // Poin 6: Deteksi Perbedaan dari Posisi / Saran Otomatis (Khusus SABAQ)
+    if (inputJenis === "SABAQ") {
+      const modalAwal = activeSantri.modalHafalanAwalHalaman ?? activeSantri.modalHalamanAwal ?? 0;
+      const posisiTerakhir = activeSantri.posisiTerakhirHalaman ?? modalAwal;
+      const isParsial = Boolean(activeSantri.isHalamanTerakhirParsial);
+      const suggested = suggestedPageRef.current ?? (isParsial && posisiTerakhir > 0 ? posisiTerakhir : (posisiTerakhir > 0 ? Math.min(604, posisiTerakhir + 1) : 1));
+
+      if (hlmMulaiNum !== suggested) {
+        let tipePerbedaan: "LOMPAT_MAJU" | "PENGULANGAN" | "MUNDUR" = "LOMPAT_MAJU";
+        if (hlmMulaiNum > suggested) {
+          tipePerbedaan = "LOMPAT_MAJU";
+        } else if (hlmMulaiNum === posisiTerakhir && !isParsial) {
+          tipePerbedaan = "PENGULANGAN";
+        } else {
+          tipePerbedaan = "MUNDUR";
+        }
+
+        setJumpWarningModal({
+          isOpen: true,
+          posisiTerakhir,
+          saranHalaman: suggested,
+          halamanInput: hlmMulaiNum,
+          tipePerbedaan,
+          alasan: "",
+        });
+        return;
+      }
     }
 
     executeSaveSetoran();
   };
 
-  // Eksekusi Simpan Setoran dengan Proteksi Double-Submit & Idempotency Key
+  // Eksekusi Simpan Setoran dengan Synchronous Submit Lock & Idempotency Key (Poin 11 & Poin 9)
   const executeSaveSetoran = (extra?: { alasanLompatanHalaman?: string }) => {
-    if (isSubmitting) return;
+    if (submitLockRef.current || isSubmitting) return;
+    submitLockRef.current = true;
     setIsSubmitting(true);
 
-    const clientRequestId =
-      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `req-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    if (!pendingRequestIdRef.current) {
+      pendingRequestIdRef.current =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `req-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    }
+    const clientRequestId = pendingRequestIdRef.current;
 
     startTransition(async () => {
       try {
         const hlmMulaiNum = parseInt(halamanMulai, 10) || 1;
         const jmlHlmNum = parseFloat(jumlahHalaman) || 1;
-        const hlmSelesaiNum = parseInt(halamanSelesai, 10) || (hlmMulaiNum + Math.ceil(jmlHlmNum) - 1);
+        const hlmSelesaiNum = parseInt(halamanSelesai, 10) || (jmlHlmNum === 0.5 ? hlmMulaiNum : (hlmMulaiNum + Math.ceil(jmlHlmNum) - 1));
         const juzNum = parseInt(juz, 10) || getJuzByPage(hlmMulaiNum) || 1;
 
         let catatanRincian = "";
@@ -503,51 +593,44 @@ export function TahfizhModule({
           catatan: finalCatatan,
           clientRequestId,
           alasanLompatanHalaman: extra?.alasanLompatanHalaman,
+          isManualSabaqi: inputJenis === "SABQI" ? isManualSabaqi : undefined,
+          alasanManualSabaqi: inputJenis === "SABQI" && isManualSabaqi ? alasanManualSabaqi.trim() : undefined,
         });
 
         if (res.success) {
+          // Posisi terbaru santri
+          let posisiTerbaru = santriPosisiTerakhir;
+          let isParsialBaru = false;
+          if (inputJenis === "SABAQ") {
+            posisiTerbaru = hlmSelesaiNum;
+            isParsialBaru = jmlHlmNum === 0.5 && !activeSantri?.isHalamanTerakhirParsial;
+          }
+
+          // Feedback sukses standar di layar (Poin 9: Tanpa dialog WhatsApp)
           setFeedback({
             type: "success",
-            message: `Alhamdulillah! Setoran ${inputJenis} untuk ${activeSantri!.nama} (${jmlHlmNum} Hlm, Juz ${juzNum}) berhasil disimpan ke server.`,
+            message: `Alhamdulillah! Setoran ${inputJenis} untuk ${activeSantri!.nama} (${jmlHlmNum} Hlm, Juz ${juzNum}) berhasil disimpan. Posisi hafalan terkini: Halaman ${posisiTerbaru} (${smartKonversiAkumulasi.label}).`,
           });
 
-          // Trigger refresh
+          // Reset idempotency request id untuk form setoran berikutnya
+          pendingRequestIdRef.current = null;
+
+          // Perbarui saran posisi untuk setoran berikutnya (Poin 5)
+          if (inputJenis === "SABAQ") {
+            const updatedSantri: DashboardSantriSummary = {
+              ...activeSantri!,
+              posisiTerakhirHalaman: posisiTerbaru,
+              isHalamanTerakhirParsial: isParsialBaru,
+              tambahanSabaq: santriTambahanSabaq + jmlHlmNum,
+              totalHafalan: santriTotalHafalan + jmlHlmNum,
+            };
+            applySuggestedSabaqPosition(updatedSantri);
+          }
+
+          // Trigger refresh parent & recent data
           onRefresh?.();
           loadRecentSetoran();
           if (activeSantri) loadSabaqiSantri(activeSantri.id);
-
-          // Siapkan pesan WA resmi dengan metrik halaman cerdas
-          const waMsg = buildSetoranTahfizhWAMessage({
-            santriNama: activeSantri!.nama,
-            santriNis: activeSantri!.nis,
-            kelas: activeSantri!.kelas,
-            pembinaNama: currentUserName,
-            jenisSetoran: inputJenis,
-            juz: juzNum,
-            halamanMulai: hlmMulaiNum,
-            halamanSelesai: hlmSelesaiNum,
-            nilai,
-            catatan,
-            jumlahHalaman: jmlHlmNum,
-            totalHalamanKumulatif: inputJenis === "SABAQ" ? akumulasiHalamanBaru : undefined,
-            konversiLabel: inputJenis === "SABAQ" ? smartKonversiAkumulasi.label : undefined,
-          });
-
-          // Ambil kontak wali santri
-          const guardianPhone =
-            (res.data?.santri as unknown as { noHpWali?: string })?.noHpWali ||
-            (activeSantri as unknown as { noHpWali?: string })?.noHpWali ||
-            "";
-          if (guardianPhone) {
-            setWaDialog({
-              isOpen: true,
-              phone: guardianPhone,
-              recipientName: `Wali dari ${activeSantri!.nama}`,
-              message: waMsg,
-              title: "Kirim Laporan Setoran ke Wali Santri",
-              description: `Kirim laporan mutaba'ah setoran resmi untuk ${activeSantri!.nama} via WhatsApp.`,
-            });
-          }
         } else {
           setFeedback({
             type: "error",
@@ -555,6 +638,7 @@ export function TahfizhModule({
           });
         }
       } finally {
+        submitLockRef.current = false;
         setIsSubmitting(false);
       }
     });
@@ -993,7 +1077,9 @@ export function TahfizhModule({
                         type="button"
                         onClick={() => {
                           setInputJenis(j);
-                          if (j === "MUFAR") {
+                          if (j === "SABAQ") {
+                            applySuggestedSabaqPosition(activeSantri);
+                          } else if (j === "MUFAR") {
                             setJumlahJuzMufar(String(dynamicMufarTarget));
                             setRincianJuzMufar(`Juz 1 s/d ${dynamicMufarTarget}`);
                           } else if (j === "SABQI") {
@@ -1050,6 +1136,13 @@ export function TahfizhModule({
                         Auto-Calculated
                       </Badge>
                     </div>
+
+                    {santriPosisiTerakhir >= 604 && !activeSantri?.isHalamanTerakhirParsial && (
+                      <div className="p-3 bg-emerald-100/90 border border-emerald-300 rounded-xl text-xs font-bold text-emerald-950 flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                        <span>Alhamdulillah, santri telah menyelesaikan setoran Mushaf Madinah (Halaman 604 / 30 Juz Khatam).</span>
+                      </div>
+                    )}
 
                     {/* Metric Cards Grid: 4 Kolom Proporsional */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
@@ -1331,7 +1424,7 @@ export function TahfizhModule({
                         max={604}
                         value={halamanMulai}
                         onChange={(e) => handleHalamanMulaiChange(e.target.value)}
-                        placeholder="e.g. 582"
+                        placeholder="1"
                         className="min-h-[44px] font-semibold text-sm"
                       />
                     </div>
@@ -1364,7 +1457,7 @@ export function TahfizhModule({
                         max={604}
                         value={halamanSelesai}
                         onChange={(e) => handleHalamanSelesaiChange(e.target.value)}
-                        placeholder="e.g. 582"
+                        placeholder="1"
                         className="min-h-[44px] font-semibold text-sm"
                       />
                     </div>
@@ -2080,18 +2173,7 @@ export function TahfizhModule({
         <RewardEvaluasiTab userRole={userRole} currentUserName={currentUserName} />
       )}
 
-      {/* WhatsApp Dialog */}
-      <WhatsAppDialog
-        isOpen={waDialog.isOpen}
-        defaultPhone={waDialog.phone}
-        defaultRecipientName={waDialog.recipientName}
-        defaultMessage={waDialog.message}
-        title={waDialog.title}
-        description={waDialog.description}
-        onClose={() => setWaDialog((prev) => ({ ...prev, isOpen: false }))}
-      />
-
-      {/* Peringatan Lompatan Urutan Hafalan (Sequence Jump Warning Dialog - Poin 8) */}
+      {/* Peringatan Urutan Hafalan (Sequence Jump Warning Dialog - Poin 6) */}
       {jumpWarningModal.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-amber-200 animate-in zoom-in-95 duration-150">
@@ -2101,31 +2183,41 @@ export function TahfizhModule({
               </span>
               <div>
                 <h3 className="font-bold text-base text-slate-900 font-heading">
-                  Peringatan Urutan Hafalan
+                  Konfirmasi Urutan Halaman Sabaq
                 </h3>
                 <span className="text-xs text-amber-700 font-semibold">
-                  Lompatan Halaman Terdeteksi
+                  {jumpWarningModal.tipePerbedaan === "LOMPAT_MAJU"
+                    ? "Hafalan melompat dari posisi seharusnya"
+                    : jumpWarningModal.tipePerbedaan === "PENGULANGAN"
+                    ? "Mengulang halaman yang sudah disetor penuh"
+                    : "Menyetor halaman sebelum posisi terakhir"}
                 </span>
               </div>
             </div>
 
             <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200/80 mb-4 text-xs text-amber-950 leading-relaxed space-y-1.5">
-              <p>
-                Halaman yang dimasukkan melompat dari <strong>halaman {jumpWarningModal.posisiTerakhir}</strong> ke <strong>halaman {jumpWarningModal.halamanInput}</strong>.
-              </p>
-              <p className="text-amber-800 font-medium">
-                Pastikan data sudah benar.
-              </p>
+              <div className="flex justify-between border-b border-amber-200/60 pb-1.5 mb-1.5 font-medium">
+                <span>Posisi Terakhir Santri:</span>
+                <span className="font-bold">Halaman {jumpWarningModal.posisiTerakhir}</span>
+              </div>
+              <div className="flex justify-between border-b border-amber-200/60 pb-1.5 mb-1.5 font-medium">
+                <span>Saran Halaman Otomatis:</span>
+                <span className="font-bold text-emerald-800">Halaman {jumpWarningModal.saranHalaman}</span>
+              </div>
+              <div className="flex justify-between font-medium">
+                <span>Halaman yang Anda Masukkan:</span>
+                <span className="font-bold text-amber-900">Halaman {jumpWarningModal.halamanInput}</span>
+              </div>
             </div>
 
             <div className="mb-5">
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Alasan Lompatan Halaman <span className="text-red-500">*</span>
+                Alasan Perubahan Urutan Halaman <span className="text-red-500">*</span>
               </label>
               <textarea
                 value={jumpWarningModal.alasan}
                 onChange={(e) => setJumpWarningModal((prev) => ({ ...prev, alasan: e.target.value }))}
-                placeholder="Masukkan alasan lompatan halaman (misal: akselerasi materi, setoran susulan, atau pengujian mandiri)..."
+                placeholder="Wajib masukkan alasan minimal 5 karakter (misal: akselerasi materi, setoran susulan, pengulangan karena belum lancar)..."
                 rows={3}
                 className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
               />

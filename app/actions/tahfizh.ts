@@ -18,6 +18,8 @@ export interface CreateSetoranInput {
   catatan?: string;
   clientRequestId?: string;
   alasanLompatanHalaman?: string;
+  isManualSabaqi?: boolean;
+  alasanManualSabaqi?: string;
 }
 
 /**
@@ -112,34 +114,18 @@ export async function createSetoranAction(input: CreateSetoranInput) {
     };
   }
 
-  // SABAQI: jika input tanpa ada Sabaq tersimpan pada pekan berjalan, wajib ada alasan manual
-  if (input.jenis === "SABQI" && (!input.catatan || input.catatan.trim().length < 3)) {
-    // Catatan diperiksa lebih lanjut bila diperlukan alasan manual
-  }
-
   try {
-    // 3.5 Idempotency Key check: jika client mengirimkan clientRequestId dan sudah tercatat
-    if (input.clientRequestId) {
-      const existing = await prisma.setoranTahfizh.findUnique({
-        where: { clientRequestId: input.clientRequestId },
-        include: {
-          santri: true,
-          musyrif: true,
-        },
-      });
-      if (existing) {
-        return {
-          success: true,
-          message: `Setoran ${existing.santri.nama} (${existing.setoranCode}) telah tercatat sebelumnya (idempoten).`,
-          data: existing,
-        };
-      }
-    }
-
     // 4. Verifikasi Keberadaan Santri di Database
     const santri = await prisma.santri.findUnique({
       where: { id: input.santriId },
-      select: { id: true, nama: true, nis: true, halaqohId: true },
+      select: {
+        id: true,
+        nama: true,
+        nis: true,
+        halaqohId: true,
+        modalHafalanAwalHalaman: true,
+        tanggalBaselineTahfizh: true,
+      },
     });
 
     if (!santri) {
@@ -190,6 +176,93 @@ export async function createSetoranAction(input: CreateSetoranInput) {
     const musyrifStaff = await prisma.staff.findUnique({ where: { id: musyrifStaffId } });
     if (!musyrifStaff) {
       return { success: false, message: "Data staf pengampu/pencatat tidak ditemukan di sistem." };
+    }
+
+    // 6.5 Pemeriksaan Idempotency Key (clientRequestId) setelah Autentikasi, Santri, ABAC & Staf terverifikasi
+    if (input.clientRequestId) {
+      const existing = await prisma.setoranTahfizh.findUnique({
+        where: { clientRequestId: input.clientRequestId },
+        include: {
+          santri: true,
+          musyrif: true,
+        },
+      });
+      if (existing) {
+        // Verifikasi kepemilikan record
+        if (existing.santriId !== input.santriId) {
+          return {
+            success: false,
+            message: "Akses Ditolak: clientRequestId tidak sesuai dengan santri yang dituju.",
+          };
+        }
+        return {
+          success: true,
+          message: `Setoran ${existing.santri.nama} (${existing.setoranCode}) telah tercatat sebelumnya (idempoten).`,
+          data: existing,
+        };
+      }
+    }
+
+    // 6.6 Validasi Sabaqi di Sisi Server (Section 8)
+    if (input.jenis === "SABQI") {
+      const refDate = new Date();
+      const startOfWeek = getStartOfWeekWITA(refDate);
+      const activeSabaqThisWeek = await prisma.setoranTahfizh.findMany({
+        where: {
+          santriId: input.santriId,
+          jenis: "SABAQ",
+          status: { not: "DIBATALKAN" },
+          tanggal: {
+            gte: startOfWeek,
+            lte: refDate,
+          },
+        },
+      });
+
+      if (activeSabaqThisWeek.length === 0) {
+        if (!input.isManualSabaqi) {
+          return {
+            success: false,
+            message: "Belum ada Sabaq tersimpan pada pekan ini. Input manual Sabaqi memerlukan konfirmasi dan alasan tertulis.",
+          };
+        }
+        if (!input.alasanManualSabaqi || input.alasanManualSabaqi.trim().length < 5) {
+          return {
+            success: false,
+            message: "Alasan input manual Sabaqi wajib diisi minimal 5 karakter.",
+          };
+        }
+      }
+    }
+
+    // 6.7 Validasi Setoran 0.5 Halaman & Kapasitas Halaman Maksimal 1.0 Halaman (Section 4)
+    if (input.jenis === "SABAQ") {
+      const baselineDate = santri.tanggalBaselineTahfizh ? new Date(santri.tanggalBaselineTahfizh) : null;
+      // Periksa akumulasi Sabaq aktif pada halaman target
+      const existingSabaqOnPage = await prisma.setoranTahfizh.findMany({
+        where: {
+          santriId: input.santriId,
+          jenis: "SABAQ",
+          status: { not: "DIBATALKAN" },
+          halamanMulai: { lte: halMulai },
+          halamanSelesai: { gte: halMulai },
+          ...(baselineDate ? { tanggal: { gte: baselineDate } } : {}),
+        },
+      });
+
+      const existingVolumeOnPage = existingSabaqOnPage.reduce((acc, cur) => acc + (cur.jumlahHalaman || 0), 0);
+      if (existingVolumeOnPage >= 1.0) {
+        return {
+          success: false,
+          message: `Halaman ${halMulai} sudah lengkap disetorkan (1.0 halaman penuh). Silakan lanjutkan ke halaman berikutnya atau ajukan koreksi resmi.`,
+        };
+      }
+      if (existingVolumeOnPage + jmlHalaman > 1.0) {
+        return {
+          success: false,
+          message: `Akumulasi setoran pada halaman ${halMulai} melebihi kapasitas 1 halaman (saat ini sudah tersimpan ${existingVolumeOnPage} halaman).`,
+        };
+      }
     }
 
     // 7. Simpan Setoran dalam Transaksi Aman dengan Concurrency Protection & Idempotency
@@ -268,6 +341,7 @@ export async function createSetoranAction(input: CreateSetoranInput) {
         nilai: input.nilai,
         clientRequestId: input.clientRequestId || null,
         alasanLompatanHalaman: input.alasanLompatanHalaman || null,
+        alasanManualSabaqi: input.alasanManualSabaqi || null,
         catatan: input.catatan || null,
       },
     });
@@ -328,10 +402,12 @@ export async function getSetoranSabaqPekanSantriAction(santriId: string, tanggal
     const startOfWeek = getStartOfWeekWITA(refDate);
 
     // Ambil seluruh setoran SABAQ tersimpan sejak Senin 00:00:00 WITA sampai waktu referensi
+    // Kriteria Ketat: HANYA jenis SABAQ, status BUKAN DIBATALKAN
     const sabaqRecords = await prisma.setoranTahfizh.findMany({
       where: {
         santriId,
         jenis: "SABAQ",
+        status: { not: "DIBATALKAN" },
         tanggal: {
           gte: startOfWeek,
           lte: refDate,

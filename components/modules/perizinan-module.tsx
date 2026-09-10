@@ -193,14 +193,21 @@ export function PerizinanModule({
           batasKembali: returnDate.toLocaleDateString("id-ID"),
         });
 
-        setWaDialog({
-          isOpen: true,
-          phone: targetSantri.noHpWali || "081234567890",
-          recipientName: targetSantri.namaWali ? `${targetSantri.namaWali} (Wali ${targetSantri.nama})` : `Wali dari ${targetSantri.nama}`,
-          message: msg,
-          title: "Notifikasi Pengajuan Izin ke Wali",
-          description: "Kirim konfirmasi bahwa pengajuan izin telah dicatat di sistem.",
-        });
+        if (targetSantri.noHpWali) {
+          setWaDialog({
+            isOpen: true,
+            phone: targetSantri.noHpWali,
+            recipientName: targetSantri.namaWali ? `${targetSantri.namaWali} (Wali ${targetSantri.nama})` : `Wali dari ${targetSantri.nama}`,
+            message: msg,
+            title: "Notifikasi Pengajuan Izin ke Wali",
+            description: "Kirim konfirmasi bahwa pengajuan izin telah dicatat di sistem.",
+          });
+        } else {
+          setFeedback({
+            type: "success",
+            message: "Izin berhasil diajukan. Nomor WhatsApp wali belum tersedia.",
+          });
+        }
 
         if (onIzinUpdated) onIzinUpdated();
       } else {

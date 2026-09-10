@@ -296,7 +296,8 @@ export default function Home() {
             tambahanSabaq: s.tambahanSabaq ?? 0,
             totalHafalan: s.totalHafalan ?? s.totalHalaman ?? s.capaianHalaman ?? 0,
             totalHalaman: s.totalHafalan ?? s.totalHalaman ?? s.capaianHalaman ?? 0,
-            posisiTerakhirHalaman: s.posisiTerakhirHalaman ?? (s.modalHafalanAwalHalaman || 1),
+            posisiTerakhirHalaman: s.posisiTerakhirHalaman ?? (s.modalHafalanAwalHalaman || 0),
+            isHalamanTerakhirParsial: s.isHalamanTerakhirParsial ?? false,
             bintangKebaikan: s.bintangKebaikan ?? 0,
           }))
         );
