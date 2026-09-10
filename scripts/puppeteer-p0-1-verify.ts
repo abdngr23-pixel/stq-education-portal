@@ -11,6 +11,7 @@ import puppeteer, { Browser, Page } from "puppeteer-core";
 import { spawn, spawnSync, ChildProcess } from "child_process";
 import fs from "fs";
 import path from "path";
+import os from "os";
 import { PrismaClient } from "@prisma/client";
 import {
   startTestDatabase,
@@ -25,8 +26,21 @@ import {
   getActiveTempDir,
 } from "../tests/test-db-manager";
 
-const CHROME_PATH = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-const ARTIFACT_DIR = "C:\\Users\\Lenovo\\.gemini\\antigravity-ide\\brain\\55dbb3f2-f96d-42d5-a15a-c4b49aeabf22";
+const CHROME_PATH =
+  process.env.CHROME_PATH ||
+  process.env.PUPPETEER_EXECUTABLE_PATH ||
+  (process.platform === "win32"
+    ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+    : "/usr/bin/google-chrome");
+
+const ARTIFACT_DIR =
+  process.env.E2E_ARTIFACT_DIR ||
+  process.env.ARTIFACT_DIR ||
+  path.join(os.tmpdir(), "stq-e2e-artifacts");
+
+if (!fs.existsSync(ARTIFACT_DIR)) {
+  fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
+}
 
 function fail(message: string): never {
   throw new Error(`[E2E ASSERTION FAILED] ${message}`);
