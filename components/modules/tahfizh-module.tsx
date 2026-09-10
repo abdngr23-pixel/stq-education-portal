@@ -483,6 +483,31 @@ export function TahfizhModule({
   const smartKonversiTotal = useMemo(() => konversiHalamanKeJuz(santriTotalHafalan), [santriTotalHafalan]);
   const smartKonversiAkumulasi = useMemo(() => konversiHalamanKeJuz(akumulasiHalamanBaru), [akumulasiHalamanBaru]);
 
+  // Batas Juz aktif & validasi lintas juz (Poin 8)
+  const currentStartPage = useMemo(() => {
+    const p = parseInt(halamanMulai, 10);
+    return isNaN(p) ? 1 : p;
+  }, [halamanMulai]);
+
+  const currentJuzMeta = useMemo(() => {
+    if (currentStartPage < 1 || currentStartPage > 604) return null;
+    return JUZ_LIST.find((j) => currentStartPage >= j.startPage && currentStartPage <= j.endPage) || null;
+  }, [currentStartPage]);
+
+  const maxPagesRemainingInJuz = useMemo(() => {
+    if (!currentJuzMeta) return 20;
+    return Math.max(0.5, currentJuzMeta.endPage - currentStartPage + 1);
+  }, [currentJuzMeta, currentStartPage]);
+
+  const isCrossJuzBoundary = useMemo(() => {
+    if (currentStartPage < 1 || currentStartPage > 604) return false;
+    const end = parseInt(halamanSelesai, 10);
+    if (isNaN(end) || end < currentStartPage) return false;
+    const juzMulai = getJuzByPage(currentStartPage);
+    const juzSelesai = getJuzByPage(end);
+    return Boolean(juzMulai && juzSelesai && juzMulai !== juzSelesai);
+  }, [currentStartPage, halamanSelesai]);
+
   // Handler Simpan Setoran: Pemeriksaan Otorisasi, Lock, Validasi & Deteksi Perbedaan dari Saran
   const handleSaveSetoran = () => {
     setFeedback(null);
@@ -520,6 +545,15 @@ export function TahfizhModule({
     const hlmMulaiNum = parseInt(halamanMulai, 10);
     if (isNaN(hlmMulaiNum) || hlmMulaiNum < 1 || hlmMulaiNum > 604) {
       setFeedback({ type: "error", message: "Halaman mulai harus antara 1 sampai 604." });
+      return;
+    }
+
+    // Poin 8: Cegah Setoran Melintasi Batas Juz
+    if (isCrossJuzBoundary) {
+      setFeedback({
+        type: "error",
+        message: `Setoran tidak boleh melintasi batas Juz. Halaman mulai (${halamanMulai}) dan selesai (${halamanSelesai}) berada pada juz berbeda. Maksimal sisa ${maxPagesRemainingInJuz} halaman untuk Juz ${currentJuzMeta?.juz || ""}.`,
+      });
       return;
     }
 
@@ -972,10 +1006,11 @@ export function TahfizhModule({
               <CardContent className="space-y-5 pt-5">
                 {/* Pilih Santri */}
                 <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1.5">
+                  <label htmlFor="santri-selector" className="text-xs font-bold text-slate-700 block mb-1.5">
                     Nama Santri
                   </label>
                   <select
+                    id="santri-selector"
                     value={effectiveSantriId}
                     onChange={(e) => handleSelectSantri(e.target.value)}
                     className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-[#0E7C3A]/20 transition-colors"
@@ -1214,21 +1249,32 @@ export function TahfizhModule({
                         Pilihan Cepat Tambah:
                       </span>
                       <div className="flex flex-wrap items-center gap-1.5">
-                        {["0.5", "1", "2", "3", "5", "7"].map((val) => (
-                          <button
-                            key={val}
-                            type="button"
-                            disabled={isKhatam30Juz}
-                            onClick={() => handleJumlahHalamanChange(val)}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-                              jumlahHalaman === val
-                                ? "bg-[#0E7C3A] text-white shadow-xs"
-                                : "bg-white text-emerald-800 border border-emerald-200 hover:bg-emerald-100/60"
-                            }`}
-                          >
-                            +{val} Hlm
-                          </button>
-                        ))}
+                        {["0.5", "1", "2", "3", "5", "7"].map((val) => {
+                          const numVal = parseFloat(val);
+                          const exceedsJuzBoundary = Boolean(currentJuzMeta && numVal > maxPagesRemainingInJuz);
+                          const isDisabled = isKhatam30Juz || exceedsJuzBoundary;
+
+                          return (
+                            <button
+                              key={val}
+                              type="button"
+                              disabled={isDisabled}
+                              onClick={() => handleJumlahHalamanChange(val)}
+                              title={
+                                exceedsJuzBoundary && currentJuzMeta
+                                  ? `Pilihan +${val} hlm melintasi batas Juz ${currentJuzMeta.juz} (sisa ${maxPagesRemainingInJuz} hlm hingga batas akhir hlm ${currentJuzMeta.endPage}).`
+                                  : undefined
+                              }
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                                jumlahHalaman === val
+                                  ? "bg-[#0E7C3A] text-white shadow-xs"
+                                  : "bg-white text-emerald-800 border border-emerald-200 hover:bg-emerald-100/60"
+                              }`}
+                            >
+                              +{val} Hlm
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -1637,10 +1683,29 @@ export function TahfizhModule({
                   </div>
                 </div>
 
+                {/* Banner Peringatan Lintas Batas Juz (Poin 8) */}
+                {isCrossJuzBoundary && currentJuzMeta && (
+                  <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 flex items-start gap-2 shadow-2xs">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold">Setoran melintasi batas Juz {currentJuzMeta.juz}.</p>
+                      <p className="text-[11px] text-amber-800 mt-0.5">
+                        Halaman mulai ({halamanMulai}) dan selesai ({halamanSelesai}) berada pada juz berbeda. Standar kurikulum STQ DUC: satu transaksi setoran harus dalam satu juz yang sama (maksimal hingga halaman {currentJuzMeta.endPage} untuk Juz {currentJuzMeta.juz}).
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <Button
                   variant="primary"
                   onClick={handleSaveSetoran}
-                  disabled={isSubmitting || isPending || !activeSantri || (inputJenis === "SABAQ" && isKhatam30Juz)}
+                  disabled={
+                    isSubmitting ||
+                    isPending ||
+                    !activeSantri ||
+                    (inputJenis === "SABAQ" && isKhatam30Juz) ||
+                    isCrossJuzBoundary
+                  }
                   className="w-full min-h-[48px] font-bold text-sm bg-[#0E7C3A] hover:bg-[#0B642E] shadow-xs gap-2 disabled:bg-slate-300 disabled:cursor-not-allowed"
                 >
                   <BookCheck className="h-4 w-4" />
@@ -1648,6 +1713,8 @@ export function TahfizhModule({
                     ? "Pilih Santri Terlebih Dahulu"
                     : inputJenis === "SABAQ" && isKhatam30Juz
                     ? "Target Hafalan 30 Juz Telah Selesai"
+                    : isCrossJuzBoundary
+                    ? "Rentang Halaman Melintasi Batas Juz"
                     : isSubmitting || isPending
                     ? "Sedang menyimpan..."
                     : "Simpan Setoran Santri"}

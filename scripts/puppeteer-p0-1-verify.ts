@@ -1,244 +1,464 @@
-import puppeteer from "puppeteer-core";
+import puppeteer, { Browser } from "puppeteer-core";
 import path from "path";
+import { spawn, ChildProcess } from "child_process";
+import {
+  startTestDatabase,
+  setupTestFixtures,
+  cleanupTestFixtures,
+  stopTestDatabase,
+  FIXTURES,
+  TEST_DATABASE_URL,
+} from "../tests/test-db-manager";
 
-const ARTIFACT_DIR = "C:\\Users\\Lenovo\\.gemini\\antigravity-ide\\brain\\55dbb3f2-f96d-42d5-a15a-c4b49aeabf22";
 const CHROME_PATH = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+const ARTIFACT_DIR = "C:\\Users\\Lenovo\\.gemini\\antigravity-ide\\brain\\55dbb3f2-f96d-42d5-a15a-c4b49aeabf22";
+const BASE_URL = "http://localhost:3000";
 
-async function main() {
-  console.log("=== STARTING PUPPETEER P0.1 E2E VERIFICATION ===");
+let nextServerProcess: ChildProcess | null = null;
+let browser: Browser | null = null;
 
-  const browser = await puppeteer.launch({
-    executablePath: CHROME_PATH,
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    defaultViewport: { width: 1366, height: 900 },
-  });
+function logStep(step: string) {
+  console.log(`\n======================================================`);
+  console.log(`[E2E STEP] ${step}`);
+  console.log(`======================================================`);
+}
 
-  try {
-    const page = await browser.newPage();
+function fail(msg: string): never {
+  console.error(`\n❌ [ASSERTION FAILED] ${msg}\n`);
+  process.exit(1);
+}
 
-    // ==========================================
-    // 1. LOGIN SEBAGAI MUSYRIF TAHFIZH (MT)
-    // ==========================================
-    console.log("\n[1] Navigasi ke login...");
-    await page.goto("http://localhost:3000/login", { waitUntil: "networkidle2" });
-
-    const client = await page.createCDPSession();
-    await client.send("Network.clearBrowserCookies");
-
-    console.log("Mengisi formulir login MT: musyrif.tahfizh / password123...");
-    const usernameInput = await page.$('input[type="text"], input[name="username"]');
-    const passwordInput = await page.$('input[type="password"]');
-
-    if (!usernameInput || !passwordInput) {
-      throw new Error("Input login tidak ditemukan!");
-    }
-
-    await usernameInput.click({ clickCount: 3 });
-    await usernameInput.type("musyrif.tahfizh");
-    await passwordInput.click({ clickCount: 3 });
-    await passwordInput.type("password123");
-
-    const submitBtn = await page.$('button[type="submit"]');
-    if (submitBtn) await submitBtn.click();
-
-    await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(() => {});
-    await new Promise((r) => setTimeout(r, 2000));
-
-    // ==========================================
-    // 2. BUKA MODUL TAHFIZH
-    // ==========================================
-    console.log("\n[2] Membuka modul Tahfizh...");
-    const allButtons = await page.$$("button, a");
-    for (const btn of allButtons) {
-      const text = await page.evaluate((el) => el.textContent, btn);
-      if (text && text.includes("Tahfizh") && !text.includes("Musyrif")) {
-        await btn.click();
-        break;
-      }
-    }
-    await new Promise((r) => setTimeout(r, 2500));
-
-    // ==========================================
-    // 3. SKENARIO 1: MULTI-HALAMAN SABAQ (424-425, VOL 2)
-    // ==========================================
-    console.log("\n[3] Skenario 1: Multi-halaman Sabaq (2 Halaman: 424–425)...");
-    const santriSelect = await page.$("select");
-    if (santriSelect) {
-      const options = await page.evaluate((sel) => {
-        return Array.from(sel.options).map((o) => ({ value: o.value, text: o.text }));
-      }, santriSelect);
-      const obamaOpt = options.find((o) => o.text.includes("Obama"));
-      if (obamaOpt) {
-        await santriSelect.select(obamaOpt.value);
-        await new Promise((r) => setTimeout(r, 1500));
-      }
-    }
-
-    // Klik tombol quick add "+2 Hlm"
-    const quickAdd2Btn = await page.evaluateHandle(() => {
-      const buttons = Array.from(document.querySelectorAll("button"));
-      return buttons.find((b) => b.textContent?.trim() === "+2 Hlm") || null;
-    });
-
-    if (quickAdd2Btn.asElement()) {
-      await (quickAdd2Btn.asElement() as puppeteer.ElementHandle<HTMLButtonElement>).click();
-      await new Promise((r) => setTimeout(r, 800));
-    }
-
-    const numberInputs = await page.$$('input[type="number"]');
-    const hlmMulaiVal = await page.evaluate((el) => (el as HTMLInputElement).value, numberInputs[0]);
-    const jmlHlmVal = await page.evaluate((el) => (el as HTMLInputElement).value, numberInputs[1]);
-    const hlmSelesaiVal = await page.evaluate((el) => (el as HTMLInputElement).value, numberInputs[2]);
-
-    console.log(`   Halaman Mulai = ${hlmMulaiVal} (Ekspektasi: 424)`);
-    console.log(`   Jumlah Halaman = ${jmlHlmVal} (Ekspektasi: 2)`);
-    console.log(`   Halaman Selesai = ${hlmSelesaiVal} (Ekspektasi: 425)`);
-
-    const screenshotPath1 = path.join(ARTIFACT_DIR, "p0_1_scenario1_multipage_422_423.png");
-    await page.screenshot({ path: screenshotPath1, fullPage: true });
-    console.log(`   📸 Screenshot disimpan: ${screenshotPath1}`);
-
-    // ==========================================
-    // 4. SKENARIO 2: SETENGAH HALAMAN (0.5)
-    // ==========================================
-    console.log("\n[4] Skenario 2: Setoran 0.5 Halaman (424-424, Vol 0.5)...");
-    const quickAddHalfBtn = await page.evaluateHandle(() => {
-      const buttons = Array.from(document.querySelectorAll("button"));
-      return buttons.find((b) => b.textContent?.trim() === "+0.5 Hlm") || null;
-    });
-
-    if (quickAddHalfBtn.asElement()) {
-      await (quickAddHalfBtn.asElement() as puppeteer.ElementHandle<HTMLButtonElement>).click();
-      await new Promise((r) => setTimeout(r, 800));
-    }
-
-    const halfHlmMulai = await page.evaluate((el) => (el as HTMLInputElement).value, numberInputs[0]);
-    const halfJmlHlm = await page.evaluate((el) => (el as HTMLInputElement).value, numberInputs[1]);
-    const halfHlmSelesai = await page.evaluate((el) => (el as HTMLInputElement).value, numberInputs[2]);
-
-    console.log(`   Halaman Mulai = ${halfHlmMulai} (Ekspektasi: 424)`);
-    console.log(`   Jumlah Halaman = ${halfJmlHlm} (Ekspektasi: 0.5)`);
-    console.log(`   Halaman Selesai = ${halfHlmSelesai} (Ekspektasi: 424)`);
-
-    const screenshotPath2 = path.join(ARTIFACT_DIR, "p0_1_scenario2_half_page.png");
-    await page.screenshot({ path: screenshotPath2, fullPage: true });
-    console.log(`   📸 Screenshot disimpan: ${screenshotPath2}`);
-
-    // ==========================================
-    // 5. SKENARIO 3: SABAQI SANTRI TANPA SABAQ PEKAN INI (NO FALLBACK)
-    // ==========================================
-    console.log("\n[5] Skenario 3: Memeriksa Sabqi tanpa fallback lama untuk santri tanpa Sabaq pekan ini...");
-    // Pilih santri SAN-0003 (Muh. Fauzan) yang belum memiliki Sabaq pekan ini
-    if (santriSelect) {
-      const options = await page.evaluate((sel) => {
-        return Array.from(sel.options).map((o) => ({ value: o.value, text: o.text }));
-      }, santriSelect);
-      const fauzanOpt = options.find((o) => o.text.includes("Fauzan") || o.text.includes("SAN-0003"));
-      if (fauzanOpt) {
-        await santriSelect.select(fauzanOpt.value);
-        await new Promise((r) => setTimeout(r, 1500));
-      }
-    }
-
-    // Klik tab "2. Sabqi"
-    const sabqiTabBtn = await page.evaluateHandle(() => {
-      const buttons = Array.from(document.querySelectorAll("button"));
-      return buttons.find((b) => b.textContent?.includes("Sabqi")) || null;
-    });
-
-    if (sabqiTabBtn.asElement()) {
-      await (sabqiTabBtn.asElement() as puppeteer.ElementHandle<HTMLButtonElement>).click();
-      await new Promise((r) => setTimeout(r, 1500));
-    }
-
-    // Periksa apakah pesan "Belum ada Sabaq tersimpan pada pekan ini" muncul
-    const bodyText = await page.evaluate(() => document.body.innerText);
-    const hasCleanMessage = bodyText.includes("Belum ada Sabaq tersimpan pada pekan ini");
-    console.log(`   Pesan informatif muncul: ${hasCleanMessage} (Ekspektasi: true)`);
-
-    // Centang input manual Sabaqi
-    const manualCheckbox = await page.$('input[type="checkbox"]');
-    if (manualCheckbox) {
-      await manualCheckbox.click();
+async function waitPort(port: number, timeoutMs = 60000): Promise<void> {
+  const net = await import("net");
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const socket = net.createConnection(port, "127.0.0.1", () => {
+          socket.destroy();
+          resolve();
+        });
+        socket.on("error", reject);
+        socket.setTimeout(800, () => {
+          socket.destroy();
+          reject(new Error("timeout"));
+        });
+      });
+      return;
+    } catch {
       await new Promise((r) => setTimeout(r, 500));
     }
+  }
+  throw new Error(`Port ${port} tidak dapat dijangkau setelah ${timeoutMs}ms`);
+}
 
-    const screenshotPath3 = path.join(ARTIFACT_DIR, "p0_1_scenario3_sabaqi_no_fallback.png");
-    await page.screenshot({ path: screenshotPath3, fullPage: true });
-    console.log(`   📸 Screenshot disimpan: ${screenshotPath3}`);
+async function startNextTestServer() {
+  logStep("Memulai Next.js Server Terisolasi pada Port 3000 (PostgreSQL Test Terisolasi)...");
 
-    // ==========================================
-    // 6. SKENARIO 4: TIDAK ADA WHATSAPP PADA SETORAN HARIAN
-    // ==========================================
-    console.log("\n[6] Skenario 4: Memastikan tidak ada popup WhatsApp pada alur setoran harian...");
-    const hasWAPopup = await page.evaluate(() => {
-      return (
-        document.querySelector('[data-testid="wa-dialog"]') !== null ||
-        Array.from(document.querySelectorAll("a, button")).some(
-          (el) => el.textContent?.includes("Kirim WhatsApp Otomatis")
-        )
-      );
-    });
-    console.log(`   Popup WhatsApp terdeteksi: ${hasWAPopup} (Ekspektasi: false)`);
-
-    const screenshotPath4 = path.join(ARTIFACT_DIR, "p0_1_scenario4_no_wa_dialog.png");
-    await page.screenshot({ path: screenshotPath4, fullPage: true });
-    console.log(`   📸 Screenshot disimpan: ${screenshotPath4}`);
-
-    // ==========================================
-    // 7. SKENARIO 5: TARGET SELESAI / 30 JUZ KHATAM (HALAMAN 604)
-    // ==========================================
-    console.log("\n[7] Skenario 5: Memverifikasi penanganan santri khatam 30 Juz...");
-    // Kembali ke tab Sabaq
-    const sabaqTabBtn = await page.evaluateHandle(() => {
-      const buttons = Array.from(document.querySelectorAll("button"));
-      return buttons.find((b) => b.textContent?.includes("Sabaq") && !b.textContent?.includes("Sabqi")) || null;
-    });
-    if (sabaqTabBtn.asElement()) {
-      await (sabaqTabBtn.asElement() as puppeteer.ElementHandle<HTMLButtonElement>).click();
-      await new Promise((r) => setTimeout(r, 1000));
+  try {
+    const { execSync } = await import("child_process");
+    const out = execSync("netstat -ano | findstr :3000", { encoding: "utf-8" });
+    const lines = out.split("\n").filter((l) => l.includes("LISTENING"));
+    for (const l of lines) {
+      const parts = l.trim().split(/\s+/);
+      const pid = parts[parts.length - 1];
+      if (pid && pid !== "0") {
+        execSync(`taskkill /PID ${pid} /F`, { stdio: "ignore" });
+      }
     }
+    await new Promise((r) => setTimeout(r, 1000));
+  } catch {
+    // Port 3000 bersih
+  }
 
-    // Demonstrasi status visual khatam 604
-    await page.evaluate(() => {
-      const container = document.querySelector(".space-y-3\\.5");
-      if (container) {
-        const khatamDiv = document.createElement("div");
-        khatamDiv.id = "target-khatam-banner-preview";
-        khatamDiv.className = "p-3.5 bg-emerald-100/90 border border-emerald-300 rounded-xl text-xs text-emerald-950 space-y-1 shadow-xs";
-        khatamDiv.innerHTML = `
-          <div class="flex items-center gap-2 font-black text-emerald-900 text-sm">
-            <svg class="w-4 h-4 text-emerald-700 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-            <span>Target hafalan 30 juz telah selesai.</span>
-          </div>
-          <p class="text-emerald-800 font-bold pl-6">
-            Tidak ada halaman Sabaq berikutnya.
-          </p>
-        `;
-        container.prepend(khatamDiv);
-      }
+  // Pastikan env diisolasi ke database test
+  const env = {
+    ...process.env,
+    PORT: "3000",
+    NODE_ENV: "test",
+    IS_TEST_RUN: "true",
+    DATABASE_URL: TEST_DATABASE_URL,
+    TEST_DATABASE_URL: TEST_DATABASE_URL,
+    AUTH_SECRET: "stq_portal_test_secret_session_key_min_32_characters_long_2026",
+  };
 
-      // Update submit button visual
-      const buttons = Array.from(document.querySelectorAll("button"));
-      const submit = buttons.find((b) => b.textContent?.includes("Simpan Setoran") || b.textContent?.includes("Target Hafalan"));
-      if (submit) {
-        submit.disabled = true;
-        submit.textContent = "Target Hafalan 30 Juz Telah Selesai";
-      }
-    });
+  nextServerProcess = spawn("npx.cmd", ["next", "dev", "-p", "3000", "--turbopack"], {
+    cwd: path.resolve(__dirname, ".."),
+    env,
+    stdio: "pipe",
+    shell: true,
+  });
 
-    const screenshotPath5 = path.join(ARTIFACT_DIR, "p0_1_scenario5_khatam_604.png");
-    await page.screenshot({ path: screenshotPath5, fullPage: true });
-    console.log(`   📸 Screenshot disimpan: ${screenshotPath5}`);
+  nextServerProcess.stdout?.on("data", (data) => {
+    const s = data.toString();
+    if (s.includes("Ready") || s.includes("started") || s.includes("3000")) {
+      console.log(`[Next.js 3000] ${s.trim()}`);
+    }
+  });
 
-    console.log("\n=== SELURUH SKENARIO PUPPETEER BERHASIL DIVERIFIKASI ===");
+  nextServerProcess.stderr?.on("data", (data) => {
+    console.error(`[Next.js 3000 ERROR] ${data.toString().trim()}`);
+  });
+
+  await waitPort(3000);
+  console.log("Next.js test server siap pada port 3000!");
+}
+
+async function shutdown() {
+  console.log("\nMembersihkan environment pengujian...");
+  if (browser) {
+    try {
+      await browser.close();
+    } catch {}
+  }
+
+  if (nextServerProcess && nextServerProcess.pid) {
+    try {
+      const { execSync } = await import("child_process");
+      execSync(`taskkill /F /T /PID ${nextServerProcess.pid}`, { stdio: "ignore" });
+    } catch {}
+  }
+
+  try {
+    const prisma = await startTestDatabase();
+    await cleanupTestFixtures(prisma);
+    await stopTestDatabase();
+  } catch {}
+
+  console.log("Pembersihan selesai.");
+}
+
+process.on("SIGINT", async () => {
+  await shutdown();
+  process.exit(1);
+});
+
+async function runE2E() {
+  // 1. Inisialisasi Database Test & Fixtures
+  logStep("1. Menyiapkan Database Test PostgreSQL Terisolasi & Fixtures...");
+  const prisma = await startTestDatabase();
+  await setupTestFixtures(prisma);
+  console.log("Fixtures test santri dan akun berhasil dibuat di database test terisolasi.");
+
+  // 2. Start Next.js Test Server pada port 3001
+  await startNextTestServer();
+
+  // 3. Launch Chrome Puppeteer
+  logStep("2. Meluncurkan Chrome Puppeteer Riil...");
+  browser = await puppeteer.launch({
+    executablePath: CHROME_PATH,
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--window-size=1400,900"],
+    defaultViewport: { width: 1400, height: 900 },
+  });
+
+  const page = await browser.newPage();
+
+  // Helper login
+  async function doLogin() {
+    logStep("Login sebagai Akun Test Musyrif (test.musyrif)...");
+    await page.goto(`${BASE_URL}/login`, { waitUntil: "networkidle2" });
+    await page.waitForSelector('input[name="username"]');
+    await page.type('input[name="username"]', FIXTURES.USERNAME);
+    await page.type('input[name="password"]', FIXTURES.PASSWORD);
+    await page.click('button[type="submit"]');
+
+    await page.waitForNavigation({ waitUntil: "networkidle2" });
+    const currentUrl = page.url();
+    if (!currentUrl.includes("/tahfizh") && !currentUrl.includes("/dashboard") && !currentUrl.includes("/")) {
+      fail(`Gagal login. URL saat ini: ${currentUrl}`);
+    }
+    console.log("Login berhasil! URL:", currentUrl);
+  }
+
+  await doLogin();
+
+  // Navigasi ke modul Tahfizh
+  await page.goto(`${BASE_URL}/?tab=tahfizh`, { waitUntil: "networkidle2" });
+  await page.waitForSelector("#santri-selector", { timeout: 15000 });
+  console.log("Modul Tahfizh dimuat dengan sukses.");
+
+  // =========================================================================
+  // SKENARIO A: Multi-Halaman Nyata (Muhammad Test Multi)
+  // =========================================================================
+  logStep("SKENARIO A: Multi-Halaman Nyata (2 Halaman 422–423)");
+  // Pilih santri TEST-SAN-01
+  await page.select("#santri-selector", FIXTURES.SANTRI_MULTI);
+  await new Promise((r) => setTimeout(r, 800));
+
+  // Pastikan saran halaman mulai adalah 422
+  const halMulaiVal = await page.$eval('input[placeholder="1"]', (el) => (el as HTMLInputElement).value);
+  if (halMulaiVal !== "422") {
+    fail(`Saran halaman mulai santri multi harus 422, didapat: ${halMulaiVal}`);
+  }
+  console.log("Saran awal halaman mulai terverifikasi: 422");
+
+  // Klik pilihan cepat +2 Hlm
+  const clicked2 = await page.evaluate(() => {
+    const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("+2 Hlm"));
+    if (btn) {
+      (btn as HTMLButtonElement).click();
+      return true;
+    }
+    return false;
+  });
+  if (!clicked2) fail("Tombol +2 Hlm tidak ditemukan");
+  await new Promise((r) => setTimeout(r, 500));
+
+  // Klik Simpan Setoran Santri
+  const clickedSimpan = await page.evaluate(() => {
+    const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("Simpan Setoran"));
+    if (btn) {
+      (btn as HTMLButtonElement).click();
+      return true;
+    }
+    return false;
+  });
+  if (!clickedSimpan) fail("Tombol Simpan Setoran Santri tidak ditemukan");
+
+  // Tunggu feedback berhasil dari server action nyata
+  await page.waitForFunction(
+    () => {
+      const body = document.body.innerText;
+      return body.includes("berhasil disimpan") || body.includes("berhasil") || body.includes("Alhamdulillah");
+    },
+    { timeout: 10000 }
+  );
+  console.log("Server action sukses: Setoran multi-halaman berhasil dicatat.");
+
+  // Pastikan TIDAK ADA dialog / popup WhatsApp
+  const isWaModalOpen = await page.evaluate(() => {
+    const text = document.body.innerText;
+    return Boolean(document.querySelector('[role="dialog"]')) && (text.includes("Kirim via WhatsApp") || text.includes("WhatsApp"));
+  });
+  if (isWaModalOpen) {
+    fail("Dialog WhatsApp muncul pada setoran harian rutin!");
+  }
+  console.log("Verifikasi lolos: Tidak ada dialog/tautan WhatsApp yang muncul.");
+
+  const screenshotA = path.join(ARTIFACT_DIR, "p0_1_real_multipage_success.png");
+  await page.screenshot({ path: screenshotA, fullPage: true });
+
+  // Reload halaman untuk membuktikan persistensi nyata ke database
+  logStep("Reload Halaman & Verifikasi Persistensi Database...");
+  await page.reload({ waitUntil: "networkidle2" });
+  await page.waitForSelector("#santri-selector");
+  await page.select("#santri-selector", FIXTURES.SANTRI_MULTI);
+  await new Promise((r) => setTimeout(r, 800));
+
+  // Periksa apakah setoran muncul di Riwayat Setoran Terkini
+  const hasHistoryRecord = await page.evaluate(() => {
+    const text = document.body.innerText;
+    return text.includes("422") && text.includes("423") && text.includes("Muhammad Test Multi");
+  });
+  if (!hasHistoryRecord) {
+    fail("Data setoran 422-423 tidak ditemukan di tabel Riwayat Setoran Terkini setelah reload!");
+  }
+  console.log("Tabel riwayat terverifikasi: Record 422-423 tersimpan dan ditampilkan dari database.");
+
+  // Periksa saran halaman berikutnya telah maju ke 424
+  const nextHalMulai = await page.$eval('input[placeholder="1"]', (el) => (el as HTMLInputElement).value);
+  if (nextHalMulai !== "424") {
+    fail(`Saran berikutnya setelah setoran 422-423 harus 424, didapat: ${nextHalMulai}`);
+  }
+  console.log("Saran berikutnya terverifikasi maju ke halaman 424.");
+
+  // =========================================================================
+  // SKENARIO B: Setengah Halaman Nyata (Muhammad Test Half)
+  // =========================================================================
+  logStep("SKENARIO B: Setoran Parsial 0.5 Halaman");
+  await page.select("#santri-selector", FIXTURES.SANTRI_HALF);
+  await new Promise((r) => setTimeout(r, 800));
+
+  // Simpan 0.5 pertama pada halaman 431
+  const clickedHalf1 = await page.evaluate(() => {
+    const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("+0.5 Hlm"));
+    if (btn) {
+      (btn as HTMLButtonElement).click();
+      return true;
+    }
+    return false;
+  });
+  if (!clickedHalf1) fail("Tombol +0.5 Hlm tidak ditemukan");
+  await new Promise((r) => setTimeout(r, 400));
+
+  const clickedSimpanHalf1 = await page.evaluate(() => {
+    const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("Simpan Setoran"));
+    if (btn) {
+      (btn as HTMLButtonElement).click();
+      return true;
+    }
+    return false;
+  });
+  if (!clickedSimpanHalf1) fail("Tombol Simpan Setoran Santri tidak ditemukan");
+
+  await page.waitForFunction(
+    () => {
+      const body = document.body.innerText;
+      return body.includes("berhasil disimpan") || body.includes("berhasil") || body.includes("Alhamdulillah");
+    },
+    { timeout: 10000 }
+  );
+  console.log("0.5 pertama berhasil disimpan.");
+
+  // Reload halaman: Saran harus tetap pada 431 karena masih tersisa kapasitas 0.5
+  await page.reload({ waitUntil: "networkidle2" });
+  await page.waitForSelector("#santri-selector");
+  await page.select("#santri-selector", FIXTURES.SANTRI_HALF);
+  await new Promise((r) => setTimeout(r, 800));
+
+  const halfStayVal = await page.$eval('input[placeholder="1"]', (el) => (el as HTMLInputElement).value);
+  if (halfStayVal !== "431") {
+    fail(`Saran setelah 0.5 pertama harus tetap halaman 431, didapat: ${halfStayVal}`);
+  }
+  console.log("Verifikasi lolos: Saran tetap pada halaman 431 (kapasitas parsial tersisa).");
+
+  // Simpan 0.5 kedua
+  const clickedHalf2 = await page.evaluate(() => {
+    const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("+0.5 Hlm"));
+    if (btn) {
+      (btn as HTMLButtonElement).click();
+      return true;
+    }
+    return false;
+  });
+  if (!clickedHalf2) fail("Tombol +0.5 Hlm tidak ditemukan");
+  await new Promise((r) => setTimeout(r, 400));
+
+  const clickedSimpanHalf2 = await page.evaluate(() => {
+    const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("Simpan Setoran"));
+    if (btn) {
+      (btn as HTMLButtonElement).click();
+      return true;
+    }
+    return false;
+  });
+  if (!clickedSimpanHalf2) fail("Tombol Simpan Setoran Santri tidak ditemukan");
+
+  await page.waitForFunction(
+    () => {
+      const body = document.body.innerText;
+      return body.includes("berhasil disimpan") || body.includes("berhasil") || body.includes("Alhamdulillah");
+    },
+    { timeout: 10000 }
+  );
+  console.log("0.5 kedua berhasil disimpan.");
+
+  // Reload: Saran sekarang harus maju ke halaman 432
+  await page.reload({ waitUntil: "networkidle2" });
+  await page.waitForSelector("#santri-selector");
+  await page.select("#santri-selector", FIXTURES.SANTRI_HALF);
+  await new Promise((r) => setTimeout(r, 800));
+
+  const halfAdvanceVal = await page.$eval('input[placeholder="1"]', (el) => (el as HTMLInputElement).value);
+  if (halfAdvanceVal !== "432") {
+    fail(`Saran setelah halaman 431 penuh (1.0) harus maju ke 432, didapat: ${halfAdvanceVal}`);
+  }
+  console.log("Verifikasi lolos: Saran maju ke halaman 432.");
+
+  // =========================================================================
+  // SKENARIO C: Khatam 30 Juz Nyata (Muhammad Test Khatam 30 Juz)
+  // =========================================================================
+  logStep("SKENARIO C: Santri Khatam 30 Juz (Halaman 604 Selesai)");
+  await page.select("#santri-selector", FIXTURES.SANTRI_KHATAM);
+  await new Promise((r) => setTimeout(r, 800));
+
+  // Pastikan banner khatam muncul dari React state tanpa DOM injection
+  const khatamBannerExists = await page.evaluate(() => {
+    const text = document.body.innerText;
+    return text.includes("Target hafalan 30 juz telah selesai") && text.includes("Tidak ada halaman Sabaq berikutnya");
+  });
+  if (!khatamBannerExists) {
+    fail("Banner resmi Khatam 30 Juz tidak muncul di UI!");
+  }
+  console.log("Banner khatam 30 juz terverifikasi muncul dari state aplikasi.");
+
+  // Pastikan form dan tombol dinonaktifkan
+  const isSubmitDisabled = await page.evaluate(() => {
+    const btn = Array.from(document.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Target Hafalan 30 Juz Telah Selesai") || b.textContent?.includes("Simpan Setoran")
+    );
+    return btn ? (btn as HTMLButtonElement).disabled : false;
+  });
+  if (!isSubmitDisabled) {
+    fail("Tombol simpan harus dinonaktifkan untuk santri yang sudah khatam!");
+  }
+  console.log("Tombol simpan Sabaq terverifikasi dinonaktifkan.");
+
+  // Pastikan tidak ada saran halaman 605
+  const pageText = await page.evaluate(() => document.body.innerText);
+  if (pageText.includes("Halaman 605") || pageText.includes("hlm 605")) {
+    fail("Sistem menyarankan Halaman 605 yang tidak ada di mushaf!");
+  }
+  console.log("Verifikasi lolos: Tidak ada referensi Halaman 605.");
+
+  const screenshotC = path.join(ARTIFACT_DIR, "p0_1_real_khatam_disabled.png");
+  await page.screenshot({ path: screenshotC, fullPage: true });
+
+  // =========================================================================
+  // SKENARIO D: Sabaqi Tanpa Fallback Lama (Muhammad Test Sabaqi Clean)
+  // =========================================================================
+  logStep("SKENARIO D: Validasi Sabaqi Tanpa Fallback Lama");
+  await page.select("#santri-selector", FIXTURES.SANTRI_SABAQI);
+  await new Promise((r) => setTimeout(r, 600));
+
+  // Pindah ke tab SABQI
+  const clickedSabqi = await page.evaluate(() => {
+    const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("Sabqi"));
+    if (btn) {
+      (btn as HTMLButtonElement).click();
+      return true;
+    }
+    return false;
+  });
+  if (!clickedSabqi) fail("Tab Sabqi tidak ditemukan");
+  await new Promise((r) => setTimeout(r, 800));
+
+  // Pastikan banner informasi 'Belum ada Sabaq tersimpan pada pekan ini' muncul
+  const noSabaqBanner = await page.evaluate(() => {
+    return document.body.innerText.includes("Belum ada Sabaq tersimpan pada pekan ini");
+  });
+  if (!noSabaqBanner) {
+    fail("Peringatan Sabaqi tanpa Sabaq pekan ini tidak muncul!");
+  }
+  console.log("Banner informasi Sabaqi tanpa Sabaq pekan ini terverifikasi.");
+
+  // Coba simpan tanpa mode manual -> harus ditolak
+  const clickedSimpanSabqi = await page.evaluate(() => {
+    const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("Simpan Setoran"));
+    if (btn) {
+      (btn as HTMLButtonElement).click();
+      return true;
+    }
+    return false;
+  });
+  if (!clickedSimpanSabqi) fail("Tombol Simpan Setoran Santri pada Sabqi tidak ditemukan");
+  await new Promise((r) => setTimeout(r, 600));
+
+  const hasValidationError = await page.evaluate(() => {
+    const text = document.body.innerText;
+    return text.includes("Belum ada Sabaq tersimpan pada pekan ini") || text.includes("alasan tertulis");
+  });
+  if (!hasValidationError) {
+    fail("Simpan Sabaqi tanpa konfirmasi/alasan tidak memunculkan validasi error!");
+  }
+  console.log("Validasi lolos: Sabaqi tanpa konfirmasi manual tertolak dengan pesan informatif.");
+
+  const screenshotD = path.join(ARTIFACT_DIR, "p0_1_real_sabaqi_validation.png");
+  await page.screenshot({ path: screenshotD, fullPage: true });
+
+  logStep("Semua Skenario Pengujian E2E Riil Selesai dengan SUKSES 100%!");
+}
+
+async function main() {
+  try {
+    await runE2E();
+  } catch (err) {
+    console.error("Kesalahan fatal saat eksekusi E2E:", err);
+    process.exit(1);
   } finally {
-    await browser.close();
+    await shutdown();
   }
 }
 
-main().catch((err) => {
-  console.error("Gagal menjalankan Puppeteer:", err);
-  process.exit(1);
-});
+main();

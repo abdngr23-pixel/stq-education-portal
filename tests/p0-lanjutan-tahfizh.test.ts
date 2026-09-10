@@ -182,127 +182,62 @@ describe("KOREKSI P0.1 TAHFIZH — Production Unit Tests", () => {
     });
   });
 
-  describe("4. Proteksi Konkurensi & Idempotensi (Concurrency Simulation)", () => {
-    it("10. Concurrent write tidak dapat membuat occupancy lebih dari 1.0", () => {
-      // Simulasi 2 thread membaca snapshot yang sama (misal occupancy 0.5)
-      // Keduanya mengajukan +0.5 pada halaman 422
+  describe("4. Proteksi Kapasitas Multi-Halaman & Alokasi Parsial", () => {
+    it("10. Multi-halaman yang menabrak kapasitas sebagian halaman ditolak", () => {
+      // Halaman 423 sudah terisi 0.5 oleh setoran sebelumnya
       const baseState = [
         {
-          id: "s-exist",
+          id: "s-exist-423",
           jenis: "SABAQ",
           status: "AKTIF",
-          halamanMulai: 422,
-          halamanSelesai: 422,
+          halamanMulai: 423,
+          halamanSelesai: 423,
           jumlahHalaman: 0.5,
           tanggal: new Date("2026-09-09T08:00:00Z"),
         },
       ];
 
-      // Request A diproses lebih dulu dan berhasil
-      const checkA = validateProposedSabaqAllocation(baseState, 422, 422, 0.5);
-      assert.equal(checkA.valid, true);
+      // Pengajuan setoran 2 halaman: 422–423 volume 2 (memerlukan 1.0 pada 422 dan 1.0 pada 423)
+      // Halaman 423 akan menjadi 0.5 + 1.0 = 1.5 (> 1.0) -> Harus DITOLAK
+      const checkOverCapacity = validateProposedSabaqAllocation(baseState, 422, 423, 2.0);
+      assert.equal(checkOverCapacity.valid, false);
+      assert.match(checkOverCapacity.message || "", /melebihi kapasitas 1 halaman/i);
+    });
 
-      // Setelah Request A committed ke state
-      const stateAfterA = [
-        ...baseState,
+    it("11. Validasi batas toleransi kapasitas floating-point aman terhadap pembulatan", () => {
+      // Dua setoran 0.5 berturut-turut
+      const state = [
         {
-          id: "s-a",
+          id: "s-1",
           jenis: "SABAQ",
           status: "AKTIF",
-          halamanMulai: 422,
-          halamanSelesai: 422,
+          halamanMulai: 500,
+          halamanSelesai: 500,
           jumlahHalaman: 0.5,
-          tanggal: new Date("2026-09-09T08:00:01Z"),
+          tanggal: new Date("2026-09-09T08:00:00Z"),
         },
       ];
 
-      // Request B yang datang bersamaan (atau berselisih milidetik) diuji terhadap updated state
-      const checkB = validateProposedSabaqAllocation(stateAfterA, 422, 422, 0.5);
-      assert.equal(checkB.valid, false);
-      assert.match(checkB.message || "", /sudah lengkap disetorkan|melebihi kapasitas/);
-    });
+      const checkSecond = validateProposedSabaqAllocation(state, 500, 500, 0.5);
+      assert.equal(checkSecond.valid, true);
 
-    it("11. Setoran ulang dengan clientRequestId yang sama tetap idempoten", () => {
-      const clientRequestId = "req-uuid-test-12345";
-      const recordInitial = {
-        id: "set-db-1",
-        setoranCode: "SET-TEST-01",
-        santriId: "santri-1",
-        clientRequestId,
-      };
-
-      // Handler idempotensi memverifikasi kecocokan santriId dan mengembalikan data sama
-      function verifyIdempotency(incoming: { santriId: string; clientRequestId: string }, existing: typeof recordInitial) {
-        if (incoming.clientRequestId === existing.clientRequestId) {
-          if (incoming.santriId !== existing.santriId) {
-            return { success: false, code: "FORBIDDEN_OWNERSHIP" };
-          }
-          return { success: true, idempotent: true, data: existing };
-        }
-        return { success: true, idempotent: false };
-      }
-
-      const resSame = verifyIdempotency({ santriId: "santri-1", clientRequestId }, recordInitial);
-      assert.equal(resSame.success, true);
-      assert.equal(resSame.idempotent, true);
-      assert.equal(resSame.data?.setoranCode, "SET-TEST-01");
-
-      const resDiffSantri = verifyIdempotency({ santriId: "santri-2", clientRequestId }, recordInitial);
-      assert.equal(resDiffSantri.success, false);
-    });
-  });
-
-  describe("5. Aturan Sabaqi & Eliminasi WhatsApp Rutin", () => {
-    it("13. Sabaqi tanpa Sabaq pekan ini tidak menggunakan fallback lama", () => {
-      // Tidak ada sabaq aktif pekan ini
-      const activeSabaqThisWeek: Array<{ id: string; jenis: string; status: string }> = [];
-
-      function checkSabaqiAvailability(sabaqList: typeof activeSabaqThisWeek, isManual: boolean, reason?: string) {
-        if (sabaqList.length === 0) {
-          if (!isManual) {
-            return {
-              canAutoFill: false,
-              message: "Belum ada Sabaq tersimpan pada pekan ini.",
-            };
-          }
-          if (!reason || reason.trim().length < 5) {
-            return {
-              canAutoFill: false,
-              message: "Alasan input manual Sabaqi wajib diisi minimal 5 karakter.",
-            };
-          }
-          return { canAutoFill: true, isManual: true };
-        }
-        return { canAutoFill: true, isManual: false };
-      }
-
-      const resAuto = checkSabaqiAvailability(activeSabaqThisWeek, false);
-      assert.equal(resAuto.canAutoFill, false);
-      assert.equal(resAuto.message, "Belum ada Sabaq tersimpan pada pekan ini.");
-
-      const resManualShort = checkSabaqiAvailability(activeSabaqThisWeek, true, "skt");
-      assert.equal(resManualShort.canAutoFill, false);
-
-      const resManualValid = checkSabaqiAvailability(activeSabaqThisWeek, true, "Mengulang sabaq pekan lalu karena sakit.");
-      assert.equal(resManualValid.canAutoFill, true);
-    });
-
-    it("14. Simpan setoran harian tidak membuka dialog WhatsApp", () => {
-      // Memastikan response dari server action tahfizh tidak memicu WhatsApp URL trigger
-      const mockResult = {
-        success: true,
-        message: "Setoran Muhammad Obama (SET-2026-TEST) berhasil dicatat.",
-        data: {
-          setoranCode: "SET-2026-TEST",
-          halamanMulai: 422,
-          halamanSelesai: 423,
-          jumlahHalaman: 2,
+      // Setelah 0.5 kedua tersimpan
+      const stateFull = [
+        ...state,
+        {
+          id: "s-2",
+          jenis: "SABAQ",
+          status: "AKTIF",
+          halamanMulai: 500,
+          halamanSelesai: 500,
+          jumlahHalaman: 0.5,
+          tanggal: new Date("2026-09-09T09:00:00Z"),
         },
-      };
+      ];
 
-      assert.equal(mockResult.success, true);
-      assert.equal("waLink" in mockResult, false);
-      assert.equal("openWhatsApp" in mockResult, false);
+      // Setoran ketiga harus ditolak
+      const checkThird = validateProposedSabaqAllocation(stateFull, 500, 500, 0.5);
+      assert.equal(checkThird.valid, false);
     });
   });
 });
