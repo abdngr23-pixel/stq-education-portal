@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { formatIndonesianPhone, generateWALink } from "../lib/whatsapp";
 import { getAuthSecretKey } from "../lib/auth";
 
+const setNodeEnv = (val: string | undefined) => {
+  (process.env as Record<string, string | undefined>).NODE_ENV = val;
+};
+
 describe("Audit STQ 2026-09-08 — Remediasi Batch 1 (P0 Security & Access Control)", () => {
   describe("1. A05: Fail-Closed Secret Handling", () => {
     it("harus melempar galat fatal jika dijalankan di production tanpa AUTH_SECRET yang memadai", () => {
@@ -10,7 +14,7 @@ describe("Audit STQ 2026-09-08 — Remediasi Batch 1 (P0 Security & Access Contr
       const originalSecret = process.env.AUTH_SECRET;
 
       try {
-        process.env.NODE_ENV = "production";
+        setNodeEnv("production");
         delete process.env.AUTH_SECRET;
 
         assert.throws(
@@ -18,7 +22,7 @@ describe("Audit STQ 2026-09-08 — Remediasi Batch 1 (P0 Security & Access Contr
           /FATAL SECURITY ERROR: AUTH_SECRET wajib dikonfigurasi minimal 32 karakter di lingkungan produksi/
         );
       } finally {
-        process.env.NODE_ENV = originalEnv;
+        setNodeEnv(originalEnv);
         if (originalSecret !== undefined) {
           process.env.AUTH_SECRET = originalSecret;
         } else {
@@ -32,14 +36,14 @@ describe("Audit STQ 2026-09-08 — Remediasi Batch 1 (P0 Security & Access Contr
       const originalSecret = process.env.AUTH_SECRET;
 
       try {
-        process.env.NODE_ENV = "development";
+        setNodeEnv("development");
         delete process.env.AUTH_SECRET;
 
         const key = getAuthSecretKey();
         assert.ok(key instanceof Uint8Array);
         assert.ok(key.length >= 32);
       } finally {
-        process.env.NODE_ENV = originalEnv;
+        setNodeEnv(originalEnv);
         if (originalSecret !== undefined) {
           process.env.AUTH_SECRET = originalSecret;
         } else {
@@ -75,13 +79,13 @@ describe("Audit STQ 2026-09-08 — Remediasi Batch 1 (P0 Security & Access Contr
     it("quickDemoLoginAction harus menolak login demo tanpa password di mode produksi", async () => {
       const originalEnv = process.env.NODE_ENV;
       try {
-        process.env.NODE_ENV = "production";
+        setNodeEnv("production");
         const { quickDemoLoginAction } = await import("../app/actions/auth");
         const result = await quickDemoLoginAction("KS");
         assert.equal(result.success, false);
         assert.match(result.message || "", /dinonaktifkan pada lingkungan produksi/i);
       } finally {
-        process.env.NODE_ENV = originalEnv;
+        setNodeEnv(originalEnv);
       }
     });
   });

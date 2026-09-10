@@ -277,7 +277,7 @@ describe("Uji Kelayakan Operasional STQ DUC (Fase Finalisasi & Quality Gates)", 
     });
 
     it("Kategori 2 (pemberian point) TIDAK BOLEH memicu penerbitan SP", () => {
-      const kategoriTingkat = "KATEGORI_2";
+      const kategoriTingkat: string = "KATEGORI_2";
       const isKat3 = kategoriTingkat === "KATEGORI_3" || kategoriTingkat === "BERAT";
       assert.equal(isKat3, false, "Kategori 2 tidak boleh dievaluasi sebagai pemicu SP");
     });

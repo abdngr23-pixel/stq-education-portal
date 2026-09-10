@@ -47,10 +47,8 @@ describe("Audit STQ 2026-09-08 — Remediasi Batch 2 (P0 Persistence & Honest Re
     it("catatPelanggaranAction harus mengembalikan success: false saat dipanggil tanpa sesi login", async () => {
       const res = await catatPelanggaranAction({
         santriId: "santri-1",
-        aturanId: "AT-01",
-        kategori: "KEDISIPLINAN",
-        poin: 10,
-        keterangan: "Uji coba pelanggaran",
+        kategoriId: "KAT-01",
+        kronologi: "Uji coba pelanggaran",
       });
 
       assert.strictEqual(res.success, false);
@@ -62,8 +60,8 @@ describe("Audit STQ 2026-09-08 — Remediasi Batch 2 (P0 Persistence & Honest Re
         santriId: "santri-1",
         jenis: "PULANG",
         alasan: "Keperluan keluarga",
-        tglMulai: "2026-09-08",
-        tglSelesai: "2026-09-10",
+        tanggalMulai: "2026-09-08T00:00:00.000Z",
+        tanggalSelesai: "2026-09-10T00:00:00.000Z",
       });
 
       assert.strictEqual(res.success, false);
@@ -75,7 +73,9 @@ describe("Audit STQ 2026-09-08 — Remediasi Batch 2 (P0 Persistence & Honest Re
         santriId: "santri-1",
         jenis: "SABAQ",
         juz: 30,
-        halaman: 582,
+        halamanMulai: 582,
+        halamanSelesai: 582,
+        jumlahHalaman: 1,
         nilai: "MUMTAZ",
       });
 

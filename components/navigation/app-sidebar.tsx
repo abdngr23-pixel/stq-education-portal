@@ -138,6 +138,7 @@ export function AppSidebar({
                     <button
                       key={item.id}
                       type="button"
+                      data-testid={`nav-${item.id}`}
                       onClick={() => onSelectTab(item.id)}
                       title={isCollapsed ? item.label : undefined}
                       className={cn(
@@ -168,6 +169,7 @@ export function AppSidebar({
       {/* 3. Footer Sidebar: Profil Pengguna & Keluar */}
       <div className="p-2.5 border-t border-slate-200/80 bg-slate-50/40">
         <div
+          data-testid="current-user"
           className={cn(
             "flex items-center gap-2.5 p-2 rounded-xl transition-colors",
             !isCollapsed ? "hover:bg-slate-100/80" : "justify-center"

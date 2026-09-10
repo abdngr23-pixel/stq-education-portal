@@ -897,7 +897,7 @@ export function TahfizhModule({
   );
 
   return (
-    <div className="space-y-6">
+    <div data-testid="tahfizh-module" className="space-y-6">
       {/* 1. Sub-Navigasi Tahfizh: Setoran | Laporan Bulanan | Ujian Ikhtibar */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-1.5 bg-slate-100/90 rounded-2xl border border-slate-200/80">
         <div className="flex items-center gap-1 w-full sm:w-auto">
@@ -962,6 +962,7 @@ export function TahfizhModule({
       {feedback && (
         <div
           role="alert"
+          data-testid={feedback.type === "success" ? "setoran-success" : "setoran-error"}
           className={`p-4 rounded-2xl border flex items-start gap-3 text-sm transition-all ${
             feedback.type === "success"
               ? "bg-emerald-50 border-emerald-200 text-emerald-800"
@@ -1117,6 +1118,7 @@ export function TahfizhModule({
                     {(["SABAQ", "SABQI", "MANZIL", "MUFAR"] as const).map((j) => (
                       <button
                         key={j}
+                        data-testid={`btn-jenis-${j.toLowerCase()}`}
                         type="button"
                         onClick={() => {
                           setInputJenis(j);
@@ -1257,6 +1259,7 @@ export function TahfizhModule({
                           return (
                             <button
                               key={val}
+                              data-testid={`btn-quick-add-${val}`}
                               type="button"
                               disabled={isDisabled}
                               onClick={() => handleJumlahHalamanChange(val)}
@@ -1480,6 +1483,8 @@ export function TahfizhModule({
                         <span className="text-[10px] text-slate-400 font-medium">1–604</span>
                       </div>
                       <Input
+                        id="halaman-mulai"
+                        data-testid="input-halaman-mulai"
                         type="number"
                         min={1}
                         max={604}
@@ -1496,6 +1501,8 @@ export function TahfizhModule({
                         Jumlah Halaman
                       </label>
                       <Input
+                        id="jumlah-halaman"
+                        data-testid="input-jumlah-halaman"
                         type="number"
                         min={0.5}
                         step={0.5}
@@ -1515,6 +1522,8 @@ export function TahfizhModule({
                         <span className="text-[10px] text-slate-400 font-medium">1–604</span>
                       </div>
                       <Input
+                        id="halaman-selesai"
+                        data-testid="input-halaman-selesai"
                         type="number"
                         min={1}
                         max={604}
@@ -1697,6 +1706,7 @@ export function TahfizhModule({
                 )}
 
                 <Button
+                  data-testid="btn-simpan-setoran"
                   variant="primary"
                   onClick={handleSaveSetoran}
                   disabled={
@@ -1756,6 +1766,7 @@ export function TahfizhModule({
                     {filteredRecentSetoran.map((item) => (
                       <div
                         key={item.id}
+                        data-testid="recent-setoran-item"
                         className="p-3.5 hover:bg-slate-50/80 transition-colors flex items-start justify-between gap-3"
                       >
                         <div className="flex items-start gap-2.5">
@@ -2302,6 +2313,7 @@ export function TahfizhModule({
                 Alasan Perubahan Urutan Halaman <span className="text-red-500">*</span>
               </label>
               <textarea
+                data-testid="textarea-jump-alasan"
                 value={jumpWarningModal.alasan}
                 onChange={(e) => setJumpWarningModal((prev) => ({ ...prev, alasan: e.target.value }))}
                 placeholder="Wajib masukkan alasan minimal 5 karakter (misal: akselerasi materi, setoran susulan, pengulangan karena belum lancar)..."
@@ -2327,6 +2339,7 @@ export function TahfizhModule({
                 type="button"
                 variant="primary"
                 size="sm"
+                data-testid="btn-confirm-jump"
                 disabled={isSubmitting || !jumpWarningModal.alasan.trim() || jumpWarningModal.alasan.trim().length < 5}
                 onClick={() => {
                   const alasan = jumpWarningModal.alasan.trim();

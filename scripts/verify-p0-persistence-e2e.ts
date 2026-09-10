@@ -48,7 +48,7 @@ async function verifyP0E2E() {
   console.log("\n[3] Memeriksa output Server Action getSantriListAction()...");
   const santriListRes = await getSantriListAction();
   if (!santriListRes.success || !santriListRes.data) {
-    throw new Error(`getSantriListAction gagal: ${santriListRes.error}`);
+    throw new Error(`getSantriListAction gagal: ${santriListRes.message}`);
   }
 
   const obamaFromAction = santriListRes.data.find((s) => s.nis === "SAN-0001");
@@ -82,17 +82,16 @@ async function verifyP0E2E() {
   console.log("\n[4] Memeriksa output Server Action getSantriProgresAction()...");
   const progresRes = await getSantriProgresAction(obama.id);
   if (!progresRes.success || !progresRes.data) {
-    throw new Error(`getSantriProgresAction gagal: ${progresRes.error}`);
+    throw new Error(`getSantriProgresAction gagal: ${progresRes.message}`);
   }
 
   console.log("   Output Progres Kumulatif:");
-  console.log(`   - modalAwalHalaman: ${progresRes.data.modalAwalHalaman}`);
-  console.log(`   - tambahanSabaqHalaman: ${progresRes.data.tambahanSabaqHalaman}`);
-  console.log(`   - totalKumulatifHalaman: ${progresRes.data.totalKumulatifHalaman}`);
-  console.log(`   - targetHalaman: ${progresRes.data.targetHalaman}`);
-  console.log(`   - persentaseCapaian: ${progresRes.data.persentaseCapaian}%`);
+  console.log(`   - modalHalamanAwal: ${progresRes.data.modalHalamanAwal}`);
+  console.log(`   - tambahanSabaq: ${progresRes.data.tambahanSabaq}`);
+  console.log(`   - totalHalamanSabaq: ${progresRes.data.totalHalamanSabaq}`);
+  console.log(`   - capaianLabel: ${progresRes.data.capaianLabel}`);
 
-  if (progresRes.data.modalAwalHalaman !== 420 || progresRes.data.totalKumulatifHalaman !== 421) {
+  if (progresRes.data.modalHalamanAwal !== 420 || progresRes.data.totalHalamanSabaq !== 421) {
     throw new Error("Mismatch pada perhitungan getSantriProgresAction!");
   }
   console.log("   ✅ getSantriProgresAction() terverifikasi sinkron dengan baseline DB.");

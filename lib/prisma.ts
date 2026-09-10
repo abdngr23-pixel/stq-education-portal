@@ -6,10 +6,41 @@ const globalForPrisma = globalThis as unknown as {
 
 // Pastikan bila di lingkungan pengujian, PrismaClient selalu menggunakan TEST_DATABASE_URL terisolasi
 const isTestEnv = process.env.NODE_ENV === "test" || process.env.IS_TEST_RUN === "true";
-const testDbUrl = isTestEnv ? (process.env.TEST_DATABASE_URL || process.env.DATABASE_URL) : undefined;
 
-if (isTestEnv && testDbUrl && (testDbUrl.includes("accelerate.prisma-data.net") || testDbUrl.includes("production"))) {
-  throw new Error("FATAL: Pengujian dilarang menggunakan database produksi!");
+let testDbUrl: string | undefined = undefined;
+
+if (isTestEnv) {
+  const envTestDbUrl = process.env.TEST_DATABASE_URL;
+  if (!envTestDbUrl || envTestDbUrl.trim() === "") {
+    throw new Error(
+      "FATAL: Dalam mode pengujian (NODE_ENV=test atau IS_TEST_RUN=true), TEST_DATABASE_URL wajib disediakan. Dilarang memakai DATABASE_URL sebagai fallback demi melindungi basis data utama/produksi!"
+    );
+  }
+
+  const isProdUrl =
+    envTestDbUrl.includes("accelerate.prisma-data.net") ||
+    envTestDbUrl.includes("production") ||
+    envTestDbUrl.includes("neon.tech") ||
+    envTestDbUrl.includes("supabase.co") ||
+    envTestDbUrl.includes("stq-education-portal-app");
+
+  if (isProdUrl) {
+    throw new Error("FATAL: Pengujian dilarang menggunakan database produksi!");
+  }
+
+  try {
+    const parsed = new URL(envTestDbUrl);
+    const host = parsed.hostname.toLowerCase();
+    if (host !== "127.0.0.1" && host !== "localhost") {
+      throw new Error(
+        `FATAL: Database pengujian harus menggunakan host loopback (127.0.0.1 atau localhost), terdeteksi: "${host}"!`
+      );
+    }
+  } catch (e) {
+    if ((e as Error).message.startsWith("FATAL:")) throw e;
+  }
+
+  testDbUrl = envTestDbUrl;
 }
 
 export const prisma =

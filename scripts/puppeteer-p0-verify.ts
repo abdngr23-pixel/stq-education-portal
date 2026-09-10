@@ -35,9 +35,9 @@ async function main() {
       throw new Error("Input username atau password tidak ditemukan!");
     }
 
-    await usernameInput.click({ clickCount: 3 });
+    await usernameInput.click({ count: 3 });
     await usernameInput.type("musyrif.tahfizh");
-    await passwordInput.click({ clickCount: 3 });
+    await passwordInput.click({ count: 3 });
     await passwordInput.type("password123");
 
     const submitBtn = await page.$('button[type="submit"]');
@@ -71,9 +71,9 @@ async function main() {
     console.log("\n[3] Menguji sequence jump warning (halaman 582)...");
     const numberInputs = await page.$$('input[type="number"]');
     if (numberInputs.length >= 2) {
-      await numberInputs[0].click({ clickCount: 3 });
+      await numberInputs[0].click({ count: 3 });
       await numberInputs[0].type("582");
-      await numberInputs[1].click({ clickCount: 3 });
+      await numberInputs[1].click({ count: 3 });
       await numberInputs[1].type("582");
     }
 
@@ -133,9 +133,9 @@ async function main() {
     const uInput = await page.$('input[type="text"], input[name="username"]');
     const pInput = await page.$('input[type="password"]');
     if (uInput && pInput) {
-      await uInput.click({ clickCount: 3 });
+      await uInput.click({ count: 3 });
       await uInput.type("admin");
-      await pInput.click({ clickCount: 3 });
+      await pInput.click({ count: 3 });
       await pInput.type("password123");
       const sBtn = await page.$('button[type="submit"]');
       if (sBtn) await sBtn.click();

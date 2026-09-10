@@ -932,7 +932,7 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 font-sans text-slate-800">
+    <div data-testid="authenticated-app" className="flex h-screen overflow-hidden bg-slate-50 font-sans text-slate-800">
       {/* 1. Desktop Collapsible Sidebar */}
       <AppSidebar
         activeTab={activeTab}

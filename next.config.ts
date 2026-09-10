@@ -14,6 +14,7 @@ const cspHeader = `
 `.replace(/\s{2,}/g, ' ').trim();
 
 const nextConfig: NextConfig = {
+  ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   // Hanya gunakan standalone saat build Docker (Vercel membutuhkan default build output)
   ...(process.env.DOCKER_BUILD === "true" ? { output: "standalone" } : {}),
 

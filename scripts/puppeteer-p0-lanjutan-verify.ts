@@ -1,4 +1,7 @@
-// Script verifikasi Puppeteer E2E Riil untuk P0.1 Tahfizh
-// Menggantikan seluruh pola mock/DOM injection palsu lama dengan assertion database dan browser nyata.
+import { runIsolatedE2EVerification } from "./puppeteer-p0-1-verify";
 
-import "./puppeteer-p0-1-verify";
+if (require.main === module) {
+  runIsolatedE2EVerification().catch(() => {
+    process.exit(1);
+  });
+}

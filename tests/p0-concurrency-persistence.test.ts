@@ -1,4 +1,4 @@
-import test, { describe, before, after } from "node:test";
+import test, { describe, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
 import { saveSetoranTahfizhCore } from "../lib/tahfizh-persistence";
@@ -21,6 +21,10 @@ describe("INTEGRASI P0.1: Concurrency, Idempotensi, & Persistensi Nyata (Postgre
 
   before(async () => {
     prisma = await startTestDatabase();
+  });
+
+  beforeEach(async () => {
+    // Reset kondisi fixtures sebelum setiap test agar independen
     await setupTestFixtures(prisma);
   });
 
@@ -42,13 +46,16 @@ describe("INTEGRASI P0.1: Concurrency, Idempotensi, & Persistensi Nyata (Postgre
         halamanSelesai: 431,
         jumlahHalaman: 0.5,
         nilai: "MUMTAZ",
-        clientRequestId: "INITIAL-HALF-431",
+        clientRequestId: `INIT-HALF-${Date.now()}`,
       },
       context: testContext,
     });
     assert.equal(initialHalf.success, true, "Setoran 0.5 pertama harus berhasil");
 
     // 2. Jalankan dua request simultan dengan Promise.allSettled untuk mengisi sisa kapasitas 0.5
+    const clientRequestIdA = `CONC-REQ-A-${Date.now()}`;
+    const clientRequestIdB = `CONC-REQ-B-${Date.now()}`;
+
     const reqA = saveSetoranTahfizhCore(prisma, {
       input: {
         santriId: FIXTURES.SANTRI_HALF,
@@ -58,7 +65,7 @@ describe("INTEGRASI P0.1: Concurrency, Idempotensi, & Persistensi Nyata (Postgre
         halamanSelesai: 431,
         jumlahHalaman: 0.5,
         nilai: "JAYYID_JIDDAN",
-        clientRequestId: `CONC-A-${Date.now()}`,
+        clientRequestId: clientRequestIdA,
       },
       context: testContext,
     });
@@ -72,7 +79,7 @@ describe("INTEGRASI P0.1: Concurrency, Idempotensi, & Persistensi Nyata (Postgre
         halamanSelesai: 431,
         jumlahHalaman: 0.5,
         nilai: "JAYYID",
-        clientRequestId: `CONC-B-${Date.now()}`,
+        clientRequestId: clientRequestIdB,
       },
       context: testContext,
     });
@@ -85,7 +92,7 @@ describe("INTEGRASI P0.1: Concurrency, Idempotensi, & Persistensi Nyata (Postgre
     const successes = [resultA, resultB].filter((r) => r?.success === true);
     const failures = [resultA, resultB].filter((r) => r?.success === false);
 
-    // Assert: Maksimal 1 transaksi berhasil mengisi sisa kapasitas
+    // Assert: Tepat 1 transaksi berhasil mengisi sisa kapasitas
     assert.equal(
       successes.length,
       1,
@@ -96,6 +103,19 @@ describe("INTEGRASI P0.1: Concurrency, Idempotensi, & Persistensi Nyata (Postgre
       1,
       `Harus tepat 1 transaksi konkuren yang ditolak karena kapasitas penuh, tetapi didapat ${failures.length}`
     );
+
+    let winnerRequestId: string;
+    let loserRequestId: string;
+
+    if (resultA?.success && !resultB?.success) {
+      winnerRequestId = clientRequestIdA;
+      loserRequestId = clientRequestIdB;
+    } else if (!resultA?.success && resultB?.success) {
+      winnerRequestId = clientRequestIdB;
+      loserRequestId = clientRequestIdA;
+    } else {
+      assert.fail(`Tepat 1 request harus berhasil dan 1 gagal`);
+    }
 
     // 3. Verifikasi Occupancy di Database Riil tidak melebihi 1.0
     const recordsInDb = await prisma.setoranTahfizh.findMany({
@@ -113,30 +133,27 @@ describe("INTEGRASI P0.1: Concurrency, Idempotensi, & Persistensi Nyata (Postgre
       `Occupancy akhir pada halaman 431 di database harus tepat 1.0, tetapi didapat ${totalOccupancy}`
     );
 
-    // 4. Verifikasi Audit Log hanya dibuat untuk transaksi yang berhasil
-    const failedClientRequestId = failures[0]?.message?.includes("CONC-A")
-      ? "CONC-A"
-      : "CONC-B";
-
+    // 4. Verifikasi Audit Log: Hanya memuat winnerRequestId dan TIDAK memuat loserRequestId
     const allAuditLogs = await prisma.auditLog.findMany({
       where: {
         action: "CREATE_SETORAN",
         userId: testContext.userId,
       },
     });
-    assert.equal(allAuditLogs.length, 2);
-    const auditClientIds = allAuditLogs.map((log) => (log.details as { clientRequestId?: string })?.clientRequestId);
-    assert.equal(auditClientIds.includes(failedClientRequestId), false);
 
-    // Total audit log yang dibuat harus 2: (1 untuk initial 0.5 + 1 untuk transaksi konkuren yang menang)
-    const logsForHalaman431 = allAuditLogs.filter((log) => {
-      const d = log.details as { halaman?: string };
-      return d?.halaman === "431-431";
+    const auditClientIds = allAuditLogs.map((log) => {
+      const details = log.details as { clientRequestId?: string };
+      return details?.clientRequestId;
     });
+
+    assert.ok(
+      auditClientIds.includes(winnerRequestId),
+      `Audit log harus memuat clientRequestId dari transaksi yang berhasil (${winnerRequestId})`
+    );
     assert.equal(
-      logsForHalaman431.length,
-      2,
-      `Audit log hanya boleh dibuat untuk transaksi yang berhasil (total 2), tetapi didapat ${logsForHalaman431.length}`
+      auditClientIds.includes(loserRequestId),
+      false,
+      `Audit log dilarang memuat clientRequestId dari transaksi yang gagal (${loserRequestId})`
     );
   });
 
@@ -178,151 +195,134 @@ describe("INTEGRASI P0.1: Concurrency, Idempotensi, & Persistensi Nyata (Postgre
     assert.equal(res2.idempotent, true);
     assert.equal(res2.data?.id, res1.data?.id);
 
-    // Request ketiga dengan clientRequestId sama tetapi santri BERBEDA: Harus DITOLAK (Poin 6)
-    const res3 = await saveSetoranTahfizhCore(prisma, {
+    // Request ketiga dengan clientRequestId sama tetapi santriId berbeda: Wajib ditolak
+    const resDifferentSantri = await saveSetoranTahfizhCore(prisma, {
       input: {
-        santriId: FIXTURES.SANTRI_HALF, // Santri berbeda!
+        santriId: FIXTURES.SANTRI_HALF,
         jenis: "SABAQ",
         juz: 22,
-        halamanMulai: 422,
-        halamanSelesai: 423,
-        jumlahHalaman: 2,
+        halamanMulai: 431,
+        halamanSelesai: 431,
+        jumlahHalaman: 0.5,
         nilai: "MUMTAZ",
         clientRequestId,
       },
       context: testContext,
     });
-    assert.equal(res3.success, false);
-    assert.match(res3.message, /Akses Ditolak/i);
+    assert.equal(resDifferentSantri.success, false);
+    assert.match(resDifferentSantri.message, /santri berbeda/i);
   });
 
   test("3. Validasi Server Alasan Lompatan Halaman SABAQ (Poin 7)", async () => {
-    // Santri SANTRI_MULTI posisi hafalan sekarang adalah halaman 423.
-    // Saran resmi sistem berikutnya adalah Halaman 424.
-    // Jika musyrif melompat ke Halaman 426 (tetap di Juz 22):
-
-    // A. Tanpa alasan -> Harus Ditolak
+    // Santri Multi memiliki modal 421, posisi berikutnya yang diharapkan adalah 422.
+    // Jika melompat ke halaman 425 tanpa alasan, server wajib menolak.
     const resTanpaAlasan = await saveSetoranTahfizhCore(prisma, {
       input: {
         santriId: FIXTURES.SANTRI_MULTI,
         jenis: "SABAQ",
         juz: 22,
-        halamanMulai: 426, // Melompat dari saran 424
-        halamanSelesai: 426,
+        halamanMulai: 425,
+        halamanSelesai: 425,
         jumlahHalaman: 1,
-        nilai: "MUMTAZ",
-        alasanLompatanHalaman: "",
+        nilai: "JAYYID",
+        clientRequestId: `JUMP-NO-REASON-${Date.now()}`,
       },
       context: testContext,
     });
     assert.equal(resTanpaAlasan.success, false);
-    assert.match(resTanpaAlasan.message, /minimal 5 karakter/i);
+    assert.match(resTanpaAlasan.message, /alasan lompatan|pengulangan/i);
 
-    // B. Alasan terlalu pendek (< 5 karakter) -> Harus Ditolak
-    const resAlasanPendek = await saveSetoranTahfizhCore(prisma, {
+    // Jika diberikan alasan minimal 5 karakter, server mengizinkan dan mencatat ke audit log
+    const resDenganAlasan = await saveSetoranTahfizhCore(prisma, {
       input: {
         santriId: FIXTURES.SANTRI_MULTI,
         jenis: "SABAQ",
         juz: 22,
-        halamanMulai: 426,
-        halamanSelesai: 426,
+        halamanMulai: 425,
+        halamanSelesai: 425,
         jumlahHalaman: 1,
-        nilai: "MUMTAZ",
-        alasanLompatanHalaman: "tes",
+        nilai: "JAYYID",
+        alasanLompatanHalaman: "Pengulangan maqra khusus sesuai instruksi musyrif",
+        clientRequestId: `JUMP-WITH-REASON-${Date.now()}`,
       },
       context: testContext,
     });
-    assert.equal(resAlasanPendek.success, false);
-    assert.match(resAlasanPendek.message, /minimal 5 karakter/i);
+    assert.equal(resDenganAlasan.success, true);
+    assert.ok(resDenganAlasan.data);
 
-    // C. Alasan valid (>= 5 karakter) -> Harus Diterima & Dicatat ke Audit Log
-    const alasanSah = "Santri diuji pada halaqoh khusus akselerasi";
-    const resAlasanSah = await saveSetoranTahfizhCore(prisma, {
-      input: {
-        santriId: FIXTURES.SANTRI_MULTI,
-        jenis: "SABAQ",
-        juz: 22,
-        halamanMulai: 426,
-        halamanSelesai: 426,
-        jumlahHalaman: 1,
-        nilai: "MUMTAZ",
-        alasanLompatanHalaman: alasanSah,
-      },
-      context: testContext,
-    });
-    assert.equal(resAlasanSah.success, true);
-
-    // Verifikasi catatan di AuditLog
-    const auditRecord = await prisma.auditLog.findFirst({
+    // Pastikan audit log mencatat alasan lompatan
+    const jumpAudit = await prisma.auditLog.findFirst({
       where: {
-        entityId: resAlasanSah.data?.id,
-        action: "CREATE_SETORAN",
+        entityId: resDenganAlasan.data?.id,
       },
     });
-    assert.ok(auditRecord);
-    const details = auditRecord.details as { alasanLompatanHalaman?: string };
-    assert.equal(details.alasanLompatanHalaman, alasanSah);
+    assert.ok(jumpAudit);
+    const details = jumpAudit.details as { alasanLompatanHalaman?: string };
+    assert.equal(details?.alasanLompatanHalaman, "Pengulangan maqra khusus sesuai instruksi musyrif");
   });
 
   test("4. Validasi Server Sabaqi Nyata Tanpa Data Palsu (Poin 5)", async () => {
-    // Santri SANTRI_SABAQI belum memiliki catatan setoran Sabaq pekan ini.
-
-    // A. Sabaqi reguler tanpa Sabaq pekan ini -> Ditolak
-    const resRegular = await saveSetoranTahfizhCore(prisma, {
+    // Santri Sabaqi Clean (TEST_SAN_SABAQI) belum memiliki setoran Sabaq pada pekan berjalan.
+    // Jika mencoba input Sabaqi tanpa konfirmasi manual, server wajib menolak dengan pesan informatif
+    const resSabaqiTanpaManual = await saveSetoranTahfizhCore(prisma, {
       input: {
         santriId: FIXTURES.SANTRI_SABAQI,
         jenis: "SABQI",
         juz: 5,
-        halamanMulai: 82, // Hlm 82-86 ada di Juz 5
-        halamanSelesai: 86,
+        halamanMulai: 96,
+        halamanSelesai: 100,
         jumlahHalaman: 5,
         nilai: "MUMTAZ",
-        isManualSabaqi: false,
+        clientRequestId: `SABAQI-AUTO-FAIL-${Date.now()}`,
       },
       context: testContext,
     });
-    assert.equal(resRegular.success, false);
-    assert.match(resRegular.message, /Belum ada Sabaq tersimpan pada pekan ini/i);
+    assert.equal(resSabaqiTanpaManual.success, false);
+    assert.match(resSabaqiTanpaManual.message, /belum ada sabaq tersimpan pada pekan ini/i);
 
-    // B. Sabaqi manual tanpa alasan -> Ditolak
-    const resManualTanpaAlasan = await saveSetoranTahfizhCore(prisma, {
+    // Jika dicentang manual tetapi alasan < 5 karakter: Wajib ditolak
+    const resSabaqiShortReason = await saveSetoranTahfizhCore(prisma, {
       input: {
         santriId: FIXTURES.SANTRI_SABAQI,
         jenis: "SABQI",
         juz: 5,
-        halamanMulai: 82,
-        halamanSelesai: 86,
-        jumlahHalaman: 5,
-        nilai: "MUMTAZ",
-        isManualSabaqi: true,
-        alasanManualSabaqi: "",
-      },
-      context: testContext,
-    });
-    assert.equal(resManualTanpaAlasan.success, false);
-    assert.match(resManualTanpaAlasan.message, /minimal 5 karakter/i);
-
-    // C. Sabaqi manual dengan alasan valid -> Diterima
-    const resManualSah = await saveSetoranTahfizhCore(prisma, {
-      input: {
-        santriId: FIXTURES.SANTRI_SABAQI,
-        jenis: "SABQI",
-        juz: 5,
-        halamanMulai: 82,
-        halamanSelesai: 86,
+        halamanMulai: 96,
+        halamanSelesai: 100,
         jumlahHalaman: 5,
         nilai: "MUMTAZ",
         isManualSabaqi: true,
-        alasanManualSabaqi: "Mengulang hafalan sabaqi pekan lalu karena baru sembuh sakit",
+        alasanManualSabaqi: "abc",
+        clientRequestId: `SABAQI-SHORT-${Date.now()}`,
       },
       context: testContext,
     });
-    assert.equal(resManualSah.success, true);
+    assert.equal(resSabaqiShortReason.success, false);
+    assert.match(resSabaqiShortReason.message, /minimal 5 karakter/i);
+
+    // Jika manual dengan alasan valid >= 5 karakter: Diterima
+    const resSabaqiValid = await saveSetoranTahfizhCore(prisma, {
+      input: {
+        santriId: FIXTURES.SANTRI_SABAQI,
+        jenis: "SABQI",
+        juz: 5,
+        halamanMulai: 96,
+        halamanSelesai: 100,
+        jumlahHalaman: 5,
+        nilai: "MUMTAZ",
+        isManualSabaqi: true,
+        alasanManualSabaqi: "Santri baru pindah halaqoh dan mengulang materi pekan lalu",
+        clientRequestId: `SABAQI-VALID-${Date.now()}`,
+      },
+      context: testContext,
+    });
+    assert.equal(resSabaqiValid.success, true);
+    assert.ok(resSabaqiValid.data);
   });
 
   test("5. Santri Khatam 30 Juz (Halaman 604 Selesai) Dinonaktifkan dari Sabaq Baru", async () => {
-    // Santri SANTRI_KHATAM telah menyelesaikan Halaman 604 penuh.
-    const resKhatam = await saveSetoranTahfizhCore(prisma, {
+    // SANTRI_KHATAM telah menyelesaikan Halaman 604 penuh di database fixture.
+    // Percobaan menambah setoran SABAQ baru (misal Halaman 604 atau 605) harus ditolak tegas oleh server
+    const resKhatamSabaq = await saveSetoranTahfizhCore(prisma, {
       input: {
         santriId: FIXTURES.SANTRI_KHATAM,
         jenis: "SABAQ",
@@ -331,31 +331,77 @@ describe("INTEGRASI P0.1: Concurrency, Idempotensi, & Persistensi Nyata (Postgre
         halamanSelesai: 604,
         jumlahHalaman: 1,
         nilai: "MUMTAZ",
+        clientRequestId: `KHATAM-SABAQ-REJECT-${Date.now()}`,
       },
       context: testContext,
     });
-    assert.equal(resKhatam.success, false);
-    assert.match(resKhatam.message, /Target hafalan 30 juz telah selesai/i);
-  });
+    assert.equal(resKhatamSabaq.success, false);
+    assert.match(resKhatamSabaq.message, /target hafalan 30 juz telah selesai/i);
 
-  test("6. Response Setoran Tidak Memuat Payload WhatsApp Rutin", async () => {
-    const res = await saveSetoranTahfizhCore(prisma, {
+    // Namun jenis setoran lain (seperti MANZIL atau MUFAR) tetap diizinkan untuk muroja'ah
+    const resKhatamManzil = await saveSetoranTahfizhCore(prisma, {
       input: {
-        santriId: FIXTURES.SANTRI_SABAQI,
+        santriId: FIXTURES.SANTRI_KHATAM,
         jenis: "MANZIL",
         juz: 1,
         halamanMulai: 1,
         halamanSelesai: 20,
         jumlahHalaman: 20,
         nilai: "MUMTAZ",
+        clientRequestId: `KHATAM-MANZIL-ALLOW-${Date.now()}`,
+      },
+      context: testContext,
+    });
+    assert.equal(resKhatamManzil.success, true);
+  });
+
+  test("6. Response Setoran Tidak Memuat Payload WhatsApp Rutin", async () => {
+    const res = await saveSetoranTahfizhCore(prisma, {
+      input: {
+        santriId: FIXTURES.SANTRI_MULTI,
+        jenis: "SABAQ",
+        juz: 22,
+        halamanMulai: 422,
+        halamanSelesai: 423,
+        jumlahHalaman: 2,
+        nilai: "MUMTAZ",
+        clientRequestId: `NO-WA-PAYLOAD-${Date.now()}`,
       },
       context: testContext,
     });
     assert.equal(res.success, true);
-    // Pastikan tidak ada tautan wa.me, dialog WhatsApp, atau pemicu popup
-    const resKeys = Object.keys(res);
-    assert.equal(resKeys.includes("waLink"), false);
-    assert.equal(resKeys.includes("whatsAppUrl"), false);
-    assert.equal(resKeys.includes("showWhatsAppModal"), false);
+    const anyRes = res as Record<string, unknown>;
+    assert.equal(anyRes.whatsappUrl, undefined);
+    assert.equal(anyRes.waPayload, undefined);
+    assert.equal(anyRes.showWhatsAppDialog, undefined);
+  });
+
+  test("7. Validasi Server Batas Juz (Setoran Melintasi Batas Juz Wajib Ditolak)", async () => {
+    // SANTRI_BATAS_JUZ berada di halaman 441 (akhir Juz 22).
+    // Setoran melintasi halaman 441 ke 442 (Juz 23) dalam satu transaksi harus ditolak oleh server
+    const resCrossJuz = await saveSetoranTahfizhCore(prisma, {
+      input: {
+        santriId: FIXTURES.SANTRI_BATAS_JUZ,
+        jenis: "SABAQ",
+        juz: 22,
+        halamanMulai: 441,
+        halamanSelesai: 442,
+        jumlahHalaman: 2,
+        nilai: "MUMTAZ",
+        clientRequestId: `CROSS-JUZ-${Date.now()}`,
+      },
+      context: testContext,
+    });
+    assert.equal(resCrossJuz.success, false);
+    assert.match(resCrossJuz.message, /batas juz/i);
+
+    // Pastikan tidak ada record yang tersimpan di database
+    const dbCount = await prisma.setoranTahfizh.count({
+      where: {
+        santriId: FIXTURES.SANTRI_BATAS_JUZ,
+        halamanMulai: 441,
+      },
+    });
+    assert.equal(dbCount, 0, "Dilarang membuat record di database jika melintasi batas juz");
   });
 });

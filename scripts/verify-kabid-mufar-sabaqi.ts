@@ -73,8 +73,8 @@ assert.equal(razanStaff?.isKepalaBidangTahfidz, true, "Ust. Razan harus berstatu
 console.log(`  • Ustadzah Lisa (lisa.mt): isKepalaBidangTahfidz = ${lisaStaff?.isKepalaBidangTahfidz ?? false}`);
 assert.equal(Boolean(lisaStaff?.isKepalaBidangTahfidz), false, "Ustadzah Lisa tidak boleh berstatus Kepala Bidang Tahfidz");
 
-console.log(`  • Ust. Kamal (kamal.ph): isKepalaBidangTahfidz = ${kamalStaff?.isKepalaBidangTahfidz ?? false}`);
-assert.equal(Boolean(kamalStaff?.isKepalaBidangTahfidz), false, "Ust. Kamal tidak boleh berstatus Kepala Bidang Tahfidz");
+console.log(`  • Ust. Kamal (kamal.ph): isKepalaBidangTahfidz = ${(kamalStaff as { isKepalaBidangTahfidz?: boolean })?.isKepalaBidangTahfidz ?? false}`);
+assert.equal(Boolean((kamalStaff as { isKepalaBidangTahfidz?: boolean })?.isKepalaBidangTahfidz), false, "Ust. Kamal tidak boleh berstatus Kepala Bidang Tahfidz");
 
 // Simulasi Otoritas Pemilihan Halaqoh
 function simulasiPilihanHalaqoh(user: { username: string; role: string; isKepalaBidangTahfidz?: boolean }, requestedHalaqoh: string) {
