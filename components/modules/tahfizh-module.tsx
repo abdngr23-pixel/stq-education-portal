@@ -1160,35 +1160,35 @@ export function TahfizhModule({
                   </div>
                 </div>
 
-                {/* FITUR PINTAR OTOMATIS: KALKULASI HALAMAN & JUZ (KHUSUS SABAQ) */}
+                {/* POSISI & KALKULASI HALAMAN & JUZ (KHUSUS SABAQ) */}
                 {inputJenis === "SABAQ" && (
-                  <div className="rounded-2xl p-4 bg-gradient-to-br from-emerald-50 via-teal-50/60 to-emerald-50 border border-emerald-300/80 shadow-xs space-y-3.5">
+                  <div className="rounded-2xl p-4 bg-slate-50/80 border border-slate-200/90 shadow-2xs space-y-3.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
-                        <span className="p-1.5 bg-emerald-600 text-white rounded-lg shadow-xs">
+                        <span className="p-1.5 bg-[#0E7C3A] text-white rounded-lg shadow-2xs">
                           <Calculator className="h-4 w-4" />
                         </span>
                         <div>
-                          <span className="text-xs font-extrabold text-emerald-950 block">
-                            Fitur Pintar Otomatis Konversi Hafalan
+                          <span className="text-xs font-bold text-slate-900 block">
+                            Posisi &amp; Kalkulasi Hafalan
                           </span>
-                          <span className="text-[10px] text-emerald-700 font-medium">
+                          <span className="text-[11px] text-slate-500 font-medium">
                             Standar Mushaf Madinah: 1 Juz = 20 Halaman
                           </span>
                         </div>
                       </div>
                       <Badge variant="green" size="sm" className="font-mono text-[10px]">
-                        Auto-Calculated
+                        Kalkulasi Otomatis
                       </Badge>
                     </div>
 
                     {isKhatam30Juz && (
-                      <div className="p-3.5 bg-emerald-100/90 border border-emerald-300 rounded-xl text-xs text-emerald-950 space-y-1">
-                        <div className="flex items-center gap-2 font-black text-emerald-900 text-sm">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                      <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950 space-y-1">
+                        <div className="flex items-center gap-2 font-bold text-[#0E7C3A] text-sm">
+                          <CheckCircle2 className="w-4 h-4 text-[#0E7C3A] shrink-0" />
                           <span>Target hafalan 30 juz telah selesai.</span>
                         </div>
-                        <p className="text-emerald-800 font-bold pl-6">
+                        <p className="text-emerald-800 font-medium pl-6">
                           Tidak ada halaman Sabaq berikutnya.
                         </p>
                       </div>
@@ -1196,23 +1196,23 @@ export function TahfizhModule({
 
                     {/* Metric Cards Grid: 4 Kolom Proporsional */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
-                      <div className="bg-white/95 p-2.5 rounded-xl border border-emerald-200/80 text-center shadow-2xs">
-                        <span className="text-[10px] uppercase font-bold text-slate-500 block">
+                      <div className="bg-white p-2.5 rounded-xl border border-slate-200 text-center shadow-2xs">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
                           Total Saat Ini
                         </span>
-                        <span className="text-base font-black text-slate-900 block mt-0.5">
+                        <span className="text-base font-bold text-slate-900 block mt-0.5">
                           {santriTotalHafalan} Hlm
                         </span>
-                        <span className="text-[10px] text-emerald-700 font-semibold block mt-0.5">
+                        <span className="text-[10px] text-[#0E7C3A] font-semibold block mt-0.5">
                           {smartKonversiTotal.label}
                         </span>
                       </div>
 
-                      <div className="bg-white/95 p-2.5 rounded-xl border border-emerald-200/80 text-center shadow-2xs">
-                        <span className="text-[10px] uppercase font-bold text-slate-500 block">
+                      <div className="bg-white p-2.5 rounded-xl border border-slate-200 text-center shadow-2xs">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
                           Tambah Hari Ini
                         </span>
-                        <span className="text-base font-black text-emerald-700 block mt-0.5">
+                        <span className="text-base font-bold text-[#0E7C3A] block mt-0.5">
                           +{parsedTambahanHlm} Hlm
                         </span>
                         <span className="text-[10px] text-slate-500 block mt-0.5">
@@ -1220,11 +1220,11 @@ export function TahfizhModule({
                         </span>
                       </div>
 
-                      <div className="bg-white/95 p-2.5 rounded-xl border border-emerald-200/80 text-center shadow-2xs">
-                        <span className="text-[10px] uppercase font-bold text-slate-500 block">
+                      <div className="bg-white p-2.5 rounded-xl border border-slate-200 text-center shadow-2xs">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
                           Total Akumulasi
                         </span>
-                        <span className="text-base font-black text-slate-900 block mt-0.5">
+                        <span className="text-base font-bold text-slate-900 block mt-0.5">
                           {akumulasiHalamanBaru} Hlm
                         </span>
                         <span className="text-[10px] text-slate-500 block mt-0.5">
@@ -1232,14 +1232,14 @@ export function TahfizhModule({
                         </span>
                       </div>
 
-                      <div className="bg-gradient-to-br from-[#0E7C3A] to-emerald-700 p-2.5 rounded-xl text-white text-center shadow-xs flex flex-col justify-center">
+                      <div className="bg-[#0E7C3A] p-2.5 rounded-xl text-white text-center shadow-2xs flex flex-col justify-center">
                         <span className="text-[10px] uppercase font-bold text-emerald-100 block">
-                          Otomatis Menjadi
+                          Total Konversi
                         </span>
-                        <span className="text-xs sm:text-sm font-black text-white block mt-0.5">
+                        <span className="text-xs sm:text-sm font-bold text-white block mt-0.5">
                           {smartKonversiAkumulasi.label}
                         </span>
-                        <span className="text-[9px] text-emerald-200 block mt-0.5">
+                        <span className="text-[10px] text-emerald-100 block mt-0.5">
                           {Math.floor(akumulasiHalamanBaru / 20)} Juz {akumulasiHalamanBaru % 20} Hlm
                         </span>
                       </div>
@@ -1747,7 +1747,7 @@ export function TahfizhModule({
                     </span>
                   </div>
                   <CardDescription className="text-xs text-slate-500">
-                    Daftar hafalan santri yang telah direkam ke server
+                    Riwayat setoran santri yang tercatat di sistem
                   </CardDescription>
                   <div className="relative w-full mt-1">
                     <Search className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
