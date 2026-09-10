@@ -1,11 +1,16 @@
 "use server";
 
 import prisma from "@/lib/prisma";
-import { getCurrentSession, recordAuditLog } from "@/lib/auth";
+import { getCurrentSession } from "@/lib/auth";
 import { JenisSetoran, NilaiSetoran, Prisma } from "@prisma/client";
 
 import { getJuzByPage, JUZ_LIST } from "@/lib/quran-metadata";
 import { hitungRekomendasiSabaqiPekan, getStartOfWeekWITA } from "@/lib/sabaqi";
+import {
+  allocateSabaqPages,
+  validateProposedSabaqAllocation,
+  calculateLatestSabaqPosition,
+} from "@/lib/tahfizh-page-allocation";
 
 export interface CreateSetoranInput {
   santriId: string;
@@ -69,28 +74,38 @@ export async function createSetoranAction(input: CreateSetoranInput) {
   }
 
   // Hubungan volume dan rentang halaman secara konsisten
-  const rentangHalaman = halSelesai - halMulai + 1;
-  if (jmlHalaman === 0.5) {
-    if (halMulai !== halSelesai) {
+  if (input.jenis === "SABAQ") {
+    try {
+      allocateSabaqPages(halMulai, halSelesai, jmlHalaman);
+    } catch (err) {
       return {
         success: false,
-        message: "Untuk setoran 0.5 halaman, halaman mulai dan selesai harus sama.",
-      };
-    }
-  } else if (Number.isInteger(jmlHalaman)) {
-    if (jmlHalaman !== rentangHalaman) {
-      return {
-        success: false,
-        message: `Jumlah halaman (${jmlHalaman}) tidak sesuai dengan rentang halaman (${halMulai}–${halSelesai} = ${rentangHalaman} halaman).`,
+        message: (err as Error).message,
       };
     }
   } else {
-    // Pecahan selain 0.5 (misal 1.5): rentang halaman harus menampung volume
-    if (rentangHalaman < Math.floor(jmlHalaman) || rentangHalaman > Math.ceil(jmlHalaman)) {
-      return {
-        success: false,
-        message: `Volume halaman (${jmlHalaman}) tidak konsisten dengan rentang halaman ${halMulai}–${halSelesai}.`,
-      };
+    const rentangHalaman = halSelesai - halMulai + 1;
+    if (jmlHalaman === 0.5) {
+      if (halMulai !== halSelesai) {
+        return {
+          success: false,
+          message: "Untuk setoran 0.5 halaman, halaman mulai dan selesai harus sama.",
+        };
+      }
+    } else if (Number.isInteger(jmlHalaman)) {
+      if (jmlHalaman !== rentangHalaman) {
+        return {
+          success: false,
+          message: `Jumlah halaman (${jmlHalaman}) tidak sesuai dengan rentang halaman (${halMulai}–${halSelesai} = ${rentangHalaman} halaman).`,
+        };
+      }
+    } else {
+      if (rentangHalaman < Math.floor(jmlHalaman) || rentangHalaman > Math.ceil(jmlHalaman)) {
+        return {
+          success: false,
+          message: `Volume halaman (${jmlHalaman}) tidak konsisten dengan rentang halaman ${halMulai}–${halSelesai}.`,
+        };
+      }
     }
   }
 
@@ -235,116 +250,188 @@ export async function createSetoranAction(input: CreateSetoranInput) {
       }
     }
 
-    // 6.7 Validasi Setoran 0.5 Halaman & Kapasitas Halaman Maksimal 1.0 Halaman (Section 4)
-    if (input.jenis === "SABAQ") {
-      const baselineDate = santri.tanggalBaselineTahfizh ? new Date(santri.tanggalBaselineTahfizh) : null;
-      // Periksa akumulasi Sabaq aktif pada halaman target
-      const existingSabaqOnPage = await prisma.setoranTahfizh.findMany({
-        where: {
-          santriId: input.santriId,
-          jenis: "SABAQ",
-          status: { not: "DIBATALKAN" },
-          halamanMulai: { lte: halMulai },
-          halamanSelesai: { gte: halMulai },
-          ...(baselineDate ? { tanggal: { gte: baselineDate } } : {}),
-        },
-      });
-
-      const existingVolumeOnPage = existingSabaqOnPage.reduce((acc, cur) => acc + (cur.jumlahHalaman || 0), 0);
-      if (existingVolumeOnPage >= 1.0) {
-        return {
-          success: false,
-          message: `Halaman ${halMulai} sudah lengkap disetorkan (1.0 halaman penuh). Silakan lanjutkan ke halaman berikutnya atau ajukan koreksi resmi.`,
-        };
-      }
-      if (existingVolumeOnPage + jmlHalaman > 1.0) {
-        return {
-          success: false,
-          message: `Akumulasi setoran pada halaman ${halMulai} melebihi kapasitas 1 halaman (saat ini sudah tersimpan ${existingVolumeOnPage} halaman).`,
-        };
+    // 7. Simpan Setoran dalam Transaksi Atomik dengan Concurrency Protection & Idempotency
+    class CapacityValidationError extends Error {
+      constructor(message: string) {
+        super(message);
+        this.name = "CapacityValidationError";
       }
     }
 
-    // 7. Simpan Setoran dalam Transaksi Aman dengan Concurrency Protection & Idempotency
-    const newSetoran = await prisma.$transaction(async (tx) => {
-      let created = null;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          const timePart = Date.now().toString(36).toUpperCase();
-          const randPart = Math.random().toString(36).substring(2, 6).toUpperCase();
-          const setoranCode = `SET-${timePart}-${randPart}`;
+    const baselineDate = santri.tanggalBaselineTahfizh ? new Date(santri.tanggalBaselineTahfizh) : null;
+    let newSetoran = null;
+    const MAX_RETRIES = 3;
 
-          created = await tx.setoranTahfizh.create({
-            data: {
-              setoranCode,
-              santriId: input.santriId,
-              musyrifId: musyrifStaff.id,
-              tanggal: new Date(),
-              jenis: input.jenis,
-              juz: declaredJuz,
-              halamanMulai: halMulai,
-              halamanSelesai: halSelesai,
-              jumlahHalaman: jmlHalaman,
-              nilai: input.nilai,
-              catatan: input.catatan?.trim() || null,
-              clientRequestId: input.clientRequestId?.trim() || null,
-              status: "AKTIF",
-              createdBy: session.username,
-            },
-            include: {
-              santri: true,
-              musyrif: true,
-            },
-          });
-          break;
-        } catch (err) {
-          if ((err as { code?: string })?.code === "P2002") {
-            // Jika constraint violation pada clientRequestId, kembalikan record yang sudah ada
-            if (input.clientRequestId) {
-              const existingRecord = await tx.setoranTahfizh.findUnique({
-                where: { clientRequestId: input.clientRequestId },
-                include: { santri: true, musyrif: true },
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        newSetoran = await prisma.$transaction(
+          async (tx) => {
+            // 1. Membaca seluruh setoran aktif yang berkaitan
+            if (input.jenis === "SABAQ") {
+              const activeSabaqList = await tx.setoranTahfizh.findMany({
+                where: {
+                  santriId: input.santriId,
+                  jenis: "SABAQ",
+                  status: { not: "DIBATALKAN" },
+                  ...(baselineDate ? { tanggal: { gte: baselineDate } } : {}),
+                },
+                select: {
+                  id: true,
+                  jenis: true,
+                  status: true,
+                  halamanMulai: true,
+                  halamanSelesai: true,
+                  jumlahHalaman: true,
+                  tanggal: true,
+                  createdAt: true,
+                },
               });
-              if (existingRecord) {
-                created = existingRecord;
-                break;
+
+              // Cek jika santri telah menyelesaikan target hafalan 30 juz (halaman 604)
+              const latestPos = calculateLatestSabaqPosition(
+                activeSabaqList,
+                santri.modalHafalanAwalHalaman || 0,
+                baselineDate
+              );
+
+              if (latestPos.isKhatam30Juz) {
+                throw new CapacityValidationError(
+                  "Target hafalan 30 juz telah selesai. Tidak ada halaman Sabaq berikutnya."
+                );
+              }
+
+              // 2 & 3. Menghitung occupancy setiap halaman & memvalidasi kapasitas
+              const validation = validateProposedSabaqAllocation(
+                activeSabaqList,
+                halMulai,
+                halSelesai,
+                jmlHalaman,
+                baselineDate
+              );
+
+              if (!validation.valid) {
+                throw new CapacityValidationError(
+                  validation.message || `Akumulasi setoran pada halaman melebihi kapasitas 1 halaman.`
+                );
               }
             }
-            if (attempt < 2) {
-              await new Promise((r) => setTimeout(r, 50 * (attempt + 1)));
-              continue;
-            }
-          }
-          throw err;
-        }
-      }
-      if (!created) {
-        throw new Error("Gagal membuat record setoran baru setelah 3 kali percobaan.");
-      }
-      return created;
-    });
 
-    // 8. Catat Audit Log (termasuk alasan lompatan hafalan jika ada)
-    await recordAuditLog({
-      userId: session.userId,
-      action: "CREATE_SETORAN",
-      entity: "SetoranTahfizh",
-      entityId: newSetoran.id,
-      details: {
-        setoranCode: newSetoran.setoranCode,
-        databaseId: newSetoran.id,
-        santriId: newSetoran.santriId,
-        santriNis: newSetoran.santri.nis,
-        juz: declaredJuz,
-        halaman: `${halMulai}-${halSelesai}`,
-        jumlahHalaman: jmlHalaman,
-        nilai: input.nilai,
-        clientRequestId: input.clientRequestId || null,
-        alasanLompatanHalaman: input.alasanLompatanHalaman || null,
-        alasanManualSabaqi: input.alasanManualSabaqi || null,
-        catatan: input.catatan || null,
-      },
-    });
+            // 4. Membuat setoran baru
+            const timePart = Date.now().toString(36).toUpperCase();
+            const randPart = Math.random().toString(36).substring(2, 6).toUpperCase();
+            const setoranCode = `SET-${timePart}-${randPart}`;
+
+            const created = await tx.setoranTahfizh.create({
+              data: {
+                setoranCode,
+                santriId: input.santriId,
+                musyrifId: musyrifStaff.id,
+                tanggal: new Date(),
+                jenis: input.jenis,
+                juz: declaredJuz,
+                halamanMulai: halMulai,
+                halamanSelesai: halSelesai,
+                jumlahHalaman: jmlHalaman,
+                nilai: input.nilai,
+                catatan: input.catatan?.trim() || null,
+                clientRequestId: input.clientRequestId?.trim() || null,
+                status: "AKTIF",
+                createdBy: session.username,
+              },
+              include: {
+                santri: true,
+                musyrif: true,
+              },
+            });
+
+            // 5. Membuat audit log yang berkaitan di dalam transaksi atomik
+            await tx.auditLog.create({
+              data: {
+                userId: session.userId,
+                action: "CREATE_SETORAN",
+                entity: "SetoranTahfizh",
+                entityId: created.id,
+                details: {
+                  setoranCode: created.setoranCode,
+                  databaseId: created.id,
+                  santriId: created.santriId,
+                  santriNis: created.santri.nis,
+                  juz: declaredJuz,
+                  halaman: `${halMulai}-${halSelesai}`,
+                  jumlahHalaman: jmlHalaman,
+                  nilai: input.nilai,
+                  clientRequestId: input.clientRequestId || null,
+                  alasanLompatanHalaman: input.alasanLompatanHalaman || null,
+                  alasanManualSabaqi: input.alasanManualSabaqi || null,
+                  catatan: input.catatan || null,
+                },
+              },
+            });
+
+            return created;
+          },
+          {
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+            maxWait: 5000,
+            timeout: 10000,
+          }
+        );
+
+        // Berhasil disimpan
+        break;
+      } catch (err: unknown) {
+        if (err instanceof CapacityValidationError) {
+          return {
+            success: false,
+            message: err.message,
+          };
+        }
+
+        const prismaErr = err as { code?: string; message?: string };
+
+        // Handle unique constraint clientRequestId (idempotensi saat concurrency)
+        if (prismaErr?.code === "P2002" && input.clientRequestId) {
+          const existingRecord = await prisma.setoranTahfizh.findUnique({
+            where: { clientRequestId: input.clientRequestId },
+            include: { santri: true, musyrif: true },
+          });
+          if (existingRecord) {
+            return {
+              success: true,
+              message: `Setoran ${existingRecord.santri.nama} (${existingRecord.setoranCode}) telah tercatat sebelumnya (idempoten).`,
+              data: existingRecord,
+            };
+          }
+        }
+
+        // Handle PostgreSQL serialization failure / deadlock (P2034)
+        if (
+          prismaErr?.code === "P2034" ||
+          prismaErr?.message?.includes("could not serialize access") ||
+          prismaErr?.message?.includes("deadlock detected")
+        ) {
+          if (attempt < MAX_RETRIES - 1) {
+            await new Promise((r) => setTimeout(r, 60 * (attempt + 1)));
+            continue;
+          }
+          return {
+            success: false,
+            message:
+              "Posisi hafalan santri baru saja diperbarui dari perangkat lain. Data telah dimuat ulang. Silakan periksa lalu simpan kembali.",
+          };
+        }
+
+        throw err;
+      }
+    }
+
+    if (!newSetoran) {
+      return {
+        success: false,
+        message:
+          "Posisi hafalan santri baru saja diperbarui dari perangkat lain. Data telah dimuat ulang. Silakan periksa lalu simpan kembali.",
+      };
+    }
 
     return {
       success: true,

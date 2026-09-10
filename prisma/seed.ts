@@ -308,7 +308,7 @@ async function main() {
         status: SantriStatus.AKTIF,
         isYatimDhuafa: false,
         namaWali: `Wali ${item.nama.split(" ")[0]}`,
-        noHpWali: "081299887766",
+        noHpWali: null,
         halaqohId: item.halaqohId,
         createdBy: "SYSTEM",
       },

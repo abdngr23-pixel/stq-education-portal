@@ -3,6 +3,7 @@
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
 import { SantriStatus, JenisKelamin, Prisma } from "@prisma/client";
+import { calculateLatestSabaqPosition } from "@/lib/tahfizh-page-allocation";
 
 export interface CreateSantriInput {
   nis: string;
@@ -146,22 +147,24 @@ export async function getSantriListAction(params?: {
       const latestSetoran = s.setoranList?.[0] || null;
       const nilaiTerakhir = latestSetoran ? latestSetoran.nilai : "Belum ada data";
 
-      // Sesuai Instruksi P0 Lanjutan Section 2:
+      // Sesuai Instruksi P0.1:
       // Posisi terakhir Tahfizh HANYA boleh berasal dari SABAQ aktif pasca-baseline.
-      // Jika ada Sabaq aktif: posisi terakhir = halamanSelesai Sabaq aktif terbaru
-      // Jika belum ada Sabaq setelah baseline: posisi terakhir = modalHafalanAwalHalaman
-      const latestSabaq = sabaqAfterBaseline[0] || null;
-      let posisiTerakhirHalaman = modalAwal;
-      let isHalamanTerakhirParsial = false;
-
-      if (latestSabaq) {
-        posisiTerakhirHalaman = latestSabaq.halamanSelesai;
-        // Hitung total akumulasi pada halaman terakhir tersebut untuk mendeteksi setoran 0.5 halaman
-        const totalOnLatestPage = sabaqAfterBaseline
-          .filter((st) => st.halamanMulai <= latestSabaq.halamanSelesai && st.halamanSelesai >= latestSabaq.halamanSelesai)
-          .reduce((acc, cur) => acc + (cur.jumlahHalaman || 0), 0);
-        isHalamanTerakhirParsial = totalOnLatestPage > 0 && totalOnLatestPage < 1.0;
-      }
+      // Dihitung melalui modul murni produksi lib/tahfizh-page-allocation.
+      const sabaqPosition = calculateLatestSabaqPosition(
+        sabaqAfterBaseline.map((st) => ({
+          jenis: st.jenis,
+          status: "AKTIF",
+          halamanMulai: st.halamanMulai,
+          halamanSelesai: st.halamanSelesai,
+          jumlahHalaman: st.jumlahHalaman,
+          tanggal: st.tanggal,
+          createdAt: st.createdAt,
+        })),
+        modalAwal,
+        baselineDate
+      );
+      const posisiTerakhirHalaman = sabaqPosition.posisiTerakhirHalaman;
+      const isHalamanTerakhirParsial = sabaqPosition.isHalamanTerakhirParsial;
 
       // Hitung akumulasi bintang riil dari DB
       const totalBintang = s._count.bintangList || 0;

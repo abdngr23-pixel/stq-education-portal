@@ -161,7 +161,7 @@ export async function migrateLegacyData(options: {
       HalaqohId: 'HLQ-01',
       Status: 'AKTIF',
       Wali_Nama: 'Bambang Sudarmono',
-      Wali_WA: '081234567890',
+      Wali_WA: '',
     },
     {
       NIS: 'SAN-2026-002',
@@ -170,7 +170,7 @@ export async function migrateLegacyData(options: {
       HalaqohId: 'HLQ-01',
       Status: 'AKTIF',
       Wali_Nama: 'Fauzi Rahman',
-      Wali_WA: '081234567891',
+      Wali_WA: '',
     },
   ];
 
@@ -181,6 +181,8 @@ export async function migrateLegacyData(options: {
       ? (s.Status as SantriStatus)
       : SantriStatus.AKTIF;
 
+    const normalizedNoHpWali = s.Wali_WA?.trim() ? s.Wali_WA.trim() : null;
+
     await prisma.santri.upsert({
       where: { nis: s.NIS },
       update: {
@@ -189,7 +191,7 @@ export async function migrateLegacyData(options: {
         halaqohId: halaqoh ? halaqoh.id : null,
         status,
         namaWali: s.Wali_Nama,
-        noHpWali: s.Wali_WA,
+        noHpWali: normalizedNoHpWali,
       },
       create: {
         nis: s.NIS,
@@ -199,7 +201,7 @@ export async function migrateLegacyData(options: {
         halaqohId: halaqoh ? halaqoh.id : null,
         status,
         namaWali: s.Wali_Nama,
-        noHpWali: s.Wali_WA,
+        noHpWali: normalizedNoHpWali,
       },
     });
   }

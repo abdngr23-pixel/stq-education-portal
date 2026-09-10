@@ -44,7 +44,6 @@ import {
 import {
   konversiHalamanKeJuz,
   hitungTargetMufar,
-  hitungReferensiSabaqiKumulatif,
 } from "@/lib/laporan-bulanan";
 
 export interface TahfizhModuleProps {
@@ -120,7 +119,7 @@ export function TahfizhModule({
   const submitLockRef = useRef(false);
   const pendingRequestIdRef = useRef<string | null>(null);
   const suggestedPageRef = useRef<number | null>(null);
-  const suggestedJmlRef = useRef<number>(1);
+  const suggestedJmlRef = useRef<number | null>(1);
   const prevSantriIdRef = useRef<string>("");
 
   // -------------------------------------------------------------
@@ -149,9 +148,18 @@ export function TahfizhModule({
       saranHlm = posisiTerakhir;
       saranJml = 0.5;
     } else if (posisiTerakhir >= 604) {
-      // Santri telah mencapai halaman akhir Mushaf (khatam 604)
-      saranHlm = 604;
-      saranJml = 1;
+      // Santri telah mencapai halaman akhir Mushaf (khatam 604 / 30 Juz Selesai)
+      suggestedPageRef.current = null;
+      suggestedJmlRef.current = null;
+      setHalamanMulai("");
+      setHalamanSelesai("");
+      setJumlahHalaman("");
+      setJuz("30");
+      const mufarTgt = hitungTargetMufar(30);
+      setJumlahJuzMufar(String(mufarTgt));
+      setRincianJuzMufar(`Juz 1 s/d ${mufarTgt}`);
+      pendingRequestIdRef.current = null;
+      return;
     } else if (posisiTerakhir === 0) {
       // Belum ada modal dan belum ada sabaq
       saranHlm = 1;
@@ -445,26 +453,18 @@ export function TahfizhModule({
     return activeSantri.posisiTerakhirHalaman ?? (santriModalAwal > 0 ? santriModalAwal : 1);
   }, [activeSantri, santriModalAwal]);
 
-  // Rentang Referensi Sabaqi Kumulatif Harian (Senin - Jumat)
-  const sabaqiKumulatifRef = useMemo(() => {
-    return hitungReferensiSabaqiKumulatif({
-      modalAwalHalaman: santriModalAwal,
-    });
-  }, [santriModalAwal]);
+  const isKhatam30Juz = useMemo(() => {
+    if (!activeSantri) return false;
+    return santriPosisiTerakhir >= 604 && !activeSantri.isHalamanTerakhirParsial;
+  }, [activeSantri, santriPosisiTerakhir]);
 
-  // Handler otomatis menerapkan rentang Sabaqi Kumulatif hari berjalan ke form input
+  // Handler otomatis menerapkan rentang Sabaqi dari setoran SABAQ aktif pekan berjalan ke form input
   const handleApplySabaqiReference = () => {
     if (sabaqiPekan && sabaqiPekan.adaSabaqPekanIni && sabaqiPekan.halamanMulai && sabaqiPekan.halamanSelesai) {
       setHalamanMulai(String(sabaqiPekan.halamanMulai));
       setHalamanSelesai(String(sabaqiPekan.halamanSelesai));
       setJumlahHalaman(String(sabaqiPekan.totalHalamanSabaq));
       const detected = getJuzByPage(sabaqiPekan.halamanMulai);
-      if (detected) setJuz(String(detected));
-    } else {
-      setHalamanMulai(String(sabaqiKumulatifRef.halamanMulai));
-      setHalamanSelesai(String(sabaqiKumulatifRef.halamanSelesai));
-      setJumlahHalaman(String(sabaqiKumulatifRef.totalHalaman));
-      const detected = getJuzByPage(sabaqiKumulatifRef.halamanMulai);
       if (detected) setJuz(String(detected));
     }
   };
@@ -495,6 +495,14 @@ export function TahfizhModule({
     }
     if (!activeSantri) {
       setFeedback({ type: "error", message: "Silakan pilih santri terlebih dahulu." });
+      return;
+    }
+
+    if (inputJenis === "SABAQ" && isKhatam30Juz) {
+      setFeedback({
+        type: "error",
+        message: "Target hafalan 30 juz telah selesai. Tidak ada halaman Sabaq berikutnya.",
+      });
       return;
     }
 
@@ -1137,10 +1145,15 @@ export function TahfizhModule({
                       </Badge>
                     </div>
 
-                    {santriPosisiTerakhir >= 604 && !activeSantri?.isHalamanTerakhirParsial && (
-                      <div className="p-3 bg-emerald-100/90 border border-emerald-300 rounded-xl text-xs font-bold text-emerald-950 flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
-                        <span>Alhamdulillah, santri telah menyelesaikan setoran Mushaf Madinah (Halaman 604 / 30 Juz Khatam).</span>
+                    {isKhatam30Juz && (
+                      <div className="p-3.5 bg-emerald-100/90 border border-emerald-300 rounded-xl text-xs text-emerald-950 space-y-1">
+                        <div className="flex items-center gap-2 font-black text-emerald-900 text-sm">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                          <span>Target hafalan 30 juz telah selesai.</span>
+                        </div>
+                        <p className="text-emerald-800 font-bold pl-6">
+                          Tidak ada halaman Sabaq berikutnya.
+                        </p>
                       </div>
                     )}
 
@@ -1205,8 +1218,9 @@ export function TahfizhModule({
                           <button
                             key={val}
                             type="button"
+                            disabled={isKhatam30Juz}
                             onClick={() => handleJumlahHalamanChange(val)}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
                               jumlahHalaman === val
                                 ? "bg-[#0E7C3A] text-white shadow-xs"
                                 : "bg-white text-emerald-800 border border-emerald-200 hover:bg-emerald-100/60"
@@ -1400,8 +1414,9 @@ export function TahfizhModule({
                       </label>
                       <select
                         value={juz}
+                        disabled={isKhatam30Juz}
                         onChange={(e) => handleJuzChange(e.target.value)}
-                        className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500"
+                        className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {JUZ_LIST.map((j) => (
                           <option key={j.juz} value={j.juz}>
@@ -1422,10 +1437,11 @@ export function TahfizhModule({
                         type="number"
                         min={1}
                         max={604}
+                        disabled={isKhatam30Juz}
                         value={halamanMulai}
                         onChange={(e) => handleHalamanMulaiChange(e.target.value)}
                         placeholder="1"
-                        className="min-h-[44px] font-semibold text-sm"
+                        className="min-h-[44px] font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                       />
                     </div>
 
@@ -1437,10 +1453,11 @@ export function TahfizhModule({
                         type="number"
                         min={0.5}
                         step={0.5}
+                        disabled={isKhatam30Juz}
                         value={jumlahHalaman}
                         onChange={(e) => handleJumlahHalamanChange(e.target.value)}
                         placeholder="1"
-                        className="min-h-[44px] font-semibold text-sm"
+                        className="min-h-[44px] font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                       />
                     </div>
 
@@ -1455,10 +1472,11 @@ export function TahfizhModule({
                         type="number"
                         min={1}
                         max={604}
+                        disabled={isKhatam30Juz}
                         value={halamanSelesai}
                         onChange={(e) => handleHalamanSelesaiChange(e.target.value)}
                         placeholder="1"
-                        className="min-h-[44px] font-semibold text-sm"
+                        className="min-h-[44px] font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                       />
                     </div>
                   </div>
@@ -1622,12 +1640,14 @@ export function TahfizhModule({
                 <Button
                   variant="primary"
                   onClick={handleSaveSetoran}
-                  disabled={isSubmitting || isPending || !activeSantri}
+                  disabled={isSubmitting || isPending || !activeSantri || (inputJenis === "SABAQ" && isKhatam30Juz)}
                   className="w-full min-h-[48px] font-bold text-sm bg-[#0E7C3A] hover:bg-[#0B642E] shadow-xs gap-2 disabled:bg-slate-300 disabled:cursor-not-allowed"
                 >
                   <BookCheck className="h-4 w-4" />
                   {!activeSantri
                     ? "Pilih Santri Terlebih Dahulu"
+                    : inputJenis === "SABAQ" && isKhatam30Juz
+                    ? "Target Hafalan 30 Juz Telah Selesai"
                     : isSubmitting || isPending
                     ? "Sedang menyimpan..."
                     : "Simpan Setoran Santri"}
