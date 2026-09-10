@@ -2,7 +2,7 @@
 
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
-import { JenisSetoran, NilaiSetoran } from "@prisma/client";
+import { JenisSetoran, NilaiSetoran, Prisma } from "@prisma/client";
 
 import { getJuzByPage, JUZ_LIST } from "@/lib/quran-metadata";
 import { hitungRekomendasiSabaqiPekan, getStartOfWeekWITA } from "@/lib/sabaqi";
@@ -16,6 +16,8 @@ export interface CreateSetoranInput {
   jumlahHalaman: number;
   nilai: NilaiSetoran;
   catatan?: string;
+  clientRequestId?: string;
+  alasanLompatanHalaman?: string;
 }
 
 /**
@@ -116,6 +118,24 @@ export async function createSetoranAction(input: CreateSetoranInput) {
   }
 
   try {
+    // 3.5 Idempotency Key check: jika client mengirimkan clientRequestId dan sudah tercatat
+    if (input.clientRequestId) {
+      const existing = await prisma.setoranTahfizh.findUnique({
+        where: { clientRequestId: input.clientRequestId },
+        include: {
+          santri: true,
+          musyrif: true,
+        },
+      });
+      if (existing) {
+        return {
+          success: true,
+          message: `Setoran ${existing.santri.nama} (${existing.setoranCode}) telah tercatat sebelumnya (idempoten).`,
+          data: existing,
+        };
+      }
+    }
+
     // 4. Verifikasi Keberadaan Santri di Database
     const santri = await prisma.santri.findUnique({
       where: { id: input.santriId },
@@ -172,7 +192,7 @@ export async function createSetoranAction(input: CreateSetoranInput) {
       return { success: false, message: "Data staf pengampu/pencatat tidak ditemukan di sistem." };
     }
 
-    // 7. Simpan Setoran dalam Transaksi Aman dengan Concurrency Protection
+    // 7. Simpan Setoran dalam Transaksi Aman dengan Concurrency Protection & Idempotency
     const newSetoran = await prisma.$transaction(async (tx) => {
       let created = null;
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -194,6 +214,8 @@ export async function createSetoranAction(input: CreateSetoranInput) {
               jumlahHalaman: jmlHalaman,
               nilai: input.nilai,
               catatan: input.catatan?.trim() || null,
+              clientRequestId: input.clientRequestId?.trim() || null,
+              status: "AKTIF",
               createdBy: session.username,
             },
             include: {
@@ -203,9 +225,22 @@ export async function createSetoranAction(input: CreateSetoranInput) {
           });
           break;
         } catch (err) {
-          if ((err as { code?: string })?.code === "P2002" && attempt < 2) {
-            await new Promise((r) => setTimeout(r, 50 * (attempt + 1)));
-            continue;
+          if ((err as { code?: string })?.code === "P2002") {
+            // Jika constraint violation pada clientRequestId, kembalikan record yang sudah ada
+            if (input.clientRequestId) {
+              const existingRecord = await tx.setoranTahfizh.findUnique({
+                where: { clientRequestId: input.clientRequestId },
+                include: { santri: true, musyrif: true },
+              });
+              if (existingRecord) {
+                created = existingRecord;
+                break;
+              }
+            }
+            if (attempt < 2) {
+              await new Promise((r) => setTimeout(r, 50 * (attempt + 1)));
+              continue;
+            }
           }
           throw err;
         }
@@ -216,7 +251,7 @@ export async function createSetoranAction(input: CreateSetoranInput) {
       return created;
     });
 
-    // 8. Catat Audit Log
+    // 8. Catat Audit Log (termasuk alasan lompatan hafalan jika ada)
     await recordAuditLog({
       userId: session.userId,
       action: "CREATE_SETORAN",
@@ -231,6 +266,8 @@ export async function createSetoranAction(input: CreateSetoranInput) {
         halaman: `${halMulai}-${halSelesai}`,
         jumlahHalaman: jmlHalaman,
         nilai: input.nilai,
+        clientRequestId: input.clientRequestId || null,
+        alasanLompatanHalaman: input.alasanLompatanHalaman || null,
         catatan: input.catatan || null,
       },
     });
@@ -346,7 +383,9 @@ export async function getRecentSetoranAction(limit: number = 10) {
   }
 
   try {
-    const where: Record<string, unknown> = {};
+    const where: Prisma.SetoranTahfizhWhereInput = {
+      status: { not: "DIBATALKAN" },
+    };
 
     if (session.role === "MT" || session.role === "PH") {
       if (!session.staffId) {
@@ -396,7 +435,11 @@ export async function getSantriProgresAction(santriId: string) {
       return { success: false, message: "Akses Ditolak: Anda hanya berhak melihat progres santri Anda sendiri." };
     }
   } else if (session.role === "MT" || session.role === "PH") {
-    if (session.staffId) {
+    // Fail-closed: MT/PH tanpa staffId wajib langsung ditolak
+    if (!session.staffId) {
+      return { success: false, message: "Akses Ditolak: Akun MT/PH belum terhubung dengan data staf." };
+    }
+    if (!session.isKepalaBidangTahfidz) {
       const isBinaan = await prisma.halaqoh.findFirst({
         where: {
           pembinaId: session.staffId,
@@ -415,6 +458,7 @@ export async function getSantriProgresAction(santriId: string) {
       include: {
         halaqoh: { include: { pembina: true } },
         setoranList: {
+          where: { status: { not: "DIBATALKAN" } },
           orderBy: { tanggal: "desc" },
           take: 5,
         },
@@ -424,26 +468,42 @@ export async function getSantriProgresAction(santriId: string) {
     if (!santri) return { success: false, message: "Santri tidak ditemukan" };
 
     const totalSetoran = await prisma.setoranTahfizh.count({
-      where: { santriId },
+      where: { santriId, status: { not: "DIBATALKAN" } },
     });
 
+    const modalAwal = Number(santri.modalHafalanAwalHalaman) || 0;
+    const baselineDate = santri.tanggalBaselineTahfizh ? new Date(santri.tanggalBaselineTahfizh) : null;
+
+    const sabaqWhere: Prisma.SetoranTahfizhWhereInput = {
+      santriId,
+      jenis: "SABAQ",
+      status: { not: "DIBATALKAN" },
+    };
+    if (baselineDate) {
+      sabaqWhere.tanggal = { gte: baselineDate };
+    }
+
     const sabaqAggregate = await prisma.setoranTahfizh.aggregate({
-      where: { santriId, jenis: "SABAQ" },
+      where: sabaqWhere,
       _sum: { jumlahHalaman: true },
     });
-    const totalHalamanSabaq = sabaqAggregate._sum.jumlahHalaman || 0;
-    const totalJuzSabaq = Math.floor(totalHalamanSabaq / 20);
-    const sisaHalamanSabaq = totalHalamanSabaq % 20;
+
+    const tambahanSabaq = sabaqAggregate._sum.jumlahHalaman || 0;
+    const totalHalaman = modalAwal + tambahanSabaq;
+    const totalJuz = Math.floor(totalHalaman / 20);
+    const sisaHalaman = totalHalaman % 20;
 
     return {
       success: true,
       data: {
         ...santri,
         totalSetoran,
-        totalHalamanSabaq,
-        totalJuzSabaq,
-        sisaHalamanSabaq,
-        capaianLabel: `${totalJuzSabaq} Juz ${sisaHalamanSabaq} Halaman`,
+        modalHalamanAwal: modalAwal,
+        tambahanSabaq,
+        totalHalamanSabaq: totalHalaman,
+        totalJuzSabaq: totalJuz,
+        sisaHalamanSabaq: sisaHalaman,
+        capaianLabel: `${totalJuz} Juz ${sisaHalaman} Halaman`,
       },
     };
   } catch (error) {
@@ -453,8 +513,9 @@ export async function getSantriProgresAction(santriId: string) {
 }
 
 /**
- * Server Action: Hitung Total Halaman Kumulatif Santri dari seluruh Setoran SABAQ
+ * Server Action: Hitung Total Halaman Kumulatif Santri dari Modal Baseline + Setoran SABAQ
  * Sabqi / Manzil / Mufar tidak menambah total kumulatif (itu muroja'ah).
+ * Setoran DIBATALKAN dikecualikan.
  */
 export async function getSantriKumulatifHalamanAction(santriId: string) {
   const session = await getCurrentSession();
@@ -468,31 +529,50 @@ export async function getSantriKumulatifHalamanAction(santriId: string) {
       return { success: false, message: "Akses Ditolak: Anda hanya berhak melihat progres santri Anda sendiri." };
     }
   } else if (session.role === "MT" || session.role === "PH") {
-    if (session.staffId) {
+    // Fail-closed: MT/PH tanpa staffId wajib langsung ditolak
+    if (!session.staffId) {
+      return { success: false, message: "Akses Ditolak: Akun MT/PH belum terhubung dengan data staf." };
+    }
+    if (!session.isKepalaBidangTahfidz) {
       const isBinaan = await prisma.halaqoh.findFirst({
         where: {
           pembinaId: session.staffId,
           santriList: { some: { id: santriId } },
         },
       });
-      if (!isBinaan && !session.isKepalaBidangTahfidz) {
+      if (!isBinaan) {
         return { success: false, message: "Akses Ditolak: Santri berada di luar halaqoh binaan Anda." };
       }
     }
   }
 
   try {
+    const santri = await prisma.santri.findUnique({
+      where: { id: santriId },
+      select: { modalHafalanAwalHalaman: true, tanggalBaselineTahfizh: true },
+    });
+
+    const modalAwal = Number(santri?.modalHafalanAwalHalaman) || 0;
+    const baselineDate = santri?.tanggalBaselineTahfizh ? new Date(santri.tanggalBaselineTahfizh) : null;
+
+    const sabaqWhere: Prisma.SetoranTahfizhWhereInput = {
+      santriId,
+      jenis: "SABAQ",
+      status: { not: "DIBATALKAN" },
+    };
+    if (baselineDate) {
+      sabaqWhere.tanggal = { gte: baselineDate };
+    }
+
     const sabaqAggregate = await prisma.setoranTahfizh.aggregate({
-      where: {
-        santriId,
-        jenis: "SABAQ",
-      },
+      where: sabaqWhere,
       _sum: {
         jumlahHalaman: true,
       },
     });
 
-    const totalHalaman = sabaqAggregate._sum.jumlahHalaman || 0;
+    const tambahanSabaq = sabaqAggregate._sum.jumlahHalaman || 0;
+    const totalHalaman = modalAwal + tambahanSabaq;
     const totalJuz = Math.floor(totalHalaman / 20);
     const sisaHalaman = totalHalaman % 20;
     const label = totalJuz > 0 && sisaHalaman > 0
@@ -504,6 +584,8 @@ export async function getSantriKumulatifHalamanAction(santriId: string) {
     return {
       success: true,
       data: {
+        modalAwal,
+        tambahanSabaq,
         totalHalaman,
         totalJuz,
         sisaHalaman,

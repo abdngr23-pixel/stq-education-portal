@@ -311,6 +311,8 @@ model Santri {
   status        SantriStatus     @default(AKTIF)
   isYatimDhuafa Boolean          @default(false) @map("is_yatim_dhuafa")
   targetAkhirProgramJuz Int      @default(30) @map("target_akhir_program_juz")
+  modalHafalanAwalHalaman Float  @default(0) @map("modal_hafalan_awal_halaman")
+  tanggalBaselineTahfizh DateTime? @map("tanggal_baseline_tahfizh")
   
   namaWali      String?          @map("nama_wali")
   noHpWali      String?          @map("no_hp_wali")
@@ -405,6 +407,11 @@ model SetoranTahfizh {
   jumlahHalaman  Float         @map("jumlah_halaman")
   nilai          NilaiSetoran
   catatan        String?
+  clientRequestId String?      @unique @map("client_request_id")
+  status         String        @default("AKTIF")
+  alasanPembatalan String?     @map("alasan_pembatalan")
+  dibatalkanAt   DateTime?     @map("dibatalkan_at")
+  dibatalkanBy   String?       @map("dibatalkan_by")
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
   createdBy      String?       @map("created_by")
@@ -412,6 +419,7 @@ model SetoranTahfizh {
   @@index([santriId, tanggal])
   @@index([musyrifId])
   @@index([jenis])
+  @@index([status])
   @@map("setoran_tahfizh")
 }
 

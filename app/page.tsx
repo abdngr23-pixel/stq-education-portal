@@ -286,12 +286,18 @@ export default function Home() {
             targetJuz: s.targetJuz ?? 30,
             setoranTerakhir: s.setoranTerakhir || "-",
             status: s.status,
-            nilaiTerakhir: s.nilaiTerakhir || "MUMTAZ",
+            nilaiTerakhir: s.nilaiTerakhir || "Belum ada data",
             poinPelanggaran: s.poinPelanggaran ?? 0,
             namaWali: s.namaWali,
             noHpWali: s.noHpWali,
-            totalHalaman: s.capaianHalaman ?? 0,
-            modalHalamanAwal: 0,
+            modalHalamanAwal: s.modalHalamanAwal ?? s.modalHafalanAwalHalaman ?? s.capaianHalaman ?? 0,
+            modalHafalanAwalHalaman: s.modalHafalanAwalHalaman ?? s.modalHalamanAwal ?? 0,
+            tanggalBaselineTahfizh: s.tanggalBaselineTahfizh ?? null,
+            tambahanSabaq: s.tambahanSabaq ?? 0,
+            totalHafalan: s.totalHafalan ?? s.totalHalaman ?? s.capaianHalaman ?? 0,
+            totalHalaman: s.totalHafalan ?? s.totalHalaman ?? s.capaianHalaman ?? 0,
+            posisiTerakhirHalaman: s.posisiTerakhirHalaman ?? (s.modalHafalanAwalHalaman || 1),
+            bintangKebaikan: s.bintangKebaikan ?? 0,
           }))
         );
       } else {

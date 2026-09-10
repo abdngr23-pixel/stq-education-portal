@@ -96,11 +96,21 @@ export async function getSantriListAction(params?: {
           include: { pembina: true },
         },
         setoranList: {
-          where: { jenis: "SABAQ" },
-          select: { jumlahHalaman: true },
+          where: { status: { not: "DIBATALKAN" } },
+          orderBy: { tanggal: "desc" },
+          select: {
+            id: true,
+            jenis: true,
+            juz: true,
+            halamanMulai: true,
+            halamanSelesai: true,
+            jumlahHalaman: true,
+            nilai: true,
+            tanggal: true,
+          },
         },
         _count: {
-          select: { setoranList: true, pelanggaranList: true },
+          select: { setoranList: true, pelanggaranList: true, bintangList: true },
         },
       },
     });
@@ -115,8 +125,35 @@ export async function getSantriListAction(params?: {
     const sortedList = [...ikhwanList, ...akhwatList];
 
     const mappedData = sortedList.map((s) => {
-      const capaianHalaman = s.setoranList?.reduce((acc, cur) => acc + (cur.jumlahHalaman || 0), 0) || 0;
-      const capaianJuz = Math.floor(capaianHalaman / 20);
+      const modalAwal = Number(s.modalHafalanAwalHalaman) || 0;
+      const baselineDate = s.tanggalBaselineTahfizh ? new Date(s.tanggalBaselineTahfizh) : null;
+
+      // Rumus Resmi:
+      // Total Hafalan = Modal Hafalan Awal + Total jumlahHalaman SABAQ setelah tanggal baseline
+      // SABQI, MANZIL, dan MUFAR tidak menambah total hafalan. Setoran DIBATALKAN dikecualikan.
+      const sabaqAfterBaseline = (s.setoranList || []).filter((st) => {
+        if (st.jenis !== "SABAQ") return false;
+        if (!baselineDate) return true;
+        return new Date(st.tanggal) >= baselineDate;
+      });
+
+      const tambahanSabaq = sabaqAfterBaseline.reduce((acc, cur) => acc + (cur.jumlahHalaman || 0), 0);
+      const totalHafalan = modalAwal + tambahanSabaq;
+      const capaianJuz = Math.floor(totalHafalan / 20);
+
+      // Setoran terakhir riil dari DB
+      const latestSetoran = s.setoranList?.[0] || null;
+      const nilaiTerakhir = latestSetoran ? latestSetoran.nilai : "Belum ada data";
+
+      // Posisi halaman terakhir Mushaf santri
+      const latestHalaman = latestSetoran
+        ? latestSetoran.halamanSelesai
+        : modalAwal > 0
+        ? modalAwal
+        : 1;
+
+      // Hitung akumulasi bintang riil dari DB
+      const totalBintang = s._count.bintangList || 0;
 
       return {
         id: s.id, // Primary Key riil PostgreSQL
@@ -131,16 +168,23 @@ export async function getSantriListAction(params?: {
         pembina: s.halaqoh?.pembina?.nama || "-",
         namaWali: s.namaWali || undefined,
         noHpWali: s.noHpWali || undefined,
-        capaianHalaman,
+        modalHalamanAwal: modalAwal,
+        modalHafalanAwalHalaman: modalAwal,
+        tanggalBaselineTahfizh: s.tanggalBaselineTahfizh ? s.tanggalBaselineTahfizh.toISOString() : null,
+        tambahanSabaq,
+        totalHafalan,
+        capaianHalaman: totalHafalan,
+        totalHalaman: totalHafalan,
         capaianJuz,
-        targetAkhirProgramJuz: 30,
-        targetJuz: 30,
-        setoranTerakhir: s._count.setoranList > 0 ? `${s._count.setoranList} setoran tersimpan` : "-",
-        nilaiTerakhir: "MUMTAZ",
+        posisiTerakhirHalaman: latestHalaman,
+        targetAkhirProgramJuz: s.targetAkhirProgramJuz || 30,
+        targetJuz: s.targetAkhirProgramJuz || 30,
+        setoranTerakhir: latestSetoran
+          ? `${latestSetoran.jenis} Juz ${latestSetoran.juz} Hlm ${latestSetoran.halamanMulai}-${latestSetoran.halamanSelesai}`
+          : "-",
+        nilaiTerakhir,
         poinPelanggaran: s._count.pelanggaranList || 0,
-        bintangKebaikan: 0,
-        modalHalamanAwal: capaianHalaman,
-        totalHalaman: capaianHalaman,
+        bintangKebaikan: totalBintang,
       };
     });
 
@@ -148,6 +192,176 @@ export async function getSantriListAction(params?: {
   } catch (error) {
     console.error("Gagal mengambil data santri:", error);
     return { success: false, message: "Gagal mengambil data santri.", data: [] };
+  }
+}
+
+/**
+ * Atur Baseline Modal Hafalan Awal Santri (Khusus KS & ADM)
+ * Dilengkapi audit trail lengkap: alasan, petugas pengubah, nilai lama, nilai baru.
+ */
+export async function updateBaselineModalSantriAction(input: {
+  santriId: string;
+  modalHafalanAwalHalaman: number;
+  tanggalBaselineTahfizh?: string | null;
+  alasan: string;
+}) {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Sesi tidak valid atau belum login." };
+  }
+
+  // Khusus KS dan ADM (fail-closed)
+  if (session.role !== "KS" && session.role !== "ADM") {
+    return {
+      success: false,
+      message: "Akses Ditolak: Hanya Mudir (KS) dan Administrator (ADM) yang berwenang mengatur baseline modal hafalan.",
+    };
+  }
+
+  if (typeof input.modalHafalanAwalHalaman !== "number" || isNaN(input.modalHafalanAwalHalaman) || input.modalHafalanAwalHalaman < 0) {
+    return { success: false, message: "Nilai modal hafalan awal harus berupa angka positif atau nol." };
+  }
+
+  if (!input.alasan || input.alasan.trim().length < 5) {
+    return { success: false, message: "Alasan penetapan/perubahan baseline wajib diisi (minimal 5 karakter)." };
+  }
+
+  try {
+    const santri = await prisma.santri.findUnique({
+      where: { id: input.santriId },
+      select: { id: true, nama: true, nis: true, modalHafalanAwalHalaman: true, tanggalBaselineTahfizh: true },
+    });
+
+    if (!santri) {
+      return { success: false, message: "Data santri tidak ditemukan." };
+    }
+
+    const baselineDate = input.tanggalBaselineTahfizh ? new Date(input.tanggalBaselineTahfizh) : new Date();
+
+    const updated = await prisma.santri.update({
+      where: { id: input.santriId },
+      data: {
+        modalHafalanAwalHalaman: input.modalHafalanAwalHalaman,
+        tanggalBaselineTahfizh: baselineDate,
+      },
+    });
+
+    await recordAuditLog({
+      userId: session.userId,
+      action: "UPDATE_BASELINE_MODAL",
+      entity: "Santri",
+      entityId: santri.id,
+      details: {
+        santriNis: santri.nis,
+        santriNama: santri.nama,
+        modalSebelumnya: santri.modalHafalanAwalHalaman,
+        modalBaru: input.modalHafalanAwalHalaman,
+        tanggalBaseline: baselineDate.toISOString(),
+        alasan: input.alasan.trim(),
+        petugas: session.username,
+        rolePetugas: session.role,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Baseline modal hafalan ${santri.nama} berhasil diperbarui menjadi ${input.modalHafalanAwalHalaman} halaman.`,
+      data: updated,
+    };
+  } catch (error) {
+    console.error("Gagal memperbarui baseline modal hafalan:", error);
+    return { success: false, message: "Gagal menyimpan perubahan ke database." };
+  }
+}
+
+/**
+ * Batalkan Setoran Tahfizh (Soft Cancel dengan status DIBATALKAN dan alasan)
+ * Tidak menghapus riwayat secara permanen.
+ */
+export async function batalkanSetoranTahfizhAction(input: {
+  setoranId: string;
+  alasan: string;
+}) {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
+  }
+
+  if (!["KS", "ADM", "MT", "PH"].includes(session.role)) {
+    return { success: false, message: "Akses Ditolak: Anda tidak berwenang membatalkan setoran." };
+  }
+
+  if (!input.alasan || input.alasan.trim().length < 5) {
+    return { success: false, message: "Alasan pembatalan setoran wajib diisi (minimal 5 karakter)." };
+  }
+
+  try {
+    const setoran = await prisma.setoranTahfizh.findUnique({
+      where: { id: input.setoranId },
+      include: { santri: true },
+    });
+
+    if (!setoran) {
+      return { success: false, message: "Data setoran tidak ditemukan." };
+    }
+
+    if (setoran.status === "DIBATALKAN") {
+      return { success: false, message: "Setoran ini sudah dalam status DIBATALKAN sebelumnya." };
+    }
+
+    // MT/PH ABAC: harus pembina dari halaqoh santri
+    if (session.role === "MT" || session.role === "PH") {
+      if (!session.staffId) {
+        return { success: false, message: "Akses Ditolak: Profil staf belum terhubung." };
+      }
+      if (!session.isKepalaBidangTahfidz) {
+        const isBinaan = await prisma.halaqoh.findFirst({
+          where: {
+            pembinaId: session.staffId,
+            santriList: { some: { id: setoran.santriId } },
+          },
+        });
+        if (!isBinaan) {
+          return { success: false, message: "Akses Ditolak: Anda hanya berwenang membatalkan setoran halaqoh binaan Anda." };
+        }
+      }
+    }
+
+    const updated = await prisma.setoranTahfizh.update({
+      where: { id: input.setoranId },
+      data: {
+        status: "DIBATALKAN",
+        alasanPembatalan: input.alasan.trim(),
+        dibatalkanAt: new Date(),
+        dibatalkanBy: session.username,
+      },
+    });
+
+    await recordAuditLog({
+      userId: session.userId,
+      action: "CANCEL_SETORAN",
+      entity: "SetoranTahfizh",
+      entityId: setoran.id,
+      details: {
+        setoranCode: setoran.setoranCode,
+        santriNis: setoran.santri.nis,
+        santriNama: setoran.santri.nama,
+        halaman: `${setoran.halamanMulai}-${setoran.halamanSelesai}`,
+        jumlahHalaman: setoran.jumlahHalaman,
+        alasan: input.alasan.trim(),
+        petugas: session.username,
+        rolePetugas: session.role,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Setoran ${setoran.setoranCode} berhasil dibatalkan.`,
+      data: updated,
+    };
+  } catch (error) {
+    console.error("Gagal membatalkan setoran:", error);
+    return { success: false, message: "Gagal membatalkan setoran di database." };
   }
 }
 

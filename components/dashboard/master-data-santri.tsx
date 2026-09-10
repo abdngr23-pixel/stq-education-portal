@@ -20,8 +20,9 @@ import {
   AlertCircle,
   X,
   UserCheck,
+  SlidersHorizontal,
 } from "lucide-react";
-import { createSantriAction } from "@/app/actions/santri";
+import { createSantriAction, updateBaselineModalSantriAction } from "@/app/actions/santri";
 import { exportToCSV } from "@/lib/export-csv";
 import { openWhatsAppDirect } from "@/lib/whatsapp";
 
@@ -39,6 +40,13 @@ export interface SantriItem {
   poinPelanggaran: number;
   namaWali?: string | null;
   noHpWali?: string | null;
+  modalHalamanAwal?: number;
+  modalHafalanAwalHalaman?: number;
+  tanggalBaselineTahfizh?: string | null;
+  tambahanSabaq?: number;
+  totalHafalan?: number;
+  totalHalaman?: number;
+  posisiTerakhirHalaman?: number;
 }
 
 export interface MasterDataSantriProps {
@@ -76,6 +84,59 @@ export function MasterDataSantri({
 
   const [isPending, startTransition] = useTransition();
   const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Modal State: Kelola Baseline Modal Hafalan Santri (KS & ADM - Poin 4)
+  const [showBaselineModal, setShowBaselineModal] = useState(false);
+  const [selectedBaselineSantri, setSelectedBaselineSantri] = useState<SantriItem | null>(null);
+  const [inputBaselineHalaman, setInputBaselineHalaman] = useState<string>("0");
+  const [inputBaselineTanggal, setInputBaselineTanggal] = useState<string>("2026-09-08");
+  const [inputBaselineAlasan, setInputBaselineAlasan] = useState<string>("");
+
+  const handleOpenBaselineModal = (santri: SantriItem) => {
+    setSelectedBaselineSantri(santri);
+    const curModal = santri.modalHafalanAwalHalaman ?? santri.modalHalamanAwal ?? 0;
+    setInputBaselineHalaman(String(curModal));
+    setInputBaselineTanggal(
+      santri.tanggalBaselineTahfizh
+        ? santri.tanggalBaselineTahfizh.substring(0, 10)
+        : "2026-09-08"
+    );
+    setInputBaselineAlasan("");
+    setShowBaselineModal(true);
+  };
+
+  const handleSaveBaseline = () => {
+    if (!selectedBaselineSantri) return;
+    const hlmNum = parseFloat(inputBaselineHalaman);
+    if (isNaN(hlmNum) || hlmNum < 0) {
+      setNotification({ type: "error", message: "Modal hafalan awal harus berupa angka positif atau nol." });
+      return;
+    }
+    if (!inputBaselineAlasan.trim() || inputBaselineAlasan.trim().length < 5) {
+      setNotification({
+        type: "error",
+        message: "Alasan penetapan/perubahan baseline wajib diisi (minimal 5 karakter) untuk pencatatan audit log.",
+      });
+      return;
+    }
+
+    startTransition(async () => {
+      const res = await updateBaselineModalSantriAction({
+        santriId: selectedBaselineSantri.id,
+        modalHafalanAwalHalaman: hlmNum,
+        tanggalBaselineTahfizh: inputBaselineTanggal || "2026-09-08",
+        alasan: inputBaselineAlasan.trim(),
+      });
+
+      if (res.success) {
+        setNotification({ type: "success", message: res.message });
+        setShowBaselineModal(false);
+        if (onRefresh) onRefresh();
+      } else {
+        setNotification({ type: "error", message: res.message });
+      }
+    });
+  };
 
   // Filter santri
   const filteredSantri = useMemo(() => {
@@ -234,6 +295,20 @@ export function MasterDataSantri({
           >
             Ekspor CSV / Excel
           </Button>
+          {isCanManage && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                const obama = santriList.find((s) => s.nis === "SAN-0001") || santriList[0];
+                if (obama) handleOpenBaselineModal(obama);
+              }}
+              leftIcon={<SlidersHorizontal className="h-4 w-4 text-emerald-700" />}
+              className="text-xs font-semibold border-emerald-300 text-emerald-900 hover:bg-emerald-50"
+            >
+              Atur Baseline Modal
+            </Button>
+          )}
           {isCanManage && (
             <Button
               variant="primary"
@@ -432,19 +507,22 @@ export function MasterDataSantri({
                         <div className="font-semibold">{santri.halaqoh}</div>
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
+                        <div className="flex flex-col items-center justify-center">
                           <span className="font-extrabold text-[#0E7C3A] text-sm">
-                            {santri.capaianJuz} Juz
+                            {santri.totalHafalan ?? santri.totalHalaman ?? (santri.capaianJuz * 20)} Hlm
                           </span>
-                          <span className="text-[10px] text-slate-400">
-                            / 30 Juz (Target Akhir)
+                          <span className="text-[10px] text-slate-500 font-medium">
+                            Modal: {santri.modalHafalanAwalHalaman ?? santri.modalHalamanAwal ?? 0} | Sabaq: +{santri.tambahanSabaq ?? 0}
+                          </span>
+                          <span className="text-[9px] text-emerald-700 font-bold">
+                            {santri.capaianJuz} Juz / 30 Juz
                           </span>
                         </div>
                       </td>
                       <td className="py-3 px-4 text-slate-600 text-[11px]">
                         <div className="font-medium">{santri.setoranTerakhir || "-"}</div>
                         <span className="text-[10px] text-emerald-700 font-semibold">
-                          Nilai: {santri.nilaiTerakhir || "MUMTAZ"}
+                          Nilai: {santri.nilaiTerakhir || "Belum ada data"}
                         </span>
                       </td>
                       <td className="py-3 px-3 text-center">
@@ -454,6 +532,15 @@ export function MasterDataSantri({
                       </td>
                       <td className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-1">
+                          {isCanManage && (
+                            <button
+                              onClick={() => handleOpenBaselineModal(santri)}
+                              title="Atur Baseline Modal Hafalan Santri"
+                              className="p-1.5 rounded-lg hover:bg-emerald-50 text-emerald-800 transition-colors"
+                            >
+                              <SlidersHorizontal className="h-4 w-4" />
+                            </button>
+                          )}
                           <button
                             onClick={() => setSelectedSantriDetail(santri)}
                             title="Lihat Detail Santri"
@@ -737,6 +824,168 @@ export function MasterDataSantri({
                 className="bg-[#0E7C3A] hover:bg-[#0B642E] text-white font-bold"
               >
                 {isPending ? "Menyimpan..." : "Simpan Santri"}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL: KELOLA BASELINE MODAL HAFALAN AWAL (KS & ADM - POIN 4) */}
+      {showBaselineModal && selectedBaselineSantri && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <Card rounded="3xl" className="max-w-lg w-full p-6 bg-white space-y-4 shadow-2xl animate-scale-in border border-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="p-2 rounded-xl bg-emerald-50 text-[#0E7C3A]">
+                  <SlidersHorizontal className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm font-heading">
+                    Atur Baseline Modal Hafalan Awal
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Otoritas resmi KS &amp; ADM dengan pencatatan audit log permanen
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowBaselineModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Banner Khusus Santri Obama (Preview Data Lama - Poin 4) */}
+            {selectedBaselineSantri.nis === "SAN-0001" && (
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-950 space-y-2">
+                <div className="flex items-center gap-2 font-bold text-amber-900">
+                  <BookCheck className="h-4 w-4 text-amber-700" />
+                  <span>Preview Data Historis (Aplikasi Lama): Obama</span>
+                </div>
+                <p className="text-[11px] leading-relaxed text-amber-800">
+                  Berdasarkan pangkalan data lama STQ Darul Ulum Cendekia, santri Obama memiliki modal hafalan awal tercatat <strong>420 halaman</strong> (21 Juz).
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInputBaselineHalaman("420");
+                    setInputBaselineTanggal("2026-09-08");
+                    setInputBaselineAlasan("Penetapan modal awal hafalan historis pra-sistem digital 420 halaman (21 Juz)");
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-amber-200/80 hover:bg-amber-300 text-amber-950 font-bold text-[11px] transition-colors"
+                >
+                  ✓ Terapkan Data Historis: 420 Hlm (8 Sept 2026)
+                </button>
+              </div>
+            )}
+
+            {/* Info Santri Terpilih */}
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Santri:</span>
+                <span className="font-bold text-slate-800">{selectedBaselineSantri.nama} ({selectedBaselineSantri.nis})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Halaqoh:</span>
+                <span className="font-semibold text-slate-700">{selectedBaselineSantri.halaqoh}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Modal Saat Ini:</span>
+                <span className="font-bold text-emerald-800">
+                  {selectedBaselineSantri.modalHafalanAwalHalaman ?? selectedBaselineSantri.modalHalamanAwal ?? 0} Halaman
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Tambahan Sabaq:</span>
+                <span className="font-semibold text-emerald-700">+{selectedBaselineSantri.tambahanSabaq ?? 0} Halaman</span>
+              </div>
+            </div>
+
+            {/* Form Inputs */}
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700">
+                    Modal Hafalan Awal (Hlm) <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="Contoh: 420"
+                    value={inputBaselineHalaman}
+                    onChange={(e) => setInputBaselineHalaman(e.target.value)}
+                  />
+                  <span className="text-[10px] text-slate-400">
+                    {Math.floor((parseFloat(inputBaselineHalaman) || 0) / 20)} Juz {(parseFloat(inputBaselineHalaman) || 0) % 20} Hlm
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700">
+                    Tanggal Baseline <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    type="date"
+                    value={inputBaselineTanggal}
+                    onChange={(e) => setInputBaselineTanggal(e.target.value)}
+                  />
+                  <span className="text-[10px] text-slate-400">
+                    Sabaq setelah tanggal ini diakumulasi
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700">
+                  Alasan Penetapan / Perubahan <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={inputBaselineAlasan}
+                  onChange={(e) => setInputBaselineAlasan(e.target.value)}
+                  placeholder="Contoh: Verifikasi mutaba'ah fisik dan konversi hafalan aplikasi lama..."
+                  className="w-full p-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-[#0E7C3A]/20 focus:border-[#0E7C3A]"
+                />
+                <span className="text-[10px] text-slate-400">
+                  Wajib diisi minimal 5 karakter untuk audit trail.
+                </span>
+              </div>
+
+              {/* Live Preview Hasil */}
+              <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs space-y-1">
+                <div className="font-bold text-emerald-900 text-[11px] uppercase tracking-wider">
+                  Hasil Kalkulasi Akumulasi Baru:
+                </div>
+                <div className="flex justify-between items-center text-xs pt-1">
+                  <span className="text-slate-600">Total Hafalan Menjadi:</span>
+                  <span className="font-extrabold text-emerald-950 text-sm">
+                    {(parseFloat(inputBaselineHalaman) || 0) + (selectedBaselineSantri.tambahanSabaq ?? 0)} Halaman
+                  </span>
+                </div>
+                <div className="text-[10px] text-emerald-700">
+                  Rumus: Modal Awal ({parseFloat(inputBaselineHalaman) || 0} Hlm) + Sabaq Sah (+{selectedBaselineSantri.tambahanSabaq ?? 0} Hlm)
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowBaselineModal(false)}
+                disabled={isPending}
+              >
+                Batal
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleSaveBaseline}
+                disabled={isPending || !inputBaselineAlasan.trim() || inputBaselineAlasan.trim().length < 5}
+                className="bg-[#0E7C3A] hover:bg-[#0B642E] text-white font-bold"
+              >
+                {isPending ? "Menyimpan..." : "Simpan Baseline Modal"}
               </Button>
             </div>
           </Card>

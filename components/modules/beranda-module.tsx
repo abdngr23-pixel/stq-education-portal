@@ -38,6 +38,12 @@ export interface DashboardSantriSummary {
   noHpWali?: string | null;
   totalHalaman?: number;
   modalHalamanAwal?: number;
+  modalHafalanAwalHalaman?: number;
+  tanggalBaselineTahfizh?: string | null;
+  tambahanSabaq?: number;
+  totalHafalan?: number;
+  posisiTerakhirHalaman?: number;
+  bintangKebaikan?: number;
 }
 
 export interface BerandaModuleProps {

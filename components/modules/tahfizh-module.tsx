@@ -18,6 +18,7 @@ import {
   inputHasilTahap1Action,
   inputHasilTahap2Action,
   ajukanIkhtibarAction,
+  getDaftarIkhtibarAction,
 } from "@/app/actions/ikhtibar";
 import { type LaporanBulananData } from "@/app/actions/laporan-bulanan";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
@@ -32,6 +33,7 @@ import {
   Search,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   FileSpreadsheet,
   Clock,
   X,
@@ -76,7 +78,21 @@ export function TahfizhModule({
   );
 
   const [isPending, startTransition] = useTransition();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Modal Peringatan Lompatan Urutan Hafalan (Sequence Jump Warning)
+  const [jumpWarningModal, setJumpWarningModal] = useState<{
+    isOpen: boolean;
+    posisiTerakhir: number;
+    halamanInput: number;
+    alasan: string;
+  }>({
+    isOpen: false,
+    posisiTerakhir: 1,
+    halamanInput: 1,
+    alasan: "",
+  });
 
   // -------------------------------------------------------------
   // FORM INPUT SETORAN TUNGGAL BERBASIS HALAMAN & JUZ
@@ -344,13 +360,28 @@ export function TahfizhModule({
     return hitungTargetMufar(juzSantri);
   }, [activeSantri]);
 
-  // Kalkulasi Cerdas Halaman & Konversi Juz Dinamis untuk Santri Manapun
+  // Kalkulasi Cerdas Halaman & Konversi Juz Dinamis untuk Santri
+  // Mengikuti formula resmi:
+  // Total Hafalan = Modal Hafalan Awal + Total jumlahHalaman SABAQ setelah tanggal baseline
   const santriModalAwal = useMemo(() => {
     if (!activeSantri) return 0;
-    if (activeSantri.modalHalamanAwal !== undefined) return activeSantri.modalHalamanAwal;
-    if (activeSantri.totalHalaman !== undefined) return activeSantri.totalHalaman;
-    return (activeSantri.capaianJuz || 0) * HALAMAN_PER_JUZ;
+    return activeSantri.modalHafalanAwalHalaman ?? activeSantri.modalHalamanAwal ?? 0;
   }, [activeSantri]);
+
+  const santriTambahanSabaq = useMemo(() => {
+    if (!activeSantri) return 0;
+    return activeSantri.tambahanSabaq ?? 0;
+  }, [activeSantri]);
+
+  const santriTotalHafalan = useMemo(() => {
+    if (!activeSantri) return 0;
+    return activeSantri.totalHafalan ?? (santriModalAwal + santriTambahanSabaq);
+  }, [activeSantri, santriModalAwal, santriTambahanSabaq]);
+
+  const santriPosisiTerakhir = useMemo(() => {
+    if (!activeSantri) return 1;
+    return activeSantri.posisiTerakhirHalaman ?? (santriModalAwal > 0 ? santriModalAwal : 1);
+  }, [activeSantri, santriModalAwal]);
 
   // Rentang Referensi Sabaqi Kumulatif Harian (Senin - Jumat)
   const sabaqiKumulatifRef = useMemo(() => {
@@ -381,14 +412,16 @@ export function TahfizhModule({
     return isNaN(n) || n < 0 ? 0 : n;
   }, [jumlahHalaman]);
 
+  // Akumulasi total hafalan setelah setoran SABAQ baru tersimpan:
   const akumulasiHalamanBaru = useMemo(() => {
-    return santriModalAwal + parsedTambahanHlm;
-  }, [santriModalAwal, parsedTambahanHlm]);
+    return santriTotalHafalan + (inputJenis === "SABAQ" ? parsedTambahanHlm : 0);
+  }, [santriTotalHafalan, inputJenis, parsedTambahanHlm]);
 
   const smartKonversiAwal = useMemo(() => konversiHalamanKeJuz(santriModalAwal), [santriModalAwal]);
+  const smartKonversiTotal = useMemo(() => konversiHalamanKeJuz(santriTotalHafalan), [santriTotalHafalan]);
   const smartKonversiAkumulasi = useMemo(() => konversiHalamanKeJuz(akumulasiHalamanBaru), [akumulasiHalamanBaru]);
 
-  // Handler Simpan Setoran (Single source of truth)
+  // Handler Simpan Setoran: Pemeriksaan Otorisasi & Deteksi Lompatan Urutan
   const handleSaveSetoran = () => {
     setFeedback(null);
     if (!["MT", "PH", "KS"].includes(userRole)) {
@@ -411,88 +444,125 @@ export function TahfizhModule({
       }
     }
 
-    startTransition(async () => {
-      const hlmMulaiNum = parseInt(halamanMulai, 10) || 1;
-      const jmlHlmNum = parseFloat(jumlahHalaman) || 1;
-      const hlmSelesaiNum = parseInt(halamanSelesai, 10) || (hlmMulaiNum + Math.ceil(jmlHlmNum) - 1);
-      const juzNum = parseInt(juz, 10) || getJuzByPage(hlmMulaiNum) || 1;
+    const hlmMulaiNum = parseInt(halamanMulai, 10) || 1;
 
-      let catatanRincian = "";
-      if (inputJenis === "SABAQ") {
-        catatanRincian = `[Sabaq: ${jmlHlmNum} Hlm (Hlm ${hlmMulaiNum}–${hlmSelesaiNum}) | Akumulasi: ${akumulasiHalamanBaru} Hlm (${smartKonversiAkumulasi.label})]`;
-      } else if (inputJenis === "SABQI") {
-        const manualTag = isManualSabaqi ? `[Manual Sabaqi: ${alasanManualSabaqi}] ` : "";
-        catatanRincian = `${manualTag}[Sabqi: Hlm ${hlmMulaiNum}–${hlmSelesaiNum} (${jmlHlmNum} Hlm, Juz ${juzNum})]`;
-      } else if (inputJenis === "MANZIL") {
-        catatanRincian = `[Manzil: 1 Juz Penuh (Juz ${juzNum}, 20 Halaman)]`;
-      } else {
-        catatanRincian = `[Mufar: ${jumlahJuzMufar} Juz (${rincianJuzMufar || `Juz ${juzNum}`})]`;
-      }
-
-      const finalCatatan = catatan ? `${catatanRincian}. ${catatan}`.trim() : catatanRincian;
-
-      const res = await createSetoranAction({
-        santriId: activeSantri.id,
-        jenis: inputJenis,
-        juz: juzNum,
-        halamanMulai: hlmMulaiNum,
-        halamanSelesai: hlmSelesaiNum,
-        jumlahHalaman: jmlHlmNum,
-        nilai,
-        catatan: finalCatatan,
+    // Sesuai Poin 8: Deteksi Lompatan Urutan Hafalan (Sequence Jump Warning)
+    // Jika posisi terakhir santri (misal Obama hlm 421) melompat jauh ke 582, minta konfirmasi dan alasan
+    if (inputJenis === "SABAQ" && santriPosisiTerakhir > 0 && hlmMulaiNum > santriPosisiTerakhir + 1) {
+      setJumpWarningModal({
+        isOpen: true,
+        posisiTerakhir: santriPosisiTerakhir,
+        halamanInput: hlmMulaiNum,
+        alasan: "",
       });
+      return;
+    }
 
-      if (res.success) {
-        setFeedback({
-          type: "success",
-          message: `Alhamdulillah! Setoran ${inputJenis} untuk ${activeSantri.nama} (${jmlHlmNum} Hlm, Juz ${juzNum}) berhasil disimpan ke server.`,
-        });
+    executeSaveSetoran();
+  };
 
-        // Trigger refresh
-        onRefresh?.();
-        loadRecentSetoran();
-        if (activeSantri) loadSabaqiSantri(activeSantri.id);
+  // Eksekusi Simpan Setoran dengan Proteksi Double-Submit & Idempotency Key
+  const executeSaveSetoran = (extra?: { alasanLompatanHalaman?: string }) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
 
-        // Siapkan pesan WA resmi dengan metrik halaman cerdas (Tanpa kolom Surah)
-        const waMsg = buildSetoranTahfizhWAMessage({
-          santriNama: activeSantri.nama,
-          santriNis: activeSantri.nis,
-          kelas: activeSantri.kelas,
-          pembinaNama: currentUserName,
-          jenisSetoran: inputJenis,
+    const clientRequestId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `req-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+    startTransition(async () => {
+      try {
+        const hlmMulaiNum = parseInt(halamanMulai, 10) || 1;
+        const jmlHlmNum = parseFloat(jumlahHalaman) || 1;
+        const hlmSelesaiNum = parseInt(halamanSelesai, 10) || (hlmMulaiNum + Math.ceil(jmlHlmNum) - 1);
+        const juzNum = parseInt(juz, 10) || getJuzByPage(hlmMulaiNum) || 1;
+
+        let catatanRincian = "";
+        if (inputJenis === "SABAQ") {
+          catatanRincian = `[Sabaq: ${jmlHlmNum} Hlm (Hlm ${hlmMulaiNum}–${hlmSelesaiNum}) | Akumulasi: ${akumulasiHalamanBaru} Hlm (${smartKonversiAkumulasi.label})]`;
+        } else if (inputJenis === "SABQI") {
+          const manualTag = isManualSabaqi ? `[Manual Sabaqi: ${alasanManualSabaqi}] ` : "";
+          catatanRincian = `${manualTag}[Sabqi: Hlm ${hlmMulaiNum}–${hlmSelesaiNum} (${jmlHlmNum} Hlm, Juz ${juzNum})]`;
+        } else if (inputJenis === "MANZIL") {
+          catatanRincian = `[Manzil: 1 Juz Penuh (Juz ${juzNum}, 20 Halaman)]`;
+        } else {
+          catatanRincian = `[Mufar: ${jumlahJuzMufar} Juz (${rincianJuzMufar || `Juz ${juzNum}`})]`;
+        }
+
+        const finalCatatan = catatan ? `${catatanRincian}. ${catatan}`.trim() : catatanRincian;
+
+        const res = await createSetoranAction({
+          santriId: activeSantri!.id,
+          jenis: inputJenis,
           juz: juzNum,
           halamanMulai: hlmMulaiNum,
           halamanSelesai: hlmSelesaiNum,
-          nilai,
-          catatan,
           jumlahHalaman: jmlHlmNum,
-          totalHalamanKumulatif: inputJenis === "SABAQ" ? akumulasiHalamanBaru : undefined,
-          konversiLabel: inputJenis === "SABAQ" ? smartKonversiAkumulasi.label : undefined,
+          nilai,
+          catatan: finalCatatan,
+          clientRequestId,
+          alasanLompatanHalaman: extra?.alasanLompatanHalaman,
         });
 
-        // Ambil nomor kontak wali riil dari santri terpilih
-        const guardianPhone = (res.data?.santri as unknown as { noHpWali?: string })?.noHpWali || (activeSantri as unknown as { noHpWali?: string })?.noHpWali || "";
-        if (guardianPhone) {
-          setWaDialog({
-            isOpen: true,
-            phone: guardianPhone,
-            recipientName: `Wali dari ${activeSantri.nama}`,
-            message: waMsg,
-            title: "Kirim Laporan Setoran ke Wali Santri",
-            description: `Kirim laporan mutaba'ah setoran resmi untuk ${activeSantri.nama} via WhatsApp.`,
+        if (res.success) {
+          setFeedback({
+            type: "success",
+            message: `Alhamdulillah! Setoran ${inputJenis} untuk ${activeSantri!.nama} (${jmlHlmNum} Hlm, Juz ${juzNum}) berhasil disimpan ke server.`,
+          });
+
+          // Trigger refresh
+          onRefresh?.();
+          loadRecentSetoran();
+          if (activeSantri) loadSabaqiSantri(activeSantri.id);
+
+          // Siapkan pesan WA resmi dengan metrik halaman cerdas
+          const waMsg = buildSetoranTahfizhWAMessage({
+            santriNama: activeSantri!.nama,
+            santriNis: activeSantri!.nis,
+            kelas: activeSantri!.kelas,
+            pembinaNama: currentUserName,
+            jenisSetoran: inputJenis,
+            juz: juzNum,
+            halamanMulai: hlmMulaiNum,
+            halamanSelesai: hlmSelesaiNum,
+            nilai,
+            catatan,
+            jumlahHalaman: jmlHlmNum,
+            totalHalamanKumulatif: inputJenis === "SABAQ" ? akumulasiHalamanBaru : undefined,
+            konversiLabel: inputJenis === "SABAQ" ? smartKonversiAkumulasi.label : undefined,
+          });
+
+          // Ambil kontak wali santri
+          const guardianPhone =
+            (res.data?.santri as unknown as { noHpWali?: string })?.noHpWali ||
+            (activeSantri as unknown as { noHpWali?: string })?.noHpWali ||
+            "";
+          if (guardianPhone) {
+            setWaDialog({
+              isOpen: true,
+              phone: guardianPhone,
+              recipientName: `Wali dari ${activeSantri!.nama}`,
+              message: waMsg,
+              title: "Kirim Laporan Setoran ke Wali Santri",
+              description: `Kirim laporan mutaba'ah setoran resmi untuk ${activeSantri!.nama} via WhatsApp.`,
+            });
+          }
+        } else {
+          setFeedback({
+            type: "error",
+            message: res.message || "Gagal menyimpan setoran. Silakan periksa kembali isian.",
           });
         }
-      } else {
-        setFeedback({
-          type: "error",
-          message: res.message || "Gagal menyimpan setoran. Silakan periksa kembali isian.",
-        });
+      } finally {
+        setIsSubmitting(false);
       }
     });
   };
 
   // -------------------------------------------------------------
   // TAB IKHTIBAR: ALUR PENDAFTARAN & PENILAIAN UJIAN 2-TAHAP
+  // Memuat data nyata dari PostgreSQL (Eliminasi cm_santri_*)
   // -------------------------------------------------------------
   const [ikhtibarList, setIkhtibarList] = useState<Array<{
     id: string;
@@ -506,47 +576,45 @@ export function TahfizhModule({
     penguji: string;
     nilai: number | null;
     catatan: string | null;
-  }>>([
-    {
-      id: "ikh-1",
-      santriNama: "Obama Ozearld Egberted Turizqi",
-      santriNis: "SAN-0001",
-      santriId: "cm_santri_1",
-      kelas: "9A",
-      juz: 22,
-      status: "MENUNGGU_TAHAP_1",
-      tahap: 1,
-      penguji: "Ust. Razan Mufli, S.Pd",
-      nilai: null,
-      catatan: null,
-    },
-    {
-      id: "ikh-2",
-      santriNama: "Muhammad Fardhan",
-      santriNis: "SAN-0002",
-      santriId: "cm_santri_2",
-      kelas: "9A",
-      juz: 16,
-      status: "LULUS_TAHAP_1",
-      tahap: 2,
-      penguji: "Mudir Pesantren (Ust. Andi Quarzy)",
-      nilai: 92,
-      catatan: "Tajwid & kelancaran sangat baik pada Tahap 1",
-    },
-    {
-      id: "ikh-3",
-      santriNama: "Muh. Fauzan",
-      santriNis: "SAN-0003",
-      santriId: "cm_santri_3",
-      kelas: "9A",
-      juz: 19,
-      status: "LULUS_SEMPURNA_TAHAP_2",
-      tahap: 2,
-      penguji: "Mudir Pesantren",
-      nilai: 95,
-      catatan: "Disahkan Mudir Pesantren. Sah tuntas Juz 19.",
-    },
-  ]);
+  }>>([]);
+  useEffect(() => {
+    let isMounted = true;
+    getDaftarIkhtibarAction().then((res) => {
+      if (isMounted && res.success && Array.isArray(res.data)) {
+        interface RawIkhtibarItem {
+          id: string;
+          santri?: { nama?: string; nis?: string; kelas?: string };
+          santriId: string;
+          juz: number;
+          status: string;
+          pengujiTahap1?: { nama?: string };
+          pengujiTahap2?: { nama?: string };
+          nilaiTahap1?: number | null;
+          nilaiTahap2?: number | null;
+          catatanTahap1?: string | null;
+          catatanTahap2?: string | null;
+        }
+        setIkhtibarList(
+          (res.data as RawIkhtibarItem[]).map((item) => ({
+            id: item.id,
+            santriNama: item.santri?.nama || "-",
+            santriNis: item.santri?.nis || "-",
+            santriId: item.santriId,
+            kelas: item.santri?.kelas || "-",
+            juz: item.juz,
+            status: item.status,
+            tahap: item.status.includes("TAHAP_2") ? 2 : 1,
+            penguji: item.pengujiTahap2?.nama || item.pengujiTahap1?.nama || "Belum Ditentukan",
+            nilai: item.nilaiTahap2 ?? item.nilaiTahap1 ?? null,
+            catatan: item.catatanTahap2 || item.catatanTahap1 || null,
+          }))
+        );
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Modal Pendaftaran Ikhtibar Baru (Tahap 5)
   const [showAjukanModal, setShowAjukanModal] = useState(false);
@@ -824,17 +892,89 @@ export function TahfizhModule({
                       <option value="">Memuat data santri dari basis data...</option>
                     ) : (
                       santriList.map((s) => {
-                        const totalHlm = s.modalHalamanAwal ?? s.totalHalaman ?? (s.capaianJuz * 20);
-                        const konv = konversiHalamanKeJuz(totalHlm);
+                        const modalAwal = s.modalHafalanAwalHalaman ?? s.modalHalamanAwal ?? 0;
+                        const sabaq = s.tambahanSabaq ?? 0;
+                        const total = s.totalHafalan ?? (modalAwal + sabaq);
+                        const pos = s.posisiTerakhirHalaman ?? (modalAwal > 0 ? modalAwal : 1);
+                        const konv = konversiHalamanKeJuz(total);
                         return (
                           <option key={s.id} value={s.id}>
-                            {s.nama} ({s.kelas}) — {s.nis} — Modal: {totalHlm} Hlm ({konv.label})
+                            {s.nama} ({s.kelas}) — {s.nis} — Modal: {modalAwal} Hlm | Sabaq: +{sabaq} Hlm | Total: {total} Hlm ({konv.label}) | Posisi: Hlm {pos}
                           </option>
                         );
                       })
                     )}
                   </select>
                 </div>
+
+                {/* STATUS HAFALAN SANTRI: PEMISAHAN 5 INFORMASI WAJIB (POIN 5) */}
+                {activeSantri && (
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                      <span>Status Capaian Hafalan Santri Saat Ini</span>
+                      <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-md">
+                        {activeSantri.nama} ({activeSantri.nis})
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1 text-center">
+                      <div className="bg-white p-2 rounded-xl border border-slate-200">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                          1. Modal Awal
+                        </span>
+                        <span className="text-sm font-black text-slate-800 block mt-0.5">
+                          {santriModalAwal} Halaman
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-medium">
+                          {smartKonversiAwal.label}
+                        </span>
+                      </div>
+                      <div className="bg-white p-2 rounded-xl border border-slate-200">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                          2. Tambahan Sabaq
+                        </span>
+                        <span className="text-sm font-black text-emerald-700 block mt-0.5">
+                          +{santriTambahanSabaq} Halaman
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-medium">
+                          Tersimpan di DB
+                        </span>
+                      </div>
+                      <div className="bg-white p-2 rounded-xl border border-emerald-300 bg-emerald-50/40">
+                        <span className="text-[10px] uppercase font-bold text-emerald-800 block">
+                          3. Total Hafalan
+                        </span>
+                        <span className="text-sm font-black text-emerald-900 block mt-0.5">
+                          {santriTotalHafalan} Halaman
+                        </span>
+                        <span className="text-[10px] text-emerald-700 font-bold">
+                          {smartKonversiTotal.label}
+                        </span>
+                      </div>
+                      <div className="bg-white p-2 rounded-xl border border-slate-200">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                          4. Posisi Terakhir
+                        </span>
+                        <span className="text-sm font-black text-slate-800 block mt-0.5">
+                          Halaman {santriPosisiTerakhir}
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-medium">
+                          Juz {getJuzByPage(santriPosisiTerakhir)}
+                        </span>
+                      </div>
+                      <div className="bg-white p-2 rounded-xl border border-slate-200 col-span-2 sm:col-span-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                          5. Target Akhir
+                        </span>
+                        <span className="text-sm font-black text-slate-800 block mt-0.5">
+                          {activeSantri.targetJuz ?? 30} Juz
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-medium">
+                          600 Halaman
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Jenis Setoran (Metode Al-Pakistani) */}
                 <div>
@@ -915,13 +1055,13 @@ export function TahfizhModule({
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
                       <div className="bg-white/95 p-2.5 rounded-xl border border-emerald-200/80 text-center shadow-2xs">
                         <span className="text-[10px] uppercase font-bold text-slate-500 block">
-                          Modal Awal
+                          Total Saat Ini
                         </span>
                         <span className="text-base font-black text-slate-900 block mt-0.5">
-                          {santriModalAwal} Hlm
+                          {santriTotalHafalan} Hlm
                         </span>
                         <span className="text-[10px] text-emerald-700 font-semibold block mt-0.5">
-                          {smartKonversiAwal.label}
+                          {smartKonversiTotal.label}
                         </span>
                       </div>
 
@@ -945,7 +1085,7 @@ export function TahfizhModule({
                           {akumulasiHalamanBaru} Hlm
                         </span>
                         <span className="text-[10px] text-slate-500 block mt-0.5">
-                          {santriModalAwal} + {parsedTambahanHlm}
+                          {santriTotalHafalan} + {parsedTambahanHlm}
                         </span>
                       </div>
 
@@ -1389,14 +1529,14 @@ export function TahfizhModule({
                 <Button
                   variant="primary"
                   onClick={handleSaveSetoran}
-                  disabled={isPending || !activeSantri}
+                  disabled={isSubmitting || isPending || !activeSantri}
                   className="w-full min-h-[48px] font-bold text-sm bg-[#0E7C3A] hover:bg-[#0B642E] shadow-xs gap-2 disabled:bg-slate-300 disabled:cursor-not-allowed"
                 >
                   <BookCheck className="h-4 w-4" />
                   {!activeSantri
                     ? "Pilih Santri Terlebih Dahulu"
-                    : isPending
-                    ? "Menyimpan ke Server..."
+                    : isSubmitting || isPending
+                    ? "Sedang menyimpan..."
                     : "Simpan Setoran Santri"}
                 </Button>
               </CardContent>
@@ -1950,6 +2090,78 @@ export function TahfizhModule({
         description={waDialog.description}
         onClose={() => setWaDialog((prev) => ({ ...prev, isOpen: false }))}
       />
+
+      {/* Peringatan Lompatan Urutan Hafalan (Sequence Jump Warning Dialog - Poin 8) */}
+      {jumpWarningModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-amber-200 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-amber-600 mb-3">
+              <span className="p-2 bg-amber-100 rounded-xl text-amber-700">
+                <AlertTriangle className="h-6 w-6" />
+              </span>
+              <div>
+                <h3 className="font-bold text-base text-slate-900 font-heading">
+                  Peringatan Urutan Hafalan
+                </h3>
+                <span className="text-xs text-amber-700 font-semibold">
+                  Lompatan Halaman Terdeteksi
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200/80 mb-4 text-xs text-amber-950 leading-relaxed space-y-1.5">
+              <p>
+                Halaman yang dimasukkan melompat dari <strong>halaman {jumpWarningModal.posisiTerakhir}</strong> ke <strong>halaman {jumpWarningModal.halamanInput}</strong>.
+              </p>
+              <p className="text-amber-800 font-medium">
+                Pastikan data sudah benar.
+              </p>
+            </div>
+
+            <div className="mb-5">
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Alasan Lompatan Halaman <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={jumpWarningModal.alasan}
+                onChange={(e) => setJumpWarningModal((prev) => ({ ...prev, alasan: e.target.value }))}
+                placeholder="Masukkan alasan lompatan halaman (misal: akselerasi materi, setoran susulan, atau pengujian mandiri)..."
+                rows={3}
+                className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+              />
+              <span className="text-[11px] text-slate-400 block mt-1">
+                Minimal 5 karakter. Alasan ini akan dicatat ke dalam audit log resmi.
+              </span>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setJumpWarningModal((prev) => ({ ...prev, isOpen: false }))}
+                className="text-xs font-bold min-h-[38px]"
+              >
+                Kembali periksa
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                disabled={isSubmitting || !jumpWarningModal.alasan.trim() || jumpWarningModal.alasan.trim().length < 5}
+                onClick={() => {
+                  const alasan = jumpWarningModal.alasan.trim();
+                  setJumpWarningModal((prev) => ({ ...prev, isOpen: false }));
+                  executeSaveSetoran({ alasanLompatanHalaman: alasan });
+                }}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs min-h-[38px] disabled:bg-slate-300"
+              >
+                {isSubmitting ? "Sedang menyimpan..." : "Tetap simpan dengan alasan"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
