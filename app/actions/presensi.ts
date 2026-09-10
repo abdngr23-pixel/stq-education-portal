@@ -2,7 +2,7 @@
 
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
-import { StatusAbsensi } from "@prisma/client";
+import { StatusAbsensi, KategoriCapaian } from "@prisma/client";
 import { batchPresensiSchema } from "@/lib/validations";
 import { getTodayWITADateString, getWITADayRange, parseWITADate } from "@/lib/wita-date";
 
@@ -262,6 +262,222 @@ export async function getRiwayatPresensiHarianAction(tanggalStr?: string, kegiat
     return { success: true, data: records };
   } catch (error) {
     console.error("Gagal mengambil riwayat presensi:", error);
+    return { success: false, data: [] };
+  }
+}
+
+export interface MutabaahHarianItem {
+  santriId: string;
+  shalatBerjamaah: boolean;
+  qiyamulLail: boolean;
+  rawatib: boolean;
+  dhuha: boolean;
+  dzikirPagiPetang: boolean;
+  tilawahMandiri: boolean;
+  literasiHalaman: number;
+  catatan?: string;
+}
+
+export interface CatatMutabaahHarianInput {
+  tanggal?: string;
+  items: MutabaahHarianItem[];
+}
+
+/**
+ * Server Action: Catat Mutaba'ah Harian Santri (7 Komponen)
+ * Batch transaksional, fail-closed authorization, dukungan angka halaman literasi
+ */
+export async function catatMutabaahHarianAction(input: CatatMutabaahHarianInput) {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
+  }
+
+  // Wewenang: MT, MK, PH, Petugas Putri, KS, ADM (fail-closed)
+  const isStaffPresensi = ["MK", "MT", "PH", "OSDA", "KS", "ADM"].includes(session.role);
+  let isPetugasPutri = Boolean(session.isPetugasPresensiPutri);
+
+  if (!isPetugasPutri && session.role === "ST" && session.userId && !session.userId.startsWith("user_")) {
+    try {
+      const userDb = await prisma.user.findUnique({
+        where: { id: session.userId },
+        select: { isPetugasPresensiPutri: true, santri: { select: { jenisKelamin: true } } },
+      });
+      if (userDb?.isPetugasPresensiPutri && userDb?.santri?.jenisKelamin === "P") {
+        isPetugasPutri = true;
+      }
+    } catch {
+      // DB offline fallback
+    }
+  }
+
+  if (!isStaffPresensi && !isPetugasPutri) {
+    return {
+      success: false,
+      message: `Akses Ditolak: Peran '${session.role}' tidak memiliki kewenangan mencatat Mutaba'ah Harian.`,
+    };
+  }
+
+  if (!input.items || input.items.length === 0) {
+    return { success: false, message: "Tidak ada data santri yang dikirimkan." };
+  }
+
+  // Fail-closed untuk Petugas Presensi Putri: hanya boleh santriwati
+  if (isPetugasPutri && !isStaffPresensi) {
+    const santriTargets = await prisma.santri.findMany({
+      where: { id: { in: input.items.map((i) => i.santriId) } },
+      select: { id: true, nama: true, jenisKelamin: true },
+    });
+    const santriLakiLaki = santriTargets.filter((s) => s.jenisKelamin === "L");
+    if (santriLakiLaki.length > 0) {
+      return {
+        success: false,
+        message: `Akses Ditolak: Petugas Presensi Putri hanya berwenang mencatat santriwati (perempuan).`,
+      };
+    }
+  }
+
+  const tanggalStr = input.tanggal || getTodayWITADateString();
+  const targetDate = parseWITADate(tanggalStr);
+
+  try {
+    const dicatatOleh = session.username || session.name || "Staf Presensi";
+
+    // Transactional Batch Save
+    const results = await prisma.$transaction(async (tx) => {
+      const createdRecords = [];
+
+      for (const item of input.items) {
+        // 1. Qiyamul Lail / Tahajjud
+        const tahajjudRecord = await tx.catatanMutabaahHarian.upsert({
+          where: {
+            santriId_kategori_tanggal: {
+              santriId: item.santriId,
+              kategori: KategoriCapaian.SHOLAT_TAHAJJUD,
+              tanggal: targetDate,
+            },
+          },
+          update: {
+            nilai: item.qiyamulLail ? 1 : 0,
+            catatan: `[Qiyamul Lail: ${item.qiyamulLail ? "Ya" : "Tidak"}] [Shalat Berjamaah: ${item.shalatBerjamaah ? "Ya" : "Tidak"}] [Rawatib: ${item.rawatib ? "Ya" : "Tidak"}]`,
+            dicatatOleh,
+          },
+          create: {
+            santriId: item.santriId,
+            kategori: KategoriCapaian.SHOLAT_TAHAJJUD,
+            tanggal: targetDate,
+            nilai: item.qiyamulLail ? 1 : 0,
+            catatan: `[Qiyamul Lail: ${item.qiyamulLail ? "Ya" : "Tidak"}] [Shalat Berjamaah: ${item.shalatBerjamaah ? "Ya" : "Tidak"}] [Rawatib: ${item.rawatib ? "Ya" : "Tidak"}]`,
+            dicatatOleh,
+          },
+        });
+        createdRecords.push(tahajjudRecord);
+
+        // 2. Sholat Dhuha
+        const dhuhaRecord = await tx.catatanMutabaahHarian.upsert({
+          where: {
+            santriId_kategori_tanggal: {
+              santriId: item.santriId,
+              kategori: KategoriCapaian.SHOLAT_DHUHA,
+              tanggal: targetDate,
+            },
+          },
+          update: {
+            nilai: item.dhuha ? 1 : 0,
+            catatan: `[Dhuha: ${item.dhuha ? "Ya" : "Tidak"}] [Dzikir: ${item.dzikirPagiPetang ? "Ya" : "Tidak"}] [Tilawah: ${item.tilawahMandiri ? "Ya" : "Tidak"}]`,
+            dicatatOleh,
+          },
+          create: {
+            santriId: item.santriId,
+            kategori: KategoriCapaian.SHOLAT_DHUHA,
+            tanggal: targetDate,
+            nilai: item.dhuha ? 1 : 0,
+            catatan: `[Dhuha: ${item.dhuha ? "Ya" : "Tidak"}] [Dzikir: ${item.dzikirPagiPetang ? "Ya" : "Tidak"}] [Tilawah: ${item.tilawahMandiri ? "Ya" : "Tidak"}]`,
+            dicatatOleh,
+          },
+        });
+        createdRecords.push(dhuhaRecord);
+
+        // 3. Literasi Kitab / Buku (Halaman)
+        const literasiRecord = await tx.catatanMutabaahHarian.upsert({
+          where: {
+            santriId_kategori_tanggal: {
+              santriId: item.santriId,
+              kategori: KategoriCapaian.LITERASI,
+              tanggal: targetDate,
+            },
+          },
+          update: {
+            nilai: item.literasiHalaman || 0,
+            catatan: item.catatan || null,
+            dicatatOleh,
+          },
+          create: {
+            santriId: item.santriId,
+            kategori: KategoriCapaian.LITERASI,
+            tanggal: targetDate,
+            nilai: item.literasiHalaman || 0,
+            catatan: item.catatan || null,
+            dicatatOleh,
+          },
+        });
+        createdRecords.push(literasiRecord);
+      }
+
+      return createdRecords;
+    });
+
+    await recordAuditLog({
+      userId: session.userId,
+      action: "CATAT_MUTABAAH_HARIAN",
+      entity: "CatatanMutabaahHarian",
+      entityId: `${tanggalStr}-${input.items.length}_santri`,
+      details: {
+        tanggal: tanggalStr,
+        totalSantri: input.items.length,
+        totalRecords: results.length,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Mutaba'ah Harian untuk ${input.items.length} santri berhasil disimpan.`,
+      data: { totalDiproses: input.items.length, totalRecords: results.length },
+    };
+  } catch (error) {
+    console.error("Gagal mencatat mutabaah harian:", error);
+    return { success: false, message: "Terjadi kesalahan saat menyimpan mutaba'ah harian ke basis data." };
+  }
+}
+
+/**
+ * Mengambil rekap catatan Mutaba'ah Harian pada tanggal tertentu
+ */
+export async function getMutabaahHarianListAction(tanggalStr?: string) {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Sesi telah berakhir.", data: [] };
+  }
+
+  const dateStr = tanggalStr || getTodayWITADateString();
+  const targetDate = parseWITADate(dateStr);
+
+  try {
+    const list = await prisma.catatanMutabaahHarian.findMany({
+      where: {
+        tanggal: targetDate,
+      },
+      include: {
+        santri: {
+          select: { id: true, nama: true, nis: true, kelas: true, halaqohId: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return { success: true, data: list };
+  } catch (error) {
+    console.error("Gagal mengambil catatan mutabaah:", error);
     return { success: false, data: [] };
   }
 }

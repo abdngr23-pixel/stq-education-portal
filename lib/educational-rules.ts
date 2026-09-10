@@ -219,3 +219,24 @@ export function validasiIkhtibarTahap2(
     }.`,
   };
 }
+
+/**
+ * 6. Mata Pelajaran Resmi Kepesantrenan STQ DUC
+ */
+export const KEPESANTRENAN_KODE_MAPEL: string[] = [
+  "KPS-ARB", // Bahasa Arab
+  "KPS-FQH", // Fikih
+  "KPS-TFS", // Tafsir
+  "KPS-TJW", // Tajwid
+  "KPS-AQD", // Aqidah Islamiyah
+];
+
+/**
+ * Konversi nilai angka 0-100 ke predikat huruf A/B/C/D materi kepesantrenan
+ */
+export function konversiAngkaKeHurufKepesantrenan(angka: number): string {
+  if (angka >= 85) return "A";
+  if (angka >= 75) return "B";
+  if (angka >= 65) return "C";
+  return "D";
+}

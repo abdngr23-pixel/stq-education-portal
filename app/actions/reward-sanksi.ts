@@ -9,15 +9,17 @@ import { StatusHakLibur, JenisTransaksiBintang, StatusSanksiKunjungan } from "@p
  */
 export async function getKebijakanRewardSanksiAction() {
   try {
-    let kebijakan = await prisma.kebijakanRewardSanksi.findFirst({
+    const kebijakan = await prisma.kebijakanRewardSanksi.findFirst({
       where: { isActive: true },
       orderBy: { createdAt: "desc" },
     });
 
     if (!kebijakan) {
-      // Buat default kebijakan jika belum ada
-      kebijakan = await prisma.kebijakanRewardSanksi.create({
+      // Kembalikan konfigurasi default resmi tanpa menulis ke DB pada aksi GET (Read-Only)
+      return {
+        success: true,
         data: {
+          id: "DEFAULT_STQ_DUC",
           nama: "Kebijakan Standar Pesantren STQ DUC",
           minNilaiTasmi: 80.0,
           minNilaiSimaan: 85.0,
@@ -25,11 +27,11 @@ export async function getKebijakanRewardSanksiAction() {
           bintangSimaan: 2,
           hakLiburTasmiHari: 1,
           hakLiburSimaanHari: 2,
-          minPersenTargetBulanan: 100.0,
+          minPersenTargetBulanan: 80.0,
           durasiKehilanganKunjunganHari: 30,
           isActive: true,
         },
-      });
+      };
     }
 
     return { success: true, data: kebijakan };
@@ -330,13 +332,16 @@ export async function previewFinalisasiBulananAction(params: {
     const minPersen = kebijakan?.minPersenTargetBulanan ?? 100.0;
     const durasiHari = kebijakan?.durasiKehilanganKunjunganHari ?? 30;
 
-    // Hitung range tanggal bulan
+    // Hitung range tanggal bulan dalam zona WITA (UTC+8)
     const [thnAwalStr, thnAkhirStr] = params.tahunAjaran.split("/");
     const tahunKalender =
       params.bulan >= 7 ? parseInt(thnAwalStr, 10) || 2026 : parseInt(thnAkhirStr, 10) || 2027;
 
-    const startDate = new Date(tahunKalender, params.bulan - 1, 1);
-    const endDate = new Date(tahunKalender, params.bulan, 0, 23, 59, 59, 999);
+    // Batas Awal Bulan 00:00:00 WITA
+    const startDate = new Date(Date.UTC(tahunKalender, params.bulan - 1, 1, -8, 0, 0, 0));
+    // Batas Akhir Bulan 23:59:59.999 WITA
+    const lastDayOfMonth = new Date(tahunKalender, params.bulan, 0).getDate();
+    const endDate = new Date(Date.UTC(tahunKalender, params.bulan - 1, lastDayOfMonth, 15, 59, 59, 999));
 
     const santriList = await prisma.santri.findMany({
       where: { status: "AKTIF" },
@@ -356,8 +361,10 @@ export async function previewFinalisasiBulananAction(params: {
 
     const hasilPreview = await Promise.all(
       santriList.map(async (s) => {
-        // Target bulanan santri (default target proses bulanan atau proporsional harian x 25 hari)
-        const targetBulanan = s.targetList[0]?.targetBulanan ?? 20.0;
+        // Target bulanan santri: jangan otomatis pakai 20 halaman jika belum ditetapkan
+        const rawTarget = s.targetList[0]?.targetBulanan;
+        const hasValidTarget = typeof rawTarget === "number" && rawTarget > 0;
+        const targetBulanan = hasValidTarget ? rawTarget : null;
 
         // Ambil setoran riil tersimpan di bulan ini (SABAQ)
         const setoranBulan = await prisma.setoranTahfizh.aggregate({
@@ -370,17 +377,26 @@ export async function previewFinalisasiBulananAction(params: {
         });
 
         const capaianHalaman = Number(setoranBulan._sum.jumlahHalaman ?? 0);
-        const persentase = targetBulanan > 0
-          ? Math.round((capaianHalaman / targetBulanan) * 1000) / 10
-          : 0;
+        let persentase = 0;
+        let isTercapai = false;
+        let statusSanksi: StatusSanksiKunjungan = StatusSanksiKunjungan.BEBAS;
+        let statusKeterangan = "Target Tercapai";
 
-        const isTercapai = persentase >= minPersen;
+        if (!hasValidTarget) {
+          // Aturan: Santri tanpa target valid masuk status 'Perlu penetapan target', bukan disanksi
+          statusSanksi = StatusSanksiKunjungan.DIKECUALIKAN;
+          statusKeterangan = "Perlu penetapan target";
+          isTercapai = false;
+        } else {
+          persentase = Math.round((capaianHalaman / (targetBulanan as number)) * 1000) / 10;
+          isTercapai = persentase >= minPersen;
+          statusSanksi = isTercapai
+            ? StatusSanksiKunjungan.BEBAS
+            : StatusSanksiKunjungan.KEHILANGAN_KUNJUNGAN;
+          statusKeterangan = isTercapai ? "Target Tercapai" : "Belum Capai Target";
+        }
+
         const finalisasiExisting = s.finalisasiBulananList[0];
-
-        let statusSanksi: StatusSanksiKunjungan = isTercapai
-          ? StatusSanksiKunjungan.BEBAS
-          : StatusSanksiKunjungan.KEHILANGAN_KUNJUNGAN;
-
         if (finalisasiExisting && finalisasiExisting.isOverride) {
           statusSanksi = finalisasiExisting.statusSanksiKunjungan;
         }
@@ -391,6 +407,8 @@ export async function previewFinalisasiBulananAction(params: {
           nama: s.nama,
           halaqoh: s.halaqoh?.nama || "-",
           targetHalaman: targetBulanan,
+          hasValidTarget,
+          statusKeterangan,
           capaianHalaman,
           persentase,
           isTercapai,
@@ -469,8 +487,28 @@ export async function finalisasiLaporanBulananAction(params: {
       const isOverride = Boolean(override);
       const effectiveStatusSanksi = override
         ? override.statusSanksi
-        : (item.isTercapai ? StatusSanksiKunjungan.BEBAS : StatusSanksiKunjungan.KEHILANGAN_KUNJUNGAN);
+        : item.statusSanksi;
       const alasanOverride = override ? override.alasanOverride : null;
+
+      const existingRecord = await prisma.finalisasiBulananSantri.findUnique({
+        where: {
+          santriId_bulan_tahunAjaran: {
+            santriId: item.santriId,
+            bulan: params.bulan,
+            tahunAjaran: params.tahunAjaran,
+          },
+        },
+      });
+
+      // Aturan: Jangan memperpanjang sanksi jika finalisasi dijalankan ulang (Idempotent date preservation)
+      const tglMulai =
+        effectiveStatusSanksi === StatusSanksiKunjungan.KEHILANGAN_KUNJUNGAN
+          ? existingRecord?.tanggalMulaiSanksi || now
+          : null;
+      const tglSelesai =
+        effectiveStatusSanksi === StatusSanksiKunjungan.KEHILANGAN_KUNJUNGAN
+          ? existingRecord?.tanggalSelesaiSanksi || tanggalSelesaiSanksi
+          : null;
 
       const rec = await prisma.finalisasiBulananSantri.upsert({
         where: {
@@ -484,25 +522,25 @@ export async function finalisasiLaporanBulananAction(params: {
           santriId: item.santriId,
           bulan: params.bulan,
           tahunAjaran: params.tahunAjaran,
-          targetHalaman: item.targetHalaman,
-          capaianHalaman: item.capaianHalaman,
-          persentase: item.persentase,
+          targetHalaman: item.targetHalaman ?? 0,
+          capaianHalaman: item.capaianHalaman ?? 0,
+          persentase: item.persentase ?? 0,
           isTercapai: item.isTercapai,
           statusSanksiKunjungan: effectiveStatusSanksi,
-          tanggalMulaiSanksi: effectiveStatusSanksi === StatusSanksiKunjungan.KEHILANGAN_KUNJUNGAN ? now : null,
-          tanggalSelesaiSanksi: effectiveStatusSanksi === StatusSanksiKunjungan.KEHILANGAN_KUNJUNGAN ? tanggalSelesaiSanksi : null,
+          tanggalMulaiSanksi: tglMulai,
+          tanggalSelesaiSanksi: tglSelesai,
           isOverride,
           alasanOverride,
           difinalisasiOlehId: session.userId,
         },
         update: {
-          targetHalaman: item.targetHalaman,
-          capaianHalaman: item.capaianHalaman,
-          persentase: item.persentase,
+          targetHalaman: item.targetHalaman ?? 0,
+          capaianHalaman: item.capaianHalaman ?? 0,
+          persentase: item.persentase ?? 0,
           isTercapai: item.isTercapai,
           statusSanksiKunjungan: effectiveStatusSanksi,
-          tanggalMulaiSanksi: effectiveStatusSanksi === StatusSanksiKunjungan.KEHILANGAN_KUNJUNGAN ? now : null,
-          tanggalSelesaiSanksi: effectiveStatusSanksi === StatusSanksiKunjungan.KEHILANGAN_KUNJUNGAN ? tanggalSelesaiSanksi : null,
+          tanggalMulaiSanksi: tglMulai,
+          tanggalSelesaiSanksi: tglSelesai,
           isOverride,
           alasanOverride,
           difinalisasiOlehId: session.userId,
@@ -527,14 +565,120 @@ export async function finalisasiLaporanBulananAction(params: {
       },
     });
 
+    const totalDiproses = finalizedRecords.length;
+    const totalDisanksi = finalizedRecords.filter(
+      (r) => r.statusSanksiKunjungan === StatusSanksiKunjungan.KEHILANGAN_KUNJUNGAN
+    ).length;
+    const totalBebas = finalizedRecords.filter(
+      (r) => r.statusSanksiKunjungan === StatusSanksiKunjungan.BEBAS
+    ).length;
+
     return {
       success: true,
       message: `Finalisasi bulanan (Bulan ${params.bulan}, TA ${params.tahunAjaran}) berhasil disimpan secara idempotent untuk ${finalizedRecords.length} santri.`,
-      data: finalizedRecords,
+      data: {
+        records: finalizedRecords,
+        totalDiproses,
+        totalDisanksi,
+        totalBebas,
+      },
     };
   } catch (error) {
     console.error("Gagal memfinalisasi bulanan:", error);
     return { success: false, message: "Terjadi kesalahan saat memfinalisasi laporan bulanan." };
+  }
+}
+
+/**
+ * Override/Dispensasi Sanksi Bulanan Santri (Khusus Mudir - Role KS)
+ */
+export async function overrideSanksiBulananAction(params: {
+  santriId: string;
+  bulan: number;
+  tahunAjaran: string;
+  statusSanksiBaru: "BEBAS" | "KEHILANGAN_KUNJUNGAN" | "DIKECUALIKAN";
+  alasan: string;
+}) {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
+  }
+
+  if (session.role !== "KS") {
+    return {
+      success: false,
+      message: "Akses Ditolak: Hanya Kepala Sekolah/Mudir (KS) yang memiliki kewenangan override/dispensasi sanksi.",
+    };
+  }
+
+  if (!params.alasan || params.alasan.trim().length < 5) {
+    return { success: false, message: "Alasan dispensasi/override wajib diisi minimal 5 karakter." };
+  }
+
+  try {
+    const statusEnum = params.statusSanksiBaru as StatusSanksiKunjungan;
+    const existing = await prisma.finalisasiBulananSantri.findUnique({
+      where: {
+        santriId_bulan_tahunAjaran: {
+          santriId: params.santriId,
+          bulan: params.bulan,
+          tahunAjaran: params.tahunAjaran,
+        },
+      },
+    });
+
+    let updated;
+    if (existing) {
+      updated = await prisma.finalisasiBulananSantri.update({
+        where: { id: existing.id },
+        data: {
+          statusSanksiKunjungan: statusEnum,
+          isOverride: true,
+          alasanOverride: params.alasan,
+          difinalisasiOlehId: session.userId,
+        },
+      });
+    } else {
+      updated = await prisma.finalisasiBulananSantri.create({
+        data: {
+          santriId: params.santriId,
+          bulan: params.bulan,
+          tahunAjaran: params.tahunAjaran,
+          targetHalaman: 0,
+          capaianHalaman: 0,
+          persentase: 0,
+          isTercapai: statusEnum === StatusSanksiKunjungan.BEBAS,
+          statusSanksiKunjungan: statusEnum,
+          isOverride: true,
+          alasanOverride: params.alasan,
+          difinalisasiOlehId: session.userId,
+        },
+      });
+    }
+
+    await recordAuditLog({
+      userId: session.userId,
+      action: "OVERRIDE_SANKSI_BULANAN",
+      entity: "FinalisasiBulananSantri",
+      entityId: updated.id,
+      details: {
+        santriId: params.santriId,
+        bulan: params.bulan,
+        tahunAjaran: params.tahunAjaran,
+        statusSanksiBaru: statusEnum,
+        alasan: params.alasan,
+        overrideOleh: session.username,
+      },
+    });
+
+    return {
+      success: true,
+      message: "Dispensasi/override sanksi Mudir berhasil disimpan ke pangkalan data.",
+      data: updated,
+    };
+  } catch (error) {
+    console.error("Gagal menyimpan override sanksi bulanan:", error);
+    return { success: false, message: "Terjadi kesalahan saat menyimpan override sanksi." };
   }
 }
 
@@ -590,5 +734,60 @@ export async function batalkanFinalisasiBulananAction(params: {
   } catch (error) {
     console.error("Gagal membatalkan finalisasi bulanan:", error);
     return { success: false, message: "Terjadi kesalahan saat membatalkan finalisasi." };
+  }
+}
+
+/**
+ * Mengambil daftar ujian Tasmi' dan Sima'an untuk panel evaluasi & reward
+ */
+export async function getDaftarTasmiSimaanEligibleAction() {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Sesi telah berakhir. Silakan login kembali.", data: [] };
+  }
+
+  try {
+    const list = await prisma.tasmiSimaan.findMany({
+      include: {
+        santri: {
+          select: { id: true, nama: true, nis: true, kelas: true },
+        },
+        musyrif: {
+          select: { id: true, nama: true },
+        },
+        hakLiburList: {
+          select: { id: true, status: true, jumlahHari: true },
+        },
+        transaksiBintangList: {
+          select: { id: true, jenis: true, jumlahBintang: true },
+        },
+      },
+      orderBy: { tanggal: "desc" },
+      take: 50,
+    });
+
+    return {
+      success: true,
+      data: list.map((item) => ({
+        id: item.id,
+        santriId: item.santriId,
+        santriNama: item.santri.nama,
+        santriNis: item.santri.nis,
+        kelas: item.santri.kelas,
+        penguji: item.musyrif.nama,
+        tanggal: item.tanggal,
+        jenis: item.jenis,
+        juz: item.juz,
+        nilai: item.nilai,
+        predikat: item.predikat,
+        catatan: item.catatan,
+        isRewarded: item.hakLiburList.length > 0 && item.hakLiburList.some((h) => h.status !== "DIBATALKAN"),
+        hakLibur: item.hakLiburList[0] || null,
+        bintang: item.transaksiBintangList[0] || null,
+      })),
+    };
+  } catch (error) {
+    console.error("Gagal mengambil daftar tasmi simaan:", error);
+    return { success: false, message: "Gagal memuat data dari database.", data: [] };
   }
 }

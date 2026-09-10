@@ -7,7 +7,13 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { catatPelanggaranAction, putihkanSPAction, getPelanggaranListAction, getSPListAction } from "@/app/actions/kedisiplinan";
+import {
+  catatPelanggaranAction,
+  putihkanSPAction,
+  getPelanggaranListAction,
+  getSPListAction,
+  getMasterPelanggaranListAction,
+} from "@/app/actions/kedisiplinan";
 import { evaluasiLevelSP, STATUS_ATURAN_PENDIDIKAN } from "@/lib/educational-rules";
 import { PrintSP } from "@/components/print/print-sp";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
@@ -42,73 +48,63 @@ export interface SPRecord {
   nomorSP: string;
   santriNama: string;
   santriNis?: string;
-  tingkat: number;
+  tingkat: number | string;
   totalPoin: number;
   tanggal: string;
   status: "AKTIF" | "DIPUTIHKAN";
 }
 
+export interface MasterKategoriItem {
+  id: string;
+  kode: string;
+  nama: string;
+  tingkat: string;
+  sanksi?: string | null;
+  poinDasar?: number | null;
+  deskripsi?: string | null;
+}
+
 export interface KedisiplinanModuleProps {
   userRole: Role;
-  currentUserName: string;
+  currentUserName?: string;
   santriList: DashboardSantriSummary[];
+  onUpdateSantriList?: () => void;
 }
 
 export function KedisiplinanModule({
   userRole,
-  currentUserName,
+  currentUserName = "Staf Pengasuhan",
   santriList,
+  onUpdateSantriList,
 }: KedisiplinanModuleProps) {
   const [isPending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // Data Pelanggaran & SP
-  const [pelanggaranList, setPelanggaranList] = useState<PelanggaranRecord[]>([
-    {
-      id: "p-1",
-      kode: "PLG-000001",
-      santriNama: "Achmad Sufiyan",
-      santriNis: "SAN-0015",
-      kategori: "Terlambat Sholat Berjamaah",
-      poin: 5,
-      isPengulangan: false,
-      tanggal: "05/09/2026",
-      pencatat: "Ust. Mujaddid (MK)",
-      kronologi: "Terlambat tiba di masjid saat qomat sholat subuh.",
-    },
-    {
-      id: "p-2",
-      kode: "PLG-000002",
-      santriNama: "Achmad Sufiyan",
-      santriNis: "SAN-0015",
-      kategori: "Terlambat Sholat Berjamaah",
-      poin: 10,
-      isPengulangan: true,
-      tanggal: "07/09/2026",
-      pencatat: "Ust. Mujaddid (MK)",
-      kronologi: "Pengulangan pelanggaran adab shalat subuh (Poin berlipat x2).",
-    },
-  ]);
+  const [pelanggaranList, setPelanggaranList] = useState<PelanggaranRecord[]>([]);
+  const [spList, setSpList] = useState<SPRecord[]>([]);
 
-  const [spList, setSpList] = useState<SPRecord[]>([
-    {
-      id: "sp-1",
-      nomorSP: "001/SP-1/DUC/2026",
-      santriNama: "Achmad Sufiyan",
-      santriNis: "SAN-0015",
-      tingkat: 1,
-      totalPoin: 25,
-      tanggal: "07/09/2026",
-      status: "AKTIF",
-    },
-  ]);
+  // 44 Master Data Kategori Pelanggaran dari Database
+  const [masterKategoriList, setMasterKategoriList] = useState<MasterKategoriItem[]>([]);
+  const [selectedKategoriId, setSelectedKategoriId] = useState<string>("");
+  const [selectedSantriId, setSelectedSantriId] = useState<string>("");
+  const effectiveSantriId =
+    selectedSantriId && santriList.some((s) => s.id === selectedSantriId)
+      ? selectedSantriId
+      : santriList[0]?.id || "";
+  const [kategoriSearchTerm, setKategoriSearchTerm] = useState<string>("");
+  const [kategoriTingkatFilter, setKategoriTingkatFilter] = useState<string>("ALL");
 
-  // Load pelanggaran & SP riil dari server action on mount
+  // Load pelanggaran, SP, dan 44 master kategori riil dari server action on mount
   useEffect(() => {
     let isMounted = true;
-    Promise.all([getPelanggaranListAction(), getSPListAction()]).then(([pRes, spRes]) => {
+    Promise.all([
+      getPelanggaranListAction(),
+      getSPListAction(),
+      getMasterPelanggaranListAction(),
+    ]).then(([pRes, spRes, mRes]) => {
       if (!isMounted) return;
-      if (pRes.success && pRes.data && pRes.data.length > 0) {
+      if (pRes.success && pRes.data) {
         setPelanggaranList(
           pRes.data.map((p) => ({
             id: p.id,
@@ -124,7 +120,7 @@ export function KedisiplinanModule({
           }))
         );
       }
-      if (spRes.success && spRes.data && spRes.data.length > 0) {
+      if (spRes.success && spRes.data) {
         setSpList(
           spRes.data.map((sp) => ({
             id: sp.id,
@@ -138,6 +134,10 @@ export function KedisiplinanModule({
           }))
         );
       }
+      if (mRes.success && mRes.data && mRes.data.length > 0) {
+        setMasterKategoriList(mRes.data);
+        setSelectedKategoriId(mRes.data[0].id);
+      }
     });
     return () => {
       isMounted = false;
@@ -146,8 +146,6 @@ export function KedisiplinanModule({
 
   // Dialog Tambah Pelanggaran
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [selectedSantriNis, setSelectedSantriNis] = useState(santriList[0]?.nis || "");
-  const [kategoriPelanggaran, setKategoriPelanggaran] = useState<"PLG_SHOLAT" | "PLG_GADGET" | "PLG_PIKET">("PLG_SHOLAT");
   const [kronologi, setKronologi] = useState("");
 
   // Dialog Detail / Kronologi
@@ -182,19 +180,36 @@ export function KedisiplinanModule({
       p.kategori.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const filteredKategoriOptions = masterKategoriList.filter((k) => {
+    const matchTingkat =
+      kategoriTingkatFilter === "ALL" || k.tingkat === kategoriTingkatFilter;
+    const matchSearch =
+      k.nama.toLowerCase().includes(kategoriSearchTerm.toLowerCase()) ||
+      k.kode.toLowerCase().includes(kategoriSearchTerm.toLowerCase());
+    return matchTingkat && matchSearch;
+  });
+
+  const activeKategori = masterKategoriList.find((k) => k.id === selectedKategoriId) || null;
+
   // Handler Submit Pelanggaran
   const handleCatatPelanggaran = () => {
     setFeedback(null);
-    const target = santriList.find((s) => s.nis === selectedSantriNis);
+    const target = santriList.find((s) => s.id === effectiveSantriId);
     if (!target) {
       setFeedback({ type: "error", message: "Silakan pilih santri terlebih dahulu." });
+      return;
+    }
+
+    const selectedKat = masterKategoriList.find((k) => k.id === selectedKategoriId);
+    if (!selectedKat) {
+      setFeedback({ type: "error", message: "Silakan pilih kategori pelanggaran terlebih dahulu." });
       return;
     }
 
     startTransition(async () => {
       const res = await catatPelanggaranAction({
         santriId: target.id,
-        kategoriId: kategoriPelanggaran,
+        kategoriId: selectedKat.id,
         kronologi: kronologi || "Pelanggaran tata tertib asrama tercatat.",
       });
 
@@ -207,12 +222,7 @@ export function KedisiplinanModule({
           kode: res.data.kodePelanggaran,
           santriNama: target.nama,
           santriNis: target.nis,
-          kategori:
-            kategoriPelanggaran === "PLG_SHOLAT"
-              ? "Terlambat Sholat Berjamaah"
-              : kategoriPelanggaran === "PLG_GADGET"
-              ? "Pelanggaran Gadget / HP"
-              : "Kelalaian Piket Asrama",
+          kategori: selectedKat.nama,
           poin,
           isPengulangan: isRepeat,
           tanggal: new Date().toLocaleDateString("id-ID"),
@@ -221,58 +231,64 @@ export function KedisiplinanModule({
         };
 
         setPelanggaranList((prev) => [newRecord, ...prev]);
+        onUpdateSantriList?.();
 
         // Cek apakah menerbitkan SP baru
+        getSPListAction().then((spRes) => {
+          if (spRes.success && spRes.data) {
+            setSpList(
+              spRes.data.map((sp) => ({
+                id: sp.id,
+                nomorSP: sp.nomorSP,
+                santriNama: sp.santriNama,
+                santriNis: sp.santriNis,
+                tingkat: sp.tingkat,
+                totalPoin: sp.totalPoin,
+                tanggal: sp.tanggal,
+                status: sp.status as "AKTIF" | "DIPUTIHKAN",
+              }))
+            );
+          }
+        });
+
+        // Siapkan WA peringatan dengan nomor wali santri riil jika ada SP
         const spLevel = res.totalPoin ? evaluasiLevelSP(res.totalPoin) : null;
         if (spLevel) {
           const tingkatNum = spLevel === "SP3" ? 3 : spLevel === "SP2" ? 2 : 1;
-          getSPListAction().then((spRes) => {
-            if (spRes.success && spRes.data && spRes.data.length > 0) {
-              setSpList(
-                spRes.data.map((sp) => ({
-                  id: sp.id,
-                  nomorSP: sp.nomorSP,
-                  santriNama: sp.santriNama,
-                  santriNis: sp.santriNis,
-                  tingkat: sp.tingkat,
-                  totalPoin: sp.totalPoin,
-                  tanggal: sp.tanggal,
-                  status: sp.status as "AKTIF" | "DIPUTIHKAN",
-                }))
-              );
-            }
-          });
-
-          // Siapkan WA peringatan dengan nomor wali santri riil
           const waMsg = buildPelanggaranSPWAMessage({
             santriNama: target.nama,
             santriNis: target.nis,
             kelas: target.kelas,
-            perihal: `Pemberitahuan Akumulasi Poin Kedisiplinan & Penerbitan ${spLevel}`,
-            totalPoin: res.totalPoin || poin,
-            kategori: newRecord.kategori,
             tingkatSP: tingkatNum,
-            pencatat: currentUserName,
+            totalPoin: res.totalPoin || poin,
+            kategori: selectedKat.tingkat,
+            perihal: selectedKat.nama,
           });
 
-          setWaDialog({
-            isOpen: true,
-            phone: target.noHpWali || "081234567890",
-            recipientName: target.namaWali ? `${target.namaWali} (Wali ${target.nama})` : `Wali dari ${target.nama}`,
-            message: waMsg,
-            title: `Peringatan ${spLevel} untuk ${target.nama}`,
-            description: "Akumulasi poin telah melampaui batas ambang. Hubungi wali santri.",
-          });
+          const guardianPhone = target.noHpWali || "";
+          if (guardianPhone) {
+            setWaDialog({
+              isOpen: true,
+              phone: guardianPhone,
+              recipientName: `Wali dari ${target.nama}`,
+              message: waMsg,
+              title: `Peringatan Resmi (SP-${tingkatNum}) untuk Wali Santri`,
+              description: `Kirim notifikasi surat peringatan resmi untuk ${target.nama} via WhatsApp.`,
+            });
+          }
         }
 
-        setShowAddDialog(false);
-        setKronologi("");
         setFeedback({
           type: "success",
-          message: `Pelanggaran ${target.nama} (${res.data.kodePelanggaran}) berhasil dicatat. Poin sanksi: ${poin}${isRepeat ? " (Pengulangan x2)" : ""}.`,
+          message: res.message || `Pelanggaran '${selectedKat.nama}' untuk ${target.nama} berhasil dicatat (+${poin} poin).`,
         });
+        setShowAddDialog(false);
+        setKronologi("");
       } else {
-        setFeedback({ type: "error", message: res.message || "Gagal mencatat pelanggaran." });
+        setFeedback({
+          type: "error",
+          message: res.message || "Gagal mencatat pelanggaran santri.",
+        });
       }
     });
   };
@@ -531,32 +547,96 @@ export function KedisiplinanModule({
                   Pilih Santri
                 </label>
                 <select
-                  value={selectedSantriNis}
-                  onChange={(e) => setSelectedSantriNis(e.target.value)}
+                  value={effectiveSantriId}
+                  onChange={(e) => setSelectedSantriId(e.target.value)}
                   className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold"
                 >
-                  {santriList.map((s) => (
-                    <option key={s.nis} value={s.nis}>
-                      {s.nama} ({s.kelas}) — Poin Saat Ini: {s.poinPelanggaran}
-                    </option>
-                  ))}
+                  {santriList.length === 0 ? (
+                    <option value="">Memuat daftar santri...</option>
+                  ) : (
+                    santriList.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.nama} ({s.kelas}) — Poin Saat Ini: {s.poinPelanggaran}
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Kategori Pelanggaran
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Kategori Pelanggaran (44 Master Resmi STQ DUC)
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-medium">
+                    {masterKategoriList.length} Kategori Tersedia
+                  </span>
+                </div>
+
+                <div className="flex gap-2 mb-2">
+                  <select
+                    value={kategoriTingkatFilter}
+                    onChange={(e) => setKategoriTingkatFilter(e.target.value)}
+                    className="text-xs border rounded-lg px-2 py-1.5 bg-slate-50 text-slate-700 w-1/3"
+                  >
+                    <option value="ALL">Semua Tingkat</option>
+                    <option value="KATEGORI_1">Kategori 1 (Ringan)</option>
+                    <option value="KATEGORI_2">Kategori 2 (Sedang)</option>
+                    <option value="KATEGORI_3">Kategori 3 (Berat/SP)</option>
+                  </select>
+                  <Input
+                    placeholder="Cari nama pelanggaran..."
+                    value={kategoriSearchTerm}
+                    onChange={(e) => setKategoriSearchTerm(e.target.value)}
+                    className="text-xs h-8 flex-1"
+                  />
+                </div>
+
                 <select
-                  value={kategoriPelanggaran}
-                  onChange={(e) => setKategoriPelanggaran(e.target.value as "PLG_SHOLAT" | "PLG_GADGET" | "PLG_PIKET")}
-                  className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold"
+                  value={selectedKategoriId}
+                  onChange={(e) => setSelectedKategoriId(e.target.value)}
+                  className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-semibold text-slate-900 focus:bg-white"
                 >
-                  <option value="PLG_SHOLAT">Terlambat / Masbuk Sholat Berjamaah (5 Poin)</option>
-                  <option value="PLG_PIKET">Kelalaian Piket Asrama / Kamar (5 Poin)</option>
-                  <option value="PLG_GADGET">Pelanggaran Gadget / HP Terlarang (15 Poin)</option>
+                  {filteredKategoriOptions.length === 0 ? (
+                    <option value="">Tidak ada kategori yang cocok</option>
+                  ) : (
+                    filteredKategoriOptions.map((k) => (
+                      <option key={k.id} value={k.id}>
+                        [{k.tingkat}] {k.kode} - {k.nama} ({k.poinDasar ?? 0} Poin)
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
+
+              {/* Preview Metadata Kategori Terpilih */}
+              {activeKategori && (
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800">{activeKategori.nama}</span>
+                    <Badge
+                      className={
+                        activeKategori.tingkat === "KATEGORI_3" || activeKategori.tingkat === "BERAT"
+                          ? "bg-rose-100 text-rose-800 border-none text-[10px]"
+                          : activeKategori.tingkat === "KATEGORI_2"
+                          ? "bg-amber-100 text-amber-800 border-none text-[10px]"
+                          : "bg-blue-100 text-blue-800 border-none text-[10px]"
+                      }
+                    >
+                      {activeKategori.tingkat}
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600">
+                    <div>Poin Sanksi: <strong className="text-slate-800">{activeKategori.poinDasar ?? 0} Poin</strong></div>
+                    <div>Sanksi Standar: <span className="text-slate-700">{activeKategori.sanksi || "-"}</span></div>
+                  </div>
+                  <p className="text-[10px] text-slate-500 italic">
+                    {activeKategori.tingkat === "KATEGORI_3" || activeKategori.tingkat === "BERAT"
+                      ? "⚠️ Pelanggaran berat. Berpotensi langsung memicu SP-1, SP-2, atau SP-3 sesuai riwayat santri."
+                      : "ℹ️ Pelanggaran edukatif / pemberian poin. Kategori 1 dan 2 tidak memicu penerbitan Surat Peringatan (SP)."}
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">

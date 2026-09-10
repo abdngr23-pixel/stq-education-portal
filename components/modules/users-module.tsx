@@ -10,6 +10,7 @@ import {
   KeyRound,
   Search,
   Lock,
+  ShieldCheck,
 } from "lucide-react";
 
 export interface UserAccountItem {
@@ -18,6 +19,9 @@ export interface UserAccountItem {
   role: string;
   nama: string;
   status: string;
+  isPetugasPresensiPutri?: boolean;
+  jenisKelamin?: string;
+  santriId?: string | null;
 }
 
 export interface UsersModuleProps {
@@ -25,6 +29,7 @@ export interface UsersModuleProps {
   userRole: Role;
   onToggleStatus: (userId: string) => Promise<void> | void;
   onResetPassword: (username: string) => Promise<void> | void;
+  onTogglePetugasPutri?: (userId: string) => Promise<void> | void;
   isPending?: boolean;
 }
 
@@ -33,6 +38,7 @@ export function UsersModule({
   userRole,
   onToggleStatus,
   onResetPassword,
+  onTogglePetugasPutri,
   isPending = false,
 }: UsersModuleProps) {
   const [searchTerm, setSearchTerm] = useState("");
@@ -159,9 +165,16 @@ export function UsersModule({
                       <td className="p-3.5 font-bold text-slate-800">{user.nama}</td>
                       <td className="p-3.5 text-slate-500 font-mono text-[11px]">{user.username}</td>
                       <td className="p-3.5">
-                        <Badge variant={roleDef?.badgeVariant || "neutral"} size="sm">
-                          {user.role} — {roleDef?.title.split(" ")[0]}
-                        </Badge>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Badge variant={roleDef?.badgeVariant || "neutral"} size="sm">
+                            {user.role} — {roleDef?.title.split(" ")[0]}
+                          </Badge>
+                          {user.isPetugasPresensiPutri && (
+                            <Badge variant="purple" size="sm" className="font-bold">
+                              Petugas Putri
+                            </Badge>
+                          )}
+                        </div>
                       </td>
                       <td className="p-3.5">
                         <Badge variant={user.status === "AKTIF" ? "green" : "neutral"} size="sm">
@@ -170,6 +183,31 @@ export function UsersModule({
                       </td>
                       <td className="p-3.5 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          {user.role === "ST" && user.jenisKelamin === "P" && onTogglePetugasPutri && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className={`text-[11px] h-8 px-2.5 ${
+                                user.isPetugasPresensiPutri
+                                  ? "border-purple-300 text-purple-800 bg-purple-50 hover:bg-purple-100 font-bold"
+                                  : "border-slate-200 text-slate-600 hover:text-purple-700"
+                              }`}
+                              onClick={() => onTogglePetugasPutri(user.id)}
+                              disabled={!canManageUsers || isPending}
+                              title={
+                                user.isPetugasPresensiPutri
+                                  ? "Cabut wewenang Petugas Presensi Putri"
+                                  : "Tetapkan sebagai Petugas Presensi Putri"
+                              }
+                            >
+                              <ShieldCheck
+                                className={`h-3 w-3 mr-1 ${
+                                  user.isPetugasPresensiPutri ? "text-purple-600" : "text-slate-400"
+                                }`}
+                              />
+                              {user.isPetugasPresensiPutri ? "Petugas Putri (On)" : "+ Petugas Putri"}
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="secondary"

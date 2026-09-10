@@ -1,14 +1,19 @@
 "use client";
 
-import React, { useState, useTransition, useMemo } from "react";
+import React, { useState, useEffect, useTransition, useMemo } from "react";
 import { Role } from "@/types/auth";
 import { DashboardSantriSummary } from "./beranda-module";
 import { RekapLaporanBulanan } from "@/components/dashboard/rekap-laporan-bulanan";
+import { RewardEvaluasiTab } from "@/components/dashboard/reward-evaluasi-tab";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { createSetoranAction } from "@/app/actions/tahfizh";
+import {
+  createSetoranAction,
+  getRecentSetoranAction,
+  getSetoranSabaqPekanSantriAction,
+} from "@/app/actions/tahfizh";
 import {
   inputHasilTahap1Action,
   inputHasilTahap2Action,
@@ -33,6 +38,8 @@ import {
   PlusCircle,
   Calculator,
   Info,
+  Star,
+  Loader2,
 } from "lucide-react";
 import {
   konversiHalamanKeJuz,
@@ -50,6 +57,7 @@ export interface TahfizhModuleProps {
   initialOpenForm?: boolean;
   isKepalaBidangTahfidz?: boolean;
   onPrintPreview?: (data: LaporanBulananData) => void;
+  onRefresh?: () => void;
 }
 
 export function TahfizhModule({
@@ -61,8 +69,9 @@ export function TahfizhModule({
   initialOpenForm = false,
   isKepalaBidangTahfidz,
   onPrintPreview,
+  onRefresh,
 }: TahfizhModuleProps) {
-  const [activeSubTab, setActiveSubTab] = useState<"setoran" | "laporan" | "ikhtibar">(
+  const [activeSubTab, setActiveSubTab] = useState<"setoran" | "laporan" | "ikhtibar" | "reward_evaluasi">(
     initialOpenForm ? "setoran" : "setoran"
   );
 
@@ -71,10 +80,14 @@ export function TahfizhModule({
 
   // -------------------------------------------------------------
   // FORM INPUT SETORAN TUNGGAL BERBASIS HALAMAN & JUZ
+  // Menggunakan Primary Key database riil (CUID)
   // -------------------------------------------------------------
-  const [selectedSantriNis, setSelectedSantriNis] = useState<string>(
-    santriList[0]?.nis || ""
-  );
+  const [selectedSantriId, setSelectedSantriId] = useState<string>("");
+  const effectiveSantriId =
+    selectedSantriId && santriList.some((s) => s.id === selectedSantriId)
+      ? selectedSantriId
+      : santriList[0]?.id || "";
+
   const [inputJenis, setInputJenis] = useState<"SABAQ" | "SABQI" | "MANZIL" | "MUFAR">("SABAQ");
   const [juz, setJuz] = useState("30");
   const [halamanMulai, setHalamanMulai] = useState("582");
@@ -135,9 +148,11 @@ export function TahfizhModule({
   };
 
   // Handler saat santri dipilih: sinkronkan ke posisi lanjutan hafalan santri & target Mufar dinamis
-  const handleSelectSantri = (nis: string) => {
-    setSelectedSantriNis(nis);
-    const targetSantri = santriList.find((s) => s.nis === nis);
+  const handleSelectSantri = (id: string) => {
+    setSelectedSantriId(id);
+    setIsManualSabaqi(false);
+    setAlasanManualSabaqi("");
+    const targetSantri = santriList.find((s) => s.id === id);
     if (targetSantri) {
       const modal = targetSantri.modalHalamanAwal ?? targetSantri.totalHalaman ?? ((targetSantri.capaianJuz || 0) * HALAMAN_PER_JUZ);
       const nextHlm = Math.min(604, Math.max(1, modal + 1));
@@ -154,7 +169,76 @@ export function TahfizhModule({
     }
   };
 
-  // Riwayat setoran lokal dalam memori (disinkronkan dengan server)
+  // -------------------------------------------------------------
+  // REKOMENDASI SABAQI PEKAN INI DARI DATABASE POSTGRESQL RIIL
+  // -------------------------------------------------------------
+  const [sabaqiPekan, setSabaqiPekan] = useState<{
+    adaSabaqPekanIni: boolean;
+    totalHalamanSabaq: number;
+    halamanMulai: number | null;
+    halamanSelesai: number | null;
+    labelRentang: string;
+    pesan: string;
+  } | null>(null);
+  const [isSabaqiLoading, setIsSabaqiLoading] = useState(false);
+  const [isManualSabaqi, setIsManualSabaqi] = useState(false);
+  const [alasanManualSabaqi, setAlasanManualSabaqi] = useState("");
+
+  const loadSabaqiSantri = async (santriId: string) => {
+    if (!santriId) return;
+    setIsSabaqiLoading(true);
+    try {
+      const res = await getSetoranSabaqPekanSantriAction(santriId);
+      if (res.success && res.data?.rekomendasi) {
+        const rec = res.data.rekomendasi;
+        setSabaqiPekan({
+          adaSabaqPekanIni: rec.hasSabaq,
+          totalHalamanSabaq: rec.totalHalaman,
+          halamanMulai: rec.hasSabaq ? rec.halamanMulai : null,
+          halamanSelesai: rec.hasSabaq ? rec.halamanSelesai : null,
+          labelRentang: rec.labelLengkap,
+          pesan: rec.sumberKeterangan,
+        });
+      } else {
+        setSabaqiPekan(null);
+      }
+    } catch {
+      setSabaqiPekan(null);
+    } finally {
+      setIsSabaqiLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!effectiveSantriId) return;
+    let isMounted = true;
+    getSetoranSabaqPekanSantriAction(effectiveSantriId)
+      .then((res) => {
+        if (!isMounted) return;
+        if (res.success && res.data?.rekomendasi) {
+          const rec = res.data.rekomendasi;
+          setSabaqiPekan({
+            adaSabaqPekanIni: rec.hasSabaq,
+            totalHalamanSabaq: rec.totalHalaman,
+            halamanMulai: rec.hasSabaq ? rec.halamanMulai : null,
+            halamanSelesai: rec.hasSabaq ? rec.halamanSelesai : null,
+            labelRentang: rec.labelLengkap,
+            pesan: rec.sumberKeterangan,
+          });
+        } else {
+          setSabaqiPekan(null);
+        }
+      })
+      .catch(() => {
+        if (isMounted) setSabaqiPekan(null);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [effectiveSantriId]);
+
+  // Riwayat setoran riil dari server
   const [recentSetoran, setRecentSetoran] = useState<Array<{
     id: string;
     santriNama: string;
@@ -167,34 +251,72 @@ export function TahfizhModule({
     jumlahHalaman?: number;
     nilai: string;
     tanggal: string;
-  }>>([
-    {
-      id: "set-1",
-      santriNama: santriList[0]?.nama || "Obama Ozearld",
-      santriNis: santriList[0]?.nis || "SAN-0001",
-      kelas: santriList[0]?.kelas || "9A",
-      jenis: "SABAQ",
-      juz: 22,
-      halamanMulai: 421,
-      halamanSelesai: 421,
-      jumlahHalaman: 1,
-      nilai: "MUMTAZ",
-      tanggal: "Hari Ini, 07:15 WITA",
-    },
-    {
-      id: "set-2",
-      santriNama: santriList[1]?.nama || "Muhammad Fardhan",
-      santriNis: santriList[1]?.nis || "SAN-0002",
-      kelas: santriList[1]?.kelas || "9A",
-      jenis: "SABQI",
-      juz: 16,
-      halamanMulai: 318,
-      halamanSelesai: 320,
-      jumlahHalaman: 3,
-      nilai: "JAYYID_JIDDAN",
-      tanggal: "Hari Ini, 07:40 WITA",
-    },
-  ]);
+  }>>([]);
+
+  const loadRecentSetoran = async () => {
+    try {
+      const res = await getRecentSetoranAction(20);
+      if (res.success && res.data) {
+        setRecentSetoran(
+          res.data.map((r) => ({
+            id: r.id,
+            santriNama: r.santri?.nama || "-",
+            santriNis: r.santri?.nis || "-",
+            kelas: r.santri?.kelas || "-",
+            jenis: r.jenis,
+            juz: r.juz,
+            halamanMulai: r.halamanMulai,
+            halamanSelesai: r.halamanSelesai,
+            jumlahHalaman: r.jumlahHalaman,
+            nilai: r.nilai,
+            tanggal:
+              new Date(r.tanggal).toLocaleString("id-ID", {
+                timeZone: "Asia/Makassar",
+                day: "numeric",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              }) + " WITA",
+          }))
+        );
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+    getRecentSetoranAction(20).then((res) => {
+      if (isMounted && res.success && res.data) {
+        setRecentSetoran(
+          res.data.map((r) => ({
+            id: r.id,
+            santriNama: r.santri?.nama || "-",
+            santriNis: r.santri?.nis || "-",
+            kelas: r.santri?.kelas || "-",
+            jenis: r.jenis,
+            juz: r.juz,
+            halamanMulai: r.halamanMulai,
+            halamanSelesai: r.halamanSelesai,
+            jumlahHalaman: r.jumlahHalaman,
+            nilai: r.nilai,
+            tanggal:
+              new Date(r.tanggal).toLocaleString("id-ID", {
+                timeZone: "Asia/Makassar",
+                day: "numeric",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              }) + " WITA",
+          }))
+        );
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // WhatsApp Dialog State
   const [waDialog, setWaDialog] = useState<{
@@ -213,8 +335,8 @@ export function TahfizhModule({
     description: "Format laporan resmi DUC akan dikirimkan kepada wali santri.",
   });
 
-  // Santri yang sedang dipilih
-  const activeSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
+  // Santri yang sedang dipilih (Strict: Jangan fallback palsu ke index 0 jika belum ada yang terpilih)
+  const activeSantri = santriList.find((s) => s.id === effectiveSantriId) || null;
 
   // Target Mufar Dinamis berdasarkan Total Capaian Hafalan Santri (Acuan Program Tahfidz STQ DUC 2026)
   const dynamicMufarTarget = useMemo(() => {
@@ -239,11 +361,19 @@ export function TahfizhModule({
 
   // Handler otomatis menerapkan rentang Sabaqi Kumulatif hari berjalan ke form input
   const handleApplySabaqiReference = () => {
-    setHalamanMulai(String(sabaqiKumulatifRef.halamanMulai));
-    setHalamanSelesai(String(sabaqiKumulatifRef.halamanSelesai));
-    setJumlahHalaman(String(sabaqiKumulatifRef.totalHalaman));
-    const detected = getJuzByPage(sabaqiKumulatifRef.halamanMulai);
-    if (detected) setJuz(String(detected));
+    if (sabaqiPekan && sabaqiPekan.adaSabaqPekanIni && sabaqiPekan.halamanMulai && sabaqiPekan.halamanSelesai) {
+      setHalamanMulai(String(sabaqiPekan.halamanMulai));
+      setHalamanSelesai(String(sabaqiPekan.halamanSelesai));
+      setJumlahHalaman(String(sabaqiPekan.totalHalamanSabaq));
+      const detected = getJuzByPage(sabaqiPekan.halamanMulai);
+      if (detected) setJuz(String(detected));
+    } else {
+      setHalamanMulai(String(sabaqiKumulatifRef.halamanMulai));
+      setHalamanSelesai(String(sabaqiKumulatifRef.halamanSelesai));
+      setJumlahHalaman(String(sabaqiKumulatifRef.totalHalaman));
+      const detected = getJuzByPage(sabaqiKumulatifRef.halamanMulai);
+      if (detected) setJuz(String(detected));
+    }
   };
 
   const parsedTambahanHlm = useMemo(() => {
@@ -270,6 +400,17 @@ export function TahfizhModule({
       return;
     }
 
+    if (inputJenis === "SABQI" && sabaqiPekan && !sabaqiPekan.adaSabaqPekanIni) {
+      if (!isManualSabaqi || !alasanManualSabaqi.trim() || alasanManualSabaqi.trim().length < 5) {
+        setFeedback({
+          type: "error",
+          message:
+            "Belum ada Sabaq tersimpan pada pekan ini. Jika menggunakan input manual Sabaqi, centang opsi dan wajib masukkan alasan tertulis minimal 5 karakter.",
+        });
+        return;
+      }
+    }
+
     startTransition(async () => {
       const hlmMulaiNum = parseInt(halamanMulai, 10) || 1;
       const jmlHlmNum = parseFloat(jumlahHalaman) || 1;
@@ -280,7 +421,8 @@ export function TahfizhModule({
       if (inputJenis === "SABAQ") {
         catatanRincian = `[Sabaq: ${jmlHlmNum} Hlm (Hlm ${hlmMulaiNum}–${hlmSelesaiNum}) | Akumulasi: ${akumulasiHalamanBaru} Hlm (${smartKonversiAkumulasi.label})]`;
       } else if (inputJenis === "SABQI") {
-        catatanRincian = `[Sabqi: Hlm ${hlmMulaiNum}–${hlmSelesaiNum} (${jmlHlmNum} Hlm, Juz ${juzNum})]`;
+        const manualTag = isManualSabaqi ? `[Manual Sabaqi: ${alasanManualSabaqi}] ` : "";
+        catatanRincian = `${manualTag}[Sabqi: Hlm ${hlmMulaiNum}–${hlmSelesaiNum} (${jmlHlmNum} Hlm, Juz ${juzNum})]`;
       } else if (inputJenis === "MANZIL") {
         catatanRincian = `[Manzil: 1 Juz Penuh (Juz ${juzNum}, 20 Halaman)]`;
       } else {
@@ -306,23 +448,10 @@ export function TahfizhModule({
           message: `Alhamdulillah! Setoran ${inputJenis} untuk ${activeSantri.nama} (${jmlHlmNum} Hlm, Juz ${juzNum}) berhasil disimpan ke server.`,
         });
 
-        const setoranId = res.data?.id || `set-${Date.now()}`;
-        setRecentSetoran((prev) => [
-          {
-            id: setoranId,
-            santriNama: activeSantri.nama,
-            santriNis: activeSantri.nis,
-            kelas: activeSantri.kelas,
-            jenis: inputJenis,
-            juz: juzNum,
-            halamanMulai: hlmMulaiNum,
-            halamanSelesai: hlmSelesaiNum,
-            jumlahHalaman: jmlHlmNum,
-            nilai,
-            tanggal: "Baru saja",
-          },
-          ...prev,
-        ]);
+        // Trigger refresh
+        onRefresh?.();
+        loadRecentSetoran();
+        if (activeSantri) loadSabaqiSantri(activeSantri.id);
 
         // Siapkan pesan WA resmi dengan metrik halaman cerdas (Tanpa kolom Surah)
         const waMsg = buildSetoranTahfizhWAMessage({
@@ -614,6 +743,18 @@ export function TahfizhModule({
             <Award className="h-4 w-4" />
             Ujian Ikhtibar
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveSubTab("reward_evaluasi")}
+            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+              activeSubTab === "reward_evaluasi"
+                ? "bg-[#0E7C3A] text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+            }`}
+          >
+            <Star className="h-4 w-4" />
+            Reward &amp; Evaluasi Bulanan
+          </button>
         </div>
 
         {currentHalaqohName && (
@@ -675,19 +816,23 @@ export function TahfizhModule({
                     Nama Santri
                   </label>
                   <select
-                    value={selectedSantriNis}
+                    value={effectiveSantriId}
                     onChange={(e) => handleSelectSantri(e.target.value)}
                     className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-[#0E7C3A]/20 transition-colors"
                   >
-                    {santriList.map((s) => {
-                      const totalHlm = s.modalHalamanAwal ?? s.totalHalaman ?? (s.capaianJuz * 20);
-                      const konv = konversiHalamanKeJuz(totalHlm);
-                      return (
-                        <option key={s.nis} value={s.nis}>
-                          {s.nama} ({s.kelas}) — Modal: {totalHlm} Hlm ({konv.label})
-                        </option>
-                      );
-                    })}
+                    {santriList.length === 0 ? (
+                      <option value="">Memuat data santri dari basis data...</option>
+                    ) : (
+                      santriList.map((s) => {
+                        const totalHlm = s.modalHalamanAwal ?? s.totalHalaman ?? (s.capaianJuz * 20);
+                        const konv = konversiHalamanKeJuz(totalHlm);
+                        return (
+                          <option key={s.id} value={s.id}>
+                            {s.nama} ({s.kelas}) — {s.nis} — Modal: {totalHlm} Hlm ({konv.label})
+                          </option>
+                        );
+                      })
+                    )}
                   </select>
                 </div>
 
@@ -850,7 +995,7 @@ export function TahfizhModule({
                   </div>
                 )}
 
-                {/* FITUR PINTAR REFERENSI SABAQI KUMULATIF (SENIN - JUMAT) */}
+                {/* FITUR PINTAR REFERENSI SABAQI DARI DATABASE POSTGRESQL RIIL */}
                 {inputJenis === "SABQI" && (
                   <div className="rounded-2xl p-4 bg-gradient-to-br from-sky-50 via-blue-50/60 to-sky-50 border border-sky-300/80 shadow-xs space-y-3">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -860,41 +1005,88 @@ export function TahfizhModule({
                         </span>
                         <div>
                           <span className="text-xs font-extrabold text-sky-950 block">
-                            Pola Siklus Sabaqi Kumulatif (Senin – Jumat)
+                            Rekomendasi Sabaqi Pekan Ini (Senin 00:00 WITA – Hari Ini)
                           </span>
                           <span className="text-[10px] text-sky-700 font-medium">
-                            Acuan Resmi DUC 2026: Hari {sabaqiKumulatifRef.hariNama} ({sabaqiKumulatifRef.polaKeterangan})
+                            Dihitung otomatis dari akumulasi setoran SABAQ riil santri di database
                           </span>
                         </div>
                       </div>
-                      <Badge variant="sky" size="sm" className="font-semibold text-[10px]">
-                        Hari {sabaqiKumulatifRef.hariNama}
-                      </Badge>
+                      {isSabaqiLoading && (
+                        <Badge variant="sky" size="sm" className="font-semibold text-[10px] flex items-center gap-1">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Memeriksa DB...
+                        </Badge>
+                      )}
                     </div>
 
-                    <div className="bg-white/95 p-3 rounded-xl border border-sky-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-                      <div>
-                        <span className="text-[10px] uppercase font-bold text-slate-500 block">
-                          Rentang Halaman Referensi Hari Ini:
-                        </span>
-                        <span className="text-sm font-black text-sky-900 block mt-0.5">
-                          {sabaqiKumulatifRef.labelLengkap}
-                        </span>
-                        <span className="text-[10px] text-slate-500 block mt-0.5">
-                          Muroja&apos;ah kumulatif {sabaqiKumulatifRef.totalHalaman} halaman hafalan pekan berjalan
-                        </span>
+                    {isSabaqiLoading ? (
+                      <div className="p-4 text-center text-xs text-slate-400 bg-white/70 rounded-xl">
+                        Memeriksa riwayat setoran Sabaq pekan berjalan dari basis data...
                       </div>
+                    ) : sabaqiPekan && sabaqiPekan.adaSabaqPekanIni ? (
+                      <div className="bg-white/95 p-3.5 rounded-xl border border-sky-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                        <div>
+                          <span className="text-[10px] uppercase font-bold text-slate-500 block">
+                            Akumulasi Sabaq Tersimpan Pekan Ini:
+                          </span>
+                          <span className="text-sm font-black text-sky-900 block mt-0.5">
+                            {sabaqiPekan.labelRentang} ({sabaqiPekan.totalHalamanSabaq} Halaman)
+                          </span>
+                          <span className="text-[10px] text-slate-500 block mt-0.5">
+                            Muroja&apos;ah wajib sabqi pekanan santri sebelum menambah sabaq baru.
+                          </span>
+                        </div>
 
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        onClick={handleApplySabaqiReference}
-                        className="text-xs font-bold text-sky-800 border-sky-300 hover:bg-sky-50 min-h-[38px] shrink-0"
-                      >
-                        ✓ Terapkan ke Form Input
-                      </Button>
-                    </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={handleApplySabaqiReference}
+                          className="text-xs font-bold text-sky-800 border-sky-300 hover:bg-sky-50 min-h-[38px] shrink-0"
+                        >
+                          ✓ Terapkan ke Form Input
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="bg-white/95 p-3.5 rounded-xl border border-amber-200/80 space-y-3 shadow-2xs">
+                        <div className="flex items-start gap-2 text-amber-800">
+                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-xs font-bold">Belum ada Sabaq tersimpan pada pekan ini.</p>
+                            <p className="text-[10px] text-slate-500 mt-0.5">
+                              Santri belum memiliki catatan setoran jenis SABAQ sejak hari Senin 00:00 WITA pekan berjalan.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-100">
+                          <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isManualSabaqi}
+                              onChange={(e) => setIsManualSabaqi(e.target.checked)}
+                              className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                            />
+                            Gunakan Input Manual Sabaqi (Wajib isi alasan tertulis untuk dicatat ke audit log)
+                          </label>
+
+                          {isManualSabaqi && (
+                            <div className="mt-2.5">
+                              <label className="text-[10px] font-bold text-slate-600 block mb-1">
+                                Alasan Tertulis Input Manual Sabaqi:
+                              </label>
+                              <textarea
+                                className="w-full border rounded-lg p-2 text-xs h-16 bg-amber-50/40 border-amber-200 focus:bg-white"
+                                placeholder="Contoh: Mengulang sabaq pekan lalu karena izin sakit panjang."
+                                value={alasanManualSabaqi}
+                                onChange={(e) => setAlasanManualSabaqi(e.target.value)}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1197,11 +1389,15 @@ export function TahfizhModule({
                 <Button
                   variant="primary"
                   onClick={handleSaveSetoran}
-                  disabled={isPending}
-                  className="w-full min-h-[48px] font-bold text-sm bg-[#0E7C3A] hover:bg-[#0B642E] shadow-xs gap-2"
+                  disabled={isPending || !activeSantri}
+                  className="w-full min-h-[48px] font-bold text-sm bg-[#0E7C3A] hover:bg-[#0B642E] shadow-xs gap-2 disabled:bg-slate-300 disabled:cursor-not-allowed"
                 >
                   <BookCheck className="h-4 w-4" />
-                  {isPending ? "Menyimpan ke Server..." : "Simpan Setoran Santri"}
+                  {!activeSantri
+                    ? "Pilih Santri Terlebih Dahulu"
+                    : isPending
+                    ? "Menyimpan ke Server..."
+                    : "Simpan Setoran Santri"}
                 </Button>
               </CardContent>
             </Card>
@@ -1737,6 +1933,11 @@ export function TahfizhModule({
             </div>
           </div>
         </div>
+      )}
+
+      {/* 4. Tab Reward & Evaluasi Bulanan */}
+      {activeSubTab === "reward_evaluasi" && (
+        <RewardEvaluasiTab userRole={userRole} currentUserName={currentUserName} />
       )}
 
       {/* WhatsApp Dialog */}

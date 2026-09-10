@@ -13,7 +13,7 @@ import {
   isPageWithinBounds,
 } from "../lib/quran-metadata";
 import { buildProgressSantriWAMessage } from "../lib/whatsapp";
-import { konversiAngkaKeHuruf, KEPESANTRENAN_KODE_MAPEL } from "../app/actions/kepesantrenan";
+import { konversiAngkaKeHurufKepesantrenan as konversiAngkaKeHuruf, KEPESANTRENAN_KODE_MAPEL } from "../lib/educational-rules";
 
 describe("Uji Kelayakan Operasional STQ DUC (Fase Finalisasi & Quality Gates)", () => {
   // =========================================================================

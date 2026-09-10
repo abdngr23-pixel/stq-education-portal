@@ -25,7 +25,12 @@ import { PrintSP } from "@/components/print/print-sp";
 import { PrintLaporanBulanan } from "@/components/print/print-laporan-bulanan";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
 import { tambahAgendaAction } from "@/app/actions/kalender";
-import { toggleUserStatusAction, resetUserPasswordAction } from "@/app/actions/users";
+import {
+  toggleUserStatusAction,
+  resetUserPasswordAction,
+  togglePetugasPresensiPutriAction,
+  getUsersListAction,
+} from "@/app/actions/users";
 import { getAuditLogsAction, type AuditLogItem } from "@/app/actions/audit";
 import { kirimKotakSaranAction } from "@/app/actions/portal-wali";
 import { type LaporanBulananData } from "@/app/actions/laporan-bulanan";
@@ -108,82 +113,16 @@ export default function Home() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [isPending, startTransition] = useTransition();
 
+  // Santri Loading & Error States
+  const [santriLoadError, setSantriLoadError] = useState<string | null>(null);
+
   // Accessible feedback banner state
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // -------------------------------------------------------------
-  // MASTER DATA SANTRI (57 Santri Riil DUC)
+  // MASTER DATA SANTRI (Dimuat dinamis dari database PostgreSQL riil)
   // -------------------------------------------------------------
-  const [santriList, setSantriList] = useState<DashboardSantriSummary[]>([
-    // Halaqoh Ust. Razan Mufli, S.Pd (Musyrif Ketahfidzhan)
-    { id: "cm_santri_1", nis: "SAN-0001", nama: "Obama Ozearld Egberted Turizqi", kelas: "9A Takhossus", halaqoh: "Halaqoh Ust. Razan Mufli, S.Pd", capaianJuz: 22, targetJuz: 30, setoranTerakhir: "Al-Ahzab: 1-35", status: "AKTIF", nilaiTerakhir: "MUMTAZ", poinPelanggaran: 0, modalHalamanAwal: 420, totalHalaman: 444 },
-    { id: "cm_santri_2", nis: "SAN-0002", nama: "Muhammad Fardhan", kelas: "9A Takhossus", halaqoh: "Halaqoh Ust. Razan Mufli, S.Pd", capaianJuz: 16, targetJuz: 20, setoranTerakhir: "Hlm 333 (16 Juz 13 Hlm)", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0, modalHalamanAwal: 317, totalHalaman: 333 },
-    { id: "cm_santri_3", nis: "SAN-0003", nama: "Muh. Fauzan", kelas: "9A Takhossus", halaqoh: "Halaqoh Ust. Razan Mufli, S.Pd", capaianJuz: 19, targetJuz: 25, setoranTerakhir: "Maryam: 1-40", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0, modalHalamanAwal: 360, totalHalaman: 381 },
-    { id: "cm_santri_4", nis: "SAN-0004", nama: "Khubaib", kelas: "9A Takhossus", halaqoh: "Halaqoh Ust. Razan Mufli, S.Pd", capaianJuz: 22, targetJuz: 30, setoranTerakhir: "Fatir: 1-30", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0, modalHalamanAwal: 420, totalHalaman: 442 },
-    { id: "cm_santri_5", nis: "SAN-0005", nama: "Abd. Riziq Ardi", kelas: "9A Takhossus", halaqoh: "Halaqoh Ust. Razan Mufli, S.Pd", capaianJuz: 22, targetJuz: 30, setoranTerakhir: "Yasin: 1-50", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0, modalHalamanAwal: 420, totalHalaman: 443 },
-
-    // Halaqoh Ust. Kamal (Mudhabbir)
-    { id: "cm_santri_6", nis: "SAN-0006", nama: "Muhammad Amirul Hanif Al-Fatih", kelas: "8A Takhossus", halaqoh: "Halaqoh Ust. Kamal", capaianJuz: 12, targetJuz: 15, setoranTerakhir: "Yusuf: 1-30", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_7", nis: "SAN-0007", nama: "Muh. Riski Isral Wijaya", kelas: "8A Takhossus", halaqoh: "Halaqoh Ust. Kamal", capaianJuz: 13, targetJuz: 15, setoranTerakhir: "Ibrahim: 1-25", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0 },
-    { id: "cm_santri_8", nis: "SAN-0008", nama: "Muhammad Ridwan Kamil", kelas: "8A Takhossus", halaqoh: "Halaqoh Ust. Kamal", capaianJuz: 10, targetJuz: 12, setoranTerakhir: "At-Taubah: 50-80", status: "AKTIF", nilaiTerakhir: "MUMTAZ", poinPelanggaran: 0 },
-    { id: "cm_santri_9", nis: "SAN-0009", nama: "Ahmad Ripai", kelas: "8A Takhossus", halaqoh: "Halaqoh Ust. Kamal", capaianJuz: 10, targetJuz: 12, setoranTerakhir: "Yunus: 1-30", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0 },
-    { id: "cm_santri_10", nis: "SAN-0010", nama: "Muhammad Mikhael", kelas: "8A Takhossus", halaqoh: "Halaqoh Ust. Kamal", capaianJuz: 10, targetJuz: 12, setoranTerakhir: "Hud: 1-25", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_11", nis: "SAN-0011", nama: "Arya Idris", kelas: "7A Takhossus", halaqoh: "Halaqoh Ust. Kamal", capaianJuz: 5, targetJuz: 7, setoranTerakhir: "An-Nisa: 100-120", status: "AKTIF", nilaiTerakhir: "MUMTAZ", poinPelanggaran: 0 },
-    { id: "cm_santri_12", nis: "SAN-0012", nama: "Muhammad Ghozy Ma'Arif", kelas: "7A Takhossus", halaqoh: "Halaqoh Ust. Kamal", capaianJuz: 5, targetJuz: 7, setoranTerakhir: "Ali 'Imran: 50-70", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0 },
-    { id: "cm_santri_13", nis: "SAN-0013", nama: "Muhammad Walied", kelas: "7A Takhossus", halaqoh: "Halaqoh Ust. Kamal", capaianJuz: 5, targetJuz: 7, setoranTerakhir: "Al-Baqarah: 250-270", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0 },
-    { id: "cm_santri_14", nis: "SAN-0014", nama: "Hilmy Mutawakkil Al Muntashir", kelas: "8A Takhossus", halaqoh: "Halaqoh Ust. Kamal", capaianJuz: 15, targetJuz: 18, setoranTerakhir: "Al-Isra: 1-30", status: "AKTIF", nilaiTerakhir: "MUMTAZ", poinPelanggaran: 0 },
-
-    // Halaqoh Ust. Rizaldi (Mudhabbir)
-    { id: "cm_santri_15", nis: "SAN-0015", nama: "Achmad Sufiyan", kelas: "8B Takhossus", halaqoh: "Halaqoh Ust. Rizaldi", capaianJuz: 8, targetJuz: 10, setoranTerakhir: "Al-A'raf: 1-30", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_16", nis: "SAN-0016", nama: "Muh. Rifki Pria Herman", kelas: "8B Takhossus", halaqoh: "Halaqoh Ust. Rizaldi", capaianJuz: 8, targetJuz: 10, setoranTerakhir: "Al-An'am: 100-130", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0 },
-    { id: "cm_santri_17", nis: "SAN-0017", nama: "Muh Fadhlih Aksa", kelas: "7B Takhossus", halaqoh: "Halaqoh Ust. Rizaldi", capaianJuz: 4, targetJuz: 6, setoranTerakhir: "An-Nisa: 1-25", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_18", nis: "SAN-0018", nama: "Muhammad Rizky Ashari", kelas: "7B Takhossus", halaqoh: "Halaqoh Ust. Rizaldi", capaianJuz: 5, targetJuz: 7, setoranTerakhir: "Ali 'Imran: 120-145", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_19", nis: "SAN-0019", nama: "Hafidzh Asri", kelas: "7B Takhossus", halaqoh: "Halaqoh Ust. Rizaldi", capaianJuz: 3, targetJuz: 5, setoranTerakhir: "Al-Baqarah: 180-210", status: "AKTIF", nilaiTerakhir: "MUMTAZ", poinPelanggaran: 0 },
-    { id: "cm_santri_20", nis: "SAN-0020", nama: "Qonit Su'Adiy", kelas: "7B Takhossus", halaqoh: "Halaqoh Ust. Rizaldi", capaianJuz: 5, targetJuz: 7, setoranTerakhir: "Ali 'Imran: 80-105", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0 },
-    { id: "cm_santri_21", nis: "SAN-0021", nama: "Raja Muddin", kelas: "8B Takhossus", halaqoh: "Halaqoh Ust. Rizaldi", capaianJuz: 6, targetJuz: 8, setoranTerakhir: "Al-Ma'idah: 40-65", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_22", nis: "SAN-0022", nama: "M. Alief Pratama", kelas: "8B Takhossus", halaqoh: "Halaqoh Ust. Rizaldi", capaianJuz: 7, targetJuz: 9, setoranTerakhir: "Al-An'am: 40-70", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_23", nis: "SAN-0023", nama: "Muh Fadhlan Aksa", kelas: "7B Takhossus", halaqoh: "Halaqoh Ust. Rizaldi", capaianJuz: 5, targetJuz: 7, setoranTerakhir: "Ali 'Imran: 30-55", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_24", nis: "SAN-0024", nama: "Muhammad Azaky", kelas: "9A Takhossus", halaqoh: "Halaqoh Ust. Rizaldi", capaianJuz: 15, targetJuz: 18, setoranTerakhir: "Al-Kahfi: 1-40", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0 },
-
-    // Halaqoh Ust. Abi Hudzaifah (Mudhabbir)
-    { id: "cm_santri_25", nis: "SAN-0025", nama: "Syahrul Haq", kelas: "7A Takhossus", halaqoh: "Halaqoh Ust. Abi Hudzaifah", capaianJuz: 5, targetJuz: 7, setoranTerakhir: "Ali 'Imran: 1-25", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_26", nis: "SAN-0026", nama: "Iksanul Haq", kelas: "7A Takhossus", halaqoh: "Halaqoh Ust. Abi Hudzaifah", capaianJuz: 4, targetJuz: 6, setoranTerakhir: "Al-Baqarah: 220-240", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_27", nis: "SAN-0027", nama: "M. Alamsyah", kelas: "7A Takhossus", halaqoh: "Halaqoh Ust. Abi Hudzaifah", capaianJuz: 3, targetJuz: 5, setoranTerakhir: "Al-Baqarah: 140-160", status: "AKTIF", nilaiTerakhir: "MAQBUL", poinPelanggaran: 0 },
-    { id: "cm_santri_28", nis: "SAN-0028", nama: "Ahmad Fausan Al Farisi", kelas: "8A Takhossus", halaqoh: "Halaqoh Ust. Abi Hudzaifah", capaianJuz: 6, targetJuz: 8, setoranTerakhir: "Al-Ma'idah: 1-25", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_29", nis: "SAN-0029", nama: "Abdul Karim", kelas: "7A Takhossus", halaqoh: "Halaqoh Ust. Abi Hudzaifah", capaianJuz: 3, targetJuz: 5, setoranTerakhir: "Al-Baqarah: 160-180", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_30", nis: "SAN-0030", nama: "Muhammad Asfa Ilham Ridwan", kelas: "8A Takhossus", halaqoh: "Halaqoh Ust. Abi Hudzaifah", capaianJuz: 6, targetJuz: 8, setoranTerakhir: "Al-Ma'idah: 60-80", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0 },
-    { id: "cm_santri_31", nis: "SAN-0031", nama: "Khaerul Azam Abu Bakar", kelas: "8A Takhossus", halaqoh: "Halaqoh Ust. Abi Hudzaifah", capaianJuz: 6, targetJuz: 8, setoranTerakhir: "Al-Ma'idah: 80-100", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0 },
-    { id: "cm_santri_32", nis: "SAN-0032", nama: "Muh. Alif Ihsan", kelas: "8A Takhossus", halaqoh: "Halaqoh Ust. Abi Hudzaifah", capaianJuz: 6, targetJuz: 8, setoranTerakhir: "Al-An'am: 1-25", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0 },
-    { id: "cm_santri_33", nis: "SAN-0033", nama: "Muh. Imran Maulana Sahid", kelas: "7A Takhossus", halaqoh: "Halaqoh Ust. Abi Hudzaifah", capaianJuz: 4, targetJuz: 6, setoranTerakhir: "Al-Baqarah: 240-260", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0 },
-    { id: "cm_santri_34", nis: "SAN-0034", nama: "Affan Garatta", kelas: "9A Takhossus", halaqoh: "Halaqoh Ust. Abi Hudzaifah", capaianJuz: 14, targetJuz: 16, setoranTerakhir: "Al-Hijr: 1-40", status: "AKTIF", nilaiTerakhir: "MUMTAZ", poinPelanggaran: 0 },
-
-    // Halaqoh Ust. Alwan (Mudhabbir)
-    { id: "cm_santri_35", nis: "SAN-0035", nama: "Laode Hisyam Arqana", kelas: "7B Takhossus", halaqoh: "Halaqoh Ust. Alwan", capaianJuz: 3, targetJuz: 5, setoranTerakhir: "Al-Baqarah: 170-190", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_36", nis: "SAN-0036", nama: "Xavier Omar Syarif Hidayatullah", kelas: "7B Takhossus", halaqoh: "Halaqoh Ust. Alwan", capaianJuz: 2, targetJuz: 4, setoranTerakhir: "Al-Baqarah: 100-120", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_37", nis: "SAN-0037", nama: "Muhammad Syafiq", kelas: "7B Takhossus", halaqoh: "Halaqoh Ust. Alwan", capaianJuz: 2, targetJuz: 4, setoranTerakhir: "Al-Baqarah: 80-100", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_38", nis: "SAN-0038", nama: "Andi Muhammad Ghazi Al Fatih", kelas: "7B Takhossus", halaqoh: "Halaqoh Ust. Alwan", capaianJuz: 3, targetJuz: 5, setoranTerakhir: "Al-Baqarah: 150-170", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_39", nis: "SAN-0039", nama: "Zulkifli", kelas: "7B Takhossus", halaqoh: "Halaqoh Ust. Alwan", capaianJuz: 2, targetJuz: 4, setoranTerakhir: "Al-Baqarah: 120-140", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_40", nis: "SAN-0040", nama: "M. Dzul Jalaali Walikhrom Rf", kelas: "7B Takhossus", halaqoh: "Halaqoh Ust. Alwan", capaianJuz: 1, targetJuz: 3, setoranTerakhir: "Al-Baqarah: 50-70", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_41", nis: "SAN-0041", nama: "Abdullah Khairun Nizham", kelas: "7B Takhossus", halaqoh: "Halaqoh Ust. Alwan", capaianJuz: 3, targetJuz: 5, setoranTerakhir: "Al-Baqarah: 160-180", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_42", nis: "SAN-0042", nama: "Andi Muh Rizky S", kelas: "7B Takhossus", halaqoh: "Halaqoh Ust. Alwan", capaianJuz: 1, targetJuz: 3, setoranTerakhir: "Al-Baqarah: 40-60", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_43", nis: "SAN-0043", nama: "Muhammad Rifky Firjatullah", kelas: "8B Takhossus", halaqoh: "Halaqoh Ust. Alwan", capaianJuz: 5, targetJuz: 7, setoranTerakhir: "Ali 'Imran: 50-80", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0 },
-    { id: "cm_santri_44", nis: "SAN-0044", nama: "Rahmatullah S.", kelas: "7B Takhossus", halaqoh: "Halaqoh Ust. Alwan", capaianJuz: 2, targetJuz: 4, setoranTerakhir: "Al-Baqarah: 110-130", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_45", nis: "SAN-0045", nama: "Ade Naufal", kelas: "7B Takhossus", halaqoh: "Halaqoh Ust. Alwan", capaianJuz: 3, targetJuz: 5, setoranTerakhir: "Al-Baqarah: 160-180", status: "AKTIF", nilaiTerakhir: "MUMTAZ", poinPelanggaran: 0 },
-    { id: "cm_santri_46", nis: "SAN-0046", nama: "Hafiz Abd Aziz", kelas: "8B Takhossus", halaqoh: "Halaqoh Ust. Alwan", capaianJuz: 5, targetJuz: 7, setoranTerakhir: "Ali 'Imran: 100-125", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_47", nis: "SAN-0047", nama: "Badar Fayyadh Nabil", kelas: "7B Takhossus", halaqoh: "Halaqoh Ust. Alwan", capaianJuz: 1, targetJuz: 3, setoranTerakhir: "Al-Baqarah: 1-25", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-
-    // Halaqoh Ustadzah Lisa Dwina Fitri (Musyrifah Putri)
-    { id: "cm_santri_48", nis: "SAN-0048", nama: "Habiba Asri", kelas: "9C Putri", halaqoh: "Halaqoh Ustadzah Lisa Dwina Fitri", capaianJuz: 21, targetJuz: 30, setoranTerakhir: "Al-Ahzab: 30-60", status: "AKTIF", nilaiTerakhir: "MUMTAZ", poinPelanggaran: 0 },
-    { id: "cm_santri_49", nis: "SAN-0049", nama: "Meisya Arrahma", kelas: "9C Putri", halaqoh: "Halaqoh Ustadzah Lisa Dwina Fitri", capaianJuz: 17, targetJuz: 20, setoranTerakhir: "Al-Isra: 50-80", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0 },
-    { id: "cm_santri_50", nis: "SAN-0050", nama: "Rahmawati", kelas: "8C Putri", halaqoh: "Halaqoh Ustadzah Lisa Dwina Fitri", capaianJuz: 11, targetJuz: 15, setoranTerakhir: "Yusuf: 40-70", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0 },
-    { id: "cm_santri_51", nis: "SAN-0051", nama: "Annisa Az Zahrah A.", kelas: "8C Putri", halaqoh: "Halaqoh Ustadzah Lisa Dwina Fitri", capaianJuz: 12, targetJuz: 15, setoranTerakhir: "Hud: 50-80", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0 },
-    { id: "cm_santri_52", nis: "SAN-0052", nama: "Aisyah Muthmainnah", kelas: "8C Putri", halaqoh: "Halaqoh Ustadzah Lisa Dwina Fitri", capaianJuz: 10, targetJuz: 13, setoranTerakhir: "At-Taubah: 80-100", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0 },
-    { id: "cm_santri_53", nis: "SAN-0053", nama: "Nur Aqsa", kelas: "7C Putri", halaqoh: "Halaqoh Ustadzah Lisa Dwina Fitri", capaianJuz: 3, targetJuz: 5, setoranTerakhir: "Al-Baqarah: 170-190", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_54", nis: "SAN-0054", nama: "Sri Ramadhaniyanti", kelas: "7C Putri", halaqoh: "Halaqoh Ustadzah Lisa Dwina Fitri", capaianJuz: 2, targetJuz: 5, setoranTerakhir: "Al-Baqarah: 130-150", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_55", nis: "SAN-0055", nama: "Farhana", kelas: "7C Putri", halaqoh: "Halaqoh Ustadzah Lisa Dwina Fitri", capaianJuz: 4, targetJuz: 6, setoranTerakhir: "Al-Baqarah: 240-260", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_56", nis: "SAN-0056", nama: "Rushaifa Rustam", kelas: "7C Putri", halaqoh: "Halaqoh Ustadzah Lisa Dwina Fitri", capaianJuz: 2, targetJuz: 5, setoranTerakhir: "Al-Baqarah: 110-130", status: "AKTIF", nilaiTerakhir: "JAYYID", poinPelanggaran: 0 },
-    { id: "cm_santri_57", nis: "SAN-0057", nama: "Naafilah Kaltsum Aslan", kelas: "7C Putri", halaqoh: "Halaqoh Ustadzah Lisa Dwina Fitri", capaianJuz: 5, targetJuz: 7, setoranTerakhir: "Ali 'Imran: 20-45", status: "AKTIF", nilaiTerakhir: "JAYYID_JIDDAN", poinPelanggaran: 0 },
-  ]);
+  const [santriList, setSantriList] = useState<DashboardSantriSummary[]>([]);
 
   // -------------------------------------------------------------
   // PERIZINAN, DISIPLIN, AGENDA, USERS, AUDIT, KOTAK SARAN
@@ -329,31 +268,38 @@ export default function Home() {
     return ROLE_NAV_MAP[selectedRole] || ["beranda"];
   }, [selectedRole]);
 
-  // Helper untuk memuat ulang daftar santri dari server
-  const fetchSantriData = async () => {
+  // Helper untuk memuat ulang daftar santri dari server secara aman
+  const fetchSantriData = async (filter?: string) => {
+    setSantriLoadError(null);
     try {
-      const res = await getSantriListAction();
-      if (res.success && res.data && res.data.length > 0) {
+      const activeFilter = filter !== undefined ? filter : halaqohFilter;
+      const res = await getSantriListAction(activeFilter !== "ALL" ? { halaqohId: activeFilter } : undefined);
+      if (res.success && res.data) {
         setSantriList(
           res.data.map((s) => ({
-            id: s.id,
+            id: s.id, // Primary Key riil PostgreSQL cuid
             nis: s.nis,
             nama: s.nama,
             kelas: s.kelas,
-            halaqoh: s.halaqoh?.nama || "Belum Ditentukan",
-            capaianJuz: (s as unknown as { capaianJuz?: number }).capaianJuz || 0,
-            targetJuz: 30,
-            setoranTerakhir: "-",
+            halaqoh: s.halaqoh || s.halaqohNama || "Belum Ditentukan",
+            capaianJuz: s.capaianJuz ?? 0,
+            targetJuz: s.targetJuz ?? 30,
+            setoranTerakhir: s.setoranTerakhir || "-",
             status: s.status,
-            nilaiTerakhir: "MUMTAZ",
-            poinPelanggaran: 0,
+            nilaiTerakhir: s.nilaiTerakhir || "MUMTAZ",
+            poinPelanggaran: s.poinPelanggaran ?? 0,
             namaWali: s.namaWali,
             noHpWali: s.noHpWali,
+            totalHalaman: s.capaianHalaman ?? 0,
+            modalHalamanAwal: 0,
           }))
         );
+      } else {
+        setSantriLoadError(res.message || "Gagal memuat data santri dari basis data.");
       }
-    } catch {
-      // Pertahankan data lokal jika server offline
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Terjadi kesalahan jaringan saat memuat data santri.";
+      setSantriLoadError(msg);
     }
   };
 
@@ -456,6 +402,7 @@ export default function Home() {
     return () => {
       isMounted = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run strictly once on mount
 
   // Listener navigasi popstate browser (Back/Forward) secara terpisah
@@ -654,6 +601,62 @@ export default function Home() {
     });
   };
 
+  const handleTogglePetugasPutri = async (userId: string) => {
+    if (selectedRole !== "ADM" && selectedRole !== "KS") {
+      setFeedback({ type: "error", text: "Hanya Admin & Mudir yang berwenang menetapkan Petugas Presensi Putri." });
+      return;
+    }
+    startTransition(async () => {
+      const res = await togglePetugasPresensiPutriAction(userId);
+      if (!res.success) {
+        setFeedback({ type: "error", text: res.message || "Gagal mengubah wewenang Petugas Presensi Putri." });
+        return;
+      }
+      setUsersList((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, isPetugasPresensiPutri: !u.isPetugasPresensiPutri } : u))
+      );
+      setFeedback({ type: "success", text: res.message });
+    });
+  };
+
+  useEffect(() => {
+    if (activeTab !== "users" || !["ADM", "KS", "YAY"].includes(selectedRole)) return;
+    let isMounted = true;
+    getUsersListAction()
+      .then((res) => {
+        if (!isMounted) return;
+        if (res.success && res.data && Array.isArray(res.data) && res.data.length > 0) {
+          setUsersList(
+            res.data.map((u: {
+              id: string;
+              username: string;
+              role: string;
+              status: string;
+              isPetugasPresensiPutri?: boolean;
+              staff?: { nama: string } | null;
+              santri?: { id: string; nama: string; nis: string; jenisKelamin: string } | null;
+            }) => ({
+              id: u.id,
+              username: u.username,
+              role: u.role,
+              nama: u.staff?.nama || u.santri?.nama || u.username,
+              status: u.status,
+              isPetugasPresensiPutri: Boolean(u.isPetugasPresensiPutri),
+              jenisKelamin: u.santri?.jenisKelamin,
+              santriId: u.santri?.id || null,
+            }))
+          );
+        }
+      })
+      .catch((e) => {
+        console.error("Gagal memuat pengguna riil:", e);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeTab, selectedRole]);
+
   // Audit refresh
   const handleRefreshAuditLogs = async () => {
     startTransition(async () => {
@@ -758,6 +761,7 @@ export default function Home() {
               setPrintLaporanData(data);
               setShowPrintModal("laporan_bulanan");
             }}
+            onRefresh={fetchSantriData}
           />
         );
 
@@ -868,6 +872,7 @@ export default function Home() {
             userRole={selectedRole}
             onToggleStatus={handleToggleUserStatus}
             onResetPassword={handleResetPassword}
+            onTogglePetugasPutri={handleTogglePetugasPutri}
             isPending={isPending}
           />
         );
@@ -977,6 +982,30 @@ export default function Home() {
               >
                 <X className="h-4 w-4" />
               </button>
+            </div>
+          )}
+
+          {/* Santri Load Error Banner */}
+          {santriLoadError && (
+            <div
+              role="alert"
+              className="p-4 rounded-2xl border border-red-200 bg-red-50 text-red-800 flex items-center justify-between text-sm shadow-xs"
+            >
+              <div className="flex items-center gap-2.5">
+                <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
+                <div>
+                  <p className="font-semibold text-xs text-red-900">Gagal Memuat Data Santri</p>
+                  <p className="text-xs text-red-700 mt-0.5">{santriLoadError}</p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="text-xs bg-white text-red-700 hover:bg-red-100 border-red-200"
+                onClick={() => fetchSantriData()}
+              >
+                Coba Lagi
+              </Button>
             </div>
           )}
 

@@ -58,17 +58,31 @@ export async function catatPelanggaranAction(input: CatatPelanggaranData) {
       kategori.sanksi ||
       (poinFinal > 0 ? `${poinFinal} Poin` : "Hukuman Langsung / Pembinaan");
 
-    // Pencatat staff
-    const pencatatStaff = session.staffId
-      ? await prisma.staff.findUnique({ where: { id: session.staffId } })
-      : await prisma.staff.findFirst({ where: { roleStaff: "MK" } });
-
-    if (!pencatatStaff) {
-      return { success: false, message: "Data staf pencatat tidak ditemukan." };
+    // Pencatat staff (Fail-Closed, tanpa fallback staf sembarangan)
+    let pencatatStaffId = session.staffId;
+    if (!pencatatStaffId) {
+      const userWithStaff = await prisma.user.findUnique({
+        where: { id: session.userId },
+        select: { staffId: true },
+      });
+      pencatatStaffId = userWithStaff?.staffId || null;
     }
 
-    const count = await prisma.pelanggaranSantri.count();
-    const kodePelanggaran = `PLG-${String(count + 1).padStart(6, "0")}`;
+    if (!pencatatStaffId) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Akun Anda tidak memiliki relasi staf pencatat resmi di pangkalan data.",
+      };
+    }
+
+    const pencatatStaff = await prisma.staff.findUnique({ where: { id: pencatatStaffId } });
+    if (!pencatatStaff) {
+      return { success: false, message: "Data profil staf pencatat tidak ditemukan." };
+    }
+
+    const timePart = Date.now().toString(36).toUpperCase();
+    const randPart = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const kodePelanggaran = `PLG-${timePart}-${randPart}`;
 
     // Simpan pelanggaran dengan snapshot identitas
     const newPelanggaran = await prisma.pelanggaranSantri.create({
@@ -402,5 +416,37 @@ export async function getSPListAction(santriId?: string) {
   } catch (error) {
     console.error("Gagal mengambil data SP:", error);
     return { success: false, message: "Gagal memuat data SP dari server.", data: [] };
+  }
+}
+
+/**
+ * Server Action: Mengambil 44 Master Data Kategori Pelanggaran Resmi STQ DUC dari Database
+ */
+export async function getMasterPelanggaranListAction() {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Sesi kedaluwarsa. Silakan login kembali.", data: [] };
+  }
+
+  try {
+    const list = await prisma.kategoriPelanggaran.findMany({
+      orderBy: [{ tingkat: "asc" }, { kode: "asc" }],
+    });
+
+    return {
+      success: true,
+      data: list.map((k) => ({
+        id: k.id, // Primary Key DB asli
+        kode: k.kode,
+        nama: k.nama,
+        tingkat: k.tingkat,
+        sanksi: k.sanksi,
+        poinDasar: k.poinDasar,
+        deskripsi: k.sanksi || "",
+      })),
+    };
+  } catch (error) {
+    console.error("Gagal mengambil master kategori pelanggaran:", error);
+    return { success: false, message: "Gagal memuat master pelanggaran dari pangkalan data.", data: [] };
   }
 }

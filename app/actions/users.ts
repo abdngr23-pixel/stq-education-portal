@@ -23,10 +23,10 @@ export async function getUsersListAction(): Promise<UsersResponse> {
     const users = await prisma.user.findMany({
       include: {
         staff: { select: { nama: true, staffCode: true, noHp: true } },
-        santri: { select: { nama: true, nis: true, kelas: true } },
+        santri: { select: { id: true, nama: true, nis: true, kelas: true, jenisKelamin: true } },
       },
       orderBy: { createdAt: 'desc' },
-      take: 50,
+      take: 100,
     });
 
     return {
@@ -122,6 +122,74 @@ export async function resetUserPasswordAction(userId: string): Promise<UsersResp
       success: true,
       message: `Kata sandi akun ${user.username} berhasil di-reset dengan sandi acak: "${tempPassword}". Seluruh sesi lama telah dicabut.`,
       data: { temporaryPassword: tempPassword },
+    };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
+    return { success: false, message: errorMsg, error: errorMsg };
+  }
+}
+
+/**
+ * Toggle hak akses Petugas Presensi Putri untuk santri putri
+ * Akses: ADM, KS (05_ROLE_PERMISSION_MATRIX.md)
+ * Aturan Bisnis:
+ * - Hanya santri dengan jenisKelamin === "P" yang dapat dijadikan Petugas Presensi Putri.
+ * - Server re-check memastikan tidak dapat diberikan kepada santri putra atau non-santri.
+ */
+export async function togglePetugasPresensiPutriAction(userId: string): Promise<UsersResponse> {
+  try {
+    const session = await requireRole(['ADM', 'KS']);
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        santri: { select: { id: true, nama: true, nis: true, jenisKelamin: true } },
+      },
+    });
+
+    if (!user) {
+      return { success: false, message: 'Pengguna tidak ditemukan.' };
+    }
+
+    if (user.role !== 'ST' || !user.santri) {
+      return {
+        success: false,
+        message: 'Akses Ditolak: Wewenang Petugas Presensi Putri hanya dapat diberikan kepada akun santri.',
+      };
+    }
+
+    if (user.santri.jenisKelamin !== 'P') {
+      return {
+        success: false,
+        message: `Validasi Gagal: Santri ${user.santri.nama} berjenis kelamin laki-laki (L). Petugas Presensi Putri khusus santriwati (P).`,
+      };
+    }
+
+    const newStatus = !user.isPetugasPresensiPutri;
+
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: { isPetugasPresensiPutri: newStatus },
+    });
+
+    await recordAuditLog(
+      session.userId,
+      'TOGGLE_PETUGAS_PRESENSI_PUTRI',
+      'User',
+      user.id,
+      {
+        username: user.username,
+        santriNama: user.santri.nama,
+        santriNis: user.santri.nis,
+        isPetugasPresensiPutri: newStatus,
+        assignedBy: session.username,
+      }
+    );
+
+    return {
+      success: true,
+      message: `Status Petugas Presensi Putri untuk ${user.santri.nama} (${user.username}) berhasil diubah menjadi: ${newStatus ? 'AKTIF' : 'NONAKTIF'}.`,
+      data: updated,
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';

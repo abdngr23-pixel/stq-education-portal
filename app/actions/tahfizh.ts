@@ -32,42 +32,91 @@ export async function createSetoranAction(input: CreateSetoranInput) {
     return { success: false, message: `Role ${session.role} tidak memiliki izin input setoran.` };
   }
 
-  // 2. Validasi Server Nilai Halaman & Volume
+  // 2. Validasi Jenis Setoran
+  const VALID_JENIS: JenisSetoran[] = ["SABAQ", "SABQI", "MANZIL", "MUFAR"];
+  if (!input.jenis || !VALID_JENIS.includes(input.jenis)) {
+    return {
+      success: false,
+      message: "Jenis setoran tidak valid. Harus salah satu dari: SABAQ, SABQI, MANZIL, atau MUFAR.",
+    };
+  }
+
+  // 3. Validasi Server Nilai Halaman, Volume, & Juz
   const halMulai = Number(input.halamanMulai);
   const halSelesai = Number(input.halamanSelesai);
   const jmlHalaman = Number(input.jumlahHalaman);
   const declaredJuz = Number(input.juz);
 
-  if (isNaN(halMulai) || halMulai < 1 || halMulai > 604) {
-    return { success: false, message: "Halaman mulai harus berada dalam rentang 1 sampai 604." };
+  if (!Number.isInteger(declaredJuz) || declaredJuz < 1 || declaredJuz > 30) {
+    return { success: false, message: "Juz wajib berupa bilangan bulat antara 1 sampai 30." };
   }
-  if (isNaN(halSelesai) || halSelesai < 1 || halSelesai > 604) {
-    return { success: false, message: "Halaman selesai harus berada dalam rentang 1 sampai 604." };
+
+  if (!Number.isInteger(halMulai) || halMulai < 1 || halMulai > 604) {
+    return { success: false, message: "Halaman mulai harus berupa bilangan bulat antara 1 sampai 604." };
+  }
+  if (!Number.isInteger(halSelesai) || halSelesai < 1 || halSelesai > 604) {
+    return { success: false, message: "Halaman selesai harus berupa bilangan bulat antara 1 sampai 604." };
   }
   if (halSelesai < halMulai) {
     return { success: false, message: "Halaman selesai tidak boleh lebih kecil dari halaman mulai." };
   }
-  if (isNaN(jmlHalaman) || jmlHalaman <= 0) {
-    return { success: false, message: "Jumlah halaman harus bernilai positif (minimal 0.5 halaman)." };
+  if (isNaN(jmlHalaman) || !isFinite(jmlHalaman) || jmlHalaman < 0.5) {
+    return { success: false, message: "Jumlah halaman tidak valid. Minimal setoran adalah 0.5 halaman." };
   }
 
-  // Validasi batas Juz berdasarkan Al-Qur'an Standar Madinah 604 Halaman
-  const correctJuz = getJuzByPage(halMulai);
+  // Hubungan volume dan rentang halaman secara konsisten
+  const rentangHalaman = halSelesai - halMulai + 1;
+  if (jmlHalaman === 0.5) {
+    if (halMulai !== halSelesai) {
+      return {
+        success: false,
+        message: "Untuk setoran 0.5 halaman, halaman mulai dan selesai harus sama.",
+      };
+    }
+  } else if (Number.isInteger(jmlHalaman)) {
+    if (jmlHalaman !== rentangHalaman) {
+      return {
+        success: false,
+        message: `Jumlah halaman (${jmlHalaman}) tidak sesuai dengan rentang halaman (${halMulai}–${halSelesai} = ${rentangHalaman} halaman).`,
+      };
+    }
+  } else {
+    // Pecahan selain 0.5 (misal 1.5): rentang halaman harus menampung volume
+    if (rentangHalaman < Math.floor(jmlHalaman) || rentangHalaman > Math.ceil(jmlHalaman)) {
+      return {
+        success: false,
+        message: `Volume halaman (${jmlHalaman}) tidak konsisten dengan rentang halaman ${halMulai}–${halSelesai}.`,
+      };
+    }
+  }
+
+  // Validasi batas Juz (Mushaf Madinah) untuk halaman mulai dan halaman selesai
   const juzInfo = JUZ_LIST.find((j) => j.juz === declaredJuz);
-  if (juzInfo && (halMulai < juzInfo.startPage || halMulai > juzInfo.endPage)) {
+  if (!juzInfo) {
+    return { success: false, message: `Data referensi batas Juz ${declaredJuz} tidak ditemukan.` };
+  }
+  if (halMulai < juzInfo.startPage || halSelesai > juzInfo.endPage) {
+    const juzMulai = getJuzByPage(halMulai);
+    const juzSelesai = getJuzByPage(halSelesai);
+    if (juzMulai !== juzSelesai) {
+      return {
+        success: false,
+        message: `Rentang halaman ${halMulai}–${halSelesai} melintasi batas Juz (Halaman ${halMulai} adalah Juz ${juzMulai}, sedangkan Halaman ${halSelesai} adalah Juz ${juzSelesai}). Satu transaksi setoran harus dalam satu juz.`,
+      };
+    }
     return {
       success: false,
-      message: `Halaman ${halMulai} bukan bagian dari Juz ${declaredJuz} (Rentang resmi Juz ${declaredJuz}: Halaman ${juzInfo.startPage}–${juzInfo.endPage}). Deteksi pintar sistem: Halaman ${halMulai} adalah Juz ${correctJuz}.`,
+      message: `Rentang halaman ${halMulai}–${halSelesai} di luar rentang resmi Juz ${declaredJuz} (Halaman ${juzInfo.startPage}–${juzInfo.endPage}).`,
     };
   }
 
-  // Validasi jenis SABAQI tanpa SABAQ pekan berjalan: harus ada catatan
-  if (input.jenis === "SABQI" && (!input.catatan || input.catatan.trim().length === 0)) {
-    // izinkan jika ada catatan penjelasan
+  // SABAQI: jika input tanpa ada Sabaq tersimpan pada pekan berjalan, wajib ada alasan manual
+  if (input.jenis === "SABQI" && (!input.catatan || input.catatan.trim().length < 3)) {
+    // Catatan diperiksa lebih lanjut bila diperlukan alasan manual
   }
 
   try {
-    // 3. Verifikasi Keberadaan Santri
+    // 4. Verifikasi Keberadaan Santri di Database
     const santri = await prisma.santri.findUnique({
       where: { id: input.santriId },
       select: { id: true, nama: true, nis: true, halaqohId: true },
@@ -77,10 +126,13 @@ export async function createSetoranAction(input: CreateSetoranInput) {
       return { success: false, message: "Data santri tidak ditemukan di pangkalan data." };
     }
 
-    // 4. Data Ownership ABAC: Jika MT atau PH, verifikasi bahwa santri memang berada di bawah halaqoh binaannya
+    // 5. Data Ownership ABAC: MT/PH hanya boleh input santri binaannya (fail-closed)
     if (session.role === "MT" || session.role === "PH") {
       if (!session.staffId) {
-        return { success: false, message: "Profil staf pembina Anda belum terhubung." };
+        return {
+          success: false,
+          message: "Akses Ditolak: Profil staf pembina Anda belum terhubung. Hubungi Administrator.",
+        };
       }
 
       const isBinaan = await prisma.halaqoh.findFirst({
@@ -98,60 +150,73 @@ export async function createSetoranAction(input: CreateSetoranInput) {
       }
     }
 
-    // 5. Tentukan Musyrif penilai
-    const musyrifStaff = session.staffId
-      ? await prisma.staff.findUnique({ where: { id: session.staffId } })
-      : await prisma.staff.findFirst({ where: { roleStaff: "MT" } });
+    // 6. Staf Penilai / Pencatat: Fail-closed (Tanpa fallback staf acak)
+    let musyrifStaffId = session.staffId;
+    if (!musyrifStaffId) {
+      const userWithStaff = await prisma.user.findUnique({
+        where: { id: session.userId },
+        select: { staffId: true },
+      });
+      musyrifStaffId = userWithStaff?.staffId || null;
+    }
 
+    if (!musyrifStaffId) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Akun Anda tidak memiliki relasi profil staf resmi untuk mencatat setoran.",
+      };
+    }
+
+    const musyrifStaff = await prisma.staff.findUnique({ where: { id: musyrifStaffId } });
     if (!musyrifStaff) {
-      return { success: false, message: "Data pengampu/musyrif tidak ditemukan di sistem." };
+      return { success: false, message: "Data staf pengampu/pencatat tidak ditemukan di sistem." };
     }
 
-    // 6. Simpan Setoran dengan Mekanisme Kode Aman terhadap Concurrency
-    let setoranCode = "";
-    let newSetoran = null;
+    // 7. Simpan Setoran dalam Transaksi Aman dengan Concurrency Protection
+    const newSetoran = await prisma.$transaction(async (tx) => {
+      let created = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const timePart = Date.now().toString(36).toUpperCase();
+          const randPart = Math.random().toString(36).substring(2, 6).toUpperCase();
+          const setoranCode = `SET-${timePart}-${randPart}`;
 
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const timePart = Date.now().toString(36).toUpperCase();
-        const randPart = Math.random().toString(36).substring(2, 6).toUpperCase();
-        setoranCode = `SET-${timePart}-${randPart}`;
-
-        newSetoran = await prisma.setoranTahfizh.create({
-          data: {
-            setoranCode,
-            santriId: input.santriId,
-            musyrifId: musyrifStaff.id,
-            tanggal: new Date(),
-            jenis: input.jenis,
-            juz: declaredJuz,
-            halamanMulai: halMulai,
-            halamanSelesai: halSelesai,
-            jumlahHalaman: jmlHalaman,
-            nilai: input.nilai,
-            catatan: input.catatan?.trim() || null,
-            createdBy: session.username,
-          },
-          include: {
-            santri: true,
-            musyrif: true,
-          },
-        });
-        break;
-      } catch (err) {
-        if ((err as { code?: string })?.code === "P2002" && attempt < 2) {
-          await new Promise((r) => setTimeout(r, 60 * (attempt + 1)));
-          continue;
+          created = await tx.setoranTahfizh.create({
+            data: {
+              setoranCode,
+              santriId: input.santriId,
+              musyrifId: musyrifStaff.id,
+              tanggal: new Date(),
+              jenis: input.jenis,
+              juz: declaredJuz,
+              halamanMulai: halMulai,
+              halamanSelesai: halSelesai,
+              jumlahHalaman: jmlHalaman,
+              nilai: input.nilai,
+              catatan: input.catatan?.trim() || null,
+              createdBy: session.username,
+            },
+            include: {
+              santri: true,
+              musyrif: true,
+            },
+          });
+          break;
+        } catch (err) {
+          if ((err as { code?: string })?.code === "P2002" && attempt < 2) {
+            await new Promise((r) => setTimeout(r, 50 * (attempt + 1)));
+            continue;
+          }
+          throw err;
         }
-        throw err;
       }
-    }
+      if (!created) {
+        throw new Error("Gagal membuat record setoran baru setelah 3 kali percobaan.");
+      }
+      return created;
+    });
 
-    if (!newSetoran) {
-      throw new Error("Gagal menginisialisasi record setoran baru.");
-    }
-
-    // 7. Catat Audit Log
+    // 8. Catat Audit Log
     await recordAuditLog({
       userId: session.userId,
       action: "CREATE_SETORAN",
@@ -160,11 +225,13 @@ export async function createSetoranAction(input: CreateSetoranInput) {
       details: {
         setoranCode: newSetoran.setoranCode,
         databaseId: newSetoran.id,
+        santriId: newSetoran.santriId,
         santriNis: newSetoran.santri.nis,
         juz: declaredJuz,
         halaman: `${halMulai}-${halSelesai}`,
         jumlahHalaman: jmlHalaman,
         nilai: input.nilai,
+        catatan: input.catatan || null,
       },
     });
 
@@ -185,6 +252,91 @@ export async function createSetoranAction(input: CreateSetoranInput) {
 }
 
 /**
+ * Server Action: Mengambil rekomendasi Sabaqi santri berdasarkan setoran SABAQ nyata pekan berjalan (WITA)
+ */
+export async function getSetoranSabaqPekanSantriAction(santriId: string, tanggalStr?: string) {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
+  }
+
+  if (!santriId) {
+    return { success: false, message: "ID santri wajib diberikan." };
+  }
+
+  // ABAC check
+  if (session.role === "WS" || session.role === "ST") {
+    if (!session.santriId || session.santriId !== santriId) {
+      return { success: false, message: "Akses Ditolak: Anda hanya berwenang melihat data santri Anda sendiri." };
+    }
+  } else if (session.role === "MT" || session.role === "PH") {
+    if (!session.staffId) {
+      return { success: false, message: "Akses Ditolak: Akun MT/PH belum terhubung dengan staf." };
+    }
+    if (!session.isKepalaBidangTahfidz) {
+      const isBinaan = await prisma.halaqoh.findFirst({
+        where: {
+          pembinaId: session.staffId,
+          santriList: { some: { id: santriId } },
+        },
+      });
+      if (!isBinaan) {
+        return { success: false, message: "Akses Ditolak: Santri berada di luar halaqoh binaan Anda." };
+      }
+    }
+  }
+
+  try {
+    const refDate = tanggalStr ? new Date(tanggalStr) : new Date();
+    const startOfWeek = getStartOfWeekWITA(refDate);
+
+    // Ambil seluruh setoran SABAQ tersimpan sejak Senin 00:00:00 WITA sampai waktu referensi
+    const sabaqRecords = await prisma.setoranTahfizh.findMany({
+      where: {
+        santriId,
+        jenis: "SABAQ",
+        tanggal: {
+          gte: startOfWeek,
+          lte: refDate,
+        },
+      },
+      orderBy: { tanggal: "asc" },
+      select: {
+        id: true,
+        tanggal: true,
+        halamanMulai: true,
+        halamanSelesai: true,
+        jumlahHalaman: true,
+        juz: true,
+      },
+    });
+
+    const rekomendasi = hitungRekomendasiSabaqiPekan(
+      sabaqRecords.map((s) => ({
+        id: s.id,
+        tanggal: s.tanggal,
+        halamanMulai: s.halamanMulai,
+        halamanSelesai: s.halamanSelesai,
+        jumlahHalaman: s.jumlahHalaman,
+      })),
+      refDate
+    );
+
+    return {
+      success: true,
+      data: {
+        rekomendasi,
+        sabaqRecords,
+        startOfWeekWITA: startOfWeek.toISOString(),
+      },
+    };
+  } catch (error) {
+    console.error("Gagal mengambil data Sabaq pekan:", error);
+    return { success: false, message: "Gagal menghitung Sabaqi santri dari database." };
+  }
+}
+
+/**
  * Server Action: Mengambil riwayat setoran terbaru (dengan otorisasi sesi & scoping ABAC)
  */
 export async function getRecentSetoranAction(limit: number = 10) {
@@ -197,7 +349,10 @@ export async function getRecentSetoranAction(limit: number = 10) {
     const where: Record<string, unknown> = {};
 
     if (session.role === "MT" || session.role === "PH") {
-      if (session.staffId) {
+      if (!session.staffId) {
+        return { success: false, message: "Akses Ditolak: Profil staf belum terhubung.", data: [] };
+      }
+      if (!session.isKepalaBidangTahfidz) {
         where.santri = {
           halaqoh: { pembinaId: session.staffId },
         };
@@ -361,51 +516,4 @@ export async function getSantriKumulatifHalamanAction(santriId: string) {
   }
 }
 
-/**
- * Server Action: Mengambil Rekomendasi Sabaqi Santri Berdasarkan Setoran SABAQ Nyata Pekan Berjalan (WITA)
- */
-export async function getSetoranSabaqPekanSantriAction(santriId: string, refDateStr?: string) {
-  const session = await getCurrentSession();
-  if (!session) {
-    return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
-  }
-
-  const refDate = refDateStr ? new Date(refDateStr) : new Date();
-  const startOfWeek = getStartOfWeekWITA(refDate);
-
-  try {
-    const sabaqRecords = await prisma.setoranTahfizh.findMany({
-      where: {
-        santriId,
-        jenis: "SABAQ",
-        tanggal: {
-          gte: startOfWeek,
-          lte: refDate,
-        },
-      },
-      orderBy: { tanggal: "asc" },
-      select: {
-        id: true,
-        tanggal: true,
-        halamanMulai: true,
-        halamanSelesai: true,
-        jumlahHalaman: true,
-      },
-    });
-
-    const rekomendasi = hitungRekomendasiSabaqiPekan(sabaqRecords, refDate);
-
-    return {
-      success: true,
-      data: {
-        rekomendasi,
-        totalSetoranPekanIni: sabaqRecords.length,
-        sabaqRecords,
-      },
-    };
-  } catch (err) {
-    console.error("Gagal mengambil data Sabaq pekanan:", (err as Error)?.message || err);
-    return { success: false, message: "Gagal mengambil rekomendasi Sabaqi." };
-  }
-}
 

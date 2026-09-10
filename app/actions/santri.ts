@@ -46,7 +46,18 @@ export async function getSantriListAction(params?: {
       }
       where.id = session.santriId;
     } else if (session.role === "MT" || session.role === "PH") {
-      if (session.staffId) {
+      if (!session.staffId) {
+        return {
+          success: false,
+          message: "Profil staf pembina Anda belum terhubung. Silakan hubungi admin.",
+          data: [],
+        };
+      }
+      if (session.isKepalaBidangTahfidz) {
+        if (params?.halaqohId && params.halaqohId !== "ALL") {
+          where.halaqohId = params.halaqohId;
+        }
+      } else {
         const halaqohDibina = await prisma.halaqoh.findMany({
           where: { pembinaId: session.staffId },
           select: { id: true },
@@ -59,11 +70,9 @@ export async function getSantriListAction(params?: {
         } else {
           return { success: true, data: [] };
         }
-      } else {
-        return { success: true, data: [] };
       }
     } else {
-      if (params?.halaqohId) {
+      if (params?.halaqohId && params.halaqohId !== "ALL") {
         where.halaqohId = params.halaqohId;
       }
     }
@@ -86,8 +95,12 @@ export async function getSantriListAction(params?: {
         halaqoh: {
           include: { pembina: true },
         },
+        setoranList: {
+          where: { jenis: "SABAQ" },
+          select: { jumlahHalaman: true },
+        },
         _count: {
-          select: { setoranList: true },
+          select: { setoranList: true, pelanggaranList: true },
         },
       },
     });
@@ -99,7 +112,39 @@ export async function getSantriListAction(params?: {
       .filter((s) => s.jenisKelamin === "P")
       .sort((a, b) => a.nama.localeCompare(b.nama, "id", { sensitivity: "base" }));
 
-    return { success: true, data: [...ikhwanList, ...akhwatList] };
+    const sortedList = [...ikhwanList, ...akhwatList];
+
+    const mappedData = sortedList.map((s) => {
+      const capaianHalaman = s.setoranList?.reduce((acc, cur) => acc + (cur.jumlahHalaman || 0), 0) || 0;
+      const capaianJuz = Math.floor(capaianHalaman / 20);
+
+      return {
+        id: s.id, // Primary Key riil PostgreSQL
+        nis: s.nis,
+        nama: s.nama,
+        kelas: s.kelas,
+        jenisKelamin: s.jenisKelamin,
+        status: s.status,
+        halaqohId: s.halaqohId,
+        halaqohNama: s.halaqoh?.nama || null,
+        halaqoh: s.halaqoh?.nama || "Halaqoh",
+        pembina: s.halaqoh?.pembina?.nama || "-",
+        namaWali: s.namaWali || undefined,
+        noHpWali: s.noHpWali || undefined,
+        capaianHalaman,
+        capaianJuz,
+        targetAkhirProgramJuz: 30,
+        targetJuz: 30,
+        setoranTerakhir: s._count.setoranList > 0 ? `${s._count.setoranList} setoran tersimpan` : "-",
+        nilaiTerakhir: "MUMTAZ",
+        poinPelanggaran: s._count.pelanggaranList || 0,
+        bintangKebaikan: 0,
+        modalHalamanAwal: capaianHalaman,
+        totalHalaman: capaianHalaman,
+      };
+    });
+
+    return { success: true, data: mappedData };
   } catch (error) {
     console.error("Gagal mengambil data santri:", error);
     return { success: false, message: "Gagal mengambil data santri.", data: [] };

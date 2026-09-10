@@ -4,24 +4,10 @@ import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
 import { UserSession } from "@/types/auth";
 import { KategoriMapel, JenisNilai } from "@prisma/client";
-
-export const KEPESANTRENAN_KODE_MAPEL = [
-  "KPS-ARB", // Bahasa Arab
-  "KPS-FQH", // Fikih
-  "KPS-TFS", // Tafsir
-  "KPS-TJW", // Tajwid
-  "KPS-AQD", // Aqidah Islamiyah
-];
-
-/**
- * Konversi nilai angka 0-100 ke predikat huruf A/B/C/D
- */
-export function konversiAngkaKeHuruf(angka: number): string {
-  if (angka >= 85) return "A";
-  if (angka >= 75) return "B";
-  if (angka >= 65) return "C";
-  return "D";
-}
+import {
+  KEPESANTRENAN_KODE_MAPEL,
+  konversiAngkaKeHurufKepesantrenan as konversiAngkaKeHuruf,
+} from "@/lib/educational-rules";
 
 /**
  * Verifikasi apakah sesi pengguna berhak mengelola materi Kepesantrenan
