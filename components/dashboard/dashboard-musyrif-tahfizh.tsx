@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +61,7 @@ export function DashboardMusyrifTahfizh({
   santriList,
   selectedSantriId,
   onSelectSantriId,
+  selectedSantriNis,
   onSelectSantriNis,
   halaqohName = "Halaqoh Binaan",
   userName = "Musyrif Tahfizh",
@@ -74,6 +75,11 @@ export function DashboardMusyrifTahfizh({
   const [showCompletedList, setShowCompletedList] = useState(false);
   const [showAllSantriModal, setShowAllSantriModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Refs untuk aksesibilitas modal (focus management, focus trap, and restore)
+  const modalContentRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const triggerButtonRef = useRef<HTMLButtonElement | null>(null);
 
   // Penentuan status setoran hari ini berbasis data terstruktur dari server (WITA Asia/Makassar)
   const santriSudahSetor = useMemo(() => {
@@ -99,7 +105,7 @@ export function DashboardMusyrifTahfizh({
   const countSudahSetor = santriSudahSetor.length;
   const countBelumSetor = santriBelumSetor.length;
   const percentSetor = totalBinaan > 0 ? Math.round((countSudahSetor / totalBinaan) * 100) : 0;
-  const perluPerhatianCount = (izinPendingCount || 0) + (santriSakitCount || 0);
+  const izinKesehatanCount = (izinPendingCount || 0) + (santriSakitCount || 0);
 
   // Filter daftar santri belum setor untuk modal pencarian
   const filteredModalSantri = useMemo(() => {
@@ -110,18 +116,100 @@ export function DashboardMusyrifTahfizh({
     );
   }, [santriBelumSetor, searchQuery]);
 
-  // Handler navigasi catat setoran (menjaga single navigation pushState)
-  const handleStartSetoran = (santriId?: string) => {
+  // Modal handlers
+  const handleOpenModal = (e?: React.MouseEvent<HTMLButtonElement>) => {
+    if (e?.currentTarget) {
+      triggerButtonRef.current = e.currentTarget;
+    }
+    setShowAllSantriModal(true);
+  };
+
+  const handleCloseModal = () => {
     setShowAllSantriModal(false);
+    setSearchQuery("");
+    // Kembalikan fokus ke trigger button setelah modal ditutup
+    setTimeout(() => {
+      triggerButtonRef.current?.focus();
+    }, 0);
+  };
+
+  // Aksesibilitas: Escape key, Focus trap, & Body scroll lock selama modal aktif
+  useEffect(() => {
+    if (!showAllSantriModal) return;
+
+    // 1. Body scroll lock
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    // 2. Fokus awal ke input pencarian
+    const focusTimer = setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 30);
+
+    // 3. Escape key & Focus Trap
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        handleCloseModal();
+        return;
+      }
+
+      if (e.key === "Tab" && modalContentRef.current) {
+        const focusableElements = modalContentRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusableElements.length === 0) return;
+
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === firstElement) {
+            e.preventDefault();
+            lastElement.focus();
+          }
+        } else {
+          if (document.activeElement === lastElement) {
+            e.preventDefault();
+            firstElement.focus();
+          }
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+      clearTimeout(focusTimer);
+    };
+  }, [showAllSantriModal]);
+
+  // Handler navigasi catat setoran (menjaga single navigation & fallback aman ID -> NIS)
+  const handleStartSetoran = (santriId?: string) => {
+    handleCloseModal();
     const targetId = santriId || selectedSantriId;
-    if (targetId && onSelectSantriId) {
-      onSelectSantriId(targetId);
+
+    if (targetId) {
+      if (onSelectSantriId) {
+        onSelectSantriId(targetId);
+        return;
+      }
+      if (onSelectSantriNis) {
+        // Cari record santri berdasarkan ID untuk mendapatkan santri.nis yang valid
+        const matched = santriList.find((s) => s.id === targetId || s.nis === targetId);
+        const targetNis = matched ? matched.nis : (santriId ? undefined : selectedSantriNis);
+        if (targetNis) {
+          onSelectSantriNis(targetNis);
+          return;
+        }
+      }
+    } else if (selectedSantriNis && onSelectSantriNis) {
+      onSelectSantriNis(selectedSantriNis);
       return;
     }
-    if (targetId && onSelectSantriNis) {
-      onSelectSantriNis(targetId);
-      return;
-    }
+
     if (onNavigate) {
       onNavigate("tahfizh");
     }
@@ -149,8 +237,8 @@ export function DashboardMusyrifTahfizh({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-1.5 flex-wrap">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-white/15 text-emerald-50 backdrop-blur-xs">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
-                Sesi Aktif
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-300" />
+                Halaqoh Tahfizh
               </span>
               <span className="text-emerald-100/80 text-xs">
                 Zona WITA (UTC+8)
@@ -162,7 +250,7 @@ export function DashboardMusyrifTahfizh({
             </h1>
 
             <p className="text-xs sm:text-sm text-emerald-100/90 mt-0.5 truncate">
-              {halaqohName} • Sesi Pagi Tahfizh Berjalan
+              {halaqohName}
             </p>
           </div>
 
@@ -173,7 +261,7 @@ export function DashboardMusyrifTahfizh({
               data-testid="btn-catat-setoran-beranda"
               onClick={() => handleStartSetoran()}
               leftIcon={<BookCheck className="h-4 w-4 text-[#0E7C3A]" />}
-              className="bg-white hover:bg-emerald-50 text-[#0E7C3A] hover:text-[#0B642E] font-bold text-xs sm:text-sm shadow-sm rounded-xl min-h-[44px] px-4 sm:px-5 border-0 active:scale-[0.98] transition-all"
+              className="bg-white hover:bg-emerald-50 text-[#0E7C3A] hover:text-[#0B642E] font-bold text-xs sm:text-sm shadow-sm rounded-xl min-h-[44px] px-4 sm:px-5 border-0 active:scale-[0.98] transition-all motion-reduce:transition-none"
             >
               + Catat Setoran
             </Button>
@@ -222,7 +310,7 @@ export function DashboardMusyrifTahfizh({
             </div>
             <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
               <div
-                className="bg-[#0E7C3A] h-1.5 rounded-full transition-all duration-300"
+                className="bg-[#0E7C3A] h-1.5 rounded-full transition-all duration-300 motion-reduce:transition-none"
                 style={{ width: `${percentSetor}%` }}
               />
             </div>
@@ -265,11 +353,11 @@ export function DashboardMusyrifTahfizh({
           </div>
         </div>
 
-        {/* Metrik 4: Perlu Perhatian atau Izin Menunggu */}
+        {/* Metrik 4: Izin & Kesehatan */}
         <div className="bg-white rounded-2xl p-3.5 sm:p-5 border border-slate-200/90 shadow-2xs flex flex-col justify-between">
           <div className="flex items-start justify-between gap-1.5 mb-2">
             <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider leading-snug">
-              Perlu Perhatian
+              Izin & Kesehatan
             </span>
             <div className="p-1.5 sm:p-2 rounded-xl bg-orange-50 text-orange-600 shrink-0">
               <AlertTriangle className="h-4 w-4" />
@@ -277,10 +365,10 @@ export function DashboardMusyrifTahfizh({
           </div>
           <div>
             <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-heading">
-              {perluPerhatianCount}
+              {izinKesehatanCount}
             </div>
             <span className="text-[11px] sm:text-xs text-slate-500 block mt-1 truncate">
-              {perluPerhatianCount > 0
+              {izinKesehatanCount > 0
                 ? `${izinPendingCount} izin • ${santriSakitCount} sakit`
                 : "Kondisi aman & terpantau"}
             </span>
@@ -330,7 +418,7 @@ export function DashboardMusyrifTahfizh({
                   <button
                     type="button"
                     onClick={() => handleStartSetoran()}
-                    className="min-h-[44px] px-3 py-1.5 text-xs font-bold rounded-xl bg-emerald-50 text-[#0E7C3A] hover:bg-[#0E7C3A] hover:text-white transition-colors shrink-0"
+                    className="min-h-[44px] px-3 py-1.5 text-xs font-bold rounded-xl bg-emerald-50 text-[#0E7C3A] hover:bg-[#0E7C3A] hover:text-white transition-colors motion-reduce:transition-none shrink-0"
                   >
                     Catat Sekarang
                   </button>
@@ -362,7 +450,7 @@ export function DashboardMusyrifTahfizh({
                   <button
                     type="button"
                     onClick={() => onNavigate?.("tahfizh")}
-                    className="min-h-[44px] px-3 py-1.5 text-xs font-bold rounded-xl bg-amber-50 text-amber-700 hover:bg-amber-600 hover:text-white transition-colors shrink-0"
+                    className="min-h-[44px] px-3 py-1.5 text-xs font-bold rounded-xl bg-amber-50 text-amber-700 hover:bg-amber-600 hover:text-white transition-colors motion-reduce:transition-none shrink-0"
                   >
                     Tinjau Ikhtibar
                   </button>
@@ -394,7 +482,7 @@ export function DashboardMusyrifTahfizh({
                   <button
                     type="button"
                     onClick={() => onNavigate?.("perizinan")}
-                    className="min-h-[44px] px-3 py-1.5 text-xs font-bold rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white transition-colors shrink-0"
+                    className="min-h-[44px] px-3 py-1.5 text-xs font-bold rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white transition-colors motion-reduce:transition-none shrink-0"
                   >
                     Tinjau Izin
                   </button>
@@ -422,7 +510,7 @@ export function DashboardMusyrifTahfizh({
                 <button
                   type="button"
                   data-testid="btn-lihat-semua-santri"
-                  onClick={() => setShowAllSantriModal(true)}
+                  onClick={(e) => handleOpenModal(e)}
                   className="text-xs font-bold text-[#0E7C3A] hover:text-[#0B642E] flex items-center gap-1 min-h-[44px] px-2"
                 >
                   Lihat Semua ({countBelumSetor})
@@ -446,7 +534,7 @@ export function DashboardMusyrifTahfizh({
                     <div
                       key={santri.id || santri.nis}
                       data-testid="santri-belum-setor-item"
-                      className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 hover:bg-slate-50/80 px-2 rounded-xl transition-colors"
+                      className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 hover:bg-slate-50/80 px-2 rounded-xl transition-colors motion-reduce:transition-none"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -468,7 +556,7 @@ export function DashboardMusyrifTahfizh({
                           size="sm"
                           data-testid={`btn-catat-setoran-santri-${santri.id || santri.nis}`}
                           onClick={() => handleStartSetoran(santri.id)}
-                          className="text-xs font-bold text-[#0E7C3A] border-emerald-200 hover:bg-emerald-50 min-h-[44px] sm:min-h-[38px] gap-1 rounded-xl"
+                          className="text-xs font-bold text-[#0E7C3A] border-emerald-200 hover:bg-emerald-50 min-h-[44px] sm:min-h-[38px] gap-1 rounded-xl transition-all motion-reduce:transition-none"
                         >
                           Catat Setoran
                           <ArrowRight className="h-3.5 w-3.5 text-[#0E7C3A]" />
@@ -485,7 +573,7 @@ export function DashboardMusyrifTahfizh({
                   <span>Menampilkan 5 dari {countBelumSetor} santri belum setor</span>
                   <button
                     type="button"
-                    onClick={() => setShowAllSantriModal(true)}
+                    onClick={(e) => handleOpenModal(e)}
                     className="font-bold text-[#0E7C3A] hover:underline flex items-center gap-1 min-h-[44px] px-2"
                   >
                     Buka Daftar Lengkap
@@ -555,7 +643,7 @@ export function DashboardMusyrifTahfizh({
         </div>
 
         {/* --------------------------------------------------------------------- */}
-        {/* KOLOM KANAN (4 Kolom): Akses Cepat & Ringkasan Halaqoh Operasional   */}
+        {/* KOLOM KANAN (4 Kolom): Akses Cepat & Info Halaqoh Faktual            */}
         {/* --------------------------------------------------------------------- */}
         <div className="lg:col-span-4 space-y-5 sm:space-y-6">
           {/* Akses Cepat (4 Shortcuts) */}
@@ -569,9 +657,9 @@ export function DashboardMusyrifTahfizh({
               <button
                 type="button"
                 onClick={() => handleStartSetoran()}
-                className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/60 hover:bg-emerald-50/70 hover:border-emerald-200 text-left transition-colors min-h-[44px] group"
+                className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/60 hover:bg-emerald-50/70 hover:border-emerald-200 text-left transition-colors motion-reduce:transition-none min-h-[44px] group"
               >
-                <div className="p-2 rounded-lg bg-emerald-100 text-[#0E7C3A] group-hover:bg-[#0E7C3A] group-hover:text-white transition-colors">
+                <div className="p-2 rounded-lg bg-emerald-100 text-[#0E7C3A] group-hover:bg-[#0E7C3A] group-hover:text-white transition-colors motion-reduce:transition-none">
                   <BookCheck className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -582,15 +670,15 @@ export function DashboardMusyrifTahfizh({
                     Input sabaq, sabaqi, manzil
                   </p>
                 </div>
-                <ArrowRight className="h-3.5 w-3.5 text-slate-400 group-hover:text-[#0E7C3A] group-hover:translate-x-0.5 transition-all" />
+                <ArrowRight className="h-3.5 w-3.5 text-slate-400 group-hover:text-[#0E7C3A] group-hover:translate-x-0.5 transition-all motion-reduce:transition-none" />
               </button>
 
               <button
                 type="button"
                 onClick={() => onNavigate?.("presensi")}
-                className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/60 hover:bg-blue-50/70 hover:border-blue-200 text-left transition-colors min-h-[44px] group"
+                className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/60 hover:bg-blue-50/70 hover:border-blue-200 text-left transition-colors motion-reduce:transition-none min-h-[44px] group"
               >
-                <div className="p-2 rounded-lg bg-blue-100 text-blue-700 group-hover:bg-blue-700 group-hover:text-white transition-colors">
+                <div className="p-2 rounded-lg bg-blue-100 text-blue-700 group-hover:bg-blue-700 group-hover:text-white transition-colors motion-reduce:transition-none">
                   <Clock className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -601,34 +689,34 @@ export function DashboardMusyrifTahfizh({
                     Kehadiran sesi pagi & sore
                   </p>
                 </div>
-                <ArrowRight className="h-3.5 w-3.5 text-slate-400 group-hover:text-blue-700 group-hover:translate-x-0.5 transition-all" />
+                <ArrowRight className="h-3.5 w-3.5 text-slate-400 group-hover:text-blue-700 group-hover:translate-x-0.5 transition-all motion-reduce:transition-none" />
               </button>
 
               <button
                 type="button"
                 onClick={() => onNavigate?.("data_santri")}
-                className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/60 hover:bg-purple-50/70 hover:border-purple-200 text-left transition-colors min-h-[44px] group"
+                className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/60 hover:bg-purple-50/70 hover:border-purple-200 text-left transition-colors motion-reduce:transition-none min-h-[44px] group"
               >
-                <div className="p-2 rounded-lg bg-purple-100 text-purple-700 group-hover:bg-purple-700 group-hover:text-white transition-colors">
+                <div className="p-2 rounded-lg bg-purple-100 text-purple-700 group-hover:bg-purple-700 group-hover:text-white transition-colors motion-reduce:transition-none">
                   <Users className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-bold text-slate-800 group-hover:text-purple-700 truncate">
-                    Data & Rapor Santri
+                    Data Santri
                   </p>
                   <p className="text-[11px] text-slate-500 truncate">
-                    Profil, modal, mutaba&apos;ah
+                    Profil & mutaba&apos;ah santri
                   </p>
                 </div>
-                <ArrowRight className="h-3.5 w-3.5 text-slate-400 group-hover:text-purple-700 group-hover:translate-x-0.5 transition-all" />
+                <ArrowRight className="h-3.5 w-3.5 text-slate-400 group-hover:text-purple-700 group-hover:translate-x-0.5 transition-all motion-reduce:transition-none" />
               </button>
 
               <button
                 type="button"
                 onClick={() => onNavigate?.("perizinan")}
-                className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/60 hover:bg-orange-50/70 hover:border-orange-200 text-left transition-colors min-h-[44px] group"
+                className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/60 hover:bg-orange-50/70 hover:border-orange-200 text-left transition-colors motion-reduce:transition-none min-h-[44px] group"
               >
-                <div className="p-2 rounded-lg bg-orange-100 text-orange-700 group-hover:bg-orange-700 group-hover:text-white transition-colors">
+                <div className="p-2 rounded-lg bg-orange-100 text-orange-700 group-hover:bg-orange-700 group-hover:text-white transition-colors motion-reduce:transition-none">
                   <Send className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -639,12 +727,12 @@ export function DashboardMusyrifTahfizh({
                     Izin pulang, sakit, syar&apos;i
                   </p>
                 </div>
-                <ArrowRight className="h-3.5 w-3.5 text-slate-400 group-hover:text-orange-700 group-hover:translate-x-0.5 transition-all" />
+                <ArrowRight className="h-3.5 w-3.5 text-slate-400 group-hover:text-orange-700 group-hover:translate-x-0.5 transition-all motion-reduce:transition-none" />
               </button>
             </CardContent>
           </Card>
 
-          {/* Ringkasan Sesi Operasional */}
+          {/* Info Halaqoh Faktual */}
           <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-emerald-50/80 to-teal-50/50 border border-emerald-200/60">
             <div className="flex items-center gap-2 mb-2 text-[#0E7C3A]">
               <Sparkles className="h-4 w-4" />
@@ -652,15 +740,12 @@ export function DashboardMusyrifTahfizh({
                 Info Halaqoh
               </span>
             </div>
-            <p className="text-xs text-slate-700 font-semibold truncate">
+            <p className="text-xs text-slate-800 font-bold truncate">
               {halaqohName}
             </p>
-            <p className="text-[11px] text-slate-500 mt-1">
-              Target Tahfizh: Juz 28–30 Mutqin
-            </p>
             <div className="mt-3 pt-2.5 border-t border-emerald-200/50 flex items-center justify-between text-[11px] text-slate-600">
-              <span>Sesi Pagi WITA</span>
-              <span className="font-semibold text-emerald-800">06.00 – 07.30</span>
+              <span>Total Santri Binaan</span>
+              <span className="font-semibold text-emerald-800">{totalBinaan} Santri</span>
             </div>
           </div>
         </div>
@@ -672,27 +757,33 @@ export function DashboardMusyrifTahfizh({
       {showAllSantriModal && (
         <div
           data-testid="modal-semua-santri"
-          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none"
           role="dialog"
           aria-modal="true"
           aria-labelledby="modal-santri-title"
+          aria-describedby="modal-santri-desc"
+          onClick={handleCloseModal}
         >
-          <div className="bg-white w-full max-w-2xl max-h-[85vh] rounded-2xl shadow-xl flex flex-col overflow-hidden border border-slate-200">
+          <div
+            ref={modalContentRef}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white w-full max-w-2xl max-h-[85vh] rounded-2xl shadow-xl flex flex-col overflow-hidden border border-slate-200"
+          >
             {/* Header Modal */}
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-2">
               <div>
                 <h3 id="modal-santri-title" className="text-base sm:text-lg font-bold text-slate-900 font-heading">
                   Daftar Lengkap Santri Belum Setor ({countBelumSetor})
                 </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <p id="modal-santri-desc" className="text-xs text-slate-500 mt-0.5">
                   {halaqohName} • Pilih santri untuk memulai input hafalan
                 </p>
               </div>
               <button
                 type="button"
                 data-testid="btn-close-modal-santri"
-                onClick={() => setShowAllSantriModal(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+                onClick={handleCloseModal}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors motion-reduce:transition-none min-h-[44px] min-w-[44px] flex items-center justify-center"
                 aria-label="Tutup modal"
               >
                 <X className="h-5 w-5" />
@@ -704,6 +795,7 @@ export function DashboardMusyrifTahfizh({
               <div className="relative">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                 <input
+                  ref={searchInputRef}
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -725,7 +817,7 @@ export function DashboardMusyrifTahfizh({
                   return (
                     <div
                       key={santri.id || santri.nis}
-                      className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 hover:bg-slate-50/80 px-2 rounded-xl transition-colors"
+                      className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 hover:bg-slate-50/80 px-2 rounded-xl transition-colors motion-reduce:transition-none"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -747,7 +839,7 @@ export function DashboardMusyrifTahfizh({
                           size="sm"
                           data-testid={`btn-catat-setoran-santri-${santri.id || santri.nis}`}
                           onClick={() => handleStartSetoran(santri.id)}
-                          className="text-xs font-bold text-[#0E7C3A] border-emerald-200 hover:bg-emerald-50 min-h-[44px] sm:min-h-[38px] gap-1 rounded-xl"
+                          className="text-xs font-bold text-[#0E7C3A] border-emerald-200 hover:bg-emerald-50 min-h-[44px] sm:min-h-[38px] gap-1 rounded-xl transition-all motion-reduce:transition-none"
                         >
                           Catat Setoran
                           <ArrowRight className="h-3.5 w-3.5 text-[#0E7C3A]" />
@@ -765,7 +857,7 @@ export function DashboardMusyrifTahfizh({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowAllSantriModal(false)}
+                onClick={handleCloseModal}
                 className="text-xs min-h-[44px]"
               >
                 Tutup
@@ -777,3 +869,4 @@ export function DashboardMusyrifTahfizh({
     </div>
   );
 }
+

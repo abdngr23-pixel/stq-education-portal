@@ -148,7 +148,35 @@ export async function runIsolatedE2EVerification() {
     // 2. Setup Fixtures Data
     console.log("\n[2] Menyiapkan fixtures data pengujian...");
     await setupTestFixtures(testPrisma);
-    console.log("   ✓ Fixtures siap (Musyrif, Halaqoh, 5 Santri: Multi, Half, Khatam, Sabaqi, BatasJuz)");
+    // Tambahkan 2 santri ekstra agar total santri halaqoh = 7 (> 5)
+    // untuk menguji pembatasan baris (maks 5), tombol "Lihat Semua (7)", dan aksesibilitas modal dialog
+    await testPrisma.santri.createMany({
+      data: [
+        {
+          id: "TEST_SAN_EXTRA1",
+          nis: "TEST-006",
+          nama: "Hammam Fathurrahman",
+          kelas: "7A",
+          jenisKelamin: "L",
+          halaqohId: FIXTURES.HALAQOH_ID,
+          modalHafalanAwalHalaman: 100,
+          tanggalBaselineTahfizh: new Date("2026-09-01T00:00:00.000Z"),
+          status: "AKTIF",
+        },
+        {
+          id: "TEST_SAN_EXTRA2",
+          nis: "TEST-007",
+          nama: "Ibrahim Al-Ghazi",
+          kelas: "7A",
+          jenisKelamin: "L",
+          halaqohId: FIXTURES.HALAQOH_ID,
+          modalHafalanAwalHalaman: 150,
+          tanggalBaselineTahfizh: new Date("2026-09-01T00:00:00.000Z"),
+          status: "AKTIF",
+        },
+      ],
+    });
+    console.log("   ✓ Fixtures siap (Musyrif, Halaqoh, 7 Santri Binaan untuk Uji Threshold Dashboard & Modal)");
 
     // 3. Alokasikan Port Dinamis untuk Server Next.js Test (Mulai dari 3100)
     console.log("\n[3] Mencari port kosong untuk Next.js test...");
@@ -268,15 +296,15 @@ export async function runIsolatedE2EVerification() {
     const btnText = await page.$eval('[data-testid="btn-catat-setoran-beranda"]', (el) => el.textContent || "");
     if (!btnText.includes("Catat Setoran")) fail(`Teks tombol tidak sesuai: "${btnText}"`);
 
-    // Daftar belum/sudah setor sesuai data database (assert presisi, bukan hanya >= 1)
+    // Daftar belum/sudah setor sesuai data database (assert presisi, maks 5 di dashboard utama)
     await page.waitForSelector('[data-testid="santri-belum-setor-list"]', { timeout: 5000 });
     const belumSetorCountUi = await page.$$eval('[data-testid="santri-belum-setor-item"]', (els) => els.length);
     const dbBelumSetorCount = await testPrisma.santri.count({
       where: { halaqohId: FIXTURES.HALAQOH_ID },
     });
-    console.log(`   ✓ Daftar santri belum setor terverifikasi memuat ${belumSetorCountUi} santri (sesuai DB: ${dbBelumSetorCount}).`);
-    if (belumSetorCountUi !== dbBelumSetorCount) {
-      fail(`Jumlah santri belum setor di UI (${belumSetorCountUi}) tidak sama persis dengan record database (${dbBelumSetorCount})!`);
+    console.log(`   ✓ Total santri belum setor di database: ${dbBelumSetorCount}, ditampilkan di dashboard: ${belumSetorCountUi} (maks 5).`);
+    if (belumSetorCountUi !== 5) {
+      fail(`Dashboard utama harus menampilkan tepat 5 santri (terdeteksi: ${belumSetorCountUi}) ketika total antrean > 5!`);
     }
 
     // Verifikasi Kartu Antrean Ikhtibar Riil (Antrean 0)
@@ -295,6 +323,98 @@ export async function runIsolatedE2EVerification() {
       fail(`Jumlah antrean ikhtibar di kartu (${ikhtibarCardText}) tidak sesuai dengan record database (${ikhtibarDbCount})!`);
     }
     console.log(`   ✓ Kartu Antrean Ikhtibar menampilkan "${ikhtibarDbCount} Antrean Ikhtibar" sesuai database.`);
+
+    // =========================================================================
+    // VERIFIKASI TIDAK ADA KLAIM OPERASIONAL / TARGET PALSU
+    // =========================================================================
+    console.log("   [Assertion Faktual] Memverifikasi ketiadaan klaim sesi/waktu/target palsu...");
+    const pageText = await page.evaluate(() => document.body.innerText);
+    const forbiddenPatterns = [
+      "Sesi Aktif",
+      "Sesi Pagi Tahfizh Berjalan",
+      "Sesi Pagi WITA",
+      "06.00 – 07.30",
+      "Target Tahfizh: Juz 28–30 Mutqin",
+      "Perlu Perhatian",
+      "Data & Rapor Santri",
+    ];
+    for (const pattern of forbiddenPatterns) {
+      if (pageText.includes(pattern)) {
+        fail(`Ditemukan teks terlarang/hardcoded palsu pada dashboard: "${pattern}"!`);
+      }
+    }
+    console.log("   ✓ Terverifikasi bebas dari teks sesi, waktu, target palsu, dan label usang.");
+
+    // =========================================================================
+    // VERIFIKASI MODAL "LIHAT SEMUA SANTRI" (WCAG FOCUS, ESCAPE, SEARCH, SELECT)
+    // =========================================================================
+    console.log("   [Assertion Modal & Aksesibilitas] Menguji modal 'Lihat Semua Santri'...");
+    const btnLihatSemua = await page.waitForSelector('[data-testid="btn-lihat-semua-santri"]', { timeout: 5000 });
+    if (!btnLihatSemua) fail("Tombol 'Lihat Semua' tidak muncul pada santri > 5!");
+
+    // 1. Klik Lihat Semua untuk membuka modal
+    await btnLihatSemua.click();
+    await page.waitForSelector('[data-testid="modal-semua-santri"]', { timeout: 5000 });
+    console.log("   ✓ Modal 'Lihat Semua Santri' berhasil terbuka.");
+
+    // 2. Escape menutup modal
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(
+      () => !document.querySelector('[data-testid="modal-semua-santri"]'),
+      { timeout: 5000 }
+    );
+    console.log("   ✓ Tombol Escape berhasil menutup modal.");
+
+    // 3. Fokus kembali ke tombol 'Lihat Semua'
+    const isFocusRestored = await page.evaluate(() => {
+      const active = document.activeElement;
+      return active?.getAttribute("data-testid") === "btn-lihat-semua-santri";
+    });
+    if (!isFocusRestored) {
+      fail("Fokus gagal kembali ke tombol 'Lihat Semua' setelah modal ditutup via Escape!");
+    }
+    console.log("   ✓ Fokus berhasil kembali ke tombol 'Lihat Semua'.");
+
+    // 4. Buka kembali modal untuk menguji pencarian
+    await btnLihatSemua.click();
+    await page.waitForSelector('[data-testid="modal-semua-santri"]', { timeout: 5000 });
+
+    // Ketik kata kunci pencarian
+    const searchInput = await page.waitForSelector('[data-testid="modal-semua-santri"] input[type="text"]', { timeout: 5000 });
+    if (!searchInput) fail("Input pencarian modal tidak ditemukan!");
+    await searchInput.type("Ibrahim");
+    await new Promise((r) => setTimeout(r, 200));
+
+    // Verifikasi hasil pencarian modal terfilter menjadi 1 santri
+    const searchModalRows = await page.$$eval('[data-testid="modal-semua-santri"] [data-testid^="btn-catat-setoran-santri-"]', (els) => els.length);
+    if (searchModalRows !== 1) {
+      fail(`Pencarian modal gagal: diharapkan 1 hasil untuk 'Ibrahim', terdeteksi ${searchModalRows}!`);
+    }
+    console.log("   ✓ Pencarian modal berfungsi dengan akurat (1 santri terfilter).");
+
+    // 5. Pemilihan santri dari modal membuka modul Tahfizh dengan santri yang benar
+    const btnSelectModalSantri = await page.waitForSelector(
+      '[data-testid="modal-semua-santri"] [data-testid="btn-catat-setoran-santri-TEST_SAN_EXTRA2"]',
+      { timeout: 5000 }
+    );
+    if (!btnSelectModalSantri) fail("Tombol catat setoran santri Ibrahim Al-Ghazi tidak ditemukan di modal!");
+    await btnSelectModalSantri.click();
+
+    // Pastikan modul Tahfizh terbuka dan santri terpilih sesuai
+    await page.waitForSelector('[data-testid="tahfizh-module"]', { timeout: 10000 });
+    await page.waitForFunction(
+      () => {
+        const sel = document.querySelector("#santri-selector") as HTMLSelectElement | null;
+        return sel && sel.value === "TEST_SAN_EXTRA2";
+      },
+      { timeout: 10000 }
+    );
+    console.log("   ✓ Pemilihan santri dari modal berhasil membuka modul Tahfizh dengan santri yang benar (TEST_SAN_EXTRA2).");
+
+    // Kembali ke Beranda untuk melanjutkan skenario berikutnya
+    const navBerandaAwal = await page.waitForSelector('[data-testid="nav-beranda"], button[title*="Beranda"]', { timeout: 5000 });
+    if (navBerandaAwal) await navBerandaAwal.click();
+    await page.waitForSelector('[data-testid="dashboard-musyrif-tahfizh"]', { timeout: 10000 });
 
     // Verifikasi PWA / Service Worker tidak aktif
     const swRegistrationsCount = await page.evaluate(async () => {
@@ -324,6 +444,13 @@ export async function runIsolatedE2EVerification() {
     if (mobile390Overflow) fail("Mobile 390x844 mengalami horizontal overflow!");
     console.log("   ✓ Mobile 390x844 bebas overflow.");
 
+    // 2b. Mobile Sempit 360x800
+    await page.setViewport({ width: 360, height: 800 });
+    await new Promise((r) => setTimeout(r, 300));
+    const mobile360Overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    if (mobile360Overflow) fail("Mobile 360x800 mengalami horizontal overflow!");
+    console.log("   ✓ Mobile 360x800 bebas overflow.");
+
     // 3. Mobile 412x915
     await page.setViewport({ width: 412, height: 915 });
     await new Promise((r) => setTimeout(r, 300));
@@ -348,7 +475,9 @@ export async function runIsolatedE2EVerification() {
     await new Promise((r) => setTimeout(r, 200));
 
     // Klik tombol "+ Catat Setoran" dari header Beranda Musyrif untuk navigasi umum ke Tahfizh
-    await catatSetoranBtn.click();
+    const catatSetoranBtnAgain = await page.waitForSelector('[data-testid="btn-catat-setoran-beranda"]', { timeout: 5000 });
+    if (!catatSetoranBtnAgain) fail("Tombol + Catat Setoran tidak ditemukan di Beranda Musyrif");
+    await catatSetoranBtnAgain.click();
     await page.waitForSelector('[data-testid="tahfizh-module"]', { timeout: 10000 });
     await page.waitForFunction(
       () => {
@@ -732,6 +861,11 @@ export async function runIsolatedE2EVerification() {
 
     if (testPrisma) {
       try {
+        await testPrisma.santri.deleteMany({
+          where: {
+            id: { in: ["TEST_SAN_EXTRA1", "TEST_SAN_EXTRA2"] },
+          },
+        });
         await cleanupTestFixtures(testPrisma);
         console.log("   ✓ Fixtures test dibersihkan.");
       } catch (err) {

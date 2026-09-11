@@ -43,10 +43,19 @@ async function waitForServerReady(url: string, timeoutMs = 45000): Promise<boole
   return false;
 }
 
+const DOCS_DIR = path.join(process.cwd(), "docs", "screenshots");
+if (!fs.existsSync(DOCS_DIR)) {
+  fs.mkdirSync(DOCS_DIR, { recursive: true });
+}
+
 async function capture(page: Page, filename: string, options: { fullPage?: boolean } = { fullPage: true }) {
   const fullPath = path.join(ARTIFACT_DIR, filename);
   await page.screenshot({ path: fullPath, fullPage: options.fullPage });
-  console.log(`📸 [Screenshot Saved] -> ${filename}`);
+  const docsPath = path.join(DOCS_DIR, filename);
+  try {
+    fs.copyFileSync(fullPath, docsPath);
+  } catch {}
+  console.log(`📸 [Screenshot Saved] -> ${filename} (Artifact & docs/screenshots)`);
   return fullPath;
 }
 
