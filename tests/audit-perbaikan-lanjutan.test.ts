@@ -1,8 +1,19 @@
+// Shim React.createContext in Node test environment under react-server condition
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const React = require("react");
+if (!React.createContext) {
+  React.createContext = () => ({
+    Provider: () => null,
+    Consumer: () => null,
+  });
+}
+
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ROLE_NAV_MAP } from "../types/navigation";
 import { konversiPredikatNilai, evaluasiLevelSP, hitungPoinPelanggaran, SP_THRESHOLDS } from "../lib/educational-rules";
 import { buildIzinSantriWAMessage, buildPelanggaranSPWAMessage } from "../lib/whatsapp";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { ROLE_NAV_MAP } = require("../types/navigation");
 
 test("Tahap 1: Otorisasi Navigasi Role Yayasan (YAY)", () => {
   // Sesuai 05_ROLE_PERMISSION_MATRIX.md: Yayasan berhak mengakses monitoring akademik & kedisiplinan

@@ -1,5 +1,5 @@
 // Test Khusus Verifikasi Penentuan Status Setoran Hari Ini Berdasarkan Batas Hari WITA (Asia/Makassar)
-// Menjamin Pengujian Terintegrasi Jalur Produksi Server Action (getSantriListAction):
+// Menjamin Pengujian Terintegrasi Service Internal Produksi (getSantriListForSession):
 // 1. sudahSetorHariIni = true untuk setoran aktif hari ini (WITA)
 // 2. sudahSetorHariIni = false untuk setoran kemarin (WITA)
 // 3. sudahSetorHariIni = true untuk setoran pada batas pergantian hari 00:05 WITA
@@ -21,7 +21,7 @@ import { isTodayWita, getWitaDateString, parseWITADate } from "../lib/wita-date"
 import { getSantriListForSession } from "../lib/server/santri-list-service";
 import { UserSession } from "../types/auth";
 
-describe("Verifikasi Status Setoran Hari Ini Berbasis Zona Waktu WITA & Jalur Produksi getSantriListAction", () => {
+describe("Verifikasi Status Setoran Hari Ini Berbasis Zona Waktu WITA & Service Internal Produksi getSantriListForSession", () => {
   let prisma: PrismaClient;
 
   const SANTRI_ID_TODAY = "santri-wita-today-01";
@@ -179,7 +179,7 @@ describe("Verifikasi Status Setoran Hari Ini Berbasis Zona Waktu WITA & Jalur Pr
     await stopTestDatabase();
   });
 
-  it("1. jalur produksi getSantriListAction: menandai sudahSetorHariIni = true dan setoranTerakhirAt untuk setoran aktif hari ini", async () => {
+  it("1. service internal produksi getSantriListForSession: menandai sudahSetorHariIni = true dan setoranTerakhirAt untuk setoran aktif hari ini", async () => {
     const res = await getSantriListForSession(undefined, sessionMT, prisma);
     assert.equal(res.success, true);
     const santriToday = res.data.find((s) => s.id === SANTRI_ID_TODAY);
@@ -188,7 +188,7 @@ describe("Verifikasi Status Setoran Hari Ini Berbasis Zona Waktu WITA & Jalur Pr
     assert.equal(santriToday.setoranTerakhirAt, todayMiddayWita.toISOString());
   });
 
-  it("2. jalur produksi getSantriListAction: menandai sudahSetorHariIni = false dan setoranTerakhirAt kemarin untuk setoran kemarin", async () => {
+  it("2. service internal produksi getSantriListForSession: menandai sudahSetorHariIni = false dan setoranTerakhirAt kemarin untuk setoran kemarin", async () => {
     const res = await getSantriListForSession(undefined, sessionMT, prisma);
     assert.equal(res.success, true);
     const santriYesterday = res.data.find((s) => s.id === SANTRI_ID_YESTERDAY);
@@ -197,7 +197,7 @@ describe("Verifikasi Status Setoran Hari Ini Berbasis Zona Waktu WITA & Jalur Pr
     assert.equal(santriYesterday.setoranTerakhirAt, yesterdayWitaDate.toISOString());
   });
 
-  it("3. jalur produksi getSantriListAction: menandai sudahSetorHariIni = true untuk setoran pada batas jam 00:05 WITA", async () => {
+  it("3. service internal produksi getSantriListForSession: menandai sudahSetorHariIni = true untuk setoran pada batas jam 00:05 WITA", async () => {
     const res = await getSantriListForSession(undefined, sessionMT, prisma);
     assert.equal(res.success, true);
     const santriBoundary = res.data.find((s) => s.id === SANTRI_ID_BOUNDARY);
@@ -206,7 +206,7 @@ describe("Verifikasi Status Setoran Hari Ini Berbasis Zona Waktu WITA & Jalur Pr
     assert.equal(santriBoundary.setoranTerakhirAt, earlyMorningWita.toISOString());
   });
 
-  it("4. jalur produksi getSantriListAction: mengecualikan setoran DIBATALKAN sehingga sudahSetorHariIni = false dan setoranTerakhirAt = null", async () => {
+  it("4. service internal produksi getSantriListForSession: mengecualikan setoran DIBATALKAN sehingga sudahSetorHariIni = false dan setoranTerakhirAt = null", async () => {
     const res = await getSantriListForSession(undefined, sessionMT, prisma);
     assert.equal(res.success, true);
     const santriCancelled = res.data.find((s) => s.id === SANTRI_ID_CANCELLED);

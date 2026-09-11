@@ -2,7 +2,7 @@
 
 import prisma from '@/lib/prisma';
 import { requireRole, getSession, recordAuditLog } from '@/lib/auth';
-import { StatusIkhtibar } from '@prisma/client';
+import { StatusIkhtibar, Prisma } from '@prisma/client';
 import { validasiIkhtibarTahap1, validasiIkhtibarTahap2, MIN_NILAI_IKHTIBAR } from '@/lib/educational-rules';
 import { getIkhtibarPendingCountForSession } from '@/lib/server/ikhtibar-pending-service';
 
@@ -35,6 +35,16 @@ export async function ajukanIkhtibarAction(formData: {
 
     if (!santri) {
       return { success: false, message: 'Data santri tidak ditemukan.' };
+    }
+
+    // Penegakan ABAC Fail-Closed: MT hanya berwenang mengajukan santri dalam halaqoh binaannya
+    if (session.role === 'MT' && !session.isKepalaBidangTahfidz) {
+      if (!session.staffId) {
+        return { success: false, message: 'Akses ditolak: Profil staf pembina belum terhubung.' };
+      }
+      if (santri.halaqoh?.pembinaId !== session.staffId) {
+        return { success: false, message: 'Akses ditolak: Anda hanya berwenang mengajukan ikhtibar untuk santri halaqoh binaan Anda.' };
+      }
     }
 
     // Cek apakah santri sudah lulus sempurna juz ini
@@ -111,11 +121,21 @@ export async function inputHasilTahap1Action(formData: {
 
     const ikhtibar = await prisma.ikhtibarTahfizh.findUnique({
       where: { id: formData.ikhtibarId },
-      include: { santri: true },
+      include: { santri: { include: { halaqoh: true } } },
     });
 
     if (!ikhtibar) {
       return { success: false, message: 'Data ikhtibar tidak ditemukan.' };
+    }
+
+    // Penegakan ABAC Fail-Closed: MT hanya berwenang menilai ujian santri halaqoh binaannya
+    if (session.role === 'MT' && !session.isKepalaBidangTahfidz) {
+      if (!session.staffId) {
+        return { success: false, message: 'Akses ditolak: Profil staf pembina belum terhubung.' };
+      }
+      if (ikhtibar.santri.halaqoh?.pembinaId !== session.staffId) {
+        return { success: false, message: 'Akses ditolak: Anda hanya berwenang menilai ikhtibar untuk santri halaqoh binaan Anda.' };
+      }
     }
 
     // Validasi aturan bisnis transisi ikhtibar tahap 1
@@ -132,6 +152,7 @@ export async function inputHasilTahap1Action(formData: {
         nilaiTahap1: formData.nilai,
         catatanTahap1: formData.catatan || (status === StatusIkhtibar.LULUS_TAHAP_1 ? 'Lancar dan makhraj fasih' : `Perlu pemantapan hafalan (Nilai: ${formData.nilai})`),
         tanggalTahap1: new Date(),
+        pengujiTahap1Id: session.staffId || null,
         status,
       },
     });
@@ -250,8 +271,35 @@ export async function getDaftarIkhtibarAction(filterStatus?: StatusIkhtibar): Pr
       return { success: false, message: 'Sesi tidak sah' };
     }
 
+    const where: Prisma.IkhtibarTahfizhWhereInput = {};
+    if (filterStatus) {
+      where.status = filterStatus;
+    }
+
+    // Penegakan ABAC Fail-Closed: Filter daftar ikhtibar berdasarkan wewenang peran
+    if (session.role === 'MT' && !session.isKepalaBidangTahfidz) {
+      if (!session.staffId) {
+        return { success: true, message: 'Berhasil memuat daftar ikhtibar', data: [] };
+      }
+      where.santri = { halaqoh: { pembinaId: session.staffId } };
+    } else if (session.role === 'PH') {
+      if (!session.staffId) {
+        return { success: true, message: 'Berhasil memuat daftar ikhtibar', data: [] };
+      }
+      where.santri = { halaqoh: { pembinaId: session.staffId } };
+    } else if (session.role === 'WS' || session.role === 'ST') {
+      if (!session.santriId) {
+        return { success: true, message: 'Berhasil memuat daftar ikhtibar', data: [] };
+      }
+      where.santriId = session.santriId;
+    } else if (session.role === 'KS' || session.role === 'ADM' || (session.role === 'MT' && session.isKepalaBidangTahfidz)) {
+      // Global access untuk pimpinan & admin
+    } else {
+      return { success: false, message: 'Akses ditolak' };
+    }
+
     const list = await prisma.ikhtibarTahfizh.findMany({
-      where: filterStatus ? { status: filterStatus } : undefined,
+      where,
       include: {
         santri: {
           select: { id: true, nis: true, nama: true, kelas: true },

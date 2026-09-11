@@ -59,11 +59,25 @@ export async function verifySessionToken(token: string): Promise<AuthTokenPayloa
   }
 }
 
+let testSessionMock: UserSession | null | undefined = undefined;
+
+/**
+ * Mock sesi untuk lingkungan pengujian (dinonaktifkan total di mode produksi)
+ */
+export function setTestSession(session: UserSession | null | undefined): void {
+  if (process.env.NODE_ENV !== "production") {
+    testSessionMock = session;
+  }
+}
+
 /**
  * Ambil sesi pengguna saat ini dari HTTP-only Cookie
  * Menvalidasi token JWT dan status keaktifan akun terkini di database
  */
 export async function getCurrentSession(): Promise<UserSession | null> {
+  if (process.env.NODE_ENV !== "production" && testSessionMock !== undefined) {
+    return testSessionMock;
+  }
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;

@@ -5,6 +5,7 @@ process.env.ALLOW_ISOLATED_TEST_DB = "true";
 import { spawn, spawnSync } from "child_process";
 import fs from "fs";
 import path from "path";
+import os from "os";
 import {
   isPortInUse,
   isPidRunning,
@@ -28,6 +29,65 @@ interface RunWorkerResult {
   stderr: string;
 }
 
+function extractMetadataFromStdout(stdout: string): WorkerMetadata | null {
+  const lines = stdout.split(/\r?\n/);
+  for (const line of lines) {
+    const idx = line.indexOf("__WORKER_METADATA__");
+    if (idx !== -1) {
+      const jsonStr = line.substring(idx + "__WORKER_METADATA__".length).trim();
+      try {
+        const parsed = JSON.parse(jsonStr);
+        if (parsed && typeof parsed === "object") {
+          return parsed as WorkerMetadata;
+        }
+      } catch {}
+    }
+  }
+  return null;
+}
+
+export function validateMetadataShape(meta: WorkerMetadata | null, scenarioName: string): WorkerMetadata {
+  if (!meta) {
+    throw new Error(`[FAIL] Metadata wajib ada untuk ${scenarioName}, namun ditemukan kosong!`);
+  }
+
+  // port integer valid
+  if (
+    typeof meta.port !== "number" ||
+    !Number.isInteger(meta.port) ||
+    meta.port <= 1024 ||
+    meta.port > 65535
+  ) {
+    throw new Error(`[FAIL] Metadata port tidak valid pada ${scenarioName}: ${meta.port}`);
+  }
+
+  // tempDir memiliki prefix 'stq-test-db-' dan berada di os.tmpdir()
+  if (!meta.tempDir || typeof meta.tempDir !== "string") {
+    throw new Error(`[FAIL] Metadata tempDir kosong pada ${scenarioName}`);
+  }
+  const resolved = path.resolve(meta.tempDir);
+  const tmpDir = path.resolve(os.tmpdir());
+  const rel = path.relative(tmpDir, resolved);
+  const isInsideTmp = Boolean(rel) && !rel.startsWith("..") && !path.isAbsolute(rel);
+  if (!isInsideTmp || !path.basename(resolved).startsWith("stq-test-db-")) {
+    throw new Error(
+      `[FAIL] Metadata tempDir (${meta.tempDir}) bukan direktori valid dengan prefix 'stq-test-db-' di dalam os.tmpdir()`
+    );
+  }
+
+  // mainPid berupa angka positif
+  if (typeof meta.mainPid !== "number" || meta.mainPid <= 0) {
+    throw new Error(`[FAIL] Metadata mainPid tidak valid pada ${scenarioName}: ${meta.mainPid}`);
+  }
+
+  // childPids berupa array
+  if (!Array.isArray(meta.childPids)) {
+    throw new Error(`[FAIL] Metadata childPids harus berupa array pada ${scenarioName}!`);
+  }
+
+  return meta;
+}
+
 function runWorkerProcess(mode: string, timeoutMs = 60000): Promise<RunWorkerResult> {
   return new Promise((resolve) => {
     const tsxCli = path.resolve(__dirname, "../node_modules/tsx/dist/cli.mjs");
@@ -40,27 +100,17 @@ function runWorkerProcess(mode: string, timeoutMs = 60000): Promise<RunWorkerRes
         IS_TEST_RUN: "true",
         ALLOW_ISOLATED_TEST_DB: "true",
       },
+      detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"],
     });
 
     let stdout = "";
     let stderr = "";
-    let metadata: WorkerMetadata | null = null;
     let timedOut = false;
     let timer: NodeJS.Timeout | null = null;
 
     child.stdout.on("data", (chunk: Buffer) => {
-      const str = chunk.toString();
-      stdout += str;
-      const lines = str.split("\n");
-      for (const line of lines) {
-        if (line.includes("__WORKER_METADATA__")) {
-          const jsonStr = line.substring(line.indexOf("__WORKER_METADATA__") + "__WORKER_METADATA__".length).trim();
-          try {
-            metadata = JSON.parse(jsonStr);
-          } catch {}
-        }
-      }
+      stdout += chunk.toString();
     });
 
     child.stderr.on("data", (chunk: Buffer) => {
@@ -69,7 +119,9 @@ function runWorkerProcess(mode: string, timeoutMs = 60000): Promise<RunWorkerRes
 
     timer = setTimeout(() => {
       timedOut = true;
-      console.warn(`   [PARENT TIMEOUT] Batas waktu ${timeoutMs / 1000}s tercapai. Menghentikan tree worker PID: ${child.pid}...`);
+      console.warn(
+        `   [PARENT TIMEOUT] Batas waktu ${timeoutMs / 1000}s tercapai. Menghentikan tree worker PID: ${child.pid}...`
+      );
 
       if (child.pid) {
         if (process.platform === "win32") {
@@ -89,6 +141,7 @@ function runWorkerProcess(mode: string, timeoutMs = 60000): Promise<RunWorkerRes
         clearTimeout(timer);
         timer = null;
       }
+      const metadata = extractMetadataFromStdout(stdout);
       resolve({
         exitCode: code,
         timedOut,
@@ -104,6 +157,7 @@ function runWorkerProcess(mode: string, timeoutMs = 60000): Promise<RunWorkerRes
         timer = null;
       }
       stderr += `\nChild process spawn error: ${err.message}`;
+      const metadata = extractMetadataFromStdout(stdout);
       resolve({
         exitCode: -1,
         timedOut,
@@ -118,7 +172,7 @@ function runWorkerProcess(mode: string, timeoutMs = 60000): Promise<RunWorkerRes
 async function verifyResourceCleanup(metadata: WorkerMetadata | null, scenarioName: string): Promise<void> {
   console.log(`   [VERIFIKASI OS] Memeriksa status sumber daya pasca ${scenarioName}...`);
   if (!metadata) {
-    console.log(`   ✓ Metadata instance tidak tercatat (instance belum terbentuk atau dibatalkan sangat awal).`);
+    console.log(`   ✓ Metadata instance tidak tercatat (instance dibatalkan sebelum alokasi resource).`);
     return;
   }
 
@@ -140,7 +194,6 @@ async function verifyResourceCleanup(metadata: WorkerMetadata | null, scenarioNa
 
   for (const pid of allPids) {
     if (isPidRunning(pid)) {
-      // Jika masih hidup (misal saat intentional timeout kill), terminasi PID spesifik milik instance test ini
       if (tempDir && verifyPostgresProcessOwnership(pid, tempDir, mainPid)) {
         console.log(`   Menghentikan sisa PID test terverifikasi: ${pid}`);
         if (process.platform === "win32") {
@@ -176,7 +229,7 @@ async function verifyResourceCleanup(metadata: WorkerMetadata | null, scenarioNa
 
 async function main() {
   console.log("================================================================");
-  console.log("MEMULAI PENGUJIAN VERIFIKASI CLEANUP POSTGRESQL (5 SKENARIO)");
+  console.log("MEMULAI PENGUJIAN VERIFIKASI CLEANUP POSTGRESQL (PENGETATAN METADATA)");
   console.log("================================================================");
   const overallStart = Date.now();
 
@@ -185,7 +238,7 @@ async function main() {
   const baselinePids = new Set(baselinePgProcesses.map((p) => p.ProcessId));
   console.log(`[SNAPSHOT AWAL] Proses PostgreSQL sistem terdeteksi: ${baselinePids.size} PID.`);
 
-  // SKENARIO 1: 5 Siklus Normal Start-Stop Berturut-turut
+  // SKENARIO 1: 5 Siklus Normal Start-Stop Berturut-turut (Metadata wajib & valid)
   console.log("\n>>> SKENARIO 1: Start Normal -> Stop Normal (5 Siklus Berturut-turut)");
   for (let cycle = 1; cycle <= 5; cycle++) {
     console.log(`\n--- [Siklus Normal ${cycle}/5] ---`);
@@ -196,64 +249,82 @@ async function main() {
       throw new Error(`Siklus ${cycle} mengalami parent timeout!`);
     }
     if (result.exitCode !== 0) {
-      throw new Error(`Siklus ${cycle} gagal dengan exit code ${result.exitCode}. Output: ${result.stderr || result.stdout}`);
+      throw new Error(
+        `Siklus ${cycle} gagal dengan exit code ${result.exitCode}. Output: ${result.stderr || result.stdout}`
+      );
     }
 
+    validateMetadataShape(result.metadata, `Siklus Normal ${cycle}`);
     await verifyResourceCleanup(result.metadata, `Siklus ${cycle}`);
     console.log(`✓ Siklus ${cycle}/5 LULUS (${((Date.now() - startCycle) / 1000).toFixed(1)}s)`);
   }
 
-  // SKENARIO 2: Fail-Start (Kegagalan / Pembatalan Operasi Saat Start)
-  console.log("\n>>> SKENARIO 2: Start Gagal / Dibatalkan Sebelum Selesai (Fail-Start)");
+  // SKENARIO 2A: Fail-Start Sebelum Resource Dibuat
+  console.log("\n>>> SKENARIO 2A: Fail-Start Sebelum Resource Dibuat");
   {
-    const result = await runWorkerProcess("fail-start", 30000);
-    if (result.timedOut) {
-      throw new Error("Skenario 2 mengalami parent timeout!");
+    const result = await runWorkerProcess("fail-start-before-resource", 20000);
+    if (result.exitCode === 0) {
+      throw new Error("Skenario 2A seharusnya keluar dengan exit code nonzero!");
     }
-    await verifyResourceCleanup(result.metadata, "Skenario Fail-Start");
-    console.log("✓ Skenario 2 (Fail-Start) LULUS 100%");
+    if (result.metadata !== null) {
+      throw new Error("Skenario 2A tidak boleh memiliki metadata karena resource belum dialokasikan!");
+    }
+    await verifyResourceCleanup(result.metadata, "Skenario Fail-Start Sebelum Resource");
+    console.log("✓ Skenario 2A (Fail-Start Sebelum Resource) LULUS 100%");
   }
 
-  // SKENARIO 3: Double-Stop (Idempotensi Stop)
+  // SKENARIO 2B: Fail-Start Setelah Resource Dibuat (Metadata wajib ada & dibersihkan)
+  console.log("\n>>> SKENARIO 2B: Fail-Start Setelah Resource Dibuat");
+  {
+    const result = await runWorkerProcess("fail-start-after-resource", 35000);
+    validateMetadataShape(result.metadata, "Skenario Fail-Start Setelah Resource");
+    await verifyResourceCleanup(result.metadata, "Skenario Fail-Start Setelah Resource");
+    console.log("✓ Skenario 2B (Fail-Start Setelah Resource) LULUS 100%");
+  }
+
+  // SKENARIO 3: Double-Stop (Metadata wajib & idempoten)
   console.log("\n>>> SKENARIO 3: Stop Dipanggil Dua Kali (Idempotency)");
   {
-    const result = await runWorkerProcess("double-stop", 30000);
+    const result = await runWorkerProcess("double-stop", 35000);
     if (result.timedOut) {
       throw new Error("Skenario 3 mengalami parent timeout!");
     }
     if (result.exitCode !== 0) {
       throw new Error(`Skenario 3 gagal dengan exit code ${result.exitCode}: ${result.stderr}`);
     }
+    validateMetadataShape(result.metadata, "Skenario Double-Stop");
     await verifyResourceCleanup(result.metadata, "Skenario Double-Stop");
     console.log("✓ Skenario 3 (Double-Stop) LULUS 100%");
   }
 
-  // SKENARIO 4: Intentional Timeout & Worker Kill
+  // SKENARIO 4: Intentional Timeout & Worker Tree-Kill (Metadata wajib ada setelah DB start)
   console.log("\n>>> SKENARIO 4: Timeout Buatan pada Worker & Parent Tree-Kill");
   {
-    // Berikan batas waktu pendek (5 detik) untuk memicu parent hard timeout
-    const result = await runWorkerProcess("intentional-timeout", 6000);
+    // Berikan batas waktu 35 detik agar DB sempat start penuh (~16s), emit metadata, lalu parent timeout & kill
+    const result = await runWorkerProcess("intentional-timeout", 35000);
     if (!result.timedOut) {
       throw new Error("Skenario 4 seharusnya memicu parent timeout!");
     }
     console.log("   ✓ Parent hard timeout terpicu sesuai rancangan.");
 
-    // Tunggu sejenak agar OS menyelesaikan pelepasan proses
+    validateMetadataShape(result.metadata, "Skenario Intentional-Timeout");
     await new Promise((r) => setTimeout(r, 1000));
     await verifyResourceCleanup(result.metadata, "Skenario Intentional-Timeout");
     console.log("✓ Skenario 4 (Intentional-Timeout & Hard Kill) LULUS 100%");
   }
 
-  // SKENARIO 5: Verifikasi Proses PostgreSQL Eksternal / Sistem Tidak Tersentuh
+  // SKENARIO 5: Verifikasi Tidak Ada PostgreSQL Lain di Mesin yang Disentuh
   console.log("\n>>> SKENARIO 5: Verifikasi Tidak Ada PostgreSQL Lain di Mesin yang Disentuh");
   {
     const postPgProcesses = getSystemPostgresProcesses();
     const postPids = new Set(postPgProcesses.map((p) => p.ProcessId));
 
-    // Pastikan setiap PID yang ada sebelum tes tidak dibunuh sembarangan
+    // Validasi ketat: Seluruh PID baseline yang tercatat di awal harus tetap hidup
     for (const pid of baselinePids) {
       if (!postPids.has(pid)) {
-        console.warn(`[CATATAN] PID baseline ${pid} tidak lagi aktif (mungkin dihentikan secara alami di luar kontrol).`);
+        throw new Error(
+          `[FAIL] PID baseline ${pid} terhenti selama pengujian! Pelestarian proses eksternal gagal.`
+        );
       }
     }
 
@@ -265,14 +336,14 @@ async function main() {
       }
     }
     console.log(`   ✓ Tidak ditemukan proses PostgreSQL yatim dari lingkungan pengujian.`);
-    console.log(`   ✓ Proses PostgreSQL eksternal aman dan tidak tersentuh.`);
+    console.log(`   ✓ Seluruh proses PostgreSQL eksternal aman dan tidak tersentuh.`);
     console.log("✓ Skenario 5 (Integritas Proses Sistem) LULUS 100%");
   }
 
   const totalDuration = ((Date.now() - overallStart) / 1000).toFixed(1);
   console.log("\n================================================================");
-  console.log(`🎉 SELURUH 5 SKENARIO VERIFIKASI CLEANUP LULUS DALAM ${totalDuration}s!`);
-  console.log("Parent-child architecture terisolasi penuh, 0 kebocoran sumber daya.");
+  console.log(`🎉 SELURUH SKENARIO VERIFIKASI CLEANUP LULUS DALAM ${totalDuration}s!`);
+  console.log("Validasi metadata ketat & anti-chunk-splitting terbukti berhasil.");
   console.log("================================================================");
 }
 

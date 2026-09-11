@@ -59,18 +59,20 @@ async function runWorker() {
     await stopTestDatabase();
     console.log(`[Worker PID: ${process.pid}] Mode normal selesai sukses.`);
     process.exit(0);
-  } else if (mode === "fail-start") {
-    // Skenario 2: Simulasi pembatalan/kegagalan saat siklus start
+  } else if (mode === "fail-start-before-resource") {
+    // Skenario 2A: Simulasi kegagalan sebelum sumber daya DB dibuat
+    console.log(`[Worker PID: ${process.pid}] Mensimulasikan kegagalan sebelum sumber daya dibuat...`);
+    throw new Error("SIMULATED_FAIL_BEFORE_RESOURCE");
+  } else if (mode === "fail-start" || mode === "fail-start-after-resource") {
+    // Skenario 2B: Simulasi kegagalan setelah sumber daya DB dibuat
     await startTestDatabase();
     const meta = safeGetMetadata();
     emitMetadata(meta);
 
-    // Simulasi kegagalan operasi di tengah jalan
-    console.log(`[Worker PID: ${process.pid}] Mensimulasikan error kegagalan operasi...`);
+    console.log(`[Worker PID: ${process.pid}] Mensimulasikan error kegagalan operasi pasca alokasi resource...`);
     try {
-      throw new Error("SIMULATED_START_FAILURE: Operasi dibatalkan saat start");
+      throw new Error("SIMULATED_FAIL_AFTER_RESOURCE");
     } finally {
-      // Pastikan stopTestDatabase dipanggil untuk membersihkan sisa
       await stopTestDatabase();
       console.log(`[Worker PID: ${process.pid}] Cleanup pasca simulasi kegagalan berhasil.`);
     }
@@ -88,13 +90,13 @@ async function runWorker() {
     console.log(`[Worker PID: ${process.pid}] Stop ganda berhasil tanpa error.`);
     process.exit(0);
   } else if (mode === "intentional-timeout") {
-    // Skenario 4: Worker sengaja menahan proses hingga induk memicu hard timeout & tree-kill
+    // Skenario 4: Worker start DB, emit metadata, lalu menahan proses hingga induk memicu hard timeout & tree-kill
     await startTestDatabase();
     const meta = safeGetMetadata();
     emitMetadata(meta);
 
-    console.log(`[Worker PID: ${process.pid}] Menunggu hingga dihentikan oleh parent timeout...`);
-    // Tunggu tanpa henti (akan di-kill oleh induk)
+    console.log(`[Worker PID: ${process.pid}] Database aktif. Menunggu hingga dihentikan oleh parent timeout...`);
+    // Tunggu (akan di-kill oleh induk)
     await new Promise((resolve) => setTimeout(resolve, 120000));
     process.exit(0);
   } else {

@@ -28,6 +28,7 @@ export interface DashboardSantriSummary {
   nis: string;
   nama: string;
   kelas: string;
+  jenisKelamin?: string;
   halaqoh: string;
   capaianJuz: number;
   targetJuz: number;

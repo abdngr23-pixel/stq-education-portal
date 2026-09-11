@@ -1,6 +1,6 @@
 import "server-only";
 
-import { PrismaClient, Prisma } from "@prisma/client";
+import { PrismaClient, Prisma, JenisKelamin } from "@prisma/client";
 import { UserSession } from "@/types/auth";
 import { prisma as defaultPrisma } from "@/lib/prisma";
 import { isTodayWita } from "@/lib/wita-date";
@@ -17,6 +17,7 @@ export interface SantriListItem {
   nis: string;
   nama: string;
   kelas: string;
+  jenisKelamin: JenisKelamin;
   status: string;
   halaqohId: string | null;
   halaqohNama: string | null;
@@ -133,15 +134,40 @@ export async function getSantriListForSession(
           include: { pembina: true },
         },
         setoranList: {
-          orderBy: { tanggal: "desc" },
+          orderBy: [
+            { tanggal: "desc" },
+            { createdAt: "desc" },
+          ],
+          select: {
+            jenis: true,
+            status: true,
+            tanggal: true,
+            createdAt: true,
+            halamanMulai: true,
+            halamanSelesai: true,
+            jumlahHalaman: true,
+            juz: true,
+            nilai: true,
+          },
         },
         _count: {
-          select: { pelanggaranList: true },
+          select: {
+            pelanggaranList: true,
+            bintangList: true,
+          },
         },
       },
     });
 
-    const mappedData: SantriListItem[] = list.map((s) => {
+    const ikhwanList = list.filter((s) => s.jenisKelamin === "L");
+    const akhwatList = list
+      .filter((s) => s.jenisKelamin === "P")
+      .sort((a, b) =>
+        a.nama.localeCompare(b.nama, "id", { sensitivity: "base" })
+      );
+    const sortedList = [...ikhwanList, ...akhwatList];
+
+    const mappedData: SantriListItem[] = sortedList.map((s) => {
       const modalAwal = s.modalHafalanAwalHalaman || 0;
       const baselineDate = s.tanggalBaselineTahfizh ? new Date(s.tanggalBaselineTahfizh) : null;
 
@@ -181,19 +207,12 @@ export async function getSantriListForSession(
       const posisiTerakhirHalaman = sabaqPosition.posisiTerakhirHalaman;
       const isHalamanTerakhirParsial = sabaqPosition.isHalamanTerakhirParsial;
 
-      // Hitung total bintang kebaikan
-      const totalBintang = (s.setoranList || []).reduce((acc, cur) => {
-        if (cur.status === "DIBATALKAN") return acc;
-        if (cur.nilai === "MUMTAZ") return acc + 2;
-        if (cur.nilai === "JAYYID_JIDDAN") return acc + 1;
-        return acc;
-      }, 0);
-
       return {
         id: s.id,
         nis: s.nis,
         nama: s.nama,
         kelas: s.kelas,
+        jenisKelamin: s.jenisKelamin,
         status: s.status,
         halaqohId: s.halaqohId,
         halaqohNama: s.halaqoh?.nama || null,
@@ -219,7 +238,7 @@ export async function getSantriListForSession(
         sudahSetorHariIni,
         nilaiTerakhir,
         poinPelanggaran: s._count.pelanggaranList || 0,
-        bintangKebaikan: totalBintang,
+        bintangKebaikan: s._count.bintangList || 0,
       };
     });
 

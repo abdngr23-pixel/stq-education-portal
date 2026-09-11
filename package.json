@@ -9,7 +9,7 @@
     "lint": "eslint",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "postinstall": "prisma generate",
-    "test": "dotenv -e .env.test -- tsx --test --test-concurrency=1 tests/*.test.ts",
+    "test": "dotenv -e .env.test -- tsx --conditions=react-server --test --test-concurrency=1 tests/*.test.ts",
     "db:backup": "tsx scripts/backup-db.ts"
   },
   "dependencies": {
