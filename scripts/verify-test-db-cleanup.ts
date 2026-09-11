@@ -170,6 +170,8 @@ function runWorkerProcess(mode: string, timeoutMs = 60000): Promise<RunWorkerRes
   });
 }
 
+let systemBaselinePids = new Set<number>();
+
 async function verifyResourceCleanup(metadata: WorkerMetadata | null, scenarioName: string): Promise<void> {
   console.log(`   [VERIFIKASI OS] Memeriksa status sumber daya pasca ${scenarioName}...`);
   if (!metadata) {
@@ -181,20 +183,40 @@ async function verifyResourceCleanup(metadata: WorkerMetadata | null, scenarioNa
 
   // 1. Verifikasi dan hentikan seluruh PID instance jika masih berjalan
   const pidsSet = new Set<number>(
-    [mainPid, ...(childPids || [])].filter((p): p is number => typeof p === "number" && p > 0)
+    [mainPid, ...(childPids || [])].filter(
+      (p): p is number => typeof p === "number" && p > 0 && !systemBaselinePids.has(p)
+    )
   );
 
   if (port) {
     const listeningPid = findListeningPid(port);
-    if (listeningPid) {
+    if (listeningPid && !systemBaselinePids.has(listeningPid)) {
       pidsSet.add(listeningPid);
+    }
+  }
+
+  // Deteksi proses PostgreSQL yang spawn kemudian (misal io_worker) terkait instance test
+  if (tempDir || mainPid) {
+    const currentPg = getSystemPostgresProcesses();
+    for (const proc of currentPg) {
+      if (systemBaselinePids.has(proc.ProcessId)) continue;
+      if (
+        (tempDir && verifyPostgresProcessOwnership(proc.ProcessId, tempDir, mainPid)) ||
+        (mainPid && proc.ParentProcessId === mainPid)
+      ) {
+        pidsSet.add(proc.ProcessId);
+      }
     }
   }
 
   const allPids = Array.from(pidsSet);
   for (const pid of allPids) {
+    if (systemBaselinePids.has(pid)) continue;
     if (isPidRunning(pid)) {
-      if (tempDir && verifyPostgresProcessOwnership(pid, tempDir, mainPid)) {
+      const isOwned =
+        Boolean(tempDir && verifyPostgresProcessOwnership(pid, tempDir, mainPid)) ||
+        (mainPid !== null && mainPid > 0 && pidsSet.has(pid));
+      if (isOwned) {
         console.log(`   Menghentikan sisa PID test terverifikasi: ${pid}`);
         if (process.platform === "win32") {
           spawnSync("taskkill", ["/PID", pid.toString(), "/T", "/F"], { stdio: "ignore" });
@@ -218,9 +240,9 @@ async function verifyResourceCleanup(metadata: WorkerMetadata | null, scenarioNa
   // 2. Verifikasi port tertutup (dengan polling toleransi pelepasan socket OS)
   if (port) {
     let portOpen = await isPortInUse(port);
-    const deadline = Date.now() + 3000;
+    const deadline = Date.now() + 6000;
     while (portOpen && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 150));
+      await new Promise((r) => setTimeout(r, 200));
       portOpen = await isPortInUse(port);
     }
     if (portOpen) {
@@ -253,7 +275,8 @@ async function main() {
 
   // Snapshot proses PostgreSQL sistem sebelum tes dimulai
   const baselinePgProcesses = getSystemPostgresProcesses();
-  const baselinePids = new Set(baselinePgProcesses.map((p) => p.ProcessId));
+  systemBaselinePids = new Set(baselinePgProcesses.map((p) => p.ProcessId));
+  const baselinePids = systemBaselinePids;
   console.log(`[SNAPSHOT AWAL] Proses PostgreSQL sistem terdeteksi: ${baselinePids.size} PID.`);
 
   // SKENARIO 1: 5 Siklus Normal Start-Stop Berturut-turut (Metadata wajib & valid)

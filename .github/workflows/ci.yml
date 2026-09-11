@@ -37,6 +37,11 @@ jobs:
         run: npm run lint
 
       - name: Run Business Rules Unit Tests
+        env:
+          NODE_ENV: test
+          IS_TEST_RUN: "true"
+          ALLOW_ISOLATED_TEST_DB: "true"
+          TEST_DATABASE_URL: "postgresql://postgres:postgrespassword@127.0.0.1:5433/stq_test?schema=test_portal"
         run: npm test
 
       - name: Run Next.js Production Build

@@ -2,33 +2,23 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import fs from "node:fs";
 
 describe("P1 Guard: Penguncian Mock Session Khusus Explicit Test Runtime", () => {
   const rootDir = path.resolve(__dirname, "..");
   const testDbUrl = "postgresql://postgres:pass@127.0.0.1:5433/stq_test?schema=test_portal";
+  const runnerScript = path.resolve(__dirname, "helpers/session-guard-runner.ts");
+
+  assert.ok(
+    fs.existsSync(runnerScript),
+    `File runner session guard harus ada di ${runnerScript}`
+  );
 
   function runSnippetWithEnv(envOverrides: Record<string, string | undefined>): {
     stdout: string;
     stderr: string;
     status: number | null;
   } {
-    const snippet = `
-      import('./lib/auth').then(async ({ setTestSession, getCurrentSession }) => {
-        setTestSession({
-          userId: 'mock-user-guard',
-          username: 'mock.guard',
-          name: 'Mock Guard User',
-          role: 'MT',
-          staffId: 'staff-guard-01',
-        });
-        const session = await getCurrentSession();
-        console.log('RESULT_SESSION_ID:' + (session?.userId || 'NULL'));
-      }).catch(err => {
-        console.error('ERROR:', err.message);
-        process.exit(1);
-      });
-    `;
-
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       TEST_DATABASE_URL: testDbUrl,
@@ -45,7 +35,7 @@ describe("P1 Guard: Penguncian Mock Session Khusus Explicit Test Runtime", () =>
     const tsxCli = require.resolve("tsx/cli");
     const res = spawnSync(
       process.execPath,
-      [tsxCli, "--conditions=react-server", "-e", snippet],
+      [tsxCli, "--conditions=react-server", runnerScript],
       {
         cwd: rootDir,
         env,
@@ -67,7 +57,7 @@ describe("P1 Guard: Penguncian Mock Session Khusus Explicit Test Runtime", () =>
       ALLOW_ISOLATED_TEST_DB: "true",
     });
 
-    assert.equal(res.status, 0, `Proses gagal: ${res.stderr}`);
+    assert.equal(res.status, 0, `Proses gagal: ${res.stderr || res.stdout}`);
     assert.match(res.stdout, /RESULT_SESSION_ID:mock-user-guard/);
   });
 
@@ -78,7 +68,7 @@ describe("P1 Guard: Penguncian Mock Session Khusus Explicit Test Runtime", () =>
       ALLOW_ISOLATED_TEST_DB: "true",
     });
 
-    assert.equal(res.status, 0, `Proses gagal: ${res.stderr}`);
+    assert.equal(res.status, 0, `Proses gagal: ${res.stderr || res.stdout}`);
     assert.match(res.stdout, /RESULT_SESSION_ID:NULL/);
   });
 
@@ -89,7 +79,7 @@ describe("P1 Guard: Penguncian Mock Session Khusus Explicit Test Runtime", () =>
       ALLOW_ISOLATED_TEST_DB: "true",
     });
 
-    assert.equal(res.status, 0, `Proses gagal: ${res.stderr}`);
+    assert.equal(res.status, 0, `Proses gagal: ${res.stderr || res.stdout}`);
     assert.match(res.stdout, /RESULT_SESSION_ID:NULL/);
   });
 
@@ -100,7 +90,7 @@ describe("P1 Guard: Penguncian Mock Session Khusus Explicit Test Runtime", () =>
       ALLOW_ISOLATED_TEST_DB: undefined,
     });
 
-    assert.equal(res.status, 0, `Proses gagal: ${res.stderr}`);
+    assert.equal(res.status, 0, `Proses gagal: ${res.stderr || res.stdout}`);
     assert.match(res.stdout, /RESULT_SESSION_ID:NULL/);
   });
 });
