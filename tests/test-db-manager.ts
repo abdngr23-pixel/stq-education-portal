@@ -682,7 +682,23 @@ export function verifyPostgresProcessOwnership(
           lowerOut.includes(String(verifiedMainPid))
       );
 
-      return matchesDir || matchesParent || matchesForkChild;
+      if (matchesDir || matchesParent || matchesForkChild) {
+        return true;
+      }
+      // Fallback: periksa via getSystemPostgresProcesses() jika wmic tidak memuat kolom lengkap
+      const allPg = getSystemPostgresProcesses();
+      const proc = allPg.find((p) => p.ProcessId === pid);
+      if (proc) {
+        const cmd = (proc.CommandLine || "").toLowerCase();
+        const matchesProcDir = cmd.includes(lowerDir) || cmd.includes(lowerRawDir);
+        const matchesProcParent = verifiedMainPid !== null && proc.ParentProcessId === verifiedMainPid;
+        const matchesProcFork =
+          verifiedMainPid !== null &&
+          cmd.includes("--forkchild") &&
+          cmd.includes(verifiedMainPid.toString());
+        return matchesProcDir || matchesProcParent || matchesProcFork;
+      }
+      return false;
     } catch {
       return false;
     }
@@ -691,10 +707,22 @@ export function verifyPostgresProcessOwnership(
       const cmdlinePath = `/proc/${pid}/cmdline`;
       if (fs.existsSync(cmdlinePath)) {
         const cmd = fs.readFileSync(cmdlinePath, "utf-8");
-        return cmd.includes("postgres") && cmd.includes(targetDir);
+        if (!cmd.includes("postgres")) return false;
+        if (targetDir && cmd.includes(targetDir)) return true;
       }
-    } catch {}
-    return true;
+      if (verifiedMainPid && verifiedMainPid > 0) {
+        const statPath = `/proc/${pid}/stat`;
+        if (fs.existsSync(statPath)) {
+          const stat = fs.readFileSync(statPath, "utf-8");
+          const parts = stat.substring(stat.lastIndexOf(")") + 2).trim().split(/\s+/);
+          const ppid = parseInt(parts[1], 10);
+          if (ppid === verifiedMainPid) return true;
+        }
+      }
+      return false;
+    } catch {
+      return false;
+    }
   }
 }
 

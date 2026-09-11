@@ -172,7 +172,91 @@ function runWorkerProcess(mode: string, timeoutMs = 60000): Promise<RunWorkerRes
 
 let systemBaselinePids = new Set<number>();
 
-async function verifyResourceCleanup(metadata: WorkerMetadata | null, scenarioName: string): Promise<void> {
+export function isProcessVerifiedTestOwned(
+  pid: number,
+  tempDir: string | null,
+  verifiedMainPid: number | null,
+  recordedChildPids: number[],
+  baselinePids: Set<number>
+): { isOwned: boolean; reason: string } {
+  // 1. Guard mutlak: PID sistem/baseline dilarang disentuh sama sekali
+  if (baselinePids.has(pid)) {
+    return {
+      isOwned: false,
+      reason: `PID ${pid} terdaftar dalam systemBaselinePids (proses eksternal sistem dilindungi mutlak)`,
+    };
+  }
+
+  // 2. PID tidak valid atau sudah tidak berjalan
+  if (!pid || pid <= 0 || !isPidRunning(pid)) {
+    return {
+      isOwned: false,
+      reason: `PID ${pid} tidak aktif atau tidak valid`,
+    };
+  }
+
+  // 3. Pada Windows, pastikan executable adalah postgres.exe (mencegah pembunuhan proses lain akibat PID reuse)
+  if (process.platform === "win32") {
+    try {
+      const tasklistRes = spawnSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+        encoding: "utf-8",
+        timeout: 1500,
+        windowsHide: true,
+      });
+      const output = (tasklistRes.stdout || "").toLowerCase();
+      if (!output.includes("postgres.exe")) {
+        return {
+          isOwned: false,
+          reason: `PID ${pid} bukan postgres.exe (proses non-postgres / PID reuse terdeteksi)`,
+        };
+      }
+    } catch {
+      return {
+        isOwned: false,
+        reason: `Gagal memverifikasi nama executable untuk PID ${pid}`,
+      };
+    }
+  }
+
+  // 4. Kriteria A: PID utama yang identitas / command line-nya cocok dengan instance PostgreSQL test dan tempDir
+  if (verifiedMainPid && pid === verifiedMainPid && tempDir) {
+    if (verifyPostgresProcessOwnership(pid, tempDir, null)) {
+      return {
+        isOwned: true,
+        reason: `KRITERIA_A: PID ${pid} adalah main PID terverifikasi dan command line cocok dengan tempDir (${tempDir})`,
+      };
+    }
+  }
+
+  // 5. Kriteria B: Child PostgreSQL yang tercatat pada metadata (dan terverifikasi milik test database)
+  if (recordedChildPids.includes(pid)) {
+    if (tempDir && verifyPostgresProcessOwnership(pid, tempDir, verifiedMainPid)) {
+      return {
+        isOwned: true,
+        reason: `KRITERIA_B: PID ${pid} tercatat pada metadata childPids dan terverifikasi terkait test database`,
+      };
+    }
+  }
+
+  // 6. Kriteria C: Proses PostgreSQL yang command line atau hubungan parent-child-nya dapat dikaitkan dengan main PID yang sudah terverifikasi atau tempDir
+  if (tempDir && verifyPostgresProcessOwnership(pid, tempDir, verifiedMainPid)) {
+    return {
+      isOwned: true,
+      reason: `KRITERIA_C: PID ${pid} adalah child/worker PostgreSQL (misal io_worker) terhubung dengan mainPid/tempDir`,
+    };
+  }
+
+  return {
+    isOwned: false,
+    reason: `PID ${pid} tidak memenuhi kriteria kepemilikan instance test (bukan milik database test ini)`,
+  };
+}
+
+export async function verifyResourceCleanup(
+  metadata: WorkerMetadata | null,
+  scenarioName: string,
+  extraCandidatePids: number[] = []
+): Promise<void> {
   console.log(`   [VERIFIKASI OS] Memeriksa status sumber daya pasca ${scenarioName}...`);
   if (!metadata) {
     console.log(`   ✓ Metadata instance tidak tercatat (instance dibatalkan sebelum alokasi resource).`);
@@ -181,63 +265,80 @@ async function verifyResourceCleanup(metadata: WorkerMetadata | null, scenarioNa
 
   const { port, tempDir, mainPid, childPids } = metadata;
 
-  // 1. Verifikasi dan hentikan seluruh PID instance jika masih berjalan
-  const pidsSet = new Set<number>(
-    [mainPid, ...(childPids || [])].filter(
-      (p): p is number => typeof p === "number" && p > 0 && !systemBaselinePids.has(p)
-    )
-  );
+  // 1. Kumpulkan seluruh kandidat PID (Candidate PIDs)
+  const candidatePids = new Set<number>();
+  if (mainPid && mainPid > 0) candidatePids.add(mainPid);
+  for (const cp of childPids || []) {
+    if (typeof cp === "number" && cp > 0) candidatePids.add(cp);
+  }
+  for (const ep of extraCandidatePids) {
+    if (typeof ep === "number" && ep > 0) candidatePids.add(ep);
+  }
 
   if (port) {
     const listeningPid = findListeningPid(port);
-    if (listeningPid && !systemBaselinePids.has(listeningPid)) {
-      pidsSet.add(listeningPid);
+    if (listeningPid) {
+      candidatePids.add(listeningPid);
     }
   }
 
-  // Deteksi proses PostgreSQL yang spawn kemudian (misal io_worker) terkait instance test
-  if (tempDir || mainPid) {
+  if (process.platform === "win32") {
     const currentPg = getSystemPostgresProcesses();
     for (const proc of currentPg) {
-      if (systemBaselinePids.has(proc.ProcessId)) continue;
-      if (
-        (tempDir && verifyPostgresProcessOwnership(proc.ProcessId, tempDir, mainPid)) ||
-        (mainPid && proc.ParentProcessId === mainPid)
-      ) {
-        pidsSet.add(proc.ProcessId);
-      }
+      candidatePids.add(proc.ProcessId);
     }
   }
 
-  const allPids = Array.from(pidsSet);
-  for (const pid of allPids) {
-    if (systemBaselinePids.has(pid)) continue;
+  // 2. Pemisahan ketat: Candidate PID vs Verified-Owned PID
+  const verifiedOwnedPids = new Set<number>();
+  const unverifiedCandidatePids = new Map<number, string>();
+
+  for (const pid of candidatePids) {
+    const check = isProcessVerifiedTestOwned(
+      pid,
+      tempDir,
+      mainPid,
+      childPids || [],
+      systemBaselinePids
+    );
+    if (check.isOwned) {
+      verifiedOwnedPids.add(pid);
+    } else {
+      unverifiedCandidatePids.set(pid, check.reason);
+    }
+  }
+
+  console.log(
+    `   [AUDIT OWNERSHIP] Total kandidat: ${candidatePids.size} | Terverifikasi test: ${verifiedOwnedPids.size} | Ditolak: ${unverifiedCandidatePids.size}`
+  );
+
+  // 3. Hentikan HANYA PID yang terbukti milik test database (Verified-Owned)
+  for (const pid of verifiedOwnedPids) {
     if (isPidRunning(pid)) {
-      const isOwned =
-        Boolean(tempDir && verifyPostgresProcessOwnership(pid, tempDir, mainPid)) ||
-        (mainPid !== null && mainPid > 0 && pidsSet.has(pid));
-      if (isOwned) {
-        console.log(`   Menghentikan sisa PID test terverifikasi: ${pid}`);
-        if (process.platform === "win32") {
-          spawnSync("taskkill", ["/PID", pid.toString(), "/T", "/F"], { stdio: "ignore" });
-        } else {
-          process.kill(pid, "SIGKILL");
-        }
+      console.log(`   Menghentikan sisa PID test terverifikasi: ${pid}`);
+      if (process.platform === "win32") {
+        spawnSync("taskkill", ["/PID", pid.toString(), "/T", "/F"], { stdio: "ignore" });
+      } else {
+        process.kill(pid, "SIGKILL");
       }
-      const pidDeadline = Date.now() + 2000;
+
+      const pidDeadline = Date.now() + 2500;
       while (isPidRunning(pid) && Date.now() < pidDeadline) {
         await new Promise((r) => setTimeout(r, 100));
       }
       if (isPidRunning(pid)) {
-        throw new Error(`[FAIL] PID ${pid} masih aktif setelah pembersihan ${scenarioName}!`);
+        throw new Error(`[FAIL] PID terverifikasi ${pid} masih aktif setelah pembersihan ${scenarioName}!`);
       }
     }
   }
-  if (allPids.length > 0) {
-    console.log(`   ✓ Seluruh PID instance ([${allPids.join(", ")}]) terverifikasi non-aktif.`);
+
+  if (verifiedOwnedPids.size > 0) {
+    console.log(
+      `   ✓ Seluruh PID instance terverifikasi ([${Array.from(verifiedOwnedPids).join(", ")}]) terbukti non-aktif.`
+    );
   }
 
-  // 2. Verifikasi port tertutup (dengan polling toleransi pelepasan socket OS)
+  // 4. Verifikasi port tertutup (dengan polling toleransi pelepasan socket OS)
   if (port) {
     let portOpen = await isPortInUse(port);
     const deadline = Date.now() + 6000;
@@ -246,12 +347,21 @@ async function verifyResourceCleanup(metadata: WorkerMetadata | null, scenarioNa
       portOpen = await isPortInUse(port);
     }
     if (portOpen) {
+      const remainingListeningPid = findListeningPid(port);
+      if (remainingListeningPid) {
+        const reason = unverifiedCandidatePids.get(remainingListeningPid);
+        throw new Error(
+          `[FAIL] Port ${port} masih terbuka setelah ${scenarioName}! Port digunakan oleh PID ${remainingListeningPid} yang TIDAK DIHENTIKAN karena bukan milik test instance: ${
+            reason || "Tidak terverifikasi"
+          }`
+        );
+      }
       throw new Error(`[FAIL] Port ${port} masih terbuka setelah ${scenarioName}!`);
     }
     console.log(`   ✓ Port ${port} terverifikasi tertutup.`);
   }
 
-  // 3. Verifikasi direktori temporer
+  // 5. Verifikasi direktori temporer
   if (tempDir && fs.existsSync(tempDir)) {
     try {
       const validated = validateTempDataDir(tempDir);
@@ -387,14 +497,117 @@ async function main() {
     console.log("✓ Skenario 5 (Integritas Proses Sistem) LULUS 100%");
   }
 
+  // SKENARIO 6: Regression Test Ownership & Non-Target Process Preservation
+  console.log("\n>>> SKENARIO 6: Regression Test Ownership & Non-Target Process Preservation");
+  {
+    // 1. Buat proses dummy tidak terkait (Node.js dummy process)
+    const dummyProcess = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000);"], {
+      stdio: "ignore",
+    });
+    const dummyPid = dummyProcess.pid;
+    if (!dummyPid || !isPidRunning(dummyPid)) {
+      throw new Error("Gagal memulai dummy process untuk Skenario 6!");
+    }
+
+    try {
+      console.log(`   Proses dummy eksternal dimulai: PID ${dummyPid}`);
+
+      // 2. Verifikasi isProcessVerifiedTestOwned menolak proses dummy
+      const fakeTempDir = path.resolve(os.tmpdir(), "stq-test-db-dummy-scenario6");
+      const fakeMainPid = 999999;
+      const dummyCheck = isProcessVerifiedTestOwned(
+        dummyPid,
+        fakeTempDir,
+        fakeMainPid,
+        [dummyPid],
+        systemBaselinePids
+      );
+      if (dummyCheck.isOwned) {
+        throw new Error(
+          `[FAIL] isProcessVerifiedTestOwned seharusnya MENOLAK dummy process PID ${dummyPid}, namun dinyatakan owned!`
+        );
+      }
+      console.log(`   ✓ isProcessVerifiedTestOwned menolak dummy process: "${dummyCheck.reason}"`);
+
+      // 3. Verifikasi isProcessVerifiedTestOwned menolak seluruh baseline process
+      for (const bPid of systemBaselinePids) {
+        const baselineCheck = isProcessVerifiedTestOwned(
+          bPid,
+          fakeTempDir,
+          fakeMainPid,
+          [],
+          systemBaselinePids
+        );
+        if (baselineCheck.isOwned) {
+          throw new Error(
+            `[FAIL] isProcessVerifiedTestOwned seharusnya MENOLAK baseline PID ${bPid}, namun dinyatakan owned!`
+          );
+        }
+      }
+      if (systemBaselinePids.size > 0) {
+        console.log(
+          `   ✓ Seluruh baseline PID sistem (${systemBaselinePids.size} PID) terbukti ditolak dari ownership check.`
+        );
+      }
+
+      // 4. Jalankan satu siklus normal dengan menyertakan dummyPid sebagai extra kandidat
+      const result = await runWorkerProcess("normal", 45000);
+      if (result.timedOut || result.exitCode !== 0) {
+        throw new Error(`Worker normal untuk Skenario 6 gagal: ${result.stderr || result.stdout}`);
+      }
+      validateMetadataShape(result.metadata, "Skenario 6 Normal Worker");
+
+      // Panggil verifyResourceCleanup dengan dummyPid sebagai extra kandidat
+      await verifyResourceCleanup(result.metadata, "Skenario 6 Live Cleanup", [dummyPid]);
+
+      // 5. Buktikan dummyPid TIDAK DIHENTIKAN dan masih berjalan
+      if (!isPidRunning(dummyPid)) {
+        throw new Error(
+          `[FAIL] Dummy process PID ${dummyPid} terbunuh oleh verifyResourceCleanup! Non-target preservation gagal.`
+        );
+      }
+      console.log(`   ✓ Terbukti: Dummy process PID ${dummyPid} tetap hidup dan TIDAK disentuh.`);
+
+      // 6. Buktikan port dan direktori temporer test tetap bersih
+      if (result.metadata?.port && (await isPortInUse(result.metadata.port))) {
+        throw new Error(`[FAIL] Port test ${result.metadata.port} masih terbuka setelah Skenario 6!`);
+      }
+      if (result.metadata?.tempDir && fs.existsSync(result.metadata.tempDir)) {
+        throw new Error(`[FAIL] TempDir test ${result.metadata.tempDir} masih ada setelah Skenario 6!`);
+      }
+      console.log(`   ✓ Port dan direktori temporer test terbukti 100% bersih.`);
+    } finally {
+      // Bersihkan dummy process
+      if (dummyPid && isPidRunning(dummyPid)) {
+        if (process.platform === "win32") {
+          spawnSync("taskkill", ["/PID", dummyPid.toString(), "/F"], { stdio: "ignore" });
+        } else {
+          try {
+            process.kill(dummyPid, "SIGKILL");
+          } catch {}
+        }
+      }
+    }
+    console.log("✓ Skenario 6 (Regression Test Ownership & Non-Target Preservation) LULUS 100%");
+  }
+
   const totalDuration = ((Date.now() - overallStart) / 1000).toFixed(1);
   console.log("\n================================================================");
   console.log(`🎉 SELURUH SKENARIO VERIFIKASI CLEANUP LULUS DALAM ${totalDuration}s!`);
-  console.log("Validasi metadata ketat & anti-chunk-splitting terbukti berhasil.");
+  console.log("Validasi metadata ketat & pemisahan ownership terbukti berhasil.");
   console.log("================================================================");
 }
 
-main().catch((err) => {
-  console.error("\n❌ VERIFIKASI CLEANUP GAGAL:", err instanceof Error ? err.message : String(err));
-  process.exit(1);
-});
+export { systemBaselinePids };
+
+const isDirectExecution =
+  (typeof require !== "undefined" && require.main === module) ||
+  (Boolean(process.argv[1]) && path.resolve(process.argv[1]) === path.resolve(__filename));
+
+if (isDirectExecution) {
+  main().catch((err) => {
+    console.error("\n❌ VERIFIKASI CLEANUP GAGAL:", err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  });
+}
+
