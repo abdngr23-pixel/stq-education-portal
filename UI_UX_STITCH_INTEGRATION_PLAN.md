@@ -84,7 +84,7 @@ Berikut adalah inventarisasi detail dari 18 subdirektori dan aset pada `STITCH_R
 | 5 | `beranda_musyrif_tahfizh_stq_duc` | Beranda Musyrif (Desktop 1200px) | `code.html`, `screen.png` | 3 Kartu metrik utama, tombol "+ Catat Setoran" primer tunggal, tabel santri belum setor | Sidebar grouped menu, header dengan waktu WITA | **Sangat tenang, aksi utama sangat dominan, daftar santri bersih tanpa nested card** | Tidak ada | **Gunakan (Fondasi Utama Beranda Musyrif)** |
 | 6 | `beranda_musyrif_tahfizh_brand_claymorphism_stq_duc` | Beranda Musyrif (Desktop 1360px) | `code.html`, `screen.png` | Card tebal 24px padding, shadow inset | Floating rounded sidebar | Card antrean santri cukup informatif | Bayangan berlebihan, efek mengambang terlalu tebal | **Sederhanakan (Ambil struktur list santri)** |
 | 7 | `beranda_musyrif_tahfizh_claymorphism_stq_duc` | Beranda Musyrif (Desktop 1360px) | `code.html`, `screen.png` | Clay button, card timbul | Floating sidebar | Menarik secara estetika kartu | Tidak cocok untuk lingkungan kerja pesantren sehari-hari | **Tolak Varian Ini** |
-| 8 | `catat_setoran_tahfizh_brand_claymorphism_stq_duc` | Form Catat Setoran (Desktop 1360px) | `code.html`, `screen.png` | Stepper 4 langkah, grid 2 kolom (form di kiri, rekap di kanan) | Pill tabs navigasi Tahfizh | Stepper 4 langkah memperjelas alur (Santri ➔ Kategori ➔ Rincian ➔ Verifikasi) | Terlalu banyak rounded pill, shadow inset tebal, kolom kanan agak ramai | **Kombinasikan & Sederhanakan (Ambil stepper, ratakan card)** |
+| 8 | `catat_setoran_tahfizh_brand_claymorphism_stq_duc` | Form Catat Setoran (Desktop 1360px) | `code.html`, `screen.png` | Stepper 4 langkah, grid 2 kolom (form di kiri, rekap di kanan) | Pill tabs navigasi Tahfizh | Pembagian field setoran | Stepper multi-langkah memperlambat pencatatan harian musyrif di halaqoh | **Sederhanakan (Tolak stepper; tetapkan formulir single-page terfokus)** |
 | 9 | `catat_setoran_tahfizh_claymorphism_stq_duc` | Form Catat Setoran (Desktop 1360px) | `code.html`, `screen.png` | Form setoran dengan tombol timbul tebal | Pill navigation | Pemisahan field cukup jelas | Mengaburkan batas input karena kontras bayangan | **Tolak Varian Ini** |
 | 10 | `catat_setoran_tahfizh_neumorphic_stq_duc` | Form Catat Setoran (Desktop 1200px) | `code.html`, `screen.png` | Input cekung abu-abu | Sidebar abu-abu | Eksplorasi layout | Kontras sangat buruk, tombol terlihat membingungkan | **Tolak Total** |
 | 11 | `daftar_santri_stq_duc` | Daftar Santri (Desktop 1200px) | `code.html`, `screen.png` | 3 vital indicator, search bar, dropdown halaqoh & status, drawer filter lanjutan | Sidebar grouped, header institusi | **Penerapan progressive disclosure filter sangat bagus, tabel maksimal 5 kolom** | Data dummy 124 santri (wajib diganti data riil 57 santri STQ DUC) | **Gunakan (Sebagai Acuan Modul Santri)** |
@@ -140,7 +140,7 @@ Berdasarkan audit mendalam pada berkas-berkas antarmuka aktif (`components/modul
 |---|---|---|---|---|---|---|
 | **Beranda Mudir** | `dashboard-mudir-ks.tsx`, `beranda-module.tsx` | `beranda_mudir_stq_duc` | KS (Mudir) | Tinjau persetujuan yang menunggu | Maksimal 3 kartu ringkasan, antrean persetujuan prioritas, agenda terdekat | Tampilan vertikal, tombol aksi persetujuan cepat (Setujui/Tolak) |
 | **Beranda Musyrif Tahfizh** | `dashboard-musyrif-tahfizh.tsx` | `beranda_musyrif_tahfizh_stq_duc` | MT (Musyrif Tahfizh) | **+ Catat Setoran** | 3 metrik (Halaqoh, Setoran Hari Ini, Ujian Siap), list santri belum setor | Ringkas 2 kartu metrik, sticky button catat setoran, tap santri langsung isi |
-| **Catat Setoran Tahfizh** | `tahfizh-module.tsx` | `catat_setoran_tahfizh_brand_claymorphism_stq_duc` (disederhanakan) | MT, PH | **Simpan Setoran** | Stepper alur fokus: 1. Pilih Santri ➔ 2. Kategori ➔ 3. Rincian Halaman ➔ 4. Verifikasi & Simpan | Form 1 kolom terfokus, touch-target 44px, sticky simpan di bawah |
+| **Catat Setoran Tahfizh** | `tahfizh-module.tsx` | `catat_setoran_tahfizh_brand_claymorphism_stq_duc` (disederhanakan) | MT, PH | **Simpan Setoran** | Form Catat Setoran adalah single-page focused form tanpa wizard dan tanpa visual stepper | Form 1 kolom terfokus, touch-target 44px, sticky simpan di bawah |
 | **Riwayat Setoran** | `tahfizh-module.tsx` (bagian bawah) | Disatukan dari landing Tahfizh Stitch | MT, PH, KS | Filter & cari setoran | Dipindahkan ke tab terpisah "Riwayat Setoran", tabel ringkas 5 kolom | List row dengan badge tanggal & status, tap untuk detail |
 | **Ujian Hafalan / Tasmi'** | `tahfizh-module.tsx` (sub-tab) | Tab Ujian Hafalan Stitch | MT, KS | Nilai ujian hafalan | Antrean santri siap tasmi'/ikhtibar terpisah dari form setoran harian | Card ringkas nama santri & juz yang diuji, modal input nilai |
 | **Data Santri** | `master-data-santri.tsx`, `santri-module.tsx` | `daftar_santri_stq_duc` | ADM, KS, MT, GA | Cari & buka profil santri | 3 kartu ringkasan santri, search bar, dropdown filter halaqoh, tabel 5 kolom | List row (Avatar, Nama, NIS, Halaqoh, Status), tap untuk buka profil |
@@ -177,7 +177,7 @@ Menggabungkan fondasi token warna dan tipografi resmi dari `stq_darul_ulum_cende
 
 | Unsur Desain | Status | Rincian Alasan |
 |---|:---:|---|
-| **Struktur Stepper Catat Setoran** | **DIGUNAKAN** | Memecah kepadatan formulir tahfizh menjadi alur bertahap yang logis dan fokus. |
+| **Struktur Stepper Catat Setoran** | **DITOLAK** | Ditolak demi kelancaran & kecepatan pencatatan harian musyrif: Form Catat Setoran adalah single-page focused form tanpa wizard dan tanpa visual stepper. |
 | **Segmented Control Presensi Mobile** | **DIGUNAKAN** | Sangat cepat untuk jempol di ponsel; 5 opsi status sejajar dengan target sentuh 44px. |
 | **Grouped Sidebar Navigation** | **DIGUNAKAN** | Merapikan 16 modul menjadi 5–7 kelompok menu yang ringkas. |
 | **Drawer Filter Lanjutan (Progressive Disclosure)** | **DIGUNAKAN** | Menyembunyikan filter kompleks dari layar utama; hanya muncul jika dipanggil pengguna. |
@@ -328,7 +328,7 @@ Menggabungkan fondasi token warna dan tipografi resmi dari `stq_darul_ulum_cende
 
 | Berkas Komponen Saat Ini | Masalah Struktur Saat Ini | Komponen Baru / Refactor Plan | Tanggung Jawab Komponen Baru |
 |---|---|---|---|
-| `components/modules/tahfizh-module.tsx` (109 KB) | Raksasa, monolitik, mencampur form setoran, Pakistani calculation, jump modal, dan riwayat | Dipecah menjadi 3 sub-komponen terfokus: <br>1. `tahfizh-form-wizard.tsx` <br>2. `tahfizh-jump-modal.tsx` <br>3. `tahfizh-recent-history.tsx` | - Form stepper 4 langkah terfokus <br>- Modal dialog konfirmasi lompatan urutan <br>- Tabel riwayat terpisah <br>- Mempertahankan seluruh logika P0.1 & `data-testid` |
+| `components/modules/tahfizh-module.tsx` (109 KB) | Raksasa, monolitik, mencampur kalkulasi dan teks berulang | `tahfizh-module.tsx` (Single-Page Form Refactor) | Form Catat Setoran adalah single-page focused form tanpa wizard dan tanpa visual stepper; ringkasan 5 data riil disederhanakan anti-slop, mempertahankan seluruh logika P0.1 & `data-testid` |
 | `components/dashboard/dashboard-musyrif-tahfizh.tsx` (21 KB) | Metrik terlalu banyak baris, card bertumpuk | `dashboard-musyrif-tahfizh.tsx` (Redesign) | Menampilkan tepat 3 ringkasan vital, tombol utama `+ Catat Setoran`, dan daftar santri belum setor |
 | `components/dashboard/dashboard-mudir-ks.tsx` (12 KB) | Terlalu banyak statistik global | `dashboard-mudir-ks.tsx` (Redesign) | Menampilkan antrean persetujuan yang menunggu, agenda terdekat, dan link ke laporan |
 | `components/dashboard/presensi-harian-mobile.tsx` (37 KB) | Tampilan form panjang | `presensi-harian-mobile.tsx` (Refactor) | Mengadopsi segmented button 5 status dari Stitch, sticky bottom save bar |
@@ -391,8 +391,8 @@ Seluruh fondasi operasional dan keamanan yang sudah berjalan wajib dipertahankan
 
 ### Sub-Tahap B2: Halaman Percontohan (Pilot Page)
 1. Mengimplementasikan **Beranda Musyrif Tahfizh** (`dashboard-musyrif-tahfizh.tsx`) sesuai varian terpilih (3 metrik + aksi utama tunggal).
-2. Mengimplementasikan **Form Catat Setoran Tahfizh** (`tahfizh-module.tsx`) dengan stepper 4 langkah bersih.
-3. Menjalankan pengujian E2E Puppeteer dan mengambil tangkapan layar pada desktop (1440px) dan mobile (390px).
+2. Mengimplementasikan **Form Catat Setoran Tahfizh** (`tahfizh-module.tsx`) sebagai single-page focused form tanpa wizard dan tanpa visual stepper.
+3. Menjelaskan bahwa Vercel membuat preview deployment otomatis pada branch review, tetapi tidak ada production deployment.
 4. Berhenti sejenak untuk evaluasi sebelum melanjutkan ke modul lain.
 
 ### Sub-Tahap B3: Modul Operasional Lainnya

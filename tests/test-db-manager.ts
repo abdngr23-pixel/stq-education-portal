@@ -581,7 +581,7 @@ export function detectTestInstancePids(port: number, tempDir: string): { mainPid
   };
 }
 
-export function validateTempDataDir(dirPath: string | null): string {
+export function validateTempDataDir(dirPath: string): string {
   if (!dirPath || typeof dirPath !== "string") {
     throw new Error("FATAL: Direktori temporer database tes tidak valid atau kosong.");
   }
@@ -592,8 +592,12 @@ export function validateTempDataDir(dirPath: string | null): string {
   const projectRoot = path.resolve(process.cwd());
   const homeDir = path.resolve(os.homedir());
 
-  if (!resolved.toLowerCase().startsWith(tmpDir.toLowerCase())) {
-    throw new Error(`FATAL: Direktori temporer harus berada di dalam os.tmpdir() (${tmpDir}), terdeteksi: ${resolved}`);
+  // Validasi berbasis path.relative agar path sibling tidak dianggap berada di dalam temp directory
+  const rel = path.relative(tmpDir, resolved);
+  const isInsideTemp = Boolean(rel) && !rel.startsWith("..") && !path.isAbsolute(rel);
+
+  if (!isInsideTemp) {
+    throw new Error(`FATAL: Direktori temporer harus berada di dalam os.tmpdir() (${tmpDir}), terdeteksi di luar: ${resolved}`);
   }
   if (!base.startsWith("stq-test-db-")) {
     throw new Error(`FATAL: Direktori temporer harus memiliki prefix 'stq-test-db-', terdeteksi: ${base}`);
@@ -610,6 +614,76 @@ export function validateTempDataDir(dirPath: string | null): string {
     throw new Error(`FATAL: Direktori temporer (${resolved}) tidak sama persis dengan activeTempDataDir (${path.resolve(activeTempDataDir)})`);
   }
   return resolved;
+}
+
+/**
+ * Memverifikasi apakah suatu PID masih aktif, merupakan executable postgres.exe,
+ * dan terbukti terkait dengan instance database test kita (CommandLine memuat direktori test
+ * atau ParentProcessId terhubung dengan main PID terverifikasi).
+ * Melindungi dari pembunuhan proses lain akibat Windows PID reuse.
+ */
+export function verifyPostgresProcessOwnership(
+  pid: number,
+  targetDir: string,
+  verifiedMainPid: number | null
+): boolean {
+  if (!isPidRunning(pid)) return false;
+
+  if (process.platform === "win32") {
+    try {
+      // 1. Cek nama executable via tasklist
+      const tasklistRes = spawnSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+        encoding: "utf-8",
+        timeout: 1000,
+        windowsHide: true,
+      });
+      const output = tasklistRes.stdout || "";
+      if (!output.toLowerCase().includes("postgres.exe")) {
+        // PID reuse terdeteksi: bukan postgres.exe, dilarang di-kill
+        return false;
+      }
+
+      // 2. Baca CommandLine dan ParentProcessId via wmic
+      const wmicRes = spawnSync(
+        "wmic",
+        ["process", "where", `ProcessId=${pid}`, "get", "CommandLine,ParentProcessId", "/format:csv"],
+        { encoding: "utf-8", timeout: 2000, windowsHide: true }
+      );
+      const wmicOut = wmicRes.stdout || "";
+      const lowerOut = wmicOut.toLowerCase();
+      const lowerDir = targetDir.toLowerCase().replace(/\\/g, "\\\\");
+      const lowerRawDir = targetDir.toLowerCase();
+
+      // Cek apakah CommandLine memuat targetDir
+      const matchesDir = lowerOut.includes(lowerDir) || lowerOut.includes(lowerRawDir);
+
+      // Cek apakah ParentProcessId sama dengan verifiedMainPid
+      let matchesParent = false;
+      if (verifiedMainPid && verifiedMainPid > 0) {
+        const lines = wmicOut.trim().split("\n").filter((l) => l.trim().length > 0);
+        for (const line of lines) {
+          const cols = line.split(",").map((c) => c.trim());
+          if (cols.includes(String(verifiedMainPid))) {
+            matchesParent = true;
+            break;
+          }
+        }
+      }
+
+      return matchesDir || matchesParent;
+    } catch {
+      return false;
+    }
+  } else {
+    try {
+      const cmdlinePath = `/proc/${pid}/cmdline`;
+      if (fs.existsSync(cmdlinePath)) {
+        const cmd = fs.readFileSync(cmdlinePath, "utf-8");
+        return cmd.includes("postgres") && cmd.includes(targetDir);
+      }
+    } catch {}
+    return true;
+  }
 }
 
 /**
@@ -692,10 +766,11 @@ export async function stopTestDatabase() {
     await new Promise((r) => setTimeout(r, 200));
   }
 
-  // 6. Jika masih ada PID yang tertinggal setelah batas waktu, hentikan HANYA PID yang tercatat milik instance ini
+  // 6. Jika masih ada PID yang tertinggal setelah batas waktu, hentikan HANYA PID yang terverifikasi
+  // merupakan executable postgres.exe milik instance direktori test ini (mencegah pembunuhan proses lain akibat PID reuse)
   for (const pid of pidsToTerminate) {
-    if (isPidRunning(pid)) {
-      console.log(`[test-db-manager] Menghentikan PID instance tes tertinggal: ${pid}`);
+    if (targetDir && verifyPostgresProcessOwnership(pid, targetDir, activeMainPid)) {
+      console.log(`[test-db-manager] Menghentikan PID instance tes terverifikasi: ${pid}`);
       try {
         if (process.platform === "win32") {
           spawnSync("taskkill", ["/PID", pid.toString(), "/T", "/F"], { stdio: "ignore" });
@@ -703,10 +778,12 @@ export async function stopTestDatabase() {
           process.kill(pid, "SIGKILL");
         }
       } catch {}
+    } else {
+      // Lewati jika PID bukan postgres.exe atau bukan milik instance test ini
     }
   }
 
-  // 7. Tunggu seluruh PID benar-benar hilang (timeout 4 detik)
+  // 7. Tunggu seluruh PID terverifikasi benar-benar hilang (timeout 4 detik)
   const killWaitStart = Date.now();
   while (Date.now() - killWaitStart < 4000) {
     let anyStillAlive = false;
@@ -753,7 +830,19 @@ export async function stopTestDatabase() {
     }
   }
 
-  // 11. Bersihkan state global hanya setelah seluruh rangkaian selesai
+  // 11. Validasi kebersihan akhir sebelum menghapus state pelacakan
+  const isPortStillOpen = targetPort ? await isPortInUse(targetPort) : false;
+  const anyPidStillRunning = Array.from(pidsToTerminate).some((p) => isPidRunning(p));
+  const isDirStillExists = targetDir ? fs.existsSync(targetDir) : false;
+
+  if (isPortStillOpen || anyPidStillRunning || isDirStillExists) {
+    // Pertahankan state pelacakan agar stopTestDatabase() dapat dipanggil ulang
+    throw new Error(
+      `[test-db-manager] Cleanup PostgreSQL belum tuntas: Port ${targetPort} terbuka=${isPortStillOpen}, PID aktif=${anyPidStillRunning}, Dir ada=${isDirStillExists}. State pelacakan dipertahankan untuk pembersihan ulang.`
+    );
+  }
+
+  // 12. Bersihkan state global HANYA jika seluruh komponen sudah 100% bersih
   activeTempDataDir = null;
   activeTestPort = null;
   activeTestDatabaseUrl = null;

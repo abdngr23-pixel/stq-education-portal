@@ -285,6 +285,8 @@ export default function Home() {
             capaianJuz: s.capaianJuz ?? 0,
             targetJuz: s.targetJuz ?? 30,
             setoranTerakhir: s.setoranTerakhir || "-",
+            setoranTerakhirAt: s.setoranTerakhirAt ?? null,
+            sudahSetorHariIni: Boolean(s.sudahSetorHariIni),
             status: s.status,
             nilaiTerakhir: s.nilaiTerakhir || "Belum ada data",
             poinPelanggaran: s.poinPelanggaran ?? 0,

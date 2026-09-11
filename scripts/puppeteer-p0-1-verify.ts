@@ -257,9 +257,86 @@ export async function runIsolatedE2EVerification() {
       fail(`Identitas akun tidak sesuai di current-user: "${userDisplay}"`);
     }
 
-    // 4. Navigasi ke Modul Tahfizh
-    await navigateToTahfizh(page);
-    console.log("   ✓ Skenario 1 Lolos: Otentikasi terbukti sah melalui authenticated-app, current-user, dan tahfizh-module.");
+    // 3b. VERIFIKASI BERANDA MUSYRIF TAHFIZH RIIL (ROLE MT)
+    console.log("   [Assertion Beranda MT] Memverifikasi komponen DashboardMusyrifTahfizh...");
+    await page.waitForSelector('[data-testid="dashboard-musyrif-tahfizh"]', { timeout: 10000 });
+    console.log("   ✓ Selector [data-testid=\"dashboard-musyrif-tahfizh\"] terverifikasi muncul.");
+
+    // Teks dan tombol dari DashboardMusyrifTahfizh benar-benar muncul
+    const catatSetoranBtn = await page.waitForSelector('[data-testid="btn-catat-setoran-beranda"]', { timeout: 5000 });
+    if (!catatSetoranBtn) fail("Tombol + Catat Setoran tidak ditemukan di Beranda Musyrif");
+    const btnText = await page.$eval('[data-testid="btn-catat-setoran-beranda"]', (el) => el.textContent || "");
+    if (!btnText.includes("Catat Setoran")) fail(`Teks tombol tidak sesuai: "${btnText}"`);
+
+    // Daftar belum/sudah setor sesuai data database
+    await page.waitForSelector('[data-testid="santri-belum-setor-list"]', { timeout: 5000 });
+    const belumSetorCountUi = await page.$$eval('[data-testid="santri-belum-setor-item"]', (els) => els.length);
+    console.log(`   ✓ Daftar santri belum setor terverifikasi memuat ${belumSetorCountUi} santri binaan.`);
+    if (belumSetorCountUi < 1) fail("Daftar santri belum setor di Beranda Musyrif kosong!");
+
+    // Verifikasi PWA / Service Worker tidak aktif
+    const swRegistrationsCount = await page.evaluate(async () => {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        return regs.length;
+      }
+      return 0;
+    });
+    if (swRegistrationsCount > 0) {
+      fail(`Terdeteksi ${swRegistrationsCount} service worker terdaftar. PWA dilarang di fase pilot!`);
+    }
+    console.log("   ✓ Terverifikasi tidak ada Service Worker aktif (0 registrasi).");
+
+    // Verifikasi Overflow & Responsivitas Viewport
+    // 1. Desktop 1366x768
+    await page.setViewport({ width: 1366, height: 768 });
+    await new Promise((r) => setTimeout(r, 300));
+    const desktopOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    if (desktopOverflow) fail("Desktop 1366x768 mengalami horizontal overflow!");
+    console.log("   ✓ Desktop 1366x768 bebas overflow.");
+
+    // 2. Mobile 390x844
+    await page.setViewport({ width: 390, height: 844 });
+    await new Promise((r) => setTimeout(r, 300));
+    const mobile390Overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    if (mobile390Overflow) fail("Mobile 390x844 mengalami horizontal overflow!");
+    console.log("   ✓ Mobile 390x844 bebas overflow.");
+
+    // 3. Mobile 412x915
+    await page.setViewport({ width: 412, height: 915 });
+    await new Promise((r) => setTimeout(r, 300));
+    const mobile412Overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    if (mobile412Overflow) fail("Mobile 412x915 mengalami horizontal overflow!");
+    console.log("   ✓ Mobile 412x915 bebas overflow.");
+
+    // 4. Verifikasi tidak ada elemen interaktif tertutup bottom navigation
+    const isPrimaryObscured = await page.evaluate(() => {
+      const bottomNav = document.querySelector('nav, [data-testid="mobile-bottom-nav"]');
+      const actionBtn = document.querySelector('[data-testid="btn-catat-setoran-beranda"]');
+      if (!bottomNav || !actionBtn) return false;
+      const navRect = bottomNav.getBoundingClientRect();
+      const btnRect = actionBtn.getBoundingClientRect();
+      return btnRect.bottom > navRect.top && btnRect.top < navRect.bottom;
+    });
+    if (isPrimaryObscured) fail("Tombol primer Beranda tertutup oleh bottom navigation bar!");
+    console.log("   ✓ Elemen interaktif bebas dari tumpukan bottom navigation.");
+
+    // Kembalikan viewport standar desktop untuk pengujian setoran
+    await page.setViewport({ width: 1280, height: 900 });
+    await new Promise((r) => setTimeout(r, 200));
+
+    // Klik tombol "Catat Setoran" dari Beranda Musyrif untuk navigasi langsung ke Tahfizh
+    await catatSetoranBtn.click();
+    await page.waitForSelector('[data-testid="tahfizh-module"]', { timeout: 10000 });
+    await page.waitForFunction(
+      () => {
+        const sel = document.querySelector("#santri-selector") as HTMLSelectElement | null;
+        return sel && sel.options.length > 1;
+      },
+      { timeout: 10000 }
+    );
+    console.log("   ✓ Navigasi Beranda: Tombol '+ Catat Setoran' berhasil membuka modul Tahfizh.");
+    console.log("   ✓ Skenario 1 Lolos: Otentikasi, Beranda MT, dan navigasi Tahfizh terbukti sah.");
 
     // =========================================================================
     // SKENARIO 2: SETORAN MULTI-HALAMAN (422–423, VOLUME 2) & VERIFIKASI PERSISTENSI

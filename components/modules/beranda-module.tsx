@@ -21,6 +21,7 @@ import {
   DollarSign,
   HeartHandshake,
 } from "lucide-react";
+import { DashboardMusyrifTahfizh } from "@/components/dashboard/dashboard-musyrif-tahfizh";
 
 export interface DashboardSantriSummary {
   id: string;
@@ -31,6 +32,8 @@ export interface DashboardSantriSummary {
   capaianJuz: number;
   targetJuz: number;
   setoranTerakhir: string;
+  setoranTerakhirAt?: string | null;
+  sudahSetorHariIni?: boolean;
   status: string;
   nilaiTerakhir: string;
   poinPelanggaran: number;
@@ -70,6 +73,19 @@ export function BerandaModule({
   onNavigate,
   onOpenSetoranQuick,
 }: BerandaModuleProps) {
+  // Role MT dialihkan ke Dashboard Musyrif Tahfizh terfokus (Pilot UI/UX B2)
+  if (userRole === "MT") {
+    return (
+      <DashboardMusyrifTahfizh
+        santriList={santriList}
+        halaqohName={currentHalaqohName || "Halaqoh Binaan"}
+        userName={userName}
+        ikhtibarPendingCount={ikhtibarPendingCount}
+        onNavigate={onNavigate}
+      />
+    );
+  }
+
   const roleInfo = ROLE_LABELS[userRole] || {
     title: "Pengguna",
     badgeVariant: "neutral",

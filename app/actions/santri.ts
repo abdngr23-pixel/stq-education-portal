@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
 import { SantriStatus, JenisKelamin, Prisma } from "@prisma/client";
 import { calculateLatestSabaqPosition } from "@/lib/tahfizh-page-allocation";
+import { isTodayWita } from "@/lib/wita-date";
 
 export interface CreateSantriInput {
   nis: string;
@@ -102,6 +103,7 @@ export async function getSantriListAction(params?: {
           select: {
             id: true,
             jenis: true,
+            status: true,
             juz: true,
             halamanMulai: true,
             halamanSelesai: true,
@@ -134,6 +136,7 @@ export async function getSantriListAction(params?: {
       // Total Hafalan = Modal Hafalan Awal + Total jumlahHalaman SABAQ setelah tanggal baseline
       // SABQI, MANZIL, dan MUFAR tidak menambah total hafalan. Setoran DIBATALKAN dikecualikan.
       const sabaqAfterBaseline = (s.setoranList || []).filter((st) => {
+        if (st.status === "DIBATALKAN") return false;
         if (st.jenis !== "SABAQ") return false;
         if (!baselineDate) return true;
         return new Date(st.tanggal) >= baselineDate;
@@ -143,9 +146,14 @@ export async function getSantriListAction(params?: {
       const totalHafalan = modalAwal + tambahanSabaq;
       const capaianJuz = Math.floor(totalHafalan / 20);
 
-      // Setoran terakhir riil dari DB (untuk ringkasan aktivitas terbaru)
-      const latestSetoran = s.setoranList?.[0] || null;
+      // Setoran valid non-batal untuk pelacakan status harian WITA & ringkasan aktivitas terbaru
+      const validSetoranList = (s.setoranList || []).filter((st) => st.status !== "DIBATALKAN");
+      const latestSetoran = validSetoranList[0] || null;
       const nilaiTerakhir = latestSetoran ? latestSetoran.nilai : "Belum ada data";
+
+      // Status setoran hari ini berdasarkan zona waktu resmi WITA (Asia/Makassar)
+      const sudahSetorHariIni = validSetoranList.some((st) => isTodayWita(st.tanggal));
+      const setoranTerakhirAt = latestSetoran ? latestSetoran.tanggal.toISOString() : null;
 
       // Sesuai Instruksi P0.1:
       // Posisi terakhir Tahfizh HANYA boleh berasal dari SABAQ aktif pasca-baseline.
@@ -197,6 +205,8 @@ export async function getSantriListAction(params?: {
         setoranTerakhir: latestSetoran
           ? `${latestSetoran.jenis} Juz ${latestSetoran.juz} Hlm ${latestSetoran.halamanMulai}-${latestSetoran.halamanSelesai}`
           : "-",
+        setoranTerakhirAt,
+        sudahSetorHariIni,
         nilaiTerakhir,
         poinPelanggaran: s._count.pelanggaranList || 0,
         bintangKebaikan: totalBintang,

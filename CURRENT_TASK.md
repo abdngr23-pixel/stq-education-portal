@@ -11,9 +11,10 @@ Pemulihan konteks, pembersihan ruang lingkup premature (B3 & PWA), perbaikan han
 ### File yang Boleh Berubah (Runtime B1–B2 & Test DB Hardening)
 * `app/globals.css` (Fondasi token desain STQ Clean Institutional Minimalist)
 * `app/layout.tsx` (Font Plus Jakarta Sans, viewport, metadata)
-* `components/dashboard/dashboard-musyrif-tahfizh.tsx` (Pilot Beranda Musyrif: 1 primary action, 3 metrik riil, flat list)
-* `components/modules/tahfizh-module.tsx` (Pilot Catat Setoran: single-page focused form, visual stepper dihapus)
-* `tests/test-db-manager.ts` (Hardening cleanup PostgreSQL test: PID tracking, pg_ctl graceful shutdown, safe directory deletion)
+* `components/dashboard/dashboard-musyrif-tahfizh.tsx` (Pilot Beranda Musyrif: terhubung langsung untuk role MT pada beranda-module.tsx, data-testid="dashboard-musyrif-tahfizh", 1 primary action, 3 metrik operasional riil berbasis batas hari WITA, flat list santri)
+* `components/modules/beranda-module.tsx` (Integrasi minimal: render DashboardMusyrifTahfizh jika role === "MT", role lain tetap beranda existing)
+* `components/modules/tahfizh-module.tsx` (Pilot Catat Setoran: single-page focused form tanpa wizard dan tanpa visual stepper, ringkasan 5 data disederhanakan)
+* `tests/test-db-manager.ts` (Hardening cleanup PostgreSQL test: PID tracking, process verification postgres.exe cegah PID reuse, safe temp deletion path.relative)
 * `scripts/puppeteer-p0-1-verify.ts` (Konfigurasi path artefak screenshot E2E dinamis)
 
 ### File Dokumentasi & Verifikasi yang Dibuat/Diperbarui
@@ -22,10 +23,10 @@ Pemulihan konteks, pembersihan ruang lingkup premature (B3 & PWA), perbaikan han
 * `UI_UX_STITCH_INTEGRATION_PLAN.md`
 * `UI_UX_LOCAL_IMPLEMENTATION_AUDIT.md`
 * `CHECKPOINT_UI_UX_PILOT_B1_B2.md`
-* `scripts/verify-test-db-cleanup.ts` (Verifikasi siklus start-stop test DB)
+* `scripts/verify-test-db-cleanup.ts` (Verifikasi siklus start-stop test DB dengan try/finally)
 
 ### File yang DILARANG Berubah (Wajib Identik dengan HEAD `18e1761`)
-* Seluruh berkas modul B3: `app/page.tsx`, `components/dashboard/dashboard-mudir-ks.tsx`, `components/dashboard/master-data-santri.tsx`, `components/dashboard/mutabaah-harian-tab.tsx`, `components/dashboard/presensi-harian-mobile.tsx`, `components/modules/akademik-module.tsx`, `components/modules/anggaran-module.tsx`, `components/modules/audit-module.tsx`, `components/modules/beranda-module.tsx`, `components/modules/kalender-module.tsx`, `components/modules/kedisiplinan-module.tsx`, `components/modules/kesehatan-module.tsx`, `components/modules/logistik-module.tsx`, `components/modules/perizinan-module.tsx`, `components/modules/portal-wali-module.tsx`, `components/modules/sponsor-module.tsx`, `components/modules/surat-module.tsx`, `components/modules/users-module.tsx`, serta seluruh `app/actions/`.
+* Modul B3 non-pilot (Akademik, Anggaran, Audit, Kalender, Kedisiplinan, Kesehatan, Logistik, Perizinan, Portal Wali, Sponsor, Surat, Users) serta fitur PWA B4.
 * Seluruh berkas PWA/B4: `public/manifest.webmanifest`, `public/sw.js`, `public/offline.html`.
 * Skema basis data: `prisma/schema.prisma` dan migrasi database.
 * File otentikasi & login demo: `components/auth/demo-account-switcher.tsx`.
@@ -33,11 +34,11 @@ Pemulihan konteks, pembersihan ruang lingkup premature (B3 & PWA), perbaikan han
 ## 4. Pekerjaan yang Sudah Selesai
 * [x] **Pemeriksaan Kondisi Git (Gate R0):** `tests/test-db-manager.ts` terverifikasi tracked di HEAD.
 * [x] **Verifikasi Backup Lokal:** Direktori `D:\stq-education-portal-antigravity\uiux_local_backup_before_scope_recovery` terverifikasi lengkap memuat `tracked-changes.patch` dan seluruh file untracked.
-* [x] **Pemulihan Perubahan Prematur B3 & PWA:** Seluruh berkas B3 telah identik dengan HEAD, dan file PWA (`sw.js`, `manifest`, `offline.html`) telah dikeluarkan dari worktree.
+* [x] **Pemulihan Perubahan Prematur B3 & PWA:** Seluruh berkas B3 non-pilot telah identik dengan HEAD, dan file PWA (`sw.js`, `manifest`, `offline.html`) telah dikeluarkan dari worktree.
 * [x] **Instalasi Anti-Slop:** 5 skill anti-slop terpasang di `.agents/skills/` dan pointer terpasang di `AGENTS.md`.
 * [x] **Fondasi Desain B1:** Token warna emerald `#0E7C3A`, safe-area insets, touch target $\ge 44 \times 44$ px, Plus Jakarta Sans font.
-* [x] **Pilot Beranda Musyrif B2:** 1 tombol primary action (+ Catat Setoran), 3 metrik halaqoh riil, flat list tanpa nested cards.
-* [x] **Pilot Catat Setoran B2:** Visual stepper 4-langkah buatan (baris 1006–1029) telah dihapus sepenuhnya; form murni single-page.
+* [x] **Pilot Beranda Musyrif B2:** Terhubung langsung ke role `MT` di `beranda-module.tsx`, `data-testid="dashboard-musyrif-tahfizh"`, 1 tombol primary action (+ Catat Setoran), 3 metrik operasional riil berbasis WITA (Total Binaan, Sudah Setor Hari Ini, Belum Setor Hari Ini), rumus estimasi palsu dihapus, flat list tanpa nested cards.
+* [x] **Pilot Catat Setoran B2:** Form Catat Setoran adalah single-page focused form tanpa wizard dan tanpa visual stepper. (Baseline commit 18e1761 memang sudah single-page tanpa stepper; klaim keliru bahwa stepper dihapus oleh commit pilot telah dihapus dan diselaraskan). Ringkasan 5 data riil disederhanakan anti-slop tanpa mengubah validasi P0.1.
 * [x] **Remediasi Hang Cleanup PostgreSQL Test di Windows:**
   - `isPidRunning()` diperbaiki menggunakan `spawnSync("tasklist")` (menghindari false-negative libuv pada Windows).
   - Integrasi native `pg_ctl stop -m fast -w` dari paket `@embedded-postgres` sebelum terminasi proses.
@@ -61,7 +62,7 @@ Pemulihan konteks, pembersihan ruang lingkup premature (B3 & PWA), perbaikan han
 ## 6. Larangan Tegas
 * DILARANG commit atau push langsung ke branch `main`.
 * DILARANG merge ke `main`.
-* DILARANG deploy ke production / staging.
+* DILARANG deploy ke production / staging (Vercel membuat preview deployment otomatis pada branch review, tetapi TIDAK ADA production deployment).
 * DILARANG melanjutkan pengerjaan modul B3 atau PWA/B4 sebelum branch review B1–B2 disetujui.
 * DILARANG mengubah skema database Prisma atau migrasi.
 

@@ -88,13 +88,15 @@ Plugin resmi anti-slop telah terpasang dengan konfigurasi *This project only* (A
 ## 4. Implementasi Pilot B2 — Beranda Musyrif Tahfizh
 
 Berkas: `components/dashboard/dashboard-musyrif-tahfizh.tsx`
-* **Fokus Kerja Harian:** Menampilkan identitas halaqoh binaan, status sesi aktif WITA, dan tombol aksi utama tunggal: `+ Catat Setoran` (navigasi langsung ke formulir setoran).
+* **Integrasi Beranda Musyrif Riil:** Terhubung langsung pada `components/modules/beranda-module.tsx` saat pengguna memiliki peran `role === "MT"`, dengan identitas root selector `data-testid="dashboard-musyrif-tahfizh"`. Pengguna non-MT tetap menggunakan Beranda yang sudah ada.
+* **Fokus Kerja Harian:** Menampilkan identitas halaqoh binaan, status sesi aktif WITA, dan tombol aksi utama tunggal: `+ Catat Setoran` (membuka modul Tahfizh secara langsung).
 * **3 Metrik Operasional Riil:**
-  1. *Halaqoh Aktif:* Total santri terdaftar di kelompok binaan (`totalBinaan`).
-  2. *Setoran Hari Ini:* Jumlah santri yang telah menyetorkan ziyadah/murojaah hari ini beserta progress bar (`countSudahSetor / totalBinaan`).
-  3. *Ujian Siap Diuji:* Santri yang telah menyelesaikan juz bulat dan siap tasmi'/ikhtibar (`countSiapTasmi`).
-* **Struktur Antarmuka Flat:**
-  - Antrean santri belum setor disajikan dalam bentuk daftar datar (*flat list*), bukan kartu bersarang (*no nested cards*).
+  1. *Total Binaan:* Total santri terdaftar di kelompok binaan (`totalBinaan`).
+  2. *Sudah Setor Hari Ini:* Jumlah santri yang telah menyetorkan ziyadah/murojaah hari ini berbasis batas hari zona waktu resmi WITA (Asia/Makassar, UTC+8) dan data terstruktur server (`sudahSetorHariIni` / `setoranTerakhirAt`). Setoran berstatus `DIBATALKAN` dilarang dan tidak dihitung.
+  3. *Belum Setor Hari Ini / Antrean Ikhtibar:* Metrik riil yang dapat dibuktikan dari data database (`belumSetorCount` dan `ikhtibarPendingCount`). Rumus estimasi palsu `capaianJuz > 0 && capaianJuz % 1 === 0` telah dihapus sepenuhnya.
+* **Struktur Antarmuka Flat Anti-Slop (Mode DURING):**
+  - Satu heading singkat, satu aksi primer (`+ Catat Setoran`), maksimal tiga metrik, tanpa teks penjelasan redundan.
+  - Antrean santri disajikan sebagai flat list fokus (bukan kartu bersarang / *no nested cards*), informasi sekunder maksimal satu baris per santri.
   - Santri yang telah tuntas setor dapat diciutkan (*collapsible accordion*) untuk menjaga kebersihan visual layar.
 
 ---
@@ -102,9 +104,13 @@ Berkas: `components/dashboard/dashboard-musyrif-tahfizh.tsx`
 ## 5. Implementasi Pilot B2 — Catat Setoran Tahfizh
 
 Berkas: `components/modules/tahfizh-module.tsx`
-* **Single-Page Focused Form:**
-  - **Bukti Stepper Dihapus:** Indikator stepper bertingkat 4-langkah buatan (`1. Santri & Posisi → 2. Metode → 3. Rincian → 4. Simpan`) pada baris 1006–1029 telah **dihapus sepenuhnya**.
-  - Alur pengisian setoran berada dalam satu layar terpadu: Pilih Santri → Ringkasan Capaian Riil 5 Metrik → Pilih Jenis Setoran (Sabaq/Sabqi/Manzil/Mufar) → Rentang Halaman & Nilai → Simpan.
+* **Keputusan Tunggal Desain:**
+  “Form Catat Setoran adalah single-page focused form tanpa wizard dan tanpa visual stepper.”
+  (Baseline commit `18e1761` memang sudah berformat single-page tanpa stepper; klaim keliru bahwa stepper dihapus oleh commit pilot telah dihapus dan diselaraskan).
+* **Penyederhanaan Kepadatan UI (Anti-Slop Mode DURING):**
+  - Audit seluruh halaman Catat Setoran: teks pengantar berulang dikurangi, ringkasan 5 metrik data (Modal Awal, Tambahan Sabaq, Total Hafalan, Posisi Terakhir, Target Akhir) disederhanakan tanpa menghilangkan makna bisnisnya.
+  - Formulir satu halaman tanpa wizard/stepper dipertahankan.
+  - Seluruh atribut `data-testid` dipertahankan 100% tanpa perubahan breaking.
 * **Integritas Aturan Bisnis & Perlindungan P0.1:**
   - Mendukung penambahan multi-halaman proporsional dan setoran 0.5 halaman (kapasitas maksimal 1.0 hlm per nomor halaman mushaf).
   - Proteksi batas antarjuz (halaman 441 akhir Juz 22 tidak boleh melintasi ke halaman 442).
@@ -112,6 +118,8 @@ Berkas: `components/modules/tahfizh-module.tsx`
   - Alasan mandatory untuk rekomendasi Sabaqi manual.
   - Idempotensi request (`clientRequestId`) dan proteksi double-submit.
   - Penyimpanan setoran tidak membuka WhatsApp secara otomatis.
+* **Kebijakan Deployment Vercel:**
+  Vercel membuat preview deployment otomatis pada setiap push ke branch review (`review/uiux-pilot-b1-b2`), tetapi TIDAK ADA production deployment karena branch `main` tidak disentuh dan tidak di-merge.
 
 ---
 

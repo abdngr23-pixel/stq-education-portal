@@ -1035,69 +1035,63 @@ export function TahfizhModule({
                   </select>
                 </div>
 
-                {/* STATUS HAFALAN SANTRI: PEMISAHAN 5 INFORMASI WAJIB (POIN 5) */}
+                {/* STATUS HAFALAN SANTRI: 5 METRIK RIIL RINGKAS & BERSIH */}
                 {activeSantri && (
-                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 shadow-2xs space-y-2">
-                    <div className="flex items-center justify-between text-xs font-bold text-slate-700">
-                      <span>Status Capaian Hafalan Santri Saat Ini</span>
-                      <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-md">
+                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/90 shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
+                      <span>Capaian Hafalan Terkini</span>
+                      <span className="text-[11px] font-medium text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-md">
                         {activeSantri.nama} ({activeSantri.nis})
                       </span>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1 text-center">
                       <div className="bg-white p-2 rounded-xl border border-slate-200">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                          1. Modal Awal
+                        <span className="text-[10px] uppercase font-semibold text-slate-400 block">
+                          Modal Awal
                         </span>
-                        <span className="text-sm font-black text-slate-800 block mt-0.5">
-                          {santriModalAwal} Halaman
+                        <span className="text-sm font-bold text-slate-800 block mt-0.5">
+                          {santriModalAwal} Hlm
                         </span>
                         <span className="text-[10px] text-slate-500 font-medium">
                           {smartKonversiAwal.label}
                         </span>
                       </div>
                       <div className="bg-white p-2 rounded-xl border border-slate-200">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                          2. Tambahan Sabaq
+                        <span className="text-[10px] uppercase font-semibold text-slate-400 block">
+                          Tambahan Sabaq
                         </span>
-                        <span className="text-sm font-black text-emerald-700 block mt-0.5">
-                          +{santriTambahanSabaq} Halaman
-                        </span>
-                        <span className="text-[10px] text-slate-500 font-medium">
-                          Tersimpan di DB
+                        <span className="text-sm font-bold text-emerald-700 block mt-0.5">
+                          +{santriTambahanSabaq} Hlm
                         </span>
                       </div>
                       <div className="bg-white p-2 rounded-xl border border-emerald-300 bg-emerald-50/40">
-                        <span className="text-[10px] uppercase font-bold text-emerald-800 block">
-                          3. Total Hafalan
+                        <span className="text-[10px] uppercase font-semibold text-emerald-800 block">
+                          Total Hafalan
                         </span>
-                        <span className="text-sm font-black text-emerald-900 block mt-0.5">
-                          {santriTotalHafalan} Halaman
+                        <span className="text-sm font-bold text-emerald-900 block mt-0.5">
+                          {santriTotalHafalan} Hlm
                         </span>
                         <span className="text-[10px] text-emerald-700 font-bold">
                           {smartKonversiTotal.label}
                         </span>
                       </div>
                       <div className="bg-white p-2 rounded-xl border border-slate-200">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                          4. Posisi Terakhir
+                        <span className="text-[10px] uppercase font-semibold text-slate-400 block">
+                          Posisi Terakhir
                         </span>
-                        <span className="text-sm font-black text-slate-800 block mt-0.5">
-                          Halaman {santriPosisiTerakhir}
+                        <span className="text-sm font-bold text-slate-800 block mt-0.5">
+                          Hlm {santriPosisiTerakhir}
                         </span>
                         <span className="text-[10px] text-slate-500 font-medium">
                           Juz {getJuzByPage(santriPosisiTerakhir)}
                         </span>
                       </div>
                       <div className="bg-white p-2 rounded-xl border border-slate-200 col-span-2 sm:col-span-1">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                          5. Target Akhir
+                        <span className="text-[10px] uppercase font-semibold text-slate-400 block">
+                          Target Akhir
                         </span>
-                        <span className="text-sm font-black text-slate-800 block mt-0.5">
+                        <span className="text-sm font-bold text-slate-800 block mt-0.5">
                           {activeSantri.targetJuz ?? 30} Juz
-                        </span>
-                        <span className="text-[10px] text-slate-500 font-medium">
-                          600 Halaman
                         </span>
                       </div>
                     </div>
