@@ -43,7 +43,7 @@ if (isTestEnv) {
   testDbUrl = envTestDbUrl;
 }
 
-export const prisma =
+const basePrisma =
   globalForPrisma.prisma ??
   new PrismaClient({
     ...(testDbUrl ? { datasources: { db: { url: testDbUrl } } } : {}),
@@ -51,7 +51,18 @@ export const prisma =
   });
 
 if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
+  globalForPrisma.prisma = basePrisma;
 }
+
+export const prisma: PrismaClient = new Proxy(basePrisma, {
+  get(target, prop, receiver) {
+    const activeClient = globalForPrisma.prisma || target;
+    const value = Reflect.get(activeClient, prop, receiver);
+    if (typeof value === "function") {
+      return value.bind(activeClient);
+    }
+    return value;
+  },
+});
 
 export default prisma;

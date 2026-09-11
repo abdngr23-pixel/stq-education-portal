@@ -248,6 +248,8 @@ export async function startTestDatabase(preferredPort?: number): Promise<PrismaC
     },
   });
 
+  (globalThis as unknown as { prisma: PrismaClient | undefined }).prisma = testPrismaClient;
+
   return testPrismaClient;
 }
 
@@ -705,6 +707,7 @@ export async function stopTestDatabase() {
       await testPrismaClient.$disconnect();
     } catch {}
     testPrismaClient = null;
+    (globalThis as unknown as { prisma: PrismaClient | undefined }).prisma = undefined;
   }
 
   // 2. Snapshot PID sebelum proses stop dipanggil agar child tetap terlacak

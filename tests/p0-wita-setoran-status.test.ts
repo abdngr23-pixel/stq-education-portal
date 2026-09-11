@@ -1,9 +1,14 @@
 // Test Khusus Verifikasi Penentuan Status Setoran Hari Ini Berdasarkan Batas Hari WITA (Asia/Makassar)
-// Menjamin:
-// 1. Setoran hari ini (WITA) menghasilkan sudahSetorHariIni = true
-// 2. Setoran kemarin (WITA) menghasilkan sudahSetorHariIni = false
-// 3. Setoran sekitar batas pergantian hari UTC/WITA terhitung presisi
-// 4. Setoran berstatus DIBATALKAN tidak pernah dihitung sebagai sudah setor
+// Menjamin Pengujian Terintegrasi Jalur Produksi Server Action (getSantriListAction):
+// 1. sudahSetorHariIni = true untuk setoran aktif hari ini (WITA)
+// 2. sudahSetorHariIni = false untuk setoran kemarin (WITA)
+// 3. sudahSetorHariIni = true untuk setoran pada batas pergantian hari 00:05 WITA
+// 4. setoran berstatus DIBATALKAN tidak dihitung (sudahSetorHariIni = false, setoranTerakhirAt = null)
+// 5. setoranTerakhirAt memetakan ISO timestamp aktual setoran valid terakhir
+
+(process.env as Record<string, string | undefined>).NODE_ENV = "test";
+process.env.IS_TEST_RUN = "true";
+process.env.ALLOW_ISOLATED_TEST_DB = "true";
 
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -13,14 +18,32 @@ import {
   stopTestDatabase,
 } from "./test-db-manager";
 import { isTodayWita, getWitaDateString, parseWITADate } from "../lib/wita-date";
+import { getSantriListAction } from "../app/actions/santri";
+import { UserSession } from "../types/auth";
 
-describe("Verifikasi Status Setoran Hari Ini Berbasis Zona Waktu WITA & Status DIBATALKAN", () => {
+describe("Verifikasi Status Setoran Hari Ini Berbasis Zona Waktu WITA & Jalur Produksi getSantriListAction", () => {
   let prisma: PrismaClient;
 
   const SANTRI_ID_TODAY = "santri-wita-today-01";
   const SANTRI_ID_YESTERDAY = "santri-wita-yesterday-02";
   const SANTRI_ID_CANCELLED = "santri-wita-cancelled-03";
   const SANTRI_ID_BOUNDARY = "santri-wita-boundary-04";
+
+  const sessionMT: UserSession = {
+    userId: "usr-wita-tester",
+    username: "pembina.wita",
+    role: "MT",
+    staffId: "staff-wita-test-01",
+    staffCode: "STF-WITA-01",
+    name: "Ust. Pembina WITA",
+    halaqohName: "Halaqoh Uji WITA",
+    isKepalaBidangTahfidz: false,
+    isPetugasPresensiPutri: false,
+  };
+
+  let todayMiddayWita: Date;
+  let yesterdayWitaDate: Date;
+  let earlyMorningWita: Date;
 
   before(async () => {
     prisma = await startTestDatabase();
@@ -74,8 +97,8 @@ describe("Verifikasi Status Setoran Hari Ini Berbasis Zona Waktu WITA & Status D
     // Hitung tanggal hari ini di WITA
     const now = new Date();
     const todayWitaStr = getWitaDateString(now); // e.g. "2026-09-11"
-    const todayMiddayWita = new Date(parseWITADate(todayWitaStr).getTime() + 10 * 3600 * 1000); // pukul 10:00 WITA hari ini
-    const yesterdayWitaDate = new Date(parseWITADate(todayWitaStr).getTime() - 4 * 3600 * 1000); // pukul 20:00 WITA kemarin malam
+    todayMiddayWita = new Date(parseWITADate(todayWitaStr).getTime() + 10 * 3600 * 1000); // pukul 10:00 WITA hari ini
+    yesterdayWitaDate = new Date(parseWITADate(todayWitaStr).getTime() - 4 * 3600 * 1000); // pukul 20:00 WITA kemarin malam
 
     // 1. Setoran santri 1: AKTIF pada hari ini WITA
     await prisma.setoranTahfizh.create({
@@ -133,7 +156,7 @@ describe("Verifikasi Status Setoran Hari Ini Berbasis Zona Waktu WITA & Status D
     });
 
     // 4. Setoran santri 4: tepat di awal hari WITA (00:05 WITA = jam 16:05 UTC kemarin)
-    const earlyMorningWita = new Date(parseWITADate(todayWitaStr).getTime() + 5 * 60 * 1000); // 00:05 WITA
+    earlyMorningWita = new Date(parseWITADate(todayWitaStr).getTime() + 5 * 60 * 1000); // 00:05 WITA
     await prisma.setoranTahfizh.create({
       data: {
         setoranCode: "SET-WITA-BOUNDARY",
@@ -156,46 +179,59 @@ describe("Verifikasi Status Setoran Hari Ini Berbasis Zona Waktu WITA & Status D
     await stopTestDatabase();
   });
 
-  it("harus menandai sudahSetorHariIni = true untuk setoran aktif pada hari ini WITA", async () => {
-    const setoran = await prisma.setoranTahfizh.findFirst({
-      where: { santriId: SANTRI_ID_TODAY, status: { not: "DIBATALKAN" } },
-      orderBy: { tanggal: "desc" },
-    });
-    assert.ok(setoran);
-    assert.equal(isTodayWita(setoran.tanggal), true);
+  it("1. jalur produksi getSantriListAction: menandai sudahSetorHariIni = true dan setoranTerakhirAt untuk setoran aktif hari ini", async () => {
+    const res = await getSantriListAction(undefined, sessionMT);
+    assert.equal(res.success, true);
+    const santriToday = res.data.find((s) => s.id === SANTRI_ID_TODAY);
+    assert.ok(santriToday);
+    assert.equal(santriToday.sudahSetorHariIni, true);
+    assert.equal(santriToday.setoranTerakhirAt, todayMiddayWita.toISOString());
   });
 
-  it("harus menandai sudahSetorHariIni = false untuk setoran kemarin WITA", async () => {
-    const setoran = await prisma.setoranTahfizh.findFirst({
-      where: { santriId: SANTRI_ID_YESTERDAY, status: { not: "DIBATALKAN" } },
-      orderBy: { tanggal: "desc" },
-    });
-    assert.ok(setoran);
-    assert.equal(isTodayWita(setoran.tanggal), false);
+  it("2. jalur produksi getSantriListAction: menandai sudahSetorHariIni = false dan setoranTerakhirAt kemarin untuk setoran kemarin", async () => {
+    const res = await getSantriListAction(undefined, sessionMT);
+    assert.equal(res.success, true);
+    const santriYesterday = res.data.find((s) => s.id === SANTRI_ID_YESTERDAY);
+    assert.ok(santriYesterday);
+    assert.equal(santriYesterday.sudahSetorHariIni, false);
+    assert.equal(santriYesterday.setoranTerakhirAt, yesterdayWitaDate.toISOString());
   });
 
-  it("harus menandai sudahSetorHariIni = true untuk setoran jam 00:05 WITA (meski masih kemarin di UTC)", async () => {
-    const setoran = await prisma.setoranTahfizh.findFirst({
-      where: { santriId: SANTRI_ID_BOUNDARY, status: { not: "DIBATALKAN" } },
-      orderBy: { tanggal: "desc" },
-    });
-    assert.ok(setoran);
-    // Jam 00:05 WITA adalah tanggal hari ini di WITA
-    assert.equal(isTodayWita(setoran.tanggal), true);
+  it("3. jalur produksi getSantriListAction: menandai sudahSetorHariIni = true untuk setoran pada batas jam 00:05 WITA", async () => {
+    const res = await getSantriListAction(undefined, sessionMT);
+    assert.equal(res.success, true);
+    const santriBoundary = res.data.find((s) => s.id === SANTRI_ID_BOUNDARY);
+    assert.ok(santriBoundary);
+    assert.equal(santriBoundary.sudahSetorHariIni, true);
+    assert.equal(santriBoundary.setoranTerakhirAt, earlyMorningWita.toISOString());
   });
 
-  it("tidak boleh menghitung setoran yang berstatus DIBATALKAN", async () => {
-    // Query hanya yang bukan DIBATALKAN
-    const validSetoran = await prisma.setoranTahfizh.findFirst({
-      where: { santriId: SANTRI_ID_CANCELLED, status: { not: "DIBATALKAN" } },
-    });
-    assert.equal(validSetoran, null);
+  it("4. jalur produksi getSantriListAction: mengecualikan setoran DIBATALKAN sehingga sudahSetorHariIni = false dan setoranTerakhirAt = null", async () => {
+    const res = await getSantriListAction(undefined, sessionMT);
+    assert.equal(res.success, true);
+    const santriCancelled = res.data.find((s) => s.id === SANTRI_ID_CANCELLED);
+    assert.ok(santriCancelled);
+    assert.equal(santriCancelled.sudahSetorHariIni, false);
+    assert.equal(santriCancelled.setoranTerakhirAt, null, "Setoran berstatus DIBATALKAN tidak boleh menjadi setoranTerakhirAt");
+  });
 
-    // Santri ini tidak memiliki setoran aktif, sehingga status sudahSetorHariIni harus false
-    const allValid = await prisma.setoranTahfizh.findMany({
-      where: { santriId: SANTRI_ID_CANCELLED, status: "AKTIF" },
+  it("5. fungsi utilitas isTodayWita() konsisten dengan query langsung database", async () => {
+    const setoranToday = await prisma.setoranTahfizh.findFirst({
+      where: { santriId: SANTRI_ID_TODAY, status: "AKTIF" },
     });
-    const sudahSetor = allValid.some((st) => isTodayWita(st.tanggal));
-    assert.equal(sudahSetor, false);
+    assert.ok(setoranToday);
+    assert.equal(isTodayWita(setoranToday.tanggal), true);
+
+    const setoranYesterday = await prisma.setoranTahfizh.findFirst({
+      where: { santriId: SANTRI_ID_YESTERDAY, status: "AKTIF" },
+    });
+    assert.ok(setoranYesterday);
+    assert.equal(isTodayWita(setoranYesterday.tanggal), false);
+
+    const setoranBoundary = await prisma.setoranTahfizh.findFirst({
+      where: { santriId: SANTRI_ID_BOUNDARY, status: "AKTIF" },
+    });
+    assert.ok(setoranBoundary);
+    assert.equal(isTodayWita(setoranBoundary.tanggal), true);
   });
 });

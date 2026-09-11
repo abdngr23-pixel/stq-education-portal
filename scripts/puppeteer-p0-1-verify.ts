@@ -268,11 +268,33 @@ export async function runIsolatedE2EVerification() {
     const btnText = await page.$eval('[data-testid="btn-catat-setoran-beranda"]', (el) => el.textContent || "");
     if (!btnText.includes("Catat Setoran")) fail(`Teks tombol tidak sesuai: "${btnText}"`);
 
-    // Daftar belum/sudah setor sesuai data database
+    // Daftar belum/sudah setor sesuai data database (assert presisi, bukan hanya >= 1)
     await page.waitForSelector('[data-testid="santri-belum-setor-list"]', { timeout: 5000 });
     const belumSetorCountUi = await page.$$eval('[data-testid="santri-belum-setor-item"]', (els) => els.length);
-    console.log(`   ✓ Daftar santri belum setor terverifikasi memuat ${belumSetorCountUi} santri binaan.`);
-    if (belumSetorCountUi < 1) fail("Daftar santri belum setor di Beranda Musyrif kosong!");
+    const dbBelumSetorCount = await testPrisma.santri.count({
+      where: { halaqohId: FIXTURES.HALAQOH_ID },
+    });
+    console.log(`   ✓ Daftar santri belum setor terverifikasi memuat ${belumSetorCountUi} santri (sesuai DB: ${dbBelumSetorCount}).`);
+    if (belumSetorCountUi !== dbBelumSetorCount) {
+      fail(`Jumlah santri belum setor di UI (${belumSetorCountUi}) tidak sama persis dengan record database (${dbBelumSetorCount})!`);
+    }
+
+    // Verifikasi Kartu Antrean Ikhtibar Riil (Antrean 0)
+    await page.waitForSelector('[data-testid="card-antrean-ikhtibar"]', { timeout: 5000 });
+    const ikhtibarCardText = await page.$eval('[data-testid="card-antrean-ikhtibar"]', (el) => el.textContent || "");
+    if (!ikhtibarCardText.includes("Antrean Ikhtibar")) {
+      fail(`Label kartu Ikhtibar salah: "${ikhtibarCardText}"`);
+    }
+    const ikhtibarDbCount = await testPrisma.ikhtibarTahfizh.count({
+      where: {
+        santri: { halaqohId: FIXTURES.HALAQOH_ID },
+        status: { in: ["PENGAJUAN", "LULUS_TAHAP_1", "MENGULANG", "MENGULANG_SEBAGIAN", "MENGULANG_SATU_JUZ"] },
+      },
+    });
+    if (!ikhtibarCardText.includes(String(ikhtibarDbCount))) {
+      fail(`Jumlah antrean ikhtibar di kartu (${ikhtibarCardText}) tidak sesuai dengan record database (${ikhtibarDbCount})!`);
+    }
+    console.log(`   ✓ Kartu Antrean Ikhtibar menampilkan "${ikhtibarDbCount} Antrean Ikhtibar" sesuai database.`);
 
     // Verifikasi PWA / Service Worker tidak aktif
     const swRegistrationsCount = await page.evaluate(async () => {
@@ -325,7 +347,7 @@ export async function runIsolatedE2EVerification() {
     await page.setViewport({ width: 1280, height: 900 });
     await new Promise((r) => setTimeout(r, 200));
 
-    // Klik tombol "Catat Setoran" dari Beranda Musyrif untuk navigasi langsung ke Tahfizh
+    // Klik tombol "+ Catat Setoran" dari header Beranda Musyrif untuk navigasi umum ke Tahfizh
     await catatSetoranBtn.click();
     await page.waitForSelector('[data-testid="tahfizh-module"]', { timeout: 10000 });
     await page.waitForFunction(
@@ -336,7 +358,55 @@ export async function runIsolatedE2EVerification() {
       { timeout: 10000 }
     );
     console.log("   ✓ Navigasi Beranda: Tombol '+ Catat Setoran' berhasil membuka modul Tahfizh.");
-    console.log("   ✓ Skenario 1 Lolos: Otentikasi, Beranda MT, dan navigasi Tahfizh terbukti sah.");
+
+    // =========================================================================
+    // SKENARIO 1B: P0 TOMBOL CATAT SETORAN PER SANTRI (SANTRI KEDUA)
+    // =========================================================================
+    console.log("\n[SKENARIO 1B] Pengujian Tombol 'Catat Setoran' Spesifik Santri Kedua...");
+    // Kembali ke Beranda
+    const navBerandaBtn = await page.waitForSelector('[data-testid="nav-beranda"], button[title*="Beranda"]', { timeout: 5000 });
+    if (navBerandaBtn) await navBerandaBtn.click();
+    await page.waitForSelector('[data-testid="dashboard-musyrif-tahfizh"]', { timeout: 10000 });
+
+    // Klik tombol "Catat Setoran" pada baris santri kedua (FIXTURES.SANTRI_HALF)
+    const btnSantriKedua = await page.waitForSelector(
+      `[data-testid="btn-catat-setoran-santri-${FIXTURES.SANTRI_HALF}"]`,
+      { timeout: 5000 }
+    );
+    if (!btnSantriKedua) fail(`Tombol Catat Setoran untuk santri kedua (${FIXTURES.SANTRI_HALF}) tidak ditemukan!`);
+    await btnSantriKedua.click();
+
+    // Tunggu modul Tahfizh terbuka
+    await page.waitForSelector('[data-testid="tahfizh-module"]', { timeout: 10000 });
+    await page.waitForFunction(
+      (expectedId) => {
+        const sel = document.querySelector("#santri-selector") as HTMLSelectElement | null;
+        return sel && sel.value === expectedId;
+      },
+      { timeout: 10000 },
+      FIXTURES.SANTRI_HALF
+    );
+
+    const selectedSantriIdVal = await page.$eval("#santri-selector", (el) => (el as HTMLSelectElement).value);
+    if (selectedSantriIdVal !== FIXTURES.SANTRI_HALF) {
+      fail(`Formulir tidak memilih santri kedua. Diharapkan ID ${FIXTURES.SANTRI_HALF}, didapat ${selectedSantriIdVal}`);
+    }
+    console.log(`   ✓ Selector #santri-selector berhasil memilih ID santri kedua: ${selectedSantriIdVal}`);
+
+    // Assert pengisian otomatis posisi Sabaq berasal dari posisi santri kedua (modal 430 -> halaman mulai 431)
+    await page.waitForFunction(
+      () => {
+        const inp = document.querySelector('[data-testid="input-halaman-mulai"]') as HTMLInputElement | null;
+        return inp && inp.value === "431";
+      },
+      { timeout: 10000 }
+    );
+    const halMulaiKeduaVal = await page.$eval('[data-testid="input-halaman-mulai"]', (el) => (el as HTMLInputElement).value);
+    if (halMulaiKeduaVal !== "431") {
+      fail(`Halaman mulai tidak sesuai posisi santri kedua. Diharapkan "431", didapat "${halMulaiKeduaVal}"`);
+    }
+    console.log(`   ✓ Halaman mulai terisi otomatis dari posisi santri kedua: Halaman ${halMulaiKeduaVal} (bukan santri pertama 422).`);
+    console.log("   ✓ Skenario 1 & 1B Lolos: Otentikasi, Beranda MT, dan navigasi per santri terbukti sah.");
 
     // =========================================================================
     // SKENARIO 2: SETORAN MULTI-HALAMAN (422–423, VOLUME 2) & VERIFIKASI PERSISTENSI

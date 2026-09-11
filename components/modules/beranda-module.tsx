@@ -57,8 +57,11 @@ export interface BerandaModuleProps {
   santriList: DashboardSantriSummary[];
   izinPendingCount: number;
   ikhtibarPendingCount: number;
+  ikhtibarLoading?: boolean;
+  ikhtibarError?: string | null;
   santriSakitCount: number;
   onNavigate: (tab: AppNavId) => void;
+  onSelectSantriForSetoran?: (santriId: string) => void;
   onOpenSetoranQuick?: () => void;
 }
 
@@ -69,8 +72,11 @@ export function BerandaModule({
   santriList,
   izinPendingCount,
   ikhtibarPendingCount,
+  ikhtibarLoading,
+  ikhtibarError,
   santriSakitCount,
   onNavigate,
+  onSelectSantriForSetoran,
   onOpenSetoranQuick,
 }: BerandaModuleProps) {
   // Role MT dialihkan ke Dashboard Musyrif Tahfizh terfokus (Pilot UI/UX B2)
@@ -81,7 +87,10 @@ export function BerandaModule({
         halaqohName={currentHalaqohName || "Halaqoh Binaan"}
         userName={userName}
         ikhtibarPendingCount={ikhtibarPendingCount}
+        ikhtibarLoading={ikhtibarLoading}
+        ikhtibarError={ikhtibarError}
         onNavigate={onNavigate}
+        onSelectSantriId={onSelectSantriForSetoran}
       />
     );
   }
@@ -289,7 +298,7 @@ export function BerandaModule({
               ) : (
                 <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-100 text-slate-500 text-xs">
                   <CheckCircle2 className="h-4 w-4 text-[#0E7C3A] shrink-0" />
-                  <span>Tidak ada antrean ujian ikhtibar saat ini.</span>
+                  <span>0 Antrean Ikhtibar (Tidak ada antrean ujian ikhtibar saat ini).</span>
                 </div>
               )}
 

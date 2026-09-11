@@ -2,6 +2,7 @@
 
 import prisma from '@/lib/prisma';
 import { requireRole, getSession, recordAuditLog } from '@/lib/auth';
+import { UserSession } from '@/types/auth';
 import { StatusIkhtibar } from '@prisma/client';
 import { validasiIkhtibarTahap1, validasiIkhtibarTahap2, MIN_NILAI_IKHTIBAR } from '@/lib/educational-rules';
 
@@ -272,5 +273,99 @@ export async function getDaftarIkhtibarAction(filterStatus?: StatusIkhtibar): Pr
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
     return { success: false, message: errorMsg, error: errorMsg };
+  }
+}
+
+/**
+ * Ambil Jumlah Antrean Ikhtibar Riil
+ * Status aktif/belum selesai sesuai aturan Ikhtibar:
+ * - PENGAJUAN
+ * - LULUS_TAHAP_1
+ * - MENGULANG
+ * - MENGULANG_SEBAGIAN
+ * - MENGULANG_SATU_JUZ
+ * Status selesai (LULUS_SEMPURNA_TAHAP_2) TIDAK dihitung.
+ *
+ * Otorisasi ABAC Fail-Closed:
+ * - Role MT: Hanya menghitung santri dalam halaqoh yang dibinanya.
+ *   Jika akun MT tidak memiliki relasi staffId atau halaqoh, return 0 secara fail-closed.
+ *   Tidak menghitung seluruh santri pesantren untuk akun MT.
+ * - Role KS / ADM / PH: Menghitung seluruh santri pesantren yang antre.
+ * - Role ST / WS: Menghitung hanya santri terkait (santriId).
+ */
+export async function getIkhtibarPendingCountAction(
+  sessionOverride?: UserSession
+): Promise<{ success: boolean; count: number; error?: string }> {
+  try {
+    const session = sessionOverride || (await getSession());
+    if (!session) {
+      return { success: false, count: 0, error: 'UNAUTHORIZED: Sesi tidak sah atau belum login.' };
+    }
+
+    const activeStatuses: StatusIkhtibar[] = [
+      StatusIkhtibar.PENGAJUAN,
+      StatusIkhtibar.LULUS_TAHAP_1,
+      StatusIkhtibar.MENGULANG,
+      StatusIkhtibar.MENGULANG_SEBAGIAN,
+      StatusIkhtibar.MENGULANG_SATU_JUZ,
+    ];
+
+    if (session.role === 'MT') {
+      // Fail-closed ABAC: akun MT tanpa relasi staffId menghasilkan 0
+      if (!session.staffId) {
+        return { success: true, count: 0 };
+      }
+
+      // Ambil halaqoh binaan MT
+      const halaqohList = await prisma.halaqoh.findMany({
+        where: { pembinaId: session.staffId },
+        select: { id: true },
+      });
+
+      const halaqohIds = halaqohList.map((h) => h.id);
+      if (halaqohIds.length === 0) {
+        // Fail-closed: MT tanpa halaqoh binaan menghasilkan 0
+        return { success: true, count: 0 };
+      }
+
+      // Hitung hanya santri dalam halaqoh kewenangannya
+      const count = await prisma.ikhtibarTahfizh.count({
+        where: {
+          status: { in: activeStatuses },
+          santri: {
+            halaqohId: { in: halaqohIds },
+          },
+        },
+      });
+
+      return { success: true, count };
+    }
+
+    if (session.role === 'KS' || session.role === 'ADM' || session.role === 'PH') {
+      const count = await prisma.ikhtibarTahfizh.count({
+        where: {
+          status: { in: activeStatuses },
+        },
+      });
+      return { success: true, count };
+    }
+
+    if (session.role === 'ST' || session.role === 'WS') {
+      if (!session.santriId) {
+        return { success: true, count: 0 };
+      }
+      const count = await prisma.ikhtibarTahfizh.count({
+        where: {
+          status: { in: activeStatuses },
+          santriId: session.santriId,
+        },
+      });
+      return { success: true, count };
+    }
+
+    return { success: true, count: 0 };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
+    return { success: false, count: 0, error: errorMsg };
   }
 }

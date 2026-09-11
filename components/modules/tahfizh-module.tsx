@@ -53,6 +53,7 @@ export interface TahfizhModuleProps {
   santriList: DashboardSantriSummary[];
   halaqohList: Array<{ id: string; nama: string }>;
   initialOpenForm?: boolean;
+  initialSelectedSantriId?: string;
   isKepalaBidangTahfidz?: boolean;
   onPrintPreview?: (data: LaporanBulananData) => void;
   onRefresh?: () => void;
@@ -65,6 +66,7 @@ export function TahfizhModule({
   santriList,
   halaqohList,
   initialOpenForm = false,
+  initialSelectedSantriId,
   isKepalaBidangTahfidz,
   onPrintPreview,
   onRefresh,
@@ -99,7 +101,7 @@ export function TahfizhModule({
   // Menggunakan Primary Key database riil (CUID)
   // Nilai awal kosong / null-safe (P0 Lanjutan)
   // -------------------------------------------------------------
-  const [selectedSantriId, setSelectedSantriId] = useState<string>("");
+  const [selectedSantriId, setSelectedSantriId] = useState<string>(initialSelectedSantriId || "");
   const effectiveSantriId =
     selectedSantriId && santriList.some((s) => s.id === selectedSantriId)
       ? selectedSantriId
@@ -114,6 +116,8 @@ export function TahfizhModule({
   const [rincianJuzMufar, setRincianJuzMufar] = useState("Juz 1, 2");
   const [nilai, setNilai] = useState<"MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "DHOIF">("MUMTAZ");
   const [catatan, setCatatan] = useState("");
+  const [isManualSabaqi, setIsManualSabaqi] = useState(false);
+  const [alasanManualSabaqi, setAlasanManualSabaqi] = useState("");
 
   // Synchronous submit lock & Idempotency Key Ref & Tracking Saran Posisi
   const submitLockRef = useRef(false);
@@ -121,6 +125,7 @@ export function TahfizhModule({
   const suggestedPageRef = useRef<number | null>(null);
   const suggestedJmlRef = useRef<number | null>(1);
   const prevSantriIdRef = useRef<string>("");
+  const lastInitialSantriIdRef = useRef<string | undefined>(initialSelectedSantriId);
 
   // -------------------------------------------------------------
   // SINKRONISASI SATU FUNGSI TERPUSAT POSISI SABAQ (P0 LANJUTAN)
@@ -272,6 +277,25 @@ export function TahfizhModule({
     }
   }, [effectiveSantriId, santriList, inputJenis, halamanMulai, applySuggestedSabaqPosition]);
 
+  // Efek pemilihan santri dari prop initialSelectedSantriId (misal dari Beranda Catat Setoran)
+  useEffect(() => {
+    if (initialSelectedSantriId && initialSelectedSantriId !== lastInitialSantriIdRef.current) {
+      lastInitialSantriIdRef.current = initialSelectedSantriId;
+      const targetSantri = santriList.find((s) => s.id === initialSelectedSantriId);
+      if (targetSantri) {
+        const timer = setTimeout(() => {
+          setSelectedSantriId(initialSelectedSantriId);
+          setIsManualSabaqi(false);
+          setAlasanManualSabaqi("");
+          if (inputJenis === "SABAQ") {
+            applySuggestedSabaqPosition(targetSantri);
+          }
+        }, 0);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [initialSelectedSantriId, santriList, inputJenis, applySuggestedSabaqPosition]);
+
   // -------------------------------------------------------------
   // REKOMENDASI SABAQI PEKAN INI DARI DATABASE POSTGRESQL RIIL
   // -------------------------------------------------------------
@@ -284,8 +308,6 @@ export function TahfizhModule({
     pesan: string;
   } | null>(null);
   const [isSabaqiLoading, setIsSabaqiLoading] = useState(false);
-  const [isManualSabaqi, setIsManualSabaqi] = useState(false);
-  const [alasanManualSabaqi, setAlasanManualSabaqi] = useState("");
 
   const loadSabaqiSantri = async (santriId: string) => {
     if (!santriId) return;
@@ -1019,33 +1041,26 @@ export function TahfizhModule({
                     {santriList.length === 0 ? (
                       <option value="">Memuat data santri dari basis data...</option>
                     ) : (
-                      santriList.map((s) => {
-                        const modalAwal = s.modalHafalanAwalHalaman ?? s.modalHalamanAwal ?? 0;
-                        const sabaq = s.tambahanSabaq ?? 0;
-                        const total = s.totalHafalan ?? (modalAwal + sabaq);
-                        const pos = s.posisiTerakhirHalaman ?? (modalAwal > 0 ? modalAwal : 1);
-                        const konv = konversiHalamanKeJuz(total);
-                        return (
-                          <option key={s.id} value={s.id}>
-                            {s.nama} ({s.kelas}) — {s.nis} — Modal: {modalAwal} Hlm | Sabaq: +{sabaq} Hlm | Total: {total} Hlm ({konv.label}) | Posisi: Hlm {pos}
-                          </option>
-                        );
-                      })
+                      santriList.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.nama} — Kelas {s.kelas} — {s.nis}
+                        </option>
+                      ))
                     )}
                   </select>
                 </div>
 
-                {/* STATUS HAFALAN SANTRI: 5 METRIK RIIL RINGKAS & BERSIH */}
+                {/* STATUS HAFALAN SANTRI: 5 METRIK RIIL RINGKAS & BERSIH (FLAT PANEL ANTI-SLOP) */}
                 {activeSantri && (
-                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/90 shadow-2xs space-y-2">
-                    <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
-                      <span>Capaian Hafalan Terkini</span>
-                      <span className="text-[11px] font-medium text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-md">
-                        {activeSantri.nama} ({activeSantri.nis})
+                  <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2.5">
+                    <div className="flex items-center justify-between text-xs font-semibold text-slate-700 pb-2 border-b border-slate-100">
+                      <span>Ringkasan Capaian</span>
+                      <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-md">
+                        {activeSantri.nama} <span className="font-normal text-slate-500 font-mono">({activeSantri.nis})</span>
                       </span>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1 text-center">
-                      <div className="bg-white p-2 rounded-xl border border-slate-200">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 text-left sm:text-center pt-0.5">
+                      <div className="pt-1 sm:pt-0 sm:px-1.5">
                         <span className="text-[10px] uppercase font-semibold text-slate-400 block">
                           Modal Awal
                         </span>
@@ -1056,7 +1071,7 @@ export function TahfizhModule({
                           {smartKonversiAwal.label}
                         </span>
                       </div>
-                      <div className="bg-white p-2 rounded-xl border border-slate-200">
+                      <div className="pt-1 sm:pt-0 sm:px-1.5">
                         <span className="text-[10px] uppercase font-semibold text-slate-400 block">
                           Tambahan Sabaq
                         </span>
@@ -1064,18 +1079,18 @@ export function TahfizhModule({
                           +{santriTambahanSabaq} Hlm
                         </span>
                       </div>
-                      <div className="bg-white p-2 rounded-xl border border-emerald-300 bg-emerald-50/40">
-                        <span className="text-[10px] uppercase font-semibold text-emerald-800 block">
+                      <div className="pt-1 sm:pt-0 sm:px-1.5">
+                        <span className="text-[10px] uppercase font-semibold text-slate-400 block">
                           Total Hafalan
                         </span>
-                        <span className="text-sm font-bold text-emerald-900 block mt-0.5">
+                        <span className="text-sm font-bold text-slate-900 block mt-0.5">
                           {santriTotalHafalan} Hlm
                         </span>
                         <span className="text-[10px] text-emerald-700 font-bold">
                           {smartKonversiTotal.label}
                         </span>
                       </div>
-                      <div className="bg-white p-2 rounded-xl border border-slate-200">
+                      <div className="pt-1 sm:pt-0 sm:px-1.5">
                         <span className="text-[10px] uppercase font-semibold text-slate-400 block">
                           Posisi Terakhir
                         </span>
@@ -1086,9 +1101,9 @@ export function TahfizhModule({
                           Juz {getJuzByPage(santriPosisiTerakhir)}
                         </span>
                       </div>
-                      <div className="bg-white p-2 rounded-xl border border-slate-200 col-span-2 sm:col-span-1">
+                      <div className="pt-1 sm:pt-0 sm:px-1.5 col-span-2 sm:col-span-1">
                         <span className="text-[10px] uppercase font-semibold text-slate-400 block">
-                          Target Akhir
+                          Target Akhir 30 Juz
                         </span>
                         <span className="text-sm font-bold text-slate-800 block mt-0.5">
                           {activeSantri.targetJuz ?? 30} Juz
@@ -1104,9 +1119,6 @@ export function TahfizhModule({
                     <label className="text-xs font-bold text-slate-700 block">
                       Metode Setoran (Al-Pakistani)
                     </label>
-                    <span className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                      Kurikulum Inti STQ
-                    </span>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {(["SABAQ", "SABQI", "MANZIL", "MUFAR"] as const).map((j) => (
@@ -1133,12 +1145,12 @@ export function TahfizhModule({
                       >
                         <span>
                           {j === "SABAQ"
-                            ? "1. Sabaq"
+                            ? "Sabaq"
                             : j === "SABQI"
-                            ? "2. Sabqi"
+                            ? "Sabqi"
                             : j === "MANZIL"
-                            ? "3. Manzil"
-                            : "4. Mufar"}
+                            ? "Manzil"
+                            : "Mufar"}
                         </span>
                         <span className="text-[10px] font-normal opacity-90 mt-0.5">
                           {j === "SABAQ"
@@ -1171,9 +1183,6 @@ export function TahfizhModule({
                           </span>
                         </div>
                       </div>
-                      <Badge variant="green" size="sm" className="font-mono text-[10px]">
-                        Kalkulasi Otomatis
-                      </Badge>
                     </div>
 
                     {isKhatam30Juz && (
@@ -1188,23 +1197,23 @@ export function TahfizhModule({
                       </div>
                     )}
 
-                    {/* Metric Cards Grid: 4 Kolom Proporsional */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                    {/* Metric Cards Grid: 3 Kolom Terfokus Anti-Slop */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
                       <div className="bg-white p-2.5 rounded-xl border border-slate-200 text-center shadow-2xs">
                         <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                          Total Saat Ini
+                          Posisi Berikutnya
                         </span>
                         <span className="text-base font-bold text-slate-900 block mt-0.5">
-                          {santriTotalHafalan} Hlm
+                          {isKhatam30Juz ? "-" : `Hlm ${halamanMulai || "-"}`}
                         </span>
-                        <span className="text-[10px] text-[#0E7C3A] font-semibold block mt-0.5">
-                          {smartKonversiTotal.label}
+                        <span className="text-[10px] text-slate-500 block mt-0.5">
+                          {halamanMulai ? `Juz ${getJuzByPage(Number(halamanMulai)) || 1}` : "-"}
                         </span>
                       </div>
 
-                      <div className="bg-white p-2.5 rounded-xl border border-slate-200 text-center shadow-2xs">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                          Tambah Hari Ini
+                      <div className="bg-white p-2.5 rounded-xl border border-emerald-200 bg-emerald-50/20 text-center shadow-2xs">
+                        <span className="text-[10px] uppercase font-bold text-emerald-800 block">
+                          Jumlah Halaman Hari Ini
                         </span>
                         <span className="text-base font-bold text-[#0E7C3A] block mt-0.5">
                           +{parsedTambahanHlm} Hlm
@@ -1216,25 +1225,13 @@ export function TahfizhModule({
 
                       <div className="bg-white p-2.5 rounded-xl border border-slate-200 text-center shadow-2xs">
                         <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                          Total Akumulasi
+                          Posisi Setelah Disimpan
                         </span>
                         <span className="text-base font-bold text-slate-900 block mt-0.5">
-                          {akumulasiHalamanBaru} Hlm
+                          {isKhatam30Juz ? "-" : `Hlm ${halamanSelesai || "-"}`}
                         </span>
                         <span className="text-[10px] text-slate-500 block mt-0.5">
-                          {santriTotalHafalan} + {parsedTambahanHlm}
-                        </span>
-                      </div>
-
-                      <div className="bg-[#0E7C3A] p-2.5 rounded-xl text-white text-center shadow-2xs flex flex-col justify-center">
-                        <span className="text-[10px] uppercase font-bold text-emerald-100 block">
-                          Total Konversi
-                        </span>
-                        <span className="text-xs sm:text-sm font-bold text-white block mt-0.5">
-                          {smartKonversiAkumulasi.label}
-                        </span>
-                        <span className="text-[10px] text-emerald-100 block mt-0.5">
-                          {Math.floor(akumulasiHalamanBaru / 20)} Juz {akumulasiHalamanBaru % 20} Hlm
+                          {halamanSelesai ? `Juz ${getJuzByPage(Number(halamanSelesai)) || 1}` : "-"}
                         </span>
                       </div>
                     </div>

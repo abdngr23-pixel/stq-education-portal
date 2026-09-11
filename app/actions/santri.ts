@@ -2,6 +2,7 @@
 
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
+import { UserSession } from "@/types/auth";
 import { SantriStatus, JenisKelamin, Prisma } from "@prisma/client";
 import { calculateLatestSabaqPosition } from "@/lib/tahfizh-page-allocation";
 import { isTodayWita } from "@/lib/wita-date";
@@ -24,13 +25,16 @@ export interface CreateSantriInput {
  * - MT / PH hanya melihat santri dalam halaqoh binaannya
  * - Admin / Mudir / Manajemen memiliki akses penuh
  */
-export async function getSantriListAction(params?: {
-  search?: string;
-  kelas?: string;
-  halaqohId?: string;
-}) {
+export async function getSantriListAction(
+  params?: {
+    search?: string;
+    kelas?: string;
+    halaqohId?: string;
+  },
+  sessionOverride?: UserSession
+) {
   try {
-    const session = await getCurrentSession();
+    const session = sessionOverride || (await getCurrentSession());
     if (!session) {
       return { success: false, message: "Sesi tidak valid atau belum login.", data: [] };
     }

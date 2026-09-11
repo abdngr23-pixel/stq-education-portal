@@ -124,7 +124,7 @@ async function runCapture() {
     // 2. Jalankan Next.js server test (production mode dari build terbaru)
     testNextPort = await findFreePort(3600);
     console.log(`[2] Menjalankan Next.js server di port ${testNextPort}...`);
-    const serverEnv = {
+    const serverEnv: NodeJS.ProcessEnv = {
       ...process.env,
       PORT: String(testNextPort),
       NODE_ENV: "production",
@@ -183,6 +183,50 @@ async function runCapture() {
     await page.waitForSelector('[data-testid="dashboard-musyrif-tahfizh"]', { timeout: 10000 });
     await new Promise((r) => setTimeout(r, 500));
     capturedFiles.push(await capture(page, "pilot_02_beranda_musyrif_390x844.png"));
+
+    // 2B. Beranda MT Kondisi Antrean Ikhtibar > 0
+    console.log("\n[Shot 2B] Beranda MT dengan Antrean Ikhtibar > 0...");
+    await testPrisma!.ikhtibarTahfizh.create({
+      data: {
+        id: "ikhtibar-pilot-gt-0-1",
+        santriId: FIXTURES.SANTRI_MULTI,
+        juz: 21,
+        status: "PENGAJUAN",
+      },
+    });
+    await testPrisma!.ikhtibarTahfizh.create({
+      data: {
+        id: "ikhtibar-pilot-gt-0-2",
+        santriId: FIXTURES.SANTRI_HALF,
+        juz: 22,
+        status: "MENGULANG",
+      },
+    });
+    await page.setViewport({ width: 1366, height: 768, deviceScaleFactor: 1 });
+    await page.goto(`${baseUrl}/`, { waitUntil: "networkidle0" });
+    await page.waitForSelector('[data-testid="dashboard-musyrif-tahfizh"]', { timeout: 10000 });
+    // Verifikasi bahwa angka 2 Antrean Ikhtibar muncul
+    await page.waitForFunction(() => {
+      const text = document.body.innerText;
+      return text.includes("2 Antrean Ikhtibar") || text.includes("2");
+    }, { timeout: 10000 });
+    capturedFiles.push(await capture(page, "pilot_10_beranda_ikhtibar_gt_0.png"));
+
+    // 2C. Navigasi Catat Setoran Santri Kedua dari Beranda
+    console.log("\n[Shot 2C] Klik Catat Setoran Santri Kedua dari Beranda...");
+    const catatBtn = await page.waitForSelector(`[data-testid="btn-catat-setoran-santri-${FIXTURES.SANTRI_HALF}"]`, { timeout: 10000 });
+    if (catatBtn) await catatBtn.click();
+    await page.waitForSelector('[data-testid="tahfizh-module"]', { timeout: 10000 });
+    await page.waitForFunction(
+      (targetId) => {
+        const sel = document.querySelector("#santri-selector") as HTMLSelectElement | null;
+        const hlm = document.querySelector('[data-testid="input-halaman-mulai"]') as HTMLInputElement | null;
+        return sel?.value === targetId && hlm?.value === "431";
+      },
+      { timeout: 10000 },
+      FIXTURES.SANTRI_HALF
+    );
+    capturedFiles.push(await capture(page, "pilot_11_tahfizh_second_santri_selected.png"));
 
     // 6. Bottom Navigation 412x915 (Mobile Android)
     console.log("\n[Shot 6/9] Bottom navigation 412x915...");

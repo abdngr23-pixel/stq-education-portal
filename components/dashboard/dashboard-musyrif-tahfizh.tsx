@@ -35,21 +35,28 @@ export interface DashboardMusyrifTahfizhSantriItem {
 
 export interface DashboardMusyrifTahfizhProps {
   santriList: DashboardMusyrifTahfizhSantriItem[];
+  selectedSantriId?: string;
+  onSelectSantriId?: (santriId: string) => void;
   selectedSantriNis?: string;
   onSelectSantriNis?: (nis: string) => void;
   halaqohName?: string;
   userName?: string;
-  ikhtibarPendingCount?: number;
+  ikhtibarPendingCount?: number | null;
+  ikhtibarLoading?: boolean;
+  ikhtibarError?: string | null;
   onNavigate?: (tab: AppNavId) => void;
 }
 
 export function DashboardMusyrifTahfizh({
   santriList,
-  selectedSantriNis,
+  selectedSantriId,
+  onSelectSantriId,
   onSelectSantriNis,
   halaqohName = "Halaqoh Binaan",
   userName = "Musyrif Tahfizh",
   ikhtibarPendingCount,
+  ikhtibarLoading = false,
+  ikhtibarError = null,
   onNavigate,
 }: DashboardMusyrifTahfizhProps) {
   const [showCompletedList, setShowCompletedList] = useState(false);
@@ -75,10 +82,12 @@ export function DashboardMusyrifTahfizh({
   const countBelumSetor = santriBelumSetor.length;
   const percentSetor = totalBinaan > 0 ? Math.round((countSudahSetor / totalBinaan) * 100) : 0;
 
-  const handleStartSetoran = (nis?: string) => {
-    const targetNis = nis || selectedSantriNis;
-    if (targetNis && onSelectSantriNis) {
-      onSelectSantriNis(targetNis);
+  const handleStartSetoran = (santriId?: string) => {
+    const targetId = santriId || selectedSantriId;
+    if (targetId && onSelectSantriId) {
+      onSelectSantriId(targetId);
+    } else if (targetId && onSelectSantriNis) {
+      onSelectSantriNis(targetId);
     }
     if (onNavigate) {
       onNavigate("tahfizh");
@@ -142,18 +151,29 @@ export function DashboardMusyrifTahfizh({
           </div>
         </div>
 
-        {/* Metrik 3: Belum Setor Hari Ini / Antrean Ikhtibar Riil */}
-        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs">
+        {/* Metrik 3: Antrean Ikhtibar Riil */}
+        <div data-testid="card-antrean-ikhtibar" className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs">
           <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1">
-            {typeof ikhtibarPendingCount === "number" && ikhtibarPendingCount > 0
-              ? "Antrean Ikhtibar"
-              : "Belum Setor Hari Ini"}
+            Antrean Ikhtibar
           </span>
           <div className="text-2xl sm:text-3xl font-extrabold text-amber-600 font-heading">
-            {typeof ikhtibarPendingCount === "number" && ikhtibarPendingCount > 0
-              ? ikhtibarPendingCount
-              : countBelumSetor}
+            {ikhtibarLoading ? (
+              <span className="text-sm font-normal text-slate-400">Memuat...</span>
+            ) : ikhtibarError ? (
+              <span className="text-xs font-normal text-rose-500">Gagal</span>
+            ) : typeof ikhtibarPendingCount === "number" ? (
+              ikhtibarPendingCount
+            ) : (
+              0
+            )}
           </div>
+          <span className="text-[11px] text-slate-400 block mt-1">
+            {ikhtibarLoading
+              ? "Menghubungkan ke basis data..."
+              : ikhtibarError
+              ? ikhtibarError
+              : `${ikhtibarPendingCount ?? 0} Antrean Ikhtibar`}
+          </span>
         </div>
       </div>
 
@@ -207,7 +227,8 @@ export function DashboardMusyrifTahfizh({
                     <Button
                       variant="secondary"
                       size="sm"
-                      onClick={() => handleStartSetoran(santri.nis)}
+                      data-testid={`btn-catat-setoran-santri-${santri.id || santri.nis}`}
+                      onClick={() => handleStartSetoran(santri.id)}
                       className="text-xs font-bold text-[#0E7C3A] border-emerald-200 hover:bg-emerald-50 min-h-[38px] gap-1"
                     >
                       Catat Setoran
