@@ -4,7 +4,10 @@ import prisma from '@/lib/prisma';
 import { requireRole, getSession, recordAuditLog } from '@/lib/auth';
 import { StatusIkhtibar, Prisma } from '@prisma/client';
 import { validasiIkhtibarTahap1, validasiIkhtibarTahap2, MIN_NILAI_IKHTIBAR } from '@/lib/educational-rules';
-import { getIkhtibarPendingCountForSession } from '@/lib/server/ikhtibar-pending-service';
+import {
+  getIkhtibarPendingCountForSession,
+  buildIkhtibarScopeWhere,
+} from '@/lib/server/ikhtibar-pending-service';
 
 export interface IkhtibarResponse<T = unknown> {
   success: boolean;
@@ -193,6 +196,10 @@ export async function inputHasilTahap2Action(formData: {
   try {
     const session = await requireRole(['KS']);
 
+    if (!session.staffId) {
+      return { success: false, message: 'Akses ditolak: Profil staf Mudir/Kepala Sekolah belum terhubung.' };
+    }
+
     const ikhtibar = await prisma.ikhtibarTahfizh.findUnique({
       where: { id: formData.ikhtibarId },
       include: { santri: true },
@@ -231,6 +238,7 @@ export async function inputHasilTahap2Action(formData: {
         nilaiTahap2: formData.nilai,
         catatanTahap2: formData.catatan || defaultCatatan,
         tanggalTahap2: new Date(),
+        pengujiTahap2Id: session.staffId,
         status,
       },
     });
@@ -271,32 +279,18 @@ export async function getDaftarIkhtibarAction(filterStatus?: StatusIkhtibar): Pr
       return { success: false, message: 'Sesi tidak sah' };
     }
 
-    const where: Prisma.IkhtibarTahfizhWhereInput = {};
-    if (filterStatus) {
-      where.status = filterStatus;
+    const scopeWhere = buildIkhtibarScopeWhere(session);
+    if (!scopeWhere) {
+      if (session.role !== 'MT' && session.role !== 'PH' && session.role !== 'WS' && session.role !== 'ST') {
+        return { success: false, message: 'Akses ditolak' };
+      }
+      return { success: true, message: 'Berhasil memuat daftar ikhtibar', data: [] };
     }
 
-    // Penegakan ABAC Fail-Closed: Filter daftar ikhtibar berdasarkan wewenang peran
-    if (session.role === 'MT' && !session.isKepalaBidangTahfidz) {
-      if (!session.staffId) {
-        return { success: true, message: 'Berhasil memuat daftar ikhtibar', data: [] };
-      }
-      where.santri = { halaqoh: { pembinaId: session.staffId } };
-    } else if (session.role === 'PH') {
-      if (!session.staffId) {
-        return { success: true, message: 'Berhasil memuat daftar ikhtibar', data: [] };
-      }
-      where.santri = { halaqoh: { pembinaId: session.staffId } };
-    } else if (session.role === 'WS' || session.role === 'ST') {
-      if (!session.santriId) {
-        return { success: true, message: 'Berhasil memuat daftar ikhtibar', data: [] };
-      }
-      where.santriId = session.santriId;
-    } else if (session.role === 'KS' || session.role === 'ADM' || (session.role === 'MT' && session.isKepalaBidangTahfidz)) {
-      // Global access untuk pimpinan & admin
-    } else {
-      return { success: false, message: 'Akses ditolak' };
-    }
+    const where: Prisma.IkhtibarTahfizhWhereInput = {
+      ...scopeWhere,
+      ...(filterStatus ? { status: filterStatus } : {}),
+    };
 
     const list = await prisma.ikhtibarTahfizh.findMany({
       where,

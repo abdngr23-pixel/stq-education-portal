@@ -67,6 +67,29 @@ describe("P1 Audit Keamanan ABAC Ikhtibar (Multi-Role & Cross-Halaqoh Isolation)
     isKepalaBidangTahfidz: false,
   };
 
+  const sessionKSNoStaff: UserSession = {
+    userId: "user-ks-nostaff",
+    username: "mudir.nostaff",
+    name: "Mudir Tanpa Staff",
+    role: "KS",
+    staffId: undefined,
+  };
+
+  const sessionADM: UserSession = {
+    userId: "user-adm",
+    username: "admin.abac",
+    name: "Admin STQ",
+    role: "ADM",
+  };
+
+  const sessionPH: UserSession = {
+    userId: "user-ph",
+    username: "ph.abac",
+    name: "Ust. Pengasuh",
+    role: "PH",
+    staffId: STAFF_MT2,
+  };
+
   let ikhtibarSantriH1Id: string = "";
   let ikhtibarSantriH2Id: string = "";
 
@@ -281,20 +304,53 @@ describe("P1 Audit Keamanan ABAC Ikhtibar (Multi-Role & Cross-Halaqoh Isolation)
     assert.equal((res.data as { pengujiTahap1Id: string }).pengujiTahap1Id, STAFF_MT1);
   });
 
-  it("6. Negative ABAC: MT1 ditolak saat mencoba menginput hasil Tahap 2 (Khusus Mudir / KS)", async () => {
+  it("6. Negative ABAC: MT/ADM/PH ditolak pada Tahap 2, dan KS tanpa staffId ditolak fail-closed", async () => {
+    // 6a. MT ditolak
     setTestSession(sessionMT1);
-    const res = await inputHasilTahap2Action({
+    const resMT = await inputHasilTahap2Action({
       ikhtibarId: ikhtibarSantriH1Id,
       nilai: 90,
       lulus: true,
       hasilTahap2: "LULUS",
     });
+    assert.equal(resMT.success, false);
 
-    assert.equal(res.success, false);
-    assert.match(res.message, /Gagal menyimpan hasil ujian Tahap 2/i);
+    // 6b. ADM ditolak
+    setTestSession(sessionADM);
+    const resADM = await inputHasilTahap2Action({
+      ikhtibarId: ikhtibarSantriH1Id,
+      nilai: 90,
+      lulus: true,
+      hasilTahap2: "LULUS",
+    });
+    assert.equal(resADM.success, false);
+
+    // 6c. PH ditolak
+    setTestSession(sessionPH);
+    const resPH = await inputHasilTahap2Action({
+      ikhtibarId: ikhtibarSantriH1Id,
+      nilai: 90,
+      lulus: true,
+      hasilTahap2: "LULUS",
+    });
+    assert.equal(resPH.success, false);
+
+    // 6d. KS tanpa staffId ditolak fail-closed
+    setTestSession(sessionKSNoStaff);
+    const resKSNoStaff = await inputHasilTahap2Action({
+      ikhtibarId: ikhtibarSantriH1Id,
+      nilai: 90,
+      lulus: true,
+      hasilTahap2: "LULUS",
+    });
+    assert.equal(resKSNoStaff.success, false);
+    assert.match(
+      resKSNoStaff.message,
+      /Akses ditolak: Profil staf Mudir\/Kepala Sekolah belum terhubung/i
+    );
   });
 
-  it("7. Positive ABAC: KS berhasil mengesahkan hasil Tahap 2 dan meluluskan santri", async () => {
+  it("7. Positive ABAC: KS dengan staffId berhasil, menyimpan pengujiTahap2Id, dan muncul di getDaftarIkhtibarAction", async () => {
     setTestSession(sessionKS);
     const res = await inputHasilTahap2Action({
       ikhtibarId: ikhtibarSantriH1Id,
@@ -308,6 +364,32 @@ describe("P1 Audit Keamanan ABAC Ikhtibar (Multi-Role & Cross-Halaqoh Isolation)
     assert.equal(
       (res.data as { status: StatusIkhtibar }).status,
       StatusIkhtibar.LULUS_SEMPURNA_TAHAP_2
+    );
+    assert.equal(
+      (res.data as { pengujiTahap2Id: string }).pengujiTahap2Id,
+      STAFF_KS
+    );
+
+    // Verifikasi persistensi aktual di basis data
+    const dbRecord = await prisma.ikhtibarTahfizh.findUnique({
+      where: { id: ikhtibarSantriH1Id },
+    });
+    assert.ok(dbRecord);
+    assert.equal(dbRecord.pengujiTahap2Id, STAFF_KS, "pengujiTahap2Id wajib tersimpan identik dengan session.staffId");
+
+    // Verifikasi pengujiTahap2 muncul pada getDaftarIkhtibarAction
+    const resDaftar = await getDaftarIkhtibarAction();
+    assert.equal(resDaftar.success, true);
+    const list = resDaftar.data as Array<{
+      id: string;
+      pengujiTahap2?: { nama: string } | null;
+    }>;
+    const h1Item = list.find((i) => i.id === ikhtibarSantriH1Id);
+    assert.ok(h1Item);
+    assert.equal(
+      h1Item.pengujiTahap2?.nama,
+      "K.H. Mudir Pesantren",
+      "pengujiTahap2 harus tersajikan dari relasi Staff di getDaftarIkhtibarAction"
     );
   });
 

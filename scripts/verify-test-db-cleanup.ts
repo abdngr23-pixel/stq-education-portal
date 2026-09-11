@@ -9,6 +9,7 @@ import os from "os";
 import {
   isPortInUse,
   isPidRunning,
+  findListeningPid,
   getSystemPostgresProcesses,
   verifyPostgresProcessOwnership,
   validateTempDataDir,
@@ -178,20 +179,19 @@ async function verifyResourceCleanup(metadata: WorkerMetadata | null, scenarioNa
 
   const { port, tempDir, mainPid, childPids } = metadata;
 
-  // 1. Verifikasi port tertutup
-  if (port) {
-    const portOpen = await isPortInUse(port);
-    if (portOpen) {
-      throw new Error(`[FAIL] Port ${port} masih terbuka setelah ${scenarioName}!`);
-    }
-    console.log(`   ✓ Port ${port} terverifikasi tertutup.`);
-  }
-
-  // 2. Verifikasi seluruh PID instance berhenti
-  const allPids = [mainPid, ...(childPids || [])].filter(
-    (p): p is number => typeof p === "number" && p > 0
+  // 1. Verifikasi dan hentikan seluruh PID instance jika masih berjalan
+  const pidsSet = new Set<number>(
+    [mainPid, ...(childPids || [])].filter((p): p is number => typeof p === "number" && p > 0)
   );
 
+  if (port) {
+    const listeningPid = findListeningPid(port);
+    if (listeningPid) {
+      pidsSet.add(listeningPid);
+    }
+  }
+
+  const allPids = Array.from(pidsSet);
   for (const pid of allPids) {
     if (isPidRunning(pid)) {
       if (tempDir && verifyPostgresProcessOwnership(pid, tempDir, mainPid)) {
@@ -202,6 +202,10 @@ async function verifyResourceCleanup(metadata: WorkerMetadata | null, scenarioNa
           process.kill(pid, "SIGKILL");
         }
       }
+      const pidDeadline = Date.now() + 2000;
+      while (isPidRunning(pid) && Date.now() < pidDeadline) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
       if (isPidRunning(pid)) {
         throw new Error(`[FAIL] PID ${pid} masih aktif setelah pembersihan ${scenarioName}!`);
       }
@@ -209,6 +213,20 @@ async function verifyResourceCleanup(metadata: WorkerMetadata | null, scenarioNa
   }
   if (allPids.length > 0) {
     console.log(`   ✓ Seluruh PID instance ([${allPids.join(", ")}]) terverifikasi non-aktif.`);
+  }
+
+  // 2. Verifikasi port tertutup (dengan polling toleransi pelepasan socket OS)
+  if (port) {
+    let portOpen = await isPortInUse(port);
+    const deadline = Date.now() + 3000;
+    while (portOpen && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 150));
+      portOpen = await isPortInUse(port);
+    }
+    if (portOpen) {
+      throw new Error(`[FAIL] Port ${port} masih terbuka setelah ${scenarioName}!`);
+    }
+    console.log(`   ✓ Port ${port} terverifikasi tertutup.`);
   }
 
   // 3. Verifikasi direktori temporer
@@ -277,6 +295,12 @@ async function main() {
   console.log("\n>>> SKENARIO 2B: Fail-Start Setelah Resource Dibuat");
   {
     const result = await runWorkerProcess("fail-start-after-resource", 35000);
+    if (result.timedOut) {
+      throw new Error("Skenario 2B mengalami parent timeout!");
+    }
+    if (result.exitCode === 0) {
+      throw new Error("Skenario 2B seharusnya keluar dengan exit code nonzero!");
+    }
     validateMetadataShape(result.metadata, "Skenario Fail-Start Setelah Resource");
     await verifyResourceCleanup(result.metadata, "Skenario Fail-Start Setelah Resource");
     console.log("✓ Skenario 2B (Fail-Start Setelah Resource) LULUS 100%");

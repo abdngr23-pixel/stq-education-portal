@@ -59,13 +59,25 @@ export async function verifySessionToken(token: string): Promise<AuthTokenPayloa
   }
 }
 
+/**
+ * Predikat keamanan: Mock sesi HANYA diizinkan pada runtime pengujian eksplisit terisolasi.
+ * Mencegah kebocoran mock session ke development, staging, maupun production.
+ */
+export function isExplicitTestRuntime(): boolean {
+  return (
+    process.env.NODE_ENV === "test" &&
+    process.env.IS_TEST_RUN === "true" &&
+    process.env.ALLOW_ISOLATED_TEST_DB === "true"
+  );
+}
+
 let testSessionMock: UserSession | null | undefined = undefined;
 
 /**
- * Mock sesi untuk lingkungan pengujian (dinonaktifkan total di mode produksi)
+ * Mock sesi untuk lingkungan pengujian (HANYA bekerja pada explicit test runtime)
  */
 export function setTestSession(session: UserSession | null | undefined): void {
-  if (process.env.NODE_ENV !== "production") {
+  if (isExplicitTestRuntime()) {
     testSessionMock = session;
   }
 }
@@ -75,7 +87,7 @@ export function setTestSession(session: UserSession | null | undefined): void {
  * Menvalidasi token JWT dan status keaktifan akun terkini di database
  */
 export async function getCurrentSession(): Promise<UserSession | null> {
-  if (process.env.NODE_ENV !== "production" && testSessionMock !== undefined) {
+  if (isExplicitTestRuntime() && testSessionMock !== undefined) {
     return testSessionMock;
   }
   try {

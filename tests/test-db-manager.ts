@@ -572,7 +572,9 @@ export function detectTestInstancePids(port: number, tempDir: string): { mainPid
     const isChildOfMain = mainPid !== null && proc.ParentProcessId === mainPid;
     const isChildOfDescendant = descendants.has(proc.ParentProcessId);
     const isMatchingTempDir = cmd.includes(normTempDir);
-    if (isChildOfMain || isChildOfDescendant || isMatchingTempDir) {
+    const isForkChildOfMain =
+      mainPid !== null && cmd.includes("--forkchild") && cmd.includes(mainPid.toString());
+    if (isChildOfMain || isChildOfDescendant || isMatchingTempDir || isForkChildOfMain) {
       descendants.add(proc.ProcessId);
     }
   }
@@ -672,7 +674,15 @@ export function verifyPostgresProcessOwnership(
         }
       }
 
-      return matchesDir || matchesParent;
+      // Cek apakah CommandLine memuat --forkchild dan verifiedMainPid
+      const matchesForkChild = Boolean(
+        verifiedMainPid &&
+          verifiedMainPid > 0 &&
+          lowerOut.includes("--forkchild") &&
+          lowerOut.includes(String(verifiedMainPid))
+      );
+
+      return matchesDir || matchesParent || matchesForkChild;
     } catch {
       return false;
     }

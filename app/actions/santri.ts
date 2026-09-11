@@ -20,7 +20,7 @@ export interface CreateSantriInput {
 /**
  * Mengambil daftar santri dengan filter pencarian dan relasi halaqoh
  * Server Action pembungkus tipis: autentikasi sesi server & delegasi ke internal service.
- * Signature produksi murni tanpa parameter sessionOverride untuk mencegah manipulasi sesi dari klien browser.
+ * Signature produksi murni tanpa parameter sesi eksternal untuk mencegah manipulasi sesi dari klien browser.
  */
 export async function getSantriListAction(params?: SantriListParams) {
   try {
