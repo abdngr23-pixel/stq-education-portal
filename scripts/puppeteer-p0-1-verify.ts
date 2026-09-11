@@ -368,6 +368,9 @@ export async function runIsolatedE2EVerification() {
     if (navBerandaBtn) await navBerandaBtn.click();
     await page.waitForSelector('[data-testid="dashboard-musyrif-tahfizh"]', { timeout: 10000 });
 
+    // Rekam panjang riwayat browser sebelum klik untuk mendeteksi pushState ganda
+    const initialHistoryLength = await page.evaluate(() => window.history.length);
+
     // Klik tombol "Catat Setoran" pada baris santri kedua (FIXTURES.SANTRI_HALF)
     const btnSantriKedua = await page.waitForSelector(
       `[data-testid="btn-catat-setoran-santri-${FIXTURES.SANTRI_HALF}"]`,
@@ -378,6 +381,15 @@ export async function runIsolatedE2EVerification() {
 
     // Tunggu modul Tahfizh terbuka
     await page.waitForSelector('[data-testid="tahfizh-module"]', { timeout: 10000 });
+
+    // Verifikasi eksklusif: window.history.length tepat bertambah 1 (bebas double-push)
+    const finalHistoryLength = await page.evaluate(() => window.history.length);
+    const historyDelta = finalHistoryLength - initialHistoryLength;
+    console.log(`   History browser delta: ${historyDelta} (sebelum: ${initialHistoryLength}, sesudah: ${finalHistoryLength})`);
+    if (historyDelta !== 1) {
+      fail(`Terdeteksi double navigation / pushState ganda! history.length bertambah ${historyDelta} (seharusnya tepat bertambah 1).`);
+    }
+    console.log("   ✓ Verifikasi Single Navigation: window.history.length tepat bertambah 1 (bebas double-push).");
     await page.waitForFunction(
       (expectedId) => {
         const sel = document.querySelector("#santri-selector") as HTMLSelectElement | null;

@@ -737,16 +737,18 @@ export async function stopTestDatabase() {
     } catch {}
   }
 
-  // 4. Panggil stop milik embedded-postgres untuk merapikan instance internalnya
+  // 4. Bersihkan instance embedded-postgres tanpa membiarkan Promise menggantung
   if (embeddedPgInstance) {
     try {
-      const stopPromise = embeddedPgInstance.stop();
-      // Tangani rejection agar tidak meninggalkan unhandledRejection
-      stopPromise.catch(() => {});
-      await Promise.race([
-        stopPromise,
-        new Promise((resolve) => setTimeout(resolve, 3000)),
-      ]).catch(() => {});
+      const instance = embeddedPgInstance as unknown as {
+        process?: { pid?: number; exitCode?: number | null; kill?: (signal?: string) => boolean };
+      };
+      if (instance.process && instance.process.exitCode === null) {
+        try {
+          instance.process.kill?.("SIGKILL");
+        } catch {}
+      }
+      instance.process = undefined;
     } catch {}
     embeddedPgInstance = null;
   }

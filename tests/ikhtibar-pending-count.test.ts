@@ -14,7 +14,7 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { PrismaClient, StatusIkhtibar } from "@prisma/client";
 import { startTestDatabase, stopTestDatabase } from "./test-db-manager";
-import { getIkhtibarPendingCountAction } from "../app/actions/ikhtibar";
+import { getIkhtibarPendingCountForSession } from "../lib/server/ikhtibar-pending-service";
 import { UserSession } from "../types/auth";
 
 describe("P0 - Penghitungan Antrean Ikhtibar Riil Berbasis ABAC Fail-Closed", () => {
@@ -154,7 +154,7 @@ describe("P0 - Penghitungan Antrean Ikhtibar Riil Berbasis ABAC Fail-Closed", ()
   });
 
   it("1. tidak ada antrean menghasilkan 0", async () => {
-    const res = await getIkhtibarPendingCountAction(sessionMT);
+    const res = await getIkhtibarPendingCountForSession(sessionMT, prisma);
     assert.equal(res.success, true);
     assert.equal(res.count, 0);
   });
@@ -169,7 +169,7 @@ describe("P0 - Penghitungan Antrean Ikhtibar Riil Berbasis ABAC Fail-Closed", ()
       },
     });
 
-    const res = await getIkhtibarPendingCountAction(sessionMT);
+    const res = await getIkhtibarPendingCountForSession(sessionMT, prisma);
     assert.equal(res.success, true);
     assert.equal(res.count, 1);
 
@@ -188,7 +188,7 @@ describe("P0 - Penghitungan Antrean Ikhtibar Riil Berbasis ABAC Fail-Closed", ()
       },
     });
 
-    const res = await getIkhtibarPendingCountAction(sessionMT);
+    const res = await getIkhtibarPendingCountForSession(sessionMT, prisma);
     assert.equal(res.success, true);
     assert.equal(res.count, 0, "Pengajuan halaqoh lain tidak boleh terhitung untuk akun MT");
 
@@ -209,7 +209,7 @@ describe("P0 - Penghitungan Antrean Ikhtibar Riil Berbasis ABAC Fail-Closed", ()
       },
     });
 
-    const res = await getIkhtibarPendingCountAction(sessionMT);
+    const res = await getIkhtibarPendingCountForSession(sessionMT, prisma);
     assert.equal(res.success, true);
     assert.equal(res.count, 0, "Ujian yang sudah lulus sempurna tidak boleh dihitung sebagai antrean");
 
@@ -229,17 +229,17 @@ describe("P0 - Penghitungan Antrean Ikhtibar Riil Berbasis ABAC Fail-Closed", ()
     });
 
     // Kasus 5a: MT tanpa staffId
-    const resNoStaff = await getIkhtibarPendingCountAction(sessionMTNoStaff);
+    const resNoStaff = await getIkhtibarPendingCountForSession(sessionMTNoStaff, prisma);
     assert.equal(resNoStaff.success, true);
     assert.equal(resNoStaff.count, 0, "Akun MT tanpa staffId wajib memperoleh 0 secara fail-closed");
 
     // Kasus 5b: MT dengan staffId tapi belum di-assign ke halaqoh mana pun
-    const resNoHalaqoh = await getIkhtibarPendingCountAction(sessionMTNoHalaqoh);
+    const resNoHalaqoh = await getIkhtibarPendingCountForSession(sessionMTNoHalaqoh, prisma);
     assert.equal(resNoHalaqoh.success, true);
     assert.equal(resNoHalaqoh.count, 0, "Akun MT tanpa halaqoh binaan wajib memperoleh 0 secara fail-closed");
 
     // Kasus 5c: MT berwenang melihat antreannya
-    const resValid = await getIkhtibarPendingCountAction(sessionMT);
+    const resValid = await getIkhtibarPendingCountForSession(sessionMT, prisma);
     assert.equal(resValid.success, true);
     assert.equal(resValid.count, 1);
 

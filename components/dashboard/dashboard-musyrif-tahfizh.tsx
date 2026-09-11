@@ -86,8 +86,11 @@ export function DashboardMusyrifTahfizh({
     const targetId = santriId || selectedSantriId;
     if (targetId && onSelectSantriId) {
       onSelectSantriId(targetId);
-    } else if (targetId && onSelectSantriNis) {
+      return;
+    }
+    if (targetId && onSelectSantriNis) {
       onSelectSantriNis(targetId);
+      return;
     }
     if (onNavigate) {
       onNavigate("tahfizh");
@@ -167,13 +170,16 @@ export function DashboardMusyrifTahfizh({
               0
             )}
           </div>
-          <span className="text-[11px] text-slate-400 block mt-1">
-            {ikhtibarLoading
-              ? "Menghubungkan ke basis data..."
-              : ikhtibarError
-              ? ikhtibarError
-              : `${ikhtibarPendingCount ?? 0} Antrean Ikhtibar`}
-          </span>
+          {ikhtibarLoading && (
+            <span className="text-[11px] text-slate-400 block mt-1">
+              Menghubungkan ke basis data...
+            </span>
+          )}
+          {ikhtibarError && (
+            <span className="text-[11px] text-rose-500 block mt-1">
+              {ikhtibarError}
+            </span>
+          )}
         </div>
       </div>
 
@@ -229,7 +235,7 @@ export function DashboardMusyrifTahfizh({
                       size="sm"
                       data-testid={`btn-catat-setoran-santri-${santri.id || santri.nis}`}
                       onClick={() => handleStartSetoran(santri.id)}
-                      className="text-xs font-bold text-[#0E7C3A] border-emerald-200 hover:bg-emerald-50 min-h-[38px] gap-1"
+                      className="text-xs font-bold text-[#0E7C3A] border-emerald-200 hover:bg-emerald-50 min-h-[44px] sm:min-h-[38px] gap-1"
                     >
                       Catat Setoran
                       <ArrowRight className="h-3.5 w-3.5 text-[#0E7C3A]" />

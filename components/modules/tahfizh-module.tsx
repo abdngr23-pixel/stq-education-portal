@@ -1055,9 +1055,6 @@ export function TahfizhModule({
                   <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2.5">
                     <div className="flex items-center justify-between text-xs font-semibold text-slate-700 pb-2 border-b border-slate-100">
                       <span>Ringkasan Capaian</span>
-                      <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-md">
-                        {activeSantri.nama} <span className="font-normal text-slate-500 font-mono">({activeSantri.nis})</span>
-                      </span>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 text-left sm:text-center pt-0.5">
                       <div className="pt-1 sm:pt-0 sm:px-1.5">

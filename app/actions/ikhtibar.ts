@@ -2,9 +2,9 @@
 
 import prisma from '@/lib/prisma';
 import { requireRole, getSession, recordAuditLog } from '@/lib/auth';
-import { UserSession } from '@/types/auth';
 import { StatusIkhtibar } from '@prisma/client';
 import { validasiIkhtibarTahap1, validasiIkhtibarTahap2, MIN_NILAI_IKHTIBAR } from '@/lib/educational-rules';
+import { getIkhtibarPendingCountForSession } from '@/lib/server/ikhtibar-pending-service';
 
 export interface IkhtibarResponse<T = unknown> {
   success: boolean;
@@ -91,8 +91,8 @@ export async function ajukanIkhtibarAction(formData: {
       data: ikhtibar,
     };
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, message: errorMsg, error: errorMsg };
+    console.error("[Action Error] ajukanIkhtibarAction:", err);
+    return { success: false, message: 'Gagal mengajukan ikhtibar. Silakan coba kembali.' };
   }
 }
 
@@ -133,15 +133,14 @@ export async function inputHasilTahap1Action(formData: {
         catatanTahap1: formData.catatan || (status === StatusIkhtibar.LULUS_TAHAP_1 ? 'Lancar dan makhraj fasih' : `Perlu pemantapan hafalan (Nilai: ${formData.nilai})`),
         tanggalTahap1: new Date(),
         status,
-        pengujiTahap1Id: session.staffId || null,
       },
     });
 
     await recordAuditLog({
       userId: session.userId,
-      action: 'INPUT_IKHTIBAR_TAHAP_1',
+      action: 'INPUT_NILAI_IKHTIBAR_TAHAP_1',
       entity: 'IkhtibarTahfizh',
-      entityId: ikhtibar.id,
+      entityId: formData.ikhtibarId,
       details: { nilai: formData.nilai, status },
     });
 
@@ -153,8 +152,8 @@ export async function inputHasilTahap1Action(formData: {
       data: updated,
     };
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, message: errorMsg, error: errorMsg };
+    console.error("[Action Error] inputHasilTahap1Action:", err);
+    return { success: false, message: 'Gagal menyimpan hasil ujian Tahap 1. Silakan coba kembali.' };
   }
 }
 
@@ -212,21 +211,20 @@ export async function inputHasilTahap2Action(formData: {
         catatanTahap2: formData.catatan || defaultCatatan,
         tanggalTahap2: new Date(),
         status,
-        pengujiTahap2Id: session.staffId || null,
       },
     });
 
     await recordAuditLog({
       userId: session.userId,
-      action: 'INPUT_IKHTIBAR_TAHAP_2',
+      action: 'INPUT_NILAI_IKHTIBAR_TAHAP_2',
       entity: 'IkhtibarTahfizh',
-      entityId: ikhtibar.id,
-      details: { nilai: formData.nilai, status, disahkanOleh: session.username, hasilTahap2: effectiveJenis },
+      entityId: formData.ikhtibarId,
+      details: { nilai: formData.nilai, status },
     });
 
     const statusMessage =
       status === StatusIkhtibar.LULUS_SEMPURNA_TAHAP_2
-        ? `Barakallahu fiik! ${ikhtibar.santri.nama} dinyatakan RESMI LULUS SELESAI JUZ ${ikhtibar.juz} (Nilai: ${formData.nilai}) oleh Mudir Pesantren.`
+        ? `Maa Syaa Allah! Kelulusan Juz ${ikhtibar.juz} untuk ${ikhtibar.santri.nama} RESMI DISAHKAN oleh Mudir Pesantren (Nilai: ${formData.nilai}).`
         : status === StatusIkhtibar.MENGULANG_SEBAGIAN
         ? `Hasil evaluasi disimpan. ${ikhtibar.santri.nama} diminta MENGULANG SEBAGIAN maqra pada Juz ${ikhtibar.juz} (Nilai: ${formData.nilai}).`
         : `Hasil evaluasi disimpan. ${ikhtibar.santri.nama} diminta MENGULANG SATU JUZ PENUH untuk Juz ${ikhtibar.juz} (Nilai: ${formData.nilai}).`;
@@ -237,8 +235,8 @@ export async function inputHasilTahap2Action(formData: {
       data: updated,
     };
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, message: errorMsg, error: errorMsg };
+    console.error("[Action Error] inputHasilTahap2Action:", err);
+    return { success: false, message: 'Gagal menyimpan hasil ujian Tahap 2. Silakan coba kembali.' };
   }
 }
 
@@ -271,101 +269,38 @@ export async function getDaftarIkhtibarAction(filterStatus?: StatusIkhtibar): Pr
       data: list,
     };
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, message: errorMsg, error: errorMsg };
+    console.error("[Action Error] getDaftarIkhtibarAction:", err);
+    return { success: false, message: 'Gagal memuat daftar ikhtibar. Silakan coba kembali.' };
   }
 }
 
 /**
  * Ambil Jumlah Antrean Ikhtibar Riil
- * Status aktif/belum selesai sesuai aturan Ikhtibar:
- * - PENGAJUAN
- * - LULUS_TAHAP_1
- * - MENGULANG
- * - MENGULANG_SEBAGIAN
- * - MENGULANG_SATU_JUZ
- * Status selesai (LULUS_SEMPURNA_TAHAP_2) TIDAK dihitung.
- *
- * Otorisasi ABAC Fail-Closed:
- * - Role MT: Hanya menghitung santri dalam halaqoh yang dibinanya.
- *   Jika akun MT tidak memiliki relasi staffId atau halaqoh, return 0 secara fail-closed.
- *   Tidak menghitung seluruh santri pesantren untuk akun MT.
- * - Role KS / ADM / PH: Menghitung seluruh santri pesantren yang antre.
- * - Role ST / WS: Menghitung hanya santri terkait (santriId).
+ * Server Action pembungkus tipis: autentikasi sesi server & delegasi ke internal service.
+ * Signature produksi murni tanpa parameter untuk mencegah manipulasi sesi dari klien browser.
  */
-export async function getIkhtibarPendingCountAction(
-  sessionOverride?: UserSession
-): Promise<{ success: boolean; count: number; error?: string }> {
+export async function getIkhtibarPendingCountAction(): Promise<{
+  success: boolean;
+  count: number;
+  error?: string;
+}> {
   try {
-    const session = sessionOverride || (await getSession());
+    const session = await getSession();
     if (!session) {
-      return { success: false, count: 0, error: 'UNAUTHORIZED: Sesi tidak sah atau belum login.' };
+      return {
+        success: false,
+        count: 0,
+        error: 'Sesi tidak valid atau belum login.',
+      };
     }
 
-    const activeStatuses: StatusIkhtibar[] = [
-      StatusIkhtibar.PENGAJUAN,
-      StatusIkhtibar.LULUS_TAHAP_1,
-      StatusIkhtibar.MENGULANG,
-      StatusIkhtibar.MENGULANG_SEBAGIAN,
-      StatusIkhtibar.MENGULANG_SATU_JUZ,
-    ];
-
-    if (session.role === 'MT') {
-      // Fail-closed ABAC: akun MT tanpa relasi staffId menghasilkan 0
-      if (!session.staffId) {
-        return { success: true, count: 0 };
-      }
-
-      // Ambil halaqoh binaan MT
-      const halaqohList = await prisma.halaqoh.findMany({
-        where: { pembinaId: session.staffId },
-        select: { id: true },
-      });
-
-      const halaqohIds = halaqohList.map((h) => h.id);
-      if (halaqohIds.length === 0) {
-        // Fail-closed: MT tanpa halaqoh binaan menghasilkan 0
-        return { success: true, count: 0 };
-      }
-
-      // Hitung hanya santri dalam halaqoh kewenangannya
-      const count = await prisma.ikhtibarTahfizh.count({
-        where: {
-          status: { in: activeStatuses },
-          santri: {
-            halaqohId: { in: halaqohIds },
-          },
-        },
-      });
-
-      return { success: true, count };
-    }
-
-    if (session.role === 'KS' || session.role === 'ADM' || session.role === 'PH') {
-      const count = await prisma.ikhtibarTahfizh.count({
-        where: {
-          status: { in: activeStatuses },
-        },
-      });
-      return { success: true, count };
-    }
-
-    if (session.role === 'ST' || session.role === 'WS') {
-      if (!session.santriId) {
-        return { success: true, count: 0 };
-      }
-      const count = await prisma.ikhtibarTahfizh.count({
-        where: {
-          status: { in: activeStatuses },
-          santriId: session.santriId,
-        },
-      });
-      return { success: true, count };
-    }
-
-    return { success: true, count: 0 };
+    return await getIkhtibarPendingCountForSession(session, prisma);
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, count: 0, error: errorMsg };
+    console.error('[Action Error] getIkhtibarPendingCountAction:', err);
+    return {
+      success: false,
+      count: 0,
+      error: 'Gagal memuat antrean Ikhtibar. Silakan coba kembali.',
+    };
   }
 }

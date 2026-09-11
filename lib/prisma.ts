@@ -28,16 +28,28 @@ if (isTestEnv) {
     throw new Error("FATAL: Pengujian dilarang menggunakan database produksi!");
   }
 
+  let parsed: URL;
   try {
-    const parsed = new URL(envTestDbUrl);
-    const host = parsed.hostname.toLowerCase();
-    if (host !== "127.0.0.1" && host !== "localhost") {
-      throw new Error(
-        `FATAL: Database pengujian harus menggunakan host loopback (127.0.0.1 atau localhost), terdeteksi: "${host}"!`
-      );
-    }
-  } catch (e) {
-    if ((e as Error).message.startsWith("FATAL:")) throw e;
+    parsed = new URL(envTestDbUrl);
+  } catch {
+    throw new Error(`FATAL: Format TEST_DATABASE_URL tidak valid: ${envTestDbUrl}`);
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  if (host !== "127.0.0.1" && host !== "localhost") {
+    throw new Error(
+      `FATAL: Database pengujian harus menggunakan host loopback (127.0.0.1 atau localhost), terdeteksi: "${host}"!`
+    );
+  }
+
+  const dbName = parsed.pathname.replace(/^\//, "").toLowerCase();
+  const schema = (parsed.searchParams.get("schema") || "").toLowerCase();
+  const hasTestIdentifier = dbName.includes("test") || schema.includes("test");
+
+  if (!hasTestIdentifier) {
+    throw new Error(
+      `FATAL: Nama database ("${dbName}") atau schema ("${schema}") wajib memiliki penanda pengujian (memuat kata "test")!`
+    );
   }
 
   testDbUrl = envTestDbUrl;
