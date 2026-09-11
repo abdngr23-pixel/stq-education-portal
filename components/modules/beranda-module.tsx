@@ -90,6 +90,8 @@ export function BerandaModule({
         ikhtibarPendingCount={ikhtibarPendingCount}
         ikhtibarLoading={ikhtibarLoading}
         ikhtibarError={ikhtibarError}
+        izinPendingCount={izinPendingCount}
+        santriSakitCount={santriSakitCount}
         onNavigate={onNavigate}
         onSelectSantriId={onSelectSantriForSetoran}
       />
