@@ -21,16 +21,20 @@ import {
   DollarSign,
   HeartHandshake,
 } from "lucide-react";
+import { DashboardMusyrifTahfizh } from "@/components/dashboard/dashboard-musyrif-tahfizh";
 
 export interface DashboardSantriSummary {
   id: string;
   nis: string;
   nama: string;
   kelas: string;
+  jenisKelamin?: string;
   halaqoh: string;
   capaianJuz: number;
   targetJuz: number;
   setoranTerakhir: string;
+  setoranTerakhirAt?: string | null;
+  sudahSetorHariIni?: boolean;
   status: string;
   nilaiTerakhir: string;
   poinPelanggaran: number;
@@ -54,8 +58,11 @@ export interface BerandaModuleProps {
   santriList: DashboardSantriSummary[];
   izinPendingCount: number;
   ikhtibarPendingCount: number;
+  ikhtibarLoading?: boolean;
+  ikhtibarError?: string | null;
   santriSakitCount: number;
   onNavigate: (tab: AppNavId) => void;
+  onSelectSantriForSetoran?: (santriId: string) => void;
   onOpenSetoranQuick?: () => void;
 }
 
@@ -66,10 +73,31 @@ export function BerandaModule({
   santriList,
   izinPendingCount,
   ikhtibarPendingCount,
+  ikhtibarLoading,
+  ikhtibarError,
   santriSakitCount,
   onNavigate,
+  onSelectSantriForSetoran,
   onOpenSetoranQuick,
 }: BerandaModuleProps) {
+  // Role MT dialihkan ke Dashboard Musyrif Tahfizh terfokus (Pilot UI/UX B2)
+  if (userRole === "MT") {
+    return (
+      <DashboardMusyrifTahfizh
+        santriList={santriList}
+        halaqohName={currentHalaqohName || "Halaqoh Binaan"}
+        userName={userName}
+        ikhtibarPendingCount={ikhtibarPendingCount}
+        ikhtibarLoading={ikhtibarLoading}
+        ikhtibarError={ikhtibarError}
+        izinPendingCount={izinPendingCount}
+        santriSakitCount={santriSakitCount}
+        onNavigate={onNavigate}
+        onSelectSantriId={onSelectSantriForSetoran}
+      />
+    );
+  }
+
   const roleInfo = ROLE_LABELS[userRole] || {
     title: "Pengguna",
     badgeVariant: "neutral",
@@ -273,7 +301,7 @@ export function BerandaModule({
               ) : (
                 <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-100 text-slate-500 text-xs">
                   <CheckCircle2 className="h-4 w-4 text-[#0E7C3A] shrink-0" />
-                  <span>Tidak ada antrean ujian ikhtibar saat ini.</span>
+                  <span>0 Antrean Ikhtibar (Tidak ada antrean ujian ikhtibar saat ini).</span>
                 </div>
               )}
 

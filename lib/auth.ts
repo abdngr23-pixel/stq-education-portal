@@ -60,10 +60,36 @@ export async function verifySessionToken(token: string): Promise<AuthTokenPayloa
 }
 
 /**
+ * Predikat keamanan: Mock sesi HANYA diizinkan pada runtime pengujian eksplisit terisolasi.
+ * Mencegah kebocoran mock session ke development, staging, maupun production.
+ */
+export function isExplicitTestRuntime(): boolean {
+  return (
+    process.env.NODE_ENV === "test" &&
+    process.env.IS_TEST_RUN === "true" &&
+    process.env.ALLOW_ISOLATED_TEST_DB === "true"
+  );
+}
+
+let testSessionMock: UserSession | null | undefined = undefined;
+
+/**
+ * Mock sesi untuk lingkungan pengujian (HANYA bekerja pada explicit test runtime)
+ */
+export function setTestSession(session: UserSession | null | undefined): void {
+  if (isExplicitTestRuntime()) {
+    testSessionMock = session;
+  }
+}
+
+/**
  * Ambil sesi pengguna saat ini dari HTTP-only Cookie
  * Menvalidasi token JWT dan status keaktifan akun terkini di database
  */
 export async function getCurrentSession(): Promise<UserSession | null> {
+  if (isExplicitTestRuntime() && testSessionMock !== undefined) {
+    return testSessionMock;
+  }
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;

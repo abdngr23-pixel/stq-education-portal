@@ -28,22 +28,34 @@ if (isTestEnv) {
     throw new Error("FATAL: Pengujian dilarang menggunakan database produksi!");
   }
 
+  let parsed: URL;
   try {
-    const parsed = new URL(envTestDbUrl);
-    const host = parsed.hostname.toLowerCase();
-    if (host !== "127.0.0.1" && host !== "localhost") {
-      throw new Error(
-        `FATAL: Database pengujian harus menggunakan host loopback (127.0.0.1 atau localhost), terdeteksi: "${host}"!`
-      );
-    }
-  } catch (e) {
-    if ((e as Error).message.startsWith("FATAL:")) throw e;
+    parsed = new URL(envTestDbUrl);
+  } catch {
+    throw new Error(`FATAL: Format TEST_DATABASE_URL tidak valid: ${envTestDbUrl}`);
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  if (host !== "127.0.0.1" && host !== "localhost") {
+    throw new Error(
+      `FATAL: Database pengujian harus menggunakan host loopback (127.0.0.1 atau localhost), terdeteksi: "${host}"!`
+    );
+  }
+
+  const dbName = parsed.pathname.replace(/^\//, "").toLowerCase();
+  const schema = (parsed.searchParams.get("schema") || "").toLowerCase();
+  const hasTestIdentifier = dbName.includes("test") || schema.includes("test");
+
+  if (!hasTestIdentifier) {
+    throw new Error(
+      `FATAL: Nama database ("${dbName}") atau schema ("${schema}") wajib memiliki penanda pengujian (memuat kata "test")!`
+    );
   }
 
   testDbUrl = envTestDbUrl;
 }
 
-export const prisma =
+const basePrisma =
   globalForPrisma.prisma ??
   new PrismaClient({
     ...(testDbUrl ? { datasources: { db: { url: testDbUrl } } } : {}),
@@ -51,7 +63,18 @@ export const prisma =
   });
 
 if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
+  globalForPrisma.prisma = basePrisma;
 }
+
+export const prisma: PrismaClient = new Proxy(basePrisma, {
+  get(target, prop, receiver) {
+    const activeClient = globalForPrisma.prisma || target;
+    const value = Reflect.get(activeClient, prop, receiver);
+    if (typeof value === "function") {
+      return value.bind(activeClient);
+    }
+    return value;
+  },
+});
 
 export default prisma;

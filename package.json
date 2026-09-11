@@ -9,7 +9,7 @@
     "lint": "eslint",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "postinstall": "prisma generate",
-    "test": "dotenv -e .env.test -- tsx --test tests/*.test.ts",
+    "test": "dotenv -e .env.test -v NODE_ENV=test -v IS_TEST_RUN=true -v ALLOW_ISOLATED_TEST_DB=true -v TEST_DATABASE_URL=postgresql://postgres:postgrespassword@127.0.0.1:5433/stq_test?schema=test_portal -- tsx --conditions=react-server --test --test-concurrency=1 tests/*.test.ts",
     "db:backup": "tsx scripts/backup-db.ts"
   },
   "dependencies": {
@@ -21,6 +21,7 @@
     "next": "16.3.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
     "tailwind-merge": "^3.6.0",
     "zod": "^4.5.4"
   },

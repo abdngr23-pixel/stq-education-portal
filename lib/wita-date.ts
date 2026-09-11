@@ -1,73 +1,88 @@
-/**
- * Centralized WITA (Waktu Indonesia Tengah / Asia/Makassar - UTC+8) Date Engine
- * STQ Education Portal
- *
- * Sesuai temuan A14 & A15 Audit STQ 2026-09-08:
- * Memastikan tanggal operasional presensi, laporan, dan dokumen
- * konsisten di zona waktu WITA (Asia/Makassar), mencegah pergeseran
- * tanggal jika diakses sebelum pukul 08.00 WITA (00.00 UTC).
- */
+// Modul Utilitas Penentu Waktu WITA (Asia/Makassar, UTC+8)
+// Standar Resmi STQ Darul Ulum Cendekia untuk Batas Operasional Pesantren
 
-export const WITA_TIMEZONE = "Asia/Makassar";
+const witaDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Makassar",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 
 /**
- * Mengembalikan string tanggal "YYYY-MM-DD" dalam zona waktu Asia/Makassar (WITA)
+ * Format tanggal lokal di zona waktu Asia/Makassar (WITA / UTC+8) dalam format YYYY-MM-DD.
  */
-export function getTodayWITADateString(date: Date = new Date()): string {
-  // en-CA format menghasilkan format standar YYYY-MM-DD
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: WITA_TIMEZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  return formatter.format(date);
+export function getWitaDateString(date?: Date | string | number | null): string {
+  if (arguments.length === 0) {
+    return witaDateFormatter.format(new Date());
+  }
+  if (date === null || date === undefined || date === "") return "";
+  const d = typeof date === "string" || typeof date === "number" ? new Date(date) : date;
+  if (isNaN(d.getTime())) return "";
+  return witaDateFormatter.format(d);
 }
 
 /**
- * Mengonversi tanggal WITA "YYYY-MM-DD" menjadi objek Date UTC awal hari (00:00:00+08:00)
+ * Mengembalikan tanggal hari ini dalam format YYYY-MM-DD WITA.
+ * Menerima customDate opsional untuk keperluan pengujian.
  */
-export function parseWITADate(witaDateStr: string): Date {
-  const parts = witaDateStr.split("-");
-  if (parts.length !== 3) {
-    throw new Error(`Format tanggal tidak valid (harus YYYY-MM-DD): ${witaDateStr}`);
-  }
-  return new Date(`${witaDateStr}T00:00:00+08:00`);
+export function getTodayWITADateString(customDate?: Date | string | number | null): string {
+  return getWitaDateString(customDate ?? new Date());
 }
 
 /**
- * Menghasilkan batas awal dan akhir hari dalam UTC untuk query rentang database Prisma
+ * Parse string YYYY-MM-DD menjadi awal hari (00:00:00.000 WITA) dalam objek Date UTC.
+ * 00:00 WITA = 16:00 UTC hari sebelumnya (karena WITA = UTC+8).
  */
-export function getWITADayRange(witaDateStr: string): { startOfDayUTC: Date; endOfDayUTC: Date } {
-  const parts = witaDateStr.split("-");
-  if (parts.length !== 3) {
-    throw new Error(`Format tanggal tidak valid: ${witaDateStr}`);
-  }
-  const startOfDayUTC = new Date(`${witaDateStr}T00:00:00.000+08:00`);
-  const endOfDayUTC = new Date(`${witaDateStr}T23:59:59.999+08:00`);
+export function parseWITADate(dateStr: string): Date {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  // Jam 00:00:00 WITA setara dengan jam 16:00:00 UTC hari sebelumnya
+  // Contoh: 2026-09-11 00:00 WITA -> Date.UTC(2026, 8, 11, -8, 0, 0) -> 2026-09-10 16:00:00Z
+  return new Date(Date.UTC(year, month - 1, day, -8, 0, 0, 0));
+}
+
+/**
+ * Mengembalikan rentang UTC [startOfDayUTC, endOfDayUTC] untuk tanggal YYYY-MM-DD WITA tertentu.
+ */
+export function getWITADayRange(dateStr: string): { startOfDayUTC: Date; endOfDayUTC: Date } {
+  const startOfDayUTC = parseWITADate(dateStr);
+  const endOfDayUTC = new Date(startOfDayUTC.getTime() + 24 * 60 * 60 * 1000 - 1);
   return { startOfDayUTC, endOfDayUTC };
 }
 
 /**
- * Format tanggal ramah pengguna berbahasa Indonesia dalam zona waktu Asia/Makassar
+ * Memeriksa apakah dua tanggal berada pada hari kalender yang sama di zona WITA.
  */
-export function formatWITADate(
-  date: Date,
-  options: Intl.DateTimeFormatOptions = {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }
-): string {
-  return new Intl.DateTimeFormat("id-ID", {
-    ...options,
-    timeZone: WITA_TIMEZONE,
-  }).format(date);
+export function isSameDayWita(
+  date1: Date | string | number | null | undefined,
+  date2: Date | string | number | null | undefined
+): boolean {
+  if (!date1 || !date2) return false;
+  const str1 = getWitaDateString(date1);
+  const str2 = getWitaDateString(date2);
+  if (!str1 || !str2) return false;
+  return str1 === str2;
 }
 
 /**
- * Menentukan apakah dua timestamp berada pada tanggal kalender yang sama di WITA
+ * Memeriksa apakah tanggal yang diberikan adalah hari ini di zona WITA.
  */
-export function isSameWITADay(d1: Date, d2: Date): boolean {
-  return getTodayWITADateString(d1) === getTodayWITADateString(d2);
+export function isTodayWita(date: Date | string | number | null | undefined, now?: Date): boolean {
+  if (!date) return false;
+  const todayStr = getTodayWITADateString(now);
+  const targetStr = getWitaDateString(date);
+  if (!targetStr) return false;
+  return targetStr === todayStr;
+}
+
+/**
+ * Memeriksa apakah tanggal yang diberikan adalah kemarin di zona WITA.
+ */
+export function isYesterdayWita(date: Date | string | number | null | undefined, now?: Date): boolean {
+  if (!date) return false;
+  const base = now ? new Date(now) : new Date();
+  const yesterday = new Date(base.getTime() - 24 * 60 * 60 * 1000);
+  const yesterdayStr = getWitaDateString(yesterday);
+  const targetStr = getWitaDateString(date);
+  if (!targetStr) return false;
+  return targetStr === yesterdayStr;
 }

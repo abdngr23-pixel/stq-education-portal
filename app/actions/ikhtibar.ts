@@ -2,8 +2,12 @@
 
 import prisma from '@/lib/prisma';
 import { requireRole, getSession, recordAuditLog } from '@/lib/auth';
-import { StatusIkhtibar } from '@prisma/client';
+import { StatusIkhtibar, Prisma } from '@prisma/client';
 import { validasiIkhtibarTahap1, validasiIkhtibarTahap2, MIN_NILAI_IKHTIBAR } from '@/lib/educational-rules';
+import {
+  getIkhtibarPendingCountForSession,
+  buildIkhtibarScopeWhere,
+} from '@/lib/server/ikhtibar-pending-service';
 
 export interface IkhtibarResponse<T = unknown> {
   success: boolean;
@@ -34,6 +38,16 @@ export async function ajukanIkhtibarAction(formData: {
 
     if (!santri) {
       return { success: false, message: 'Data santri tidak ditemukan.' };
+    }
+
+    // Penegakan ABAC Fail-Closed: MT hanya berwenang mengajukan santri dalam halaqoh binaannya
+    if (session.role === 'MT' && !session.isKepalaBidangTahfidz) {
+      if (!session.staffId) {
+        return { success: false, message: 'Akses ditolak: Profil staf pembina belum terhubung.' };
+      }
+      if (santri.halaqoh?.pembinaId !== session.staffId) {
+        return { success: false, message: 'Akses ditolak: Anda hanya berwenang mengajukan ikhtibar untuk santri halaqoh binaan Anda.' };
+      }
     }
 
     // Cek apakah santri sudah lulus sempurna juz ini
@@ -90,8 +104,8 @@ export async function ajukanIkhtibarAction(formData: {
       data: ikhtibar,
     };
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, message: errorMsg, error: errorMsg };
+    console.error("[Action Error] ajukanIkhtibarAction:", err);
+    return { success: false, message: 'Gagal mengajukan ikhtibar. Silakan coba kembali.' };
   }
 }
 
@@ -110,11 +124,21 @@ export async function inputHasilTahap1Action(formData: {
 
     const ikhtibar = await prisma.ikhtibarTahfizh.findUnique({
       where: { id: formData.ikhtibarId },
-      include: { santri: true },
+      include: { santri: { include: { halaqoh: true } } },
     });
 
     if (!ikhtibar) {
       return { success: false, message: 'Data ikhtibar tidak ditemukan.' };
+    }
+
+    // Penegakan ABAC Fail-Closed: MT hanya berwenang menilai ujian santri halaqoh binaannya
+    if (session.role === 'MT' && !session.isKepalaBidangTahfidz) {
+      if (!session.staffId) {
+        return { success: false, message: 'Akses ditolak: Profil staf pembina belum terhubung.' };
+      }
+      if (ikhtibar.santri.halaqoh?.pembinaId !== session.staffId) {
+        return { success: false, message: 'Akses ditolak: Anda hanya berwenang menilai ikhtibar untuk santri halaqoh binaan Anda.' };
+      }
     }
 
     // Validasi aturan bisnis transisi ikhtibar tahap 1
@@ -131,16 +155,16 @@ export async function inputHasilTahap1Action(formData: {
         nilaiTahap1: formData.nilai,
         catatanTahap1: formData.catatan || (status === StatusIkhtibar.LULUS_TAHAP_1 ? 'Lancar dan makhraj fasih' : `Perlu pemantapan hafalan (Nilai: ${formData.nilai})`),
         tanggalTahap1: new Date(),
-        status,
         pengujiTahap1Id: session.staffId || null,
+        status,
       },
     });
 
     await recordAuditLog({
       userId: session.userId,
-      action: 'INPUT_IKHTIBAR_TAHAP_1',
+      action: 'INPUT_NILAI_IKHTIBAR_TAHAP_1',
       entity: 'IkhtibarTahfizh',
-      entityId: ikhtibar.id,
+      entityId: formData.ikhtibarId,
       details: { nilai: formData.nilai, status },
     });
 
@@ -152,8 +176,8 @@ export async function inputHasilTahap1Action(formData: {
       data: updated,
     };
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, message: errorMsg, error: errorMsg };
+    console.error("[Action Error] inputHasilTahap1Action:", err);
+    return { success: false, message: 'Gagal menyimpan hasil ujian Tahap 1. Silakan coba kembali.' };
   }
 }
 
@@ -171,6 +195,10 @@ export async function inputHasilTahap2Action(formData: {
 }): Promise<IkhtibarResponse> {
   try {
     const session = await requireRole(['KS']);
+
+    if (!session.staffId) {
+      return { success: false, message: 'Akses ditolak: Profil staf Mudir/Kepala Sekolah belum terhubung.' };
+    }
 
     const ikhtibar = await prisma.ikhtibarTahfizh.findUnique({
       where: { id: formData.ikhtibarId },
@@ -210,22 +238,22 @@ export async function inputHasilTahap2Action(formData: {
         nilaiTahap2: formData.nilai,
         catatanTahap2: formData.catatan || defaultCatatan,
         tanggalTahap2: new Date(),
+        pengujiTahap2Id: session.staffId,
         status,
-        pengujiTahap2Id: session.staffId || null,
       },
     });
 
     await recordAuditLog({
       userId: session.userId,
-      action: 'INPUT_IKHTIBAR_TAHAP_2',
+      action: 'INPUT_NILAI_IKHTIBAR_TAHAP_2',
       entity: 'IkhtibarTahfizh',
-      entityId: ikhtibar.id,
-      details: { nilai: formData.nilai, status, disahkanOleh: session.username, hasilTahap2: effectiveJenis },
+      entityId: formData.ikhtibarId,
+      details: { nilai: formData.nilai, status },
     });
 
     const statusMessage =
       status === StatusIkhtibar.LULUS_SEMPURNA_TAHAP_2
-        ? `Barakallahu fiik! ${ikhtibar.santri.nama} dinyatakan RESMI LULUS SELESAI JUZ ${ikhtibar.juz} (Nilai: ${formData.nilai}) oleh Mudir Pesantren.`
+        ? `Maa Syaa Allah! Kelulusan Juz ${ikhtibar.juz} untuk ${ikhtibar.santri.nama} RESMI DISAHKAN oleh Mudir Pesantren (Nilai: ${formData.nilai}).`
         : status === StatusIkhtibar.MENGULANG_SEBAGIAN
         ? `Hasil evaluasi disimpan. ${ikhtibar.santri.nama} diminta MENGULANG SEBAGIAN maqra pada Juz ${ikhtibar.juz} (Nilai: ${formData.nilai}).`
         : `Hasil evaluasi disimpan. ${ikhtibar.santri.nama} diminta MENGULANG SATU JUZ PENUH untuk Juz ${ikhtibar.juz} (Nilai: ${formData.nilai}).`;
@@ -236,8 +264,8 @@ export async function inputHasilTahap2Action(formData: {
       data: updated,
     };
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, message: errorMsg, error: errorMsg };
+    console.error("[Action Error] inputHasilTahap2Action:", err);
+    return { success: false, message: 'Gagal menyimpan hasil ujian Tahap 2. Silakan coba kembali.' };
   }
 }
 
@@ -251,8 +279,21 @@ export async function getDaftarIkhtibarAction(filterStatus?: StatusIkhtibar): Pr
       return { success: false, message: 'Sesi tidak sah' };
     }
 
+    const scopeWhere = buildIkhtibarScopeWhere(session);
+    if (!scopeWhere) {
+      if (session.role !== 'MT' && session.role !== 'PH' && session.role !== 'WS' && session.role !== 'ST') {
+        return { success: false, message: 'Akses ditolak' };
+      }
+      return { success: true, message: 'Berhasil memuat daftar ikhtibar', data: [] };
+    }
+
+    const where: Prisma.IkhtibarTahfizhWhereInput = {
+      ...scopeWhere,
+      ...(filterStatus ? { status: filterStatus } : {}),
+    };
+
     const list = await prisma.ikhtibarTahfizh.findMany({
-      where: filterStatus ? { status: filterStatus } : undefined,
+      where,
       include: {
         santri: {
           select: { id: true, nis: true, nama: true, kelas: true },
@@ -270,7 +311,38 @@ export async function getDaftarIkhtibarAction(filterStatus?: StatusIkhtibar): Pr
       data: list,
     };
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, message: errorMsg, error: errorMsg };
+    console.error("[Action Error] getDaftarIkhtibarAction:", err);
+    return { success: false, message: 'Gagal memuat daftar ikhtibar. Silakan coba kembali.' };
+  }
+}
+
+/**
+ * Ambil Jumlah Antrean Ikhtibar Riil
+ * Server Action pembungkus tipis: autentikasi sesi server & delegasi ke internal service.
+ * Signature produksi murni tanpa parameter untuk mencegah manipulasi sesi dari klien browser.
+ */
+export async function getIkhtibarPendingCountAction(): Promise<{
+  success: boolean;
+  count: number;
+  error?: string;
+}> {
+  try {
+    const session = await getSession();
+    if (!session) {
+      return {
+        success: false,
+        count: 0,
+        error: 'Sesi tidak valid atau belum login.',
+      };
+    }
+
+    return await getIkhtibarPendingCountForSession(session, prisma);
+  } catch (err: unknown) {
+    console.error('[Action Error] getIkhtibarPendingCountAction:', err);
+    return {
+      success: false,
+      count: 0,
+      error: 'Gagal memuat antrean Ikhtibar. Silakan coba kembali.',
+    };
   }
 }

@@ -1,6 +1,6 @@
 import EmbeddedPostgres from "embedded-postgres";
 import { PrismaClient } from "@prisma/client";
-import { execSync } from "child_process";
+import { execSync, spawnSync } from "child_process";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -206,6 +206,12 @@ export async function startTestDatabase(preferredPort?: number): Promise<PrismaC
     await new Promise((r) => setTimeout(r, 150));
   }
 
+  // Catat PID utama dan descendant milik instance tes ini
+  const detected = detectTestInstancePids(port, tempDir);
+  activeMainPid = detected.mainPid;
+  activeDescendantPids = new Set(detected.descendantPids);
+  console.log(`[test-db-manager] PostgreSQL aktif pada port ${port} (Main PID: ${activeMainPid || "n/a"}, Child PIDs: [${Array.from(activeDescendantPids).join(", ")}])`);
+
   // Pastikan database stq_test dibuat di cluster terisolasi
   try {
     await embeddedPgInstance.createDatabase("stq_test");
@@ -241,6 +247,8 @@ export async function startTestDatabase(preferredPort?: number): Promise<PrismaC
       },
     },
   });
+
+  (globalThis as unknown as { prisma: PrismaClient | undefined }).prisma = testPrismaClient;
 
   return testPrismaClient;
 }
@@ -448,45 +456,439 @@ export async function cleanupTestFixtures(prisma: PrismaClient) {
 }
 
 /**
- * Hentikan test database dan tutup koneksi.
- * HANYA menghentikan instance embedded PostgreSQL miliknya sendiri, dan menghapus direktori temporer miliknya sendiri.
+ * Interface proses untuk pelacakan PID instance PostgreSQL terisolasi
+ */
+interface ProcessInfo {
+  ProcessId: number;
+  ParentProcessId: number;
+  Name: string;
+  CommandLine: string | null;
+}
+
+let activeMainPid: number | null = null;
+let activeDescendantPids: Set<number> = new Set();
+
+export function getActiveMainPid(): number | null {
+  return activeMainPid;
+}
+
+export function getActiveDescendantPids(): number[] {
+  return Array.from(activeDescendantPids);
+}
+
+export function isPidRunning(pid: number): boolean {
+  if (!pid || pid <= 0) return false;
+  if (process.platform === "win32") {
+    try {
+      const res = spawnSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+        encoding: "utf-8",
+        timeout: 3000,
+      });
+      const stdout = res.stdout || "";
+      return stdout.includes(`"${pid}"`);
+    } catch {
+      return false;
+    }
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err: unknown) {
+    const error = err as { code?: string };
+    return error.code === "EPERM";
+  }
+}
+
+export function getPgCtlPath(): string | null {
+  const candidates = [
+    path.resolve(__dirname, "../node_modules/@embedded-postgres/windows-x64/native/bin/pg_ctl.exe"),
+    path.resolve(process.cwd(), "node_modules/@embedded-postgres/windows-x64/native/bin/pg_ctl.exe"),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return null;
+}
+
+export function findListeningPid(port: number): number | null {
+  if (process.platform !== "win32") return null;
+  try {
+    const output = execSync("netstat -ano -p tcp", { encoding: "utf-8", timeout: 4000 });
+    const lines = output.split("\n");
+    for (const line of lines) {
+      if (line.includes(`:${port}`) && line.includes("LISTENING")) {
+        const parts = line.trim().split(/\s+/);
+        const pidStr = parts[parts.length - 1];
+        const parsedPid = parseInt(pidStr, 10);
+        if (!isNaN(parsedPid) && parsedPid > 0) {
+          return parsedPid;
+        }
+      }
+    }
+  } catch {}
+  return null;
+}
+
+export function getSystemPostgresProcesses(): ProcessInfo[] {
+  if (process.platform !== "win32") return [];
+  try {
+    const script = `powershell -NoProfile -Command "@(Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*postgres*' } | Select-Object ProcessId, ParentProcessId, Name, CommandLine) | ConvertTo-Json -Compress"`;
+    const stdout = execSync(script, { encoding: "utf-8", timeout: 8000 }).trim();
+    if (!stdout || stdout === "[]") return [];
+    const parsed = JSON.parse(stdout);
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === "object") return [parsed];
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+export function detectTestInstancePids(port: number, tempDir: string): { mainPid: number | null; descendantPids: number[] } {
+  const normTempDir = path.resolve(tempDir).toLowerCase();
+  const allPg = getSystemPostgresProcesses();
+
+  let mainPid: number | null = activeMainPid;
+  const instancePid = (embeddedPgInstance as unknown as { process?: { pid?: number } })?.process?.pid;
+  if (instancePid && typeof instancePid === "number" && isPidRunning(instancePid)) {
+    mainPid = instancePid;
+  }
+
+  const listeningPid = findListeningPid(port);
+  if (listeningPid) {
+    const proc = allPg.find((p) => p.ProcessId === listeningPid);
+    if (proc && proc.Name.toLowerCase().includes("postgres")) {
+      const cmd = (proc.CommandLine || "").toLowerCase();
+      if (cmd.includes(normTempDir) || cmd.includes(port.toString())) {
+        mainPid = listeningPid;
+      }
+    }
+  }
+
+  const descendants: Set<number> = new Set(activeDescendantPids);
+  for (const proc of allPg) {
+    if (proc.ProcessId === mainPid) continue;
+    const cmd = (proc.CommandLine || "").toLowerCase();
+    const isChildOfMain = mainPid !== null && proc.ParentProcessId === mainPid;
+    const isChildOfDescendant = descendants.has(proc.ParentProcessId);
+    const isMatchingTempDir = cmd.includes(normTempDir);
+    const isForkChildOfMain =
+      mainPid !== null && cmd.includes("--forkchild") && cmd.includes(mainPid.toString());
+    if (isChildOfMain || isChildOfDescendant || isMatchingTempDir || isForkChildOfMain) {
+      descendants.add(proc.ProcessId);
+    }
+  }
+
+  return {
+    mainPid,
+    descendantPids: Array.from(descendants),
+  };
+}
+
+export function validateTempDataDir(dirPath: string): string {
+  if (!dirPath || typeof dirPath !== "string") {
+    throw new Error("FATAL: Direktori temporer database tes tidak valid atau kosong.");
+  }
+  const resolved = path.resolve(dirPath);
+  const tmpDir = path.resolve(os.tmpdir());
+  const base = path.basename(resolved);
+  const root = path.parse(resolved).root;
+  const projectRoot = path.resolve(process.cwd());
+  const homeDir = path.resolve(os.homedir());
+
+  // Validasi berbasis path.relative agar path sibling tidak dianggap berada di dalam temp directory
+  const rel = path.relative(tmpDir, resolved);
+  const isInsideTemp = Boolean(rel) && !rel.startsWith("..") && !path.isAbsolute(rel);
+
+  if (!isInsideTemp) {
+    throw new Error(`FATAL: Direktori temporer harus berada di dalam os.tmpdir() (${tmpDir}), terdeteksi di luar: ${resolved}`);
+  }
+  if (!base.startsWith("stq-test-db-")) {
+    throw new Error(`FATAL: Direktori temporer harus memiliki prefix 'stq-test-db-', terdeteksi: ${base}`);
+  }
+  if (
+    resolved === root ||
+    resolved === projectRoot ||
+    resolved === homeDir ||
+    resolved.length <= 10
+  ) {
+    throw new Error(`FATAL: Direktori temporer dilarang mengarah ke root drive, direktori proyek, atau home directory: ${resolved}`);
+  }
+  if (activeTempDataDir && resolved !== path.resolve(activeTempDataDir)) {
+    throw new Error(`FATAL: Direktori temporer (${resolved}) tidak sama persis dengan activeTempDataDir (${path.resolve(activeTempDataDir)})`);
+  }
+  return resolved;
+}
+
+/**
+ * Memverifikasi apakah suatu PID masih aktif, merupakan executable postgres.exe,
+ * dan terbukti terkait dengan instance database test kita (CommandLine memuat direktori test
+ * atau ParentProcessId terhubung dengan main PID terverifikasi).
+ * Melindungi dari pembunuhan proses lain akibat Windows PID reuse.
+ */
+export function verifyPostgresProcessOwnership(
+  pid: number,
+  targetDir: string,
+  verifiedMainPid: number | null
+): boolean {
+  if (!isPidRunning(pid)) return false;
+
+  if (process.platform === "win32") {
+    try {
+      // 1. Cek nama executable via tasklist
+      const tasklistRes = spawnSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+        encoding: "utf-8",
+        timeout: 1000,
+        windowsHide: true,
+      });
+      const output = tasklistRes.stdout || "";
+      if (!output.toLowerCase().includes("postgres.exe")) {
+        // PID reuse terdeteksi: bukan postgres.exe, dilarang di-kill
+        return false;
+      }
+
+      // 2. Baca CommandLine dan ParentProcessId via wmic
+      const wmicRes = spawnSync(
+        "wmic",
+        ["process", "where", `ProcessId=${pid}`, "get", "CommandLine,ParentProcessId", "/format:csv"],
+        { encoding: "utf-8", timeout: 2000, windowsHide: true }
+      );
+      const wmicOut = wmicRes.stdout || "";
+      const lowerOut = wmicOut.toLowerCase();
+      const lowerDir = targetDir.toLowerCase().replace(/\\/g, "\\\\");
+      const lowerRawDir = targetDir.toLowerCase();
+
+      // Cek apakah CommandLine memuat targetDir
+      const matchesDir = lowerOut.includes(lowerDir) || lowerOut.includes(lowerRawDir);
+
+      // Cek apakah ParentProcessId sama dengan verifiedMainPid
+      let matchesParent = false;
+      if (verifiedMainPid && verifiedMainPid > 0) {
+        const lines = wmicOut.trim().split("\n").filter((l) => l.trim().length > 0);
+        for (const line of lines) {
+          const cols = line.split(",").map((c) => c.trim());
+          if (cols.includes(String(verifiedMainPid))) {
+            matchesParent = true;
+            break;
+          }
+        }
+      }
+
+      // Cek apakah CommandLine memuat --forkchild dan verifiedMainPid
+      const matchesForkChild = Boolean(
+        verifiedMainPid &&
+          verifiedMainPid > 0 &&
+          lowerOut.includes("--forkchild") &&
+          lowerOut.includes(String(verifiedMainPid))
+      );
+
+      if (matchesDir || matchesParent || matchesForkChild) {
+        return true;
+      }
+      // Fallback: periksa via getSystemPostgresProcesses() jika wmic tidak memuat kolom lengkap
+      const allPg = getSystemPostgresProcesses();
+      const proc = allPg.find((p) => p.ProcessId === pid);
+      if (proc) {
+        const cmd = (proc.CommandLine || "").toLowerCase();
+        const matchesProcDir = cmd.includes(lowerDir) || cmd.includes(lowerRawDir);
+        const matchesProcParent = verifiedMainPid !== null && proc.ParentProcessId === verifiedMainPid;
+        const matchesProcFork =
+          verifiedMainPid !== null &&
+          cmd.includes("--forkchild") &&
+          cmd.includes(verifiedMainPid.toString());
+        return matchesProcDir || matchesProcParent || matchesProcFork;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  } else {
+    try {
+      const cmdlinePath = `/proc/${pid}/cmdline`;
+      if (fs.existsSync(cmdlinePath)) {
+        const cmd = fs.readFileSync(cmdlinePath, "utf-8");
+        if (!cmd.includes("postgres")) return false;
+        if (targetDir && cmd.includes(targetDir)) return true;
+      }
+      if (verifiedMainPid && verifiedMainPid > 0) {
+        const statPath = `/proc/${pid}/stat`;
+        if (fs.existsSync(statPath)) {
+          const stat = fs.readFileSync(statPath, "utf-8");
+          const parts = stat.substring(stat.lastIndexOf(")") + 2).trim().split(/\s+/);
+          const ppid = parseInt(parts[1], 10);
+          if (ppid === verifiedMainPid) return true;
+        }
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+}
+
+/**
+ * Hentikan test database dan tutup koneksi secara idempotent dan terisolasi penuh.
+ * HANYA menghentikan instance embedded PostgreSQL miliknya sendiri dan menghapus direktori temporer miliknya sendiri.
  */
 export async function stopTestDatabase() {
+  // Idempotency: jika sudah bersih, return langsung
+  if (!embeddedPgInstance && !testPrismaClient && !activeTempDataDir && !activeTestPort) {
+    return;
+  }
+
+  const targetPort = activeTestPort;
+  const targetDir = activeTempDataDir;
+
+  // 1. Putuskan Prisma client
   if (testPrismaClient) {
     try {
       await testPrismaClient.$disconnect();
     } catch {}
     testPrismaClient = null;
+    (globalThis as unknown as { prisma: PrismaClient | undefined }).prisma = undefined;
   }
 
+  // 2. Snapshot PID sebelum proses stop dipanggil agar child tetap terlacak
+  if (targetPort && targetDir) {
+    const freshPids = detectTestInstancePids(targetPort, targetDir);
+    if (freshPids.mainPid) activeMainPid = freshPids.mainPid;
+    for (const d of freshPids.descendantPids) {
+      activeDescendantPids.add(d);
+    }
+  }
+
+  const pidsToTerminate = new Set<number>();
+  if (activeMainPid) pidsToTerminate.add(activeMainPid);
+  for (const pid of activeDescendantPids) {
+    pidsToTerminate.add(pid);
+  }
+
+  // 3. Graceful stop: gunakan pg_ctl stop -m fast -w terlebih dahulu jika tersedia (native clean shutdown)
+  const pgCtl = getPgCtlPath();
+  if (pgCtl && targetDir && fs.existsSync(targetDir)) {
+    try {
+      spawnSync(pgCtl, ["stop", "-D", targetDir, "-m", "fast", "-w", "-t", "5"], {
+        encoding: "utf-8",
+        timeout: 6000,
+        stdio: "ignore",
+      });
+    } catch {}
+  }
+
+  // 4. Bersihkan instance embedded-postgres tanpa membiarkan Promise menggantung
   if (embeddedPgInstance) {
     try {
-      await Promise.race([
-        embeddedPgInstance.stop(),
-        new Promise((resolve) => setTimeout(resolve, 3000)),
-      ]);
-    } catch (err) {
-      console.warn("Warning saat menghentikan embedded postgres test:", err);
-    }
+      const instance = embeddedPgInstance as unknown as {
+        process?: { pid?: number; exitCode?: number | null; kill?: (signal?: string) => boolean };
+      };
+      if (instance.process && instance.process.exitCode === null) {
+        try {
+          instance.process.kill?.("SIGKILL");
+        } catch {}
+      }
+      instance.process = undefined;
+    } catch {}
     embeddedPgInstance = null;
   }
 
-  if (activeTempDataDir && fs.existsSync(activeTempDataDir)) {
-    for (let attempt = 1; attempt <= 5; attempt++) {
-      try {
-        fs.rmSync(activeTempDataDir, { recursive: true, force: true });
+  // 5. Polling: periksa apakah port dan PID sudah berhenti secara alami
+  const pollStart = Date.now();
+
+  while (Date.now() - pollStart < 4000) {
+    let anyRunning = false;
+    for (const pid of pidsToTerminate) {
+      if (isPidRunning(pid)) {
+        anyRunning = true;
         break;
-      } catch (err) {
-        if (attempt < 5) {
-          await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+    const portClosed = targetPort ? !(await isPortInUse(targetPort)) : true;
+    if (!anyRunning && portClosed) {
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+
+  // 6. Jika masih ada PID yang tertinggal setelah batas waktu, hentikan HANYA PID yang terverifikasi
+  // merupakan executable postgres.exe milik instance direktori test ini (mencegah pembunuhan proses lain akibat PID reuse)
+  for (const pid of pidsToTerminate) {
+    if (targetDir && verifyPostgresProcessOwnership(pid, targetDir, activeMainPid)) {
+      console.log(`[test-db-manager] Menghentikan PID instance tes terverifikasi: ${pid}`);
+      try {
+        if (process.platform === "win32") {
+          spawnSync("taskkill", ["/PID", pid.toString(), "/T", "/F"], { stdio: "ignore" });
         } else {
-          console.warn("Warning saat menghapus direktori temporary database test:", err);
+          process.kill(pid, "SIGKILL");
+        }
+      } catch {}
+    } else {
+      // Lewati jika PID bukan postgres.exe atau bukan milik instance test ini
+    }
+  }
+
+  // 7. Tunggu seluruh PID terverifikasi benar-benar hilang (timeout 4 detik)
+  const killWaitStart = Date.now();
+  while (Date.now() - killWaitStart < 4000) {
+    let anyStillAlive = false;
+    for (const pid of pidsToTerminate) {
+      if (isPidRunning(pid)) {
+        anyStillAlive = true;
+        break;
+      }
+    }
+    if (!anyStillAlive) break;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+
+  // 8. Pastikan port sudah tertutup
+  if (targetPort) {
+    const portWaitStart = Date.now();
+    while (Date.now() - portWaitStart < 3000) {
+      if (!(await isPortInUse(targetPort))) break;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+
+  // 9 & 10. Hapus direktori data temporer dengan validasi ketat dan retry loop
+  if (targetDir && fs.existsSync(targetDir)) {
+    const validatedDir = validateTempDataDir(targetDir);
+    let deleted = false;
+    for (let attempt = 1; attempt <= 10; attempt++) {
+      try {
+        fs.rmSync(validatedDir, { recursive: true, force: true });
+        deleted = true;
+        break;
+      } catch (err: unknown) {
+        const error = err as { code?: string; message?: string };
+        const isLockError = error.code === "EBUSY" || error.code === "EPERM" || error.code === "ENOTEMPTY";
+        if (attempt < 10 && isLockError) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        } else {
+          console.warn(`[test-db-manager] Gagal menghapus direktori temporary database test (percobaan ${attempt}/10):`, error.message);
         }
       }
     }
-    activeTempDataDir = null;
+    if (!deleted && fs.existsSync(validatedDir)) {
+      console.warn(`[test-db-manager] Direktori ${validatedDir} masih ada atau terkunci.`);
+    }
   }
 
+  // 11. Validasi kebersihan akhir sebelum menghapus state pelacakan
+  const isPortStillOpen = targetPort ? await isPortInUse(targetPort) : false;
+  const anyPidStillRunning = Array.from(pidsToTerminate).some((p) => isPidRunning(p));
+  const isDirStillExists = targetDir ? fs.existsSync(targetDir) : false;
+
+  if (isPortStillOpen || anyPidStillRunning || isDirStillExists) {
+    // Pertahankan state pelacakan agar stopTestDatabase() dapat dipanggil ulang
+    throw new Error(
+      `[test-db-manager] Cleanup PostgreSQL belum tuntas: Port ${targetPort} terbuka=${isPortStillOpen}, PID aktif=${anyPidStillRunning}, Dir ada=${isDirStillExists}. State pelacakan dipertahankan untuk pembersihan ulang.`
+    );
+  }
+
+  // 12. Bersihkan state global HANYA jika seluruh komponen sudah 100% bersih
+  activeTempDataDir = null;
   activeTestPort = null;
   activeTestDatabaseUrl = null;
+  activeMainPid = null;
+  activeDescendantPids.clear();
 }

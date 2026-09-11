@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useTransition, useMemo, useRef } from "react";
+import React, { useState, useEffect, useTransition, useMemo, useRef, useCallback } from "react";
 import { AppSidebar } from "@/components/navigation/app-sidebar";
 import { AppHeader } from "@/components/navigation/app-header";
 import { MobileBottomNav } from "@/components/navigation/mobile-bottom-nav";
@@ -17,6 +17,7 @@ import {
 } from "@/types/auth";
 import { getCurrentUserAction, logoutAction } from "@/app/actions/auth";
 import { getSantriListAction } from "@/app/actions/santri";
+import { getIkhtibarPendingCountAction } from "@/app/actions/ikhtibar";
 import { getHalaqohListAction } from "@/app/actions/halaqoh";
 import { getDaftarKesehatanAction } from "@/app/actions/kesehatan";
 import { PrintRapor } from "@/components/print/print-rapor";
@@ -285,6 +286,8 @@ export default function Home() {
             capaianJuz: s.capaianJuz ?? 0,
             targetJuz: s.targetJuz ?? 30,
             setoranTerakhir: s.setoranTerakhir || "-",
+            setoranTerakhirAt: s.setoranTerakhirAt ?? null,
+            sudahSetorHariIni: Boolean(s.sudahSetorHariIni),
             status: s.status,
             nilaiTerakhir: s.nilaiTerakhir || "Belum ada data",
             poinPelanggaran: s.poinPelanggaran ?? 0,
@@ -309,6 +312,31 @@ export default function Home() {
       setSantriLoadError(msg);
     }
   };
+
+  // Antrean Ikhtibar Riil dari basis data
+  const [ikhtibarPendingCount, setIkhtibarPendingCount] = useState<number>(0);
+  const [ikhtibarLoading, setIkhtibarLoading] = useState<boolean>(true);
+  const [ikhtibarError, setIkhtibarError] = useState<string | null>(null);
+
+  // State santri terpilih untuk diteruskan ke TahfizhModule (Catat Setoran per santri)
+  const [selectedSantriIdForTahfizh, setSelectedSantriIdForTahfizh] = useState<string | undefined>(undefined);
+
+  const fetchIkhtibarData = useCallback(async () => {
+    setIkhtibarLoading(true);
+    setIkhtibarError(null);
+    try {
+      const res = await getIkhtibarPendingCountAction();
+      if (res.success) {
+        setIkhtibarPendingCount(res.count);
+      } else {
+        setIkhtibarError(res.error || "Gagal memuat antrean ikhtibar");
+      }
+    } catch (err: unknown) {
+      setIkhtibarError(err instanceof Error ? err.message : "Gagal memuat antrean ikhtibar");
+    } finally {
+      setIkhtibarLoading(false);
+    }
+  }, []);
 
   // Ref stabil untuk selectedRole agar tidak memicu re-render / re-fetch pada popstate listener
   const selectedRoleRef = useRef<Role>(selectedRole);
@@ -391,6 +419,7 @@ export default function Home() {
 
         if (isMounted) {
           await fetchSantriData();
+          await fetchIkhtibarData();
         }
 
         if (isMounted) {
@@ -720,10 +749,19 @@ export default function Home() {
             currentHalaqohName={currentHalaqohName}
             santriList={santriList}
             izinPendingCount={izinPendingCount}
-            ikhtibarPendingCount={2}
+            ikhtibarPendingCount={ikhtibarPendingCount}
+            ikhtibarLoading={ikhtibarLoading}
+            ikhtibarError={ikhtibarError}
             santriSakitCount={santriSakitCount}
             onNavigate={handleSelectTab}
-            onOpenSetoranQuick={() => handleSelectTab("tahfizh")}
+            onSelectSantriForSetoran={(santriId: string) => {
+              setSelectedSantriIdForTahfizh(santriId);
+              handleSelectTab("tahfizh");
+            }}
+            onOpenSetoranQuick={() => {
+              setSelectedSantriIdForTahfizh(undefined);
+              handleSelectTab("tahfizh");
+            }}
           />
         );
 
@@ -763,12 +801,16 @@ export default function Home() {
             currentHalaqohName={currentHalaqohName}
             santriList={santriList}
             halaqohList={halaqohList}
+            initialSelectedSantriId={selectedSantriIdForTahfizh}
             isKepalaBidangTahfidz={isKepalaBidangTahfidz}
             onPrintPreview={(data) => {
               setPrintLaporanData(data);
               setShowPrintModal("laporan_bulanan");
             }}
-            onRefresh={fetchSantriData}
+            onRefresh={() => {
+              void fetchSantriData();
+              void fetchIkhtibarData();
+            }}
           />
         );
 
@@ -913,9 +955,15 @@ export default function Home() {
             currentHalaqohName={currentHalaqohName}
             santriList={santriList}
             izinPendingCount={izinPendingCount}
-            ikhtibarPendingCount={2}
+            ikhtibarPendingCount={ikhtibarPendingCount}
+            ikhtibarLoading={ikhtibarLoading}
+            ikhtibarError={ikhtibarError}
             santriSakitCount={santriSakitCount}
             onNavigate={handleSelectTab}
+            onSelectSantriForSetoran={(santriId: string) => {
+              setSelectedSantriIdForTahfizh(santriId);
+              handleSelectTab("tahfizh");
+            }}
           />
         );
     }
