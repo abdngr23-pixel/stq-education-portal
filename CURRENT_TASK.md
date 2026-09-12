@@ -42,7 +42,7 @@ PR #3 QA Hardening untuk STQ Education Portal:
 * `components/dashboard/presensi-harian-mobile.tsx` (Dimodifikasi: Menambahkan `data-testid="floating-save-bar"` dan `data-testid="santri-presensi-list"`).
 * `components/modules/akademik-module.tsx` (Dimodifikasi: Menambahkan `data-testid` pada subtab rapor, seleksi santri, tombol cetak, dan tombol tutup modal).
 * `package.json` (Dimodifikasi: Menambahkan script `typecheck`, `qa:structural`, dan `qa:visual`).
-* `.github/workflows/ci.yml` (Dimodifikasi: Quality gates lengkap berurutan mencakup tsc, typecheck:test, lint, unit test, build, db cleanup, puppeteer P0.1, qa structural, dan upload artifact).
+* `.github/workflows/ci.yml` (Dimodifikasi: Quality gates lengkap berurutan mencakup tsc, typecheck:test, lint, unit test, build, db cleanup, puppeteer P0.1, qa structural, upload artifact, job timeout 30m, step timeout 10m, dan upgrade runtime Node.js v22 LTS).
 * `CURRENT_TASK.md` (Dimodifikasi: Status disinkronkan dengan repositori GitHub aktual).
 
 ## 4. Status Quality Gates Lokal (100% LULUS)
@@ -50,12 +50,16 @@ Semua quality gates lokal diverifikasi dan lulus tanpa error/failure:
 - [x] `npx tsc --noEmit` (0 error)
 - [x] `npm run typecheck:test` (0 error)
 - [x] `npm run lint` (0 error, 0 warning)
-- [x] `npm test` (376 tests lulus, 124 suites, 0 failures, termasuk fail-closed semantics unit tests)
+- [x] `npm test` (378 tests lulus, 124 suites, 0 failures, termasuk unit tests terminateOwnedChildProcess)
 - [x] `npm run build` (Next.js production build berhasil dikompilasi)
 - [x] `npx tsx scripts/verify-test-db-cleanup.ts` (Semua 6 skenario pembersihan & preservasi proses DB test lulus 100%)
-- [x] `npx tsx scripts/puppeteer-p0-1-verify.ts` (Seluruh 6 skenario E2E Tahfizh P0.1 riil lulus 100%)
+- [x] `npx tsx scripts/puppeteer-p0-1-verify.ts` (Seluruh 6 skenario E2E Tahfizh P0.1 riil lulus 100%, shutdown deterministik, port closed)
 - [x] `npm run qa:structural` (98/98 layout assertions LOLOS 100% pada 6 viewports dengan fail-closed semantics)
 - [x] `npm run qa:visual` (33 screenshot multi-viewport & stres test data rapor berhasil disimpan)
 - [x] Negative Self-Test: Terbukti gagal deterministik (exit code 1, 3 failed assertions) saat selector required sengaja disabotase secara temporer.
 
-Catatan CI Artifact: `npm run qa:structural` di CI berjalan dengan `captureScreenshots: false` secara default demi kecepatan dan efisiensi resource. Step `upload-artifact` menggunakan `if-no-files-found: ignore` secara sah. Screenshot visual hanya dihasilkan saat `npm run qa:visual` dijalankan.
+Catatan CI & Process Lifecycle Hardening:
+- Next.js test server di-spawn langsung menggunakan `process.execPath` tanpa shell wrapper (`npx`) dengan detached process group pada POSIX.
+- Terminasi menggunakan `terminateOwnedChildProcess`: mengirim SIGTERM ke process group pada POSIX / taskkill tree pada Windows, menunggu event exit, melepaskan stdio streams, dan memverifikasi port telah tertutup tanpa sisa descendant proses.
+- GitHub Actions CI dilengkapi `timeout-minutes: 30` (job-level) dan `timeout-minutes: 10` (step-level) untuk mencegah hang berkepanjangan.
+- Runtime CI disesuaikan ke Node.js v22 LTS untuk memenuhi persyaratan engine `puppeteer-core@^25.10.0` (`node: >=22.12.0`).

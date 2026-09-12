@@ -1,6 +1,6 @@
 import EmbeddedPostgres from "embedded-postgres";
 import { PrismaClient } from "@prisma/client";
-import { execSync, spawnSync } from "child_process";
+import { execSync, spawnSync, ChildProcess } from "child_process";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -1110,4 +1110,230 @@ export async function stopTestDatabase() {
   activeTestDatabaseUrl = null;
   activeMainPid = null;
   activeDescendantPids.clear();
+}
+
+export interface ProcessTerminationResult {
+  pid: number;
+  exited: boolean;
+  exitCode: number | null;
+  method: "already_exited" | "graceful" | "forced";
+  portClosed: boolean;
+  remainingDescendants: number[];
+}
+
+/**
+ * Menghentikan process tree milik test secara deterministik dan terisolasi penuh.
+ * - Mencatat PID child.
+ * - Melepaskan/membersihkan stream stdio agar handle tidak menggantung.
+ * - Mengirim sinyal terminasi graceful (SIGTERM ke process group pada POSIX).
+ * - Menunggu event exit/close dengan grace period.
+ * - Jika masih hidup, melakukan force termination (SIGKILL ke process group pada POSIX, taskkill /PID <pid> /T /F pada Windows).
+ * - Menunggu kembali hingga benar-benar exit.
+ * - Memverifikasi port terisolasi telah tertutup (melempar error jika masih listening).
+ * - Memverifikasi tidak ada descendant process milik child yang tersisa.
+ */
+export async function terminateOwnedChildProcess(
+  child: ChildProcess,
+  options?: {
+    port?: number;
+    graceTimeoutMs?: number;
+    forceTimeoutMs?: number;
+    label?: string;
+  }
+): Promise<ProcessTerminationResult> {
+  const pid = child.pid;
+  const label = options?.label || "ChildProcess";
+  const graceMs = options?.graceTimeoutMs ?? 3000;
+  const forceMs = options?.forceTimeoutMs ?? 2000;
+
+  if (!pid || pid <= 0) {
+    return {
+      pid: 0,
+      exited: true,
+      exitCode: child.exitCode,
+      method: "already_exited",
+      portClosed: options?.port ? !(await isPortInUse(options.port)) : true,
+      remainingDescendants: [],
+    };
+  }
+
+  let method: "already_exited" | "graceful" | "forced" = "graceful";
+  let hasExited = child.exitCode !== null || !isPidRunning(pid);
+  let finalExitCode: number | null = child.exitCode;
+
+  // Stdio handle cleanup helper
+  const releaseStdio = () => {
+    try {
+      if (child.stdout) {
+        child.stdout.removeAllListeners();
+        child.stdout.destroy();
+      }
+      if (child.stderr) {
+        child.stderr.removeAllListeners();
+        child.stderr.destroy();
+      }
+      if (child.stdin) {
+        child.stdin.removeAllListeners();
+        child.stdin.destroy();
+      }
+    } catch {}
+  };
+
+  // Promise yang menunggu proses keluar
+  const exitPromise = new Promise<number | null>((resolve) => {
+    if (hasExited) {
+      resolve(finalExitCode);
+      return;
+    }
+    const onExit = (code: number | null) => {
+      hasExited = true;
+      finalExitCode = code;
+      cleanupListeners();
+      resolve(code);
+    };
+    const onClose = (code: number | null) => {
+      hasExited = true;
+      finalExitCode = code;
+      cleanupListeners();
+      resolve(code);
+    };
+    function cleanupListeners() {
+      child.removeListener("exit", onExit);
+      child.removeListener("close", onClose);
+    }
+    child.once("exit", onExit);
+    child.once("close", onClose);
+  });
+
+  if (hasExited) {
+    method = "already_exited";
+  } else {
+    if (process.platform === "win32") {
+      // Pada Windows: gunakan taskkill /PID <pid> /T /F untuk menghentikan seluruh process tree
+      try {
+        spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
+          stdio: "ignore",
+          windowsHide: true,
+        });
+        method = "forced";
+      } catch {
+        try {
+          child.kill("SIGKILL");
+        } catch {}
+      }
+      // Tunggu child selesai exit
+      await Promise.race([
+        exitPromise,
+        new Promise((resolve) => setTimeout(resolve, graceMs)),
+      ]);
+    } else {
+      // Pada POSIX (Linux/macOS):
+      // Jika child di-spawn dengan detached: true, child.pid adalah PGID.
+      // Kirim SIGTERM ke process group (-pid)
+      try {
+        process.kill(-pid, "SIGTERM");
+      } catch (err: unknown) {
+        const error = err as { code?: string };
+        if (error?.code !== "ESRCH") {
+          try {
+            child.kill("SIGTERM");
+          } catch {}
+        }
+      }
+
+      // Tunggu graceful termination
+      const gracefulExited = await Promise.race([
+        exitPromise.then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), graceMs)),
+      ]);
+
+      if (!gracefulExited && isPidRunning(pid)) {
+        method = "forced";
+        // Kirim SIGKILL ke process group yang sama
+        try {
+          process.kill(-pid, "SIGKILL");
+        } catch (err: unknown) {
+          const error = err as { code?: string };
+          if (error?.code !== "ESRCH") {
+            try {
+              child.kill("SIGKILL");
+            } catch {}
+          }
+        }
+        await Promise.race([
+          exitPromise.then(() => true),
+          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), forceMs)),
+        ]);
+      }
+    }
+  }
+
+  // Bersihkan stream stdio agar tidak menyisakan handle aktif
+  releaseStdio();
+
+  // Unref child jika masih memegang reference di Node event loop
+  try {
+    child.unref();
+  } catch {}
+
+  // Verifikasi final apakah PID utama sudah benar-benar mati
+  const verifyPollStart = Date.now();
+  while (Date.now() - verifyPollStart < 2000) {
+    if (!isPidRunning(pid)) {
+      hasExited = true;
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+
+  // Periksa apakah ada descendant process milik test yang masih berjalan
+  const remainingDescendants: number[] = [];
+  if (process.platform !== "win32") {
+    // Pada Linux: cek apakah process group (-pid) masih aktif
+    try {
+      process.kill(-pid, 0);
+      remainingDescendants.push(pid);
+    } catch {}
+  } else {
+    // Pada Windows: jika PID masih tercatat running
+    if (isPidRunning(pid)) {
+      remainingDescendants.push(pid);
+    }
+  }
+
+  // Verifikasi port sudah tertutup
+  let portClosed = true;
+  if (options?.port) {
+    const portPollStart = Date.now();
+    while (Date.now() - portPollStart < 4000) {
+      const inUse = await isPortInUse(options.port);
+      if (!inUse) {
+        portClosed = true;
+        break;
+      }
+      portClosed = false;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    if (!portClosed) {
+      throw new Error(
+        `[FATAL] ${label} port ${options.port} masih listening setelah proses ${pid} dihentikan!`
+      );
+    }
+  }
+
+  if (remainingDescendants.length > 0) {
+    throw new Error(
+      `[FATAL] ${label} PID ${pid} atau descendant prosesnya masih berjalan setelah terminasi!`
+    );
+  }
+
+  return {
+    pid,
+    exited: hasExited,
+    exitCode: finalExitCode,
+    method,
+    portClosed,
+    remainingDescendants,
+  };
 }

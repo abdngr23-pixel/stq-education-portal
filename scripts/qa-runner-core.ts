@@ -11,6 +11,7 @@ import {
   findFreePort,
   FIXTURES,
   RAPOR_STRESS_FIXTURES,
+  terminateOwnedChildProcess,
 } from "../tests/test-db-manager";
 import {
   getChromeExecutablePath,
@@ -173,11 +174,19 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
       NODE_ENV: "production",
     };
 
-    nextServerProcess = spawn("node", ["./node_modules/next/dist/bin/next", "start", "-p", String(testNextPort)], {
-      cwd: process.cwd(),
-      env: serverEnv,
-      stdio: "pipe",
-    });
+    const nextCli = require.resolve("next/dist/bin/next");
+    const isWin = process.platform === "win32";
+
+    nextServerProcess = spawn(
+      process.execPath,
+      [nextCli, "start", "-p", String(testNextPort)],
+      {
+        cwd: process.cwd(),
+        env: serverEnv,
+        detached: !isWin,
+        stdio: ["ignore", "pipe", "pipe"],
+      }
+    );
 
     const baseUrl = `http://127.0.0.1:${testNextPort}`;
     console.log(`[3] Menunggu Next.js server siap di ${baseUrl}...`);
@@ -745,9 +754,17 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
     };
   } finally {
     if (browser) await browser.close();
-    if (nextServerProcess) {
-      nextServerProcess.kill();
-      console.log("   ✓ Next.js server test dihentikan.");
+    if (nextServerProcess && nextServerProcess.pid) {
+      try {
+        await terminateOwnedChildProcess(nextServerProcess, {
+          port: testNextPort,
+          label: "Next.js production server",
+        });
+        console.log("   ✓ Next.js server test dihentikan.");
+      } catch (err: unknown) {
+        const error = err as Error;
+        console.error("   ❌ Gagal menghentikan Next.js server test:", error.message);
+      }
     }
     if (testPrisma) {
       await stopTestDatabase();
