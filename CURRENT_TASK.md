@@ -50,9 +50,12 @@ Semua quality gates lokal diverifikasi dan lulus tanpa error/failure:
 - [x] `npx tsc --noEmit` (0 error)
 - [x] `npm run typecheck:test` (0 error)
 - [x] `npm run lint` (0 error, 0 warning)
-- [x] `npm test` (347 tests lulus, 117 suites, 0 failures)
+- [x] `npm test` (376 tests lulus, 124 suites, 0 failures, termasuk fail-closed semantics unit tests)
 - [x] `npm run build` (Next.js production build berhasil dikompilasi)
 - [x] `npx tsx scripts/verify-test-db-cleanup.ts` (Semua 6 skenario pembersihan & preservasi proses DB test lulus 100%)
 - [x] `npx tsx scripts/puppeteer-p0-1-verify.ts` (Seluruh 6 skenario E2E Tahfizh P0.1 riil lulus 100%)
-- [x] `npm run qa:structural` (89/89 layout assertions LOLOS 100% pada 6 viewports)
+- [x] `npm run qa:structural` (98/98 layout assertions LOLOS 100% pada 6 viewports dengan fail-closed semantics)
 - [x] `npm run qa:visual` (33 screenshot multi-viewport & stres test data rapor berhasil disimpan)
+- [x] Negative Self-Test: Terbukti gagal deterministik (exit code 1, 3 failed assertions) saat selector required sengaja disabotase secara temporer.
+
+Catatan CI Artifact: `npm run qa:structural` di CI berjalan dengan `captureScreenshots: false` secara default demi kecepatan dan efisiensi resource. Step `upload-artifact` menggunakan `if-no-files-found: ignore` secara sah. Screenshot visual hanya dihasilkan saat `npm run qa:visual` dijalankan.

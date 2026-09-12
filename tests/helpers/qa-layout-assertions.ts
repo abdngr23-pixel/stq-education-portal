@@ -235,6 +235,110 @@ export async function assertNoHorizontalOverflow(
 }
 
 /**
+ * Opsi konfigurasi umum untuk assertion layout dengan semantik required / optional.
+ */
+export interface LayoutAssertionOptions {
+  required?: boolean; // default true
+}
+
+export type StickyCollisionOptions = LayoutAssertionOptions;
+export type ContentObscuredOptions = LayoutAssertionOptions;
+export type MobileBottomNavOptions = LayoutAssertionOptions;
+export interface HeaderOffsetOptions extends LayoutAssertionOptions {
+  expectedSticky?: boolean; // default true
+}
+
+export interface TouchTargetItem {
+  selector: string;
+  label: string;
+  required?: boolean; // default true
+}
+
+export interface CriticalTextItem {
+  selector: string;
+  label: string;
+  required?: boolean; // default true
+}
+
+/**
+ * Pure helper untuk evaluasi logika collision sticky bar vs bottom nav.
+ */
+export function evaluateStickyCollision(params: {
+  status: "STICKY_NOT_FOUND" | "NAV_NOT_FOUND" | "NOT_BOTH_VISIBLE" | "CHECKED";
+  stickySelector: string;
+  navSelector: string;
+  overlap?: boolean;
+  overlapHeight?: number;
+  stickyRect?: DOMRectLike;
+  navRect?: DOMRectLike;
+  isStickyVisible?: boolean;
+  isNavVisible?: boolean;
+  required?: boolean;
+}): { passed: boolean; details: string; issue?: string } {
+  const isRequired = params.required !== false;
+
+  if (params.status === "STICKY_NOT_FOUND") {
+    if (isRequired) {
+      return {
+        passed: false,
+        details: `required element [${params.stickySelector}] was not found`,
+        issue: `Required sticky bar "${params.stickySelector}" tidak ditemukan di DOM`,
+      };
+    }
+    return {
+      passed: true,
+      details: `Optional sticky element [${params.stickySelector}] tidak ditemukan. Pemeriksaan dilewati.`,
+    };
+  }
+
+  if (params.status === "NAV_NOT_FOUND") {
+    if (isRequired) {
+      return {
+        passed: false,
+        details: `required element [${params.navSelector}] was not found`,
+        issue: `Required navigation "${params.navSelector}" tidak ditemukan di DOM`,
+      };
+    }
+    return {
+      passed: true,
+      details: `Optional nav element [${params.navSelector}] tidak ditemukan. Pemeriksaan dilewati.`,
+    };
+  }
+
+  if (params.status === "NOT_BOTH_VISIBLE") {
+    if (isRequired) {
+      const missingVisibility = !params.isStickyVisible
+        ? `required element [${params.stickySelector}] is hidden or has 0 dimension`
+        : `required element [${params.navSelector}] is hidden or has 0 dimension`;
+      return {
+        passed: false,
+        details: missingVisibility,
+        issue: `Elemen wajib tidak terlihat di layar: ${missingVisibility}`,
+      };
+    }
+    return {
+      passed: true,
+      details: `Elemen opsional tidak aktif bersamaan di viewport ini. Tidak ada overlap.`,
+    };
+  }
+
+  const overlap = !!params.overlap;
+  const overlapHeight = params.overlapHeight ?? 0;
+  if (overlap) {
+    return {
+      passed: false,
+      details: `Sticky bar dan Bottom Nav bertabrakan / overlap sebesar ${overlapHeight}px! (sticky.bottom: ${params.stickyRect?.bottom}px > nav.top: ${params.navRect?.top}px)`,
+      issue: `Sticky action bar overlaps bottom navigation by ${overlapHeight}px`,
+    };
+  }
+
+  return {
+    passed: true,
+    details: `Sticky bar (bottom: ${params.stickyRect?.bottom}px) dan Bottom Nav (top: ${params.navRect?.top}px) tidak overlap.`,
+  };
+}
+
+/**
  * 2. Assertion: Memastikan floating sticky bar dan bottom navigation tidak bertabrakan/tumpang tindih (overlap).
  */
 export async function assertNoStickyCollision(
@@ -242,15 +346,18 @@ export async function assertNoStickyCollision(
   pageName: string,
   viewport: string,
   stickySelector: string,
-  navSelector: string
+  navSelector: string,
+  options?: StickyCollisionOptions
 ): Promise<AssertionResult> {
+  const isRequired = options?.required !== false;
+
   const result = await page.evaluate(
     (stickySel, navSel) => {
       const stickyEl = document.querySelector(stickySel);
       const navEl = document.querySelector(navSel);
 
-      if (!stickyEl) return { status: "STICKY_NOT_FOUND" };
-      if (!navEl) return { status: "NAV_NOT_FOUND" };
+      if (!stickyEl) return { status: "STICKY_NOT_FOUND" as const };
+      if (!navEl) return { status: "NAV_NOT_FOUND" as const };
 
       const stickyRect = stickyEl.getBoundingClientRect();
       const navRect = navEl.getBoundingClientRect();
@@ -269,7 +376,7 @@ export async function assertNoStickyCollision(
 
       if (!isStickyVisible || !isNavVisible) {
         return {
-          status: "NOT_BOTH_VISIBLE",
+          status: "NOT_BOTH_VISIBLE" as const,
           isStickyVisible,
           isNavVisible,
         };
@@ -287,9 +394,11 @@ export async function assertNoStickyCollision(
         : 0;
 
       return {
-        status: "CHECKED",
+        status: "CHECKED" as const,
         overlap,
         overlapHeight,
+        isStickyVisible,
+        isNavVisible,
         stickyRect: {
           top: stickyRect.top,
           bottom: stickyRect.bottom,
@@ -312,39 +421,83 @@ export async function assertNoStickyCollision(
     navSelector
   );
 
-  if (result.status === "STICKY_NOT_FOUND" || result.status === "NAV_NOT_FOUND" || result.status === "NOT_BOTH_VISIBLE") {
-    return {
-      passed: true,
-      category: "Sticky vs Bottom Nav",
-      page: pageName,
-      viewport,
-      details: `Elemen tidak aktif bersamaan di viewport ini (status: ${result.status}). Tidak ada overlap.`,
-    };
-  }
-
-  const passed = !result.overlap;
-  const details = passed
-    ? `Sticky bar (bottom: ${result.stickyRect?.bottom}px) dan Bottom Nav (top: ${result.navRect?.top}px) tidak overlap.`
-    : `Sticky bar dan Bottom Nav bertabrakan / overlap sebesar ${result.overlapHeight}px! (sticky.bottom: ${result.stickyRect?.bottom}px > nav.top: ${result.navRect?.top}px)`;
+  const evaluation = evaluateStickyCollision({
+    status: result.status,
+    stickySelector,
+    navSelector,
+    overlap: "overlap" in result ? result.overlap : false,
+    overlapHeight: "overlapHeight" in result ? result.overlapHeight : 0,
+    stickyRect: "stickyRect" in result ? result.stickyRect : undefined,
+    navRect: "navRect" in result ? result.navRect : undefined,
+    isStickyVisible: "isStickyVisible" in result ? result.isStickyVisible : false,
+    isNavVisible: "isNavVisible" in result ? result.isNavVisible : false,
+    required: isRequired,
+  });
 
   return {
-    passed,
+    passed: evaluation.passed,
     category: "Sticky vs Bottom Nav Collision",
     page: pageName,
     viewport,
-    details,
-    finding: !passed
+    details: evaluation.details,
+    finding: !evaluation.passed
       ? {
           severity: "P1",
           page: pageName,
           viewport,
           component: stickySelector,
-          issue: `Sticky action bar overlaps bottom navigation by ${result.overlapHeight}px`,
-          measurement: `overlapHeight=${result.overlapHeight}px (stickyBottom=${result.stickyRect?.bottom}px, navTop=${result.navRect?.top}px)`,
+          issue: evaluation.issue || evaluation.details,
+          measurement:
+            "overlapHeight" in result
+              ? `overlapHeight=${result.overlapHeight}px (stickyBottom=${result.stickyRect?.bottom}px, navTop=${result.navRect?.top}px)`
+              : evaluation.details,
           recommendation:
-            "Tambahkan offset atau safe bottom spacing pada sticky action bar agar tetap berada di atas bottom nav.",
+            "Pastikan elemen wajib ada dan tambahkan offset atau safe bottom spacing pada sticky action bar agar tetap berada di atas bottom nav.",
         }
       : undefined,
+  };
+}
+
+/**
+ * Pure helper untuk evaluasi keterjangkauan baris/konten terakhir di atas sticky area.
+ */
+export function evaluateContentNotObscured(params: {
+  status: "TARGET_NOT_FOUND" | "CHECKED";
+  targetSelector: string;
+  isObscured?: boolean;
+  coveredPixels?: number;
+  targetBottom?: number;
+  highestStickyTop?: number;
+  required?: boolean;
+}): { passed: boolean; details: string; issue?: string } {
+  const isRequired = params.required !== false;
+
+  if (params.status === "TARGET_NOT_FOUND") {
+    if (isRequired) {
+      return {
+        passed: false,
+        details: `required target element [${params.targetSelector}] was not found`,
+        issue: `Required target element "${params.targetSelector}" tidak ditemukan di DOM`,
+      };
+    }
+    return {
+      passed: true,
+      details: `Optional target selector ${params.targetSelector} tidak ditemukan pada halaman ini.`,
+    };
+  }
+
+  if (params.isObscured) {
+    const covered = params.coveredPixels ?? 0;
+    return {
+      passed: false,
+      details: `Konten terakhir tertutup oleh sticky area sebesar ${covered}px (target bottom ${params.targetBottom}px > sticky top ${params.highestStickyTop}px).`,
+      issue: `Konten terakhir tertutup oleh sticky area sebesar ${covered}px saat scroll di bawah`,
+    };
+  }
+
+  return {
+    passed: true,
+    details: `Konten terakhir terlihat penuh: target bottom (${params.targetBottom}px) berada di atas sticky area (${params.highestStickyTop}px).`,
   };
 }
 
@@ -356,20 +509,21 @@ export async function assertContentNotObscured(
   pageName: string,
   viewport: string,
   targetSelector: string,
-  stickySelectors: string[]
+  stickySelectors: string[],
+  options?: ContentObscuredOptions
 ): Promise<AssertionResult> {
+  const isRequired = options?.required !== false;
+
   const result = await page.evaluate(
     (targetSel, stickySels) => {
       const targetEl = document.querySelector(targetSel);
-      if (!targetEl) return { status: "TARGET_NOT_FOUND" };
+      if (!targetEl) return { status: "TARGET_NOT_FOUND" as const };
 
-      // Pastikan target konten terakhir dapat discroll ke posisi di atas sticky bar (tidak tertutup permanen)
       targetEl.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
 
       const targetRect = targetEl.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
 
-      // Kumpulkan boundary dari semua sticky overlay yang terlihat di bagian bawah layar
       let highestStickyTop = viewportHeight;
       const visibleStickies: { selector: string; top: number; bottom: number }[] = [];
 
@@ -396,11 +550,11 @@ export async function assertContentNotObscured(
       const coveredPixels = isObscured ? Math.round(targetRect.bottom - highestStickyTop) : 0;
 
       return {
-        status: "CHECKED",
+        status: "CHECKED" as const,
         isObscured,
         coveredPixels,
-        targetBottom: targetRect.bottom,
-        highestStickyTop,
+        targetBottom: Math.round(targetRect.bottom),
+        highestStickyTop: Math.round(highestStickyTop),
         visibleStickies,
       };
     },
@@ -408,40 +562,87 @@ export async function assertContentNotObscured(
     stickySelectors
   );
 
-  if (result.status === "TARGET_NOT_FOUND") {
-    return {
-      passed: true,
-      category: "Content Visibility Above Sticky",
-      page: pageName,
-      viewport,
-      details: `Target selector ${targetSelector} tidak ditemukan pada halaman ini.`,
-    };
-  }
-
-  const passed = !result.isObscured;
-  const details = passed
-    ? `Konten terakhir terlihat penuh: target bottom (${result.targetBottom}px) berada di atas sticky area (${result.highestStickyTop}px).`
-    : `Konten terakhir tertutup oleh sticky area sebesar ${result.coveredPixels}px (target bottom ${result.targetBottom}px > sticky top ${result.highestStickyTop}px).`;
+  const evaluation = evaluateContentNotObscured({
+    status: result.status,
+    targetSelector,
+    isObscured: "isObscured" in result ? result.isObscured : false,
+    coveredPixels: "coveredPixels" in result ? result.coveredPixels : 0,
+    targetBottom: "targetBottom" in result ? result.targetBottom : 0,
+    highestStickyTop: "highestStickyTop" in result ? result.highestStickyTop : 0,
+    required: isRequired,
+  });
 
   return {
-    passed,
+    passed: evaluation.passed,
     category: "Content Visibility Above Sticky",
     page: pageName,
     viewport,
-    details,
-    finding: !passed
+    details: evaluation.details,
+    finding: !evaluation.passed
       ? {
           severity: "P1",
           page: pageName,
           viewport,
           component: targetSelector,
-          issue: `Konten terakhir tertutup oleh sticky area sebesar ${result.coveredPixels}px saat scroll di bawah`,
-          measurement: `targetBottom=${result.targetBottom}px, highestStickyTop=${result.highestStickyTop}px`,
+          issue: evaluation.issue || evaluation.details,
+          measurement:
+            "targetBottom" in result
+              ? `targetBottom=${result.targetBottom}px, highestStickyTop=${result.highestStickyTop}px`
+              : evaluation.details,
           recommendation:
-            "Tingkatkan padding-bottom pada container daftar (misal pb-36) agar item terakhir dapat diakses penuh.",
+            "Pastikan elemen target ada dan tingkatkan padding-bottom pada container daftar (misal pb-36) agar item terakhir dapat diakses penuh.",
         }
       : undefined,
   };
+}
+
+/**
+ * Pure helper untuk evaluasi touch target item secara individual.
+ */
+export function evaluateTouchTargetItem(item: {
+  selector: string;
+  label: string;
+  status: "NOT_FOUND" | "HIDDEN" | "MEASURED";
+  width: number;
+  height: number;
+  minDim: number;
+  required?: boolean;
+}): { passed: boolean; failureType?: "missing" | "hidden" | "failed-size"; reason?: string } {
+  const isRequired = item.required !== false;
+
+  if (item.status === "NOT_FOUND") {
+    if (isRequired) {
+      return {
+        passed: false,
+        failureType: "missing",
+        reason: `required touch target "${item.label}" (${item.selector}) was not found`,
+      };
+    }
+    return { passed: true };
+  }
+
+  if (item.status === "HIDDEN") {
+    if (isRequired) {
+      return {
+        passed: false,
+        failureType: "hidden",
+        reason: `required touch target "${item.label}" (${item.selector}) is hidden or 0-sized`,
+      };
+    }
+    return { passed: true };
+  }
+
+  // Toleransi subpixel 1px
+  const sizeOk = item.width >= item.minDim - 1 && item.height >= item.minDim - 1;
+  if (!sizeOk) {
+    return {
+      passed: false,
+      failureType: "failed-size",
+      reason: `touch target "${item.label}" (${item.selector}) berukuran ${item.width}x${item.height}px (< ${item.minDim}x${item.minDim}px)`,
+    };
+  }
+
+  return { passed: true };
 }
 
 /**
@@ -451,16 +652,17 @@ export async function assertTouchTargets(
   page: Page,
   pageName: string,
   viewport: string,
-  targets: Array<{ selector: string; label: string }>,
+  targets: TouchTargetItem[],
   minDimension = 44
 ): Promise<AssertionResult> {
   const measurements = await page.evaluate(
-    (targetList, minDim) => {
+    (targetList) => {
       return targetList.map((t) => {
         const el = document.querySelector(t.selector);
-        if (!el) return { ...t, status: "NOT_FOUND", passed: true, width: 0, height: 0 };
+        if (!el) {
+          return { ...t, status: "NOT_FOUND" as const, width: 0, height: 0 };
+        }
 
-        // Cari parent clickable jika target adalah SVG / icon glyph
         let clickableEl: Element = el;
         if (el.tagName.toLowerCase() === "svg" || el.tagName.toLowerCase() === "path") {
           const parentBtn = el.closest("button, a, [role='button']");
@@ -469,32 +671,56 @@ export async function assertTouchTargets(
 
         const rect = clickableEl.getBoundingClientRect();
         const style = window.getComputedStyle(clickableEl);
-        if (style.display === "none" || style.visibility === "hidden" || rect.width === 0) {
-          return { ...t, status: "HIDDEN", passed: true, width: 0, height: 0 };
+        if (style.display === "none" || style.visibility === "hidden" || rect.width === 0 || rect.height === 0) {
+          return { ...t, status: "HIDDEN" as const, width: 0, height: 0 };
         }
-
-        // Toleransi subpixel 1px
-        const passed = rect.width >= minDim - 1 && rect.height >= minDim - 1;
 
         return {
           ...t,
-          status: "MEASURED",
-          passed,
+          status: "MEASURED" as const,
           width: Math.round(rect.width),
           height: Math.round(rect.height),
         };
       });
     },
-    targets,
-    minDimension
+    targets
   );
 
-  const failedItems = measurements.filter((m) => m.status === "MEASURED" && !m.passed);
-  const passed = failedItems.length === 0;
+  let measuredCount = 0;
+  let missingCount = 0;
+  let hiddenCount = 0;
+  let failedSizeCount = 0;
+  const failureReasons: string[] = [];
+  const failedSelectors: string[] = [];
 
+  for (const m of measurements) {
+    if (m.status === "MEASURED") measuredCount++;
+
+    const evaluation = evaluateTouchTargetItem({
+      selector: m.selector,
+      label: m.label,
+      status: m.status,
+      width: m.width,
+      height: m.height,
+      minDim: minDimension,
+      required: m.required,
+    });
+
+    if (!evaluation.passed) {
+      if (evaluation.failureType === "missing") missingCount++;
+      else if (evaluation.failureType === "hidden") hiddenCount++;
+      else if (evaluation.failureType === "failed-size") failedSizeCount++;
+
+      if (evaluation.reason) failureReasons.push(evaluation.reason);
+      failedSelectors.push(m.selector);
+    }
+  }
+
+  const passed = failureReasons.length === 0;
+  const summary = `measured: ${measuredCount}, missing: ${missingCount}, hidden: ${hiddenCount}, failed-size: ${failedSizeCount}`;
   const details = passed
-    ? `Semua ${measurements.filter((m) => m.status === "MEASURED").length} target sentuh terukur memenuhi syarat minimal ${minDimension}x${minDimension}px.`
-    : `Ditemukan ${failedItems.length} kontrol dengan touch target di bawah standar ${minDimension}px: ${failedItems.map((f) => `${f.label} (${f.width}x${f.height}px)`).join(", ")}`;
+    ? `Seluruh target sentuh yang dievaluasi memenuhi kriteria (${summary}, standar: ${minDimension}x${minDimension}px).`
+    : `Touch target check FAILED (${summary}). Alasan: ${failureReasons.join("; ")}`;
 
   return {
     passed,
@@ -507,13 +733,74 @@ export async function assertTouchTargets(
           severity: "P2",
           page: pageName,
           viewport,
-          component: failedItems[0].selector,
-          issue: `Touch target kontrol "${failedItems[0].label}" di bawah ukuran minimum ${minDimension}x${minDimension}px`,
-          measurement: `${failedItems[0].width}x${failedItems[0].height}px (< ${minDimension}x${minDimension}px)`,
+          component: failedSelectors[0] || "interactive-controls",
+          issue: `Kontrol sentuh tidak memenuhi standar ukuran atau tidak ditemukan (${summary})`,
+          measurement: failureReasons[0] || summary,
           recommendation:
-            `Tingkatkan padding atau min-height/min-width pada elemen kontrol tombol agar mencapai setidaknya ${minDimension}x${minDimension}px.`,
+            `Pastikan tombol wajib ada, terlihat, dan memiliki ukuran sentuh minimal ${minDimension}x${minDimension}px.`,
         }
       : undefined,
+  };
+}
+
+/**
+ * Pure helper untuk evaluasi status dan integritas Mobile Bottom Navigation.
+ */
+export function evaluateMobileBottomNav(params: {
+  status: "NOT_VISIBLE" | "VISIBLE";
+  count: number;
+  isDuplicate?: boolean;
+  isOverflowing?: boolean;
+  clickableCount?: number;
+  rect?: DOMRectLike;
+  windowWidth?: number;
+  navSelector?: string;
+  required?: boolean;
+}): { passed: boolean; details: string; issue?: string } {
+  const isRequired = params.required !== false;
+
+  if (params.status === "NOT_VISIBLE" || params.count === 0) {
+    if (isRequired) {
+      return {
+        passed: false,
+        details: `[FAIL] Required mobile bottom nav "${params.navSelector || "nav"}" was not visible (visible instances = 0)`,
+        issue: "Mobile bottom navigation tidak ditemukan atau tersembunyi pada viewport mobile",
+      };
+    }
+    return {
+      passed: true,
+      details: "Optional mobile bottom nav tidak aktif di tampilan ini.",
+    };
+  }
+
+  if (params.count > 1 || params.isDuplicate) {
+    return {
+      passed: false,
+      details: `[FAIL] Terdeteksi ${params.count} instance bottom nav bersamaan!`,
+      issue: `Terdeteksi duplicate (${params.count}) bottom nav instances`,
+    };
+  }
+
+  if (params.isOverflowing) {
+    return {
+      passed: false,
+      details: `[FAIL] Bottom nav overflow di luar layar (right=${params.rect?.right}px > winWidth=${params.windowWidth}px)`,
+      issue: "Mobile bottom navigation mengalami overflow horizontal",
+    };
+  }
+
+  const clickable = params.clickableCount ?? 0;
+  if (clickable < 4) {
+    return {
+      passed: false,
+      details: `[FAIL] Hanya ${clickable} tombol navigasi yang aktif/terlihat (minimum 4).`,
+      issue: `Required controls hilang: hanya ${clickable} tombol navigasi aktif`,
+    };
+  }
+
+  return {
+    passed: true,
+    details: `Satu instance bottom nav aktif (${clickable} tombol, lebar ${params.rect?.width}px aman).`,
   };
 }
 
@@ -524,8 +811,11 @@ export async function assertMobileBottomNav(
   page: Page,
   pageName: string,
   viewport: string,
-  navSelector = 'nav[data-testid="mobile-bottom-nav"]'
+  navSelector = 'nav[data-testid="mobile-bottom-nav"]',
+  options?: MobileBottomNavOptions
 ): Promise<AssertionResult> {
+  const isRequired = options?.required !== false;
+
   const result = await page.evaluate((sel) => {
     const navs = Array.from(document.querySelectorAll(sel));
     const visibleNavs = navs.filter((n) => {
@@ -540,7 +830,7 @@ export async function assertMobileBottomNav(
     });
 
     if (visibleNavs.length === 0) {
-      return { status: "NOT_VISIBLE", count: 0 };
+      return { status: "NOT_VISIBLE" as const, count: 0 };
     }
 
     const nav = visibleNavs[0];
@@ -552,15 +842,23 @@ export async function assertMobileBottomNav(
     const buttons = Array.from(nav.querySelectorAll("button, a"));
     const clickableCount = buttons.filter((b) => {
       const bRect = b.getBoundingClientRect();
-      return bRect.width > 0 && bRect.height > 0;
+      const bStyle = window.getComputedStyle(b);
+      return (
+        bRect.width > 0 &&
+        bRect.height > 0 &&
+        bStyle.display !== "none" &&
+        bStyle.visibility !== "hidden"
+      );
     }).length;
 
     return {
-      status: "VISIBLE",
+      status: "VISIBLE" as const,
       count: visibleNavs.length,
       isDuplicate,
       isOverflowing,
       rect: {
+        top: rect.top,
+        bottom: rect.bottom,
         left: rect.left,
         right: rect.right,
         width: rect.width,
@@ -572,43 +870,113 @@ export async function assertMobileBottomNav(
     };
   }, navSelector);
 
-  if (result.status !== "VISIBLE") {
-    return {
-      passed: true,
-      category: "Mobile Bottom Nav",
-      page: pageName,
-      viewport,
-      details: `Mobile bottom nav tidak aktif di tampilan ini.`,
-    };
-  }
-
-  const clickableCount = result.clickableCount ?? 0;
-  const passed = !result.isDuplicate && !result.isOverflowing && clickableCount >= 4;
-  let issue = "";
-  if (result.isDuplicate) issue = `Terdeteksi ${result.count} instance bottom nav bersamaan!`;
-  else if (result.isOverflowing) issue = `Bottom nav overflow di luar layar (right=${result.rect?.right}px > winWidth=${result.windowWidth}px)`;
-  else if (clickableCount < 4) issue = `Hanya ${clickableCount} tombol navigasi yang aktif/terlihat.`;
+  const evaluation = evaluateMobileBottomNav({
+    status: result.status,
+    count: result.count,
+    isDuplicate: "isDuplicate" in result ? result.isDuplicate : false,
+    isOverflowing: "isOverflowing" in result ? result.isOverflowing : false,
+    clickableCount: "clickableCount" in result ? result.clickableCount : 0,
+    rect: "rect" in result ? result.rect : undefined,
+    windowWidth: "windowWidth" in result ? result.windowWidth : undefined,
+    navSelector,
+    required: isRequired,
+  });
 
   return {
-    passed,
+    passed: evaluation.passed,
     category: "Mobile Bottom Nav",
     page: pageName,
     viewport,
-    details: passed
-      ? `Satu instance bottom nav aktif (${clickableCount} tombol, lebar ${result.rect?.width}px aman).`
-      : issue,
-    finding: !passed
+    details: evaluation.details,
+    finding: !evaluation.passed
       ? {
           severity: "P1",
           page: pageName,
           viewport,
           component: navSelector,
-          issue,
-          measurement: `instances=${result.count}, clickable=${result.clickableCount}, width=${result.rect?.width}px`,
+          issue: evaluation.issue || evaluation.details,
+          measurement:
+            "rect" in result
+              ? `instances=${result.count}, clickable=${result.clickableCount}, width=${result.rect?.width}px`
+              : evaluation.details,
           recommendation:
             "Pastikan bottom navigation hanya dirender satu kali dan memiliki lebar w-full dengan inset-x-0.",
         }
       : undefined,
+  };
+}
+
+/**
+ * Pure helper untuk evaluasi header offset / scroll padding.
+ */
+export function evaluateHeaderOffset(params: {
+  status: "HEADER_NOT_FOUND" | "HEADING_NOT_FOUND" | "HEADER_NOT_STICKY" | "CHECKED";
+  headingSelector: string;
+  stickyHeaderSelector: string;
+  isUnderHeader?: boolean;
+  overlapPixels?: number;
+  headingTop?: number;
+  headerBottom?: number;
+  required?: boolean;
+  expectedSticky?: boolean;
+}): { passed: boolean; details: string; issue?: string } {
+  const isRequired = params.required !== false;
+  const isExpectedSticky = params.expectedSticky !== false;
+
+  if (params.status === "HEADER_NOT_FOUND") {
+    if (isRequired) {
+      return {
+        passed: false,
+        details: `[FAIL] Required sticky header "${params.stickyHeaderSelector}" was not found`,
+        issue: `Required header "${params.stickyHeaderSelector}" tidak ditemukan`,
+      };
+    }
+    return {
+      passed: true,
+      details: `Optional header "${params.stickyHeaderSelector}" tidak ditemukan. Pemeriksaan dilewati.`,
+    };
+  }
+
+  if (params.status === "HEADING_NOT_FOUND") {
+    if (isRequired) {
+      return {
+        passed: false,
+        details: `[FAIL] Required heading element "${params.headingSelector}" was not found outside header`,
+        issue: `Heading konten "${params.headingSelector}" tidak ditemukan`,
+      };
+    }
+    return {
+      passed: true,
+      details: `Optional heading "${params.headingSelector}" tidak ditemukan. Pemeriksaan dilewati.`,
+    };
+  }
+
+  if (params.status === "HEADER_NOT_STICKY") {
+    if (isRequired && isExpectedSticky) {
+      return {
+        passed: false,
+        details: `[FAIL] Header "${params.stickyHeaderSelector}" bukan sticky atau fixed`,
+        issue: `Posisi header "${params.stickyHeaderSelector}" bukan sticky atau fixed`,
+      };
+    }
+    return {
+      passed: true,
+      details: `Header tidak berposisi sticky (sesuai konfigurasi). Pemeriksaan offset dilewati.`,
+    };
+  }
+
+  if (params.isUnderHeader) {
+    const overlap = params.overlapPixels ?? 0;
+    return {
+      passed: false,
+      details: `Page heading tertutup sticky header sebesar ${overlap}px (heading top ${params.headingTop}px < header bottom ${params.headerBottom}px).`,
+      issue: `Judul halaman tertutup oleh sticky header sebesar ${overlap}px`,
+    };
+  }
+
+  return {
+    passed: true,
+    details: `Page heading (top: ${params.headingTop}px) tidak tertutup sticky header (bottom: ${params.headerBottom}px).`,
   };
 }
 
@@ -620,21 +988,23 @@ export async function assertHeaderOffset(
   pageName: string,
   viewport: string,
   headingSelector: string,
-  stickyHeaderSelector = "header"
+  stickyHeaderSelector = "header",
+  options?: HeaderOffsetOptions
 ): Promise<AssertionResult> {
+  const isRequired = options?.required !== false;
+  const isExpectedSticky = options?.expectedSticky !== false;
+
   const result = await page.evaluate(
     (headSel, stickySel) => {
       const header = document.querySelector(stickySel);
-      if (!header) return { status: "HEADER_NOT_FOUND" };
+      if (!header) return { status: "HEADER_NOT_FOUND" as const };
 
-      // Pastikan kontainer berada di posisi paling atas saat menguji header offset
       const scrollable = document.querySelector(".overflow-y-auto") || document.scrollingElement || document.documentElement;
       if (scrollable) {
         scrollable.scrollTop = 0;
       }
       window.scrollTo(0, 0);
 
-      // Cari elemen heading di dalam konten yang bukan merupakan bagian dari header itu sendiri
       const allHeadings = Array.from(document.querySelectorAll(headSel));
       const heading = allHeadings.find((h) => {
         if (header.contains(h)) return false;
@@ -643,7 +1013,7 @@ export async function assertHeaderOffset(
         return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
       });
 
-      if (!heading) return { status: "HEADING_NOT_FOUND" };
+      if (!heading) return { status: "HEADING_NOT_FOUND" as const };
 
       const headRect = heading.getBoundingClientRect();
       const headerRect = header.getBoundingClientRect();
@@ -653,15 +1023,14 @@ export async function assertHeaderOffset(
         window.getComputedStyle(header).position === "fixed";
 
       if (!isHeaderSticky) {
-        return { status: "HEADER_NOT_STICKY" };
+        return { status: "HEADER_NOT_STICKY" as const };
       }
 
-      // Toleransi 2px
       const isUnderHeader = headRect.top < headerRect.bottom - 2;
       const overlapPixels = isUnderHeader ? Math.round(headerRect.bottom - headRect.top) : 0;
 
       return {
-        status: "CHECKED",
+        status: "CHECKED" as const,
         isUnderHeader,
         overlapPixels,
         headingTop: Math.round(headRect.top),
@@ -672,50 +1041,97 @@ export async function assertHeaderOffset(
     stickyHeaderSelector
   );
 
-  if (result.status !== "CHECKED") {
-    return {
-      passed: true,
-      category: "Header Offset",
-      page: pageName,
-      viewport,
-      details: `Pemeriksaan offset dilewati (status: ${result.status}).`,
-    };
-  }
-
-  const passed = !result.isUnderHeader;
-  const details = passed
-    ? `Page heading (top: ${result.headingTop}px) tidak tertutup sticky header (bottom: ${result.headerBottom}px).`
-    : `Page heading tertutup sticky header sebesar ${result.overlapPixels}px (heading top ${result.headingTop}px < header bottom ${result.headerBottom}px).`;
+  const evaluation = evaluateHeaderOffset({
+    status: result.status,
+    headingSelector,
+    stickyHeaderSelector,
+    isUnderHeader: "isUnderHeader" in result ? result.isUnderHeader : false,
+    overlapPixels: "overlapPixels" in result ? result.overlapPixels : 0,
+    headingTop: "headingTop" in result ? result.headingTop : 0,
+    headerBottom: "headerBottom" in result ? result.headerBottom : 0,
+    required: isRequired,
+    expectedSticky: isExpectedSticky,
+  });
 
   return {
-    passed,
+    passed: evaluation.passed,
     category: "Header Offset",
     page: pageName,
     viewport,
-    details,
-    finding: !passed
+    details: evaluation.details,
+    finding: !evaluation.passed
       ? {
           severity: "P1",
           page: pageName,
           viewport,
           component: headingSelector,
-          issue: `Judul halaman tertutup oleh sticky header sebesar ${result.overlapPixels}px`,
-          measurement: `headingTop=${result.headingTop}px, headerBottom=${result.headerBottom}px`,
+          issue: evaluation.issue || evaluation.details,
+          measurement:
+            "overlapPixels" in result
+              ? `headingTop=${result.headingTop}px, headerBottom=${result.headerBottom}px (overlap=${result.overlapPixels}px)`
+              : evaluation.details,
           recommendation:
-            "Tambahkan padding-top atau scroll-pt pada container konten utama agar elemen judul tidak tenggelam di bawah header.",
+            "Pastikan header dan heading wajib ada serta tambahkan padding-top atau scroll-pt pada container konten utama agar elemen judul tidak tenggelam di bawah header.",
         }
       : undefined,
   };
 }
 
 /**
- * 7. Assertion: Memastikan teks kritis (critical text) seperti heading utama tidak terpotong (clipped).
+ * Pure helper untuk evaluasi teks kritis (clipping / missing / hidden).
+ */
+export function evaluateCriticalTextItem(item: {
+  selector: string;
+  label: string;
+  status: "NOT_FOUND" | "HIDDEN" | "MEASURED";
+  diff: number;
+  scrollWidth: number;
+  clientWidth: number;
+  required?: boolean;
+}): { passed: boolean; failureType?: "missing" | "hidden" | "clipped"; reason?: string } {
+  const isRequired = item.required !== false;
+
+  if (item.status === "NOT_FOUND") {
+    if (isRequired) {
+      return {
+        passed: false,
+        failureType: "missing",
+        reason: `required critical text "${item.label}" (${item.selector}) was not found`,
+      };
+    }
+    return { passed: true };
+  }
+
+  if (item.status === "HIDDEN") {
+    if (isRequired) {
+      return {
+        passed: false,
+        failureType: "hidden",
+        reason: `required critical text "${item.label}" (${item.selector}) is hidden or has 0 dimensions`,
+      };
+    }
+    return { passed: true };
+  }
+
+  if (item.diff > 1) {
+    return {
+      passed: false,
+      failureType: "clipped",
+      reason: `critical text "${item.label}" (${item.selector}) clipped horizontally by ${item.diff}px (scrollWidth=${item.scrollWidth}px > clientWidth=${item.clientWidth}px)`,
+    };
+  }
+
+  return { passed: true };
+}
+
+/**
+ * 7. Assertion: Memastikan teks kritis (critical text) seperti heading utama tidak terpotong (clipped) dan wajib ada.
  */
 export async function assertCriticalTextClipping(
   page: Page,
   pageName: string,
   viewport: string,
-  selectors: Array<{ selector: string; label: string }>
+  selectors: CriticalTextItem[]
 ): Promise<AssertionResult> {
   const results = await page.evaluate((targetSelectors) => {
     return targetSelectors.map((item) => {
@@ -723,8 +1139,7 @@ export async function assertCriticalTextClipping(
       if (!el) {
         return {
           ...item,
-          status: "NOT_FOUND",
-          passed: true,
+          status: "NOT_FOUND" as const,
           diff: 0,
           scrollWidth: 0,
           clientWidth: 0,
@@ -733,11 +1148,11 @@ export async function assertCriticalTextClipping(
       }
 
       const rect = el.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) {
+      const style = window.getComputedStyle(el);
+      if (rect.width <= 0 || rect.height <= 0 || style.display === "none" || style.visibility === "hidden") {
         return {
           ...item,
-          status: "HIDDEN",
-          passed: true,
+          status: "HIDDEN" as const,
           diff: 0,
           scrollWidth: 0,
           clientWidth: 0,
@@ -745,14 +1160,11 @@ export async function assertCriticalTextClipping(
         };
       }
 
-      // Toleransi 1px
       const diff = el.scrollWidth - el.clientWidth;
-      const passed = diff <= 1;
 
       return {
         ...item,
-        status: "MEASURED",
-        passed,
+        status: "MEASURED" as const,
         diff,
         scrollWidth: el.scrollWidth,
         clientWidth: el.clientWidth,
@@ -761,12 +1173,30 @@ export async function assertCriticalTextClipping(
     });
   }, selectors);
 
-  const clipped = results.filter((r) => r.status === "MEASURED" && !r.passed);
-  const passed = clipped.length === 0;
+  const failureReasons: string[] = [];
+  const failedSelectors: string[] = [];
 
+  for (const r of results) {
+    const evaluation = evaluateCriticalTextItem({
+      selector: r.selector,
+      label: r.label,
+      status: r.status,
+      diff: r.diff,
+      scrollWidth: r.scrollWidth,
+      clientWidth: r.clientWidth,
+      required: r.required,
+    });
+
+    if (!evaluation.passed) {
+      if (evaluation.reason) failureReasons.push(evaluation.reason);
+      failedSelectors.push(r.selector);
+    }
+  }
+
+  const passed = failureReasons.length === 0;
   const details = passed
-    ? `Seluruh ${results.filter((r) => r.status === "MEASURED").length} elemen teks kritis terbaca tanpa clipping.`
-    : `Ditemukan ${clipped.length} teks kritis terpotong: ${clipped.map((c) => `"${c.label}" (${c.diff}px overflow)`).join(", ")}`;
+    ? `Seluruh ${results.filter((r) => r.status === "MEASURED").length} elemen teks kritis terukur dan terbaca tanpa clipping.`
+    : `Critical text check FAILED: ${failureReasons.join("; ")}`;
 
   return {
     passed,
@@ -779,15 +1209,16 @@ export async function assertCriticalTextClipping(
           severity: "P2",
           page: pageName,
           viewport,
-          component: clipped[0].selector,
-          issue: `Teks kritis "${clipped[0].label}" terpotong secara horizontal`,
-          measurement: `scrollWidth=${clipped[0].scrollWidth}px > clientWidth=${clipped[0].clientWidth}px (+${clipped[0].diff}px)`,
+          component: failedSelectors[0] || "critical-text",
+          issue: `Teks kritis gagal verifikasi layout (${failureReasons[0]})`,
+          measurement: failureReasons.join("; "),
           recommendation:
-            "Gunakan font sizing yang adaptif, break-words, atau sesuaikan padding agar teks penting tidak terpotong.",
+            "Pastikan elemen teks kritis wajib ada dan gunakan font sizing yang adaptif, break-words, atau sesuaikan padding agar teks penting tidak terpotong.",
         }
       : undefined,
   };
 }
+
 
 /**
  * Memformat daftar temuan visual menjadi tabel Markdown.

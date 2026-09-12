@@ -10,6 +10,12 @@ import {
   formatFindingsTable,
   VisualFinding,
   DOMRectLike,
+  evaluateStickyCollision,
+  evaluateContentNotObscured,
+  evaluateTouchTargetItem,
+  evaluateMobileBottomNav,
+  evaluateHeaderOffset,
+  evaluateCriticalTextItem,
 } from "./helpers/qa-layout-assertions";
 import { formatWitaDateIndonesian } from "../lib/wita-date";
 
@@ -166,4 +172,396 @@ describe("QA Layout Assertions Helper Suite", () => {
       assert.equal(formattedMidnight, "12 September 2026");
     });
   });
+
+  describe("6. Fail-Closed Semantics & Decision Logic Tests", () => {
+    describe("6.1 Sticky vs Bottom Nav Collision Semantics", () => {
+      it("harus FAIL jika elemen sticky bar wajib tidak ditemukan di DOM", () => {
+        const res = evaluateStickyCollision({
+          status: "STICKY_NOT_FOUND",
+          stickySelector: '[data-testid="floating-save-bar"]',
+          navSelector: 'nav[data-testid="mobile-bottom-nav"]',
+          required: true,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.details.includes("required element"), true);
+      });
+
+      it("harus FAIL jika elemen bottom nav wajib tidak ditemukan di DOM", () => {
+        const res = evaluateStickyCollision({
+          status: "NAV_NOT_FOUND",
+          stickySelector: '[data-testid="floating-save-bar"]',
+          navSelector: 'nav[data-testid="mobile-bottom-nav"]',
+          required: true,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.details.includes("required element"), true);
+      });
+
+      it("harus FAIL jika elemen wajib tersembunyi atau memiliki dimensi 0", () => {
+        const res = evaluateStickyCollision({
+          status: "NOT_BOTH_VISIBLE",
+          stickySelector: '[data-testid="floating-save-bar"]',
+          navSelector: 'nav[data-testid="mobile-bottom-nav"]',
+          isStickyVisible: false,
+          isNavVisible: true,
+          required: true,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.details.includes("is hidden or has 0 dimension"), true);
+      });
+
+      it("harus PASS jika elemen opsional tidak ditemukan (pemeriksaan dilewati)", () => {
+        const res = evaluateStickyCollision({
+          status: "STICKY_NOT_FOUND",
+          stickySelector: ".optional-sticky",
+          navSelector: "nav",
+          required: false,
+        });
+        assert.equal(res.passed, true);
+        assert.equal(res.details.includes("Pemeriksaan dilewati"), true);
+      });
+
+      it("harus FAIL jika terjadi overlap nyata antara sticky bar dan bottom nav", () => {
+        const res = evaluateStickyCollision({
+          status: "CHECKED",
+          stickySelector: "sticky",
+          navSelector: "nav",
+          overlap: true,
+          overlapHeight: 18,
+          stickyRect: { top: 700, bottom: 768, left: 0, right: 360, width: 360, height: 68 },
+          navRect: { top: 750, bottom: 800, left: 0, right: 360, width: 360, height: 50 },
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.details.includes("18px"), true);
+      });
+
+      it("harus PASS jika sticky bar berada aman di atas bottom nav", () => {
+        const res = evaluateStickyCollision({
+          status: "CHECKED",
+          stickySelector: "sticky",
+          navSelector: "nav",
+          overlap: false,
+          overlapHeight: 0,
+          stickyRect: { top: 680, bottom: 745, left: 0, right: 360, width: 360, height: 65 },
+          navRect: { top: 750, bottom: 800, left: 0, right: 360, width: 360, height: 50 },
+        });
+        assert.equal(res.passed, true);
+      });
+    });
+
+    describe("6.2 Content Visibility Above Sticky Semantics", () => {
+      it("harus FAIL jika target konten wajib tidak ditemukan di DOM", () => {
+        const res = evaluateContentNotObscured({
+          status: "TARGET_NOT_FOUND",
+          targetSelector: '[data-testid="santri-presensi-list"] > *:last-child',
+          required: true,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.details.includes("required target element"), true);
+      });
+
+      it("harus PASS jika target konten opsional tidak ditemukan", () => {
+        const res = evaluateContentNotObscured({
+          status: "TARGET_NOT_FOUND",
+          targetSelector: ".optional-last-item",
+          required: false,
+        });
+        assert.equal(res.passed, true);
+      });
+
+      it("harus FAIL jika baris terakhir tertutup oleh sticky area", () => {
+        const res = evaluateContentNotObscured({
+          status: "CHECKED",
+          targetSelector: "last-item",
+          isObscured: true,
+          coveredPixels: 24,
+          targetBottom: 780,
+          highestStickyTop: 756,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.details.includes("24px"), true);
+      });
+
+      it("harus PASS jika baris terakhir terlihat penuh di atas sticky area", () => {
+        const res = evaluateContentNotObscured({
+          status: "CHECKED",
+          targetSelector: "last-item",
+          isObscured: false,
+          coveredPixels: 0,
+          targetBottom: 720,
+          highestStickyTop: 740,
+        });
+        assert.equal(res.passed, true);
+      });
+    });
+
+    describe("6.3 Touch Target Item Semantics", () => {
+      it("harus FAIL jika required touch target tidak ditemukan (missing)", () => {
+        const res = evaluateTouchTargetItem({
+          selector: 'button[data-testid="primary-action"]',
+          label: "Primary Action",
+          status: "NOT_FOUND",
+          width: 0,
+          height: 0,
+          minDim: 44,
+          required: true,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.failureType, "missing");
+        assert.equal(res.reason?.includes("was not found"), true);
+      });
+
+      it("harus FAIL jika required touch target tersembunyi / hidden", () => {
+        const res = evaluateTouchTargetItem({
+          selector: 'button[data-testid="modal-close"]',
+          label: "Close Modal",
+          status: "HIDDEN",
+          width: 0,
+          height: 0,
+          minDim: 44,
+          required: true,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.failureType, "hidden");
+      });
+
+      it("harus PASS jika optional touch target tidak ditemukan atau hidden", () => {
+        const missingRes = evaluateTouchTargetItem({
+          selector: ".optional-filter",
+          label: "Optional Filter",
+          status: "NOT_FOUND",
+          width: 0,
+          height: 0,
+          minDim: 44,
+          required: false,
+        });
+        assert.equal(missingRes.passed, true);
+
+        const hiddenRes = evaluateTouchTargetItem({
+          selector: ".optional-filter",
+          label: "Optional Filter",
+          status: "HIDDEN",
+          width: 0,
+          height: 0,
+          minDim: 44,
+          required: false,
+        });
+        assert.equal(hiddenRes.passed, true);
+      });
+
+      it("harus FAIL jika touch target berukuran di bawah standar minimum", () => {
+        const res = evaluateTouchTargetItem({
+          selector: "button.small-icon",
+          label: "Small Icon",
+          status: "MEASURED",
+          width: 32,
+          height: 32,
+          minDim: 44,
+          required: true,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.failureType, "failed-size");
+      });
+
+      it("harus PASS jika touch target memenuhi standar ukuran (>= 44x44 px)", () => {
+        const res = evaluateTouchTargetItem({
+          selector: "button.valid",
+          label: "Valid Button",
+          status: "MEASURED",
+          width: 44,
+          height: 44,
+          minDim: 44,
+          required: true,
+        });
+        assert.equal(res.passed, true);
+      });
+    });
+
+    describe("6.4 Mobile Bottom Nav Semantics", () => {
+      it("harus FAIL jika required mobile bottom nav tidak terlihat / absent", () => {
+        const res = evaluateMobileBottomNav({
+          status: "NOT_VISIBLE",
+          count: 0,
+          required: true,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.details.includes("was not visible"), true);
+      });
+
+      it("harus FAIL jika terdeteksi duplicate bottom nav instances", () => {
+        const res = evaluateMobileBottomNav({
+          status: "VISIBLE",
+          count: 2,
+          isDuplicate: true,
+          clickableCount: 8,
+          required: true,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.details.includes("2 instance bottom nav bersamaan"), true);
+      });
+
+      it("harus FAIL jika bottom nav overflow secara horizontal", () => {
+        const res = evaluateMobileBottomNav({
+          status: "VISIBLE",
+          count: 1,
+          isOverflowing: true,
+          clickableCount: 5,
+          rect: { top: 750, bottom: 800, left: 0, right: 380, width: 380, height: 50 },
+          windowWidth: 360,
+          required: true,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.details.includes("overflow"), true);
+      });
+
+      it("harus FAIL jika required controls kurang dari 4 tombol navigasi", () => {
+        const res = evaluateMobileBottomNav({
+          status: "VISIBLE",
+          count: 1,
+          clickableCount: 3,
+          required: true,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.details.includes("Hanya 3 tombol navigasi"), true);
+      });
+
+      it("harus PASS jika single instance bottom nav aktif dengan kontrol lengkap", () => {
+        const res = evaluateMobileBottomNav({
+          status: "VISIBLE",
+          count: 1,
+          clickableCount: 5,
+          isDuplicate: false,
+          isOverflowing: false,
+          rect: { top: 750, bottom: 800, left: 0, right: 360, width: 360, height: 50 },
+          windowWidth: 360,
+          required: true,
+        });
+        assert.equal(res.passed, true);
+      });
+    });
+
+    describe("6.5 Header Offset Semantics", () => {
+      it("harus FAIL jika sticky header wajib tidak ditemukan", () => {
+        const res = evaluateHeaderOffset({
+          status: "HEADER_NOT_FOUND",
+          headingSelector: "h1",
+          stickyHeaderSelector: "header",
+          required: true,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.details.includes("was not found"), true);
+      });
+
+      it("harus FAIL jika heading konten wajib tidak ditemukan", () => {
+        const res = evaluateHeaderOffset({
+          status: "HEADING_NOT_FOUND",
+          headingSelector: "h1, h2",
+          stickyHeaderSelector: "header",
+          required: true,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.details.includes("was not found outside header"), true);
+      });
+
+      it("harus FAIL jika header wajib tidak memiliki posisi sticky/fixed", () => {
+        const res = evaluateHeaderOffset({
+          status: "HEADER_NOT_STICKY",
+          headingSelector: "h1",
+          stickyHeaderSelector: "header",
+          required: true,
+          expectedSticky: true,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.details.includes("bukan sticky atau fixed"), true);
+      });
+
+      it("harus FAIL jika judul konten tertutup oleh sticky header", () => {
+        const res = evaluateHeaderOffset({
+          status: "CHECKED",
+          headingSelector: "h1",
+          stickyHeaderSelector: "header",
+          isUnderHeader: true,
+          overlapPixels: 15,
+          headingTop: 45,
+          headerBottom: 60,
+          required: true,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.details.includes("15px"), true);
+      });
+
+      it("harus PASS jika judul konten berada di bawah sticky header secara aman", () => {
+        const res = evaluateHeaderOffset({
+          status: "CHECKED",
+          headingSelector: "h1",
+          stickyHeaderSelector: "header",
+          isUnderHeader: false,
+          overlapPixels: 0,
+          headingTop: 72,
+          headerBottom: 60,
+          required: true,
+        });
+        assert.equal(res.passed, true);
+      });
+    });
+
+    describe("6.6 Critical Text Item Semantics", () => {
+      it("harus FAIL jika teks kritis wajib tidak ditemukan di DOM", () => {
+        const res = evaluateCriticalTextItem({
+          selector: "h1.page-title",
+          label: "Page Title",
+          status: "NOT_FOUND",
+          diff: 0,
+          scrollWidth: 0,
+          clientWidth: 0,
+          required: true,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.failureType, "missing");
+      });
+
+      it("harus FAIL jika teks kritis wajib tersembunyi / hidden", () => {
+        const res = evaluateCriticalTextItem({
+          selector: "h1.page-title",
+          label: "Page Title",
+          status: "HIDDEN",
+          diff: 0,
+          scrollWidth: 0,
+          clientWidth: 0,
+          required: true,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.failureType, "hidden");
+      });
+
+      it("harus FAIL jika teks kritis terpotong secara horizontal (scrollWidth > clientWidth)", () => {
+        const res = evaluateCriticalTextItem({
+          selector: "h1.page-title",
+          label: "Page Title",
+          status: "MEASURED",
+          diff: 12,
+          scrollWidth: 320,
+          clientWidth: 308,
+          required: true,
+        });
+        assert.equal(res.passed, false);
+        assert.equal(res.failureType, "clipped");
+        assert.equal(res.reason?.includes("12px"), true);
+      });
+
+      it("harus PASS jika teks kritis terbaca utuh tanpa clipping", () => {
+        const res = evaluateCriticalTextItem({
+          selector: "h1.page-title",
+          label: "Page Title",
+          status: "MEASURED",
+          diff: 0,
+          scrollWidth: 280,
+          clientWidth: 280,
+          required: true,
+        });
+        assert.equal(res.passed, true);
+      });
+    });
+  });
 });
+

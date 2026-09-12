@@ -1,4 +1,4 @@
-import puppeteer, { Browser, Page } from "puppeteer-core";
+import puppeteer, { Browser, Page, ElementHandle } from "puppeteer-core";
 import { spawn, ChildProcess } from "child_process";
 import fs from "fs";
 import path from "path";
@@ -38,6 +38,41 @@ export interface QARunnerSummary {
   failedChecks: number;
   findings: VisualFinding[];
   screenshotsCaptured: string[];
+}
+
+/**
+ * Helper fail-closed untuk memvalidasi keberadaan kontrol navigasi wajib.
+ * Merekam kegagalan eksplisit jika kontrol tidak ditemukan di DOM (tidak ada silent skip).
+ */
+async function requireControl(
+  page: Page,
+  selector: string,
+  label: string,
+  pageName: string,
+  viewport: string,
+  recordAssertion: (result: AssertionResult) => void
+): Promise<ElementHandle<Element> | null> {
+  const el = await page.$(selector);
+  if (!el) {
+    recordAssertion({
+      passed: false,
+      category: "Required Navigation Control",
+      page: pageName,
+      viewport,
+      details: `[FAIL] ${pageName} ${viewport}: required control "${label}" (${selector}) was not found`,
+      finding: {
+        severity: "P1",
+        page: pageName,
+        viewport,
+        component: selector,
+        issue: `Required navigation control "${label}" tidak ditemukan di DOM`,
+        measurement: `document.querySelector('${selector}') === null`,
+        recommendation: `Pastikan kontrol navigasi "${label}" tersedia dengan selector "${selector}".`,
+      },
+    });
+    return null;
+  }
+  return el;
 }
 
 async function waitForServerReady(url: string, timeoutMs = 45000): Promise<boolean> {
@@ -185,8 +220,8 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
       recordAssertion(await assertNoHorizontalOverflow(page, "Beranda", vp.name));
       recordAssertion(
         await assertCriticalTextClipping(page, "Beranda", vp.name, [
-          { selector: "h1, h2", label: "Judul Beranda" },
-          { selector: "[data-testid=\"stat-card-title\"]", label: "Judul StatCard" },
+          { selector: "h1, h2", label: "Judul Beranda", required: true },
+          { selector: "[data-testid=\"stat-card-title\"]", label: "Judul StatCard", required: false },
         ])
       );
       const capBeranda = await safeCapture(page, `qa_beranda_${vp.name}.png`, {
@@ -197,14 +232,21 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
       if (capBeranda) capturedFiles.push(capBeranda);
 
       // 2. Navigasi ke Tahfizh
-      const navTahfizh = await page.$('button[data-testid="nav-tahfizh"]');
+      const navTahfizh = await requireControl(
+        page,
+        'button[data-testid="nav-tahfizh"]',
+        "Navigasi Desktop Tahfizh",
+        "Tahfizh Desktop",
+        vp.name,
+        recordAssertion
+      );
       if (navTahfizh) {
         await navTahfizh.click();
         await new Promise((r) => setTimeout(r, 600));
         recordAssertion(await assertNoHorizontalOverflow(page, "Tahfizh", vp.name));
         recordAssertion(
           await assertCriticalTextClipping(page, "Tahfizh", vp.name, [
-            { selector: "h2, h3", label: "Judul Modul Tahfizh" },
+            { selector: "h1, h2, h3", label: "Judul Modul Tahfizh", required: true },
           ])
         );
         const capTahfizh = await safeCapture(page, `qa_tahfizh_${vp.name}.png`, {
@@ -216,11 +258,23 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
       }
 
       // 3. Navigasi ke Data Santri
-      const navSantri = await page.$('button[data-testid="nav-data_santri"]');
+      const navSantri = await requireControl(
+        page,
+        'button[data-testid="nav-data_santri"]',
+        "Navigasi Desktop Data Santri",
+        "Data Santri Desktop",
+        vp.name,
+        recordAssertion
+      );
       if (navSantri) {
         await navSantri.click();
         await new Promise((r) => setTimeout(r, 600));
         recordAssertion(await assertNoHorizontalOverflow(page, "Data Santri", vp.name));
+        recordAssertion(
+          await assertCriticalTextClipping(page, "Data Santri", vp.name, [
+            { selector: "h1, h2, h3", label: "Judul Master Data Santri", required: true },
+          ])
+        );
         const capSantri = await safeCapture(page, `qa_data_santri_${vp.name}.png`, {
           capture: options.captureScreenshots,
           artifactDir,
@@ -230,7 +284,14 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
       }
 
       // 4. Navigasi ke Akademik
-      const navAkademik = await page.$('button[data-testid="nav-akademik"]');
+      const navAkademik = await requireControl(
+        page,
+        'button[data-testid="nav-akademik"]',
+        "Navigasi Desktop Akademik",
+        "Akademik Desktop",
+        vp.name,
+        recordAssertion
+      );
       if (navAkademik) {
         await navAkademik.click();
         await new Promise((r) => setTimeout(r, 600));
@@ -245,13 +306,27 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
         if (capAkademikEmpty) capturedFiles.push(capAkademikEmpty);
 
         // Subtab Rapor Santri (Pratinjau dengan Data Rapor Riil)
-        const subTabRapor = await page.$('button[data-testid="subtab-rapor"]');
+        const subTabRapor = await requireControl(
+          page,
+          'button[data-testid="subtab-rapor"]',
+          "Subtab Rapor Santri",
+          "Akademik Desktop",
+          vp.name,
+          recordAssertion
+        );
         if (subTabRapor) {
           await subTabRapor.click();
           await new Promise((r) => setTimeout(r, 600));
 
           // Pilih santri stress test
-          const selectSantri = await page.$('select[data-testid="select-santri-rapor"]');
+          const selectSantri = await requireControl(
+            page,
+            'select[data-testid="select-santri-rapor"]',
+            "Selector Santri Rapor",
+            "Akademik Desktop",
+            vp.name,
+            recordAssertion
+          );
           if (selectSantri) {
             await page.select('select[data-testid="select-santri-rapor"]', RAPOR_STRESS_FIXTURES.SANTRI_NIS);
             await new Promise((r) => setTimeout(r, 600));
@@ -260,7 +335,7 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
           recordAssertion(await assertNoHorizontalOverflow(page, "Akademik (Rapor Data)", vp.name));
           recordAssertion(
             await assertCriticalTextClipping(page, "Akademik (Rapor Data)", vp.name, [
-              { selector: "h3, h4", label: "Judul Rapor & Mata Pelajaran" },
+              { selector: "h3, h4", label: "Judul Rapor & Mata Pelajaran", required: true },
             ])
           );
 
@@ -273,7 +348,14 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
             if (capRaporData) capturedFiles.push(capRaporData);
 
             // Buka Modal Cetak Rapor
-            const btnCetakModal = await page.$('button[data-testid="btn-cetak-rapor-modal"]');
+            const btnCetakModal = await requireControl(
+              page,
+              'button[data-testid="btn-cetak-rapor-modal"]',
+              "Tombol Cetak Rapor Modal",
+              "Modal Cetak Rapor Desktop",
+              vp.name,
+              recordAssertion
+            );
             if (btnCetakModal) {
               await btnCetakModal.click();
               await new Promise((r) => setTimeout(r, 600));
@@ -288,7 +370,14 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
               if (capPrintModal) capturedFiles.push(capPrintModal);
 
               // Tutup modal
-              const btnClose = await page.$('button[data-testid="btn-close-print-modal"]');
+              const btnClose = await requireControl(
+                page,
+                'button[data-testid="btn-close-print-modal"]',
+                "Tombol Tutup Modal Cetak Rapor",
+                "Modal Cetak Rapor Desktop",
+                vp.name,
+                recordAssertion
+              );
               if (btnClose) {
                 await btnClose.click();
                 await new Promise((r) => setTimeout(r, 400));
@@ -299,7 +388,14 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
       }
 
       // Kembalikan ke Beranda
-      const navBeranda = await page.$('button[data-testid="nav-beranda"]');
+      const navBeranda = await requireControl(
+        page,
+        'button[data-testid="nav-beranda"]',
+        "Navigasi Beranda",
+        "Beranda Desktop",
+        vp.name,
+        recordAssertion
+      );
       if (navBeranda) await navBeranda.click();
       await new Promise((r) => setTimeout(r, 400));
     }
@@ -320,22 +416,29 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
       await new Promise((r) => setTimeout(r, 400));
 
       // 1. Beranda Mobile
-      const navBerandaMobile = await page.$('button[data-testid="mobile-nav-beranda"]');
+      const navBerandaMobile = await requireControl(
+        page,
+        'button[data-testid="mobile-nav-beranda"]',
+        "Navigasi Mobile Beranda",
+        "Beranda Mobile",
+        vp.name,
+        recordAssertion
+      );
       if (navBerandaMobile) await navBerandaMobile.click();
       await new Promise((r) => setTimeout(r, 500));
 
       recordAssertion(await assertNoHorizontalOverflow(page, "Beranda Mobile", vp.name));
-      recordAssertion(await assertMobileBottomNav(page, "Beranda Mobile", vp.name));
+      recordAssertion(await assertMobileBottomNav(page, "Beranda Mobile", vp.name, 'nav[data-testid="mobile-bottom-nav"]', { required: true }));
       recordAssertion(
         await assertTouchTargets(page, "Beranda Mobile", vp.name, [
-          { selector: 'button[data-testid="mobile-nav-beranda"]', label: "Tombol Nav Beranda" },
-          { selector: 'button[data-testid="mobile-nav-tahfizh"]', label: "Tombol Nav Tahfizh" },
-          { selector: 'button[data-testid="mobile-nav-presensi"]', label: "Tombol Nav Presensi" },
-          { selector: 'button[data-testid="mobile-nav-data_santri"]', label: "Tombol Nav Santri" },
+          { selector: 'button[data-testid="mobile-nav-beranda"]', label: "Tombol Nav Beranda", required: true },
+          { selector: 'button[data-testid="mobile-nav-tahfizh"]', label: "Tombol Nav Tahfizh", required: true },
+          { selector: 'button[data-testid="mobile-nav-presensi"]', label: "Tombol Nav Presensi", required: true },
+          { selector: 'button[data-testid="mobile-nav-data_santri"]', label: "Tombol Nav Santri", required: true },
         ])
       );
       recordAssertion(
-        await assertHeaderOffset(page, "Beranda Mobile", vp.name, "h1, h2", "header")
+        await assertHeaderOffset(page, "Beranda Mobile", vp.name, "h1, h2, h3", "header", { required: true })
       );
       const capBerandaMobile = await safeCapture(page, `qa_beranda_${vp.name}.png`, {
         capture: options.captureScreenshots,
@@ -345,21 +448,28 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
       if (capBerandaMobile) capturedFiles.push(capBerandaMobile);
 
       // 2. Tahfizh Mobile
-      const navTahfizhMobile = await page.$('button[data-testid="mobile-nav-tahfizh"]');
+      const navTahfizhMobile = await requireControl(
+        page,
+        'button[data-testid="mobile-nav-tahfizh"]',
+        "Navigasi Mobile Tahfizh",
+        "Tahfizh Mobile",
+        vp.name,
+        recordAssertion
+      );
       if (navTahfizhMobile) {
         await navTahfizhMobile.click();
         await new Promise((r) => setTimeout(r, 600));
 
         recordAssertion(await assertNoHorizontalOverflow(page, "Tahfizh Mobile", vp.name));
-        recordAssertion(await assertMobileBottomNav(page, "Tahfizh Mobile", vp.name));
+        recordAssertion(await assertMobileBottomNav(page, "Tahfizh Mobile", vp.name, 'nav[data-testid="mobile-bottom-nav"]', { required: true }));
         recordAssertion(
           await assertTouchTargets(page, "Tahfizh Mobile", vp.name, [
-            { selector: 'button[data-testid="tab-setoran"]', label: "Tab Input Setoran" },
-            { selector: 'button[data-testid="tab-mutabaah"]', label: "Tab Mutabaah" },
+            { selector: 'button[data-testid="tab-setoran"]', label: "Tab Setoran Harian", required: true },
+            { selector: 'button[data-testid="tab-laporan"]', label: "Tab Rekap Bulanan", required: true },
           ])
         );
         recordAssertion(
-          await assertHeaderOffset(page, "Tahfizh Mobile", vp.name, "h2, h3", "header")
+          await assertHeaderOffset(page, "Tahfizh Mobile", vp.name, "h1, h2, h3", "header", { required: true })
         );
         const capTahfizhMobile = await safeCapture(page, `qa_tahfizh_${vp.name}.png`, {
           capture: options.captureScreenshots,
@@ -370,36 +480,45 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
       }
 
       // 3. Presensi Mobile
-      const navPresensiMobile = await page.$('button[data-testid="mobile-nav-presensi"]');
+      const navPresensiMobile = await requireControl(
+        page,
+        'button[data-testid="mobile-nav-presensi"]',
+        "Navigasi Mobile Presensi",
+        "Presensi Mobile",
+        vp.name,
+        recordAssertion
+      );
       if (navPresensiMobile) {
         await navPresensiMobile.click();
         await new Promise((r) => setTimeout(r, 600));
 
         recordAssertion(await assertNoHorizontalOverflow(page, "Presensi Mobile", vp.name));
-        recordAssertion(await assertMobileBottomNav(page, "Presensi Mobile", vp.name));
+        recordAssertion(await assertMobileBottomNav(page, "Presensi Mobile", vp.name, 'nav[data-testid="mobile-bottom-nav"]', { required: true }));
         recordAssertion(
-          await assertHeaderOffset(page, "Presensi Mobile", vp.name, "h2, h3", "header")
+          await assertHeaderOffset(page, "Presensi Mobile", vp.name, "h1, h2, h3", "header", { required: true })
         );
 
-        // Pemeriksaan Khusus Presensi: Sticky Save Bar vs Bottom Nav Collision
+        // Pemeriksaan Khusus Presensi: Sticky Save Bar vs Bottom Nav Collision (REQUIRED)
         recordAssertion(
           await assertNoStickyCollision(
             page,
             "Presensi Mobile",
             vp.name,
             '[data-testid="floating-save-bar"]',
-            'nav[data-testid="mobile-bottom-nav"]'
+            'nav[data-testid="mobile-bottom-nav"]',
+            { required: true }
           )
         );
 
-        // Pemeriksaan Khusus Presensi: Konten Terakhir Tidak Tertutup Sticky Area
+        // Pemeriksaan Khusus Presensi: Konten Terakhir Tidak Tertutup Sticky Area (REQUIRED)
         recordAssertion(
           await assertContentNotObscured(
             page,
             "Presensi Mobile",
             vp.name,
             '[data-testid="santri-presensi-list"] > *:last-child',
-            ['[data-testid="floating-save-bar"]', 'nav[data-testid="mobile-bottom-nav"]']
+            ['[data-testid="floating-save-bar"]', 'nav[data-testid="mobile-bottom-nav"]'],
+            { required: true }
           )
         );
 
@@ -412,15 +531,22 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
       }
 
       // 4. Data Santri Mobile
-      const navSantriMobile = await page.$('button[data-testid="mobile-nav-data_santri"]');
+      const navSantriMobile = await requireControl(
+        page,
+        'button[data-testid="mobile-nav-data_santri"]',
+        "Navigasi Mobile Data Santri",
+        "Data Santri Mobile",
+        vp.name,
+        recordAssertion
+      );
       if (navSantriMobile) {
         await navSantriMobile.click();
         await new Promise((r) => setTimeout(r, 600));
 
         recordAssertion(await assertNoHorizontalOverflow(page, "Data Santri Mobile", vp.name));
-        recordAssertion(await assertMobileBottomNav(page, "Data Santri Mobile", vp.name));
+        recordAssertion(await assertMobileBottomNav(page, "Data Santri Mobile", vp.name, 'nav[data-testid="mobile-bottom-nav"]', { required: true }));
         recordAssertion(
-          await assertHeaderOffset(page, "Data Santri Mobile", vp.name, "h2, h3", "header")
+          await assertHeaderOffset(page, "Data Santri Mobile", vp.name, "h1, h2, h3", "header", { required: true })
         );
 
         const capSantriMobile = await safeCapture(page, `qa_data_santri_${vp.name}.png`, {
@@ -431,25 +557,59 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
         if (capSantriMobile) capturedFiles.push(capSantriMobile);
       }
 
-      // 5. Akademik Mobile (buka drawer menu "Lainnya" jika ada)
+      // 5. Akademik Mobile (buka drawer menu "Lainnya" jika navigasi langsung tidak ada)
       let navAkademikMobile = await page.$('button[data-testid="mobile-nav-akademik"]');
+      let accessedViaDrawer = false;
       if (!navAkademikMobile) {
         const moreBtn = await page.$('button[aria-label="Buka Menu Tambahan"], nav button:last-child');
         if (moreBtn) {
           await moreBtn.click();
           await new Promise((r) => setTimeout(r, 400));
           navAkademikMobile = await page.$('button[data-testid="mobile-nav-akademik"]');
+          accessedViaDrawer = !!navAkademikMobile;
         }
       }
 
-      if (navAkademikMobile) {
+      if (!navAkademikMobile) {
+        recordAssertion({
+          passed: false,
+          category: "Required Navigation Control",
+          page: "Akademik Mobile",
+          viewport: vp.name,
+          details: `[FAIL] Akademik Mobile ${vp.name}: Tidak ditemukan jalur navigasi yang valid menuju modul Akademik (gagal langsung maupun via menu Lainnya).`,
+          finding: {
+            severity: "P1",
+            page: "Akademik Mobile",
+            viewport: vp.name,
+            component: 'button[data-testid="mobile-nav-akademik"]',
+            issue: "Jalur navigasi menuju modul Akademik tidak ditemukan di bottom nav maupun menu tambahan",
+            measurement: "navAkademikMobile === null",
+            recommendation: "Pastikan item navigasi Akademik tersedia secara langsung atau melalui drawer menu Lainnya.",
+          },
+        });
+      } else {
+        recordAssertion({
+          passed: true,
+          category: "Required Navigation Control",
+          page: "Akademik Mobile",
+          viewport: vp.name,
+          details: `Jalur valid menuju modul Akademik berhasil ditemukan (${accessedViaDrawer ? "melalui drawer menu Lainnya" : "navigasi langsung"}).`,
+        });
+
         await navAkademikMobile.click();
         await new Promise((r) => setTimeout(r, 600));
 
         recordAssertion(await assertNoHorizontalOverflow(page, "Akademik Mobile", vp.name));
-        recordAssertion(await assertMobileBottomNav(page, "Akademik Mobile", vp.name));
+        recordAssertion(await assertMobileBottomNav(page, "Akademik Mobile", vp.name, 'nav[data-testid="mobile-bottom-nav"]', { required: true }));
         recordAssertion(
-          await assertHeaderOffset(page, "Akademik Mobile", vp.name, "h2, h3", "header")
+          await assertTouchTargets(page, "Akademik Mobile", vp.name, [
+            { selector: 'button[data-testid="subtab-input_nilai"]', label: "Subtab Input Nilai", required: true },
+            { selector: 'button[data-testid="subtab-rapor"]', label: "Subtab Rapor Santri", required: true },
+            { selector: 'button[data-testid="subtab-kepesantrenan"]', label: "Subtab Kepesantrenan", required: true },
+          ])
+        );
+        recordAssertion(
+          await assertHeaderOffset(page, "Akademik Mobile", vp.name, "h1, h2, h3", "header", { required: true })
         );
 
         const capAkademikMobile = await safeCapture(page, `qa_akademik_${vp.name}.png`, {
@@ -460,13 +620,27 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
         if (capAkademikMobile) capturedFiles.push(capAkademikMobile);
 
         // Subtab Rapor Santri Mobile (Data Terisi Stress Test)
-        const subTabRaporMobile = await page.$('button[data-testid="subtab-rapor"]');
+        const subTabRaporMobile = await requireControl(
+          page,
+          'button[data-testid="subtab-rapor"]',
+          "Subtab Rapor Santri Mobile",
+          "Akademik Mobile",
+          vp.name,
+          recordAssertion
+        );
         if (subTabRaporMobile) {
           await subTabRaporMobile.click();
           await new Promise((r) => setTimeout(r, 600));
 
           // Pilih santri stress test
-          const selectSantriMobile = await page.$('select[data-testid="select-santri-rapor"]');
+          const selectSantriMobile = await requireControl(
+            page,
+            'select[data-testid="select-santri-rapor"]',
+            "Selector Santri Rapor Mobile",
+            "Akademik Mobile",
+            vp.name,
+            recordAssertion
+          );
           if (selectSantriMobile) {
             await page.select('select[data-testid="select-santri-rapor"]', RAPOR_STRESS_FIXTURES.SANTRI_NIS);
             await new Promise((r) => setTimeout(r, 600));
@@ -475,7 +649,7 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
           recordAssertion(await assertNoHorizontalOverflow(page, "Akademik Mobile (Rapor Data)", vp.name));
           recordAssertion(
             await assertCriticalTextClipping(page, "Akademik Mobile (Rapor Data)", vp.name, [
-              { selector: "h4, strong", label: "Judul Mapel Rapor Mobile" },
+              { selector: "h4, strong", label: "Judul Mapel Rapor Mobile", required: true },
             ])
           );
 
@@ -490,9 +664,16 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
           );
           if (capRaporDataMobile) capturedFiles.push(capRaporDataMobile);
 
-          // Jika viewport 360x800, coba buka Print Preview Modal di mobile
+          // Jika viewport 360x800, buka Print Preview Modal di mobile
           if (vp.name === "mobile_360x800") {
-            const btnCetakModalMobile = await page.$('button[data-testid="btn-cetak-rapor-modal"]');
+            const btnCetakModalMobile = await requireControl(
+              page,
+              'button[data-testid="btn-cetak-rapor-modal"]',
+              "Tombol Cetak Rapor Modal Mobile",
+              "Modal Cetak Rapor Mobile",
+              vp.name,
+              recordAssertion
+            );
             if (btnCetakModalMobile) {
               await btnCetakModalMobile.click();
               await new Promise((r) => setTimeout(r, 600));
@@ -510,7 +691,14 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
               );
               if (capPrintMobile) capturedFiles.push(capPrintMobile);
 
-              const btnCloseMobile = await page.$('button[data-testid="btn-close-print-modal"]');
+              const btnCloseMobile = await requireControl(
+                page,
+                'button[data-testid="btn-close-print-modal"]',
+                "Tombol Tutup Modal Cetak Rapor Mobile",
+                "Modal Cetak Rapor Mobile",
+                vp.name,
+                recordAssertion
+              );
               if (btnCloseMobile) {
                 await btnCloseMobile.click();
                 await new Promise((r) => setTimeout(r, 400));
