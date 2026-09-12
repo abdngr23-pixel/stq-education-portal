@@ -122,41 +122,43 @@ export function AkademikModule({
   const [inputNilaiAngka, setInputNilaiAngka] = useState<string>("");
   const [catatanNilai, setCatatanNilai] = useState<string>("");
 
-  // Daftar Nilai Akademik Terverifikasi
-  const [nilaiList, setNilaiList] = useState<NilaiItem[]>([
-    { santriNis: "SAN-0001", santriNama: "Obama Ozearld Egberted Turizqi", mapel: "Bahasa Arab", kategori: "Kepesantrenan", angka: 90, huruf: "A", guru: "Ustzh. Nurul Hidayah, S.Pd." },
-    { santriNis: "SAN-0001", santriNama: "Obama Ozearld Egberted Turizqi", mapel: "Tafsir Al-Qur'an", kategori: "Kepesantrenan", angka: 94, huruf: "A", guru: "Ust. Razan Mufli, S.Pd" },
-    { santriNis: "SAN-0001", santriNama: "Obama Ozearld Egberted Turizqi", mapel: "Fikih Ibadah & Muamalah", kategori: "Kepesantrenan", angka: 92, huruf: "A", guru: "Ust. Mujaddid Zhohruddin" },
-    { santriNis: "SAN-0001", santriNama: "Obama Ozearld Egberted Turizqi", mapel: "Aqidah Islamiyyah", kategori: "Kepesantrenan", angka: 95, huruf: "A", guru: "Ust. Andi Quarzy Ayatullah, S.H, M.H" },
-    { santriNis: "SAN-0001", santriNama: "Obama Ozearld Egberted Turizqi", mapel: "Ilmu Tajwid", kategori: "Kepesantrenan", angka: 91, huruf: "A", guru: "Ust. Razan Mufli, S.Pd" },
-    { santriNis: "SAN-0001", santriNama: "Obama Ozearld Egberted Turizqi", mapel: "Matematika Terapan", kategori: "Studi Umum", angka: 86, huruf: "B", guru: "Ustzh. Nurul Hidayah, S.Pd." },
-    { santriNis: "SAN-0001", santriNama: "Obama Ozearld Egberted Turizqi", mapel: "Bahasa Inggris", kategori: "Studi Umum", angka: 88, huruf: "B", guru: "Ustzh. Nurul Hidayah, S.Pd." },
-    { santriNis: "SAN-0001", santriNama: "Obama Ozearld Egberted Turizqi", mapel: "Bahasa Indonesia (PBL)", kategori: "Studi Umum (PBL)", angka: 90, huruf: "A", guru: "Ustzh. Nurul Hidayah, S.Pd." },
-  ]);
+  // Daftar Nilai Akademik Terverifikasi (Initial state bersih tanpa mock data)
+  const [nilaiList, setNilaiList] = useState<NilaiItem[]>([]);
+  const [isNilaiLoading, setIsNilaiLoading] = useState<boolean>(true);
 
   // Load data nilai riil dari server action on mount
   useEffect(() => {
     let isMounted = true;
-    getNilaiAkademikListAction().then((res) => {
-      if (isMounted && res.success && res.data && res.data.length > 0) {
-        setNilaiList(
-          res.data.map((item) => ({
-            id: item.id,
-            santriId: item.santriId,
-            santriNis: item.santriNis,
-            santriNama: item.santriNama,
-            mapel: item.mapelNama,
-            kategori: item.mapelKategori,
-            angka: item.angka,
-            huruf: item.huruf,
-            guru: item.guruNama,
-            jenisNilai: item.jenis,
-            semester: item.semester,
-            tahunAjaran: item.tahunAjaran,
-          }))
-        );
-      }
-    });
+    getNilaiAkademikListAction()
+      .then((res) => {
+        if (!isMounted) return;
+        if (res.success && res.data && res.data.length > 0) {
+          setNilaiList(
+            res.data.map((item) => ({
+              id: item.id,
+              santriId: item.santriId,
+              santriNis: item.santriNis,
+              santriNama: item.santriNama,
+              mapel: item.mapelNama,
+              kategori: item.mapelKategori,
+              angka: item.angka,
+              huruf: item.huruf,
+              guru: item.guruNama,
+              jenisNilai: item.jenis,
+              semester: item.semester,
+              tahunAjaran: item.tahunAjaran,
+            }))
+          );
+        } else {
+          setNilaiList([]);
+        }
+      })
+      .catch(() => {
+        if (isMounted) setNilaiList([]);
+      })
+      .finally(() => {
+        if (isMounted) setIsNilaiLoading(false);
+      });
     return () => {
       isMounted = false;
     };
@@ -380,12 +382,12 @@ export function AkademikModule({
   return (
     <div className="space-y-6">
       {/* Sub-Navigasi: Input Nilai vs Rapor Santri */}
-      <div className="flex items-center justify-between p-1.5 bg-slate-100/90 rounded-2xl border border-slate-200/80">
-        <div className="flex items-center gap-1">
+      <div className="p-1.5 bg-slate-100/90 rounded-2xl border border-slate-200/80 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-1.5 min-w-max">
           <button
             type="button"
             onClick={() => setSubTab("input_nilai")}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 min-h-[44px] shrink-0 ${
               subTab === "input_nilai"
                 ? "bg-[#0E7C3A] text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
@@ -397,7 +399,7 @@ export function AkademikModule({
           <button
             type="button"
             onClick={() => setSubTab("rapor")}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 min-h-[44px] shrink-0 ${
               subTab === "rapor"
                 ? "bg-[#0E7C3A] text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
@@ -409,7 +411,7 @@ export function AkademikModule({
           <button
             type="button"
             onClick={() => setSubTab("kepesantrenan")}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 min-h-[44px] shrink-0 ${
               subTab === "kepesantrenan"
                 ? "bg-[#0E7C3A] text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
@@ -683,20 +685,26 @@ export function AkademikModule({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {nilaiList.filter((n) => n.mapel === currentMapel.nama).length > 0 ? (
+                      {isNilaiLoading ? (
+                        <tr>
+                          <td colSpan={5} className="text-center py-12 text-slate-500 text-xs">
+                            Memuat data nilai...
+                          </td>
+                        </tr>
+                      ) : nilaiList.filter((n) => n.mapel === currentMapel.nama).length > 0 ? (
                         nilaiList
                           .filter((n) => n.mapel === currentMapel.nama)
                           .map((item, idx) => (
                             <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
-                              <td className="px-4 py-3 font-semibold text-slate-800">
+                              <td className="px-4 py-3 font-semibold text-slate-900">
                                 {item.santriNama || currentSantri?.nama || "-"}
-                                <span className="block text-[11px] text-slate-400 font-normal">
+                                <span className="block text-[11px] text-slate-500 font-normal">
                                   {item.santriNis || currentSantri?.nis || "-"}
                                 </span>
                               </td>
                               <td className="px-3 py-3 text-slate-700">
                                 {item.mapel}
-                                <span className="block text-[10px] text-slate-400">{item.kategori}</span>
+                                <span className="block text-[10px] text-slate-500">{item.kategori}</span>
                               </td>
                               <td className="px-3 py-3 text-center font-extrabold text-slate-900 text-sm">
                                 {item.angka}
@@ -718,14 +726,14 @@ export function AkademikModule({
                                   {item.huruf}
                                 </Badge>
                               </td>
-                              <td className="px-4 py-3 text-slate-600 font-medium">
+                              <td className="px-4 py-3 text-slate-700 font-medium">
                                 {item.guru}
                               </td>
                             </tr>
                           ))
                       ) : (
                         <tr>
-                          <td colSpan={5} className="text-center py-12 text-slate-400 text-xs">
+                          <td colSpan={5} className="text-center py-12 text-slate-500 text-xs">
                             Belum ada nilai yang dicatat untuk mata pelajaran ini pada periode berjalan.
                           </td>
                         </tr>
@@ -752,11 +760,11 @@ export function AkademikModule({
                   Data nilai terverifikasi tanpa nilai estimasi palsu.
                 </CardDescription>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
                 <select
                   value={selectedSantriNis}
                   onChange={(e) => setSelectedSantriNis(e.target.value)}
-                  className="min-h-[40px] px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-semibold"
+                  className="min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-semibold text-slate-900 w-full sm:w-auto focus:bg-white focus:ring-2 focus:ring-[#0E7C3A]/20 transition-colors"
                 >
                   <option value="">-- Pilih Santri --</option>
                   {santriList.map((s) => (
@@ -770,7 +778,7 @@ export function AkademikModule({
                   size="sm"
                   disabled={!currentSantri}
                   onClick={() => setShowPrintRaporModal(true)}
-                  className="bg-[#0E7C3A] hover:bg-[#0B642E] text-xs font-bold gap-1.5 min-h-[40px] disabled:opacity-50"
+                  className="bg-[#0E7C3A] hover:bg-[#0B642E] text-xs font-bold gap-1.5 min-h-[44px] disabled:opacity-50 w-full sm:w-auto justify-center"
                 >
                   <Printer className="h-4 w-4" />
                   Cetak Rapor A4
@@ -782,19 +790,19 @@ export function AkademikModule({
                 <>
                   <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row justify-between gap-3 text-xs sm:text-sm">
                     <div>
-                      <p className="text-slate-500">Nama Santri:</p>
-                      <strong className="text-base text-slate-900">{currentSantri.nama}</strong>
-                      <p className="text-slate-500 mt-1">NIS: {currentSantri.nis} • Kelas: {currentSantri.kelas}</p>
+                      <p className="text-slate-500 font-medium">Nama Santri:</p>
+                      <strong className="text-base text-slate-900 font-heading">{currentSantri.nama}</strong>
+                      <p className="text-slate-600 mt-1">NIS: {currentSantri.nis} • Kelas: {currentSantri.kelas}</p>
                     </div>
                     <div className="sm:text-right">
-                      <p className="text-slate-500">Tahun Ajaran / Semester:</p>
+                      <p className="text-slate-500 font-medium">Tahun Ajaran / Semester:</p>
                       <strong className="text-slate-900">{selectedTahunAjaran} • Semester {selectedSemester}</strong>
-                      <p className="text-slate-500 mt-1">Capaian Tahfizh: {currentSantri.capaianJuz} Juz</p>
+                      <p className="text-slate-600 mt-1">Capaian Tahfizh: {currentSantri.capaianJuz} Juz</p>
                     </div>
                   </div>
 
-                  {/* Tabel Nilai Rapor Jujur */}
-                  <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                  {/* Desktop View: Tabel Nilai Rapor (hidden on mobile, full width on md+) */}
+                  <div className="hidden md:block border border-slate-200 rounded-2xl overflow-hidden">
                     <table className="w-full text-xs sm:text-sm text-left border-collapse">
                       <thead>
                         <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
@@ -806,10 +814,16 @@ export function AkademikModule({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {santriNilaiForRapor.length > 0 ? (
+                        {isNilaiLoading ? (
+                          <tr>
+                            <td colSpan={5} className="text-center py-12 text-slate-500 text-xs">
+                              Memuat data nilai akademik santri...
+                            </td>
+                          </tr>
+                        ) : santriNilaiForRapor.length > 0 ? (
                           santriNilaiForRapor.map((item, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50/80">
-                              <td className="px-4 py-3 font-semibold text-slate-800">{item.mapel}</td>
+                            <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="px-4 py-3 font-semibold text-slate-900">{item.mapel}</td>
                               <td className="px-3 py-3 text-slate-600">{item.kategori}</td>
                               <td className="px-3 py-3 text-center font-extrabold text-slate-900">{item.angka}</td>
                               <td className="px-3 py-3 text-center">
@@ -821,12 +835,12 @@ export function AkademikModule({
                                   {item.huruf}
                                 </Badge>
                               </td>
-                              <td className="px-4 py-3 text-slate-600">{item.guru}</td>
+                              <td className="px-4 py-3 text-slate-700">{item.guru}</td>
                             </tr>
                           ))
                         ) : (
                           <tr>
-                            <td colSpan={5} className="text-center py-12 text-slate-400 text-xs">
+                            <td colSpan={5} className="text-center py-12 text-slate-500 text-xs">
                               Belum ada data nilai akademik yang dicatat untuk santri ini.
                             </td>
                           </tr>
@@ -834,9 +848,53 @@ export function AkademikModule({
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Mobile View: Stacked Semantic Rows per Mata Pelajaran (Clean & Operational, Zero Clipping) */}
+                  <div className="block md:hidden divide-y divide-slate-200 border border-slate-200 rounded-2xl overflow-hidden bg-white">
+                    {isNilaiLoading ? (
+                      <div className="text-center py-10 px-4 text-slate-500 text-xs font-medium">
+                        Memuat data nilai akademik santri...
+                      </div>
+                    ) : santriNilaiForRapor.length > 0 ? (
+                      santriNilaiForRapor.map((item, idx) => (
+                        <div key={idx} className="p-3.5 space-y-2 hover:bg-slate-50/60 transition-colors">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <h4 className="text-xs sm:text-sm font-bold text-slate-900 leading-snug">
+                                {item.mapel}
+                              </h4>
+                              <span className="text-[11px] font-medium text-slate-500 block mt-0.5">
+                                {item.kategori}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-base font-bold text-slate-900 font-heading">
+                                {item.angka}
+                              </span>
+                              <Badge
+                                variant={item.huruf === "A" ? "green" : item.huruf === "B" ? "sky" : "orange"}
+                                size="sm"
+                                className="font-bold text-xs px-2 py-0.5"
+                              >
+                                {item.huruf}
+                              </Badge>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100">
+                            <span>Guru Pengampu:</span>
+                            <span className="font-semibold text-slate-700 truncate max-w-[200px]">{item.guru}</span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-10 px-4 text-slate-500 text-xs font-medium">
+                        Belum ada data nilai akademik yang dicatat untuk santri ini.
+                      </div>
+                    )}
+                  </div>
                 </>
               ) : (
-                <div className="text-center py-12 text-slate-400 text-sm">
+                <div className="text-center py-12 text-slate-500 text-sm font-medium">
                   Silakan pilih santri terlebih dahulu untuk melihat pratinjau rapor.
                 </div>
               )}

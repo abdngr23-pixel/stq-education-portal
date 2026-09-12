@@ -128,8 +128,11 @@ export function DashboardMusyrifTahfizh({
     setShowAllSantriModal(false);
     setSearchQuery("");
     // Kembalikan fokus ke trigger button setelah modal ditutup
+    const btn = triggerButtonRef.current || (typeof document !== "undefined" ? document.querySelector<HTMLButtonElement>('[data-testid="btn-lihat-semua-santri"]') : null);
+    btn?.focus();
     setTimeout(() => {
-      triggerButtonRef.current?.focus();
+      const b = triggerButtonRef.current || (typeof document !== "undefined" ? document.querySelector<HTMLButtonElement>('[data-testid="btn-lihat-semua-santri"]') : null);
+      b?.focus();
     }, 0);
   };
 
@@ -183,6 +186,8 @@ export function DashboardMusyrifTahfizh({
       document.body.style.overflow = originalOverflow;
       document.removeEventListener("keydown", handleKeyDown);
       clearTimeout(focusTimer);
+      const b = triggerButtonRef.current || (typeof document !== "undefined" ? document.querySelector<HTMLButtonElement>('[data-testid="btn-lihat-semua-santri"]') : null);
+      b?.focus();
     };
   }, [showAllSantriModal]);
 
@@ -272,106 +277,111 @@ export function DashboardMusyrifTahfizh({
       {/* ========================================================================= */}
       {/* 2. EMPAT KARTU STATISTIK RINGKAS & HIDUP (1 Baris Desktop / 2x2 Mobile)  */}
       {/* ========================================================================= */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Metrik 1: Santri Binaan */}
-        <div className="bg-white rounded-2xl p-3.5 sm:p-5 border border-slate-200/90 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-start justify-between gap-1.5 mb-2">
-            <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider leading-snug">
-              Santri Binaan
-            </span>
-            <div className="p-1.5 sm:p-2 rounded-xl bg-blue-50 text-blue-600 shrink-0">
-              <Users className="h-4 w-4" />
+      {/* ========================================================================= */}
+      {/* 2. PANEL STATISTIK OPERASIONAL TERPADU (Single subtle container, anti-slop) */}
+      {/* ========================================================================= */}
+      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xs overflow-hidden">
+        <div className="grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 divide-x-0 sm:divide-x divide-slate-100">
+          {/* Metrik 1: Santri Binaan */}
+          <div className="p-4 sm:p-5 flex flex-col justify-between">
+            <div className="flex items-start justify-between gap-1.5 mb-2">
+              <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider leading-snug">
+                Santri Binaan
+              </span>
+              <div className="p-1.5 sm:p-2 rounded-xl bg-blue-50 text-blue-600 shrink-0">
+                <Users className="h-4 w-4" />
+              </div>
+            </div>
+            <div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-heading">
+                {totalBinaan}
+              </div>
+              <span className="text-[11px] sm:text-xs text-slate-500 block mt-1 truncate">
+                Total santri terdaftar
+              </span>
             </div>
           </div>
-          <div>
-            <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-heading">
-              {totalBinaan}
-            </div>
-            <span className="text-[11px] sm:text-xs text-slate-400 block mt-1 truncate">
-              Total santri terdaftar
-            </span>
-          </div>
-        </div>
 
-        {/* Metrik 2: Sudah Setor Hari Ini */}
-        <div className="bg-white rounded-2xl p-3.5 sm:p-5 border border-slate-200/90 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-start justify-between gap-1.5 mb-2">
-            <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider leading-snug">
-              Sudah Setor
-            </span>
-            <div className="p-1.5 sm:p-2 rounded-xl bg-emerald-50 text-[#0E7C3A] shrink-0">
-              <CheckCircle2 className="h-4 w-4" />
+          {/* Metrik 2: Sudah Setor Hari Ini */}
+          <div className="p-4 sm:p-5 flex flex-col justify-between">
+            <div className="flex items-start justify-between gap-1.5 mb-2">
+              <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider leading-snug">
+                Sudah Setor
+              </span>
+              <div className="p-1.5 sm:p-2 rounded-xl bg-emerald-50 text-[#0E7C3A] shrink-0">
+                <CheckCircle2 className="h-4 w-4" />
+              </div>
+            </div>
+            <div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-heading">
+                {countSudahSetor}
+                <span className="text-slate-500 text-sm font-normal"> / {totalBinaan}</span>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
+                <div
+                  className="bg-[#0E7C3A] h-1.5 rounded-full transition-all duration-300 motion-reduce:transition-none"
+                  style={{ width: `${percentSetor}%` }}
+                />
+              </div>
+              <span className="text-[11px] sm:text-xs text-[#0E7C3A] font-semibold block mt-1.5 truncate">
+                {percentSetor}% santri halaqoh
+              </span>
             </div>
           </div>
-          <div>
-            <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-heading">
-              {countSudahSetor}
-              <span className="text-slate-400 text-sm font-normal"> / {totalBinaan}</span>
-            </div>
-            <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
-              <div
-                className="bg-[#0E7C3A] h-1.5 rounded-full transition-all duration-300 motion-reduce:transition-none"
-                style={{ width: `${percentSetor}%` }}
-              />
-            </div>
-            <span className="text-[11px] sm:text-xs text-[#0E7C3A] font-semibold block mt-1.5 truncate">
-              {percentSetor}% santri halaqoh
-            </span>
-          </div>
-        </div>
 
-        {/* Metrik 3: Antrean Ikhtibar Riil */}
-        <div
-          data-testid="card-antrean-ikhtibar"
-          className="bg-white rounded-2xl p-3.5 sm:p-5 border border-slate-200/90 shadow-2xs flex flex-col justify-between"
-        >
-          <div className="flex items-start justify-between gap-1.5 mb-2">
-            <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider leading-snug">
-              Antrean Ikhtibar
-            </span>
-            <div className="p-1.5 sm:p-2 rounded-xl bg-amber-50 text-amber-600 shrink-0">
-              <BookCheck className="h-4 w-4" />
+          {/* Metrik 3: Antrean Ikhtibar Riil */}
+          <div
+            data-testid="card-antrean-ikhtibar"
+            className="p-4 sm:p-5 flex flex-col justify-between"
+          >
+            <div className="flex items-start justify-between gap-1.5 mb-2">
+              <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider leading-snug">
+                Antrean Ikhtibar
+              </span>
+              <div className="p-1.5 sm:p-2 rounded-xl bg-amber-50 text-amber-600 shrink-0">
+                <BookCheck className="h-4 w-4" />
+              </div>
+            </div>
+            <div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-amber-600 font-heading">
+                {ikhtibarLoading ? (
+                  <span className="text-sm font-normal text-slate-500">Memuat...</span>
+                ) : ikhtibarError ? (
+                  <span className="text-xs font-normal text-rose-500">Gagal</span>
+                ) : typeof ikhtibarPendingCount === "number" ? (
+                  ikhtibarPendingCount
+                ) : (
+                  0
+                )}
+              </div>
+              <span className="text-[11px] sm:text-xs text-amber-700 font-medium block mt-1 truncate">
+                {typeof ikhtibarPendingCount === "number"
+                  ? `${ikhtibarPendingCount} Antrean Ikhtibar`
+                  : "0 Antrean Ikhtibar"}
+              </span>
             </div>
           </div>
-          <div>
-            <div className="text-2xl sm:text-3xl font-extrabold text-amber-600 font-heading">
-              {ikhtibarLoading ? (
-                <span className="text-sm font-normal text-slate-400">Memuat...</span>
-              ) : ikhtibarError ? (
-                <span className="text-xs font-normal text-rose-500">Gagal</span>
-              ) : typeof ikhtibarPendingCount === "number" ? (
-                ikhtibarPendingCount
-              ) : (
-                0
-              )}
-            </div>
-            <span className="text-[11px] sm:text-xs text-amber-700 font-medium block mt-1 truncate">
-              {typeof ikhtibarPendingCount === "number"
-                ? `${ikhtibarPendingCount} Antrean Ikhtibar`
-                : "0 Antrean Ikhtibar"}
-            </span>
-          </div>
-        </div>
 
-        {/* Metrik 4: Izin & Kesehatan */}
-        <div className="bg-white rounded-2xl p-3.5 sm:p-5 border border-slate-200/90 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-start justify-between gap-1.5 mb-2">
-            <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider leading-snug">
-              Izin & Kesehatan
-            </span>
-            <div className="p-1.5 sm:p-2 rounded-xl bg-orange-50 text-orange-600 shrink-0">
-              <AlertTriangle className="h-4 w-4" />
+          {/* Metrik 4: Izin & Kesehatan */}
+          <div className="p-4 sm:p-5 flex flex-col justify-between">
+            <div className="flex items-start justify-between gap-1.5 mb-2">
+              <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider leading-snug">
+                Izin & Kesehatan
+              </span>
+              <div className="p-1.5 sm:p-2 rounded-xl bg-orange-50 text-orange-600 shrink-0">
+                <AlertTriangle className="h-4 w-4" />
+              </div>
             </div>
-          </div>
-          <div>
-            <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-heading">
-              {izinKesehatanCount}
+            <div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-heading">
+                {izinKesehatanCount}
+              </div>
+              <span className="text-[11px] sm:text-xs text-slate-500 block mt-1 truncate">
+                {izinKesehatanCount > 0
+                  ? `${izinPendingCount} izin • ${santriSakitCount} sakit`
+                  : "Kondisi aman & terpantau"}
+              </span>
             </div>
-            <span className="text-[11px] sm:text-xs text-slate-500 block mt-1 truncate">
-              {izinKesehatanCount > 0
-                ? `${izinPendingCount} izin • ${santriSakitCount} sakit`
-                : "Kondisi aman & terpantau"}
-            </span>
           </div>
         </div>
       </div>
@@ -509,6 +519,7 @@ export function DashboardMusyrifTahfizh({
               {santriBelumSetor.length > 5 && (
                 <button
                   type="button"
+                  ref={triggerButtonRef}
                   data-testid="btn-lihat-semua-santri"
                   onClick={(e) => handleOpenModal(e)}
                   className="text-xs font-bold text-[#0E7C3A] hover:text-[#0B642E] flex items-center gap-1 min-h-[44px] px-2"

@@ -408,7 +408,7 @@ export function PresensiHarianMobile({
               setKategoriSesi("SHALAT");
               setSelectedSesi("Sholat Subuh");
             }}
-            className={`py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+            className={`py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 min-h-[44px] ${
               kategoriSesi === "SHALAT"
                 ? "bg-[#0E7C3A] text-white shadow-2xs"
                 : "text-slate-600 hover:text-slate-900"
@@ -423,7 +423,7 @@ export function PresensiHarianMobile({
               setKategoriSesi("SUNNAH");
               setSelectedSesi("Sholat Tahajjud");
             }}
-            className={`py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+            className={`py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 min-h-[44px] ${
               kategoriSesi === "SUNNAH"
                 ? "bg-[#0E7C3A] text-white shadow-2xs"
                 : "text-slate-600 hover:text-slate-900"
@@ -438,7 +438,7 @@ export function PresensiHarianMobile({
               setKategoriSesi("HALAQOH");
               setSelectedSesi("Halaqah Ba'da Shubuh");
             }}
-            className={`py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+            className={`py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 min-h-[44px] ${
               kategoriSesi === "HALAQOH"
                 ? "bg-[#0E7C3A] text-white shadow-2xs"
                 : "text-slate-600 hover:text-slate-900"
@@ -464,7 +464,7 @@ export function PresensiHarianMobile({
                 key={sesi.id}
                 type="button"
                 onClick={() => setSelectedSesi(sesi.id)}
-                className={`px-3 py-2 rounded-2xl text-xs font-bold whitespace-nowrap transition-all border shrink-0 flex items-center gap-1.5 ${
+                className={`px-3 py-2 rounded-2xl text-xs font-bold whitespace-nowrap transition-all border shrink-0 flex items-center gap-1.5 min-h-[44px] ${
                   isSelected
                     ? "bg-emerald-50 text-[#0E7C3A] border-emerald-300 ring-2 ring-emerald-500/20 shadow-2xs"
                     : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
@@ -701,7 +701,7 @@ export function PresensiHarianMobile({
       </Card>
 
       {/* Card 3: Daftar Santri & Input Presensi Cepat */}
-      <div className="space-y-2.5">
+      <div className="space-y-2.5 pb-36 sm:pb-24">
         {filteredSantri.map((s) => {
           const currentRec = attendanceMap[s.id] || { status: "BELUM_DICATAT" };
           const status = currentRec.status;
@@ -780,7 +780,8 @@ export function PresensiHarianMobile({
                         type="button"
                         onClick={() => handleSetStatus(s.id, st)}
                         title={cfg.label}
-                        className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                        aria-label={`Tandai ${s.nama} ${cfg.label}`}
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all border min-h-[38px] min-w-[38px] flex items-center justify-center ${
                           isCurrent
                             ? cfg.btnActive + " shadow-xs"
                             : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
@@ -804,8 +805,8 @@ export function PresensiHarianMobile({
         )}
       </div>
 
-      {/* Floating Bottom Action Bar (Mobile-friendly thumb access) */}
-      <div className="fixed bottom-16 sm:bottom-6 left-0 right-0 z-40 max-w-2xl mx-auto px-4 pointer-events-none">
+      {/* Floating Bottom Action Bar (Mobile-friendly thumb access, coordinated with bottom nav) */}
+      <div className="fixed bottom-[calc(4.5rem+max(env(safe-area-inset-bottom),0.35rem))] sm:bottom-6 left-0 right-0 z-30 max-w-2xl mx-auto px-4 pointer-events-none">
         <div className="p-3.5 rounded-3xl bg-slate-950/90 text-white backdrop-blur-md border border-slate-800 shadow-2xl flex items-center justify-between gap-3 pointer-events-auto">
           <div className="text-xs">
             <p className="font-bold flex items-center gap-1.5 text-emerald-400">
@@ -813,7 +814,7 @@ export function PresensiHarianMobile({
               <span>•</span>
               <span>{filteredSantri.length} Santri</span>
             </p>
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[11px] text-slate-300">
               {isPuasaSesi ? "Berpuasa" : isSunnahWorship ? "Shalat" : "Hadir"}: <strong className="text-white">{summaryCounts.HADIR}</strong> • 
               {isPuasaSesi ? "Batal" : isSunnahWorship ? "Menyusul" : "Masbuk"}: <strong className="text-amber-400">{summaryCounts.MASBUK}</strong> • 
               {isPuasaSesi ? "Tidak" : isSunnahWorship ? "Belum" : "Alpa"}: <strong className="text-rose-400">{summaryCounts.ALFA}</strong>
@@ -827,7 +828,7 @@ export function PresensiHarianMobile({
               size="sm"
               isLoading={isPending}
               onClick={handleSimpanPresensi}
-              className="bg-[#0E7C3A] hover:bg-[#0B642E] text-white font-bold px-4 shadow-md"
+              className="bg-[#0E7C3A] hover:bg-[#0B642E] text-white font-bold px-4 shadow-md min-h-[42px]"
               leftIcon={<CheckCircle2 className="h-4 w-4" />}
             >
               Simpan Presensi

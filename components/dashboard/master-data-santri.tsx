@@ -478,7 +478,7 @@ export function MasterDataSantri({
                       key={santri.id || santri.nis}
                       className="hover:bg-emerald-50/40 transition-colors"
                     >
-                      <td className="py-3 px-4 text-center text-slate-400 font-medium">
+                      <td className="py-3 px-4 text-center text-slate-500 font-medium">
                         {index + 1}
                       </td>
                       <td className="py-3 px-4 font-mono font-bold text-slate-700">
@@ -534,24 +534,30 @@ export function MasterDataSantri({
                         <div className="flex items-center justify-center gap-1">
                           {isCanManage && (
                             <button
+                              type="button"
                               onClick={() => handleOpenBaselineModal(santri)}
                               title="Atur Baseline Modal Hafalan Santri"
+                              aria-label={`Atur Baseline Modal Hafalan ${santri.nama}`}
                               className="p-1.5 rounded-lg hover:bg-emerald-50 text-emerald-800 transition-colors"
                             >
                               <SlidersHorizontal className="h-4 w-4" />
                             </button>
                           )}
                           <button
+                            type="button"
                             onClick={() => setSelectedSantriDetail(santri)}
                             title="Lihat Detail Santri"
+                            aria-label={`Lihat Detail Santri ${santri.nama}`}
                             className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-600 transition-colors"
                           >
                             <Eye className="h-4 w-4" />
                           </button>
                           {onPrintRapor && (
                             <button
+                              type="button"
                               onClick={() => onPrintRapor(santri)}
                               title="Cetak Rapor Santri"
+                              aria-label={`Cetak Rapor Santri ${santri.nama}`}
                               className="p-1.5 rounded-lg hover:bg-emerald-50 text-[#0E7C3A] transition-colors"
                             >
                               <Printer className="h-4 w-4" />

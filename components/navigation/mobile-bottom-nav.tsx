@@ -71,6 +71,7 @@ export function MobileBottomNav({
               <button
                 key={id}
                 type="button"
+                data-testid={`mobile-nav-${id}`}
                 onClick={() => {
                   setIsDrawerOpen(false);
                   onSelectTab(id);
@@ -168,6 +169,7 @@ export function MobileBottomNav({
                   <button
                     key={id}
                     type="button"
+                    data-testid={`mobile-nav-${id}`}
                     onClick={() => {
                       setIsDrawerOpen(false);
                       onSelectTab(id);

@@ -119,6 +119,7 @@ export default function Home() {
 
   // Accessible feedback banner state
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const mainScrollRef = useRef<HTMLDivElement>(null);
 
   // -------------------------------------------------------------
   // MASTER DATA SANTRI (Dimuat dinamis dari database PostgreSQL riil)
@@ -523,6 +524,7 @@ export default function Home() {
     }
     setActiveTab(tab);
     setFeedback(null);
+    mainScrollRef.current?.scrollTo({ top: 0, behavior: "instant" });
 
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -994,7 +996,7 @@ export default function Home() {
       />
 
       {/* 2. Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+      <div ref={mainScrollRef} className="flex-1 flex flex-col min-w-0 overflow-y-auto scroll-pt-14 sm:scroll-pt-16">
         {/* Top Header */}
         <AppHeader
           activeTab={activeTab}

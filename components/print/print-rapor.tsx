@@ -1,6 +1,7 @@
 import React from "react";
 import { KopSurat } from "./kop-surat";
 import { cn } from "@/lib/utils";
+import { konversiPredikatNilai } from "@/lib/educational-rules";
 
 export interface PrintRaporProps {
   santri: {
@@ -111,10 +112,10 @@ export function PrintRapor({
             <tr>
               <td className="border border-black py-1.5 px-2 font-bold text-emerald-800">Capaian {santri.capaianJuz} Juz dari Target Akhir 30 Juz</td>
               <td className="border border-black py-1.5 px-2 font-bold">30 Juz</td>
-              <td className="border border-black py-1.5 px-2 font-medium">{santri.setoranTerakhir || "Ali 'Imran: 1-20"}</td>
+              <td className="border border-black py-1.5 px-2 font-medium">{santri.setoranTerakhir || "-"}</td>
               <td className="border border-black py-1.5 px-2 text-emerald-700 font-semibold">Tuntas 100%</td>
               <td className="border border-black py-1.5 px-2 font-semibold">
-                {santri.nilaiTerakhir || "MUMTAZ (Fasih & Mutqin)"}
+                {santri.nilaiTerakhir || "-"}
               </td>
             </tr>
           </tbody>
@@ -127,7 +128,9 @@ export function PrintRapor({
           <h4 className="font-bold uppercase text-[11px]">
             II. Aspek Program Kepesantrenan (Senin–Jumat 18.30–19.30 WITA)
           </h4>
-          <span className="text-[10px] font-semibold">Rata-rata: {avgKepesantrenan} (A)</span>
+          <span className="text-[10px] font-semibold">
+            Rata-rata: {avgKepesantrenan}{avgKepesantrenan !== "-" ? ` (${konversiPredikatNilai(parseFloat(avgKepesantrenan))})` : ""}
+          </span>
         </div>
         <table className="w-full border-collapse border border-black text-xs">
           <thead>
