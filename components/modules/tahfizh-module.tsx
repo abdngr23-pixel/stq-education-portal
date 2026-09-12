@@ -920,13 +920,13 @@ export function TahfizhModule({
 
   return (
     <div data-testid="tahfizh-module" className="space-y-6">
-      {/* 1. Sub-Navigasi Tahfizh: Setoran | Laporan Bulanan | Ujian Ikhtibar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-1.5 bg-slate-100/90 rounded-2xl border border-slate-200/80">
-        <div className="flex items-center gap-1 w-full sm:w-auto">
+      {/* 1. Sub-Navigasi Tahfizh: Setoran | Laporan Bulanan | Ujian Ikhtibar | Reward */}
+      <div className="flex items-center justify-between gap-3 p-1.5 bg-slate-100/90 rounded-2xl border border-slate-200/80 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-1.5 min-w-max">
           <button
             type="button"
             onClick={() => setActiveSubTab("setoran")}
-            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+            className={`px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 min-h-[44px] shrink-0 ${
               activeSubTab === "setoran"
                 ? "bg-[#0E7C3A] text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
@@ -938,7 +938,7 @@ export function TahfizhModule({
           <button
             type="button"
             onClick={() => setActiveSubTab("laporan")}
-            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+            className={`px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 min-h-[44px] shrink-0 ${
               activeSubTab === "laporan"
                 ? "bg-[#0E7C3A] text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
@@ -950,7 +950,7 @@ export function TahfizhModule({
           <button
             type="button"
             onClick={() => setActiveSubTab("ikhtibar")}
-            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+            className={`px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 min-h-[44px] shrink-0 ${
               activeSubTab === "ikhtibar"
                 ? "bg-[#0E7C3A] text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
@@ -962,7 +962,7 @@ export function TahfizhModule({
           <button
             type="button"
             onClick={() => setActiveSubTab("reward_evaluasi")}
-            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+            className={`px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 min-h-[44px] shrink-0 ${
               activeSubTab === "reward_evaluasi"
                 ? "bg-[#0E7C3A] text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
@@ -974,7 +974,7 @@ export function TahfizhModule({
         </div>
 
         {currentHalaqohName && (
-          <span className="hidden lg:inline text-xs font-semibold text-emerald-800 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+          <span className="hidden lg:inline text-xs font-semibold text-emerald-800 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 shrink-0">
             {currentHalaqohName}
           </span>
         )}
@@ -1256,7 +1256,7 @@ export function TahfizhModule({
                                   ? `Pilihan +${val} hlm melintasi batas Juz ${currentJuzMeta.juz} (sisa ${maxPagesRemainingInJuz} hlm hingga batas akhir hlm ${currentJuzMeta.endPage}).`
                                   : undefined
                               }
-                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed min-h-[40px] sm:min-h-[36px] min-w-[42px] flex items-center justify-center ${
                                 jumlahHalaman === val
                                   ? "bg-[#0E7C3A] text-white shadow-xs"
                                   : "bg-white text-emerald-800 border border-emerald-200 hover:bg-emerald-100/60"
@@ -1374,46 +1374,46 @@ export function TahfizhModule({
                   </div>
                 )}
 
-                {/* FITUR PINTAR TARGET MUFAR DINAMIS RESMI STQ DUC 2026 */}
+                {/* TARGET MUFAR DINAMIS RESMI STQ DUC 2026 */}
                 {inputJenis === "MUFAR" && (
-                  <div className="rounded-2xl p-4 bg-gradient-to-br from-purple-50 via-violet-50/60 to-purple-50 border border-purple-300/80 shadow-xs space-y-3">
+                  <div className="rounded-2xl p-4 bg-slate-50/90 border border-slate-200/90 shadow-2xs space-y-3">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <span className="p-1.5 bg-purple-600 text-white rounded-lg shadow-xs">
+                        <span className="p-1.5 bg-[#0E7C3A] text-white rounded-lg shadow-2xs">
                           <Award className="h-4 w-4" />
                         </span>
                         <div>
-                          <span className="text-xs font-extrabold text-purple-950 block">
+                          <span className="text-xs font-bold text-slate-900 block">
                             Target Mufar Dinamis Resmi STQ DUC 2026
                           </span>
-                          <span className="text-[10px] text-purple-700 font-medium">
+                          <span className="text-[10px] text-slate-500 font-medium">
                             Target harian otomatis menyesuaikan total capaian hafalan santri (Bukan frekuensi tetap)
                           </span>
                         </div>
                       </div>
-                      <Badge variant="purple" size="sm" className="font-semibold text-[10px]">
+                      <Badge variant="green" size="sm" className="font-semibold text-[10px] self-start sm:self-auto">
                         Target: {dynamicMufarTarget} Juz/Hari
                       </Badge>
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center text-xs">
-                      <div className="bg-white/95 p-2.5 rounded-xl border border-purple-200/80 shadow-2xs">
+                      <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
                         <span className="text-[10px] uppercase font-bold text-slate-500 block">Total Hafalan</span>
-                        <span className="text-sm font-black text-slate-900 block mt-0.5">
+                        <span className="text-sm font-bold text-slate-900 block mt-0.5">
                           {activeSantri?.capaianJuz || Math.floor(santriModalAwal / 20) || 1} Juz
                         </span>
-                        <span className="text-[10px] text-slate-400 block mt-0.5">{smartKonversiAwal.label}</span>
+                        <span className="text-[10px] text-slate-500 block mt-0.5">{smartKonversiAwal.label}</span>
                       </div>
-                      <div className="bg-white/95 p-2.5 rounded-xl border border-purple-200/80 shadow-2xs">
-                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Target Wajib</span>
-                        <span className="text-sm font-black text-purple-700 block mt-0.5">
+                      <div className="bg-emerald-50/60 p-2.5 rounded-xl border border-emerald-200 shadow-2xs">
+                        <span className="text-[10px] uppercase font-bold text-emerald-800 block">Target Wajib</span>
+                        <span className="text-sm font-bold text-[#0E7C3A] block mt-0.5">
                           {dynamicMufarTarget} Juz / Hari
                         </span>
-                        <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">Dinamis Otomatis</span>
+                        <span className="text-[10px] text-emerald-700 font-semibold block mt-0.5">Dinamis Otomatis</span>
                       </div>
-                      <div className="col-span-2 sm:col-span-1 bg-gradient-to-br from-purple-700 to-indigo-700 p-2.5 rounded-xl text-white shadow-xs flex flex-col justify-center">
-                        <span className="text-[10px] uppercase font-bold text-purple-200 block">Kategori Acuan</span>
-                        <span className="text-xs font-black text-white block mt-0.5">
+                      <div className="col-span-2 sm:col-span-1 bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-center">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Kategori Acuan</span>
+                        <span className="text-xs font-bold text-slate-800 block mt-0.5">
                           {(activeSantri?.capaianJuz || 1) <= 5
                             ? "1-5 Juz: 1 Juz/hari"
                             : (activeSantri?.capaianJuz || 1) <= 10

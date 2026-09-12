@@ -1,6 +1,8 @@
 import React from "react";
 import { KopSurat } from "./kop-surat";
 import { cn } from "@/lib/utils";
+import { konversiPredikatNilai } from "@/lib/educational-rules";
+import { formatWitaDateIndonesian } from "@/lib/wita-date";
 
 export interface PrintRaporProps {
   santri: {
@@ -12,6 +14,7 @@ export interface PrintRaporProps {
     targetJuz: number;
     setoranTerakhir?: string;
     nilaiTerakhir?: string;
+    catatanPembina?: string;
   };
   nilaiAkademik: Array<{
     mapel: string;
@@ -21,6 +24,8 @@ export interface PrintRaporProps {
     guru: string;
   }>;
   musyrifHalaqoh?: string;
+  catatanPembina?: string;
+  keputusanKenaikan?: string;
   tahunAjaran?: string;
   semester?: string;
   tanggalCetak?: string;
@@ -30,12 +35,15 @@ export interface PrintRaporProps {
 export function PrintRapor({
   santri,
   nilaiAkademik,
-  musyrifHalaqoh = "Ust. Razan Mufli, S.Pd",
+  musyrifHalaqoh = "Musyrif Halaqoh",
+  catatanPembina,
+  keputusanKenaikan,
   tahunAjaran = "2026/2027",
   semester = "Ganjil",
-  tanggalCetak = "08 September 2026",
+  tanggalCetak,
   className,
 }: PrintRaporProps) {
+  const tglCetak = tanggalCetak || formatWitaDateIndonesian();
   // Pisahkan nilai berdasarkan kategori kurikulum resmi Bab VI & VII
   const nilaiKepesantrenan = nilaiAkademik.filter(
     (n) => n.kategori.toLowerCase().includes("pesantren") || n.kategori.toLowerCase().includes("diniyah")
@@ -94,7 +102,7 @@ export function PrintRapor({
             I. Aspek Tahfiz Al-Qur&apos;an (Metode Al-Pakistani: Sabaq, Sabqi, Manzil, Mufar)
           </h4>
           <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">
-            Predikat: {santri.nilaiTerakhir || "MUMTAZ"}
+            Predikat: {santri.nilaiTerakhir || "-"}
           </span>
         </div>
         <table className="w-full border-collapse border border-black text-center text-xs">
@@ -111,10 +119,10 @@ export function PrintRapor({
             <tr>
               <td className="border border-black py-1.5 px-2 font-bold text-emerald-800">Capaian {santri.capaianJuz} Juz dari Target Akhir 30 Juz</td>
               <td className="border border-black py-1.5 px-2 font-bold">30 Juz</td>
-              <td className="border border-black py-1.5 px-2 font-medium">{santri.setoranTerakhir || "Ali 'Imran: 1-20"}</td>
-              <td className="border border-black py-1.5 px-2 text-emerald-700 font-semibold">Tuntas 100%</td>
+              <td className="border border-black py-1.5 px-2 font-medium">{santri.setoranTerakhir || "-"}</td>
+              <td className="border border-black py-1.5 px-2 text-gray-500 font-medium">-</td>
               <td className="border border-black py-1.5 px-2 font-semibold">
-                {santri.nilaiTerakhir || "MUMTAZ (Fasih & Mutqin)"}
+                {santri.nilaiTerakhir || "-"}
               </td>
             </tr>
           </tbody>
@@ -127,7 +135,9 @@ export function PrintRapor({
           <h4 className="font-bold uppercase text-[11px]">
             II. Aspek Program Kepesantrenan (Senin–Jumat 18.30–19.30 WITA)
           </h4>
-          <span className="text-[10px] font-semibold">Rata-rata: {avgKepesantrenan} (A)</span>
+          <span className="text-[10px] font-semibold">
+            Rata-rata: {avgKepesantrenan}{avgKepesantrenan !== "-" ? ` (${konversiPredikatNilai(parseFloat(avgKepesantrenan))})` : ""}
+          </span>
         </div>
         <table className="w-full border-collapse border border-black text-xs">
           <thead>
@@ -213,34 +223,39 @@ export function PrintRapor({
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[10px]">
           <div className="flex items-center gap-1.5">
             <span className="font-semibold">1. Tahfiz Al-Qur&apos;an:</span>
-            <span className="text-emerald-700 font-bold">✓ Tuntas Target</span>
+            <span className="text-gray-500 font-medium">Belum dinilai</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="font-semibold">2. Kepesantrenan:</span>
-            <span className="text-emerald-700 font-bold">✓ Memenuhi KKM</span>
+            <span className="text-gray-500 font-medium">Belum dinilai</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="font-semibold">3. Studi Umum &amp; PBL:</span>
-            <span className="text-emerald-700 font-bold">✓ Portofolio Lengkap</span>
+            <span className="text-gray-500 font-medium">Belum dinilai</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="font-semibold">4. Presensi Kehadiran:</span>
-            <span className="text-emerald-700 font-bold">✓ 98.5% (&gt; 85%)</span>
+            <span className="text-gray-500 font-medium">Belum dinilai</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="font-semibold">5. Adab &amp; Kedisiplinan:</span>
-            <span className="text-emerald-700 font-bold">✓ Bebas SP (0 Poin)</span>
+            <span className="text-gray-500 font-medium">Belum dinilai</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="font-semibold">6. Ibadah Yaumiyah:</span>
-            <span className="text-emerald-700 font-bold">✓ Istiqomah Jamaah</span>
+            <span className="text-gray-500 font-medium">Belum dinilai</span>
           </div>
         </div>
 
         <div className="mt-2 pt-1.5 border-t border-gray-300 flex justify-between items-center text-xs font-bold">
           <span>Keputusan Dewan Penguji &amp; Asatidz:</span>
-          <span className="text-emerald-800 bg-emerald-100 px-3 py-1 rounded border border-emerald-300 uppercase tracking-wider">
-            NAIK TINGKAT / LANJUT KE SEMESTER BERIKUTNYA
+          <span className={cn(
+            "px-3 py-1 rounded border uppercase tracking-wider font-semibold",
+            keputusanKenaikan
+              ? "text-emerald-800 bg-emerald-100 border-emerald-300"
+              : "text-slate-700 bg-slate-100 border-slate-300"
+          )}>
+            {keputusanKenaikan || "Belum ditetapkan"}
           </span>
         </div>
       </div>
@@ -248,8 +263,8 @@ export function PrintRapor({
       {/* Catatan Pembina */}
       <div className="mb-4 p-2 border border-black">
         <p className="font-semibold text-[11px] mb-0.5">Catatan Pembina Halaqoh &amp; Mudir:</p>
-        <p className="italic text-gray-800 text-[11px]">
-          &quot;Alhamdulillah ananda istiqomah dalam sabaq dan murojaah sabqi-manzil harian, aktif dalam halaqah, dan menunjukkan akhlak karimah di asrama. Tingkatkan terus ziyadah hafalan pada juz berikutnya.&quot;
+        <p className="italic text-gray-500 text-[11px]">
+          {santri.catatanPembina || catatanPembina || "Belum ada catatan pembina."}
         </p>
       </div>
 
@@ -280,7 +295,7 @@ export function PrintRapor({
       </div>
 
       <div className="mt-4 text-[9px] text-gray-500 text-right">
-        Dicetak secara otomatis melalui STQ Education Portal pada: {tanggalCetak}
+        Dicetak secara otomatis melalui STQ Education Portal pada: {tglCetak}
       </div>
     </div>
   );

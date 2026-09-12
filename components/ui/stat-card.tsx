@@ -38,8 +38,8 @@ export function StatCard({
     >
       <div className="flex items-start justify-between gap-3 min-w-0">
         <div className="space-y-1 min-w-0 flex-1">
-          {/* Label: 11-13px abu-abu di atas */}
-          <p className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider truncate">
+          {/* Label: 11-13px abu-abu di atas (Bungkus rapi, cegah pemotongan elipsis pada layar ponsel) */}
+          <p className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider line-clamp-2 break-words leading-tight">
             {title}
           </p>
           {/* Angka ringkasan: 18-24px di bawah */}
@@ -47,7 +47,7 @@ export function StatCard({
             {value}
           </div>
           {description && (
-            <p className="text-[11px] sm:text-xs text-slate-500 leading-snug truncate">
+            <p className="text-[11px] sm:text-xs text-slate-500 leading-snug line-clamp-2 break-words">
               {description}
             </p>
           )}
