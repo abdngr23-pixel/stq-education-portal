@@ -86,3 +86,23 @@ export function isYesterdayWita(date: Date | string | number | null | undefined,
   if (!targetStr) return false;
   return targetStr === yesterdayStr;
 }
+
+const witaIndonesianDateFormatter = new Intl.DateTimeFormat("id-ID", {
+  timeZone: "Asia/Makassar",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
+
+/**
+ * Format tanggal dalam bahasa Indonesia di zona waktu Asia/Makassar (WITA / UTC+8).
+ * Contoh output: "12 September 2026"
+ */
+export function formatWitaDateIndonesian(date?: Date | string | number | null): string {
+  if (date === null || date === undefined || date === "") {
+    return witaIndonesianDateFormatter.format(new Date());
+  }
+  const d = typeof date === "string" || typeof date === "number" ? new Date(date) : date;
+  if (isNaN(d.getTime())) return "";
+  return witaIndonesianDateFormatter.format(d);
+}

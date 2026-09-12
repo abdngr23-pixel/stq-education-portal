@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "fs";
 import path from "path";
+import { formatWitaDateIndonesian } from "../lib/wita-date";
 
 describe("P0 Data Honesty & Mobile Accessibility (Akademik & Rapor)", () => {
   const akademikPath = path.resolve(
@@ -151,6 +152,35 @@ describe("P0 Data Honesty & Mobile Accessibility (Akademik & Rapor)", () => {
         printRaporContent.includes("Belum ada catatan pembina."),
         "Catatan pembina harus menampilkan 'Belum ada catatan pembina.' saat kosong"
       );
+    });
+
+    it("tidak boleh memuat default tanggal cetak hardcoded '08 September 2026'", () => {
+      assert.ok(
+        !printRaporContent.includes('"08 September 2026"') &&
+        !printRaporContent.includes("'08 September 2026'"),
+        "String '08 September 2026' dilarang menjadi default tanggal cetak"
+      );
+    });
+
+    it("harus menggunakan helper format tanggal WITA resmi (formatWitaDateIndonesian)", () => {
+      assert.ok(
+        printRaporContent.includes("formatWitaDateIndonesian"),
+        "Print rapor harus memanggil formatWitaDateIndonesian sebagai fallback tanggal cetak"
+      );
+    });
+
+    it("formatWitaDateIndonesian harus memformat tanggal sesuai zona Asia/Makassar dan bahasa Indonesia", () => {
+      // 2026-09-10T15:59:59.000Z = 2026-09-10 23:59:59 WITA (masih 10 September)
+      const d1 = new Date("2026-09-10T15:59:59.000Z");
+      assert.equal(formatWitaDateIndonesian(d1), "10 September 2026");
+
+      // 2026-09-10T16:00:00.000Z = 2026-09-11 00:00:00 WITA (sudah berganti menjadi 11 September)
+      const d2 = new Date("2026-09-10T16:00:00.000Z");
+      assert.equal(formatWitaDateIndonesian(d2), "11 September 2026");
+
+      // Tanpa argumen menghasilkan tanggal hari ini yang valid
+      const current = formatWitaDateIndonesian();
+      assert.ok(current.length > 5, "formatWitaDateIndonesian() harus menghasilkan string tanggal valid");
     });
   });
 

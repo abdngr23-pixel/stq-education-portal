@@ -2,6 +2,7 @@ import React from "react";
 import { KopSurat } from "./kop-surat";
 import { cn } from "@/lib/utils";
 import { konversiPredikatNilai } from "@/lib/educational-rules";
+import { formatWitaDateIndonesian } from "@/lib/wita-date";
 
 export interface PrintRaporProps {
   santri: {
@@ -39,9 +40,10 @@ export function PrintRapor({
   keputusanKenaikan,
   tahunAjaran = "2026/2027",
   semester = "Ganjil",
-  tanggalCetak = "08 September 2026",
+  tanggalCetak,
   className,
 }: PrintRaporProps) {
+  const tglCetak = tanggalCetak || formatWitaDateIndonesian();
   // Pisahkan nilai berdasarkan kategori kurikulum resmi Bab VI & VII
   const nilaiKepesantrenan = nilaiAkademik.filter(
     (n) => n.kategori.toLowerCase().includes("pesantren") || n.kategori.toLowerCase().includes("diniyah")
@@ -293,7 +295,7 @@ export function PrintRapor({
       </div>
 
       <div className="mt-4 text-[9px] text-gray-500 text-right">
-        Dicetak secara otomatis melalui STQ Education Portal pada: {tanggalCetak}
+        Dicetak secara otomatis melalui STQ Education Portal pada: {tglCetak}
       </div>
     </div>
   );
