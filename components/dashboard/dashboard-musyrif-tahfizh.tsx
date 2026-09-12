@@ -128,9 +128,11 @@ export function DashboardMusyrifTahfizh({
     setShowAllSantriModal(false);
     setSearchQuery("");
     // Kembalikan fokus ke trigger button setelah modal ditutup
+    triggerButtonRef.current?.focus();
     const btn = triggerButtonRef.current || (typeof document !== "undefined" ? document.querySelector<HTMLButtonElement>('[data-testid="btn-lihat-semua-santri"]') : null);
     btn?.focus();
     setTimeout(() => {
+      triggerButtonRef.current?.focus();
       const b = triggerButtonRef.current || (typeof document !== "undefined" ? document.querySelector<HTMLButtonElement>('[data-testid="btn-lihat-semua-santri"]') : null);
       b?.focus();
     }, 0);

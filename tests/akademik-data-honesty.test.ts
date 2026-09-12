@@ -86,6 +86,72 @@ describe("P0 Data Honesty & Mobile Accessibility (Akademik & Rapor)", () => {
         "Print rapor harus memanggil fungsi konversi predikat dinamis"
       );
     });
+
+    it("tidak boleh menganggap 'MUMTAZ' sebagai fallback nilai/predikat jika data tidak ada", () => {
+      assert.ok(
+        !printRaporContent.includes('"MUMTAZ"') && !printRaporContent.includes("'MUMTAZ'"),
+        "String 'MUMTAZ' tidak boleh dijadikan fallback nilai/predikat hardcoded"
+      );
+    });
+
+    it("tidak boleh memuat klaim kepatuhan 'Tuntas 100%' secara hardcoded", () => {
+      assert.ok(
+        !printRaporContent.includes("Tuntas 100%"),
+        "Klaim 'Tuntas 100%' tidak boleh di-hardcode di tabel aspek tahfizh"
+      );
+    });
+
+    it("tidak boleh memuat indikator kelayakan/kenaikan semester hardcoded (98.5%, Bebas SP, Istiqomah Jamaah)", () => {
+      assert.ok(
+        !printRaporContent.includes("98.5%"),
+        "Klaim kehadiran 98.5% tidak boleh di-hardcode"
+      );
+      assert.ok(
+        !printRaporContent.includes("Bebas SP (0 Poin)"),
+        "Klaim kedisiplinan 'Bebas SP (0 Poin)' tidak boleh di-hardcode"
+      );
+      assert.ok(
+        !printRaporContent.includes("Istiqomah Jamaah"),
+        "Klaim ibadah 'Istiqomah Jamaah' tidak boleh di-hardcode"
+      );
+      assert.ok(
+        !printRaporContent.includes("✓ Tuntas Target"),
+        "Klaim '✓ Tuntas Target' tidak boleh di-hardcode"
+      );
+      assert.ok(
+        !printRaporContent.includes("✓ Memenuhi KKM"),
+        "Klaim '✓ Memenuhi KKM' tidak boleh di-hardcode"
+      );
+      assert.ok(
+        !printRaporContent.includes("✓ Portofolio Lengkap"),
+        "Klaim '✓ Portofolio Lengkap' tidak boleh di-hardcode"
+      );
+    });
+
+    it("kriteria kenaikan semester harus menampilkan status netral 'Belum dinilai' saat data belum tersedia", () => {
+      assert.ok(
+        printRaporContent.includes("Belum dinilai"),
+        "Kriteria semester harus memuat fallback netral 'Belum dinilai'"
+      );
+    });
+
+    it("keputusan kenaikan tidak boleh otomatis 'NAIK TINGKAT' tanpa data resmi", () => {
+      assert.ok(
+        printRaporContent.includes("Belum ditetapkan"),
+        "Keputusan dewan penguji harus berstatus 'Belum ditetapkan' jika belum ada data resmi"
+      );
+    });
+
+    it("catatan pembina tidak boleh memuat narasi evaluasi palsu dan harus berstatus jujur", () => {
+      assert.ok(
+        !printRaporContent.includes("Alhamdulillah ananda istiqomah dalam sabaq dan murojaah"),
+        "Narasi evaluasi palsu dilarang keras di catatan pembina"
+      );
+      assert.ok(
+        printRaporContent.includes("Belum ada catatan pembina."),
+        "Catatan pembina harus menampilkan 'Belum ada catatan pembina.' saat kosong"
+      );
+    });
   });
 
   // =========================================================================
