@@ -386,6 +386,7 @@ export function AkademikModule({
         <div className="flex items-center gap-1.5 min-w-max">
           <button
             type="button"
+            data-testid="subtab-input_nilai"
             onClick={() => setSubTab("input_nilai")}
             className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 min-h-[44px] shrink-0 ${
               subTab === "input_nilai"
@@ -398,6 +399,7 @@ export function AkademikModule({
           </button>
           <button
             type="button"
+            data-testid="subtab-rapor"
             onClick={() => setSubTab("rapor")}
             className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 min-h-[44px] shrink-0 ${
               subTab === "rapor"
@@ -410,6 +412,7 @@ export function AkademikModule({
           </button>
           <button
             type="button"
+            data-testid="subtab-kepesantrenan"
             onClick={() => setSubTab("kepesantrenan")}
             className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 min-h-[44px] shrink-0 ${
               subTab === "kepesantrenan"
@@ -762,6 +765,7 @@ export function AkademikModule({
               </div>
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
                 <select
+                  data-testid="select-santri-rapor"
                   value={selectedSantriNis}
                   onChange={(e) => setSelectedSantriNis(e.target.value)}
                   className="min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-semibold text-slate-900 w-full sm:w-auto focus:bg-white focus:ring-2 focus:ring-[#0E7C3A]/20 transition-colors"
@@ -774,6 +778,7 @@ export function AkademikModule({
                   ))}
                 </select>
                 <Button
+                  data-testid="btn-cetak-rapor-modal"
                   variant="primary"
                   size="sm"
                   disabled={!currentSantri}
@@ -1249,8 +1254,10 @@ export function AkademikModule({
               </h3>
               <button
                 type="button"
+                aria-label="Tutup Pratinjau Rapor"
+                data-testid="btn-close-print-modal"
                 onClick={() => setShowPrintRaporModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 min-h-[44px] min-w-[44px] flex items-center justify-center"
               >
                 <X className="h-5 w-5" />
               </button>

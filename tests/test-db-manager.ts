@@ -20,6 +20,24 @@ export const FIXTURES = {
   SANTRI_BATAS_JUZ: "TEST_SAN_BATAS_JUZ",
 };
 
+export const RAPOR_STRESS_FIXTURES = {
+  SANTRI_ID: "santri-stress-rapor-01",
+  SANTRI_NIS: "TEST-STRESS-001",
+  SANTRI_NAMA: "Muhammad Abdullah Fathurrahman Al-Makassari",
+  STAFF_DINIYAH_ID: "staff-stress-guru-01",
+  STAFF_DINIYAH_NAMA: "Ustadz Dr. H. Abdurrahman Al-Atsary, Lc., M.A.",
+  STAFF_UMUM_ID: "staff-stress-guru-02",
+  STAFF_UMUM_NAMA: "Ustadzah Dra. Hj. Nurul Hidayah Al-Munawwarah, M.Pd.",
+  MAPEL_DINIYAH_ID: "mapel-stress-01",
+  MAPEL_DINIYAH_KODE: "MP-STR-01",
+  MAPEL_DINIYAH_NAMA: "Pendidikan Agama Islam dan Karakter Mulia STQ",
+  MAPEL_UMUM_ID: "mapel-stress-02",
+  MAPEL_UMUM_KODE: "MP-STR-02",
+  MAPEL_UMUM_NAMA: "Matematika Terapan dan Pemecahan Masalah Ilmiah",
+  NILAI_DINIYAH_ID: "nilai-stress-01",
+  NILAI_UMUM_ID: "nilai-stress-02",
+};
+
 export let TEST_DATABASE_URL = "postgresql://postgres:postgrespassword@127.0.0.1:5433/stq_test?schema=test_portal";
 
 let embeddedPgInstance: EmbeddedPostgres | null = null;
@@ -393,6 +411,132 @@ export async function setupTestFixtures(prisma: PrismaClient) {
       status: "AKTIF",
     },
   });
+
+  // Santri Stress Test Data Rapor (Muhammad Abdullah Fathurrahman Al-Makassari)
+  await prisma.santri.create({
+    data: {
+      id: RAPOR_STRESS_FIXTURES.SANTRI_ID,
+      nis: RAPOR_STRESS_FIXTURES.SANTRI_NIS,
+      nama: RAPOR_STRESS_FIXTURES.SANTRI_NAMA,
+      kelas: "7A",
+      jenisKelamin: "L",
+      halaqohId: FIXTURES.HALAQOH_ID,
+      modalHafalanAwalHalaman: 100,
+      tanggalBaselineTahfizh: baselineDate,
+      status: "AKTIF",
+    },
+  });
+}
+
+/**
+ * Menyiapkan fixtures data nilai akademik untuk pengujian rapor terisi data (termasuk uji panjang teks)
+ */
+export async function setupStressTestRaporFixtures(prisma: PrismaClient) {
+  verifyTestEnvironment();
+
+  // 1. Buat / Pastikan Guru Pengajar tersedia
+  await prisma.staff.upsert({
+    where: { staffCode: "STF-STR-001" },
+    update: {},
+    create: {
+      id: RAPOR_STRESS_FIXTURES.STAFF_DINIYAH_ID,
+      staffCode: "STF-STR-001",
+      nama: RAPOR_STRESS_FIXTURES.STAFF_DINIYAH_NAMA,
+      noHp: "081234567891",
+      roleStaff: "GA",
+      status: "AKTIF",
+    },
+  });
+
+  await prisma.staff.upsert({
+    where: { staffCode: "STF-STR-002" },
+    update: {},
+    create: {
+      id: RAPOR_STRESS_FIXTURES.STAFF_UMUM_ID,
+      staffCode: "STF-STR-002",
+      nama: RAPOR_STRESS_FIXTURES.STAFF_UMUM_NAMA,
+      noHp: "081234567892",
+      roleStaff: "GA",
+      status: "AKTIF",
+    },
+  });
+
+  // 2. Buat / Pastikan Santri Stress Test Nama Panjang tersedia
+  await prisma.santri.upsert({
+    where: { id: RAPOR_STRESS_FIXTURES.SANTRI_ID },
+    update: {},
+    create: {
+      id: RAPOR_STRESS_FIXTURES.SANTRI_ID,
+      nis: RAPOR_STRESS_FIXTURES.SANTRI_NIS,
+      nama: RAPOR_STRESS_FIXTURES.SANTRI_NAMA,
+      kelas: "7A",
+      jenisKelamin: "L",
+      halaqohId: FIXTURES.HALAQOH_ID,
+      modalHafalanAwalHalaman: 100,
+      tanggalBaselineTahfizh: new Date("2026-09-08T00:00:00.000Z"),
+      status: "AKTIF",
+    },
+  });
+
+  // 3. Buat Mata Pelajaran Kepesantrenan & Umum
+  await prisma.mataPelajaran.upsert({
+    where: { kodeMapel: RAPOR_STRESS_FIXTURES.MAPEL_DINIYAH_KODE },
+    update: {},
+    create: {
+      id: RAPOR_STRESS_FIXTURES.MAPEL_DINIYAH_ID,
+      kodeMapel: RAPOR_STRESS_FIXTURES.MAPEL_DINIYAH_KODE,
+      nama: RAPOR_STRESS_FIXTURES.MAPEL_DINIYAH_NAMA,
+      kategori: "KEPESANTRENAN",
+      guruId: RAPOR_STRESS_FIXTURES.STAFF_DINIYAH_ID,
+    },
+  });
+
+  await prisma.mataPelajaran.upsert({
+    where: { kodeMapel: RAPOR_STRESS_FIXTURES.MAPEL_UMUM_KODE },
+    update: {},
+    create: {
+      id: RAPOR_STRESS_FIXTURES.MAPEL_UMUM_ID,
+      kodeMapel: RAPOR_STRESS_FIXTURES.MAPEL_UMUM_KODE,
+      nama: RAPOR_STRESS_FIXTURES.MAPEL_UMUM_NAMA,
+      kategori: "UMUM",
+      guruId: RAPOR_STRESS_FIXTURES.STAFF_UMUM_ID,
+    },
+  });
+
+  // 4. Buat Nilai Akademik
+  await prisma.nilaiAkademik.upsert({
+    where: { id: RAPOR_STRESS_FIXTURES.NILAI_DINIYAH_ID },
+    update: {},
+    create: {
+      id: RAPOR_STRESS_FIXTURES.NILAI_DINIYAH_ID,
+      santriId: RAPOR_STRESS_FIXTURES.SANTRI_ID,
+      mapelId: RAPOR_STRESS_FIXTURES.MAPEL_DINIYAH_ID,
+      guruId: RAPOR_STRESS_FIXTURES.STAFF_DINIYAH_ID,
+      semester: 1,
+      tahunAjaran: "2026/2027",
+      jenis: "UAS",
+      angka: 94.5,
+      huruf: "A",
+      catatan: "Pemahaman materi sangat mendalam dan adab belajar terpuji.",
+    },
+  });
+
+  await prisma.nilaiAkademik.upsert({
+    where: { id: RAPOR_STRESS_FIXTURES.NILAI_UMUM_ID },
+    update: {},
+    create: {
+      id: RAPOR_STRESS_FIXTURES.NILAI_UMUM_ID,
+      santriId: RAPOR_STRESS_FIXTURES.SANTRI_ID,
+      mapelId: RAPOR_STRESS_FIXTURES.MAPEL_UMUM_ID,
+      guruId: RAPOR_STRESS_FIXTURES.STAFF_UMUM_ID,
+      semester: 1,
+      tahunAjaran: "2026/2027",
+      jenis: "UAS",
+      angka: 85.0,
+      huruf: "B",
+      catatan: null, // Menguji penanganan field opsional kosong
+    },
+  });
 }
 
 /**
@@ -407,7 +551,26 @@ export async function cleanupTestFixtures(prisma: PrismaClient) {
     FIXTURES.SANTRI_KHATAM,
     FIXTURES.SANTRI_SABAQI,
     FIXTURES.SANTRI_BATAS_JUZ,
+    RAPOR_STRESS_FIXTURES.SANTRI_ID,
+    "santri-qa-extra-01",
   ];
+
+  // Hapus NilaiAkademik terkait
+  await prisma.nilaiAkademik.deleteMany({
+    where: {
+      OR: [
+        { santriId: { in: testSantriIds } },
+        { id: { in: [RAPOR_STRESS_FIXTURES.NILAI_DINIYAH_ID, RAPOR_STRESS_FIXTURES.NILAI_UMUM_ID] } },
+      ],
+    },
+  });
+
+  // Hapus MataPelajaran terkait
+  await prisma.mataPelajaran.deleteMany({
+    where: {
+      id: { in: [RAPOR_STRESS_FIXTURES.MAPEL_DINIYAH_ID, RAPOR_STRESS_FIXTURES.MAPEL_UMUM_ID] },
+    },
+  });
 
   // Hapus AuditLog terkait
   await prisma.auditLog.deleteMany({
@@ -450,7 +613,13 @@ export async function cleanupTestFixtures(prisma: PrismaClient) {
   // Hapus Staff test
   await prisma.staff.deleteMany({
     where: {
-      id: FIXTURES.STAFF_ID,
+      id: {
+        in: [
+          FIXTURES.STAFF_ID,
+          RAPOR_STRESS_FIXTURES.STAFF_DINIYAH_ID,
+          RAPOR_STRESS_FIXTURES.STAFF_UMUM_ID,
+        ],
+      },
     },
   });
 }
@@ -503,6 +672,10 @@ export function getPgCtlPath(): string | null {
   const candidates = [
     path.resolve(__dirname, "../node_modules/@embedded-postgres/windows-x64/native/bin/pg_ctl.exe"),
     path.resolve(process.cwd(), "node_modules/@embedded-postgres/windows-x64/native/bin/pg_ctl.exe"),
+    path.resolve(__dirname, "../node_modules/@embedded-postgres/linux-x64/native/bin/pg_ctl"),
+    path.resolve(process.cwd(), "node_modules/@embedded-postgres/linux-x64/native/bin/pg_ctl"),
+    "/usr/lib/postgresql/bin/pg_ctl",
+    "/usr/bin/pg_ctl",
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
@@ -511,34 +684,80 @@ export function getPgCtlPath(): string | null {
 }
 
 export function findListeningPid(port: number): number | null {
-  if (process.platform !== "win32") return null;
-  try {
-    const output = execSync("netstat -ano -p tcp", { encoding: "utf-8", timeout: 4000 });
-    const lines = output.split("\n");
-    for (const line of lines) {
-      if (line.includes(`:${port}`) && line.includes("LISTENING")) {
-        const parts = line.trim().split(/\s+/);
-        const pidStr = parts[parts.length - 1];
-        const parsedPid = parseInt(pidStr, 10);
-        if (!isNaN(parsedPid) && parsedPid > 0) {
-          return parsedPid;
+  if (process.platform === "win32") {
+    try {
+      const output = execSync("netstat -ano -p tcp", { encoding: "utf-8", timeout: 4000 });
+      const lines = output.split("\n");
+      for (const line of lines) {
+        if (line.includes(`:${port}`) && line.includes("LISTENING")) {
+          const parts = line.trim().split(/\s+/);
+          const pidStr = parts[parts.length - 1];
+          const parsedPid = parseInt(pidStr, 10);
+          if (!isNaN(parsedPid) && parsedPid > 0) {
+            return parsedPid;
+          }
         }
       }
-    }
-  } catch {}
+    } catch {}
+    return null;
+  }
+
+  // Linux / POSIX fallback: lsof or ss
+  try {
+    const output = execSync(`lsof -i :${port} -t -sTCP:LISTEN`, { encoding: "utf-8", timeout: 4000 });
+    const pid = parseInt(output.trim().split(/\s+/)[0], 10);
+    if (!isNaN(pid) && pid > 0) return pid;
+  } catch {
+    try {
+      const output = execSync(`ss -tulpn '( sport = :${port} )'`, { encoding: "utf-8", timeout: 4000 });
+      const match = output.match(/pid=(\d+)/);
+      if (match) {
+        const pid = parseInt(match[1], 10);
+        if (!isNaN(pid) && pid > 0) return pid;
+      }
+    } catch {}
+  }
   return null;
 }
 
 export function getSystemPostgresProcesses(): ProcessInfo[] {
-  if (process.platform !== "win32") return [];
+  if (process.platform === "win32") {
+    try {
+      const script = `powershell -NoProfile -Command "@(Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*postgres*' } | Select-Object ProcessId, ParentProcessId, Name, CommandLine) | ConvertTo-Json -Compress"`;
+      const stdout = execSync(script, { encoding: "utf-8", timeout: 8000 }).trim();
+      if (!stdout || stdout === "[]") return [];
+      const parsed = JSON.parse(stdout);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && typeof parsed === "object") return [parsed];
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  // Linux / POSIX fallback
   try {
-    const script = `powershell -NoProfile -Command "@(Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*postgres*' } | Select-Object ProcessId, ParentProcessId, Name, CommandLine) | ConvertTo-Json -Compress"`;
-    const stdout = execSync(script, { encoding: "utf-8", timeout: 8000 }).trim();
-    if (!stdout || stdout === "[]") return [];
-    const parsed = JSON.parse(stdout);
-    if (Array.isArray(parsed)) return parsed;
-    if (parsed && typeof parsed === "object") return [parsed];
-    return [];
+    const stdout = execSync("ps -eo pid,ppid,comm,args", { encoding: "utf-8", timeout: 4000 }).trim();
+    const lines = stdout.split("\n").slice(1);
+    const results: ProcessInfo[] = [];
+    for (const line of lines) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 4) {
+        const pid = parseInt(parts[0], 10);
+        const ppid = parseInt(parts[1], 10);
+        const comm = parts[2];
+        const args = parts.slice(3).join(" ");
+        if (comm.toLowerCase().includes("postgres") || args.toLowerCase().includes("postgres")) {
+          results.push({
+            ProcessId: pid,
+            ParentProcessId: ppid,
+            Name: comm,
+            CommandLine: args,
+          });
+        }
+      }
+    }
+    return results;
   } catch {
     return [];
   }

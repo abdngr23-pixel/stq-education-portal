@@ -701,7 +701,7 @@ export function PresensiHarianMobile({
       </Card>
 
       {/* Card 3: Daftar Santri & Input Presensi Cepat */}
-      <div className="space-y-2.5 pb-36 sm:pb-24">
+      <div data-testid="santri-presensi-list" className="space-y-2.5 pb-36 sm:pb-24">
         {filteredSantri.map((s) => {
           const currentRec = attendanceMap[s.id] || { status: "BELUM_DICATAT" };
           const status = currentRec.status;
@@ -807,7 +807,7 @@ export function PresensiHarianMobile({
 
       {/* Floating Bottom Action Bar (Mobile-friendly thumb access, coordinated with bottom nav) */}
       <div className="fixed bottom-[calc(4.5rem+max(env(safe-area-inset-bottom),0.35rem))] sm:bottom-6 left-0 right-0 z-30 max-w-2xl mx-auto px-4 pointer-events-none">
-        <div className="p-3.5 rounded-3xl bg-slate-950/90 text-white backdrop-blur-md border border-slate-800 shadow-2xl flex items-center justify-between gap-3 pointer-events-auto">
+        <div data-testid="floating-save-bar" className="p-3.5 rounded-3xl bg-slate-950/90 text-white backdrop-blur-md border border-slate-800 shadow-2xl flex items-center justify-between gap-3 pointer-events-auto">
           <div className="text-xs">
             <p className="font-bold flex items-center gap-1.5 text-emerald-400">
               <span>{selectedSesi}</span>

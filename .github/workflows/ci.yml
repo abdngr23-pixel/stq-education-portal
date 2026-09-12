@@ -2,19 +2,21 @@ name: STQ Education Portal CI
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "review/*" ]
   pull_request:
     branches: [ "main", "master" ]
 
 jobs:
-  build-and-test:
-    name: Build, Lint & Unit Tests
+  quality-gates:
+    name: STQ Quality Gates & Verification
     runs-on: ubuntu-latest
 
     env:
       DATABASE_URL: "postgresql://postgres:postgrespassword@localhost:5432/stq_education_db?schema=public"
       AUTH_SECRET: "ci-testing-jwt-secret-key-super-secure-32chars"
       NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+      CHROME_PATH: "/usr/bin/google-chrome"
+      PUPPETEER_EXECUTABLE_PATH: "/usr/bin/google-chrome"
 
     steps:
       - name: Checkout Code Repository
@@ -33,10 +35,16 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate
 
+      - name: TypeScript App Quality Check (tsc --noEmit)
+        run: npx tsc --noEmit
+
+      - name: TypeScript Tests Quality Check (typecheck:test)
+        run: npm run typecheck:test
+
       - name: Run ESLint Code Quality Check
         run: npm run lint
 
-      - name: Run Business Rules Unit Tests
+      - name: Run Business Rules Unit & Integration Tests
         env:
           NODE_ENV: test
           IS_TEST_RUN: "true"
@@ -46,3 +54,38 @@ jobs:
 
       - name: Run Next.js Production Build
         run: npm run build
+
+      - name: Verify PostgreSQL Test DB Cleanup & Process Ownership
+        env:
+          NODE_ENV: test
+          IS_TEST_RUN: "true"
+          ALLOW_ISOLATED_TEST_DB: "true"
+          TEST_DATABASE_URL: "postgresql://postgres:postgrespassword@127.0.0.1:5433/stq_test?schema=test_portal"
+        run: npx tsx scripts/verify-test-db-cleanup.ts
+
+      - name: Verify Real P0.1 Tahfizh E2E Puppeteer Invariants
+        env:
+          NODE_ENV: test
+          IS_TEST_RUN: "true"
+          ALLOW_ISOLATED_TEST_DB: "true"
+          TEST_DATABASE_URL: "postgresql://postgres:postgrespassword@127.0.0.1:5433/stq_test?schema=test_portal"
+          CHROME_PATH: "/usr/bin/google-chrome"
+        run: npx tsx scripts/puppeteer-p0-1-verify.ts
+
+      - name: Run Visual QA Structural Layout Verification
+        env:
+          NODE_ENV: test
+          IS_TEST_RUN: "true"
+          ALLOW_ISOLATED_TEST_DB: "true"
+          TEST_DATABASE_URL: "postgresql://postgres:postgrespassword@127.0.0.1:5433/stq_test?schema=test_portal"
+          CHROME_PATH: "/usr/bin/google-chrome"
+        run: npm run qa:structural
+
+      - name: Upload Visual QA Artifacts (if generated)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: visual-qa-${{ github.sha }}
+          path: artifacts/visual-qa/
+          if-no-files-found: ignore
+          retention-days: 7

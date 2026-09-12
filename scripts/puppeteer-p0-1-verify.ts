@@ -25,13 +25,9 @@ import {
   getActiveTestPort,
   getActiveTempDir,
 } from "../tests/test-db-manager";
+import { getChromeExecutablePath } from "../tests/helpers/qa-layout-assertions";
 
-const CHROME_PATH =
-  process.env.CHROME_PATH ||
-  process.env.PUPPETEER_EXECUTABLE_PATH ||
-  (process.platform === "win32"
-    ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
-    : "/usr/bin/google-chrome");
+const CHROME_PATH = getChromeExecutablePath();
 
 const ARTIFACT_DIR =
   process.env.E2E_ARTIFACT_DIR ||

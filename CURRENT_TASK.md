@@ -1,40 +1,58 @@
 # CURRENT TASK — STQ EDUCATION PORTAL
 
 ## 1. Tujuan Saat Ini
-Remediasi Visual QA Pasca-Merge PR #1 (Desktop + Mobile) untuk STQ Education Portal:
-1. Menghilangkan data mock/hardcoded di Modul Akademik & Print Rapor (data honesty terjamin, empty state transparan).
-2. Memperbaiki responsivitas tabel Rapor Santri pada perangkat seluler (tampilan kartu tersusun/stacked tanpa pemotongan kolom).
-3. Memperbaiki koordinasi layout: sticky bottom save bar presensi di atas mobile bottom navigation, scroll-offset/padding header, tab scroll horizontal, touch target $\ge 44 \times 44$ px, dan perbaikan pemotongan teks judul StatCard.
-4. Desain institutional netral: kartu mufar bersih hijau `#0E7C3A` (tanpa gradien ungu slop), pengelompokan metrik dashboard musyrif dengan kontras tinggi.
-5. Mempertahankan 100% aturan bisnis, ABAC fail-closed, dan proteksi regresi database/P0.1.
+PR #3 QA Hardening untuk STQ Education Portal:
+1. Menjadikan skrip visual QA (`scripts/capture-post-merge-qa.ts`) portabel lintas platform (Windows, Linux, macOS) tanpa path hardcoded direktori lokal developer (`C:\Users\Lenovo\...`).
+2. Menambah viewport minimum seluler `360×800` (melengkapi `390×844` dan `412×915` pada mobile, serta `1366×768`, `1440×900`, `1920×1080` pada desktop).
+3. Menambahkan assertion layout struktural otomatis untuk mendeteksi masalah layout nyata:
+   - Accidental global horizontal overflow (membedakan scroll internal pada tab strip `overflow-x-auto`).
+   - Non-collision check: Sticky action bar vs Mobile Bottom Navigation pada modul Presensi mobile (`rectanglesOverlap`).
+   - Aksesibilitas konten: Baris/konten terakhir presensi tidak tertutup secara permanen oleh sticky bottom bar.
+   - Deteksi pemotongan teks kritis (critical text clipping).
+   - Touch target minimum $\ge 44 \times 44$ px pada kontrol navigasi & aksi utama mobile.
+   - Verifikasi single-instance dan safe-area pada Mobile Bottom Navigation.
+   - Scroll padding / header offset check: Heading halaman tidak tenggelam di bawah sticky header.
+4. Cakupan Rapor Santri terisi data riil (stress test data fixture tanpa mock hardcoded):
+   - Pengujian nama panjang santri: *Muhammad Abdullah Fathurrahman Al-Makassari*.
+   - Pengujian mata pelajaran & guru nama panjang kurikulum Kepesantrenan dan Umum.
+   - Pratinjau cetak rapor resmi dengan tanggal dinamis zona operasional WITA (Asia/Makassar).
+5. Memperluas GitHub Actions (`.github/workflows/ci.yml`) agar seluruh quality gates penting dijalankan secara berurutan dan deterministik di CI.
+6. Mempertahankan 100% aturan bisnis Tahfizh P0.1, isolasi database PostgreSQL, dan ABAC fail-closed.
 
 ## 2. Baseline Commit & Git Working State
 * **Repository:** `abdngr23-pixel/stq-education-portal`
-* **Baseline Commit (main):** `3aff8798b306b1569b5c0b273abc2816cde11b8e` (Hasil merge PR #1)
-* **Working Branch:** `review/post-merge-visual-qa` (TIDAK di-merge ke `main`, menunggu review pengawas)
+* **Baseline Commit (main):** `fa040d3db2a8b67be178bdd0f3a61d70713bcba3` (Hasil merge PR #2)
+* **Lifecycle Status:**
+  - PR #1: **MERGED**
+  - PR #2: **MERGED** (branch `review/post-merge-visual-qa` telah dihapus dari remote)
+  - Branch `review/uiux-pilot-b1-b2`: **HISTORIKAL / STALE** (tidak digunakan dan tidak dimerge)
+* **Current Working Branch:** `review/qa-hardening` (Bekerja pada branch baru, TIDAK langsung di `main`, TIDAK auto-merge)
 
-## 3. Perubahan Berkas
-### File Terverifikasi & Dimodifikasi
-* `components/modules/akademik-module.tsx` (P0: Hapus data mock hardcoded Obama, empty state jujur; P1: Tampilan stacked card mobile rapor, tab horizontal scroll aman).
-* `components/print/print-rapor.tsx` (P0: Hapus fallback hafalan hardcoded "Ali 'Imran: 1-20" -> "-", hapus fallback "MUMTAZ" -> "-", hapus "Tuntas 100%" -> "-", netralkan 6 kriteria kenaikan -> "Belum dinilai", keputusan -> "Belum ditetapkan", catatan pembina -> "Belum ada catatan pembina.", hapus hardcoded "08 September 2026" -> dynamic WITA via `formatWitaDateIndonesian`).
-* `lib/wita-date.ts` (P0: Ekspor helper `formatWitaDateIndonesian` untuk tanggal human-readable standar zona Asia/Makassar).
-* `components/dashboard/presensi-harian-mobile.tsx` (P1: Koordinasi floating save bar di atas bottom nav, padding bottom aman `pb-36 sm:pb-24`, peningkatan kontras teks secondary).
-* `app/globals.css` (P1: `scroll-padding-top: 4rem`, `scroll-margin-top: 4.5rem`).
-* `app/page.tsx` (P1: `mainScrollRef`, `scroll-pt-14 sm:scroll-pt-16`, auto-reset scroll ke atas saat beralih tab).
-* `components/modules/tahfizh-module.tsx` (P1: Sub-nav tabs horizontal scroll & touch target $\ge 44$ px; P2: Kartu mufar bersih tanpa gradien ungu slop).
-* `components/ui/stat-card.tsx` (P1: Ganti `truncate` dengan `line-clamp-2 break-words leading-tight` agar judul kartu tidak terpotong elipsis).
-* `components/dashboard/master-data-santri.tsx` (P1: Kontras teks nomor urut dinaikkan ke `text-slate-500`, aria-label eksplisit pada tombol ikon).
-* `components/dashboard/dashboard-musyrif-tahfizh.tsx` (P2: Unifikasi 4 kartu metrik menjadi 1 kontainer terstruktur, pemulihan fokus modal aksesibel).
-* `components/navigation/mobile-bottom-nav.tsx` (P1: `data-testid` terstandarisasi untuk navigasi mobile).
-* `tests/akademik-data-honesty.test.ts` (Baru: Uji regresi P0 integritas data akademik & responsivitas rapor).
-* `scripts/capture-post-merge-qa.ts` (Baru: Script penangkapan bukti visual otomatis multi-viewport).
+## 3. Perubahan Berkas PR #3
+### File Dimodifikasi & Baru
+* `tests/helpers/qa-layout-assertions.ts` (Baru: Helper reusable assertions layout, non-overlap bounding box, touch target, Chrome resolution portabel, deteksi overflow, formatter tabel visual findings).
+* `tests/qa-layout-assertions.test.ts` (Baru: Uji unit komprehensif untuk fungsi overlap rectangle, touch target threshold, path resolution, dan format finding).
+* `scripts/qa-runner-core.ts` (Baru: Runner inti QA multi-viewport, assertions struktural layout, setup fixtures stress test, dan screenshot evidence capture).
+* `scripts/qa-visual-structural.ts` (Baru: Runner khusus CI untuk validasi struktural layout tanpa beban penulisan disk berlebih).
+* `scripts/capture-post-merge-qa.ts` (Dimodifikasi: Refactor total menghapus dependensi path absolut developer, menggunakan `process.cwd()` dan path portabel).
+* `scripts/puppeteer-p0-1-verify.ts` (Dimodifikasi: Resolusi path browser lintas platform melalui `getChromeExecutablePath`).
+* `scripts/verify-test-db-cleanup.ts` (Dimodifikasi: Dukungan verifikasi proses postgres pada Linux tanpa melemahkan proteksi PID baseline dan kepemilikan instance test).
+* `tests/test-db-manager.ts` (Dimodifikasi: Dukungan Linux untuk pg_ctl, port listener via lsof/ss, proses listing via ps, serta fixture stress test data rapor).
+* `components/navigation/mobile-bottom-nav.tsx` (Dimodifikasi: Menambahkan `data-testid="mobile-bottom-nav"` untuk testing deterministik).
+* `components/dashboard/presensi-harian-mobile.tsx` (Dimodifikasi: Menambahkan `data-testid="floating-save-bar"` dan `data-testid="santri-presensi-list"`).
+* `components/modules/akademik-module.tsx` (Dimodifikasi: Menambahkan `data-testid` pada subtab rapor, seleksi santri, tombol cetak, dan tombol tutup modal).
+* `package.json` (Dimodifikasi: Menambahkan script `typecheck`, `qa:structural`, dan `qa:visual`).
+* `.github/workflows/ci.yml` (Dimodifikasi: Quality gates lengkap berurutan mencakup tsc, typecheck:test, lint, unit test, build, db cleanup, puppeteer P0.1, qa structural, dan upload artifact).
+* `CURRENT_TASK.md` (Dimodifikasi: Status disinkronkan dengan repositori GitHub aktual).
 
-## 4. Status Quality Gates (100% Lulus)
+## 4. Status Quality Gates Lokal (100% LULUS)
+Semua quality gates lokal diverifikasi dan lulus tanpa error/failure:
 - [x] `npx tsc --noEmit` (0 error)
 - [x] `npm run typecheck:test` (0 error)
 - [x] `npm run lint` (0 error, 0 warning)
-- [x] `npm test` (335 tests lulus, 111 suites, 0 failures)
-- [x] `npm run build` (Next.js 16.3.4 Turbopack berhasil dikompilasi)
-- [x] `npx tsx scripts/verify-test-db-cleanup.ts` (Semua 6 skenario pembersihan DB test lulus 100%)
-- [x] `npx tsx scripts/puppeteer-p0-1-verify.ts` (Seluruh 6 skenario E2E P0.1 riil lulus 100%)
-- [x] `npx tsx scripts/capture-post-merge-qa.ts` (22 tangkapan layar multi-viewport berhasil diambil)
+- [x] `npm test` (347 tests lulus, 117 suites, 0 failures)
+- [x] `npm run build` (Next.js production build berhasil dikompilasi)
+- [x] `npx tsx scripts/verify-test-db-cleanup.ts` (Semua 6 skenario pembersihan & preservasi proses DB test lulus 100%)
+- [x] `npx tsx scripts/puppeteer-p0-1-verify.ts` (Seluruh 6 skenario E2E Tahfizh P0.1 riil lulus 100%)
+- [x] `npm run qa:structural` (89/89 layout assertions LOLOS 100% pada 6 viewports)
+- [x] `npm run qa:visual` (33 screenshot multi-viewport & stres test data rapor berhasil disimpan)
