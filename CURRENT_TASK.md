@@ -61,12 +61,12 @@ PR #4 Secure PWA & Installability untuk STQ Education Portal (STQ Darul Ulum Cen
 * `CURRENT_TASK.md` (Pembaruan dokumentasi status kerja PR #4)
 
 ## 4. Status Quality Gates Lokal
-- [ ] `npx tsc --noEmit`
-- [ ] `npm run typecheck:test`
-- [ ] `npm run lint`
-- [ ] `npm test`
-- [ ] `npm run build`
-- [ ] `npx tsx scripts/verify-test-db-cleanup.ts`
-- [ ] `npx tsx scripts/puppeteer-p0-1-verify.ts`
-- [ ] `npm run qa:structural`
-- [ ] `npm run qa:pwa`
+- [x] `npx tsc --noEmit` — PASS (0 errors)
+- [x] `npm run typecheck:test` — PASS (0 errors)
+- [x] `npm run lint` — PASS (0 warnings, 0 errors)
+- [x] `npm test` — PASS (398/398 passed, 125 suites)
+- [x] `npm run build` — PASS (14 rute statis, /manifest.webmanifest statis)
+- [x] `npx tsx scripts/verify-test-db-cleanup.ts` — PASS (100% proses/port/temp terisolasi dan bersih)
+- [x] `npx tsx scripts/puppeteer-p0-1-verify.ts` — PASS (6/6 skenario riil + Test Isolation Guard)
+- [x] `npm run qa:structural` — PASS (98/98 assertions bebas overflow/overlap)
+- [x] `npm run qa:pwa` — PASS (8/8 tahapan: manifest, icons, privacy, cross-cache collision, offline fallback)
