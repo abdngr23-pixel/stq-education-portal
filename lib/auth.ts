@@ -2,7 +2,7 @@ import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { AuthTokenPayload, Role, UserSession } from "@/types/auth";
+import { AuthTokenPayload, Role, UserSession, getHalaqohByStaff } from "@/types/auth";
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 
@@ -71,6 +71,14 @@ export function isExplicitTestRuntime(): boolean {
   );
 }
 
+/**
+ * Predikat keamanan: Demo login HANYA diizinkan pada runtime non-produksi
+ * dengan explicit server opt-in flag STQ_ENABLE_DEMO_LOGIN === "true".
+ */
+export function isDemoLoginAllowed(): boolean {
+  return process.env.NODE_ENV !== "production" && process.env.STQ_ENABLE_DEMO_LOGIN === "true";
+}
+
 let testSessionMock: UserSession | null | undefined = undefined;
 
 /**
@@ -80,6 +88,111 @@ export function setTestSession(session: UserSession | null | undefined): void {
   if (isExplicitTestRuntime()) {
     testSessionMock = session;
   }
+}
+
+/**
+ * Unified Session Resolver: Validasi dan hidrasi sesi pengguna dari JWT payload.
+ * Menegakkan fail-closed policy dan menghidrasi atribut otorisasi dari database terkini.
+ */
+export async function resolveVerifiedSessionPayload(
+  payload: AuthTokenPayload
+): Promise<UserSession | null> {
+  if (!payload || !payload.sub) {
+    return null;
+  }
+
+  const isProd = process.env.NODE_ENV === "production";
+
+  // 1. Tolak seluruh identitas sintetik (user_*, stf_*) di production
+  if (payload.sub.startsWith("user_") || payload.sub.startsWith("stf_")) {
+    if (isProd || (!isDemoLoginAllowed() && !isExplicitTestRuntime())) {
+      return null;
+    }
+    // Lingkungan non-produksi dengan explicit demo opt-in (STQ_ENABLE_DEMO_LOGIN === "true")
+    return {
+      userId: payload.sub,
+      username: payload.username,
+      role: payload.role,
+      staffId: payload.staffId ?? null,
+      staffCode: payload.staffCode ?? null,
+      santriId: payload.santriId ?? null,
+      name: payload.name ?? payload.username,
+      halaqohName: payload.halaqohName ?? null,
+      isKepalaBidangTahfidz: payload.isKepalaBidangTahfidz ?? false,
+      isPetugasPresensiPutri: payload.isPetugasPresensiPutri ?? false,
+    };
+  }
+
+  // 2. Validasi ke PostgreSQL via Prisma (Timeout 2 detik)
+  let user = null;
+  try {
+    const dbPromise = prisma.user.findUnique({
+      where: { id: payload.sub },
+      include: {
+        staff: {
+          include: {
+            halaqohDipimpin: { select: { nama: true } },
+          },
+        },
+        santri: {
+          include: {
+            halaqoh: { select: { nama: true } },
+          },
+        },
+      },
+    });
+    const timeoutPromise = new Promise<null>((_, reject) =>
+      setTimeout(() => reject(new Error("DB_TIMEOUT")), 2000)
+    );
+    user = await Promise.race([dbPromise, timeoutPromise]);
+  } catch (dbErr) {
+    console.warn("Verifikasi database sesi pengguna gagal atau timeout:", dbErr);
+    // FAIL-CLOSED: Jika DB offline, timeout, atau Prisma error, batalkan session
+    return null;
+  }
+
+  // 3. User wajib ditemukan di database (User yang dihapus langsung ditolak)
+  if (!user) {
+    return null;
+  }
+
+  // 4. Status akun wajib AKTIF (Revocation akun langsung efektif)
+  if (user.status !== "AKTIF") {
+    return null;
+  }
+
+  // 5. Role database wajib sama persis dengan claim token (Perubahan role langsung membatalkan session lama)
+  if (user.role !== payload.role) {
+    return null;
+  }
+
+  // 6. HYDRATE AUTHORIZATION ATTRIBUTES DARI DATABASE TERKINI
+  const isKabid = Boolean(user.staff?.isKepalaBidangTahfidz);
+  const isPetugasPresensiPutri = Boolean(user.isPetugasPresensiPutri);
+  const staffCode = user.staff?.staffCode ?? null;
+  const displayName = user.staff?.nama || user.santri?.nama || user.username;
+
+  let halaqohName: string | null = null;
+  if (user.staff?.halaqohDipimpin && user.staff.halaqohDipimpin.length > 0) {
+    halaqohName = user.staff.halaqohDipimpin[0].nama;
+  } else if (user.santri?.halaqoh) {
+    halaqohName = user.santri.halaqoh.nama;
+  } else if (staffCode) {
+    halaqohName = getHalaqohByStaff(staffCode);
+  }
+
+  return {
+    userId: user.id,
+    username: user.username,
+    role: user.role,
+    staffId: user.staffId ?? null,
+    staffCode,
+    santriId: user.santriId ?? null,
+    name: displayName,
+    halaqohName,
+    isKepalaBidangTahfidz: isKabid,
+    isPetugasPresensiPutri,
+  };
 }
 
 /**
@@ -98,50 +211,7 @@ export async function getCurrentSession(): Promise<UserSession | null> {
     const payload = await verifySessionToken(token);
     if (!payload) return null;
 
-    // Tolak token demo tanpa autentikasi di mode produksi jika demo dinonaktifkan
-    if (
-      process.env.NODE_ENV === "production" &&
-      process.env.NEXT_PUBLIC_ENABLE_DEMO !== "true" &&
-      payload.sub &&
-      payload.sub.startsWith("user_demo_")
-    ) {
-      return null;
-    }
-
-    // Verifikasi status akun aktif di DB untuk akun non-memory dengan batas waktu 2 detik
-    if (payload.sub && !payload.sub.startsWith("user_")) {
-      try {
-        const dbPromise = prisma.user.findUnique({
-          where: { id: payload.sub },
-          select: { id: true, status: true, role: true },
-        });
-        const timeoutPromise = new Promise<null>((_, reject) =>
-          setTimeout(() => reject(new Error("DB_TIMEOUT")), 2000)
-        );
-        const user = await Promise.race([dbPromise, timeoutPromise]);
-
-        // Jika user ditemukan dan statusnya nonaktif atau role berubah -> batalkan sesi
-        if (user && (user.status !== "AKTIF" || user.role !== payload.role)) {
-          return null;
-        }
-      } catch (dbErr) {
-        // Jika database offline atau timeout, pertahankan sesi berdasarkan integritas kriptografis token JWT
-        console.warn("Verifikasi status DB sesi pengguna dilewati karena timeout/offline:", dbErr);
-      }
-    }
-
-    return {
-      userId: payload.sub,
-      username: payload.username,
-      role: payload.role,
-      staffId: payload.staffId,
-      staffCode: payload.staffCode,
-      santriId: payload.santriId,
-      name: payload.name,
-      halaqohName: payload.halaqohName,
-      isKepalaBidangTahfidz: payload.isKepalaBidangTahfidz ?? false,
-      isPetugasPresensiPutri: payload.isPetugasPresensiPutri ?? false,
-    };
+    return await resolveVerifiedSessionPayload(payload);
   } catch {
     return null;
   }
@@ -154,45 +224,31 @@ export const getSession = getCurrentSession;
  */
 export async function getAuthFromRequest(req: Request): Promise<UserSession | null> {
   try {
-    // 1. Cek Header Authorization
+    // 1. Cek Header Authorization (Bearer <token>)
     const authHeader = req.headers.get("authorization");
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const token = authHeader.substring(7).trim();
       const payload = await verifySessionToken(token);
-      if (payload) {
-        if (process.env.NODE_ENV === "production" && payload.sub && payload.sub.startsWith("user_")) {
-          return null;
-        }
+      if (!payload) return null;
 
-        if (payload.sub && !payload.sub.startsWith("user_")) {
-          try {
-            const user = await prisma.user.findUnique({
-              where: { id: payload.sub },
-              select: { id: true, status: true, role: true },
-            });
-            if (!user || user.status !== "AKTIF" || user.role !== payload.role) {
-              return null;
-            }
-          } catch {
-            if (process.env.NODE_ENV === "production") return null;
-          }
-        }
-        return {
-          userId: payload.sub,
-          username: payload.username,
-          role: payload.role,
-          staffId: payload.staffId,
-          staffCode: payload.staffCode,
-          santriId: payload.santriId,
-          name: payload.name,
-          halaqohName: payload.halaqohName,
-          isKepalaBidangTahfidz: payload.isKepalaBidangTahfidz ?? false,
-          isPetugasPresensiPutri: payload.isPetugasPresensiPutri ?? false,
-        };
+      return await resolveVerifiedSessionPayload(payload);
+    }
+
+    // 2. Cek Cookie dari Header Request (req.headers.get("cookie"))
+    const cookieHeader = req.headers.get("cookie");
+    if (cookieHeader) {
+      const cookiesList = cookieHeader.split(";").map((c) => c.trim());
+      const sessionCookie = cookiesList.find((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`));
+      if (sessionCookie) {
+        const token = sessionCookie.substring(SESSION_COOKIE_NAME.length + 1).trim();
+        const payload = await verifySessionToken(token);
+        if (!payload) return null;
+
+        return await resolveVerifiedSessionPayload(payload);
       }
     }
 
-    // 2. Fallback ke Cookie
+    // 3. Fallback ke Next.js cookies() store
     return getCurrentSession();
   } catch {
     return null;
