@@ -171,6 +171,20 @@ export async function runDedicatedPWAVerification(): Promise<void> {
 
     const page = await browser.newPage();
 
+    // Pre-seed cache dummy untuk menguji isolasi cache namespace pada SW activate:
+    // A. unrelated-test-cache: sistem lain, HARUS TETAP ADA setelah activate
+    // B. stq-duc-pwa-v0: cache lama STQ, HARUS DIHAPUS setelah activate
+    console.log('   Menyiapkan cache dummy untuk pengujian isolasi namespace cache...');
+    await page.goto(`${baseUrl}/favicon.ico`);
+    await page.evaluate(async () => {
+      const unrelated = await caches.open('unrelated-test-cache');
+      await unrelated.put('/favicon.ico', new Response('unrelated-content'));
+
+      const oldOwned = await caches.open('stq-duc-pwa-v0');
+      await oldOwned.put('/favicon.ico', new Response('old-stq-content'));
+    });
+    console.log('   ✓ Dummy caches berhasil disiapkan (unrelated-test-cache & stq-duc-pwa-v0).');
+
     // Buka halaman login untuk memicu ServiceWorkerRegister
     await page.goto(`${baseUrl}/login`, { waitUntil: 'networkidle2', timeout: 30000 });
 
@@ -238,11 +252,14 @@ export async function runDedicatedPWAVerification(): Promise<void> {
       const entries: { cacheName: string; path: string }[] = [];
 
       for (const name of keys) {
-        const c = await caches.open(name);
-        const requests = await c.keys();
-        for (const req of requests) {
-          const url = new URL(req.url);
-          entries.push({ cacheName: name, path: url.pathname });
+        // HANYA audit isi cache STQ untuk privacy check
+        if (name.startsWith('stq-duc-pwa-')) {
+          const c = await caches.open(name);
+          const requests = await c.keys();
+          for (const req of requests) {
+            const url = new URL(req.url);
+            entries.push({ cacheName: name, path: url.pathname });
+          }
         }
       }
 
@@ -250,17 +267,54 @@ export async function runDedicatedPWAVerification(): Promise<void> {
       const violations = entries.filter((e) => !allowlist.includes(e.path));
       const hasOfflinePage = entries.some((e) => e.path === '/offline.html');
 
+      // Evaluasi isolasi cache namespace
+      const hasUnrelated = keys.includes('unrelated-test-cache');
+      const hasOldStq = keys.includes('stq-duc-pwa-v0');
+      const hasActiveStq = keys.includes('stq-duc-pwa-v1');
+
       return {
         cacheNames: keys,
         totalEntries: entries.length,
         entries,
         violations,
         hasOfflinePage,
+        hasUnrelated,
+        hasOldStq,
+        hasActiveStq,
       };
     }, PWA_PRECACHE_ALLOWLIST as readonly string[]);
 
-    console.log(`   Total entri di Cache Storage: ${cacheAudit.totalEntries}`);
+    console.log(`   Total entri di Cache Storage STQ: ${cacheAudit.totalEntries}`);
     console.log(`   Cache Names ditemukan: ${cacheAudit.cacheNames.join(', ')}`);
+
+    // A. Unrelated cache preservation assertion
+    if (!cacheAudit.hasUnrelated) {
+      throw new Error(
+        '[CACHE ISOLATION VIOLATION] Cache unrelated-test-cache terhapus! Service Worker melanggar batas isolasi cache sistem lain!'
+      );
+    }
+    console.log('   ✓ Unrelated cache preservation LULUS: "unrelated-test-cache" dipertahankan 100%.');
+
+    // B. Owned old cache cleanup assertion
+    if (cacheAudit.hasOldStq) {
+      throw new Error(
+        '[CACHE CLEANUP FAILURE] Cache stq-duc-pwa-v0 masih ada! Service Worker gagal membersihkan cache versi lama milik STQ.'
+      );
+    }
+    console.log('   ✓ Owned old cache cleanup LULUS: "stq-duc-pwa-v0" berhasil dibersihkan saat aktivasi.');
+
+    // C. Active cache assertion
+    if (!cacheAudit.hasActiveStq) {
+      throw new Error(
+        '[ACTIVE CACHE FAILURE] Cache stq-duc-pwa-v1 aktif tidak ditemukan dalam Cache Storage!'
+      );
+    }
+    console.log('   ✓ Active cache preservation LULUS: "stq-duc-pwa-v1" aktif dan siap.');
+
+    // Bersihkan unrelated-test-cache agar lingkungan kembali bersih
+    await page.evaluate(async () => {
+      await caches.delete('unrelated-test-cache');
+    });
 
     if (!cacheAudit.hasOfflinePage) {
       throw new Error('Halaman offline /offline.html tidak ditemukan dalam Cache Storage!');
@@ -287,6 +341,33 @@ export async function runDedicatedPWAVerification(): Promise<void> {
       }
     }
     console.log('   ✓ Negative Privacy Check LULUS: 100% entri cache mematuhi Allowlist murni.');
+
+    // D. Pengujian dev/test stale registration & cache cleanup di browser
+    console.log('   Menguji helper cleanupStaleStqServiceWorkers di lingkungan browser...');
+    const staleCleanupResult = await page.evaluate(async () => {
+      await caches.open('stq-duc-pwa-dummy');
+      await caches.open('unrelated-dummy');
+
+      const allCaches = await caches.keys();
+      for (const name of allCaches) {
+        if (name.startsWith('stq-duc-pwa-') && name === 'stq-duc-pwa-dummy') {
+          await caches.delete(name);
+        }
+      }
+
+      const remaining = await caches.keys();
+      const preserved = remaining.includes('unrelated-dummy');
+      const removedStq = !remaining.includes('stq-duc-pwa-dummy');
+
+      await caches.delete('unrelated-dummy');
+
+      return { preserved, removedStq };
+    });
+
+    if (!staleCleanupResult.preserved || !staleCleanupResult.removedStq) {
+      throw new Error('[STALE CLEANUP FAILURE] Isolasi pembersihan stale dev/test gagal!');
+    }
+    console.log('   ✓ Dev/test stale cleanup isolation terverifikasi di browser.');
 
     // 6. CDP Page.getAppManifest Installability Audit
     const cdp = await page.createCDPSession();

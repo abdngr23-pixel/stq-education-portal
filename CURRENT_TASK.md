@@ -1,20 +1,22 @@
 # CURRENT TASK — STQ EDUCATION PORTAL
 
 ## 1. Tujuan Saat Ini
-PR #4 Secure PWA & Installability untuk STQ Education Portal:
+PR #4 Secure PWA & Installability untuk STQ Education Portal (STQ Darul Ulum Cendekia):
 1. Mengimplementasikan Progressive Web App (PWA) yang installable pada Android dan Chromium desktop dengan dukungan penuh metadata iOS.
 2. Menerapkan arsitektur keamanan **Online-First / Allowlist-Only**:
    - Dilarang menyimpan data santri, Tahfizh, Akademik, Presensi, Kesantrian, API, Server Actions, dan halaman HTML terotentikasi ke Cache Storage.
-   - Hanya aset statis publik offline shell yang diizinkan masuk ke Cache Storage (`/offline.html`, ikon PWA, logo, favicon).
+   - Hanya 7 aset statis publik offline shell yang diizinkan masuk ke Cache Storage (`/offline.html`, `/pwa/icon-192.png`, `/pwa/icon-512.png`, `/pwa/icon-maskable-512.png`, `/pwa/apple-touch-icon.png`, `/logo.png`, `/favicon.ico`).
 3. Halaman fallback offline statis yang jujur (`public/offline.html`):
-   - Menampilkan identitas STQ DUC resmi dan pesan jelas bahwa koneksi internet diperlukan untuk mengakses data pendidikan terbaru.
+   - Menampilkan identitas STQ Darul Ulum Cendekia resmi dan pesan jelas bahwa koneksi internet diperlukan untuk mengakses data pendidikan terbaru.
    - Tombol interaktif "Coba Lagi / Muat Ulang" tanpa menampilkan data user/fixture kadaluarsa.
-4. Service Worker transparan (`public/sw.js`):
+4. Service Worker terisolasi & fail-closed (`public/sw.js`):
    - Tanpa dependency eksternal berat (pure vanilla Service Worker).
-   - Versioned cache name dengan pembersihan cache lama otomatis saat aktivasi.
+   - Namespace cache terisolasi (`stq-duc-pwa-`): hanya menghapus cache milik STQ saat aktivasi, tidak pernah menyentuh cache sistem/aplikasi lain.
+   - Install precache fail-closed: jika precache aset mandatory offline gagal, instalasi SW dibatalkan (`throw err`) agar tidak mengaktifkan broken offline shell.
    - Navigation request ditangani secara Network-First / Network-Only tanpa pernah menyimpan respons navigasi ke cache.
 5. Registrasi Service Worker modular (`components/pwa/service-worker-register.tsx`):
    - Memiliki guard lingkungan yang ketat: hanya aktif pada production build untuk menjaga isolasi lingkungan test/dev.
+   - Pada lingkungan dev/test: membersihkan secara best-effort registrasi lama STQ (/sw.js) dan cache STQ (`stq-duc-pwa-`) tanpa menyentuh registrasi/cache lain.
 6. Aset Ikon PWA Standar (`public/pwa/`):
    - `icon-192.png` (192×192 px, transparan, contain)
    - `icon-512.png` (512×512 px, transparan, contain)
@@ -24,7 +26,7 @@ PR #4 Secure PWA & Installability untuk STQ Education Portal:
    - Menambahkan directive `worker-src 'self'` dan `manifest-src 'self'` pada Content Security Policy di `next.config.ts`.
    - Menambahkan header `Cache-Control: no-cache, no-store, must-revalidate` untuk `/sw.js`.
 8. Verifikasi Terotomasi Dedicated PWA (`scripts/verify-pwa.ts` & `npm run qa:pwa`):
-   - Menjalankan pengujian manifest, HTTP status ikon, aktivasi Service Worker di Puppeteer, audit allowlist privasi cache (negative check), fallback offline, dan pemulihan online.
+   - Menjalankan pengujian manifest, HTTP status ikon, aktivasi Service Worker di Puppeteer, audit allowlist privasi cache (negative check), preservasi cache unrelated, pembersihan cache lama STQ, fallback offline, dan pemulihan online.
    - Terintegrasi penuh ke dalam GitHub Actions CI (`.github/workflows/ci.yml`).
 
 ## 2. Baseline Commit & Git Working State

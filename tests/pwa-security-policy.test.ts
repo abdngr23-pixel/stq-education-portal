@@ -1,11 +1,15 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  PWA_CACHE_PREFIX,
   PWA_CACHE_NAME,
   PWA_PRECACHE_ALLOWLIST,
   isRequestCacheable,
   shouldRegisterServiceWorker,
   getOutdatedCacheNames,
+  isStqServiceWorkerRegistration,
+  isStqCacheName,
+  cleanupStaleStqServiceWorkers,
 } from '../lib/pwa-policy';
 import manifest from '../app/manifest';
 
@@ -202,11 +206,116 @@ describe('PWA Security & Caching Policy Guard', () => {
     );
   });
 
-  it('10. Pembersihan cache versi lama (Cache Cleanup Lifecycle)', () => {
-    const allCaches = ['stq-duc-pwa-v0', 'stq-duc-old-test', PWA_CACHE_NAME];
-    const outdated = getOutdatedCacheNames(allCaches, PWA_CACHE_NAME);
-    assert.deepEqual(outdated, ['stq-duc-pwa-v0', 'stq-duc-old-test']);
-    assert.equal(outdated.includes(PWA_CACHE_NAME), false);
+  it('10. Pembersihan cache versi lama terisolasi prefix STQ (Cache Namespace Isolation)', () => {
+    // Sesuai audit reviewer:
+    // - stq-duc-pwa-v0 -> deleted
+    // - stq-duc-pwa-v1 active -> retained
+    // - third-party-cache -> retained
+    // - unrelated-app-v2 -> retained
+    const allCaches = [
+      'stq-duc-pwa-v0',
+      PWA_CACHE_NAME, // 'stq-duc-pwa-v1'
+      'third-party-cache',
+      'unrelated-app-v2',
+      'workbox-precache-v2',
+    ];
+
+    const outdated = getOutdatedCacheNames(allCaches, PWA_CACHE_NAME, PWA_CACHE_PREFIX);
+
+    // HANYA stq-duc-pwa-v0 yang ditandai untuk dihapus
+    assert.deepEqual(outdated, ['stq-duc-pwa-v0']);
+
+    // Cache aktif STQ tidak boleh dihapus
+    assert.equal(outdated.includes(PWA_CACHE_NAME), false, 'Active STQ cache harus dipertahankan');
+
+    // Cache pihak ketiga atau aplikasi lain TIDAK BOLEH disentuh
+    assert.equal(outdated.includes('third-party-cache'), false, 'Third party cache tidak boleh dihapus');
+    assert.equal(outdated.includes('unrelated-app-v2'), false, 'Unrelated app cache tidak boleh dihapus');
+    assert.equal(outdated.includes('workbox-precache-v2'), false, 'Workbox/other cache tidak boleh dihapus');
+  });
+
+  it('12. Identifikasi script registrasi STQ Service Worker (/sw.js) secara ketat', () => {
+    assert.equal(isStqServiceWorkerRegistration('http://localhost:3000/sw.js'), true);
+    assert.equal(isStqServiceWorkerRegistration('https://portal.stqduc.sch.id/sw.js'), true);
+    assert.equal(isStqServiceWorkerRegistration('/sw.js'), true);
+
+    // Ditolak: file lain atau subpath lain
+    assert.equal(isStqServiceWorkerRegistration('http://localhost:3000/other/sw.js'), false);
+    assert.equal(isStqServiceWorkerRegistration('http://localhost:3000/firebase-messaging-sw.js'), false);
+    assert.equal(isStqServiceWorkerRegistration('http://localhost:3000/worker.js'), false);
+    assert.equal(isStqServiceWorkerRegistration(''), false);
+  });
+
+  it('13. Identifikasi namespace cache STQ (stq-duc-pwa-)', () => {
+    assert.equal(isStqCacheName('stq-duc-pwa-v1'), true);
+    assert.equal(isStqCacheName('stq-duc-pwa-v0'), true);
+    assert.equal(isStqCacheName('stq-duc-pwa-temp'), true);
+
+    assert.equal(isStqCacheName('third-party-cache'), false);
+    assert.equal(isStqCacheName('unrelated-app-v2'), false);
+    assert.equal(isStqCacheName('my-custom-cache'), false);
+  });
+
+  it('14. Dev/test cleanupStaleStqServiceWorkers hanya membersihkan STQ dan tidak menyentuh sistem lain', async () => {
+    const unregisterCalls: string[] = [];
+    const deleteCacheCalls: string[] = [];
+
+    // Mock swContainer dengan 1 STQ SW dan 1 Third-party SW
+    const mockSwContainer = {
+      async getRegistrations() {
+        return [
+          {
+            active: { scriptURL: 'http://localhost:3000/sw.js' },
+            async unregister() {
+              unregisterCalls.push('stq-sw');
+              return true;
+            },
+          },
+          {
+            active: { scriptURL: 'http://localhost:3000/other-app/sw.js' },
+            async unregister() {
+              unregisterCalls.push('other-sw');
+              return true;
+            },
+          },
+          {
+            active: { scriptURL: 'https://cdn.example.com/firebase-messaging-sw.js' },
+            async unregister() {
+              unregisterCalls.push('firebase-sw');
+              return true;
+            },
+          },
+        ];
+      },
+    };
+
+    // Mock CacheStorage dengan STQ caches dan unrelated caches
+    const mockCacheStorage = {
+      async keys() {
+        return [
+          'stq-duc-pwa-v0',
+          'stq-duc-pwa-v1',
+          'third-party-cache',
+          'unrelated-app-v2',
+        ];
+      },
+      async delete(name: string) {
+        deleteCacheCalls.push(name);
+        return true;
+      },
+    };
+
+    const res = await cleanupStaleStqServiceWorkers(mockSwContainer, mockCacheStorage);
+
+    // Verifikasi Service Worker unregister: HANYA stq-sw
+    assert.equal(res.unregisteredCount, 1);
+    assert.deepEqual(unregisterCalls, ['stq-sw']);
+
+    // Verifikasi Cache Storage delete: HANYA cache berprefix stq-duc-pwa-
+    assert.equal(res.deletedCacheCount, 2);
+    assert.deepEqual(deleteCacheCalls, ['stq-duc-pwa-v0', 'stq-duc-pwa-v1']);
+    assert.equal(deleteCacheCalls.includes('third-party-cache'), false);
+    assert.equal(deleteCacheCalls.includes('unrelated-app-v2'), false);
   });
 
   it('11. Verifikasi kelengkapan konfigurasi manifest.webmanifest', () => {

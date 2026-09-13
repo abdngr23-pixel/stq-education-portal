@@ -2,7 +2,8 @@
 // Policy: STRICT ALLOWLIST-ONLY / ONLINE-FIRST
 // Data pendidikan, santri, Tahfizh, Akademik, Presensi, dan API DILARANG dicache ke Cache Storage.
 
-const CACHE_NAME = 'stq-duc-pwa-v1';
+const CACHE_PREFIX = 'stq-duc-pwa-';
+const CACHE_NAME = `${CACHE_PREFIX}v1`;
 
 // Daftar mutlak aset publik aman yang boleh di-precache
 const PRECACHE_ALLOWLIST = [
@@ -15,7 +16,7 @@ const PRECACHE_ALLOWLIST = [
   '/favicon.ico',
 ];
 
-// 1. Install Event: Precache safe public shell assets and skip waiting immediately
+// 1. Install Event: Precache safe public shell assets fail-closed
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
@@ -25,12 +26,13 @@ self.addEventListener('install', (event) => {
         return cache.addAll(PRECACHE_ALLOWLIST);
       })
       .catch((err) => {
-        console.warn('[SW] Gagal melakukan precache aset publik:', err);
+        console.error('[SW] FATAL: Precache mandatory gagal. Membatalkan instalasi Service Worker:', err);
+        throw err; // FAIL-CLOSED: Gagalkan instalasi agar tidak mengaktifkan broken offline shell
       })
   );
 });
 
-// 2. Activate Event: Clean up outdated caches and claim clients immediately
+// 2. Activate Event: Clean up outdated caches owned by STQ and claim clients immediately
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     Promise.all([
@@ -38,8 +40,10 @@ self.addEventListener('activate', (event) => {
       caches.keys().then((cacheNames) => {
         return Promise.all(
           cacheNames.map((name) => {
-            if (name !== CACHE_NAME) {
-              console.log('[SW] Menghapus cache versi lama:', name);
+            // HANYA hapus cache yang ber-prefix STQ dan bukan versi aktif.
+            // JANGAN PERNAH menyentuh cache sistem/aplikasi lain.
+            if (name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME) {
+              console.log('[SW] Menghapus cache versi lama milik STQ:', name);
               return caches.delete(name);
             }
             return Promise.resolve();

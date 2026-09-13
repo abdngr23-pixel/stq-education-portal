@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { cleanupStaleStqServiceWorkers } from "@/lib/pwa-policy";
 
 export function ServiceWorkerRegister() {
   useEffect(() => {
@@ -16,7 +17,16 @@ export function ServiceWorkerRegister() {
     const isExplicitOptIn = process.env.NEXT_PUBLIC_ENABLE_SW === "true";
     const isExplicitDisabled = process.env.NEXT_PUBLIC_DISABLE_SW === "true";
 
-    if ((!isProduction && !isExplicitOptIn) || isExplicitDisabled) {
+    const shouldRegister = (isProduction || isExplicitOptIn) && !isExplicitDisabled;
+
+    if (!shouldRegister) {
+      // Best-effort cleanup: Copot registrasi Service Worker lama milik STQ (/sw.js)
+      // dan hapus cache storage STQ (prefix stq-duc-pwa-) agar localhost dev/test tetap bersih.
+      // Jangan pernah menyentuh Service Worker atau cache aplikasi/layanan lain.
+      cleanupStaleStqServiceWorkers(
+        navigator.serviceWorker,
+        typeof caches !== "undefined" ? caches : undefined
+      ).catch(() => {});
       return;
     }
 

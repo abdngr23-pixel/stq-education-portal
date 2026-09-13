@@ -4,7 +4,8 @@
  * Menjamin perlindungan data santri, Tahfizh, Akademik, dan privasi user.
  */
 
-export const PWA_CACHE_NAME = 'stq-duc-pwa-v1';
+export const PWA_CACHE_PREFIX = 'stq-duc-pwa-';
+export const PWA_CACHE_NAME = `${PWA_CACHE_PREFIX}v1`;
 
 export const PWA_PRECACHE_ALLOWLIST = [
   '/offline.html',
@@ -95,8 +96,100 @@ export function shouldRegisterServiceWorker(params: {
 }
 
 /**
- * Mengidentifikasi nama-nama cache kadaluarsa yang harus dihapus saat aktivasi Service Worker baru.
+ * Mengidentifikasi nama-nama cache kadaluarsa milik STQ yang harus dihapus saat aktivasi Service Worker baru.
+ * HANYA cache dengan prefix STQ yang akan ditandai untuk dihapus.
+ * Cache sistem/aplikasi lain TIDAK AKAN PERNAH disentuh.
  */
-export function getOutdatedCacheNames(currentCaches: string[], activeCacheName: string): string[] {
-  return currentCaches.filter((name) => name !== activeCacheName);
+export function getOutdatedCacheNames(
+  currentCaches: string[],
+  activeCacheName: string = PWA_CACHE_NAME,
+  cachePrefix: string = PWA_CACHE_PREFIX
+): string[] {
+  return currentCaches.filter(
+    (name) => name.startsWith(cachePrefix) && name !== activeCacheName
+  );
+}
+
+/**
+ * Memeriksa apakah registration scriptURL adalah milik Service Worker STQ (/sw.js).
+ */
+export function isStqServiceWorkerRegistration(scriptURL: string): boolean {
+  if (!scriptURL) return false;
+  try {
+    const url = new URL(scriptURL, 'http://localhost');
+    return url.pathname === '/sw.js';
+  } catch {
+    return scriptURL.endsWith('/sw.js');
+  }
+}
+
+/**
+ * Memeriksa apakah nama cache merupakan milik STQ berdasarkan namespace prefix.
+ */
+export function isStqCacheName(cacheName: string, prefix: string = PWA_CACHE_PREFIX): boolean {
+  return typeof cacheName === 'string' && cacheName.startsWith(prefix);
+}
+
+export interface MinimalServiceWorkerRegistration {
+  active?: { scriptURL?: string } | null;
+  waiting?: { scriptURL?: string } | null;
+  installing?: { scriptURL?: string } | null;
+  unregister(): Promise<boolean>;
+}
+
+export interface MinimalServiceWorkerContainer {
+  getRegistrations(): Promise<readonly MinimalServiceWorkerRegistration[]>;
+}
+
+export interface MinimalCacheStorage {
+  keys(): Promise<string[]>;
+  delete(cacheName: string): Promise<boolean>;
+}
+
+/**
+ * Membersihkan stale STQ Service Worker dan STQ Cache Storage di lingkungan non-production (dev/test).
+ * HANYA mencopot unregister /sw.js milik STQ dan menghapus cache ber-prefix stq-duc-pwa-.
+ * Bersifat best-effort, aman, dan tidak melempar error ke UI.
+ */
+export async function cleanupStaleStqServiceWorkers(
+  swContainer?: MinimalServiceWorkerContainer,
+  cacheStorage?: MinimalCacheStorage
+): Promise<{ unregisteredCount: number; deletedCacheCount: number }> {
+  let unregisteredCount = 0;
+  let deletedCacheCount = 0;
+
+  if (swContainer && typeof swContainer.getRegistrations === 'function') {
+    try {
+      const registrations = await swContainer.getRegistrations();
+      for (const reg of registrations) {
+        const scriptURL =
+          reg.active?.scriptURL ||
+          reg.waiting?.scriptURL ||
+          reg.installing?.scriptURL ||
+          '';
+        if (isStqServiceWorkerRegistration(scriptURL)) {
+          const ok = await reg.unregister();
+          if (ok) unregisteredCount++;
+        }
+      }
+    } catch (err) {
+      console.warn('[PWA] Gagal unregister stale STQ service worker:', err);
+    }
+  }
+
+  if (cacheStorage && typeof cacheStorage.keys === 'function' && typeof cacheStorage.delete === 'function') {
+    try {
+      const keys = await cacheStorage.keys();
+      for (const key of keys) {
+        if (isStqCacheName(key)) {
+          const ok = await cacheStorage.delete(key);
+          if (ok) deletedCacheCount++;
+        }
+      }
+    } catch (err) {
+      console.warn('[PWA] Gagal membersihkan stale STQ cache storage:', err);
+    }
+  }
+
+  return { unregisteredCount, deletedCacheCount };
 }
