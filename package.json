@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "qa:structural": "tsx scripts/qa-visual-structural.ts",
+    "qa:pwa": "tsx scripts/verify-pwa.ts",
     "qa:visual": "tsx scripts/capture-post-merge-qa.ts",
     "postinstall": "prisma generate",
     "test": "dotenv -e .env.test -v NODE_ENV=test -v IS_TEST_RUN=true -v ALLOW_ISOLATED_TEST_DB=true -v TEST_DATABASE_URL=postgresql://postgres:postgrespassword@127.0.0.1:5433/stq_test?schema=test_portal -- tsx --conditions=react-server --test --test-concurrency=1 tests/*.test.ts",

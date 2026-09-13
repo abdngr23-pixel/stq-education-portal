@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans, Inter } from "next/font/google";
+import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
 import "./globals.css";
 
 const plusJakarta = Plus_Jakarta_Sans({
@@ -27,6 +28,16 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "STQ Education Portal — STQ Darul Ulum Cendekia",
   description: "Portal Sistem Pendidikan Terintegrasi Tahfizh, Akademik, dan Kesantrian STQ Darul Ulum Cendekia",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "STQ DUC",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/pwa/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({
@@ -37,6 +48,7 @@ export default function RootLayout({
   return (
     <html lang="id" className={`${plusJakarta.variable} ${inter.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-[#F7F9F7] text-[#151E19]">
+        <ServiceWorkerRegister />
         {children}
       </body>
     </html>

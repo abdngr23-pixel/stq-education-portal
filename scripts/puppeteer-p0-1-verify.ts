@@ -421,7 +421,7 @@ export async function runIsolatedE2EVerification() {
     if (navBerandaAwal) await navBerandaAwal.click();
     await page.waitForSelector('[data-testid="dashboard-musyrif-tahfizh"]', { timeout: 10000 });
 
-    // Verifikasi PWA / Service Worker tidak aktif
+    // Verifikasi Service Worker tidak mencemari isolasi lingkungan test (Test Isolation Guard)
     const swRegistrationsCount = await page.evaluate(async () => {
       if ('serviceWorker' in navigator) {
         const regs = await navigator.serviceWorker.getRegistrations();
@@ -430,9 +430,9 @@ export async function runIsolatedE2EVerification() {
       return 0;
     });
     if (swRegistrationsCount > 0) {
-      fail(`Terdeteksi ${swRegistrationsCount} service worker terdaftar. PWA dilarang di fase pilot!`);
+      fail(`Terdeteksi ${swRegistrationsCount} service worker terdaftar dalam isolated test environment. SW harus dibatasi pada production build untuk menjaga test isolation!`);
     }
-    console.log("   ✓ Terverifikasi tidak ada Service Worker aktif (0 registrasi).");
+    console.log("   ✓ Terverifikasi lingkungan isolated test bebas dari kontaminasi Service Worker (0 registrasi).");
 
     // Verifikasi Overflow & Responsivitas Viewport
     // 1. Desktop 1366x768
