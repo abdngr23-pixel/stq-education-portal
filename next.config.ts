@@ -7,6 +7,8 @@ const cspHeader = `
   img-src 'self' data: blob: https:;
   font-src 'self' data: https://fonts.gstatic.com;
   connect-src 'self' https:;
+  worker-src 'self';
+  manifest-src 'self';
   frame-ancestors 'none';
   object-src 'none';
   base-uri 'self';
@@ -28,6 +30,19 @@ const nextConfig: NextConfig = {
   // 7. Secure Headers (Helmet Equivalents)
   async headers() {
     return [
+      {
+        source: "/sw.js",
+        headers: [
+          {
+            key: "Content-Type",
+            value: "application/javascript; charset=utf-8",
+          },
+          {
+            key: "Cache-Control",
+            value: "no-cache, no-store, must-revalidate",
+          },
+        ],
+      },
       {
         source: "/:path*",
         headers: [
