@@ -366,62 +366,15 @@ export async function getCurrentUserAction(): Promise<{
     const session = await getCurrentSession();
     if (!session) return null;
 
-    let halaqohName = session.halaqohName || null;
-    let displayName = session.name || null;
-
-    // Ambil data relasi riil dari PostgreSQL via Prisma jika tersedia (dengan batas waktu 2 detik)
-    try {
-      if (session.staffId) {
-        const dbStaffPromise = prisma.staff.findUnique({
-          where: { id: session.staffId },
-          include: { halaqohDipimpin: true },
-        });
-        const timeoutPromise = new Promise<null>((_, reject) =>
-          setTimeout(() => reject(new Error("DB_TIMEOUT")), 2000)
-        );
-        const staff = await Promise.race([dbStaffPromise, timeoutPromise]);
-        if (staff) {
-          if (!displayName) displayName = staff.nama;
-          if (staff.halaqohDipimpin && staff.halaqohDipimpin.length > 0) {
-            halaqohName = staff.halaqohDipimpin[0].nama;
-          }
-        }
-      } else if (session.santriId) {
-        const dbSantriPromise = prisma.santri.findUnique({
-          where: { id: session.santriId },
-          include: { halaqoh: true },
-        });
-        const timeoutPromise = new Promise<null>((_, reject) =>
-          setTimeout(() => reject(new Error("DB_TIMEOUT")), 2000)
-        );
-        const santri = await Promise.race([dbSantriPromise, timeoutPromise]);
-        if (santri) {
-          if (!displayName) displayName = santri.nama;
-          if (santri.halaqoh) halaqohName = santri.halaqoh.nama;
-        }
-      }
-    } catch {
-      // Abaikan galat Prisma jika berjalan di lingkungan memori pengujian atau database timeout
-    }
-
-    if (!displayName) {
-      const demo = DEMO_ACCOUNTS[session.role];
-      displayName = demo?.name || session.username;
-    }
-
-    if (!halaqohName) {
-      halaqohName = getHalaqohByStaff(displayName || session.username);
-    }
-
     return {
       id: session.userId,
       username: session.username,
       role: session.role,
-      name: displayName,
-      staffId: session.staffId,
-      staffCode: session.staffCode,
-      santriId: session.santriId,
-      halaqohName: halaqohName,
+      name: session.name || session.username,
+      staffId: session.staffId ?? null,
+      staffCode: session.staffCode ?? null,
+      santriId: session.santriId ?? null,
+      halaqohName: session.halaqohName ?? null,
       isKepalaBidangTahfidz: session.isKepalaBidangTahfidz ?? false,
     };
   } catch {
