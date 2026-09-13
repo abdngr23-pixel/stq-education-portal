@@ -45,6 +45,7 @@ export function MobileBottomNav({
     <>
       {/* Primary Mobile Bottom Nav Bar (md:hidden) */}
       <nav
+        data-testid="mobile-bottom-nav"
         className={cn(
           "md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 px-1 py-1 pb-[max(env(safe-area-inset-bottom),0.35rem)] shadow-lg select-none",
           className

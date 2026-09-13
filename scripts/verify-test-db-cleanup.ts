@@ -195,7 +195,7 @@ export function isProcessVerifiedTestOwned(
     };
   }
 
-  // 3. Pada Windows, pastikan executable adalah postgres.exe (mencegah pembunuhan proses lain akibat PID reuse)
+  // 3. Pastikan executable adalah postgres (mencegah pembunuhan proses lain akibat PID reuse)
   if (process.platform === "win32") {
     try {
       const tasklistRes = spawnSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
@@ -208,6 +208,25 @@ export function isProcessVerifiedTestOwned(
         return {
           isOwned: false,
           reason: `PID ${pid} bukan postgres.exe (proses non-postgres / PID reuse terdeteksi)`,
+        };
+      }
+    } catch {
+      return {
+        isOwned: false,
+        reason: `Gagal memverifikasi nama executable untuk PID ${pid}`,
+      };
+    }
+  } else {
+    try {
+      const commRes = spawnSync("ps", ["-p", pid.toString(), "-o", "comm="], {
+        encoding: "utf-8",
+        timeout: 1500,
+      });
+      const output = (commRes.stdout || "").toLowerCase();
+      if (!output.includes("postgres")) {
+        return {
+          isOwned: false,
+          reason: `PID ${pid} bukan postgres (proses non-postgres / PID reuse terdeteksi)`,
         };
       }
     } catch {

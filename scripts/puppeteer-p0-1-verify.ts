@@ -8,7 +8,7 @@
 // - Cleanup terjamin dalam blok finally tanpa mematikan aplikasi/database lain
 
 import puppeteer, { Browser, Page } from "puppeteer-core";
-import { spawn, spawnSync, ChildProcess } from "child_process";
+import { spawn, ChildProcess } from "child_process";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -24,14 +24,11 @@ import {
   getActiveTestDatabaseUrl,
   getActiveTestPort,
   getActiveTempDir,
+  terminateOwnedChildProcess,
 } from "../tests/test-db-manager";
+import { getChromeExecutablePath } from "../tests/helpers/qa-layout-assertions";
 
-const CHROME_PATH =
-  process.env.CHROME_PATH ||
-  process.env.PUPPETEER_EXECUTABLE_PATH ||
-  (process.platform === "win32"
-    ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
-    : "/usr/bin/google-chrome");
+const CHROME_PATH = getChromeExecutablePath();
 
 const ARTIFACT_DIR =
   process.env.E2E_ARTIFACT_DIR ||
@@ -198,24 +195,32 @@ export async function runIsolatedE2EVerification() {
       } catch {}
     }
 
-    // 4. Jalankan Server Next.js Test Sebagai Child Process Terisolasi
+    // 4. Jalankan Server Next.js Test Sebagai Child Process Terisolasi (tanpa shell wrapper)
     console.log("\n[4] Memulai Next.js test server...");
-    nextServerProcess = spawn("npx", ["next", "dev", "-p", testNextPort.toString(), "-H", "127.0.0.1"], {
-      cwd: rootDir,
-      env: {
-        ...process.env,
-        PORT: testNextPort.toString(),
-        NEXT_DIST_DIR: ".next-test-e2e",
-        DATABASE_URL: testDbUrl,
-        TEST_DATABASE_URL: testDbUrl,
-        NODE_ENV: "test",
-        IS_TEST_RUN: "true",
-        ALLOW_ISOLATED_TEST_DB: "true",
-        AUTH_SECRET: "stq_portal_test_secret_session_key_min_32_characters_long_2026",
-      },
-      shell: true,
-      stdio: "pipe",
-    });
+    const nextCli = require.resolve("next/dist/bin/next");
+    const isWin = process.platform === "win32";
+
+    nextServerProcess = spawn(
+      process.execPath,
+      [nextCli, "dev", "-p", testNextPort.toString(), "-H", "127.0.0.1"],
+      {
+        cwd: rootDir,
+        env: {
+          ...process.env,
+          PORT: testNextPort.toString(),
+          NEXT_DIST_DIR: ".next-test-e2e",
+          DATABASE_URL: testDbUrl,
+          TEST_DATABASE_URL: testDbUrl,
+          NODE_ENV: "test",
+          IS_TEST_RUN: "true",
+          ALLOW_ISOLATED_TEST_DB: "true",
+          AUTH_SECRET: "stq_portal_test_secret_session_key_min_32_characters_long_2026",
+        },
+        detached: !isWin,
+        stdio: ["ignore", "pipe", "pipe"],
+      }
+    );
+    console.log(`   ✓ Next.js server test di-spawn: PID ${nextServerProcess.pid}, detached: ${!isWin}`);
 
     nextServerProcess.stdout?.on("data", (d) => {
       const msg = d.toString();
@@ -836,26 +841,34 @@ export async function runIsolatedE2EVerification() {
   } finally {
     // 6. Cleanup Terjamin & Bersih (TIDAK MEMATIKAN APLIKASI ATAU DATABASE PENGGUNA LAIN)
     console.log("\n[CLEANUP] Menjalankan pembersihan lingkungan pengujian terisolasi...");
+    const cleanupErrors: Error[] = [];
 
     if (browser) {
       try {
         await browser.close();
         console.log("   ✓ Browser Chrome ditutup.");
-      } catch (err) {
-        console.warn("   ! Gagal menutup browser:", err);
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        console.warn("   ! Gagal menutup browser:", error.message);
+        cleanupErrors.push(error);
       }
     }
 
     if (nextServerProcess && nextServerProcess.pid) {
       try {
-        if (process.platform === "win32") {
-          spawnSync("taskkill", ["/pid", nextServerProcess.pid.toString(), "/f", "/t"]);
-        } else {
-          nextServerProcess.kill("SIGTERM");
-        }
-        console.log(`   ✓ Child process Next.js test (PID ${nextServerProcess.pid}) dihentikan.`);
-      } catch (err) {
-        console.warn("   ! Gagal menghentikan child process Next.js test:", err);
+        const termRes = await terminateOwnedChildProcess(nextServerProcess, {
+          port: testNextPort,
+          label: "Next.js test server",
+        });
+        console.log(
+          `   ✓ Child process Next.js test (PID ${termRes.pid}) dihentikan (metode: ${termRes.method}, exitCode: ${termRes.exitCode}).`
+        );
+        console.log(`   ✓ Port ${testNextPort} terverifikasi bebas (closed: ${termRes.portClosed}).`);
+        console.log(`   ✓ Descendant test process tersisa: ${termRes.remainingDescendants.length}.`);
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        console.error("   ❌ Gagal menghentikan child process Next.js test:", error.message);
+        cleanupErrors.push(error);
       }
     }
 
@@ -868,8 +881,10 @@ export async function runIsolatedE2EVerification() {
         });
         await cleanupTestFixtures(testPrisma);
         console.log("   ✓ Fixtures test dibersihkan.");
-      } catch (err) {
-        console.warn("   ! Gagal membersihkan fixtures test:", err);
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        console.warn("   ! Gagal membersihkan fixtures test:", error.message);
+        cleanupErrors.push(error);
       }
     }
 
@@ -877,13 +892,32 @@ export async function runIsolatedE2EVerification() {
       await stopTestDatabase();
       console.log("   ✓ Embedded PostgreSQL test miliknya sendiri dihentikan.");
       console.log("   ✓ Direktori temporary unik test dihapus.");
-    } catch (err) {
-      console.warn("   ! Gagal menghentikan database test:", err);
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.warn("   ! Gagal menghentikan database test:", error.message);
+      cleanupErrors.push(error);
+    }
+
+    if (executionError && cleanupErrors.length > 0) {
+      process.exitCode = 1;
+      throw new AggregateError(
+        [executionError, ...cleanupErrors],
+        `[E2E_EXECUTION_AND_CLEANUP_FAILED] Execution="${executionError.message}" | CleanupErrors=[${cleanupErrors.map((e) => e.message).join("; ")}]`
+      );
     }
 
     if (executionError) {
       process.exitCode = 1;
       throw executionError;
+    }
+
+    if (cleanupErrors.length > 0) {
+      process.exitCode = 1;
+      if (cleanupErrors.length === 1) throw cleanupErrors[0];
+      throw new AggregateError(
+        cleanupErrors,
+        `[E2E_CLEANUP_FAILED] Cleanup errors: ${cleanupErrors.map((e) => e.message).join("; ")}`
+      );
     }
   }
 }

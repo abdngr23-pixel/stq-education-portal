@@ -925,6 +925,7 @@ export function TahfizhModule({
         <div className="flex items-center gap-1.5 min-w-max">
           <button
             type="button"
+            data-testid="tab-setoran"
             onClick={() => setActiveSubTab("setoran")}
             className={`px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 min-h-[44px] shrink-0 ${
               activeSubTab === "setoran"
@@ -937,6 +938,7 @@ export function TahfizhModule({
           </button>
           <button
             type="button"
+            data-testid="tab-laporan"
             onClick={() => setActiveSubTab("laporan")}
             className={`px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 min-h-[44px] shrink-0 ${
               activeSubTab === "laporan"
@@ -949,6 +951,7 @@ export function TahfizhModule({
           </button>
           <button
             type="button"
+            data-testid="tab-ikhtibar"
             onClick={() => setActiveSubTab("ikhtibar")}
             className={`px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 min-h-[44px] shrink-0 ${
               activeSubTab === "ikhtibar"
@@ -961,6 +964,7 @@ export function TahfizhModule({
           </button>
           <button
             type="button"
+            data-testid="tab-reward_evaluasi"
             onClick={() => setActiveSubTab("reward_evaluasi")}
             className={`px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 min-h-[44px] shrink-0 ${
               activeSubTab === "reward_evaluasi"
