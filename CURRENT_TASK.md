@@ -18,9 +18,11 @@ PR #5 — P0 Authentication Production Hardening untuk STQ Education Portal (`ab
    - `app/login/page.tsx`: Demo Switcher hanya dirender jika `NODE_ENV !== "production" && NEXT_PUBLIC_ENABLE_DEMO === "true"`.
 4. **Session & Cookie Security**:
    - `HttpOnly = true`, `secure = (process.env.NODE_ENV === "production")`, `sameSite = "lax"`.
-   - `lib/auth.ts`: secara ketat menolak token beridentitas sintetik (`user_`, `stf_`) di lingkungan produksi.
+   - `lib/auth.ts`: unified resolver `resolveVerifiedSessionPayload()` digunakan secara konsisten oleh `getCurrentSession()` (Cookie) dan `getAuthFromRequest()` (Bearer & Cookie).
+   - Di lingkungan produksi (`NODE_ENV === "production"`), validasi sesi fail-closed: jika DB unavailable/timeout, Prisma error, user tidak ditemukan di DB (deleted), user nonaktif, role drift, atau identitas sintetik (`user_`, `stf_`) -> sesi mutlak ditolak (`null`).
+   - Mutable authorization attributes di-hydrate langsung dari PostgreSQL terkini: `staffId`, `staffCode`, `santriId`, `isKepalaBidangTahfidz`, dan `isPetugasPresensiPutri` (perubahan hak akses langsung efektif tanpa mempercayai klaim JWT lama).
 5. **Negative Security Regression Tests**:
-   - Membuat `tests/auth-production-hardening.test.ts` yang memvalidasi ke-11 skenario regresi keamanan menggunakan PostgreSQL test database terisolasi.
+   - Menambahkan dan memvalidasi ke-19 skenario auth security pada `tests/auth-production-hardening.test.ts` menggunakan PostgreSQL test database terisolasi.
 
 ## 2. Baseline Commit & Git Working State
 * **Repository:** `abdngr23-pixel/stq-education-portal`
@@ -34,12 +36,12 @@ PR #5 — P0 Authentication Production Hardening untuk STQ Education Portal (`ab
 
 ## 3. Perubahan Berkas PR #5
 ### File Baru
-* `tests/auth-production-hardening.test.ts` (11 skenario negative security tests pembuktian database-only, fail-closed, isolasi demo, dan penolakan kredensial statis)
+* `tests/auth-production-hardening.test.ts` (19 skenario auth security negative tests pembuktian database-only, fail-closed, isolasi demo, penolakan kredensial statis, penolakan deleted/nonaktif user, role drift, eliminasi privilege lama dari JWT, unifikasi Cookie & Bearer fail-closed, dan hidrasi atribut otorisasi dari PostgreSQL terkini)
 
 ### File Dimodifikasi
-* `app/actions/auth.ts` (Database-only & fail-closed `loginAction`, isolasi `quickDemoLoginAction`, secure cookie produksi)
+* `app/actions/auth.ts` (Database-only & fail-closed `loginAction`, eliminasi static fallback demo accounts pada `getCurrentUserAction`, isolasi `quickDemoLoginAction`, secure cookie produksi)
 * `app/api/v1/auth/login/route.ts` (Eliminasi fallback katalog statis & universal password, kontrak 503/401/403/200 fail-closed)
-* `lib/auth.ts` (Penolakan identitas sintetik `user_`/`stf_` di produksi, ekspor helper predikat `isDemoLoginAllowed()`)
+* `lib/auth.ts` (Unified resolver `resolveVerifiedSessionPayload()`, production session fail-closed, DB unavailable/timeout -> session ditolak, deleted/nonaktif user -> session ditolak, role drift -> session ditolak, synthetic identity -> ditolak, unifikasi `getCurrentSession()` dan `getAuthFromRequest()`, serta hidrasi mutable authorization attributes dari PostgreSQL: `staffId`, `staffCode`, `santriId`, `isKepalaBidangTahfidz`, `isPetugasPresensiPutri`)
 * `app/login/page.tsx` (Pengetatan logika render demo switcher menjadi AND: `NODE_ENV !== "production" && NEXT_PUBLIC_ENABLE_DEMO === "true"`)
 * `.env.example` (Dokumentasi konfigurasi `STQ_ENABLE_DEMO_LOGIN` khusus non-produksi)
 * `CURRENT_TASK.md` (Dokumentasi status kerja PR #5)
@@ -48,7 +50,7 @@ PR #5 — P0 Authentication Production Hardening untuk STQ Education Portal (`ab
 - [x] `npx tsc --noEmit` — PASS (0 errors)
 - [x] `npm run typecheck:test` — PASS (0 errors)
 - [x] `npm run lint` — PASS (0 warnings, 0 errors)
-- [x] `npm test` — PASS (409/409 passed, 126 suites)
+- [x] `npm test` — PASS (417/417 tests passed, 126 suites)
 - [x] `npm run build` — PASS (14 rute statis, 0 errors)
 - [x] `npx tsx scripts/verify-test-db-cleanup.ts` — PASS (100% proses/port/temp terisolasi dan bersih)
 - [x] `npx tsx scripts/puppeteer-p0-1-verify.ts` — PASS (6/6 skenario riil)
