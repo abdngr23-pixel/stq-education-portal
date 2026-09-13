@@ -841,13 +841,16 @@ export async function runIsolatedE2EVerification() {
   } finally {
     // 6. Cleanup Terjamin & Bersih (TIDAK MEMATIKAN APLIKASI ATAU DATABASE PENGGUNA LAIN)
     console.log("\n[CLEANUP] Menjalankan pembersihan lingkungan pengujian terisolasi...");
+    const cleanupErrors: Error[] = [];
 
     if (browser) {
       try {
         await browser.close();
         console.log("   ✓ Browser Chrome ditutup.");
-      } catch (err) {
-        console.warn("   ! Gagal menutup browser:", err);
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        console.warn("   ! Gagal menutup browser:", error.message);
+        cleanupErrors.push(error);
       }
     }
 
@@ -863,9 +866,9 @@ export async function runIsolatedE2EVerification() {
         console.log(`   ✓ Port ${testNextPort} terverifikasi bebas (closed: ${termRes.portClosed}).`);
         console.log(`   ✓ Descendant test process tersisa: ${termRes.remainingDescendants.length}.`);
       } catch (err: unknown) {
-        const error = err as Error;
+        const error = err instanceof Error ? err : new Error(String(err));
         console.error("   ❌ Gagal menghentikan child process Next.js test:", error.message);
-        if (!executionError) executionError = error;
+        cleanupErrors.push(error);
       }
     }
 
@@ -878,8 +881,10 @@ export async function runIsolatedE2EVerification() {
         });
         await cleanupTestFixtures(testPrisma);
         console.log("   ✓ Fixtures test dibersihkan.");
-      } catch (err) {
-        console.warn("   ! Gagal membersihkan fixtures test:", err);
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        console.warn("   ! Gagal membersihkan fixtures test:", error.message);
+        cleanupErrors.push(error);
       }
     }
 
@@ -887,13 +892,32 @@ export async function runIsolatedE2EVerification() {
       await stopTestDatabase();
       console.log("   ✓ Embedded PostgreSQL test miliknya sendiri dihentikan.");
       console.log("   ✓ Direktori temporary unik test dihapus.");
-    } catch (err) {
-      console.warn("   ! Gagal menghentikan database test:", err);
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.warn("   ! Gagal menghentikan database test:", error.message);
+      cleanupErrors.push(error);
+    }
+
+    if (executionError && cleanupErrors.length > 0) {
+      process.exitCode = 1;
+      throw new AggregateError(
+        [executionError, ...cleanupErrors],
+        `[E2E_EXECUTION_AND_CLEANUP_FAILED] Execution="${executionError.message}" | CleanupErrors=[${cleanupErrors.map((e) => e.message).join("; ")}]`
+      );
     }
 
     if (executionError) {
       process.exitCode = 1;
       throw executionError;
+    }
+
+    if (cleanupErrors.length > 0) {
+      process.exitCode = 1;
+      if (cleanupErrors.length === 1) throw cleanupErrors[0];
+      throw new AggregateError(
+        cleanupErrors,
+        `[E2E_CLEANUP_FAILED] Cleanup errors: ${cleanupErrors.map((e) => e.message).join("; ")}`
+      );
     }
   }
 }

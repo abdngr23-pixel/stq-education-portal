@@ -7,6 +7,8 @@ import {
   isProcessVerifiedTestOwned,
 } from "../scripts/verify-test-db-cleanup";
 import { isPidRunning, terminateOwnedChildProcess, findFreePort, isPortInUse } from "./test-db-manager";
+import { executeQARunnerCleanup, combineExecutionAndCleanupErrors } from "../scripts/qa-runner-core";
+import type { Browser } from "puppeteer-core";
 
 describe("Regression Guard: Strict Process Ownership Check Pembersihan Database Test", () => {
   const fakeTempDir = path.resolve(os.tmpdir(), "stq-test-db-unit-ownership-test");
@@ -145,5 +147,117 @@ describe("Regression Guard: Strict Process Ownership Check Pembersihan Database 
 
     assert.equal(result.exited, true);
     assert.equal(result.method, "already_exited");
+  });
+
+  it("7. executeQARunnerCleanup harus FAIL-CLOSED jika terjadi kegagalan pada cleanup", async () => {
+    let secondStepExecuted = false;
+    await assert.rejects(
+      async () => {
+        await executeQARunnerCleanup({
+          browser: null,
+          nextServerProcess: null,
+          testNextPort: null,
+          testPrisma: null,
+          customCleanupSteps: [
+            () => {
+              throw new Error("Simulasi server cleanup gagal (port macet)");
+            },
+            () => {
+              secondStepExecuted = true;
+            },
+          ],
+        });
+      },
+      (err: unknown) => {
+        const error = err as Error;
+        assert.match(error.message, /Simulasi server cleanup gagal/);
+        return true;
+      }
+    );
+    assert.equal(secondStepExecuted, true, "Seluruh tahapan cleanup harus tetap dijalankan meskipun ada step yang gagal");
+  });
+
+  it("8. executeQARunnerCleanup harus melempar AggregateError jika multiple cleanup steps gagal", async () => {
+    await assert.rejects(
+      async () => {
+        await executeQARunnerCleanup({
+          browser: null,
+          nextServerProcess: null,
+          testNextPort: null,
+          testPrisma: null,
+          customCleanupSteps: [
+            () => {
+              throw new Error("Kegagalan A");
+            },
+            () => {
+              throw new Error("Kegagalan B");
+            },
+          ],
+        });
+      },
+      (err: unknown) => {
+        assert.ok(err instanceof AggregateError, "Harus melempar AggregateError");
+        assert.equal(err.errors.length, 2);
+        const err0 = err.errors[0] as Error;
+        const err1 = err.errors[1] as Error;
+        assert.match(err0.message, /Kegagalan A/);
+        assert.match(err1.message, /Kegagalan B/);
+        return true;
+      }
+    );
+  });
+
+  it("9. executeQARunnerCleanup mencatat kegagalan browser.close dan tetap melanjutkan cleanup berikutnya lalu fail-closed", async () => {
+    let subsequentCleanupRun = false;
+    const fakeBrowser = {
+      close: async () => {
+        throw new Error("Simulasi browser crash saat close");
+      },
+    } as unknown as Browser;
+
+    await assert.rejects(
+      async () => {
+        await executeQARunnerCleanup({
+          browser: fakeBrowser,
+          nextServerProcess: null,
+          testNextPort: null,
+          testPrisma: null,
+          customCleanupSteps: [
+            () => {
+              subsequentCleanupRun = true;
+            },
+          ],
+        });
+      },
+      (err: unknown) => {
+        const error = err as Error;
+        assert.match(error.message, /Simulasi browser crash saat close/);
+        return true;
+      }
+    );
+    assert.equal(subsequentCleanupRun, true, "Tahapan cleanup berikutnya harus tetap dijalankan meskipun browser close gagal");
+  });
+
+  it("10. combineExecutionAndCleanupErrors memprioritaskan error tunggal tanpa nesting yang tidak perlu", () => {
+    assert.equal(combineExecutionAndCleanupErrors(null, null), null);
+
+    const primaryOnly = new Error("Primary QA assertion gagal");
+    assert.equal(combineExecutionAndCleanupErrors(primaryOnly, null), primaryOnly);
+
+    const cleanupOnly = new Error("Server cleanup gagal");
+    assert.equal(combineExecutionAndCleanupErrors(null, cleanupOnly), cleanupOnly);
+  });
+
+  it("11. combineExecutionAndCleanupErrors menggabungkan primary error dan cleanup error ke AggregateError tanpa menutupi salah satunya", () => {
+    const primary = new Error("Layout overflow terdeteksi pada mobile");
+    const cleanup = new Error("Port 3000 masih terbuka");
+
+    const combined = combineExecutionAndCleanupErrors(primary, cleanup);
+    assert.ok(combined instanceof AggregateError, "Harus menghasilkan AggregateError");
+    assert.equal(combined.errors.length, 2);
+    assert.equal(combined.errors[0], primary, "Primary error harus berada di posisi pertama");
+    assert.equal(combined.errors[1], cleanup, "Cleanup error harus berada di posisi kedua");
+    assert.match(combined.message, /Layout overflow terdeteksi/);
+    assert.match(combined.message, /Port 3000 masih terbuka/);
   });
 });

@@ -31,6 +31,7 @@ import {
 export interface QARunnerOptions {
   captureScreenshots: boolean;
   failOnStructuralError?: boolean;
+  _cleanupHooksForTesting?: (() => Promise<void> | void)[];
 }
 
 export interface QARunnerSummary {
@@ -109,6 +110,104 @@ async function safeCapture(
   return fullPath;
 }
 
+/**
+ * Menjalankan urutan cleanup terjamin untuk QA Runner:
+ * 1. Menutup Puppeteer browser;
+ * 2. Menghentikan Next.js process tree;
+ * 3. Menghentikan dan membersihkan database PostgreSQL test;
+ * 4. Menjalankan custom cleanup steps (jika ada untuk testing);
+ * 5. Mengumpulkan seluruh error yang terjadi dan melemparnya (fail-closed).
+ */
+export async function executeQARunnerCleanup(params: {
+  browser: Browser | null;
+  nextServerProcess: ChildProcess | null;
+  testNextPort: number | null;
+  testPrisma: PrismaClient | null;
+  customCleanupSteps?: (() => Promise<void> | void)[];
+}): Promise<void> {
+  const cleanupErrors: Error[] = [];
+
+  // 1. Browser tetap dicoba ditutup
+  if (params.browser) {
+    try {
+      await params.browser.close();
+      console.log("   ✓ Puppeteer browser ditutup.");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error("   ❌ Gagal menutup Puppeteer browser:", error.message);
+      cleanupErrors.push(error);
+    }
+  }
+
+  // 2. Next.js process tree tetap dicoba dihentikan
+  if (params.nextServerProcess && params.nextServerProcess.pid) {
+    try {
+      await terminateOwnedChildProcess(params.nextServerProcess, {
+        port: params.testNextPort ?? undefined,
+        label: "Next.js production server",
+      });
+      console.log("   ✓ Next.js server test dihentikan.");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error("   ❌ Gagal menghentikan Next.js server test:", error.message);
+      cleanupErrors.push(error);
+    }
+  }
+
+  // 3. Test PostgreSQL tetap dibersihkan
+  if (params.testPrisma) {
+    try {
+      await stopTestDatabase();
+      console.log("   ✓ Test database dihentikan dan dibersihkan.");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error("   ❌ Gagal menghentikan dan membersihkan database test:", error.message);
+      cleanupErrors.push(error);
+    }
+  }
+
+  // 4. Custom cleanup steps
+  if (params.customCleanupSteps && params.customCleanupSteps.length > 0) {
+    for (const step of params.customCleanupSteps) {
+      try {
+        await step();
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        console.error("   ❌ Gagal pada custom cleanup step:", error.message);
+        cleanupErrors.push(error);
+      }
+    }
+  }
+
+  // 5. Propagasi error: jika ada cleanup failure, pastikan throw agar exit non-zero
+  if (cleanupErrors.length > 0) {
+    if (cleanupErrors.length === 1) {
+      throw cleanupErrors[0];
+    }
+    throw new AggregateError(
+      cleanupErrors,
+      `[QA_CLEANUP_FAILED] Terjadi ${cleanupErrors.length} kegagalan pada saat cleanup: ${cleanupErrors.map((e) => e.message).join("; ")}`
+    );
+  }
+}
+
+/**
+ * Menggabungkan primary QA error dan cleanup error tanpa menutupi error utama.
+ * Jika keduanya terjadi, dilempar AggregateError.
+ */
+export function combineExecutionAndCleanupErrors(
+  primaryError: Error | null,
+  cleanupError: Error | null
+): Error | null {
+  if (!primaryError && !cleanupError) return null;
+  if (primaryError && !cleanupError) return primaryError;
+  if (!primaryError && cleanupError) return cleanupError;
+  return new AggregateError(
+    [primaryError!, cleanupError!],
+    `[QA_EXECUTION_AND_CLEANUP_FAILED] Primary QA error: "${primaryError!.message}" | Cleanup error: "${cleanupError!.message}"`
+  );
+}
+
 export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARunnerSummary> {
   const CHROME_PATH = getChromeExecutablePath();
   const { artifactDir, docsDir } = getArtifactDirectories();
@@ -121,6 +220,9 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
   let nextServerProcess: ChildProcess | null = null;
   let testPrisma: PrismaClient | null = null;
   let testNextPort = 0;
+
+  let primaryError: Error | null = null;
+  let summary: QARunnerSummary | null = null;
 
   const allResults: AssertionResult[] = [];
   const findings: VisualFinding[] = [];
@@ -741,34 +843,38 @@ export async function runVisualQAChecks(options: QARunnerOptions): Promise<QARun
       console.log(`\n✅ Seluruh structural layout assertions PASS 100% tanpa finding!`);
     }
 
-    if (failedChecks > 0 && options.failOnStructuralError) {
-      throw new Error(`[QA_STRUCTURAL_FAILED] Terdapat ${failedChecks} assertion structural yang gagal!`);
-    }
-
-    return {
+    summary = {
       totalChecks,
       passedChecks,
       failedChecks,
       findings,
       screenshotsCaptured: capturedFiles,
     };
-  } finally {
-    if (browser) await browser.close();
-    if (nextServerProcess && nextServerProcess.pid) {
-      try {
-        await terminateOwnedChildProcess(nextServerProcess, {
-          port: testNextPort,
-          label: "Next.js production server",
-        });
-        console.log("   ✓ Next.js server test dihentikan.");
-      } catch (err: unknown) {
-        const error = err as Error;
-        console.error("   ❌ Gagal menghentikan Next.js server test:", error.message);
-      }
+
+    if (failedChecks > 0 && options.failOnStructuralError) {
+      throw new Error(`[QA_STRUCTURAL_FAILED] Terdapat ${failedChecks} assertion structural yang gagal!`);
     }
-    if (testPrisma) {
-      await stopTestDatabase();
-      console.log("   ✓ Test database dihentikan dan dibersihkan.");
+  } catch (err: unknown) {
+    primaryError = err instanceof Error ? err : new Error(String(err));
+  } finally {
+    try {
+      await executeQARunnerCleanup({
+        browser,
+        nextServerProcess,
+        testNextPort: testNextPort || null,
+        testPrisma,
+        customCleanupSteps: options._cleanupHooksForTesting,
+      });
+    } catch (cleanupErr: unknown) {
+      const cleanError = cleanupErr instanceof Error ? cleanupErr : new Error(String(cleanupErr));
+      const combined = combineExecutionAndCleanupErrors(primaryError, cleanError);
+      if (combined) throw combined;
     }
   }
+
+  if (primaryError) {
+    throw primaryError;
+  }
+
+  return summary!;
 }
