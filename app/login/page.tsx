@@ -30,9 +30,9 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
 
-  // Hanya aktif di lingkungan demonstrasi / development (Temuan 2 Remediasi)
+  // Keamanan P0: Demo Switcher HANYA aktif jika BUKAN produksi DAN NEXT_PUBLIC_ENABLE_DEMO bernilai true
   const isDemoEnabled =
-    process.env.NODE_ENV !== "production" ||
+    process.env.NODE_ENV !== "production" &&
     process.env.NEXT_PUBLIC_ENABLE_DEMO === "true";
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {

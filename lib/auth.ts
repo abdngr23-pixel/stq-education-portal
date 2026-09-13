@@ -71,6 +71,14 @@ export function isExplicitTestRuntime(): boolean {
   );
 }
 
+/**
+ * Predikat keamanan: Demo login HANYA diizinkan pada runtime non-produksi
+ * dengan explicit server opt-in flag STQ_ENABLE_DEMO_LOGIN === "true".
+ */
+export function isDemoLoginAllowed(): boolean {
+  return process.env.NODE_ENV !== "production" && process.env.STQ_ENABLE_DEMO_LOGIN === "true";
+}
+
 let testSessionMock: UserSession | null | undefined = undefined;
 
 /**
@@ -98,12 +106,11 @@ export async function getCurrentSession(): Promise<UserSession | null> {
     const payload = await verifySessionToken(token);
     if (!payload) return null;
 
-    // Tolak token demo tanpa autentikasi di mode produksi jika demo dinonaktifkan
+    // Di lingkungan produksi, tolak seluruh token identitas sintetik/demo tanpa exception
     if (
       process.env.NODE_ENV === "production" &&
-      process.env.NEXT_PUBLIC_ENABLE_DEMO !== "true" &&
       payload.sub &&
-      payload.sub.startsWith("user_demo_")
+      (payload.sub.startsWith("user_") || payload.sub.startsWith("stf_"))
     ) {
       return null;
     }
@@ -160,7 +167,11 @@ export async function getAuthFromRequest(req: Request): Promise<UserSession | nu
       const token = authHeader.substring(7).trim();
       const payload = await verifySessionToken(token);
       if (payload) {
-        if (process.env.NODE_ENV === "production" && payload.sub && payload.sub.startsWith("user_")) {
+        if (
+          process.env.NODE_ENV === "production" &&
+          payload.sub &&
+          (payload.sub.startsWith("user_") || payload.sub.startsWith("stf_"))
+        ) {
           return null;
         }
 
