@@ -105,20 +105,21 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // B. Precache Whitelist: Cache-First untuk aset publik offline shell
-  if (PRECACHE_ALLOWLIST.includes(url.pathname)) {
+  // B. Precache Whitelist: Cache-First untuk aset publik offline shell murni TANPA query string.
+  // HANYA cari dan simpan ke active STQ cache (CACHE_NAME), JANGAN gunakan caches.match global!
+  if (PRECACHE_ALLOWLIST.includes(url.pathname) && (!url.search || url.search === '')) {
     event.respondWith(
-      caches.match(request).then((cachedResponse) => {
+      caches.open(CACHE_NAME).then(async (cache) => {
+        const cachedResponse = await cache.match(request);
         if (cachedResponse) {
           return cachedResponse;
         }
-        return fetch(request).then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            const clone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          }
-          return networkResponse;
-        });
+        const networkResponse = await fetch(request);
+        if (networkResponse && networkResponse.status === 200) {
+          const clone = networkResponse.clone();
+          cache.put(request, clone);
+        }
+        return networkResponse;
       })
     );
     return;

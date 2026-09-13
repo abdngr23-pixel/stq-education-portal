@@ -134,6 +134,33 @@ describe('PWA Security & Caching Policy Guard', () => {
     }
   });
 
+  it('7B. Query variant pada aset allowlist dilarang dicache (Strict URL Isolation)', () => {
+    const queryVariants = [
+      `${ORIGIN}/logo.png?token=abc123secret`,
+      `${ORIGIN}/favicon.ico?v=2`,
+      `${ORIGIN}/offline.html?query=test`,
+      `${ORIGIN}/pwa/icon-192.png?cacheBust=999`,
+    ];
+
+    for (const url of queryVariants) {
+      const res = isRequestCacheable({
+        method: 'GET',
+        url,
+        origin: ORIGIN,
+      });
+      assert.equal(
+        res.cacheable,
+        false,
+        `URL ${url} dengan query string harus dilarang dicache`
+      );
+      assert.equal(
+        res.reason,
+        'allowlisted_asset_with_query',
+        `Alasan penolakan harus 'allowlisted_asset_with_query' untuk ${url}`
+      );
+    }
+  });
+
   it('8. Aset di luar allowlist tidak dicache (Allowlist Strictness)', () => {
     const nonAllowlisted = [
       `${ORIGIN}/dashboard`,

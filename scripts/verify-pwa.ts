@@ -178,12 +178,12 @@ export async function runDedicatedPWAVerification(): Promise<void> {
     await page.goto(`${baseUrl}/favicon.ico`);
     await page.evaluate(async () => {
       const unrelated = await caches.open('unrelated-test-cache');
-      await unrelated.put('/favicon.ico', new Response('unrelated-content'));
+      await unrelated.put('/favicon.ico', new Response('UNRELATED_FAKE_FAVICON'));
 
       const oldOwned = await caches.open('stq-duc-pwa-v0');
       await oldOwned.put('/favicon.ico', new Response('old-stq-content'));
     });
-    console.log('   ✓ Dummy caches berhasil disiapkan (unrelated-test-cache & stq-duc-pwa-v0).');
+    console.log('   ✓ Dummy caches berhasil disiapkan (unrelated-test-cache dengan UNRELATED_FAKE_FAVICON & stq-duc-pwa-v0).');
 
     // Buka halaman login untuk memicu ServiceWorkerRegister
     await page.goto(`${baseUrl}/login`, { waitUntil: 'networkidle2', timeout: 30000 });
@@ -245,11 +245,38 @@ export async function runDedicatedPWAVerification(): Promise<void> {
     }
     console.log(`   ✓ Service Worker controller aktif di browser: ${isControlled}`);
 
-    // 5. Audit Cache Storage & Negative Data Privacy Check
+    // 5A. Cross-Cache Collision & Lookup Isolation Test:
+    // Browser mem-fetch /favicon.ico. Service Worker STQ TIDAK BOLEH membaca dari unrelated-test-cache.
+    console.log('   Menjalankan Cross-Cache Collision Test (memverifikasi SW tidak membaca unrelated-test-cache)...');
+    const faviconFetchText = await page.evaluate(async () => {
+      const res = await fetch('/favicon.ico');
+      return await res.text();
+    });
+    if (faviconFetchText.includes('UNRELATED_FAKE_FAVICON')) {
+      throw new Error(
+        '[CROSS-CACHE COLLISION FAILURE] Service Worker STQ membaca response dari "unrelated-test-cache"! caches.match global masih digunakan!'
+      );
+    }
+    console.log('   ✓ Cross-Cache Collision Test LULUS: SW STQ terbukti HANYA membaca cache miliknya sendiri (bukan unrelated-test-cache).');
+
+    // 5B. Query String Privacy Negative Test:
+    // Lakukan request dengan query parameter rahasia. SW tidak boleh menyimpan query variant ke cache.
+    console.log('   Menjalankan Query String Privacy Negative Test (fetch query variant non-allowlist)...');
+    await page.evaluate(async () => {
+      await fetch('/logo.png?secret=QA_QUERY_SHOULD_NOT_BE_CACHED');
+    });
+
+    // 5C. Audit Cache Storage & Negative Data Privacy Check
     console.log('[6/8] Menjalankan audit Cache Storage & Negative Data Privacy Check...');
     const cacheAudit = await page.evaluate(async (allowlist) => {
       const keys = await caches.keys();
-      const entries: { cacheName: string; path: string }[] = [];
+      const entries: {
+        cacheName: string;
+        path: string;
+        search: string;
+        pathWithSearch: string;
+        fullUrl: string;
+      }[] = [];
 
       for (const name of keys) {
         // HANYA audit isi cache STQ untuk privacy check
@@ -258,7 +285,13 @@ export async function runDedicatedPWAVerification(): Promise<void> {
           const requests = await c.keys();
           for (const req of requests) {
             const url = new URL(req.url);
-            entries.push({ cacheName: name, path: url.pathname });
+            entries.push({
+              cacheName: name,
+              path: url.pathname,
+              search: url.search,
+              pathWithSearch: url.pathname + url.search,
+              fullUrl: req.url,
+            });
           }
         }
       }
@@ -327,8 +360,18 @@ export async function runDedicatedPWAVerification(): Promise<void> {
       );
     }
 
-    // Negative check: pastikan tidak ada route sensitif
+    // Negative check: pastikan tidak ada route sensitif dan tidak ada query string yang dicache
     for (const entry of cacheAudit.entries) {
+      if (entry.search && entry.search !== '') {
+        throw new Error(
+          `[QUERY VARIANT CACHE LEAK] Ditemukan entri cache dengan query string: "${entry.pathWithSearch}". SW melanggar aturan strict URL allowlist!`
+        );
+      }
+      if (entry.pathWithSearch.includes('QA_QUERY_SHOULD_NOT_BE_CACHED')) {
+        throw new Error(
+          `[PRIVACY LEAK] Query param rahasia bocor ke cache STQ: "${entry.pathWithSearch}"`
+        );
+      }
       if (
         entry.path.startsWith('/api/') ||
         entry.path.includes('santri') ||
@@ -340,7 +383,7 @@ export async function runDedicatedPWAVerification(): Promise<void> {
         throw new Error(`[DATA PRIVACY LEAK] Path sensitif ${entry.path} ditemukan di cache!`);
       }
     }
-    console.log('   ✓ Negative Privacy Check LULUS: 100% entri cache mematuhi Allowlist murni.');
+    console.log('   ✓ Negative Privacy Check LULUS: 100% entri cache mematuhi Allowlist murni (bebas query variant).');
 
     // D. Pengujian dev/test stale registration & cache cleanup di browser
     console.log('   Menguji helper cleanupStaleStqServiceWorkers di lingkungan browser...');

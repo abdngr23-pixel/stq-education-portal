@@ -70,8 +70,11 @@ export function isRequestCacheable(params: RequestCheckParams): { cacheable: boo
     return { cacheable: false, reason: 'navigation_network_only' };
   }
 
-  // Hanya aset dalam allowlist precache publik yang boleh dicache
+  // Hanya aset dalam allowlist precache publik TANPA query string yang boleh dicache
   if ((PWA_PRECACHE_ALLOWLIST as readonly string[]).includes(pathname)) {
+    if (parsedUrl.search && parsedUrl.search !== '') {
+      return { cacheable: false, reason: 'allowlisted_asset_with_query' };
+    }
     return { cacheable: true, reason: 'precache_allowlist' };
   }
 
