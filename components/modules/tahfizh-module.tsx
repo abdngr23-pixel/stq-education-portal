@@ -857,6 +857,11 @@ export function TahfizhModule({
   const [inputNilaiIkhtibar, setInputNilaiIkhtibar] = useState("");
   const [inputCatatanIkhtibar, setInputCatatanIkhtibar] = useState("");
   const [inputHasilTahap2, setInputHasilTahap2] = useState<"LULUS" | "MENGULANG_SEBAGIAN" | "MENGULANG_SATU_JUZ">("LULUS");
+  const [inputTajwidIkhtibar, setInputTajwidIkhtibar] = useState<NilaiSetoran>("MUMTAZ");
+  const [inputFashahahIkhtibar, setInputFashahahIkhtibar] = useState<NilaiSetoran>("MUMTAZ");
+  const [inputKelancaranIkhtibar, setInputKelancaranIkhtibar] = useState<NilaiSetoran>("MUMTAZ");
+  const [inputMistakesIkhtibar, setInputMistakesIkhtibar] = useState<MistakeCounts>({ ...DEFAULT_MISTAKE_COUNTS });
+  const [inputMistakesIkhtibarOpen, setInputMistakesIkhtibarOpen] = useState(false);
 
   const handleAjukanIkhtibar = () => {
     const target = santriList.find((s) => s.nis === ajukanSantriNis);
@@ -941,6 +946,10 @@ export function TahfizhModule({
         res = await inputHasilTahap1Action({
           ikhtibarId: gradingUjian.id,
           nilai: numNilai,
+          nilaiTajwid: inputTajwidIkhtibar,
+          nilaiFashahah: inputFashahahIkhtibar,
+          nilaiKelancaran: inputKelancaranIkhtibar,
+          rincianKesalahan: inputMistakesIkhtibar,
           catatan: inputCatatanIkhtibar,
           lulus: isLulusTahap1,
         });
@@ -948,6 +957,10 @@ export function TahfizhModule({
         res = await inputHasilTahap2Action({
           ikhtibarId: gradingUjian.id,
           nilai: numNilai,
+          nilaiTajwid: inputTajwidIkhtibar,
+          nilaiFashahah: inputFashahahIkhtibar,
+          nilaiKelancaran: inputKelancaranIkhtibar,
+          rincianKesalahan: inputMistakesIkhtibar,
           catatan: inputCatatanIkhtibar,
           lulus: inputHasilTahap2 === "LULUS",
           hasilTahap2: inputHasilTahap2,
@@ -2386,6 +2399,108 @@ export function TahfizhModule({
                   }}
                   className="min-h-[44px] text-base font-bold"
                 />
+              </div>
+
+              {/* 3 Dimensi Kualitas Terstruktur Ikhtibar (PR #8) */}
+              <div className="p-3 bg-slate-50/90 rounded-2xl border border-slate-200 space-y-2.5">
+                <span className="text-xs font-bold text-slate-800 block">
+                  Evaluasi Kualitas 3 Dimensi Resmi (Tahap {gradingUjian.tahap})
+                </span>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-600 block mb-1">
+                      Tajwid
+                    </label>
+                    <select
+                      value={inputTajwidIkhtibar}
+                      onChange={(e) => setInputTajwidIkhtibar(e.target.value as NilaiSetoran)}
+                      className="w-full px-2 py-1.5 rounded-xl border border-slate-200 text-xs bg-white min-h-[38px]"
+                    >
+                      <option value="MUMTAZ">Mumtaz</option>
+                      <option value="JAYYID_JIDDAN">Jayyid Jiddan</option>
+                      <option value="JAYYID">Jayyid</option>
+                      <option value="MAQBUL">Maqbul</option>
+                      <option value="DHOIF">Dhoif</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-600 block mb-1">
+                      Fashahah
+                    </label>
+                    <select
+                      value={inputFashahahIkhtibar}
+                      onChange={(e) => setInputFashahahIkhtibar(e.target.value as NilaiSetoran)}
+                      className="w-full px-2 py-1.5 rounded-xl border border-slate-200 text-xs bg-white min-h-[38px]"
+                    >
+                      <option value="MUMTAZ">Mumtaz</option>
+                      <option value="JAYYID_JIDDAN">Jayyid Jiddan</option>
+                      <option value="JAYYID">Jayyid</option>
+                      <option value="MAQBUL">Maqbul</option>
+                      <option value="DHOIF">Dhoif</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-600 block mb-1">
+                      Kelancaran
+                    </label>
+                    <select
+                      value={inputKelancaranIkhtibar}
+                      onChange={(e) => setInputKelancaranIkhtibar(e.target.value as NilaiSetoran)}
+                      className="w-full px-2 py-1.5 rounded-xl border border-slate-200 text-xs bg-white min-h-[38px]"
+                    >
+                      <option value="MUMTAZ">Mumtaz</option>
+                      <option value="JAYYID_JIDDAN">Jayyid Jiddan</option>
+                      <option value="JAYYID">Jayyid</option>
+                      <option value="MAQBUL">Maqbul</option>
+                      <option value="DHOIF">Dhoif</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Collapsible Rincian Kesalahan */}
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setInputMistakesIkhtibarOpen(!inputMistakesIkhtibarOpen)}
+                    className="w-full py-1.5 px-2.5 bg-white rounded-xl border border-slate-200 text-left flex items-center justify-between text-xs font-semibold text-slate-700 hover:bg-slate-50 min-h-[36px]"
+                  >
+                    <span>Rincian Kesalahan ({Object.values(inputMistakesIkhtibar).reduce((a, b) => a + b, 0)} tercatat)</span>
+                    {inputMistakesIkhtibarOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </button>
+
+                  {inputMistakesIkhtibarOpen && (
+                    <div className="p-2.5 bg-white border border-slate-200 rounded-xl mt-1.5 grid grid-cols-2 gap-2 text-[11px]">
+                      {CANONICAL_MISTAKE_KEYS.map((key) => {
+                        const count = inputMistakesIkhtibar[key] || 0;
+                        return (
+                          <div key={key} className="flex items-center justify-between p-1.5 bg-slate-50 rounded-lg border border-slate-100">
+                            <span className="text-[10px] font-medium text-slate-700 truncate mr-1" title={MISTAKE_LABELS[key].label}>
+                              {MISTAKE_LABELS[key].label}
+                            </span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                disabled={count <= 0}
+                                onClick={() => setInputMistakesIkhtibar((p) => ({ ...p, [key]: Math.max(0, (p[key] || 0) - 1) }))}
+                                className="w-6 h-6 rounded bg-white border border-slate-200 flex items-center justify-center text-slate-600 disabled:opacity-30"
+                              >
+                                -
+                              </button>
+                              <span className="w-5 text-center font-bold text-xs">{count}</span>
+                              <button
+                                type="button"
+                                onClick={() => setInputMistakesIkhtibar((p) => ({ ...p, [key]: (p[key] || 0) + 1 }))}
+                                className="w-6 h-6 rounded bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-100"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Khusus Tahap 2 (Mudir): 3 Pilihan Keputusan Resmi Kurikulum STQ */}

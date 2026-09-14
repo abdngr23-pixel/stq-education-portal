@@ -2,8 +2,13 @@
 
 import prisma from '@/lib/prisma';
 import { requireRole, getSession, recordAuditLog } from '@/lib/auth';
-import { StatusIkhtibar, Prisma } from '@prisma/client';
+import { StatusIkhtibar, Prisma, NilaiSetoran } from '@prisma/client';
 import { validasiIkhtibarTahap1, validasiIkhtibarTahap2, MIN_NILAI_IKHTIBAR } from '@/lib/educational-rules';
+import {
+  VALID_NILAI_SETORAN_VALUES,
+  mistakeCountsSchema,
+  MistakeCounts,
+} from '@/lib/tahfizh-quality';
 import {
   getIkhtibarPendingCountForSession,
   buildIkhtibarScopeWhere,
@@ -116,6 +121,10 @@ export async function ajukanIkhtibarAction(formData: {
 export async function inputHasilTahap1Action(formData: {
   ikhtibarId: string;
   nilai: number; // 0 - 100
+  nilaiTajwid?: NilaiSetoran;
+  nilaiFashahah?: NilaiSetoran;
+  nilaiKelancaran?: NilaiSetoran;
+  rincianKesalahan?: MistakeCounts | null;
   catatan?: string;
   lulus: boolean;
 }): Promise<IkhtibarResponse> {
@@ -147,12 +156,45 @@ export async function inputHasilTahap1Action(formData: {
       return { success: false, message: validation.error };
     }
 
+    // Validasi dimensi kualitas terstruktur jika disertakan
+    if (formData.nilaiTajwid || formData.nilaiFashahah || formData.nilaiKelancaran) {
+      if (!formData.nilaiTajwid || !formData.nilaiFashahah || !formData.nilaiKelancaran) {
+        return {
+          success: false,
+          message: 'Ketiga dimensi kualitas (Tajwid, Fashahah, Kelancaran) wajib diisi lengkap.',
+        };
+      }
+      if (
+        !VALID_NILAI_SETORAN_VALUES.includes(formData.nilaiTajwid) ||
+        !VALID_NILAI_SETORAN_VALUES.includes(formData.nilaiFashahah) ||
+        !VALID_NILAI_SETORAN_VALUES.includes(formData.nilaiKelancaran)
+      ) {
+        return {
+          success: false,
+          message: 'Predikat kualitas tidak valid (DHOIF, MAQBUL, JAYYID, JAYYID_JIDDAN, MUMTAZ).',
+        };
+      }
+    }
+
+    let structuredMistakesTahap1: Prisma.InputJsonValue | undefined = undefined;
+    if (formData.rincianKesalahan) {
+      const parsedMistakes = mistakeCountsSchema.safeParse(formData.rincianKesalahan);
+      if (!parsedMistakes.success) {
+        return { success: false, message: 'Rincian kesalahan Ikhtibar Tahap 1 tidak valid.' };
+      }
+      structuredMistakesTahap1 = parsedMistakes.data as unknown as Prisma.InputJsonValue;
+    }
+
     const status = (formData.lulus && validation.lulus) ? StatusIkhtibar.LULUS_TAHAP_1 : StatusIkhtibar.MENGULANG;
 
     const updated = await prisma.ikhtibarTahfizh.update({
       where: { id: formData.ikhtibarId },
       data: {
         nilaiTahap1: formData.nilai,
+        nilaiTajwidTahap1: formData.nilaiTajwid || null,
+        nilaiFashahahTahap1: formData.nilaiFashahah || null,
+        nilaiKelancaranTahap1: formData.nilaiKelancaran || null,
+        rincianKesalahanTahap1: structuredMistakesTahap1,
         catatanTahap1: formData.catatan || (status === StatusIkhtibar.LULUS_TAHAP_1 ? 'Lancar dan makhraj fasih' : `Perlu pemantapan hafalan (Nilai: ${formData.nilai})`),
         tanggalTahap1: new Date(),
         pengujiTahap1Id: session.staffId || null,
@@ -165,7 +207,13 @@ export async function inputHasilTahap1Action(formData: {
       action: 'INPUT_NILAI_IKHTIBAR_TAHAP_1',
       entity: 'IkhtibarTahfizh',
       entityId: formData.ikhtibarId,
-      details: { nilai: formData.nilai, status },
+      details: {
+        nilai: formData.nilai,
+        status,
+        nilaiTajwidTahap1: formData.nilaiTajwid || null,
+        nilaiFashahahTahap1: formData.nilaiFashahah || null,
+        nilaiKelancaranTahap1: formData.nilaiKelancaran || null,
+      },
     });
 
     return {
@@ -189,6 +237,10 @@ export async function inputHasilTahap1Action(formData: {
 export async function inputHasilTahap2Action(formData: {
   ikhtibarId: string;
   nilai: number; // 0 - 100
+  nilaiTajwid?: NilaiSetoran;
+  nilaiFashahah?: NilaiSetoran;
+  nilaiKelancaran?: NilaiSetoran;
+  rincianKesalahan?: MistakeCounts | null;
   catatan?: string;
   lulus: boolean;
   hasilTahap2?: 'LULUS' | 'MENGULANG_SEBAGIAN' | 'MENGULANG_SATU_JUZ';
@@ -223,6 +275,35 @@ export async function inputHasilTahap2Action(formData: {
       return { success: false, message: validation.error };
     }
 
+    // Validasi dimensi kualitas terstruktur jika disertakan
+    if (formData.nilaiTajwid || formData.nilaiFashahah || formData.nilaiKelancaran) {
+      if (!formData.nilaiTajwid || !formData.nilaiFashahah || !formData.nilaiKelancaran) {
+        return {
+          success: false,
+          message: 'Ketiga dimensi kualitas (Tajwid, Fashahah, Kelancaran) wajib diisi lengkap.',
+        };
+      }
+      if (
+        !VALID_NILAI_SETORAN_VALUES.includes(formData.nilaiTajwid) ||
+        !VALID_NILAI_SETORAN_VALUES.includes(formData.nilaiFashahah) ||
+        !VALID_NILAI_SETORAN_VALUES.includes(formData.nilaiKelancaran)
+      ) {
+        return {
+          success: false,
+          message: 'Predikat kualitas tidak valid (DHOIF, MAQBUL, JAYYID, JAYYID_JIDDAN, MUMTAZ).',
+        };
+      }
+    }
+
+    let structuredMistakesTahap2: Prisma.InputJsonValue | undefined = undefined;
+    if (formData.rincianKesalahan) {
+      const parsedMistakes = mistakeCountsSchema.safeParse(formData.rincianKesalahan);
+      if (!parsedMistakes.success) {
+        return { success: false, message: 'Rincian kesalahan Ikhtibar Tahap 2 tidak valid.' };
+      }
+      structuredMistakesTahap2 = parsedMistakes.data as unknown as Prisma.InputJsonValue;
+    }
+
     const status = validation.status as StatusIkhtibar;
 
     const defaultCatatan =
@@ -236,6 +317,10 @@ export async function inputHasilTahap2Action(formData: {
       where: { id: formData.ikhtibarId },
       data: {
         nilaiTahap2: formData.nilai,
+        nilaiTajwidTahap2: formData.nilaiTajwid || null,
+        nilaiFashahahTahap2: formData.nilaiFashahah || null,
+        nilaiKelancaranTahap2: formData.nilaiKelancaran || null,
+        rincianKesalahanTahap2: structuredMistakesTahap2,
         catatanTahap2: formData.catatan || defaultCatatan,
         tanggalTahap2: new Date(),
         pengujiTahap2Id: session.staffId,
@@ -248,7 +333,13 @@ export async function inputHasilTahap2Action(formData: {
       action: 'INPUT_NILAI_IKHTIBAR_TAHAP_2',
       entity: 'IkhtibarTahfizh',
       entityId: formData.ikhtibarId,
-      details: { nilai: formData.nilai, status },
+      details: {
+        nilai: formData.nilai,
+        status,
+        nilaiTajwidTahap2: formData.nilaiTajwid || null,
+        nilaiFashahahTahap2: formData.nilaiFashahah || null,
+        nilaiKelancaranTahap2: formData.nilaiKelancaran || null,
+      },
     });
 
     const statusMessage =
