@@ -14,6 +14,7 @@ export interface CreateSetoranCoreInput {
   halamanMulai: number;
   halamanSelesai: number;
   jumlahHalaman: number;
+  jumlahJuzMufar?: number | null;
   nilai: NilaiSetoran;
   catatan?: string | null;
   clientRequestId?: string | null;
@@ -70,6 +71,19 @@ export async function saveSetoranTahfizhCore(
   }
   if (isNaN(jmlHalaman) || !isFinite(jmlHalaman) || jmlHalaman < 0.5) {
     return { success: false, message: "Jumlah halaman tidak valid. Minimal setoran adalah 0.5 halaman." };
+  }
+
+  // 1b. Validasi Khusus MUFAR (Structured Data Contract: wajib integer 1–6)
+  let validatedJumlahJuzMufar: number | null = null;
+  if (input.jenis === "MUFAR") {
+    const rawJuzMufar = Number(input.jumlahJuzMufar);
+    if (!Number.isInteger(rawJuzMufar) || rawJuzMufar < 1 || rawJuzMufar > 6) {
+      return {
+        success: false,
+        message: "Untuk setoran MUFAR, jumlah juz wajib berupa bilangan bulat antara 1 sampai 6.",
+      };
+    }
+    validatedJumlahJuzMufar = rawJuzMufar;
   }
 
   // Hubungan volume dan rentang halaman secara konsisten
@@ -285,6 +299,7 @@ export async function saveSetoranTahfizhCore(
               halamanMulai: halMulai,
               halamanSelesai: halSelesai,
               jumlahHalaman: jmlHalaman,
+              jumlahJuzMufar: input.jenis === "MUFAR" ? validatedJumlahJuzMufar : null,
               nilai: input.nilai,
               catatan: input.catatan?.trim() || null,
               clientRequestId: input.clientRequestId?.trim() || null,
@@ -312,6 +327,7 @@ export async function saveSetoranTahfizhCore(
                 juz: declaredJuz,
                 halaman: `${halMulai}-${halSelesai}`,
                 jumlahHalaman: jmlHalaman,
+                ...(input.jenis === "MUFAR" ? { jumlahJuzMufar: created.jumlahJuzMufar } : {}),
                 nilai: input.nilai,
                 clientRequestId: input.clientRequestId || null,
                 alasanLompatanHalaman: input.alasanLompatanHalaman || null,

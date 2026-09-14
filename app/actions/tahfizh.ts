@@ -10,6 +10,10 @@ import {
   allocateSabaqPages,
 } from "@/lib/tahfizh-page-allocation";
 import { saveSetoranTahfizhCore } from "@/lib/tahfizh-persistence";
+import {
+  getTahfizhOperationalMonitoring,
+  GetTahfizhMonitoringParams,
+} from "@/lib/server/tahfizh-monitoring-service";
 
 export interface CreateSetoranInput {
   santriId: string;
@@ -18,6 +22,7 @@ export interface CreateSetoranInput {
   halamanMulai: number;
   halamanSelesai: number;
   jumlahHalaman: number;
+  jumlahJuzMufar?: number | null;
   nilai: NilaiSetoran;
   catatan?: string;
   clientRequestId?: string;
@@ -70,6 +75,19 @@ export async function createSetoranAction(input: CreateSetoranInput) {
   }
   if (isNaN(jmlHalaman) || !isFinite(jmlHalaman) || jmlHalaman < 0.5) {
     return { success: false, message: "Jumlah halaman tidak valid. Minimal setoran adalah 0.5 halaman." };
+  }
+
+  // Validasi Khusus MUFAR (Structured Data Contract: wajib integer 1–6)
+  let validatedJumlahJuzMufar: number | null = null;
+  if (input.jenis === "MUFAR") {
+    const rawJuzMufar = Number(input.jumlahJuzMufar);
+    if (!Number.isInteger(rawJuzMufar) || rawJuzMufar < 1 || rawJuzMufar > 6) {
+      return {
+        success: false,
+        message: "Untuk setoran MUFAR, jumlah juz wajib berupa bilangan bulat antara 1 sampai 6.",
+      };
+    }
+    validatedJumlahJuzMufar = rawJuzMufar;
   }
 
   // Hubungan volume dan rentang halaman secara konsisten
@@ -194,7 +212,10 @@ export async function createSetoranAction(input: CreateSetoranInput) {
 
     // 7. Simpan Setoran menggunakan Core Persistence Service (Atomic Serializable Transaction & Concurrency Protection)
     return await saveSetoranTahfizhCore(prisma, {
-      input,
+      input: {
+        ...input,
+        jumlahJuzMufar: input.jenis === "MUFAR" ? validatedJumlahJuzMufar : null,
+      },
       context: {
         userId: session.userId,
         username: session.username,
@@ -557,6 +578,14 @@ export async function getSantriKumulatifHalamanAction(santriId: string) {
     console.error("Gagal menghitung kumulatif santri:", error);
     return { success: false, message: "Gagal menghitung kumulatif santri." };
   }
+}
+
+/**
+ * Server Action: Mengambil data monitoring operasional Tahfizh terpadu untuk Musyrif & Mudir.
+ */
+export async function getTahfizhOperationalMonitoringAction(params?: GetTahfizhMonitoringParams) {
+  const session = await getCurrentSession();
+  return await getTahfizhOperationalMonitoring(params, session, prisma);
 }
 
 

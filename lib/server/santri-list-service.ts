@@ -7,7 +7,18 @@ import { isTodayWita, getWitaDateString } from "@/lib/wita-date";
 import { getStartOfWeekWITA } from "@/lib/sabaqi";
 import { calculateLatestSabaqPosition } from "@/lib/tahfizh-page-allocation";
 
-import { determineTahfizhDailyStatus, TahfizhDailyStatus } from "@/lib/tahfizh-status";
+import {
+  determineTahfizhDailyStatus,
+  TahfizhDailyStatus,
+  computeTahfizhAttentionState,
+  formatMufarProgressLabel,
+} from "@/lib/tahfizh-status";
+import {
+  getCompletedJuzCount,
+  getDailyMufarTargetJuz,
+  calculateWeeklySabaqProgress,
+  WeeklySabaqProgress,
+} from "@/lib/tahfizh-mufar-tier";
 
 export interface SantriListParams {
   search?: string;
@@ -44,7 +55,14 @@ export interface SantriListItem {
   targetSabaqLabel: string;
   targetSabaqBulanan: number | null;
   targetSabaqPekanan: number | null;
+  completedJuzCanonical: number;
+  targetDailyMufarJuz: number;
+  actualDailyMufarJuz: number;
+  weeklySabaqProgress: WeeklySabaqProgress;
   statusTahfizhHariIni: TahfizhDailyStatus;
+  mufarProgressLabel: string;
+  needsAttention: boolean;
+  attentionReasons: string[];
   setoranTerakhir: string;
   setoranTerakhirAt: string | null;
   sudahSetorHariIni: boolean;
@@ -155,6 +173,8 @@ export async function getSantriListForSession(
             halamanMulai: true,
             halamanSelesai: true,
             jumlahHalaman: true,
+            jumlahJuzMufar: true,
+            catatan: true,
             juz: true,
             nilai: true,
           },
@@ -239,43 +259,71 @@ export async function getSantriListForSession(
       const sabaqTarget = targetList.find(
         (t) => t.jenis === "SABAQ" && t.bulan === activeMonth && t.tahunAjaran === targetTahunAjaran
       );
-      const mufarTarget = targetList.find(
-        (t) => t.jenis === "MUFAR" && t.bulan === activeMonth && t.tahunAjaran === targetTahunAjaran
-      );
 
       const targetSabaq = sabaqTarget?.targetBulanan ?? null;
       const targetSabaqLabel = targetSabaq !== null ? `${targetSabaq} Halaman` : "Target belum ditetapkan";
       const targetSabaqBulanan = targetSabaq;
       const targetSabaqPekanan = sabaqTarget?.targetPekanan ?? null;
 
-      // Cek apakah ada SABAQ sah pada pekan berjalan sejak Senin 00:00 WITA (untuk applicability SABQI)
+      // Cek apakah ada SABAQ sah pada pekan berjalan sejak Senin 00:00 WITA (untuk applicability SABQI & progres pekanan)
       // Wajib memerlukan baselineDate dan SABAQ harus terjadi >= max(startOfWeek, baselineDate)
       const startOfWeek = getStartOfWeekWITA(targetRefDate);
       const minValidSabaqDate = baselineDate
         ? (baselineDate > startOfWeek ? baselineDate : startOfWeek)
         : null;
-      const hasValidSabaqThisWeek = minValidSabaqDate
-        ? validSetoranList.some(
+      const sabaqThisWeek = minValidSabaqDate
+        ? validSetoranList.filter(
             (st) => st.jenis === "SABAQ" && new Date(st.tanggal) >= minValidSabaqDate
           )
-        : false;
+        : [];
+      const hasValidSabaqThisWeek = sabaqThisWeek.length > 0;
+      const actualSabaqPagesThisWeek = sabaqThisWeek.reduce((sum, st) => sum + (st.jumlahHalaman || 0), 0);
+      const weeklySabaqProgress = calculateWeeklySabaqProgress(targetSabaqPekanan, actualSabaqPagesThisWeek);
 
-      // Status setoran 4 jenis (SABAQ, SABQI, MANZIL, MUFAR) berdasarkan batas hari WITA & hari efektif
+      // Metrik MUFAR kanonikal berbasis completed Juz Mushaf Madinah & Tier Resmi
+      const completedJuzCanonical = getCompletedJuzCount(posisiTerakhirHalaman, isHalamanTerakhirParsial);
+      const targetDailyMufarJuz = getDailyMufarTargetJuz(completedJuzCanonical);
+      const isMufarApplicable = completedJuzCanonical >= 1;
+
+      // Status setoran 4 jenis (SABAQ, SABQI, MANZIL, MUFAR) berdasarkan batas hari WITA & volume actual MUFAR
+      // Locked Contract: jumlahJuzMufar adalah satu-satunya source of truth volume MUFAR
       const setoranHariIni = validSetoranList.filter((st) => isTodayWita(st.tanggal, targetRefDate));
+      const setoranMufarHariIni = setoranHariIni.filter((st) => st.jenis === "MUFAR");
+      const actualDailyMufarJuz = setoranMufarHariIni.reduce((sum, st) => {
+        if (typeof st.jumlahJuzMufar === "number" && !isNaN(st.jumlahJuzMufar) && st.jumlahJuzMufar > 0) {
+          return sum + st.jumlahJuzMufar;
+        }
+        return sum;
+      }, 0);
+
       const statusTahfizhHariIni = determineTahfizhDailyStatus({
         validSetoranToday: setoranHariIni,
         posisiTerakhirHalaman,
-        targetMufar: mufarTarget
-          ? {
-              targetBulanan: mufarTarget.targetBulanan,
-              targetPekanan: mufarTarget.targetPekanan,
-            }
-          : null,
+        isHalamanTerakhirParsial,
+        targetDailyMufarJuz,
+        actualDailyMufarJuz,
+        isMufarApplicable,
         hasValidSabaqThisWeek,
         refDate: targetRefDate,
       });
 
       const setoranTerakhirAt = latestSetoran ? latestSetoran.tanggal.toISOString() : null;
+
+      // Label visual untuk MUFAR (kanonikal)
+      const mufarProgressLabel = formatMufarProgressLabel(
+        targetDailyMufarJuz,
+        actualDailyMufarJuz,
+        statusTahfizhHariIni.mufar
+      );
+
+      // Status perhatian operasional kanonikal (Satu-satunya source of truth)
+      const { needsAttention, attentionReasons } = computeTahfizhAttentionState({
+        weeklySabaqStatus: weeklySabaqProgress.status,
+        statusTahfizhHariIni,
+        targetDailyMufarJuz,
+        actualDailyMufarJuz,
+        refDate: targetRefDate,
+      });
 
       return {
         id: s.id,
@@ -300,12 +348,19 @@ export async function getSantriListForSession(
         capaianJuz,
         posisiTerakhirHalaman,
         isHalamanTerakhirParsial,
+        completedJuzCanonical,
+        targetDailyMufarJuz,
+        actualDailyMufarJuz,
+        weeklySabaqProgress,
+        statusTahfizhHariIni,
+        mufarProgressLabel,
+        needsAttention,
+        attentionReasons,
         targetJuz: s.targetAkhirProgramJuz && s.targetAkhirProgramJuz > 0 ? s.targetAkhirProgramJuz : null,
         targetSabaq,
         targetSabaqLabel,
         targetSabaqBulanan,
         targetSabaqPekanan,
-        statusTahfizhHariIni,
         setoranTerakhir: latestSetoran
           ? `${latestSetoran.jenis} Juz ${latestSetoran.juz} Hlm ${latestSetoran.halamanMulai}-${latestSetoran.halamanSelesai}`
           : "-",
