@@ -13,7 +13,7 @@ import {
 } from "@/types/navigation";
 import {
   Role,
-  getHalaqohByStaff,
+  hasModuleAccess,
 } from "@/types/auth";
 import { getCurrentUserAction, logoutAction } from "@/app/actions/auth";
 import { getSantriListAction } from "@/app/actions/santri";
@@ -104,7 +104,6 @@ export default function Home() {
   const [isSessionLoading, setIsSessionLoading] = useState<boolean>(true);
   const [selectedRole, setSelectedRole] = useState<Role>("MT");
   const [currentUserName, setCurrentUserName] = useState<string>("");
-  const [activeStaffKey, setActiveStaffKey] = useState<string>("");
   const [serverHalaqohName, setServerHalaqohName] = useState<string | null>(null);
   const [isKepalaBidangTahfidz, setIsKepalaBidangTahfidz] = useState<boolean>(false);
   const [selectedSantriForPrint, setSelectedSantriForPrint] = useState<DashboardSantriSummary | null>(null);
@@ -248,27 +247,49 @@ export default function Home() {
     message: "",
   });
 
-  // Halaqoh list mapping dinamis dari server
-  const [dynamicHalaqohList, setDynamicHalaqohList] = useState<Array<{ id: string; nama: string; pembina: string }>>([
-    { id: "HLQ-0001", nama: "Halaqoh Ust. Razan Mufli, S.Pd", pembina: "Ust. Razan Mufli, S.Pd" },
-    { id: "HLQ-0002", nama: "Halaqoh Ust. Kamal", pembina: "Ust. Kamal" },
-    { id: "HLQ-0003", nama: "Halaqoh Ust. Rizaldi", pembina: "Ust. Rizaldi" },
-    { id: "HLQ-0004", nama: "Halaqoh Ust. Abi Hudzaifah", pembina: "Ust. Abi Hudzaifah" },
-    { id: "HLQ-0005", nama: "Halaqoh Ust. Alwan", pembina: "Ust. Alwan" },
-    { id: "HLQ-0006", nama: "Halaqoh Ustadzah Lisa Dwina Fitri", pembina: "Ustadzah Lisa Dwina Fitri" },
-  ]);
+  // Halaqoh list mapping dinamis murni dari server/database (Eliminasi fallback statis)
+  const [dynamicHalaqohList, setDynamicHalaqohList] = useState<Array<{ id: string; nama: string; pembina: string; tahunAjaran?: string }>>([]);
+  const [halaqohListError, setHalaqohListError] = useState<string | null>(null);
 
   const halaqohList = dynamicHalaqohList;
 
-  const currentHalaqohName = useMemo(() => {
-    if (serverHalaqohName) return serverHalaqohName;
-    return getHalaqohByStaff(activeStaffKey);
-  }, [serverHalaqohName, activeStaffKey]);
+  // Nama halaqoh murni berasal dari session DB (Eliminasi fallback katalog statis)
+  const currentHalaqohName = serverHalaqohName || null;
 
   // Allowed tabs based on official server role
   const allowedTabs = useMemo(() => {
     return ROLE_NAV_MAP[selectedRole] || ["beranda"];
   }, [selectedRole]);
+
+  // Helper untuk memuat ulang daftar halaqoh dari server secara aman (Role-aware & fail-closed)
+  const fetchHalaqohData = async (roleToCheck?: Role) => {
+    const activeRole = roleToCheck || selectedRole;
+    if (!hasModuleAccess(activeRole, "halaqoh", "READ")) {
+      setDynamicHalaqohList([]);
+      setHalaqohListError(null);
+      return;
+    }
+
+    setHalaqohListError(null);
+    try {
+      const res = await getHalaqohListAction();
+      if (res.success && res.data) {
+        setDynamicHalaqohList(
+          res.data.map((h) => ({
+            id: h.id,
+            nama: h.nama,
+            pembina: h.pembina?.nama || "Pembina",
+            tahunAjaran: h.tahunAjaran,
+          }))
+        );
+      } else {
+        setHalaqohListError(res.message || "Gagal memuat daftar halaqoh dari basis data.");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Terjadi kesalahan jaringan saat memuat data halaqoh.";
+      setHalaqohListError(msg);
+    }
+  };
 
   // Helper untuk memuat ulang daftar santri dari server secara aman
   const fetchSantriData = async (filter?: string) => {
@@ -285,7 +306,12 @@ export default function Home() {
             kelas: s.kelas,
             halaqoh: s.halaqoh || s.halaqohNama || "Belum Ditentukan",
             capaianJuz: s.capaianJuz ?? 0,
-            targetJuz: s.targetJuz ?? 30,
+            targetJuz: s.targetJuz ?? null,
+            targetSabaq: s.targetSabaq,
+            targetSabaqLabel: s.targetSabaqLabel,
+            targetSabaqBulanan: s.targetSabaqBulanan,
+            targetSabaqPekanan: s.targetSabaqPekanan,
+            statusTahfizhHariIni: s.statusTahfizhHariIni,
             setoranTerakhir: s.setoranTerakhir || "-",
             setoranTerakhirAt: s.setoranTerakhirAt ?? null,
             sudahSetorHariIni: Boolean(s.sudahSetorHariIni),
@@ -367,7 +393,6 @@ export default function Home() {
         setSelectedRole(session.role);
         setCurrentUserName(session.name || "");
         setIsKepalaBidangTahfidz(Boolean(session.isKepalaBidangTahfidz));
-        if (session.username) setActiveStaffKey(session.username);
         if (session.halaqohName) setServerHalaqohName(session.halaqohName);
 
         // Baca parameter navigasi aman (HANYA tab dan filter lokasi)
@@ -391,19 +416,13 @@ export default function Home() {
         }
 
         // Sinkronisasi data server sekunder (halaqoh, santri, rekam medis)
-        try {
-          const hlqRes = await getHalaqohListAction();
-          if (isMounted && hlqRes.success && hlqRes.data && hlqRes.data.length > 0) {
-            setDynamicHalaqohList(
-              hlqRes.data.map((h) => ({
-                id: h.id,
-                nama: h.nama,
-                pembina: h.pembina?.nama || "Pembina",
-              }))
-            );
+        if (isMounted) {
+          if (hasModuleAccess(session.role, "halaqoh", "READ")) {
+            await fetchHalaqohData(session.role);
+          } else {
+            setDynamicHalaqohList([]);
+            setHalaqohListError(null);
           }
-        } catch {
-          // ignore
         }
 
         try {
@@ -782,10 +801,10 @@ export default function Home() {
                 kelas: santri.kelas,
                 halaqoh: (santri.halaqoh as unknown as { nama?: string })?.nama || "Halaqoh",
                 capaianJuz: 0,
-                targetJuz: 30,
+                targetJuz: (santri as unknown as { targetAkhirProgramJuz?: number; targetJuz?: number }).targetAkhirProgramJuz ?? (santri as unknown as { targetJuz?: number }).targetJuz ?? null,
                 setoranTerakhir: "-",
                 status: santri.status,
-                nilaiTerakhir: "MUMTAZ",
+                nilaiTerakhir: (santri as { nilaiTerakhir?: string }).nilaiTerakhir || "Belum ada data",
                 poinPelanggaran: 0,
               };
               setSelectedSantriForPrint(matched);
@@ -1042,6 +1061,30 @@ export default function Home() {
             </div>
           )}
 
+          {/* Halaqoh Load Error Banner */}
+          {halaqohListError && (
+            <div
+              role="alert"
+              className="p-4 rounded-2xl border border-amber-200 bg-amber-50 text-amber-800 flex items-center justify-between text-sm shadow-xs"
+            >
+              <div className="flex items-center gap-2.5">
+                <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" />
+                <div>
+                  <p className="font-semibold text-xs text-amber-900">Gagal Memuat Daftar Halaqoh</p>
+                  <p className="text-xs text-amber-700 mt-0.5">{halaqohListError}</p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="text-xs bg-white text-amber-700 hover:bg-amber-100 border-amber-200"
+                onClick={() => fetchHalaqohData()}
+              >
+                Coba Lagi
+              </Button>
+            </div>
+          )}
+
           {/* Santri Load Error Banner */}
           {santriLoadError && (
             <div
@@ -1147,7 +1190,7 @@ export default function Home() {
                           kelas: santriList[0]?.kelas || "-",
                           halaqoh: santriList[0]?.halaqoh || "-",
                           capaianJuz: santriList[0]?.capaianJuz || 0,
-                          targetJuz: 30,
+                          targetJuz: santriList[0]?.targetJuz ?? null,
                         }
                   }
                   nilaiAkademik={[

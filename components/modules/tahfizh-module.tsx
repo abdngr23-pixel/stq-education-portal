@@ -43,7 +43,6 @@ import {
 } from "lucide-react";
 import {
   konversiHalamanKeJuz,
-  hitungTargetMufar,
 } from "@/lib/laporan-bulanan";
 
 export interface TahfizhModuleProps {
@@ -51,7 +50,7 @@ export interface TahfizhModuleProps {
   currentUserName: string;
   currentHalaqohName?: string | null;
   santriList: DashboardSantriSummary[];
-  halaqohList: Array<{ id: string; nama: string }>;
+  halaqohList: Array<{ id: string; nama: string; tahunAjaran?: string }>;
   initialOpenForm?: boolean;
   initialSelectedSantriId?: string;
   isKepalaBidangTahfidz?: boolean;
@@ -112,8 +111,8 @@ export function TahfizhModule({
   const [halamanMulai, setHalamanMulai] = useState("");
   const [halamanSelesai, setHalamanSelesai] = useState("");
   const [jumlahHalaman, setJumlahHalaman] = useState("1");
-  const [jumlahJuzMufar, setJumlahJuzMufar] = useState("2");
-  const [rincianJuzMufar, setRincianJuzMufar] = useState("Juz 1, 2");
+  const [jumlahJuzMufar, setJumlahJuzMufar] = useState("");
+  const [rincianJuzMufar, setRincianJuzMufar] = useState("");
   const [nilai, setNilai] = useState<"MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "DHOIF">("MUMTAZ");
   const [catatan, setCatatan] = useState("");
   const [isManualSabaqi, setIsManualSabaqi] = useState(false);
@@ -160,9 +159,14 @@ export function TahfizhModule({
       setHalamanSelesai("");
       setJumlahHalaman("");
       setJuz("30");
-      const mufarTgt = hitungTargetMufar(30);
-      setJumlahJuzMufar(String(mufarTgt));
-      setRincianJuzMufar(`Juz 1 s/d ${mufarTgt}`);
+      const mufarTgt = (santri as { targetMufar?: number })?.targetMufar;
+      if (mufarTgt) {
+        setJumlahJuzMufar(String(mufarTgt));
+        setRincianJuzMufar(`Juz 1 s/d ${mufarTgt}`);
+      } else {
+        setJumlahJuzMufar("");
+        setRincianJuzMufar("");
+      }
       pendingRequestIdRef.current = null;
       return;
     } else if (posisiTerakhir === 0) {
@@ -186,10 +190,15 @@ export function TahfizhModule({
     const detectedJuz = getJuzByPage(saranHlm) || 1;
     setJuz(String(detectedJuz));
 
-    // Otomatis sinkronkan target Mufar dinamis sesuai capaian santri
-    const mufarTgt = hitungTargetMufar(santri.capaianJuz || Math.floor(posisiTerakhir / 20) || 1);
-    setJumlahJuzMufar(String(mufarTgt));
-    setRincianJuzMufar(`Juz 1 s/d ${mufarTgt}`);
+    // Sinkronkan target Mufar hanya jika benar-benar tersedia dari basis data
+    const mufarTgt = (santri as { targetMufar?: number })?.targetMufar;
+    if (mufarTgt) {
+      setJumlahJuzMufar(String(mufarTgt));
+      setRincianJuzMufar(`Juz 1 s/d ${mufarTgt}`);
+    } else {
+      setJumlahJuzMufar("");
+      setRincianJuzMufar("");
+    }
 
     // Reset requestId untuk form draft baru
     pendingRequestIdRef.current = null;
@@ -446,10 +455,14 @@ export function TahfizhModule({
   // Santri yang sedang dipilih (Strict: Jangan fallback palsu ke index 0 jika belum ada yang terpilih)
   const activeSantri = santriList.find((s) => s.id === effectiveSantriId) || null;
 
-  // Target Mufar Dinamis berdasarkan Total Capaian Hafalan Santri (Acuan Program Tahfidz STQ DUC 2026)
-  const dynamicMufarTarget = useMemo(() => {
-    const juzSantri = activeSantri ? (activeSantri.capaianJuz || Math.floor((activeSantri.totalHalaman || 0) / 20) || 1) : 1;
-    return hitungTargetMufar(juzSantri);
+  // Target Mufar Resmi dari Profil Santri
+  const mufarTargetDisplay = useMemo(() => {
+    const t = (activeSantri as { targetMufar?: number | null; targetMufarBulanan?: number | null })?.targetMufar ??
+      (activeSantri as { targetMufar?: number | null; targetMufarBulanan?: number | null })?.targetMufarBulanan;
+    if (t !== undefined && t !== null) {
+      return `${t} Kali`;
+    }
+    return "Belum ditetapkan";
   }, [activeSantri]);
 
   // Kalkulasi Cerdas Halaman & Konversi Juz Dinamis untuk Santri
@@ -1104,10 +1117,12 @@ export function TahfizhModule({
                       </div>
                       <div className="pt-1 sm:pt-0 sm:px-1.5 col-span-2 sm:col-span-1">
                         <span className="text-[10px] uppercase font-semibold text-slate-400 block">
-                          Target Akhir 30 Juz
+                          Target Hafalan
                         </span>
                         <span className="text-sm font-bold text-slate-800 block mt-0.5">
-                          {activeSantri.targetJuz ?? 30} Juz
+                          {activeSantri.targetJuz
+                            ? `${activeSantri.targetJuz} Juz`
+                            : (activeSantri.targetSabaqLabel || "Target belum ditetapkan")}
                         </span>
                       </div>
                     </div>
@@ -1132,8 +1147,14 @@ export function TahfizhModule({
                           if (j === "SABAQ") {
                             applySuggestedSabaqPosition(activeSantri);
                           } else if (j === "MUFAR") {
-                            setJumlahJuzMufar(String(dynamicMufarTarget));
-                            setRincianJuzMufar(`Juz 1 s/d ${dynamicMufarTarget}`);
+                            const tgtVal = (activeSantri as { targetMufar?: number })?.targetMufar;
+                            if (tgtVal) {
+                              setJumlahJuzMufar(String(tgtVal));
+                              setRincianJuzMufar(`Juz 1 s/d ${tgtVal}`);
+                            } else {
+                              setJumlahJuzMufar("");
+                              setRincianJuzMufar("");
+                            }
                           } else if (j === "SABQI") {
                             handleApplySabaqiReference();
                           }
@@ -1160,7 +1181,9 @@ export function TahfizhModule({
                             ? "Muroja'ah Sepekan"
                             : j === "MANZIL"
                             ? "Muroja'ah 1 Juz"
-                            : "Harian 1-6 Juz"}
+                            : ((activeSantri as { targetMufar?: number })?.targetMufar
+                                ? `${(activeSantri as { targetMufar?: number }).targetMufar} Juz`
+                                : "Target belum ditetapkan")}
                         </span>
                       </button>
                     ))}
@@ -1322,7 +1345,7 @@ export function TahfizhModule({
                             {sabaqiPekan.labelRentang} ({sabaqiPekan.totalHalamanSabaq} Halaman)
                           </span>
                           <span className="text-[10px] text-slate-500 block mt-0.5">
-                            Muroja&apos;ah wajib sabqi pekanan santri sebelum menambah sabaq baru.
+                            Referensi Sabqi berasal dari Sabaq sah pada pekan berjalan.
                           </span>
                         </div>
 
@@ -1378,7 +1401,7 @@ export function TahfizhModule({
                   </div>
                 )}
 
-                {/* TARGET MUFAR DINAMIS RESMI STQ DUC 2026 */}
+                {/* INFORMASI TARGET MUFAR SANTRI */}
                 {inputJenis === "MUFAR" && (
                   <div className="rounded-2xl p-4 bg-slate-50/90 border border-slate-200/90 shadow-2xs space-y-3">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -1388,46 +1411,32 @@ export function TahfizhModule({
                         </span>
                         <div>
                           <span className="text-xs font-bold text-slate-900 block">
-                            Target Mufar Dinamis Resmi STQ DUC 2026
+                            Target Mufar Santri
                           </span>
                           <span className="text-[10px] text-slate-500 font-medium">
-                            Target harian otomatis menyesuaikan total capaian hafalan santri (Bukan frekuensi tetap)
+                            Target resmi santri dari data target bulanan/pekanan
                           </span>
                         </div>
                       </div>
                       <Badge variant="green" size="sm" className="font-semibold text-[10px] self-start sm:self-auto">
-                        Target: {dynamicMufarTarget} Juz/Hari
+                        Target: {mufarTargetDisplay}
                       </Badge>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center text-xs">
+                    <div className="grid grid-cols-2 gap-2 text-center text-xs">
                       <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
                         <span className="text-[10px] uppercase font-bold text-slate-500 block">Total Hafalan</span>
                         <span className="text-sm font-bold text-slate-900 block mt-0.5">
-                          {activeSantri?.capaianJuz || Math.floor(santriModalAwal / 20) || 1} Juz
+                          {activeSantri?.capaianJuz || Math.floor(santriModalAwal / 20) || 0} Juz
                         </span>
                         <span className="text-[10px] text-slate-500 block mt-0.5">{smartKonversiAwal.label}</span>
                       </div>
                       <div className="bg-emerald-50/60 p-2.5 rounded-xl border border-emerald-200 shadow-2xs">
-                        <span className="text-[10px] uppercase font-bold text-emerald-800 block">Target Wajib</span>
+                        <span className="text-[10px] uppercase font-bold text-emerald-800 block">Target Terdaftar</span>
                         <span className="text-sm font-bold text-[#0E7C3A] block mt-0.5">
-                          {dynamicMufarTarget} Juz / Hari
+                          {mufarTargetDisplay}
                         </span>
-                        <span className="text-[10px] text-emerald-700 font-semibold block mt-0.5">Dinamis Otomatis</span>
-                      </div>
-                      <div className="col-span-2 sm:col-span-1 bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-center">
-                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Kategori Acuan</span>
-                        <span className="text-xs font-bold text-slate-800 block mt-0.5">
-                          {(activeSantri?.capaianJuz || 1) <= 5
-                            ? "1-5 Juz: 1 Juz/hari"
-                            : (activeSantri?.capaianJuz || 1) <= 10
-                            ? "6-10 Juz: 2 Juz/hari"
-                            : (activeSantri?.capaianJuz || 1) <= 15
-                            ? "11-15 Juz: 3 Juz/hari"
-                            : (activeSantri?.capaianJuz || 1) <= 20
-                            ? "16-20 Juz: 4 Juz/hari"
-                            : "21-30 Juz: 5 Juz/hari"}
-                        </span>
+                        <span className="text-[10px] text-emerald-700 font-semibold block mt-0.5">Target Resmi</span>
                       </div>
                     </div>
                   </div>
@@ -1616,21 +1625,28 @@ export function TahfizhModule({
 
                 {inputJenis === "MUFAR" && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {!(activeSantri as { targetMufar?: number })?.targetMufar && (
+                      <div className="sm:col-span-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Target belum ditetapkan</span>
+                      </div>
+                    )}
                     <div>
                       <label className="text-xs font-bold text-slate-700 block mb-1">
-                        Target Muroja&apos;ah Harian (Dinamis: {dynamicMufarTarget} Juz/hari)
+                        Jumlah Juz Muroja&apos;ah Mufar
                       </label>
                       <select
                         value={jumlahJuzMufar}
                         onChange={(e) => setJumlahJuzMufar(e.target.value)}
                         className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-purple-500"
                       >
-                        <option value="1">1 Juz per hari {dynamicMufarTarget === 1 ? "★ (Target Wajib Santri)" : ""}</option>
-                        <option value="2">2 Juz per hari {dynamicMufarTarget === 2 ? "★ (Target Wajib Santri)" : ""}</option>
-                        <option value="3">3 Juz per hari {dynamicMufarTarget === 3 ? "★ (Target Wajib Santri)" : ""}</option>
-                        <option value="4">4 Juz per hari {dynamicMufarTarget === 4 ? "★ (Target Wajib Santri)" : ""}</option>
-                        <option value="5">5 Juz per hari {dynamicMufarTarget === 5 ? "★ (Target Wajib Santri)" : ""}</option>
-                        <option value="6">6 Juz per hari</option>
+                        <option value="">-- Pilih Jumlah Juz --</option>
+                        <option value="1">1 Juz</option>
+                        <option value="2">2 Juz</option>
+                        <option value="3">3 Juz</option>
+                        <option value="4">4 Juz</option>
+                        <option value="5">5 Juz</option>
+                        <option value="6">6 Juz</option>
                       </select>
                     </div>
 

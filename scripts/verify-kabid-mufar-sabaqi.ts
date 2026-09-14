@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import {
-  hitungTargetMufar,
   hitungReferensiSabaqiKumulatif,
 } from "../lib/laporan-bulanan";
+import { hitungTargetMufar } from "../tests/fixtures/laporan-bulanan-fixtures";
 import { ALL_MUSYRIF_TAHFIZH_ACCOUNTS, DEMO_ACCOUNTS } from "../types/auth";
 
 console.log("================================================================================");

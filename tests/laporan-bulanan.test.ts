@@ -6,14 +6,16 @@ import {
   hitungCapaianSabaq,
   hitungAkumulasiSabaqSantri,
   hitungKepatuhanFrekuensi,
-  hitungTargetMufar,
   hitungReferensiSabaqiKumulatif,
   evaluasiCapaianNonTahfizh,
   generateRingkasanTasmiSimaan,
+} from "../lib/laporan-bulanan";
+import {
+  hitungTargetMufar,
   generateLaporanBulananMock,
   MASTER_HALAQOH_LIST,
   MASTER_SANTRI_57,
-} from "../lib/laporan-bulanan";
+} from "./fixtures/laporan-bulanan-fixtures";
 import { ALL_MUSYRIF_TAHFIZH_ACCOUNTS } from "../types/auth";
 import { KategoriCapaian, JenisUjiHafalan } from "@prisma/client";
 
@@ -304,79 +306,91 @@ describe("Aturan Konversi & Laporan Bulanan (Roadmap v2)", () => {
   });
 
   describe("9. Pola Setoran Sabaqi Kumulatif (Senin-Jumat)", () => {
-    it("harus menghitung referensi hari Senin (murojaah hafalan hari itu saja)", () => {
-      // Senin: 2026-09-07
-      const senin = new Date(2026, 8, 7);
+    const sabaqSenin = {
+      tanggal: new Date("2026-09-07T08:00:00Z"),
+      halamanMulai: 318,
+      halamanSelesai: 318,
+      jumlahHalaman: 1,
+    };
+    const sabaqSelasa = {
+      tanggal: new Date("2026-09-08T08:00:00Z"),
+      halamanMulai: 319,
+      halamanSelesai: 319,
+      jumlahHalaman: 1,
+    };
+    const sabaqRabu = {
+      tanggal: new Date("2026-09-09T08:00:00Z"),
+      halamanMulai: 320,
+      halamanSelesai: 320,
+      jumlahHalaman: 1,
+    };
+    const sabaqKamis = {
+      tanggal: new Date("2026-09-10T08:00:00Z"),
+      halamanMulai: 321,
+      halamanSelesai: 321,
+      jumlahHalaman: 1,
+    };
+    const sabaqJumat = {
+      tanggal: new Date("2026-09-11T08:00:00Z"),
+      halamanMulai: 322,
+      halamanSelesai: 322,
+      jumlahHalaman: 1,
+    };
+
+    it("harus menghitung referensi hari Senin dari SABAQ nyata hari Senin", () => {
+      const senin = new Date("2026-09-07T10:00:00Z");
       const ref = hitungReferensiSabaqiKumulatif({
         tanggal: senin,
-        modalAwalHalaman: 317,
+        setoranSabaqList: [sabaqSenin],
       });
 
       assert.equal(ref.hariNama, "Senin");
-      assert.match(ref.polaKeterangan, /Senin saja/i);
+      assert.equal(ref.hasSabaq, true);
       assert.equal(ref.totalHalaman, 1);
       assert.equal(ref.halamanMulai, 318);
       assert.equal(ref.halamanSelesai, 318);
     });
 
-    it("harus menghitung referensi hari Selasa (kumulatif Senin-Selasa)", () => {
-      // Selasa: 2026-09-08
-      const selasa = new Date(2026, 8, 8);
+    it("harus menghitung referensi hari Selasa dari kumulatif Senin–Selasa", () => {
+      const selasa = new Date("2026-09-08T10:00:00Z");
       const ref = hitungReferensiSabaqiKumulatif({
         tanggal: selasa,
-        modalAwalHalaman: 317,
+        setoranSabaqList: [sabaqSenin, sabaqSelasa],
       });
 
       assert.equal(ref.hariNama, "Selasa");
-      assert.match(ref.polaKeterangan, /Senin–Selasa/i);
+      assert.equal(ref.hasSabaq, true);
       assert.equal(ref.totalHalaman, 2);
       assert.equal(ref.halamanMulai, 318);
       assert.equal(ref.halamanSelesai, 319);
     });
 
-    it("harus menghitung referensi hari Rabu (kumulatif Senin-Rabu)", () => {
-      // Rabu: 2026-09-09
-      const rabu = new Date(2026, 8, 9);
-      const ref = hitungReferensiSabaqiKumulatif({
-        tanggal: rabu,
-        modalAwalHalaman: 317,
-      });
-
-      assert.equal(ref.hariNama, "Rabu");
-      assert.match(ref.polaKeterangan, /Senin–Rabu/i);
-      assert.equal(ref.totalHalaman, 3);
-      assert.equal(ref.halamanMulai, 318);
-      assert.equal(ref.halamanSelesai, 320);
-    });
-
-    it("harus menghitung referensi hari Kamis (kumulatif Senin-Kamis)", () => {
-      // Kamis: 2026-09-10
-      const kamis = new Date(2026, 8, 10);
-      const ref = hitungReferensiSabaqiKumulatif({
-        tanggal: kamis,
-        modalAwalHalaman: 317,
-      });
-
-      assert.equal(ref.hariNama, "Kamis");
-      assert.match(ref.polaKeterangan, /Senin–Kamis/i);
-      assert.equal(ref.totalHalaman, 4);
-      assert.equal(ref.halamanMulai, 318);
-      assert.equal(ref.halamanSelesai, 321);
-    });
-
-    it("harus menghitung referensi hari Jumat (kumulatif seluruh pekan berjalan)", () => {
-      // Jumat: 2026-09-11
-      const jumat = new Date(2026, 8, 11);
+    it("harus menghitung referensi hari Jumat dari kumulatif sepekan", () => {
+      const jumat = new Date("2026-09-11T10:00:00Z");
       const ref = hitungReferensiSabaqiKumulatif({
         tanggal: jumat,
-        modalAwalHalaman: 317,
+        setoranSabaqList: [sabaqSenin, sabaqSelasa, sabaqRabu, sabaqKamis, sabaqJumat],
       });
 
       assert.equal(ref.hariNama, "Jumat");
-      assert.match(ref.polaKeterangan, /seluruh pekan/i);
+      assert.equal(ref.hasSabaq, true);
       assert.equal(ref.totalHalaman, 5);
       assert.equal(ref.halamanMulai, 318);
       assert.equal(ref.halamanSelesai, 322);
+    });
+
+    it("modal hafalan saja tanpa SABAQ pekan ini tidak boleh menghasilkan referensi Sabaqi palsu", () => {
+      const senin = new Date("2026-09-07T10:00:00Z");
+      const ref = hitungReferensiSabaqiKumulatif({
+        tanggal: senin,
+        modalAwalHalaman: 317,
+      });
+
+      assert.equal(ref.hasSabaq, false);
+      assert.equal(ref.totalHalaman, 0);
+      assert.equal(ref.halamanMulai, 0);
+      assert.equal(ref.halamanSelesai, 0);
+      assert.match(ref.labelLengkap, /Belum ada Sabaq tersimpan/i);
     });
   });
 

@@ -81,7 +81,7 @@ export async function GET(
     const rataRataAkademik = santri.nilaiList.length > 0 ? (totalNilai / santri.nilaiList.length).toFixed(1) : '0.0';
 
     const totalSetoranTercatat = await prisma.setoranTahfizh.count({
-      where: { santriId: santri.id },
+      where: { santriId: santri.id, status: { not: 'DIBATALKAN' } },
     });
 
     return NextResponse.json({

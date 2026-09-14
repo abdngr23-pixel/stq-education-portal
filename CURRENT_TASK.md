@@ -1,58 +1,91 @@
 # CURRENT TASK — STQ EDUCATION PORTAL
 
-## 1. Tujuan Saat Ini
-PR #5 — P0 Authentication Production Hardening untuk STQ Education Portal (`abdngr23-pixel/stq-education-portal`):
-1. **Database-Only & Fail-Closed Authentication**:
-   - Menghapus seluruh kemungkinan autentikasi produksi melalui akun demo, katalog statis (`ALL_STAFF_ACCOUNTS`, `DEMO_ACCOUNTS`), password universal (`password123`), atau fallback saat database gagal.
-   - Pada `app/actions/auth.ts` (`loginAction`): jika database tidak tersedia atau timeout, autentikasi fail-closed tanpa membuat session cookie dan mengembalikan error aman/generik.
-   - Jika user tidak terdaftar atau password salah: mengembalikan respon invalid credentials generik tanpa membocorkan eksistensi user.
-   - Jika akun berstatus nonaktif: ditolak dengan pesan status penangguhan yang aman.
-   - Session hanya diterbitkan jika user ditemukan di PostgreSQL (Prisma), berstatus `AKTIF`, dan lolos `verifyPassword()` terhadap hash database.
-2. **REST API Login Hardening**:
-   - Pada `app/api/v1/auth/login/route.ts`: menghapus seluruh fallback ke `DEMO_ACCOUNTS`, `ALL_STAFF_ACCOUNTS`, dan `password123`.
-   - Menegakkan kontrak API: DB unavailable -> 503 fail-closed (tanpa token); unknown user / wrong password -> 401; inactive user -> 403; valid DB user -> 200 + JWT token + HttpOnly secure cookie.
-   - Dilarang membuat identitas sintetik (`user_<role>`, `stf_<role>`) pada jalur login produksi.
-3. **Isolasi Demo & Development**:
-   - `quickDemoLoginAction` dilindungi batas tegas server-side: hanya aktif jika `NODE_ENV !== "production" && STQ_ENABLE_DEMO_LOGIN === "true"`.
-   - Di lingkungan produksi, `quickDemoLoginAction` selalu ditolak secara fail-closed.
-   - `app/login/page.tsx`: Demo Switcher hanya dirender jika `NODE_ENV !== "production" && NEXT_PUBLIC_ENABLE_DEMO === "true"`.
-4. **Session & Cookie Security**:
-   - `HttpOnly = true`, `secure = (process.env.NODE_ENV === "production")`, `sameSite = "lax"`.
-   - `lib/auth.ts`: unified resolver `resolveVerifiedSessionPayload()` digunakan secara konsisten oleh `getCurrentSession()` (Cookie) dan `getAuthFromRequest()` (Bearer & Cookie).
-   - Di lingkungan produksi (`NODE_ENV === "production"`), validasi sesi fail-closed: jika DB unavailable/timeout, Prisma error, user tidak ditemukan di DB (deleted), user nonaktif, role drift, atau identitas sintetik (`user_`, `stf_`) -> sesi mutlak ditolak (`null`).
-   - Mutable authorization attributes di-hydrate langsung dari PostgreSQL terkini: `staffId`, `staffCode`, `santriId`, `isKepalaBidangTahfidz`, dan `isPetugasPresensiPutri` (perubahan hak akses langsung efektif tanpa mempercayai klaim JWT lama).
-5. **Negative Security Regression Tests**:
-   - Menambahkan dan memvalidasi ke-19 skenario auth security pada `tests/auth-production-hardening.test.ts` menggunakan PostgreSQL test database terisolasi.
+## 1. Status Terkini: PR #6 — Draft Dibuka & Code Audit PASS
 
-## 2. Baseline Commit & Git Working State
+PR #6 — Tahfizh Data Integrity & Target Operationalization (`abdngr23-pixel/stq-education-portal`):
+* **Draft PR Status:** Draft PR #6 telah resmi dibuka pada branch `review/tahfizh-data-integrity-targets` menuju `main`.
+* **PR Link:** [PR #6 — Tahfizh Data Integrity & Target Operationalization](https://github.com/abdngr23-pixel/stq-education-portal/pull/6)
+* **Independent ChatGPT Final Code Audit:** **PASS** (Seluruh scope fungsional, integritas data, dan keamanan ABAC telah disetujui).
+* **Current Status:** Menunggu eksekusi/verifikasi migrasi skema produksi (`TargetSantri.targetPekanan` dan `targetBulanan` Double Precision) serta otorisasi final merge.
+
+---
+
+## 2. Riwayat Commit & State Git
+
 * **Repository:** `abdngr23-pixel/stq-education-portal`
-* **Baseline Commit (main):** `2bcc49a26b5d49aa09ebf52639b3e655e81ff142` (Hasil merge PR #4 Secure PWA & Installability, post-merge CI #64 SUCCESS)
-* **Lifecycle Status:**
-  - PR #1: **MERGED**
-  - PR #2: **MERGED**
-  - PR #3: **MERGED**
-  - PR #4: **MERGED** (branch PR #4 `review/pwa-secure-installability` sudah dihapus dari remote)
-* **Current Working Branch:** `review/auth-production-hardening` (Dibuat dari verified baseline main, TIDAK langsung di `main`, TIDAK auto-merge)
+* **Target PR Base (`main`):** `8ed8688ba9d6483d0d223aae976cac8a27ca7c01`
+* **Branch:** `review/tahfizh-data-integrity-targets`
+* **Approved Code HEAD:** `79e4c1d6d3f7c3122ab2a42d5d3cff096d4b07c7`
 
-## 3. Perubahan Berkas PR #5
-### File Baru
-* `tests/auth-production-hardening.test.ts` (19 skenario auth security negative tests pembuktian database-only, fail-closed, isolasi demo, penolakan kredensial statis, penolakan deleted/nonaktif user, role drift, eliminasi privilege lama dari JWT, unifikasi Cookie & Bearer fail-closed, dan hidrasi atribut otorisasi dari PostgreSQL terkini)
+### Jejak Commit PR #6:
+1. `d165565` — Commit 1: `feat(tahfizh): operationalize targets, eliminate mock data, and enforce data integrity`
+2. `b2f20cb` — Commit 2: `fix(tahfizh): audit remediation for ABAC, fractional targets, SABQI applicability, and WITA boundaries`
+3. `cdd3f33` — Commit 3: `fix(tahfizh): final audit remediation for baseline fallback, static fixtures, and ABAC portal wali`
+4. `b3b5d58` — Commit 4: `fix(tahfizh): final closeout patch for baseline progress, sabaqi boundaries, and read ABAC`
+5. `06ac467` — Commit 5: `fix(security): secure halaqoh read actions, remove static halaqoh fallbacks, and make report period dynamic`
+6. `79e4c1d` — Pre-Merge Polish: `fix(tahfizh): pre-merge polish for role-aware halaqoh fetch, stale report prevention, and DB error handling`
 
-### File Dimodifikasi
-* `app/actions/auth.ts` (Database-only & fail-closed `loginAction`, eliminasi static fallback demo accounts pada `getCurrentUserAction`, isolasi `quickDemoLoginAction`, secure cookie produksi)
-* `app/api/v1/auth/login/route.ts` (Eliminasi fallback katalog statis & universal password, kontrak 503/401/403/200 fail-closed)
-* `lib/auth.ts` (Unified resolver `resolveVerifiedSessionPayload()`, production session fail-closed, DB unavailable/timeout -> session ditolak, deleted/nonaktif user -> session ditolak, role drift -> session ditolak, synthetic identity -> ditolak, unifikasi `getCurrentSession()` dan `getAuthFromRequest()`, serta hidrasi mutable authorization attributes dari PostgreSQL: `staffId`, `staffCode`, `santriId`, `isKepalaBidangTahfidz`, `isPetugasPresensiPutri`)
-* `app/login/page.tsx` (Pengetatan logika render demo switcher menjadi AND: `NODE_ENV !== "production" && NEXT_PUBLIC_ENABLE_DEMO === "true"`)
-* `.env.example` (Dokumentasi konfigurasi `STQ_ENABLE_DEMO_LOGIN` khusus non-produksi)
-* `CURRENT_TASK.md` (Dokumentasi status kerja PR #5)
+---
 
-## 4. Status Quality Gates Lokal
+## 3. Ringkasan Perubahan Utama PR #6
+
+1. **Penghapusan Fake/Mock Operational Tahfizh**:
+   - Menghapus fallback array statis, mock santri, mock setoran, dan mock target pada seluruh jalur produksi.
+   - Semua data santri, halaqoh, setoran, dan progress di-resolve murni dari PostgreSQL.
+2. **Baseline Tahfizh Authoritative**:
+   - Boundary resmi: `modalHafalanAwalHalaman + SABAQ sah >= tanggalBaselineTahfizh`.
+   - Jika `tanggalBaselineTahfizh` null: sistem fail-closed (`tambahanSabaq: 0`, `totalHafalan: modalAwal`) tanpa aggregate SABAQ historis.
+   - Setoran sebelum tanggal baseline dieksklusi dari perhitungan bulanan.
+3. **Konsistensi Eksklusi Status DIBATALKAN**:
+   - Status `DIBATALKAN` dieksklusi secara seragam dari seluruh agregasi capaian, laporan bulanan, mutabaah, dan progress santri.
+4. **TargetSantri sebagai Source of Truth & Target Pecahan 0.5**:
+   - Model `TargetSantri` menjadi sumber kebenaran target bulanan dan pekanan.
+   - Migrasi tipe kolom `targetPekanan` dan `targetBulanan` ke `Double Precision` (`Float` di Prisma) untuk mendukung target pecahan (0.5 halaman).
+5. **Target Akhir Program dari Database**:
+   - Target akhir program santri dihitung dinamis dari profil pangkalan data santri, bukan konstanta statis hardcoded.
+6. **WITA-Safe Reporting & Dynamic Period**:
+   - Boundary penanggalan, awal/akhir bulan, dan rekapitulasi menggunakan `lib/wita-date.ts` (`Asia/Makassar`).
+   - Bulan default dinamis mengikuti kalender WITA berjalan.
+   - Tahun ajaran dihimpun dinamis dari relasi database `Halaqoh` (zero hardcoded `2026/2027` / `2025/2026`).
+   - Komponen rekap laporan bulanan dilengkapi query-key matching untuk mencegah render laporan stale.
+7. **Status SABAQ / SABQI / MANZIL / MUFAR**:
+   - Validasi kelayakan SABQI berbasis SABAQ sah pekan berjalan setelah effective baseline boundary.
+8. **Tahfizh ABAC Hardening & Role Authorization**:
+   - Scoping `getHalaqohListAction()` dan `getHalaqohDetailAction()`:
+     - KS / ADM / YAY / Kabid Tahfizh: global read.
+     - MT / PH: strictly scoped ke `pembinaId === session.staffId` (cross-halaqoh -> deny).
+     - Fail-closed error handling pada lookup database otorisasi halaqoh.
+     - Minimal projection staf `{ id, nama }` tanpa membocorkan field sensitif.
+     - Default-deny untuk unauthenticated dan role tanpa izin.
+   - Client `app/page.tsx` bersifat role-aware menggunakan `hasModuleAccess` kanonikal (role tanpa izin halaqoh tidak memicu fetch / banner error palsu).
+9. **Reward & Finalization Hardening**:
+   - Finalisasi reward dan sertifikat hafalan diverifikasi fail-closed terhadap hak akses pengguna dan capaian aktual.
+10. **Portal Wali Tahfizh-related ABAC**:
+    - Akses data portal wali (WS) dan santri (ST) dibatasi pada `santriId` yang terhubung ke akun session aktif. Akses ke santri lain ditolak secara eksplisit.
+11. **Dynamic Halaqoh DB & Penghapusan Fallback Statis**:
+    - Menghapus fallback `getHalaqohByStaff()` dari seluruh jalur autentikasi produksi (`resolveVerifiedSessionPayload`, `loginAction`, `app/page.tsx`).
+    - Staf tanpa halaqoh DB menghasilkan `halaqohName: null` (fail-closed).
+12. **Migrasi Skema Database**:
+    - File migrasi `prisma/migrations/20260914100000_target_santri_float/migration.sql` disiapkan untuk migrasi aman `Double Precision`.
+
+---
+
+## 4. Status Quality Gates Lokal & CI/CD
+
 - [x] `npx tsc --noEmit` — PASS (0 errors)
 - [x] `npm run typecheck:test` — PASS (0 errors)
-- [x] `npm run lint` — PASS (0 warnings, 0 errors)
-- [x] `npm test` — PASS (417/417 tests passed, 126 suites)
-- [x] `npm run build` — PASS (14 rute statis, 0 errors)
-- [x] `npx tsx scripts/verify-test-db-cleanup.ts` — PASS (100% proses/port/temp terisolasi dan bersih)
-- [x] `npx tsx scripts/puppeteer-p0-1-verify.ts` — PASS (6/6 skenario riil)
-- [x] `npm run qa:structural` — PASS (98/98 assertions bebas overflow/overlap)
-- [x] `npm run qa:pwa` — PASS (8/8 tahapan: manifest, icons, privacy, cross-cache collision, offline fallback)
+- [x] `npm run lint` — PASS (0 errors, 0 warnings)
+- [x] `npm test` — PASS (471/471 tests passed, 127 suites, 55/55 skenario PR #6 lulus)
+- [x] `npm run build` — PASS (14 rute Next.js Turbopack terkompilasi, 0 errors)
+- [x] `npx tsx scripts/verify-test-db-cleanup.ts` — PASS (6/6 skenario multi-cycle PostgreSQL cleanup 100% terisolasi dan bersih)
+- [x] `npx tsx scripts/puppeteer-p0-1-verify.ts` — PASS (6/6 skenario riil E2E Puppeteer)
+- [x] `npm run qa:structural` — PASS (98/98 structural layout assertions lulus, 0 findings)
+- [x] `npm run qa:pwa` — PASS (8/8 tahapan verifikasi Service Worker, cache allowlist, & offline fallback)
+- [x] GitHub Actions CI — SUCCESS (Runs: 34811841416, 34811838197)
+- [x] Vercel Production Deployments — SUCCESS (`stq-education-portal-app`, `stq-education-portal`)
+
+---
+
+## 5. Rencana Langkah Berikutnya
+1. Preflight read-only migrasi skema database produksi (`TargetSantri` float/double precision).
+2. Menunggu otorisasi final dari ChatGPT/User untuk eksekusi migrasi produksi dan merge PR #6.

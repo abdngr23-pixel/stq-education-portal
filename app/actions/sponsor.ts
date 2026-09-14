@@ -121,11 +121,12 @@ export async function generateLaporanSponsorAction(params: {
       endDate = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999));
     }
 
-    // Ambil setoran khusus periode bulan tersebut
+    // Ambil setoran khusus periode bulan tersebut (non-dibatalkan)
     const setoranBulanIni = await prisma.setoranTahfizh.findMany({
       where: {
         santriId: params.santriId,
         tanggal: { gte: startDate, lte: endDate },
+        status: { not: "DIBATALKAN" },
       },
       orderBy: { tanggal: "desc" },
     });

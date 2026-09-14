@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { generateLaporanBulananMock, MASTER_HALAQOH_LIST, MASTER_SANTRI_57 } from "../lib/laporan-bulanan";
+import { generateLaporanBulananMock, MASTER_HALAQOH_LIST, MASTER_SANTRI_57 } from "../tests/fixtures/laporan-bulanan-fixtures";
 import { createSessionToken } from "../lib/auth";
 
 async function runVerification() {

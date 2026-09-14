@@ -20,7 +20,7 @@ export async function getRingkasanAnakAction(santriIdInput?: string): Promise<Po
       return { success: false, message: 'Silakan login terlebih dahulu.' };
     }
 
-    // Tentukan ID santri sesuai hak akses ABAC (Audit P0 - A06)
+    // Tentukan ID santri sesuai hak akses ABAC
     let targetSantriId: string | undefined = santriIdInput;
 
     if (session.role === 'WS' || session.role === 'ST') {
@@ -32,21 +32,54 @@ export async function getRingkasanAnakAction(santriIdInput?: string): Promise<Po
       }
       // Paksa targetSantriId selalu sama dengan session.santriId, abaikan santriIdInput
       targetSantriId = session.santriId;
-    } else {
-      // Role staf (KS, ADM, MT, MK, dll) harus menyertakan ID santri spesifik
+    } else if (['KS', 'ADM', 'YAY'].includes(session.role)) {
+      // Role manajerial lintas-domain (KS, ADM, YAY)
       if (!targetSantriId) {
         return {
           success: false,
           message: 'ID Santri wajib disertakan untuk melihat ringkasan.',
         };
       }
+    } else if (session.role === 'MT' || session.role === 'PH') {
+      // Pembina Tahfidz: Wajib terhubung profil staf dan dibatasi ketat ke halaqoh binaan sendiri.
+      // Catatan: isKepalaBidangTahfidz BUKAN manajer kesehatan/pelanggaran umum, tetap dibatasi ke binaan.
+      if (!session.staffId) {
+        return {
+          success: false,
+          message: 'Profil staf pembina Anda belum terhubung. Silakan hubungi Admin.',
+        };
+      }
+      if (!targetSantriId) {
+        return {
+          success: false,
+          message: 'ID Santri wajib disertakan untuk melihat ringkasan.',
+        };
+      }
+      const isBinaan = await prisma.halaqoh.findFirst({
+        where: {
+          pembinaId: session.staffId,
+          santriList: { some: { id: targetSantriId } },
+        },
+      });
+      if (!isBinaan) {
+        return {
+          success: false,
+          message: 'Akses Ditolak: Anda hanya berwenang melihat data santri di dalam halaqoh binaan Anda.',
+        };
+      }
+    } else {
+      // Default Deny untuk seluruh role lain (MK, GMR, dll)
+      return {
+        success: false,
+        message: 'Akses Ditolak: Anda tidak memiliki wewenang mengakses ringkasan santri ini.',
+      };
     }
 
     const santri = await prisma.santri.findUnique({
       where: { id: targetSantriId },
       include: {
         halaqoh: { include: { pembina: true } },
-        setoranList: { take: 10, orderBy: { createdAt: 'desc' } },
+        setoranList: { where: { status: { not: 'DIBATALKAN' } }, take: 10, orderBy: { createdAt: 'desc' } },
         ikhtibarList: { orderBy: { createdAt: 'desc' } },
         nilaiList: { include: { mapel: true }, take: 10 },
         bintangList: { orderBy: { createdAt: 'desc' } },
@@ -62,7 +95,9 @@ export async function getRingkasanAnakAction(santriIdInput?: string): Promise<Po
 
     const totalPoinPelanggaran = santri.pelanggaranList.reduce((acc, p) => acc + p.poinFinal, 0);
     const totalBintang = santri.bintangList.length;
-    const totalSetoran = await prisma.setoranTahfizh.count({ where: { santriId: targetSantriId } });
+    const totalSetoran = await prisma.setoranTahfizh.count({
+      where: { santriId: targetSantriId, status: { not: 'DIBATALKAN' } },
+    });
     const ikhtibarLulus = santri.ikhtibarList.filter((i) => i.status === 'LULUS_SEMPURNA_TAHAP_2').length;
 
     return {

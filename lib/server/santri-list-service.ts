@@ -3,13 +3,17 @@ import "server-only";
 import { PrismaClient, Prisma, JenisKelamin } from "@prisma/client";
 import { UserSession } from "@/types/auth";
 import { prisma as defaultPrisma } from "@/lib/prisma";
-import { isTodayWita } from "@/lib/wita-date";
+import { isTodayWita, getWitaDateString } from "@/lib/wita-date";
+import { getStartOfWeekWITA } from "@/lib/sabaqi";
 import { calculateLatestSabaqPosition } from "@/lib/tahfizh-page-allocation";
+
+import { determineTahfizhDailyStatus, TahfizhDailyStatus } from "@/lib/tahfizh-status";
 
 export interface SantriListParams {
   search?: string;
   kelas?: string;
   halaqohId?: string;
+  refDate?: Date;
 }
 
 export interface SantriListItem {
@@ -35,7 +39,12 @@ export interface SantriListItem {
   capaianJuz: number;
   posisiTerakhirHalaman: number;
   isHalamanTerakhirParsial: boolean;
-  targetJuz: number;
+  targetJuz: number | null;
+  targetSabaq: number | null;
+  targetSabaqLabel: string;
+  targetSabaqBulanan: number | null;
+  targetSabaqPekanan: number | null;
+  statusTahfizhHariIni: TahfizhDailyStatus;
   setoranTerakhir: string;
   setoranTerakhirAt: string | null;
   sudahSetorHariIni: boolean;
@@ -150,6 +159,16 @@ export async function getSantriListForSession(
             nilai: true,
           },
         },
+        targetList: {
+          select: {
+            jenis: true,
+            targetPekanan: true,
+            targetBulanan: true,
+            ambangKepatuhan: true,
+            bulan: true,
+            tahunAjaran: true,
+          },
+        },
         _count: {
           select: {
             pelanggaranList: true,
@@ -172,11 +191,13 @@ export async function getSantriListForSession(
       const baselineDate = s.tanggalBaselineTahfizh ? new Date(s.tanggalBaselineTahfizh) : null;
 
       // Filter SABAQ aktif (non-dibatalkan) yang terjadi setelah tanggal baseline
-      const sabaqAfterBaseline = (s.setoranList || []).filter((st) => {
-        if (st.jenis !== "SABAQ" || st.status === "DIBATALKAN") return false;
-        if (!baselineDate) return true;
-        return new Date(st.tanggal) >= baselineDate;
-      });
+      // ATURAN RESMI: Jika tanggalBaselineTahfizh tidak tersedia, TIDAK BOLEH menganggap riwayat SABAQ sebagai post-baseline
+      const sabaqAfterBaseline = baselineDate
+        ? (s.setoranList || []).filter((st) => {
+            if (st.jenis !== "SABAQ" || st.status === "DIBATALKAN") return false;
+            return new Date(st.tanggal) >= baselineDate;
+          })
+        : [];
 
       const tambahanSabaq = sabaqAfterBaseline.reduce((acc, cur) => acc + (cur.jumlahHalaman || 0), 0);
       const totalHafalan = modalAwal + tambahanSabaq;
@@ -186,10 +207,6 @@ export async function getSantriListForSession(
       const validSetoranList = (s.setoranList || []).filter((st) => st.status !== "DIBATALKAN");
       const latestSetoran = validSetoranList[0] || null;
       const nilaiTerakhir = latestSetoran ? latestSetoran.nilai : "Belum ada data";
-
-      // Status setoran hari ini berdasarkan zona waktu resmi WITA (Asia/Makassar)
-      const sudahSetorHariIni = validSetoranList.some((st) => isTodayWita(st.tanggal));
-      const setoranTerakhirAt = latestSetoran ? latestSetoran.tanggal.toISOString() : null;
 
       const sabaqPosition = calculateLatestSabaqPosition(
         sabaqAfterBaseline.map((st) => ({
@@ -206,6 +223,59 @@ export async function getSantriListForSession(
 
       const posisiTerakhirHalaman = sabaqPosition.posisiTerakhirHalaman;
       const isHalamanTerakhirParsial = sabaqPosition.isHalamanTerakhirParsial;
+
+      // Target individual dari TargetSantri berbasis periode aktif WITA
+      const targetRefDate = params?.refDate || new Date();
+      const nowWitaStr = getWitaDateString(targetRefDate);
+      const [nowYearStr, nowMonthStr] = nowWitaStr.split("-");
+      const activeMonth = parseInt(nowMonthStr, 10);
+      const activeYearNum = parseInt(nowYearStr, 10);
+      const defaultTahunAjaran = activeMonth >= 7
+        ? `${activeYearNum}/${activeYearNum + 1}`
+        : `${activeYearNum - 1}/${activeYearNum}`;
+      const targetTahunAjaran = s.halaqoh?.tahunAjaran || defaultTahunAjaran;
+
+      const targetList = s.targetList || [];
+      const sabaqTarget = targetList.find(
+        (t) => t.jenis === "SABAQ" && t.bulan === activeMonth && t.tahunAjaran === targetTahunAjaran
+      );
+      const mufarTarget = targetList.find(
+        (t) => t.jenis === "MUFAR" && t.bulan === activeMonth && t.tahunAjaran === targetTahunAjaran
+      );
+
+      const targetSabaq = sabaqTarget?.targetBulanan ?? null;
+      const targetSabaqLabel = targetSabaq !== null ? `${targetSabaq} Halaman` : "Target belum ditetapkan";
+      const targetSabaqBulanan = targetSabaq;
+      const targetSabaqPekanan = sabaqTarget?.targetPekanan ?? null;
+
+      // Cek apakah ada SABAQ sah pada pekan berjalan sejak Senin 00:00 WITA (untuk applicability SABQI)
+      // Wajib memerlukan baselineDate dan SABAQ harus terjadi >= max(startOfWeek, baselineDate)
+      const startOfWeek = getStartOfWeekWITA(targetRefDate);
+      const minValidSabaqDate = baselineDate
+        ? (baselineDate > startOfWeek ? baselineDate : startOfWeek)
+        : null;
+      const hasValidSabaqThisWeek = minValidSabaqDate
+        ? validSetoranList.some(
+            (st) => st.jenis === "SABAQ" && new Date(st.tanggal) >= minValidSabaqDate
+          )
+        : false;
+
+      // Status setoran 4 jenis (SABAQ, SABQI, MANZIL, MUFAR) berdasarkan batas hari WITA & hari efektif
+      const setoranHariIni = validSetoranList.filter((st) => isTodayWita(st.tanggal, targetRefDate));
+      const statusTahfizhHariIni = determineTahfizhDailyStatus({
+        validSetoranToday: setoranHariIni,
+        posisiTerakhirHalaman,
+        targetMufar: mufarTarget
+          ? {
+              targetBulanan: mufarTarget.targetBulanan,
+              targetPekanan: mufarTarget.targetPekanan,
+            }
+          : null,
+        hasValidSabaqThisWeek,
+        refDate: targetRefDate,
+      });
+
+      const setoranTerakhirAt = latestSetoran ? latestSetoran.tanggal.toISOString() : null;
 
       return {
         id: s.id,
@@ -230,12 +300,17 @@ export async function getSantriListForSession(
         capaianJuz,
         posisiTerakhirHalaman,
         isHalamanTerakhirParsial,
-        targetJuz: 30,
+        targetJuz: s.targetAkhirProgramJuz && s.targetAkhirProgramJuz > 0 ? s.targetAkhirProgramJuz : null,
+        targetSabaq,
+        targetSabaqLabel,
+        targetSabaqBulanan,
+        targetSabaqPekanan,
+        statusTahfizhHariIni,
         setoranTerakhir: latestSetoran
           ? `${latestSetoran.jenis} Juz ${latestSetoran.juz} Hlm ${latestSetoran.halamanMulai}-${latestSetoran.halamanSelesai}`
           : "-",
         setoranTerakhirAt,
-        sudahSetorHariIni,
+        sudahSetorHariIni: statusTahfizhHariIni.sudahSetorHariIni,
         nilaiTerakhir,
         poinPelanggaran: s._count.pelanggaranList || 0,
         bintangKebaikan: s._count.bintangList || 0,

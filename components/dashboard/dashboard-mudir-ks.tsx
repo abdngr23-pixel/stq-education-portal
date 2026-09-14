@@ -162,7 +162,7 @@ export function DashboardMudirKS({
       {activeTab === "laporan_bulanan" && (
         <RekapLaporanBulanan
           userRole="KS"
-          halaqohList={halaqohList.map((h) => ({ id: h.id, nama: h.nama }))}
+          halaqohList={halaqohList.map((h) => ({ id: h.id, nama: h.nama, tahunAjaran: h.tahunAjaran }))}
         />
       )}
 

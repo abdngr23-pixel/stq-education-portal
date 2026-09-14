@@ -12,12 +12,11 @@ import {
   getPekanDariTanggal,
   hitungCapaianSabaq,
   hitungKepatuhanFrekuensi,
-  hitungTargetMufar,
   evaluasiCapaianNonTahfizh,
   generateRingkasanTasmiSimaan,
-  generateLaporanBulananMock,
   TARGET_MIN_KOMPONEN,
 } from "@/lib/laporan-bulanan";
+import { getWITAMonthRange } from "@/lib/wita-date";
 
 export interface TargetSantriInput {
   santriId: string;
@@ -79,365 +78,460 @@ export async function getLaporanBulananHalaqohAction(
   try {
     const session = await getCurrentSession();
     if (!session) {
-      if (process.env.NODE_ENV !== "production") {
-        const fallbackData = generateLaporanBulananMock(halaqohId || "ALL", bulan, tahunAjaran);
-        return { success: true, data: fallbackData };
-      }
       return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
     }
 
-    // 1. ABAC Role Enforcement
+    // 1. ABAC Role Enforcement (Explicit Allowlist & Default Deny)
     let effectiveHalaqohId = halaqohId || "ALL";
-
     const isKabidTahfidz = Boolean(session.isKepalaBidangTahfidz);
 
     if (["KS", "ADM", "YAY"].includes(session.role) || isKabidTahfidz) {
-      // KS, ADM, YAY, dan Kepala Bidang Tahfidz: Memiliki otoritas manajerial untuk melihat halaqoh manapun atau agregasi seluruh halaqoh
+      // KS, ADM, YAY, dan Kepala Bidang Tahfidz: Otoritas manajerial untuk melihat halaqoh manapun atau agregasi seluruh halaqoh
       effectiveHalaqohId = halaqohId || "ALL";
     } else if (session.role === "MT" || session.role === "PH") {
-      // Role Musyrif/Pembina biasa (selain Kabid): PAKSA selalu memakai halaqoh milik sendiri (Fail-closed)
-      let staffHalaqohId: string | null = null;
-
-      if (session.staffId) {
-        try {
-          const h = await prisma.halaqoh.findFirst({
-            where: { pembinaId: session.staffId },
-            select: { id: true, halaqohCode: true },
-          });
-          if (h) staffHalaqohId = h.id || h.halaqohCode;
-        } catch {
-          // DB offline fallback
-        }
-      }
-
-      if (!staffHalaqohId) {
+      // Musyrif/Pembina biasa (selain Kabid): Wajib memiliki profil staf dan dibatasi ke halaqoh binaan sendiri
+      if (!session.staffId) {
         return {
           success: false,
-          message: "Akun belum ditugaskan ke halaqoh mana pun. Hubungi Admin.",
+          message: "Profil staf pembina Anda belum terhubung. Hubungi Admin.",
+          error: "Akses Ditolak",
+          data: null,
         };
       }
 
-      effectiveHalaqohId = staffHalaqohId;
-    } else {
-      effectiveHalaqohId = halaqohId || "ALL";
-    }
+      const halaqohRecord = await prisma.halaqoh.findFirst({
+        where: { pembinaId: session.staffId },
+        select: { id: true, halaqohCode: true },
+      });
 
-    // 2. Tentukan range tanggal bulan
-    const [thnAwalStr, thnAkhirStr] = tahunAjaran.split("/");
-    const tahunKalender =
-      bulan >= 7 ? parseInt(thnAwalStr, 10) || 2026 : parseInt(thnAkhirStr, 10) || 2027;
-
-    const startDate = new Date(tahunKalender, bulan - 1, 1);
-    const endDate = new Date(tahunKalender, bulan, 0, 23, 59, 59, 999);
-
-    // 3. Coba query ke database PostgreSQL jika terhubung
-    try {
-      if (effectiveHalaqohId.toUpperCase() === "ALL") {
-        // Mode Agregasi: Seluruh Halaqoh
-        const allSantri = await prisma.santri.findMany({
-          where: { status: "AKTIF" },
-          include: {
-            halaqoh: { include: { pembina: true } },
-          },
-          orderBy: [{ halaqoh: { nama: "asc" } }, { nama: "asc" }],
-        });
-
-        if (allSantri && allSantri.length > 0) {
-          const rekapSantri = await Promise.all(
-            allSantri.map(async (santri) => {
-              const targets = await prisma.targetSantri.findMany({
-                where: { santriId: santri.id, bulan, tahunAjaran },
-              });
-              const targetSabaq = targets.find((t) => t.jenis === "SABAQ")?.targetBulanan || 20;
-              const targetSabqi = targets.find((t) => t.jenis === "SABQI")?.targetBulanan || 16;
-              const targetManzil = targets.find((t) => t.jenis === "MANZIL")?.targetBulanan || 16;
-              const targetMufar = targets.find((t) => t.jenis === "MUFAR")?.targetBulanan || 8;
-
-              const setoranList = await prisma.setoranTahfizh.findMany({
-                where: {
-                  santriId: santri.id,
-                  tanggal: { gte: startDate, lte: endDate },
-                },
-                orderBy: { tanggal: "asc" },
-              });
-
-              const sabaqPages = { p1: 0, p2: 0, p3: 0, p4: 0 };
-              const sabqiFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
-              const manzilFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
-              const mufarFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
-
-              setoranList.forEach((s) => {
-                const pekan = getPekanDariTanggal(s.tanggal);
-                const pKey = `p${pekan}` as const;
-                if (s.jenis === "SABAQ") {
-                  sabaqPages[pKey] += s.jumlahHalaman || extractHalamanFromSetoran(s.catatan);
-                } else if (s.jenis === "SABQI") {
-                  sabqiFreq[pKey] += 1;
-                } else if (s.jenis === "MANZIL") {
-                  manzilFreq[pKey] += 1;
-                } else if (s.jenis === "MUFAR") {
-                  mufarFreq[pKey] += 1;
-                }
-              });
-
-              const priorSabaq = await prisma.setoranTahfizh.aggregate({
-                where: { santriId: santri.id, jenis: "SABAQ", tanggal: { lt: startDate } },
-                _sum: { jumlahHalaman: true },
-              });
-              const modalAwalHalaman = priorSabaq._sum.jumlahHalaman || 0;
-              const rekapSabaq = hitungCapaianSabaq(sabaqPages, targetSabaq, modalAwalHalaman);
-              const rekapSabqi = hitungKepatuhanFrekuensi(sabqiFreq, targetSabqi, 90.0);
-              const rekapManzil = hitungKepatuhanFrekuensi(manzilFreq, targetManzil, 90.0);
-              const totalJuzSantri = rekapSabaq.konversiAkumulasi.juz || 1;
-              const targetMufarJuzHarian = hitungTargetMufar(totalJuzSantri);
-              const rekapMufar = hitungKepatuhanFrekuensi(mufarFreq, targetMufar, 90.0);
-
-              const capaianNonTahfizh = await prisma.capaianBulanan.findMany({
-                where: { santriId: santri.id, bulan, tahunAjaran },
-              });
-
-              const listKategori: KategoriCapaian[] = [
-                "HAFALAN_HADITS",
-                "HAFALAN_MUFRODAT",
-                "HAFALAN_VOCABULARY",
-                "SHOLAT_TAHAJJUD",
-                "SHOLAT_DHUHA",
-                "PUASA_SUNNAH",
-                "LITERASI",
-              ];
-
-              const rekapNonTahfizh = listKategori.map((kategori) => {
-                const record = capaianNonTahfizh.find((c) => c.kategori === kategori);
-                const hbl = record?.hbl || 0;
-                const p1 = record?.pekan1 || 0;
-                const p2 = record?.pekan2 || 0;
-                const p3 = record?.pekan3 || 0;
-                const p4 = record?.pekan4 || 0;
-                const targetMin = record?.targetMin || TARGET_MIN_KOMPONEN[kategori].target;
-                const evaluasi = evaluasiCapaianNonTahfizh(kategori, hbl, { p1, p2, p3, p4 }, targetMin);
-
-                return {
-                  kategori,
-                  label: TARGET_MIN_KOMPONEN[kategori].label,
-                  satuan: TARGET_MIN_KOMPONEN[kategori].satuan,
-                  p1,
-                  p2,
-                  p3,
-                  p4,
-                  ...evaluasi,
-                };
-              });
-
-              const riwayatTasmiSimaan = await prisma.tasmiSimaan.findMany({
-                where: { santriId: santri.id, tanggal: { gte: startDate, lte: endDate } },
-                include: { musyrif: true },
-                orderBy: { tanggal: "desc" },
-              });
-              const ringkasanTasmiSimaan = generateRingkasanTasmiSimaan(riwayatTasmiSimaan);
-
-              return {
-                santri: {
-                  id: santri.id,
-                  nis: santri.nis,
-                  nama: santri.nama,
-                  kelas: santri.kelas,
-                  halaqoh: santri.halaqoh?.nama || "Halaqoh",
-                },
-                tahfizh: {
-                  sabaq: { targetBulanan: targetSabaq, pekan: sabaqPages, ...rekapSabaq },
-                  sabqi: { targetBulanan: targetSabqi, pekan: sabqiFreq, ...rekapSabqi },
-                  manzil: { targetBulanan: targetManzil, pekan: manzilFreq, ...rekapManzil },
-                  mufar: {
-                    targetBulanan: targetMufar,
-                    targetHarianJuz: targetMufarJuzHarian,
-                    targetLabel: `${targetMufarJuzHarian} Juz/hari`,
-                    pekan: mufarFreq,
-                    ...rekapMufar,
-                  },
-                },
-                nonTahfizh: rekapNonTahfizh,
-                tasmiSimaan: { riwayat: riwayatTasmiSimaan, ...ringkasanTasmiSimaan },
-              };
-            })
-          );
-
-          return {
-            success: true,
-            data: {
-              halaqoh: {
-                id: "ALL",
-                nama: "Semua Halaqoh (Rekap Gabungan Seluruh Pesantren)",
-                pembina: "Seluruh Pembina & Musyrif STQ DUC",
-                tahunAjaran,
-              },
-              periode: { bulan, tahunAjaran, tahunKalender },
-              rekapSantri,
-            },
-          };
-        }
-      } else {
-        // Mode Spesifik Halaqoh
-        const halaqoh = await prisma.halaqoh.findFirst({
-          where: {
-            OR: [{ id: effectiveHalaqohId }, { halaqohCode: effectiveHalaqohId }],
-          },
-          include: {
-            pembina: true,
-            santriList: {
-              where: { status: "AKTIF" },
-              orderBy: { nama: "asc" },
-            },
-          },
-        });
-
-        if (halaqoh && halaqoh.santriList.length > 0) {
-          const rekapSantri = await Promise.all(
-            halaqoh.santriList.map(async (santri) => {
-              const targets = await prisma.targetSantri.findMany({
-                where: { santriId: santri.id, bulan, tahunAjaran },
-              });
-              const targetSabaq = targets.find((t) => t.jenis === "SABAQ")?.targetBulanan || 20;
-              const targetSabqi = targets.find((t) => t.jenis === "SABQI")?.targetBulanan || 16;
-              const targetManzil = targets.find((t) => t.jenis === "MANZIL")?.targetBulanan || 16;
-              const targetMufar = targets.find((t) => t.jenis === "MUFAR")?.targetBulanan || 8;
-
-              const setoranList = await prisma.setoranTahfizh.findMany({
-                where: {
-                  santriId: santri.id,
-                  tanggal: { gte: startDate, lte: endDate },
-                },
-                orderBy: { tanggal: "asc" },
-              });
-
-              const sabaqPages = { p1: 0, p2: 0, p3: 0, p4: 0 };
-              const sabqiFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
-              const manzilFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
-              const mufarFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
-
-              setoranList.forEach((s) => {
-                const pekan = getPekanDariTanggal(s.tanggal);
-                const pKey = `p${pekan}` as const;
-                if (s.jenis === "SABAQ") {
-                  sabaqPages[pKey] += s.jumlahHalaman || extractHalamanFromSetoran(s.catatan);
-                } else if (s.jenis === "SABQI") {
-                  sabqiFreq[pKey] += 1;
-                } else if (s.jenis === "MANZIL") {
-                  manzilFreq[pKey] += 1;
-                } else if (s.jenis === "MUFAR") {
-                  mufarFreq[pKey] += 1;
-                }
-              });
-
-              const priorSabaq = await prisma.setoranTahfizh.aggregate({
-                where: { santriId: santri.id, jenis: "SABAQ", tanggal: { lt: startDate } },
-                _sum: { jumlahHalaman: true },
-              });
-              const modalAwalHalaman = priorSabaq._sum.jumlahHalaman || 0;
-              const rekapSabaq = hitungCapaianSabaq(sabaqPages, targetSabaq, modalAwalHalaman);
-              const rekapSabqi = hitungKepatuhanFrekuensi(sabqiFreq, targetSabqi, 90.0);
-              const rekapManzil = hitungKepatuhanFrekuensi(manzilFreq, targetManzil, 90.0);
-              const totalJuzSantri = rekapSabaq.konversiAkumulasi.juz || 1;
-              const targetMufarJuzHarian = hitungTargetMufar(totalJuzSantri);
-              const rekapMufar = hitungKepatuhanFrekuensi(mufarFreq, targetMufar, 90.0);
-
-              const capaianNonTahfizh = await prisma.capaianBulanan.findMany({
-                where: { santriId: santri.id, bulan, tahunAjaran },
-              });
-
-              const listKategori: KategoriCapaian[] = [
-                "HAFALAN_HADITS",
-                "HAFALAN_MUFRODAT",
-                "HAFALAN_VOCABULARY",
-                "SHOLAT_TAHAJJUD",
-                "SHOLAT_DHUHA",
-                "PUASA_SUNNAH",
-                "LITERASI",
-              ];
-
-              const rekapNonTahfizh = listKategori.map((kategori) => {
-                const record = capaianNonTahfizh.find((c) => c.kategori === kategori);
-                const hbl = record?.hbl || 0;
-                const p1 = record?.pekan1 || 0;
-                const p2 = record?.pekan2 || 0;
-                const p3 = record?.pekan3 || 0;
-                const p4 = record?.pekan4 || 0;
-                const targetMin = record?.targetMin || TARGET_MIN_KOMPONEN[kategori].target;
-                const evaluasi = evaluasiCapaianNonTahfizh(kategori, hbl, { p1, p2, p3, p4 }, targetMin);
-
-                return {
-                  kategori,
-                  label: TARGET_MIN_KOMPONEN[kategori].label,
-                  satuan: TARGET_MIN_KOMPONEN[kategori].satuan,
-                  p1,
-                  p2,
-                  p3,
-                  p4,
-                  ...evaluasi,
-                };
-              });
-
-              const riwayatTasmiSimaan = await prisma.tasmiSimaan.findMany({
-                where: { santriId: santri.id, tanggal: { gte: startDate, lte: endDate } },
-                include: { musyrif: true },
-                orderBy: { tanggal: "desc" },
-              });
-              const ringkasanTasmiSimaan = generateRingkasanTasmiSimaan(riwayatTasmiSimaan);
-
-              return {
-                santri: {
-                  id: santri.id,
-                  nis: santri.nis,
-                  nama: santri.nama,
-                  kelas: santri.kelas,
-                  halaqoh: halaqoh.nama,
-                },
-                tahfizh: {
-                  sabaq: { targetBulanan: targetSabaq, pekan: sabaqPages, ...rekapSabaq },
-                  sabqi: { targetBulanan: targetSabqi, pekan: sabqiFreq, ...rekapSabqi },
-                  manzil: { targetBulanan: targetManzil, pekan: manzilFreq, ...rekapManzil },
-                  mufar: {
-                    targetBulanan: targetMufar,
-                    targetHarianJuz: targetMufarJuzHarian,
-                    targetLabel: `${targetMufarJuzHarian} Juz/hari`,
-                    pekan: mufarFreq,
-                    ...rekapMufar,
-                  },
-                },
-                nonTahfizh: rekapNonTahfizh,
-                tasmiSimaan: { riwayat: riwayatTasmiSimaan, ...ringkasanTasmiSimaan },
-              };
-            })
-          );
-
-          return {
-            success: true,
-            data: {
-              halaqoh: {
-                id: halaqoh.id,
-                nama: halaqoh.nama,
-                pembina: halaqoh.pembina?.nama || "Belum ditentukan",
-                tahunAjaran: halaqoh.tahunAjaran,
-              },
-              periode: { bulan, tahunAjaran, tahunKalender },
-              rekapSantri,
-            },
-          };
-        }
+      if (!halaqohRecord) {
+        return {
+          success: false,
+          message: "Akun belum ditugaskan ke halaqoh mana pun. Hubungi Admin.",
+          error: "Akses Ditolak",
+          data: null,
+        };
       }
-    } catch (dbErr) {
-      console.warn("Pangkalan data offline atau tabel belum termigrasi, menggunakan generator master laporan DUC:", dbErr);
+
+      // Jika meminta halaqoh lain selain binaannya sendiri: tolak tegas
+      if (
+        halaqohId &&
+        halaqohId !== "ALL" &&
+        halaqohId !== halaqohRecord.id &&
+        halaqohId !== halaqohRecord.halaqohCode
+      ) {
+        return {
+          success: false,
+          message: "Akses Ditolak: Anda hanya berwenang melihat laporan halaqoh binaan Anda.",
+          error: "Akses Ditolak",
+          data: null,
+        };
+      }
+
+      effectiveHalaqohId = halaqohRecord.id;
+    } else {
+      // Default Deny untuk seluruh role lain (GMR, MK, WS, ST, dll)
+      return {
+        success: false,
+        message: "Akses Ditolak: Anda tidak memiliki wewenang mengakses rekap laporan bulanan halaqoh.",
+        error: "Akses Ditolak",
+        data: null,
+      };
     }
 
-    // 4. Fallback Terverifikasi: Generator Laporan Bulanan Realistis berbasis 57 Santri & 6 Halaqoh
-    const fallbackData = generateLaporanBulananMock(effectiveHalaqohId, bulan, tahunAjaran);
-    return {
-      success: true,
-      data: fallbackData,
-    };
+    // 2. Tentukan range tanggal bulan berdasarkan batas WITA resmi
+    if (typeof bulan !== "number" || !Number.isInteger(bulan) || bulan < 1 || bulan > 12) {
+      return { success: false, message: "Parameter bulan tidak valid (harus 1–12).", error: "Parameter tidak valid", data: null };
+    }
+    if (!tahunAjaran || !/^\d{4}\/\d{4}$/.test(tahunAjaran)) {
+      return { success: false, message: "Format tahun ajaran tidak valid. Gunakan format YYYY/YYYY (contoh: 2026/2027).", error: "Parameter tidak valid", data: null };
+    }
+    const [thnAwalStr, thnAkhirStr] = tahunAjaran.split("/");
+    const thnAwal = parseInt(thnAwalStr, 10);
+    const thnAkhir = parseInt(thnAkhirStr, 10);
+    if (thnAkhir !== thnAwal + 1) {
+      return { success: false, message: "Tahun ajaran tidak valid. Tahun kedua harus tepat satu tahun setelah tahun pertama.", error: "Parameter tidak valid", data: null };
+    }
+    const tahunKalender = bulan >= 7 ? thnAwal : thnAkhir;
+
+    const { startDate, endDate } = getWITAMonthRange(tahunKalender, bulan);
+
+    // 3. Query ke database PostgreSQL
+    if (effectiveHalaqohId.toUpperCase() === "ALL") {
+      // Mode Agregasi: Seluruh Halaqoh
+      const allSantri = await prisma.santri.findMany({
+        where: { status: "AKTIF" },
+        include: {
+          halaqoh: { include: { pembina: true } },
+        },
+        orderBy: [{ halaqoh: { nama: "asc" } }, { nama: "asc" }],
+      });
+
+      const rekapSantri = await Promise.all(
+        allSantri.map(async (santri) => {
+          const targets = await prisma.targetSantri.findMany({
+            where: { santriId: santri.id, bulan, tahunAjaran },
+          });
+          const targetSabaqRecord = targets.find((t) => t.jenis === "SABAQ");
+          const targetSabqiRecord = targets.find((t) => t.jenis === "SABQI");
+          const targetManzilRecord = targets.find((t) => t.jenis === "MANZIL");
+          const targetMufarRecord = targets.find((t) => t.jenis === "MUFAR");
+
+          const targetSabaq = targetSabaqRecord?.targetBulanan ?? null;
+          const targetSabqi = targetSabqiRecord?.targetBulanan ?? null;
+          const targetManzil = targetManzilRecord?.targetBulanan ?? null;
+          const targetMufar = targetMufarRecord?.targetBulanan ?? null;
+
+          const setoranList = await prisma.setoranTahfizh.findMany({
+            where: {
+              santriId: santri.id,
+              tanggal: { gte: startDate, lte: endDate },
+              status: { not: "DIBATALKAN" },
+            },
+            orderBy: { tanggal: "asc" },
+          });
+
+          const modalAwal = Number(santri.modalHafalanAwalHalaman) || 0;
+          const baselineDate = santri.tanggalBaselineTahfizh
+            ? new Date(santri.tanggalBaselineTahfizh)
+            : null;
+
+          const sabaqPages = { p1: 0, p2: 0, p3: 0, p4: 0 };
+          const sabqiFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
+          const manzilFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
+          const mufarFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
+
+          setoranList.forEach((s) => {
+            const pekan = getPekanDariTanggal(s.tanggal);
+            const pKey = `p${pekan}` as const;
+            if (s.jenis === "SABAQ") {
+              if (baselineDate && new Date(s.tanggal) >= baselineDate) {
+                sabaqPages[pKey] += s.jumlahHalaman || extractHalamanFromSetoran(s.catatan);
+              }
+            } else if (s.jenis === "SABQI") {
+              sabqiFreq[pKey] += 1;
+            } else if (s.jenis === "MANZIL") {
+              manzilFreq[pKey] += 1;
+            } else if (s.jenis === "MUFAR") {
+              mufarFreq[pKey] += 1;
+            }
+          });
+
+          let priorSabaqHalaman = 0;
+          if (baselineDate && baselineDate < startDate) {
+            const priorSabaq = await prisma.setoranTahfizh.aggregate({
+              where: {
+                santriId: santri.id,
+                jenis: "SABAQ",
+                status: { not: "DIBATALKAN" },
+                tanggal: { gte: baselineDate, lt: startDate },
+              },
+              _sum: { jumlahHalaman: true },
+            });
+            priorSabaqHalaman = priorSabaq._sum.jumlahHalaman || 0;
+          }
+          const modalAwalHalaman = modalAwal + priorSabaqHalaman;
+
+          const rekapSabaq = hitungCapaianSabaq(sabaqPages, targetSabaq, modalAwalHalaman);
+          const rekapSabqi = hitungKepatuhanFrekuensi(sabqiFreq, targetSabqi, 90.0);
+          const rekapManzil = hitungKepatuhanFrekuensi(manzilFreq, targetManzil, 90.0);
+          const rekapMufar = hitungKepatuhanFrekuensi(mufarFreq, targetMufar, 90.0);
+
+          const capaianNonTahfizh = await prisma.capaianBulanan.findMany({
+            where: { santriId: santri.id, bulan, tahunAjaran },
+          });
+
+          const listKategori: KategoriCapaian[] = [
+            "HAFALAN_HADITS",
+            "HAFALAN_MUFRODAT",
+            "HAFALAN_VOCABULARY",
+            "SHOLAT_TAHAJJUD",
+            "SHOLAT_DHUHA",
+            "PUASA_SUNNAH",
+            "LITERASI",
+          ];
+
+          const rekapNonTahfizh = listKategori.map((kategori) => {
+            const record = capaianNonTahfizh.find((c) => c.kategori === kategori);
+            const hbl = record?.hbl || 0;
+            const p1 = record?.pekan1 || 0;
+            const p2 = record?.pekan2 || 0;
+            const p3 = record?.pekan3 || 0;
+            const p4 = record?.pekan4 || 0;
+            const targetMin = record?.targetMin || TARGET_MIN_KOMPONEN[kategori].target;
+            const evaluasi = evaluasiCapaianNonTahfizh(kategori, hbl, { p1, p2, p3, p4 }, targetMin);
+
+            return {
+              kategori,
+              label: TARGET_MIN_KOMPONEN[kategori].label,
+              satuan: TARGET_MIN_KOMPONEN[kategori].satuan,
+              p1,
+              p2,
+              p3,
+              p4,
+              ...evaluasi,
+            };
+          });
+
+          const riwayatTasmiSimaan = await prisma.tasmiSimaan.findMany({
+            where: { santriId: santri.id, tanggal: { gte: startDate, lte: endDate } },
+            include: { musyrif: true },
+            orderBy: { tanggal: "desc" },
+          });
+          const ringkasanTasmiSimaan = generateRingkasanTasmiSimaan(riwayatTasmiSimaan);
+
+          return {
+            santri: {
+              id: santri.id,
+              nis: santri.nis,
+              nama: santri.nama,
+              kelas: santri.kelas,
+              halaqoh: santri.halaqoh?.nama || "Halaqoh",
+            },
+            tahfizh: {
+              sabaq: {
+                targetBulanan: targetSabaq,
+                targetLabel: targetSabaq !== null ? `${targetSabaq} Hlm` : "Target belum ditetapkan",
+                pekan: sabaqPages,
+                ...rekapSabaq,
+              },
+              sabqi: {
+                targetBulanan: targetSabqi,
+                targetLabel: targetSabqi !== null ? `${targetSabqi} Kali` : "Target belum ditetapkan",
+                pekan: sabqiFreq,
+                ...rekapSabqi,
+              },
+              manzil: {
+                targetBulanan: targetManzil,
+                targetLabel: targetManzil !== null ? `${targetManzil} Kali` : "Target belum ditetapkan",
+                pekan: manzilFreq,
+                ...rekapManzil,
+              },
+              mufar: {
+                targetBulanan: targetMufar,
+                targetLabel: targetMufar !== null ? `${targetMufar} Kali` : "Target belum ditetapkan",
+                pekan: mufarFreq,
+                ...rekapMufar,
+              },
+            },
+            nonTahfizh: rekapNonTahfizh,
+            tasmiSimaan: { riwayat: riwayatTasmiSimaan, ...ringkasanTasmiSimaan },
+          };
+        })
+      );
+
+      return {
+        success: true,
+        data: {
+          halaqoh: {
+            id: "ALL",
+            nama: "Semua Halaqoh (Rekap Gabungan Seluruh Pesantren)",
+            pembina: "Seluruh Pembina & Musyrif STQ DUC",
+            tahunAjaran,
+          },
+          periode: { bulan, tahunAjaran, tahunKalender },
+          rekapSantri,
+        },
+      };
+    } else {
+      // Mode Spesifik Halaqoh
+      const halaqoh = await prisma.halaqoh.findFirst({
+        where: {
+          OR: [{ id: effectiveHalaqohId }, { halaqohCode: effectiveHalaqohId }],
+        },
+        include: {
+          pembina: true,
+          santriList: {
+            where: { status: "AKTIF" },
+            orderBy: { nama: "asc" },
+          },
+        },
+      });
+
+      if (!halaqoh) {
+        return {
+          success: false,
+          message: "Data halaqoh tidak ditemukan.",
+          error: "Halaqoh tidak ditemukan",
+          data: null,
+        };
+      }
+
+      const rekapSantri = await Promise.all(
+        halaqoh.santriList.map(async (santri) => {
+          const targets = await prisma.targetSantri.findMany({
+            where: { santriId: santri.id, bulan, tahunAjaran },
+          });
+          const targetSabaqRecord = targets.find((t) => t.jenis === "SABAQ");
+          const targetSabqiRecord = targets.find((t) => t.jenis === "SABQI");
+          const targetManzilRecord = targets.find((t) => t.jenis === "MANZIL");
+          const targetMufarRecord = targets.find((t) => t.jenis === "MUFAR");
+
+          const targetSabaq = targetSabaqRecord?.targetBulanan ?? null;
+          const targetSabqi = targetSabqiRecord?.targetBulanan ?? null;
+          const targetManzil = targetManzilRecord?.targetBulanan ?? null;
+          const targetMufar = targetMufarRecord?.targetBulanan ?? null;
+
+          const setoranList = await prisma.setoranTahfizh.findMany({
+            where: {
+              santriId: santri.id,
+              tanggal: { gte: startDate, lte: endDate },
+              status: { not: "DIBATALKAN" },
+            },
+            orderBy: { tanggal: "asc" },
+          });
+
+          const modalAwal = Number(santri.modalHafalanAwalHalaman) || 0;
+          const baselineDate = santri.tanggalBaselineTahfizh
+            ? new Date(santri.tanggalBaselineTahfizh)
+            : null;
+
+          const sabaqPages = { p1: 0, p2: 0, p3: 0, p4: 0 };
+          const sabqiFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
+          const manzilFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
+          const mufarFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
+
+          setoranList.forEach((s) => {
+            const pekan = getPekanDariTanggal(s.tanggal);
+            const pKey = `p${pekan}` as const;
+            if (s.jenis === "SABAQ") {
+              if (baselineDate && new Date(s.tanggal) >= baselineDate) {
+                sabaqPages[pKey] += s.jumlahHalaman || extractHalamanFromSetoran(s.catatan);
+              }
+            } else if (s.jenis === "SABQI") {
+              sabqiFreq[pKey] += 1;
+            } else if (s.jenis === "MANZIL") {
+              manzilFreq[pKey] += 1;
+            } else if (s.jenis === "MUFAR") {
+              mufarFreq[pKey] += 1;
+            }
+          });
+
+          let priorSabaqHalaman = 0;
+          if (baselineDate && baselineDate < startDate) {
+            const priorSabaq = await prisma.setoranTahfizh.aggregate({
+              where: {
+                santriId: santri.id,
+                jenis: "SABAQ",
+                status: { not: "DIBATALKAN" },
+                tanggal: { gte: baselineDate, lt: startDate },
+              },
+              _sum: { jumlahHalaman: true },
+            });
+            priorSabaqHalaman = priorSabaq._sum.jumlahHalaman || 0;
+          }
+          const modalAwalHalaman = modalAwal + priorSabaqHalaman;
+
+          const rekapSabaq = hitungCapaianSabaq(sabaqPages, targetSabaq, modalAwalHalaman);
+          const rekapSabqi = hitungKepatuhanFrekuensi(sabqiFreq, targetSabqi, 90.0);
+          const rekapManzil = hitungKepatuhanFrekuensi(manzilFreq, targetManzil, 90.0);
+          const rekapMufar = hitungKepatuhanFrekuensi(mufarFreq, targetMufar, 90.0);
+
+          const capaianNonTahfizh = await prisma.capaianBulanan.findMany({
+            where: { santriId: santri.id, bulan, tahunAjaran },
+          });
+
+          const listKategori: KategoriCapaian[] = [
+            "HAFALAN_HADITS",
+            "HAFALAN_MUFRODAT",
+            "HAFALAN_VOCABULARY",
+            "SHOLAT_TAHAJJUD",
+            "SHOLAT_DHUHA",
+            "PUASA_SUNNAH",
+            "LITERASI",
+          ];
+
+          const rekapNonTahfizh = listKategori.map((kategori) => {
+            const record = capaianNonTahfizh.find((c) => c.kategori === kategori);
+            const hbl = record?.hbl || 0;
+            const p1 = record?.pekan1 || 0;
+            const p2 = record?.pekan2 || 0;
+            const p3 = record?.pekan3 || 0;
+            const p4 = record?.pekan4 || 0;
+            const targetMin = record?.targetMin || TARGET_MIN_KOMPONEN[kategori].target;
+            const evaluasi = evaluasiCapaianNonTahfizh(kategori, hbl, { p1, p2, p3, p4 }, targetMin);
+
+            return {
+              kategori,
+              label: TARGET_MIN_KOMPONEN[kategori].label,
+              satuan: TARGET_MIN_KOMPONEN[kategori].satuan,
+              p1,
+              p2,
+              p3,
+              p4,
+              ...evaluasi,
+            };
+          });
+
+          const riwayatTasmiSimaan = await prisma.tasmiSimaan.findMany({
+            where: { santriId: santri.id, tanggal: { gte: startDate, lte: endDate } },
+            include: { musyrif: true },
+            orderBy: { tanggal: "desc" },
+          });
+          const ringkasanTasmiSimaan = generateRingkasanTasmiSimaan(riwayatTasmiSimaan);
+
+          return {
+            santri: {
+              id: santri.id,
+              nis: santri.nis,
+              nama: santri.nama,
+              kelas: santri.kelas,
+              halaqoh: halaqoh.nama,
+            },
+            tahfizh: {
+              sabaq: {
+                targetBulanan: targetSabaq,
+                targetLabel: targetSabaq !== null ? `${targetSabaq} Hlm` : "Target belum ditetapkan",
+                pekan: sabaqPages,
+                ...rekapSabaq,
+              },
+              sabqi: {
+                targetBulanan: targetSabqi,
+                targetLabel: targetSabqi !== null ? `${targetSabqi} Kali` : "Target belum ditetapkan",
+                pekan: sabqiFreq,
+                ...rekapSabqi,
+              },
+              manzil: {
+                targetBulanan: targetManzil,
+                targetLabel: targetManzil !== null ? `${targetManzil} Kali` : "Target belum ditetapkan",
+                pekan: manzilFreq,
+                ...rekapManzil,
+              },
+              mufar: {
+                targetBulanan: targetMufar,
+                targetLabel: targetMufar !== null ? `${targetMufar} Kali` : "Target belum ditetapkan",
+                pekan: mufarFreq,
+                ...rekapMufar,
+              },
+            },
+            nonTahfizh: rekapNonTahfizh,
+            tasmiSimaan: { riwayat: riwayatTasmiSimaan, ...ringkasanTasmiSimaan },
+          };
+        })
+      );
+
+      return {
+        success: true,
+        data: {
+          halaqoh: {
+            id: halaqoh.id,
+            nama: halaqoh.nama,
+            pembina: halaqoh.pembina?.nama || "Belum ditentukan",
+            tahunAjaran: halaqoh.tahunAjaran,
+          },
+          periode: { bulan, tahunAjaran, tahunKalender },
+          rekapSantri,
+        },
+      };
+    }
   } catch (error) {
     console.error("Gagal memuat rekap laporan bulanan halaqoh:", error);
-    const fallbackData = generateLaporanBulananMock(halaqohId || "ALL", bulan, tahunAjaran);
-    return { success: true, data: fallbackData };
+    return {
+      success: false,
+      message: "Gagal memuat rekap laporan bulanan halaqoh dari pangkalan data.",
+      error: "Gagal memuat data",
+      data: null,
+    };
   }
 }
 
@@ -454,22 +548,56 @@ export async function upsertTargetSantriAction(input: TargetSantriInput) {
     return { success: false, message: "Anda tidak memiliki wewenang mengatur target santri." };
   }
 
-  // ABAC: MT dan PH hanya berwenang mengatur target santri binaannya
+  // ABAC: MT dan PH hanya berwenang mengatur target santri binaannya (kecuali Kepala Bidang Tahfidz)
   if (session.role === "MT" || session.role === "PH") {
     if (!session.staffId) {
       return { success: false, message: "Profil staf pembina Anda belum terhubung." };
     }
-    const isBinaan = await prisma.halaqoh.findFirst({
-      where: {
-        pembinaId: session.staffId,
-        santriList: { some: { id: input.santriId } },
-      },
-    });
-    if (!isBinaan) {
-      return {
-        success: false,
-        message: "Akses Ditolak: Anda hanya berwenang mengatur target santri di dalam halaqoh binaan Anda.",
-      };
+    if (!session.isKepalaBidangTahfidz) {
+      const isBinaan = await prisma.halaqoh.findFirst({
+        where: {
+          pembinaId: session.staffId,
+          santriList: { some: { id: input.santriId } },
+        },
+      });
+      if (!isBinaan) {
+        return {
+          success: false,
+          message: "Akses Ditolak: Anda hanya berwenang mengatur target santri di dalam halaqoh binaan Anda.",
+        };
+      }
+    }
+  }
+
+  // Validasi input server-side target santri
+  if (typeof input.bulan !== "number" || !Number.isInteger(input.bulan) || input.bulan < 1 || input.bulan > 12) {
+    return { success: false, message: "Bulan harus berupa bilangan bulat antara 1 dan 12." };
+  }
+  if (!input.tahunAjaran || !/^\d{4}\/\d{4}$/.test(input.tahunAjaran)) {
+    return { success: false, message: "Format tahun ajaran tidak valid. Gunakan format YYYY/YYYY (contoh: 2026/2027)." };
+  }
+  const [thn1, thn2] = input.tahunAjaran.split("/").map(Number);
+  if (thn2 !== thn1 + 1) {
+    return { success: false, message: "Tahun ajaran tidak valid. Tahun kedua harus tepat satu tahun setelah tahun pertama (contoh: 2026/2027)." };
+  }
+  if (typeof input.targetPekanan !== "number" || !Number.isFinite(input.targetPekanan) || input.targetPekanan <= 0) {
+    return { success: false, message: "Target pekanan harus berupa angka positif lebih dari 0." };
+  }
+  if (typeof input.targetBulanan !== "number" || !Number.isFinite(input.targetBulanan) || input.targetBulanan <= 0) {
+    return { success: false, message: "Target bulanan harus berupa angka positif lebih dari 0." };
+  }
+  if (input.jenis === "SABAQ") {
+    if ((input.targetPekanan * 2) % 1 !== 0 || (input.targetBulanan * 2) % 1 !== 0) {
+      return { success: false, message: "Target Sabaq harus berupa bilangan bulat atau kelipatan 0.5 halaman." };
+    }
+  } else if (["SABQI", "MANZIL", "MUFAR"].includes(input.jenis)) {
+    if (!Number.isInteger(input.targetPekanan) || !Number.isInteger(input.targetBulanan)) {
+      return { success: false, message: `Target ${input.jenis} harus berupa bilangan bulat (frekuensi kali).` };
+    }
+  }
+  if (input.ambangKepatuhan !== undefined && input.ambangKepatuhan !== null) {
+    if (typeof input.ambangKepatuhan !== "number" || !Number.isFinite(input.ambangKepatuhan) || input.ambangKepatuhan < 0 || input.ambangKepatuhan > 100) {
+      return { success: false, message: "Ambang kepatuhan harus bernilai antara 0 dan 100 persen." };
     }
   }
 
@@ -516,6 +644,72 @@ export async function upsertTargetSantriAction(input: TargetSantriInput) {
   } catch (error) {
     console.error("Gagal mengatur target santri:", error);
     return { success: false, message: "Gagal menyimpan target santri." };
+  }
+}
+
+/**
+ * Server Action: Mengambil Target Santri (Sabaq, Sabqi, Manzil, Mufar) dengan ABAC ketat
+ */
+export async function getTargetSantriAction(
+  santriId: string,
+  bulan?: number,
+  tahunAjaran?: string
+) {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
+  }
+
+  // ABAC:
+  // WS / ST: Hanya boleh melihat target santri miliknya sendiri
+  if (session.role === "WS" || session.role === "ST") {
+    if (!session.santriId || session.santriId !== santriId) {
+      return { success: false, message: "Akses Ditolak: Anda hanya berhak melihat target anak Anda." };
+    }
+  } else if (session.role === "MT" || session.role === "PH") {
+    // MT / PH: Fail-closed jika belum terhubung staf
+    if (!session.staffId) {
+      return { success: false, message: "Profil staf pembina Anda belum terhubung." };
+    }
+    // Jika bukan Kepala Bidang Tahfidz, hanya boleh melihat target santri halaqoh binaan sendiri
+    if (!session.isKepalaBidangTahfidz) {
+      const isBinaan = await prisma.halaqoh.findFirst({
+        where: {
+          pembinaId: session.staffId,
+          santriList: { some: { id: santriId } },
+        },
+      });
+      if (!isBinaan) {
+        return {
+          success: false,
+          message: "Akses Ditolak: Anda hanya berwenang melihat target santri di dalam halaqoh binaan Anda.",
+        };
+      }
+    }
+  } else if (["KS", "ADM", "YAY"].includes(session.role) || session.isKepalaBidangTahfidz) {
+    // Otoritas manajerial diperkenankan
+  } else {
+    // Default Deny untuk seluruh role lain
+    return {
+      success: false,
+      message: "Akses Ditolak: Anda tidak memiliki wewenang mengakses target santri.",
+    };
+  }
+
+  try {
+    const whereClause: { santriId: string; bulan?: number; tahunAjaran?: string } = { santriId };
+    if (typeof bulan === "number") whereClause.bulan = bulan;
+    if (tahunAjaran) whereClause.tahunAjaran = tahunAjaran;
+
+    const targets = await prisma.targetSantri.findMany({
+      where: whereClause,
+      orderBy: { jenis: "asc" },
+    });
+
+    return { success: true, data: targets };
+  } catch (error) {
+    console.error("Gagal mengambil data target santri:", error);
+    return { success: false, message: "Gagal mengambil data target santri dari database." };
   }
 }
 
@@ -651,10 +845,12 @@ export async function recordTasmiSimaanAction(input: RecordTasmiSimaanInput) {
     }
   }
 
+  if (!session.staffId) {
+    return { success: false, message: "Profil staf penguji Anda belum terhubung. Akses ditolak." };
+  }
+
   try {
-    const musyrifStaff = session.staffId
-      ? await prisma.staff.findUnique({ where: { id: session.staffId } })
-      : await prisma.staff.findFirst({ where: { roleStaff: "MT" } });
+    const musyrifStaff = await prisma.staff.findUnique({ where: { id: session.staffId } });
 
     if (!musyrifStaff) {
       return { success: false, message: "Profil penguji staf tidak ditemukan." };

@@ -2,7 +2,7 @@ import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { AuthTokenPayload, Role, UserSession, getHalaqohByStaff } from "@/types/auth";
+import { AuthTokenPayload, Role, UserSession } from "@/types/auth";
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 
@@ -177,8 +177,6 @@ export async function resolveVerifiedSessionPayload(
     halaqohName = user.staff.halaqohDipimpin[0].nama;
   } else if (user.santri?.halaqoh) {
     halaqohName = user.santri.halaqoh.nama;
-  } else if (staffCode) {
-    halaqohName = getHalaqohByStaff(staffCode);
   }
 
   return {

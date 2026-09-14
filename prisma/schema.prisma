@@ -853,8 +853,8 @@ model TargetSantri {
   santriId        String        @map("santri_id")
   santri          Santri        @relation(fields: [santriId], references: [id], onDelete: Cascade)
   jenis           JenisSetoran  // SABAQ, SABQI, MANZIL, MUFAR
-  targetPekanan   Int           @map("target_pekanan") // Halaman (Sabaq) atau Frekuensi per pekan (Sabqi/Manzil/Mufar)
-  targetBulanan   Int           @map("target_bulanan") // Halaman (Sabaq) atau Frekuensi per bulan (Sabqi/Manzil/Mufar)
+  targetPekanan   Float         @map("target_pekanan") // Halaman (Sabaq) atau Frekuensi per pekan (Sabqi/Manzil/Mufar)
+  targetBulanan   Float         @map("target_bulanan") // Halaman (Sabaq) atau Frekuensi per bulan (Sabqi/Manzil/Mufar)
   ambangKepatuhan Float         @default(90.0) @map("ambang_kepatuhan") // Minimal persentase kepatuhan bulanan (e.g. 90%)
   bulan           Int           // 1 - 12
   tahunAjaran     String        @map("tahun_ajaran") // e.g. "2026/2027"
