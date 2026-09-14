@@ -43,7 +43,9 @@ import {
   ChevronDown,
   ChevronUp,
   Sliders,
+  BookmarkCheck,
 } from "lucide-react";
+import { EvaluasiRubuTab } from "@/components/tahfizh/evaluasi-rubu-tab";
 import {
   konversiHalamanKeJuz,
 } from "@/lib/laporan-bulanan";
@@ -83,7 +85,7 @@ export function TahfizhModule({
   onPrintPreview,
   onRefresh,
 }: TahfizhModuleProps) {
-  const [activeSubTab, setActiveSubTab] = useState<"setoran" | "laporan" | "ikhtibar" | "reward_evaluasi">(
+  const [activeSubTab, setActiveSubTab] = useState<"setoran" | "laporan" | "ikhtibar" | "reward_evaluasi" | "rubu">(
     initialOpenForm ? "setoran" : "setoran"
   );
 
@@ -1048,6 +1050,19 @@ export function TahfizhModule({
           >
             <Star className="h-4 w-4" />
             Reward &amp; Evaluasi Bulanan
+          </button>
+          <button
+            type="button"
+            data-testid="tab-rubu"
+            onClick={() => setActiveSubTab("rubu")}
+            className={`px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 min-h-[44px] shrink-0 ${
+              activeSubTab === "rubu"
+                ? "bg-[#0E7C3A] text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+            }`}
+          >
+            <BookmarkCheck className="h-4 w-4" />
+            Evaluasi Rubu&apos; (1/4 Juz)
           </button>
         </div>
 
@@ -2468,6 +2483,15 @@ export function TahfizhModule({
       {/* 4. Tab Reward & Evaluasi Bulanan */}
       {activeSubTab === "reward_evaluasi" && (
         <RewardEvaluasiTab userRole={userRole} currentUserName={currentUserName} />
+      )}
+
+      {/* 5. Tab Evaluasi Rubu' Tahfizh */}
+      {activeSubTab === "rubu" && (
+        <EvaluasiRubuTab
+          userRole={userRole}
+          santriList={santriList}
+          isKepalaBidangTahfidz={isKepalaBidangTahfidz}
+        />
       )}
 
       {/* Peringatan Urutan Hafalan (Sequence Jump Warning Dialog - Poin 6) */}

@@ -102,6 +102,37 @@ export const setoranSchema = z.object({
 export type SetoranInput = z.infer<typeof setoranSchema>;
 
 /**
+ * 3b. Skema Validasi Evaluasi Rubu' Tahfizh
+ */
+export const evaluasiRubuSchema = z.object({
+  santriId: z.string().min(1, { message: 'Santri wajib dipilih' }),
+  juz: z.coerce
+    .number()
+    .int({ message: 'Juz harus berupa bilangan bulat' })
+    .min(1, { message: 'Juz minimal 1' })
+    .max(30, { message: 'Juz maksimal 30' }),
+  rubuKe: z.coerce
+    .number()
+    .int({ message: 'Rubu ke- harus berupa bilangan bulat' })
+    .min(1, { message: 'Rubu ke- minimal 1' })
+    .max(4, { message: 'Rubu ke- maksimal 4' }),
+  nilaiTajwid: z.enum(VALID_NILAI_SETORAN_VALUES, {
+    message: 'Nilai Tajwid wajib dipilih',
+  }),
+  nilaiFashahah: z.enum(VALID_NILAI_SETORAN_VALUES, {
+    message: 'Nilai Fashahah wajib dipilih',
+  }),
+  nilaiKelancaran: z.enum(VALID_NILAI_SETORAN_VALUES, {
+    message: 'Nilai Kelancaran wajib dipilih',
+  }),
+  rincianKesalahan: mistakeCountsSchema.optional().default(DEFAULT_MISTAKE_COUNTS),
+  catatan: z.string().max(500, { message: 'Catatan maksimal 500 karakter' }).optional().nullable(),
+  tanggal: z.union([z.date(), z.string()]).optional().nullable(),
+});
+
+export type EvaluasiRubuInput = z.infer<typeof evaluasiRubuSchema>;
+
+/**
  * 4. Skema Validasi Nilai Mapel Akademik
  */
 export const nilaiMapelSchema = z.object({
