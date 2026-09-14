@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  VALID_NILAI_SETORAN_VALUES,
+  mistakeCountsSchema,
+  DEFAULT_MISTAKE_COUNTS,
+} from '@/lib/tahfizh-quality';
 
 /**
  * 1. Skema Validasi Autentikasi & Login
@@ -78,9 +83,19 @@ export const setoranSchema = z.object({
   jumlahHalaman: z.coerce
     .number()
     .min(0.5, { message: 'Jumlah halaman minimal 0.5' }),
-  nilai: z.enum(['MUMTAZ', 'JAYYID_JIDDAN', 'JAYYID', 'MAQBUL', 'DHOIF', 'RASIB'], {
-    message: 'Nilai setoran tidak valid',
+  nilaiTajwid: z.enum(VALID_NILAI_SETORAN_VALUES, {
+    message: 'Nilai Tajwid wajib dipilih',
   }),
+  nilaiFashahah: z.enum(VALID_NILAI_SETORAN_VALUES, {
+    message: 'Nilai Fashahah wajib dipilih',
+  }),
+  nilaiKelancaran: z.enum(VALID_NILAI_SETORAN_VALUES, {
+    message: 'Nilai Kelancaran wajib dipilih',
+  }),
+  rincianKesalahan: mistakeCountsSchema.optional().default(DEFAULT_MISTAKE_COUNTS),
+  nilai: z.enum(VALID_NILAI_SETORAN_VALUES, {
+    message: 'Nilai setoran tidak valid',
+  }).optional(),
   catatan: z.string().max(500, { message: 'Catatan maksimal 500 karakter' }).optional().nullable(),
 });
 

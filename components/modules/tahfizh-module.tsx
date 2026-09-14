@@ -40,10 +40,23 @@ import {
   Info,
   Star,
   Loader2,
+  ChevronDown,
+  ChevronUp,
+  Sliders,
 } from "lucide-react";
 import {
   konversiHalamanKeJuz,
 } from "@/lib/laporan-bulanan";
+import {
+  deriveOverallNilai,
+  DEFAULT_MISTAKE_COUNTS,
+  CANONICAL_MISTAKE_KEYS,
+  MISTAKE_LABELS,
+  NILAI_LABELS,
+  MistakeCounts,
+  CanonicalMistakeKey,
+} from "@/lib/tahfizh-quality";
+import { NilaiSetoran } from "@prisma/client";
 
 export interface TahfizhModuleProps {
   userRole: Role;
@@ -113,10 +126,34 @@ export function TahfizhModule({
   const [jumlahHalaman, setJumlahHalaman] = useState("1");
   const [jumlahJuzMufar, setJumlahJuzMufar] = useState("");
   const [rincianJuzMufar, setRincianJuzMufar] = useState("");
-  const [nilai, setNilai] = useState<"MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "DHOIF">("MUMTAZ");
+  const [nilaiTajwid, setNilaiTajwid] = useState<NilaiSetoran>("MUMTAZ");
+  const [nilaiFashahah, setNilaiFashahah] = useState<NilaiSetoran>("MUMTAZ");
+  const [nilaiKelancaran, setNilaiKelancaran] = useState<NilaiSetoran>("MUMTAZ");
+  const [rincianKesalahan, setRincianKesalahan] = useState<MistakeCounts>({ ...DEFAULT_MISTAKE_COUNTS });
+  const [isKesalahanOpen, setIsKesalahanOpen] = useState(false);
   const [catatan, setCatatan] = useState("");
   const [isManualSabaqi, setIsManualSabaqi] = useState(false);
   const [alasanManualSabaqi, setAlasanManualSabaqi] = useState("");
+
+  const derivedOverallNilai = useMemo(() => {
+    return deriveOverallNilai({
+      tajwid: nilaiTajwid,
+      fashahah: nilaiFashahah,
+      kelancaran: nilaiKelancaran,
+    });
+  }, [nilaiTajwid, nilaiFashahah, nilaiKelancaran]);
+
+  const totalKesalahan = useMemo(() => {
+    return Object.values(rincianKesalahan).reduce((acc, curr) => acc + (curr || 0), 0);
+  }, [rincianKesalahan]);
+
+  const handleMistakeChange = (key: CanonicalMistakeKey, delta: number) => {
+    setRincianKesalahan((prev) => {
+      const current = prev[key] || 0;
+      const updated = Math.max(0, current + delta);
+      return { ...prev, [key]: updated };
+    });
+  };
 
   // Synchronous submit lock & Idempotency Key Ref & Tracking Saran Posisi
   const submitLockRef = useRef(false);
@@ -384,6 +421,10 @@ export function TahfizhModule({
     halamanSelesai?: number;
     jumlahHalaman?: number;
     nilai: string;
+    nilaiTajwid?: string | null;
+    nilaiFashahah?: string | null;
+    nilaiKelancaran?: string | null;
+    rincianKesalahan?: any;
     tanggal: string;
   }>>([]);
 
@@ -403,6 +444,10 @@ export function TahfizhModule({
             halamanSelesai: r.halamanSelesai,
             jumlahHalaman: r.jumlahHalaman,
             nilai: r.nilai,
+            nilaiTajwid: r.nilaiTajwid,
+            nilaiFashahah: r.nilaiFashahah,
+            nilaiKelancaran: r.nilaiKelancaran,
+            rincianKesalahan: r.rincianKesalahan,
             tanggal:
               new Date(r.tanggal).toLocaleString("id-ID", {
                 timeZone: "Asia/Makassar",
@@ -435,6 +480,10 @@ export function TahfizhModule({
             halamanSelesai: r.halamanSelesai,
             jumlahHalaman: r.jumlahHalaman,
             nilai: r.nilai,
+            nilaiTajwid: r.nilaiTajwid,
+            nilaiFashahah: r.nilaiFashahah,
+            nilaiKelancaran: r.nilaiKelancaran,
+            rincianKesalahan: r.rincianKesalahan,
             tanggal:
               new Date(r.tanggal).toLocaleString("id-ID", {
                 timeZone: "Asia/Makassar",
@@ -667,7 +716,11 @@ export function TahfizhModule({
           halamanSelesai: hlmSelesaiNum,
           jumlahHalaman: jmlHlmNum,
           jumlahJuzMufar: inputJenis === "MUFAR" ? (parseInt(jumlahJuzMufar, 10) || null) : null,
-          nilai,
+          nilaiTajwid,
+          nilaiFashahah,
+          nilaiKelancaran,
+          rincianKesalahan,
+          nilai: derivedOverallNilai,
           catatan: finalCatatan,
           clientRequestId,
           alasanLompatanHalaman: extra?.alasanLompatanHalaman,
@@ -676,6 +729,13 @@ export function TahfizhModule({
         });
 
         if (res.success) {
+          // Reset quality fields to defaults
+          setNilaiTajwid("MUMTAZ");
+          setNilaiFashahah("MUMTAZ");
+          setNilaiKelancaran("MUMTAZ");
+          setRincianKesalahan({ ...DEFAULT_MISTAKE_COUNTS });
+          setCatatan("");
+          setIsKesalahanOpen(false);
           // Posisi terbaru santri
           let posisiTerbaru = santriPosisiTerakhir;
           let isParsialBaru = false;
@@ -1665,29 +1725,148 @@ export function TahfizhModule({
                   </div>
                 )}
 
-                {/* Nilai Setoran & Catatan */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">
-                      Predikat Kelancaran
-                    </label>
-                    <select
-                      value={nilai}
-                      onChange={(e) =>
-                        setNilai(
-                          e.target.value as "MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "DHOIF"
-                        )
-                      }
-                      className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500"
-                    >
-                      <option value="MUMTAZ">Mumtaz (Istimewa / Sangat Lancar)</option>
-                      <option value="JAYYID_JIDDAN">Jayyid Jiddan (Baik Sekali)</option>
-                      <option value="JAYYID">Jayyid (Baik)</option>
-                      <option value="MAQBUL">Maqbul (Cukup)</option>
-                      <option value="DHOIF">Dhoif (Perlu Mengulang)</option>
-                    </select>
+                {/* 3 Dimensi Evaluasi Kualitas & Preview Predikat Keseluruhan */}
+                <div className="space-y-3 pt-2 border-t border-slate-200/80">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sliders className="w-3.5 h-3.5 text-emerald-600" />
+                      Evaluasi Kualitas Hafalan
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] text-slate-500 font-medium">Predikat Keseluruhan:</span>
+                      <Badge
+                        variant={
+                          derivedOverallNilai === "MUMTAZ"
+                            ? "green"
+                            : derivedOverallNilai === "JAYYID_JIDDAN"
+                            ? "sky"
+                            : derivedOverallNilai === "JAYYID"
+                            ? "gold"
+                            : "neutral"
+                        }
+                        size="sm"
+                        className="font-bold text-xs"
+                      >
+                        {derivedOverallNilai}
+                      </Badge>
+                    </div>
                   </div>
 
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                        1. Tajwid
+                      </label>
+                      <select
+                        value={nilaiTajwid}
+                        onChange={(e) => setNilaiTajwid(e.target.value as NilaiSetoran)}
+                        className="w-full min-h-[44px] px-2.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500"
+                      >
+                        {Object.entries(NILAI_LABELS).map(([k, v]) => (
+                          <option key={k} value={k}>{v.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                        2. Fashahah
+                      </label>
+                      <select
+                        value={nilaiFashahah}
+                        onChange={(e) => setNilaiFashahah(e.target.value as NilaiSetoran)}
+                        className="w-full min-h-[44px] px-2.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500"
+                      >
+                        {Object.entries(NILAI_LABELS).map(([k, v]) => (
+                          <option key={k} value={k}>{v.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                        3. Kelancaran
+                      </label>
+                      <select
+                        value={nilaiKelancaran}
+                        onChange={(e) => setNilaiKelancaran(e.target.value as NilaiSetoran)}
+                        className="w-full min-h-[44px] px-2.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500"
+                      >
+                        {Object.entries(NILAI_LABELS).map(([k, v]) => (
+                          <option key={k} value={k}>{v.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-slate-500 italic">
+                    * Predikat keseluruhan otomatis diturunkan dari dimensi terendah (worst dimension) sesuai SOP STQ.
+                  </p>
+
+                  {/* Collapsible Rincian Kesalahan */}
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setIsKesalahanOpen(!isKesalahanOpen)}
+                      className="w-full px-3 py-2.5 flex items-center justify-between text-xs font-bold text-slate-800 hover:bg-slate-100 transition-colors min-h-[44px]"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span>Rincian Kesalahan (Taksonomi DUC)</span>
+                        {totalKesalahan > 0 && (
+                          <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-bold">
+                            {totalKesalahan} catatan
+                          </span>
+                        )}
+                      </span>
+                      <span className="flex items-center gap-1 text-slate-500 text-[11px]">
+                        {isKesalahanOpen ? "Tutup" : "Buka Counter"}
+                        {isKesalahanOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </span>
+                    </button>
+
+                    {isKesalahanOpen && (
+                      <div className="p-3 border-t border-slate-200 bg-white grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {CANONICAL_MISTAKE_KEYS.map((key) => {
+                          const info = MISTAKE_LABELS[key];
+                          const count = rincianKesalahan[key] || 0;
+
+                          return (
+                            <div
+                              key={key}
+                              className="p-2.5 rounded-xl border border-slate-100 bg-slate-50/50 flex items-center justify-between gap-2"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-bold text-slate-800 truncate">{info.label}</p>
+                                <p className="text-[10px] text-slate-500 truncate">{info.desc}</p>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  disabled={count <= 0}
+                                  onClick={() => handleMistakeChange(key, -1)}
+                                  className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  -
+                                </button>
+                                <span className="w-6 text-center text-xs font-bold font-mono">
+                                  {count}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMistakeChange(key, 1)}
+                                  className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center hover:bg-slate-100"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Catatan Musyrif */}
                   <div>
                     <label className="text-xs font-bold text-slate-700 block mb-1">
                       Catatan Pembina (Opsional)
@@ -1807,20 +1986,31 @@ export function TahfizhModule({
                           </div>
                         </div>
 
-                        <div className="shrink-0">
+                        <div className="shrink-0 text-right">
                           <Badge
                             variant={
                               item.nilai === "MUMTAZ"
                                 ? "green"
                                 : item.nilai === "JAYYID_JIDDAN"
                                 ? "sky"
-                                : "gold"
+                                : item.nilai === "JAYYID"
+                                ? "gold"
+                                : "neutral"
                             }
                             size="sm"
                             className="font-bold text-[10px]"
                           >
                             {item.nilai}
                           </Badge>
+                          {item.nilaiTajwid ? (
+                            <div className="text-[9px] text-slate-500 font-mono mt-0.5" title="Tajwid | Fashahah | Kelancaran">
+                              T:{item.nilaiTajwid[0]} F:{item.nilaiFashahah ? item.nilaiFashahah[0] : "-"} K:{item.nilaiKelancaran ? item.nilaiKelancaran[0] : "-"}
+                            </div>
+                          ) : (
+                            <div className="text-[9px] text-slate-400 mt-0.5">
+                              Evaluasi rinci belum tersedia
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}

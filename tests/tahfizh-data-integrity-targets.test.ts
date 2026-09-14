@@ -703,6 +703,9 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (43 Skena
       halamanMulai: 604,
       halamanSelesai: 605,
       jumlahHalaman: 2,
+      nilaiTajwid: "MUMTAZ",
+      nilaiFashahah: "MUMTAZ",
+      nilaiKelancaran: "MUMTAZ",
       nilai: "MUMTAZ",
     });
 

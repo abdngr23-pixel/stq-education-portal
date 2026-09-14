@@ -14,6 +14,7 @@ import {
   getTahfizhOperationalMonitoring,
   GetTahfizhMonitoringParams,
 } from "@/lib/server/tahfizh-monitoring-service";
+import { MistakeCounts } from "@/lib/tahfizh-quality";
 
 export interface CreateSetoranInput {
   santriId: string;
@@ -23,7 +24,11 @@ export interface CreateSetoranInput {
   halamanSelesai: number;
   jumlahHalaman: number;
   jumlahJuzMufar?: number | null;
-  nilai: NilaiSetoran;
+  nilaiTajwid?: NilaiSetoran;
+  nilaiFashahah?: NilaiSetoran;
+  nilaiKelancaran?: NilaiSetoran;
+  rincianKesalahan?: MistakeCounts | null;
+  nilai?: NilaiSetoran;
   catatan?: string;
   clientRequestId?: string;
   alasanLompatanHalaman?: string;

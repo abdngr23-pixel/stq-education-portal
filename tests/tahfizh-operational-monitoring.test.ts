@@ -498,6 +498,9 @@ describe("PR #7 — Tahfizh Operational Monitoring & Action Center (Comprehensiv
         halamanSelesai: 21,
         jumlahHalaman: 21,
         jumlahJuzMufar: 2,
+        nilaiTajwid: "MUMTAZ",
+        nilaiFashahah: "MUMTAZ",
+        nilaiKelancaran: "MUMTAZ",
         nilai: "MUMTAZ",
         catatan: "Setoran MUFAR 2 Juz",
       });
@@ -521,6 +524,9 @@ describe("PR #7 — Tahfizh Operational Monitoring & Action Center (Comprehensiv
         halamanSelesai: 21,
         jumlahHalaman: 21,
         jumlahJuzMufar: 0,
+        nilaiTajwid: "MUMTAZ",
+        nilaiFashahah: "MUMTAZ",
+        nilaiKelancaran: "MUMTAZ",
         nilai: "MUMTAZ",
       });
       assert.equal(resNegative.success, false);
@@ -534,6 +540,9 @@ describe("PR #7 — Tahfizh Operational Monitoring & Action Center (Comprehensiv
         halamanSelesai: 21,
         jumlahHalaman: 21,
         jumlahJuzMufar: 7,
+        nilaiTajwid: "MUMTAZ",
+        nilaiFashahah: "MUMTAZ",
+        nilaiKelancaran: "MUMTAZ",
         nilai: "MUMTAZ",
       });
       assert.equal(resOver.success, false);
@@ -550,6 +559,9 @@ describe("PR #7 — Tahfizh Operational Monitoring & Action Center (Comprehensiv
         halamanSelesai: 23,
         jumlahHalaman: 2,
         jumlahJuzMufar: 3, // Diberikan input mufar tapi jenis SABAQ
+        nilaiTajwid: "MUMTAZ",
+        nilaiFashahah: "MUMTAZ",
+        nilaiKelancaran: "MUMTAZ",
         nilai: "MUMTAZ",
       });
       assert.equal(res.success, true);

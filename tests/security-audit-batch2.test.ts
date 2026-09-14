@@ -76,6 +76,9 @@ describe("Audit STQ 2026-09-08 — Remediasi Batch 2 (P0 Persistence & Honest Re
         halamanMulai: 582,
         halamanSelesai: 582,
         jumlahHalaman: 1,
+        nilaiTajwid: "MUMTAZ",
+        nilaiFashahah: "MUMTAZ",
+        nilaiKelancaran: "MUMTAZ",
         nilai: "MUMTAZ",
       });
 

@@ -6,6 +6,12 @@ import {
   calculateLatestSabaqPosition,
 } from "./tahfizh-page-allocation";
 import { getStartOfWeekWITA } from "./laporan-bulanan";
+import {
+  deriveOverallNilai,
+  MistakeCounts,
+  DEFAULT_MISTAKE_COUNTS,
+  mistakeCountsSchema,
+} from "./tahfizh-quality";
 
 export interface CreateSetoranCoreInput {
   santriId: string;
@@ -15,7 +21,11 @@ export interface CreateSetoranCoreInput {
   halamanSelesai: number;
   jumlahHalaman: number;
   jumlahJuzMufar?: number | null;
-  nilai: NilaiSetoran;
+  nilaiTajwid?: NilaiSetoran | null;
+  nilaiFashahah?: NilaiSetoran | null;
+  nilaiKelancaran?: NilaiSetoran | null;
+  rincianKesalahan?: MistakeCounts | Record<string, unknown> | null;
+  nilai?: NilaiSetoran;
   catatan?: string | null;
   clientRequestId?: string | null;
   alasanLompatanHalaman?: string | null;
@@ -85,6 +95,39 @@ export async function saveSetoranTahfizhCore(
     }
     validatedJumlahJuzMufar = rawJuzMufar;
   }
+
+  // 1c. Validasi Dimensi Kualitas (Tajwid, Fashahah, Kelancaran & Rincian Kesalahan)
+  const validPredicates = Object.values(NilaiSetoran);
+  const effectiveTajwid = input.nilaiTajwid || input.nilai;
+  const effectiveFashahah = input.nilaiFashahah || input.nilai;
+  const effectiveKelancaran = input.nilaiKelancaran || input.nilai;
+
+  if (!effectiveTajwid || !validPredicates.includes(effectiveTajwid)) {
+    return { success: false, message: "Nilai Tajwid wajib diisi dengan predikat resmi." };
+  }
+  if (!effectiveFashahah || !validPredicates.includes(effectiveFashahah)) {
+    return { success: false, message: "Nilai Fashahah wajib diisi dengan predikat resmi." };
+  }
+  if (!effectiveKelancaran || !validPredicates.includes(effectiveKelancaran)) {
+    return { success: false, message: "Nilai Kelancaran wajib diisi dengan predikat resmi." };
+  }
+
+  let validatedRincianKesalahan: MistakeCounts = { ...DEFAULT_MISTAKE_COUNTS };
+  if (input.rincianKesalahan) {
+    const parseRes = mistakeCountsSchema.safeParse(input.rincianKesalahan);
+    if (!parseRes.success) {
+      const errorMsg = parseRes.error.issues.map((e) => e.message).join(", ");
+      return { success: false, message: `Rincian kesalahan tidak valid: ${errorMsg}` };
+    }
+    validatedRincianKesalahan = parseRes.data;
+  }
+
+  // Canonical server derivation: overall nilai = lowest of the 3 dimensions
+  const derivedOverallNilai = deriveOverallNilai({
+    tajwid: effectiveTajwid,
+    fashahah: effectiveFashahah,
+    kelancaran: effectiveKelancaran,
+  });
 
   // Hubungan volume dan rentang halaman secara konsisten
   if (input.jenis === "SABAQ") {
@@ -300,7 +343,11 @@ export async function saveSetoranTahfizhCore(
               halamanSelesai: halSelesai,
               jumlahHalaman: jmlHalaman,
               jumlahJuzMufar: input.jenis === "MUFAR" ? validatedJumlahJuzMufar : null,
-              nilai: input.nilai,
+              nilaiTajwid: effectiveTajwid,
+              nilaiFashahah: effectiveFashahah,
+              nilaiKelancaran: effectiveKelancaran,
+              nilai: derivedOverallNilai,
+              rincianKesalahan: validatedRincianKesalahan,
               catatan: input.catatan?.trim() || null,
               clientRequestId: input.clientRequestId?.trim() || null,
               status: "AKTIF",
@@ -328,7 +375,11 @@ export async function saveSetoranTahfizhCore(
                 halaman: `${halMulai}-${halSelesai}`,
                 jumlahHalaman: jmlHalaman,
                 ...(input.jenis === "MUFAR" ? { jumlahJuzMufar: created.jumlahJuzMufar } : {}),
-                nilai: input.nilai,
+                nilai: derivedOverallNilai,
+                nilaiTajwid: effectiveTajwid,
+                nilaiFashahah: effectiveFashahah,
+                nilaiKelancaran: effectiveKelancaran,
+                rincianKesalahan: validatedRincianKesalahan,
                 clientRequestId: input.clientRequestId || null,
                 alasanLompatanHalaman: input.alasanLompatanHalaman || null,
                 alasanManualSabaqi: input.alasanManualSabaqi || null,
