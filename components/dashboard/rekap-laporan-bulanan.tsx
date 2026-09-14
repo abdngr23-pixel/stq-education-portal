@@ -31,7 +31,6 @@ import {
   CANONICAL_MISTAKE_KEYS,
   MISTAKE_LABELS,
   MistakeCounts,
-  CanonicalMistakeKey,
 } from "@/lib/tahfizh-quality";
 import {
   getLaporanBulananHalaqohAction,

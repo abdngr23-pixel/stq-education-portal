@@ -426,7 +426,7 @@ export function TahfizhModule({
     nilaiTajwid?: string | null;
     nilaiFashahah?: string | null;
     nilaiKelancaran?: string | null;
-    rincianKesalahan?: any;
+    rincianKesalahan?: unknown;
     tanggal: string;
   }>>([]);
 

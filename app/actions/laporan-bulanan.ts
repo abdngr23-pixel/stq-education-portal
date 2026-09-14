@@ -12,7 +12,6 @@ import {
 import {
   VALID_NILAI_SETORAN_VALUES,
   mistakeCountsSchema,
-  DEFAULT_MISTAKE_COUNTS,
   MistakeCounts,
 } from "@/lib/tahfizh-quality";
 import {

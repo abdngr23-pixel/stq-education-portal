@@ -1,11 +1,15 @@
 import "server-only";
 
-import { PrismaClient, Prisma, JenisKelamin } from "@prisma/client";
+import { PrismaClient, Prisma, JenisKelamin, NilaiSetoran } from "@prisma/client";
 import { UserSession } from "@/types/auth";
 import { prisma as defaultPrisma } from "@/lib/prisma";
 import { isTodayWita, getWitaDateString } from "@/lib/wita-date";
 import { getStartOfWeekWITA } from "@/lib/sabaqi";
 import { calculateLatestSabaqPosition } from "@/lib/tahfizh-page-allocation";
+import {
+  calculateQualityTrend,
+  DimensionTrendSummary,
+} from "@/lib/tahfizh-quality";
 
 import {
   determineTahfizhDailyStatus,
@@ -67,6 +71,11 @@ export interface SantriListItem {
   setoranTerakhirAt: string | null;
   sudahSetorHariIni: boolean;
   nilaiTerakhir: string;
+  hasStructuredQuality?: boolean;
+  nilaiTajwidTerakhir?: NilaiSetoran | null;
+  nilaiFashahahTerakhir?: NilaiSetoran | null;
+  nilaiKelancaranTerakhir?: NilaiSetoran | null;
+  qualityTrend?: DimensionTrendSummary;
   poinPelanggaran: number;
   bintangKebaikan: number;
 }
@@ -177,6 +186,10 @@ export async function getSantriListForSession(
             catatan: true,
             juz: true,
             nilai: true,
+            nilaiTajwid: true,
+            nilaiFashahah: true,
+            nilaiKelancaran: true,
+            rincianKesalahan: true,
           },
         },
         targetList: {
@@ -325,6 +338,31 @@ export async function getSantriListForSession(
         refDate: targetRefDate,
       });
 
+      // 2 setoran terstruktur valid terakhir (non-DIBATALKAN dan memiliki nilaiTajwid)
+      const validStructuredSetoran = validSetoranList.filter((st) => st.nilaiTajwid !== null);
+      const latestStructured = validStructuredSetoran[0] || null;
+      const previousStructured = validStructuredSetoran[1] || null;
+
+      const hasStructuredQuality = Boolean(latestStructured);
+      const qualityTrend = calculateQualityTrend(
+        previousStructured
+          ? {
+              tajwid: previousStructured.nilaiTajwid,
+              fashahah: previousStructured.nilaiFashahah,
+              kelancaran: previousStructured.nilaiKelancaran,
+              overall: previousStructured.nilai,
+            }
+          : null,
+        latestStructured
+          ? {
+              tajwid: latestStructured.nilaiTajwid,
+              fashahah: latestStructured.nilaiFashahah,
+              kelancaran: latestStructured.nilaiKelancaran,
+              overall: latestStructured.nilai,
+            }
+          : null
+      );
+
       return {
         id: s.id,
         nis: s.nis,
@@ -367,6 +405,11 @@ export async function getSantriListForSession(
         setoranTerakhirAt,
         sudahSetorHariIni: statusTahfizhHariIni.sudahSetorHariIni,
         nilaiTerakhir,
+        hasStructuredQuality,
+        nilaiTajwidTerakhir: latestStructured?.nilaiTajwid || null,
+        nilaiFashahahTerakhir: latestStructured?.nilaiFashahah || null,
+        nilaiKelancaranTerakhir: latestStructured?.nilaiKelancaran || null,
+        qualityTrend,
         poinPelanggaran: s._count.pelanggaranList || 0,
         bintangKebaikan: s._count.bintangList || 0,
       };

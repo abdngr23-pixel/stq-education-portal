@@ -130,7 +130,7 @@ export const evaluasiRubuSchema = z.object({
   tanggal: z.union([z.date(), z.string()]).optional().nullable(),
 });
 
-export type EvaluasiRubuInput = z.infer<typeof evaluasiRubuSchema>;
+export type EvaluasiRubuInput = z.input<typeof evaluasiRubuSchema>;
 
 /**
  * 4. Skema Validasi Nilai Mapel Akademik

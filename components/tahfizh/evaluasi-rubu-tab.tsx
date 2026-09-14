@@ -23,13 +23,12 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Calendar,
   User,
   History,
 } from "lucide-react";
 
 interface EvaluasiRubuTabProps {
-  userRole: Role;
+  userRole?: Role;
   santriList: Array<{
     id: string;
     nama: string;
@@ -56,9 +55,7 @@ interface EvaluasiRubuRecord {
 }
 
 export function EvaluasiRubuTab({
-  userRole,
   santriList,
-  isKepalaBidangTahfidz,
 }: EvaluasiRubuTabProps) {
   const [selectedSantriId, setSelectedSantriId] = useState<string>(santriList[0]?.id || "");
   const [juz, setJuz] = useState<number>(1);
@@ -100,7 +97,15 @@ export function EvaluasiRubuTab({
   };
 
   useEffect(() => {
-    fetchRecords();
+    let isMounted = true;
+    getEvaluasiRubuListAction({ limit: 50 }).then((res) => {
+      if (isMounted && res.success && Array.isArray(res.data)) {
+        setRecords(res.data as unknown as EvaluasiRubuRecord[]);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const handleCounterChange = (key: CanonicalMistakeKey, delta: number) => {
