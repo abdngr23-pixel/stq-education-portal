@@ -117,9 +117,6 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
       // Abaikan jika query halaqoh gagal
     }
   }
-  if (!halaqohName && user.staff?.staffCode) {
-    halaqohName = getHalaqohByStaff(user.staff.staffCode);
-  }
 
   const isKabid = Boolean(user.staff?.isKepalaBidangTahfidz);
   const isPetugasPresensiPutri = Boolean(user.isPetugasPresensiPutri);

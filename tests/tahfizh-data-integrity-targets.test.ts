@@ -6,8 +6,8 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
 import { startTestDatabase, stopTestDatabase } from "./test-db-manager";
-import { setTestSession } from "../lib/auth";
-import { UserSession } from "../types/auth";
+import { setTestSession, resolveVerifiedSessionPayload } from "../lib/auth";
+import { UserSession, AuthTokenPayload } from "../types/auth";
 import { getSantriListForSession } from "../lib/server/santri-list-service";
 import {
   getLaporanBulananHalaqohAction,
@@ -25,6 +25,10 @@ import {
   getRecentSetoranAction,
 } from "../app/actions/tahfizh";
 import {
+  getHalaqohListAction,
+  getHalaqohDetailAction,
+} from "../app/actions/halaqoh";
+import {
   previewFinalisasiBulananAction,
   prosesRewardTasmiSimaanAction,
   getKebijakanRewardSanksiAction,
@@ -41,7 +45,7 @@ import {
   hitungAkumulasiSabaqSantri,
   getPekanDariTanggal,
 } from "../lib/laporan-bulanan";
-import { getWITAMonthRange } from "../lib/wita-date";
+import { getWITAMonthRange, getCurrentWITAMonth } from "../lib/wita-date";
 
 describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (43 Skenario Lengkap)", () => {
   let prisma: PrismaClient;
@@ -1767,5 +1771,191 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (43 Skena
     assert.ok(content.includes("fetchHalaqohData"));
     assert.ok(content.includes("halaqohListError"));
   });
+
+  // -------------------------------------------------------------
+  // 50: ABAC Enforce & Minimal Projection pada getHalaqohListAction & getHalaqohDetailAction
+  // -------------------------------------------------------------
+  it("50. ABAC enforce dan minimal projection pada getHalaqohListAction dan getHalaqohDetailAction", async () => {
+    // 1. Unauthenticated -> Deny
+    setTestSession(null);
+    const unauthList = await getHalaqohListAction();
+    assert.equal(unauthList.success, false);
+    assert.match(unauthList.message ?? "", /Sesi telah berakhir/i);
+
+    const unauthDetail = await getHalaqohDetailAction(HALAQOH_1_ID);
+    assert.equal(unauthDetail.success, false);
+    assert.match(unauthDetail.message ?? "", /Sesi telah berakhir/i);
+
+    // 2. MT tanpa staffId -> Deny
+    setTestSession(sessionMTNoStaff);
+    const noStaffList = await getHalaqohListAction();
+    assert.equal(noStaffList.success, false);
+    assert.match(noStaffList.message ?? "", /Akses Ditolak/i);
+
+    const noStaffDetail = await getHalaqohDetailAction(HALAQOH_1_ID);
+    assert.equal(noStaffDetail.success, false);
+    assert.match(noStaffDetail.message ?? "", /Akses Ditolak/i);
+
+    // 3. Unauthorized role (WS) -> Deny
+    const sessionWali: UserSession = {
+      userId: "usr-wali-01",
+      username: "wali.01",
+      name: "Wali Santri",
+      role: "WS",
+      staffId: null,
+      santriId: "san-01",
+    };
+    setTestSession(sessionWali);
+    const waliList = await getHalaqohListAction();
+    assert.equal(waliList.success, false);
+    assert.match(waliList.message ?? "", /Akses Ditolak/i);
+
+    const waliDetail = await getHalaqohDetailAction(HALAQOH_1_ID);
+    assert.equal(waliDetail.success, false);
+    assert.match(waliDetail.message ?? "", /Akses Ditolak/i);
+
+    // 4. MT own halaqoh -> Allow & Minimal Projection
+    setTestSession(sessionMT1);
+    const mt1List = await getHalaqohListAction();
+    assert.equal(mt1List.success, true);
+    assert.equal(mt1List.data.length, 1);
+    assert.equal(mt1List.data[0].id, HALAQOH_1_ID);
+
+    const item = mt1List.data[0];
+    assert.ok(item.id);
+    assert.ok(item.halaqohCode);
+    assert.ok(item.nama);
+    assert.ok(item.tahunAjaran);
+    assert.ok(item.status);
+    assert.ok(item.pembina);
+    assert.equal(item.pembina.id, STAFF_MT_1_ID);
+    assert.ok(item.pembina.nama);
+    assert.ok(item._count && typeof item._count.santriList === "number");
+
+    // Pastikan tidak mengekspos field staf yang tidak diperlukan
+    assert.equal((item.pembina as Record<string, unknown>).telepon, undefined);
+    assert.equal((item.pembina as Record<string, unknown>).alamat, undefined);
+    assert.equal((item.pembina as Record<string, unknown>).email, undefined);
+
+    const mt1Detail = await getHalaqohDetailAction(HALAQOH_1_ID);
+    assert.equal(mt1Detail.success, true);
+    assert.equal(mt1Detail.data?.id, HALAQOH_1_ID);
+
+    // 5. MT cross-halaqoh -> Deny
+    const mt1CrossDetail = await getHalaqohDetailAction(HALAQOH_2_ID);
+    assert.equal(mt1CrossDetail.success, false);
+    assert.match(mt1CrossDetail.message ?? "", /Akses Ditolak/i);
+
+    // 6. Kabid Tahfizh -> Global Allow
+    setTestSession(sessionKabid);
+    const kabidList = await getHalaqohListAction();
+    assert.equal(kabidList.success, true);
+    assert.ok(kabidList.data.length >= 2);
+
+    const kabidDetail1 = await getHalaqohDetailAction(HALAQOH_1_ID);
+    assert.equal(kabidDetail1.success, true);
+    const kabidDetail2 = await getHalaqohDetailAction(HALAQOH_2_ID);
+    assert.equal(kabidDetail2.success, true);
+  });
+
+  // -------------------------------------------------------------
+  // 51: Eliminasi Fallback Halaqoh Statis dari Jalur Sesi Produksi
+  // -------------------------------------------------------------
+  it("51. Production-like verified user dengan staffCode tetapi tanpa relasi halaqoh DB menghasilkan halaqohName null", async () => {
+    // Buat staf dan user aktif dengan staffCode STF001 (yang ada di STAFF_HALAQOH_MAP)
+    // tetapi TIDAK memiliki relasi halaqoh sama sekali di database
+    const testStaffNoHalaqoh = await prisma.staff.upsert({
+      where: { id: "stf-no-hlq-prod" },
+      update: { staffCode: "STF001", status: "AKTIF" },
+      create: {
+        id: "stf-no-hlq-prod",
+        staffCode: "STF001",
+        nama: "Ust. Staf Tanpa Halaqoh",
+        roleStaff: "MT",
+        noHp: "08999999999",
+        status: "AKTIF",
+      },
+    });
+
+    const testUserNoHalaqoh = await prisma.user.upsert({
+      where: { id: "usr-no-hlq-prod" },
+      update: { role: "MT", status: "AKTIF", staffId: testStaffNoHalaqoh.id },
+      create: {
+        id: "usr-no-hlq-prod",
+        username: "staf.nohalaqoh.prod",
+        passwordHash: "hash-dummy",
+        role: "MT",
+        status: "AKTIF",
+        staffId: testStaffNoHalaqoh.id,
+      },
+    });
+
+    const countDipimpin = await prisma.halaqoh.count({
+      where: { pembinaId: testStaffNoHalaqoh.id },
+    });
+    assert.equal(countDipimpin, 0);
+
+    const tokenPayload: AuthTokenPayload = {
+      sub: testUserNoHalaqoh.id,
+      username: testUserNoHalaqoh.username,
+      role: "MT",
+    };
+
+    const sessionResolved = await resolveVerifiedSessionPayload(tokenPayload);
+    assert.ok(sessionResolved);
+    assert.equal(sessionResolved.userId, testUserNoHalaqoh.id);
+    assert.equal(sessionResolved.staffCode, "STF001");
+    // HALAQOH HARUS NULL, bukan nama halaqoh statis dari mapping!
+    assert.equal(sessionResolved.halaqohName, null);
+
+    // Verifikasi juga penghapusan fallback pada app/page.tsx dan app/actions/auth.ts
+    const pageContent = fs.readFileSync(path.resolve(process.cwd(), "app/page.tsx"), "utf-8");
+    assert.ok(!pageContent.includes("getHalaqohByStaff(activeStaffKey)"));
+
+    const authActionContent = fs.readFileSync(path.resolve(process.cwd(), "app/actions/auth.ts"), "utf-8");
+    assert.ok(!authActionContent.includes("getHalaqohByStaff(user.staff.staffCode)"));
+  });
+
+  // -------------------------------------------------------------
+  // 52: Dynamic Monthly Reporting Period dan Academic Year dari Database
+  // -------------------------------------------------------------
+  it("52. Dynamic Monthly Reporting Period dan tahun ajaran dinamis dari database (zero hardcoded)", () => {
+    // 1. getCurrentWITAMonth deterministic test
+    // September 2026 WITA
+    const septDate = new Date("2026-09-14T04:00:00.000Z"); // 12:00 WITA
+    assert.equal(getCurrentWITAMonth(septDate), 9);
+
+    // Oktober 2026 WITA
+    const oktDate = new Date("2026-10-01T00:00:00.000Z"); // 08:00 WITA
+    assert.equal(getCurrentWITAMonth(oktDate), 10);
+
+    // Boundary check di WITA (UTC+8)
+    const endSeptWita = new Date("2026-09-30T15:59:59.000Z"); // 23:59:59 WITA
+    assert.equal(getCurrentWITAMonth(endSeptWita), 9);
+
+    const startOktWita = new Date("2026-09-30T16:00:00.000Z"); // 00:00:00 WITA 1 Okt
+    assert.equal(getCurrentWITAMonth(startOktWita), 10);
+
+    // 2. Audit rekap-laporan-bulanan.tsx source
+    const rekapContent = fs.readFileSync(
+      path.resolve(process.cwd(), "components/dashboard/rekap-laporan-bulanan.tsx"),
+      "utf-8"
+    );
+
+    // Zero hardcoded operational default
+    assert.ok(!rekapContent.includes('"2026/2027"'));
+    assert.ok(!rekapContent.includes('"2025/2026"'));
+    assert.ok(!rekapContent.includes("useState<number>(9)"));
+    assert.ok(!rekapContent.includes("useState(9)"));
+
+    // Wajib menggunakan getCurrentWITAMonth
+    assert.ok(rekapContent.includes("getCurrentWITAMonth(refDate)"));
+
+    // Wajib mengekstrak tahun ajaran dari halaqohList (database)
+    assert.ok(rekapContent.includes("availableTahunAjaranList"));
+    assert.ok(rekapContent.includes("h.tahunAjaran"));
+    assert.ok(rekapContent.includes("effectiveTahunAjaran"));
+  });
 });
+
 

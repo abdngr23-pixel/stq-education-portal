@@ -121,3 +121,14 @@ export function getWITAMonthRange(year: number, month: number): { startDate: Dat
   const endDate = new Date(Date.UTC(year, month - 1, lastDay, 15, 59, 59, 999));
   return { startDate, endDate };
 }
+
+/**
+ * Mengembalikan nomor bulan kalender (1-12) di zona waktu WITA (Asia/Makassar, UTC+8).
+ * Menerima refDate opsional untuk keperluan pengujian deterministik.
+ */
+export function getCurrentWITAMonth(date?: Date | string | number | null): number {
+  const dateStr = getTodayWITADateString(date);
+  if (!dateStr) return new Date().getMonth() + 1;
+  const parts = dateStr.split("-");
+  return Number(parts[1]) || (new Date().getMonth() + 1);
+}

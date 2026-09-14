@@ -50,7 +50,7 @@ export interface TahfizhModuleProps {
   currentUserName: string;
   currentHalaqohName?: string | null;
   santriList: DashboardSantriSummary[];
-  halaqohList: Array<{ id: string; nama: string }>;
+  halaqohList: Array<{ id: string; nama: string; tahunAjaran?: string }>;
   initialOpenForm?: boolean;
   initialSelectedSantriId?: string;
   isKepalaBidangTahfidz?: boolean;

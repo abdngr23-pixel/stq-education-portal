@@ -2,6 +2,7 @@
 
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
+import { Prisma } from "@prisma/client";
 
 export interface CreateHalaqohInput {
   nama: string;
@@ -10,14 +11,45 @@ export interface CreateHalaqohInput {
 }
 
 /**
- * Server Action: Mengambil daftar seluruh halaqoh
+ * Server Action: Mengambil daftar halaqoh (dengan otorisasi sesi & scoping ABAC)
  */
 export async function getHalaqohListAction() {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, data: [], message: "Sesi telah berakhir. Silakan login kembali." };
+  }
+
+  const where: Prisma.HalaqohWhereInput = {};
+
+  if (["KS", "ADM", "YAY"].includes(session.role) || session.isKepalaBidangTahfidz) {
+    // Read global diperbolehkan untuk KS, ADM, YAY, dan Kabid Tahfidz
+  } else if (session.role === "MT" || session.role === "PH") {
+    if (!session.staffId) {
+      return { success: false, data: [], message: "Akses Ditolak: Profil staf belum terhubung." };
+    }
+    where.pembinaId = session.staffId;
+  } else if (session.role === "MK") {
+    // MK diperbolehkan membaca daftar halaqoh untuk monitoring data santri / asrama
+  } else {
+    return { success: false, data: [], message: "Akses Ditolak: Anda tidak memiliki wewenang untuk melihat daftar halaqoh." };
+  }
+
   try {
     const list = await prisma.halaqoh.findMany({
+      where,
       orderBy: { nama: "asc" },
-      include: {
-        pembina: true,
+      select: {
+        id: true,
+        halaqohCode: true,
+        nama: true,
+        tahunAjaran: true,
+        status: true,
+        pembina: {
+          select: {
+            id: true,
+            nama: true,
+          },
+        },
         _count: {
           select: { santriList: true },
         },
@@ -32,17 +64,63 @@ export async function getHalaqohListAction() {
 }
 
 /**
- * Server Action: Mengambil detail halaqoh dan daftar santri di dalamnya
+ * Server Action: Mengambil detail halaqoh dan daftar santri di dalamnya (ABAC fail-closed)
  */
 export async function getHalaqohDetailAction(halaqohId: string) {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
+  }
+
+  if (!halaqohId) {
+    return { success: false, message: "ID halaqoh wajib diberikan." };
+  }
+
+  if (["KS", "ADM", "YAY"].includes(session.role) || session.isKepalaBidangTahfidz) {
+    // Read global diperbolehkan
+  } else if (session.role === "MT" || session.role === "PH") {
+    if (!session.staffId) {
+      return { success: false, message: "Akses Ditolak: Profil staf belum terhubung." };
+    }
+    const checkBinaan = await prisma.halaqoh.findFirst({
+      where: { id: halaqohId, pembinaId: session.staffId },
+      select: { id: true },
+    });
+    if (!checkBinaan) {
+      return { success: false, message: "Akses Ditolak: Anda hanya berwenang melihat detail halaqoh binaan Anda sendiri." };
+    }
+  } else if (session.role === "MK") {
+    // MK diperbolehkan membaca detail halaqoh untuk kebutuhan asrama
+  } else {
+    return { success: false, message: "Akses Ditolak: Anda tidak memiliki wewenang untuk melihat detail halaqoh ini." };
+  }
+
   try {
     const halaqoh = await prisma.halaqoh.findUnique({
       where: { id: halaqohId },
-      include: {
-        pembina: true,
+      select: {
+        id: true,
+        halaqohCode: true,
+        nama: true,
+        tahunAjaran: true,
+        status: true,
+        pembina: {
+          select: {
+            id: true,
+            nama: true,
+          },
+        },
         santriList: {
           where: { status: "AKTIF" },
           orderBy: { nama: "asc" },
+          select: {
+            id: true,
+            nis: true,
+            nama: true,
+            kelas: true,
+            jenisKelamin: true,
+            status: true,
+          },
         },
       },
     });

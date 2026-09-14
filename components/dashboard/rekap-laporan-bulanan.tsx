@@ -21,6 +21,7 @@ import {
   Lock,
 } from "lucide-react";
 import { exportToCSV } from "@/lib/export-csv";
+import { getCurrentWITAMonth } from "@/lib/wita-date";
 import {
   getLaporanBulananHalaqohAction,
   inputCapaianPekananAction,
@@ -45,13 +46,14 @@ const BULAN_NAMES = [
 ];
 
 export interface RekapLaporanBulananProps {
-  halaqohList?: Array<{ id: string; nama: string }>;
+  halaqohList?: Array<{ id: string; nama: string; tahunAjaran?: string }>;
   initialHalaqohId?: string;
   userRole?: string;
   currentHalaqohName?: string | null;
   currentUserName?: string | null;
   isKepalaBidangTahfidz?: boolean;
   onPrintPreview?: (data: LaporanBulananData) => void;
+  refDate?: Date;
 }
 
 export function RekapLaporanBulanan({
@@ -61,10 +63,22 @@ export function RekapLaporanBulanan({
   currentHalaqohName,
   isKepalaBidangTahfidz,
   onPrintPreview,
+  refDate,
 }: RekapLaporanBulananProps) {
   // Otoritas Kepala Bidang Tahfidz: Ditentukan murni dari flag database isKepalaBidangTahfidz
   const isKabid = Boolean(isKepalaBidangTahfidz);
   const isLockedMusyrif = (userRole === "MT" || userRole === "PH") && !isKabid;
+
+  // Daftar unik tahun ajaran dari pangkalan data (diambil dari halaqohList)
+  const availableTahunAjaranList = useMemo(() => {
+    const set = new Set<string>();
+    (halaqohList || []).forEach((h) => {
+      if (h.tahunAjaran && h.tahunAjaran.trim()) {
+        set.add(h.tahunAjaran.trim());
+      }
+    });
+    return Array.from(set).sort().reverse();
+  }, [halaqohList]);
 
   // Resolusi halaqoh binaan staf untuk role MT / PH (ABAC Enforced)
   const resolvedHalaqoh = useMemo(() => {
@@ -113,11 +127,41 @@ export function RekapLaporanBulanan({
     }
   }
 
-  const [selectedBulan, setSelectedBulan] = useState<number>(9); // September (bulan berjalan di roadmap)
-  const [selectedTahunAjaran, setSelectedTahunAjaran] = useState<string>("2026/2027");
+  // Bulan default berasal dari kalender WITA (Asia/Makassar, UTC+8)
+  const [selectedBulan, setSelectedBulan] = useState<number>(() => getCurrentWITAMonth(refDate));
+
+  // Tahun ajaran: Dinamis dari database (halaqohList)
+  // Untuk MT/PH locked: gunakan tahunAjaran halaqoh binaan yang berhasil di-resolve
+  // Untuk KS/ADM/YAY/Kabid: otomatis jika 1 pilihan, jika > 1 wajib dipilih dan jangan menebak
+  const [selectedTahunAjaran, setSelectedTahunAjaran] = useState<string>(() => {
+    if (isLockedMusyrif) {
+      return resolvedHalaqoh.tahunAjaran || "";
+    }
+    if (availableTahunAjaranList.length === 1) {
+      return availableTahunAjaranList[0];
+    }
+    return "";
+  });
+
+  const effectiveTahunAjaran = useMemo(() => {
+    if (isLockedMusyrif) {
+      return resolvedHalaqoh.tahunAjaran || "";
+    }
+    if (selectedTahunAjaran && availableTahunAjaranList.includes(selectedTahunAjaran)) {
+      return selectedTahunAjaran;
+    }
+    if (availableTahunAjaranList.length === 1) {
+      return availableTahunAjaranList[0];
+    }
+    return "";
+  }, [isLockedMusyrif, resolvedHalaqoh.tahunAjaran, selectedTahunAjaran, availableTahunAjaranList]);
+
   const [activeSubTab, setActiveSubTab] = useState<"tahfizh" | "mutabaah" | "tasmi_simaan">("tahfizh");
   
-  const [laporanData, setLaporanData] = useState<LaporanBulananData | null>(null);
+  const [rawLaporanData, setRawLaporanData] = useState<LaporanBulananData | null>(null);
+  const currentTargetHalaqohId = isLockedMusyrif ? resolvedHalaqoh.id : selectedHalaqohId;
+  const laporanData = (currentTargetHalaqohId && effectiveTahunAjaran) ? rawLaporanData : null;
+
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -143,20 +187,23 @@ export function RekapLaporanBulanan({
 
   // Fetch report data
   const loadData = React.useCallback(async (hId: string, bln: number, ta: string) => {
-    if (!hId) return;
+    if (!hId || !ta) {
+      setRawLaporanData(null);
+      return;
+    }
     setErrorMessage(null);
     try {
       const res = await getLaporanBulananHalaqohAction(hId, bln, ta);
       if (res.success && res.data) {
-        setLaporanData(res.data);
+        setRawLaporanData(res.data);
         setErrorMessage(null);
       } else {
-        setLaporanData(null);
+        setRawLaporanData(null);
         setErrorMessage(res.message || "Gagal memuat rekap laporan bulanan.");
       }
     } catch (err) {
       console.error("Gagal memuat rekap laporan bulanan:", err);
-      setLaporanData(null);
+      setRawLaporanData(null);
       setErrorMessage("Gagal memuat data laporan bulanan dari pangkalan data.");
     }
   }, []);
@@ -164,30 +211,32 @@ export function RekapLaporanBulanan({
   useEffect(() => {
     let ignore = false;
     const targetHalaqoh = isLockedMusyrif ? resolvedHalaqoh.id : selectedHalaqohId;
-    if (!targetHalaqoh) return;
+    if (!targetHalaqoh || !effectiveTahunAjaran) {
+      return;
+    }
 
-    getLaporanBulananHalaqohAction(targetHalaqoh, selectedBulan, selectedTahunAjaran)
+    getLaporanBulananHalaqohAction(targetHalaqoh, selectedBulan, effectiveTahunAjaran)
       .then((res) => {
         if (ignore) return;
         if (res.success && res.data) {
-          setLaporanData(res.data);
+          setRawLaporanData(res.data);
           setErrorMessage(null);
         } else {
-          setLaporanData(null);
+          setRawLaporanData(null);
           setErrorMessage(res.message || "Gagal memuat rekap laporan bulanan.");
         }
       })
       .catch((err) => {
         if (ignore) return;
         console.error("Gagal mengambil data laporan bulanan:", err);
-        setLaporanData(null);
+        setRawLaporanData(null);
         setErrorMessage("Gagal memuat data laporan bulanan dari pangkalan data.");
       });
 
     return () => {
       ignore = true;
     };
-  }, [selectedHalaqohId, selectedBulan, selectedTahunAjaran, isLockedMusyrif, resolvedHalaqoh.id]);
+  }, [selectedHalaqohId, selectedBulan, effectiveTahunAjaran, isLockedMusyrif, resolvedHalaqoh.id]);
 
   const handleExportCSV = () => {
     if (!laporanData) return;
@@ -232,7 +281,7 @@ export function RekapLaporanBulanan({
           (r.tahfizh.mufar.targetBulanan !== null ? `${r.tahfizh.mufar.targetBulanan}x` : "Target belum ditetapkan"),
         r.tahfizh.mufar.totalFrekuensi,
       ]);
-      exportToCSV(`Laporan_Tahfizh_${BULAN_NAMES[selectedBulan - 1]}_${selectedTahunAjaran.replace("/", "_")}`, headers, rows);
+      exportToCSV(`Laporan_Tahfizh_${BULAN_NAMES[selectedBulan - 1]}_${(effectiveTahunAjaran || "").replace("/", "_")}`, headers, rows);
     } else if (activeSubTab === "mutabaah") {
       const headers = [
         "NIS",
@@ -273,7 +322,7 @@ export function RekapLaporanBulanan({
           allTuntas ? "Tuntas Seluruhnya" : "Sebagian Belum Tuntas",
         ];
       });
-      exportToCSV(`Laporan_Mutabaah_${BULAN_NAMES[selectedBulan - 1]}_${selectedTahunAjaran.replace("/", "_")}`, headers, rows);
+      exportToCSV(`Laporan_Mutabaah_${BULAN_NAMES[selectedBulan - 1]}_${(effectiveTahunAjaran || "").replace("/", "_")}`, headers, rows);
     } else {
       const headers = ["NIS", "Nama Santri", "Kelas", "Simaan (Kali)", "Tasmi (Kali)", "Rata-rata Nilai", "Ringkasan Resmi"];
       const rows = laporanData.rekapSantri.map((r) => [
@@ -285,18 +334,19 @@ export function RekapLaporanBulanan({
         r.tasmiSimaan.rataRataNilai,
         r.tasmiSimaan.ringkasanTeks,
       ]);
-      exportToCSV(`Laporan_Tasmi_Simaan_${BULAN_NAMES[selectedBulan - 1]}_${selectedTahunAjaran.replace("/", "_")}`, headers, rows);
+      exportToCSV(`Laporan_Tasmi_Simaan_${BULAN_NAMES[selectedBulan - 1]}_${(effectiveTahunAjaran || "").replace("/", "_")}`, headers, rows);
     }
   };
 
   const handleSaveMutabaah = async () => {
-    if (!modalSantri) return;
+    if (!modalSantri || !effectiveTahunAjaran) return;
+    const targetHalaqoh = isLockedMusyrif ? resolvedHalaqoh.id : selectedHalaqohId;
     startTransition(async () => {
       const res = await inputCapaianPekananAction({
         santriId: modalSantri.id,
         kategori: modalKategori,
         bulan: selectedBulan,
-        tahunAjaran: selectedTahunAjaran,
+        tahunAjaran: effectiveTahunAjaran,
         hbl: Number(modalHBL),
         pekan1: Number(modalP1),
         pekan2: Number(modalP2),
@@ -307,7 +357,7 @@ export function RekapLaporanBulanan({
       if (res.success) {
         setNotification({ type: "success", message: res.message });
         setShowModalMutabaah(false);
-        loadData(selectedHalaqohId, selectedBulan, selectedTahunAjaran);
+        loadData(targetHalaqoh, selectedBulan, effectiveTahunAjaran);
       } else {
         setNotification({ type: "error", message: res.message });
       }
@@ -315,7 +365,8 @@ export function RekapLaporanBulanan({
   };
 
   const handleSaveTest = async () => {
-    if (!testSantriId) return;
+    if (!testSantriId || !effectiveTahunAjaran) return;
+    const targetHalaqoh = isLockedMusyrif ? resolvedHalaqoh.id : selectedHalaqohId;
     startTransition(async () => {
       const res = await recordTasmiSimaanAction({
         santriId: testSantriId,
@@ -330,7 +381,7 @@ export function RekapLaporanBulanan({
         setNotification({ type: "success", message: res.message });
         setShowModalTest(false);
         setTestCatatan("");
-        loadData(selectedHalaqohId, selectedBulan, selectedTahunAjaran);
+        loadData(targetHalaqoh, selectedBulan, effectiveTahunAjaran);
       } else {
         setNotification({ type: "error", message: res.message });
       }
@@ -466,14 +517,57 @@ export function RekapLaporanBulanan({
               <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 block">
                 Tahun Ajaran
               </label>
-              <select
-                value={selectedTahunAjaran}
-                onChange={(e) => setSelectedTahunAjaran(e.target.value)}
-                className="w-full min-h-[42px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-[#0E7C3A]/20 focus:border-[#0E7C3A]"
-              >
-                <option value="2026/2027">2026/2027 (Berjalan)</option>
-                <option value="2025/2026">2025/2026</option>
-              </select>
+              {isLockedMusyrif ? (
+                <div className="space-y-1">
+                  <div className="relative">
+                    <select
+                      id="filter-tahun-ajaran"
+                      disabled
+                      value={effectiveTahunAjaran}
+                      className="w-full min-h-[42px] px-3 py-2 pr-8 rounded-xl bg-slate-100 border border-slate-300 text-xs sm:text-sm font-semibold text-slate-700 cursor-not-allowed opacity-90 select-none"
+                    >
+                      {effectiveTahunAjaran ? (
+                        <option value={effectiveTahunAjaran}>🔒 {effectiveTahunAjaran}</option>
+                      ) : (
+                        <option value="">🔒 Tahun ajaran belum ditentukan</option>
+                      )}
+                    </select>
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                      <Lock className="h-4 w-4" />
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-amber-700 font-medium">
+                    Tahun ajaran terkunci mengikuti data halaqoh binaan.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <select
+                    id="filter-tahun-ajaran"
+                    value={effectiveTahunAjaran}
+                    onChange={(e) => setSelectedTahunAjaran(e.target.value)}
+                    disabled={availableTahunAjaranList.length === 0}
+                    className="w-full min-h-[42px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-[#0E7C3A]/20 focus:border-[#0E7C3A] cursor-pointer"
+                  >
+                    {availableTahunAjaranList.length === 0 && (
+                      <option value="">Tidak ada tahun ajaran di database</option>
+                    )}
+                    {availableTahunAjaranList.length > 1 && (
+                      <option value="">-- Pilih Tahun Ajaran --</option>
+                    )}
+                    {availableTahunAjaranList.map((ta) => (
+                      <option key={ta} value={ta}>
+                        {ta}
+                      </option>
+                    ))}
+                  </select>
+                  {availableTahunAjaranList.length > 1 && !effectiveTahunAjaran && (
+                    <p className="text-[10px] text-amber-700 font-medium">
+                      Pilih tahun ajaran untuk memuat rekapitulasi.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
@@ -517,7 +611,7 @@ export function RekapLaporanBulanan({
             className="bg-white hover:bg-slate-50 border border-slate-200 text-xs"
             onClick={() => {
               const targetHalaqoh = isLockedMusyrif ? resolvedHalaqoh.id : selectedHalaqohId;
-              loadData(targetHalaqoh, selectedBulan, selectedTahunAjaran);
+              loadData(targetHalaqoh, selectedBulan, effectiveTahunAjaran);
             }}
           >
             Coba Lagi
@@ -535,6 +629,25 @@ export function RekapLaporanBulanan({
             </h4>
             <p className="text-xs text-slate-600 max-w-md">
               Sistem tidak dapat menghubungkan profil Anda ke halaqoh binaan terdaftar. Laporan halaqoh lain tidak dapat diakses untuk menjaga integritas data (ABAC).
+            </p>
+          </div>
+        </Card>
+      )}
+
+      {/* Honest State: Tahun Ajaran Belum Dipilih / Tidak Tersedia */}
+      {!effectiveTahunAjaran && !(isLockedMusyrif && !resolvedHalaqoh.id) && (
+        <Card rounded="3xl" className="border border-slate-200 bg-slate-50/70 p-8 text-center my-4 shadow-xs">
+          <div className="flex flex-col items-center justify-center space-y-3">
+            <AlertCircle className="w-10 h-10 text-slate-400" />
+            <h4 className="text-base font-bold text-slate-800">
+              {availableTahunAjaranList.length === 0
+                ? "Data Tahun Ajaran Belum Tersedia"
+                : "Silakan Pilih Tahun Ajaran"}
+            </h4>
+            <p className="text-xs text-slate-600 max-w-md">
+              {availableTahunAjaranList.length === 0
+                ? "Tidak ada data tahun ajaran aktif yang ditemukan pada pangkalan data halaqoh."
+                : "Terdapat lebih dari satu tahun ajaran di pangkalan data. Silakan pilih tahun ajaran pada menu dropdown di atas."}
             </p>
           </div>
         </Card>
@@ -654,7 +767,7 @@ export function RekapLaporanBulanan({
                 </CardDescription>
               </div>
               <Badge variant="green" size="sm">
-                Bulan {selectedBulan} - {BULAN_NAMES[selectedBulan - 1]} {selectedTahunAjaran}
+                Bulan {selectedBulan} - {BULAN_NAMES[selectedBulan - 1]} {effectiveTahunAjaran || "-"}
               </Badge>
             </div>
           </CardHeader>

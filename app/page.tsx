@@ -13,7 +13,6 @@ import {
 } from "@/types/navigation";
 import {
   Role,
-  getHalaqohByStaff,
 } from "@/types/auth";
 import { getCurrentUserAction, logoutAction } from "@/app/actions/auth";
 import { getSantriListAction } from "@/app/actions/santri";
@@ -104,7 +103,6 @@ export default function Home() {
   const [isSessionLoading, setIsSessionLoading] = useState<boolean>(true);
   const [selectedRole, setSelectedRole] = useState<Role>("MT");
   const [currentUserName, setCurrentUserName] = useState<string>("");
-  const [activeStaffKey, setActiveStaffKey] = useState<string>("");
   const [serverHalaqohName, setServerHalaqohName] = useState<string | null>(null);
   const [isKepalaBidangTahfidz, setIsKepalaBidangTahfidz] = useState<boolean>(false);
   const [selectedSantriForPrint, setSelectedSantriForPrint] = useState<DashboardSantriSummary | null>(null);
@@ -249,15 +247,13 @@ export default function Home() {
   });
 
   // Halaqoh list mapping dinamis murni dari server/database (Eliminasi fallback statis)
-  const [dynamicHalaqohList, setDynamicHalaqohList] = useState<Array<{ id: string; nama: string; pembina: string }>>([]);
+  const [dynamicHalaqohList, setDynamicHalaqohList] = useState<Array<{ id: string; nama: string; pembina: string; tahunAjaran?: string }>>([]);
   const [halaqohListError, setHalaqohListError] = useState<string | null>(null);
 
   const halaqohList = dynamicHalaqohList;
 
-  const currentHalaqohName = useMemo(() => {
-    if (serverHalaqohName) return serverHalaqohName;
-    return getHalaqohByStaff(activeStaffKey);
-  }, [serverHalaqohName, activeStaffKey]);
+  // Nama halaqoh murni berasal dari session DB (Eliminasi fallback katalog statis)
+  const currentHalaqohName = serverHalaqohName || null;
 
   // Allowed tabs based on official server role
   const allowedTabs = useMemo(() => {
@@ -275,6 +271,7 @@ export default function Home() {
             id: h.id,
             nama: h.nama,
             pembina: h.pembina?.nama || "Pembina",
+            tahunAjaran: h.tahunAjaran,
           }))
         );
       } else {
@@ -388,7 +385,6 @@ export default function Home() {
         setSelectedRole(session.role);
         setCurrentUserName(session.name || "");
         setIsKepalaBidangTahfidz(Boolean(session.isKepalaBidangTahfidz));
-        if (session.username) setActiveStaffKey(session.username);
         if (session.halaqohName) setServerHalaqohName(session.halaqohName);
 
         // Baca parameter navigasi aman (HANYA tab dan filter lokasi)
