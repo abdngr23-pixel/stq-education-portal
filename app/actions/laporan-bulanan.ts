@@ -54,9 +54,9 @@ export interface RecordTasmiSimaanInput {
   halaman?: number;
   nilai: number;
   predikat: NilaiSetoran;
-  nilaiTajwid?: NilaiSetoran;
-  nilaiFashahah?: NilaiSetoran;
-  nilaiKelancaran?: NilaiSetoran;
+  nilaiTajwid: NilaiSetoran;
+  nilaiFashahah: NilaiSetoran;
+  nilaiKelancaran: NilaiSetoran;
   rincianKesalahan?: MistakeCounts | null;
   catatan?: string;
 }
@@ -866,33 +866,27 @@ export async function recordTasmiSimaanAction(input: RecordTasmiSimaanInput) {
       return { success: false, message: "Profil penguji staf tidak ditemukan." };
     }
 
-    // Validasi dimensi kualitas terstruktur jika diberikan
-    let structuredTajwid: NilaiSetoran | null = null;
-    let structuredFashahah: NilaiSetoran | null = null;
-    let structuredKelancaran: NilaiSetoran | null = null;
-    let structuredMistakes: Prisma.InputJsonValue | null = null;
-
-    if (input.nilaiTajwid || input.nilaiFashahah || input.nilaiKelancaran) {
-      if (!input.nilaiTajwid || !input.nilaiFashahah || !input.nilaiKelancaran) {
-        return {
-          success: false,
-          message: "Ketiga dimensi kualitas (Tajwid, Fashahah, Kelancaran) wajib diisi lengkap.",
-        };
-      }
-      if (
-        !VALID_NILAI_SETORAN_VALUES.includes(input.nilaiTajwid) ||
-        !VALID_NILAI_SETORAN_VALUES.includes(input.nilaiFashahah) ||
-        !VALID_NILAI_SETORAN_VALUES.includes(input.nilaiKelancaran)
-      ) {
-        return {
-          success: false,
-          message: "Predikat kualitas tidak valid. Pilihan: MUMTAZ, JAYYID_JIDDAN, JAYYID, MAQBUL, DHOIF.",
-        };
-      }
-      structuredTajwid = input.nilaiTajwid;
-      structuredFashahah = input.nilaiFashahah;
-      structuredKelancaran = input.nilaiKelancaran;
+    // Validasi dimensi kualitas terstruktur: wajib untuk seluruh pencatatan Tasmi/Sima'an baru
+    if (!input.nilaiTajwid || !input.nilaiFashahah || !input.nilaiKelancaran) {
+      return {
+        success: false,
+        message: "Ketiga dimensi kualitas (Tajwid, Fashahah, Kelancaran) wajib diisi lengkap.",
+      };
     }
+    if (
+      !VALID_NILAI_SETORAN_VALUES.includes(input.nilaiTajwid) ||
+      !VALID_NILAI_SETORAN_VALUES.includes(input.nilaiFashahah) ||
+      !VALID_NILAI_SETORAN_VALUES.includes(input.nilaiKelancaran)
+    ) {
+      return {
+        success: false,
+        message: "Predikat kualitas tidak valid. Pilihan: MUMTAZ, JAYYID_JIDDAN, JAYYID, MAQBUL, DHOIF.",
+      };
+    }
+    const structuredTajwid = input.nilaiTajwid;
+    const structuredFashahah = input.nilaiFashahah;
+    const structuredKelancaran = input.nilaiKelancaran;
+    let structuredMistakes: Prisma.InputJsonValue | null = null;
 
     if (input.rincianKesalahan) {
       const parsedMistakes = mistakeCountsSchema.safeParse(input.rincianKesalahan);

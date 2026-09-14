@@ -92,7 +92,7 @@ export const setoranSchema = z.object({
   nilaiKelancaran: z.enum(VALID_NILAI_SETORAN_VALUES, {
     message: 'Nilai Kelancaran wajib dipilih',
   }),
-  rincianKesalahan: mistakeCountsSchema.optional().default(DEFAULT_MISTAKE_COUNTS),
+  rincianKesalahan: mistakeCountsSchema,
   nilai: z.enum(VALID_NILAI_SETORAN_VALUES, {
     message: 'Nilai setoran tidak valid',
   }).optional(),

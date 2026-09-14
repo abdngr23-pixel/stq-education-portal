@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useTransition } from "react";
+import React, { useState, useEffect, useTransition, useMemo } from "react";
 import { Role, NilaiSetoran } from "@prisma/client";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -60,9 +60,9 @@ export function EvaluasiRubuTab({
   const [selectedSantriId, setSelectedSantriId] = useState<string>(santriList[0]?.id || "");
   const [juz, setJuz] = useState<number>(1);
   const [rubuKe, setRubuKe] = useState<number>(1);
-  const [nilaiTajwid, setNilaiTajwid] = useState<NilaiSetoran>("MUMTAZ");
-  const [nilaiFashahah, setNilaiFashahah] = useState<NilaiSetoran>("MUMTAZ");
-  const [nilaiKelancaran, setNilaiKelancaran] = useState<NilaiSetoran>("MUMTAZ");
+  const [nilaiTajwid, setNilaiTajwid] = useState<NilaiSetoran | "">("");
+  const [nilaiFashahah, setNilaiFashahah] = useState<NilaiSetoran | "">("");
+  const [nilaiKelancaran, setNilaiKelancaran] = useState<NilaiSetoran | "">("");
   const [mistakeCounts, setMistakeCounts] = useState<MistakeCounts>({ ...DEFAULT_MISTAKE_COUNTS });
   const [isMistakesOpen, setIsMistakesOpen] = useState(false);
   const [catatan, setCatatan] = useState("");
@@ -73,12 +73,15 @@ export function EvaluasiRubuTab({
   const [records, setRecords] = useState<EvaluasiRubuRecord[]>([]);
   const [isLoadingRecords, setIsLoadingRecords] = useState(false);
 
-  // Derived overall predicate (lowest dimension)
-  const derivedOverall = deriveOverallNilai({
-    tajwid: nilaiTajwid,
-    fashahah: nilaiFashahah,
-    kelancaran: nilaiKelancaran,
-  });
+  // Derived overall predicate (lowest dimension, only when all 3 selected)
+  const derivedOverall = useMemo(() => {
+    if (!nilaiTajwid || !nilaiFashahah || !nilaiKelancaran) return null;
+    return deriveOverallNilai({
+      tajwid: nilaiTajwid,
+      fashahah: nilaiFashahah,
+      kelancaran: nilaiKelancaran,
+    });
+  }, [nilaiTajwid, nilaiFashahah, nilaiKelancaran]);
 
   const totalMistakes = Object.values(mistakeCounts).reduce((acc, c) => acc + (c || 0), 0);
 
@@ -122,6 +125,14 @@ export function EvaluasiRubuTab({
       return;
     }
 
+    if (!nilaiTajwid || !nilaiFashahah || !nilaiKelancaran) {
+      setFeedback({
+        type: "error",
+        message: "Ketiga dimensi kualitas (Tajwid, Fashahah, Kelancaran) wajib dipilih.",
+      });
+      return;
+    }
+
     startTransition(async () => {
       setFeedback(null);
       const res = await createEvaluasiRubuAction({
@@ -137,6 +148,9 @@ export function EvaluasiRubuTab({
 
       if (res.success) {
         setFeedback({ type: "success", message: res.message });
+        setNilaiTajwid("");
+        setNilaiFashahah("");
+        setNilaiKelancaran("");
         setMistakeCounts({ ...DEFAULT_MISTAKE_COUNTS });
         setCatatan("");
         fetchRecords();
@@ -290,6 +304,7 @@ export function EvaluasiRubuTab({
                     onChange={(e) => setNilaiTajwid(e.target.value as NilaiSetoran)}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-medium min-h-[44px] bg-white"
                   >
+                    <option value="" disabled>Pilih predikat...</option>
                     <option value="MUMTAZ">Mumtaz (Istimewa)</option>
                     <option value="JAYYID_JIDDAN">Jayyid Jiddan (Baik Sekali)</option>
                     <option value="JAYYID">Jayyid (Baik)</option>
@@ -309,6 +324,7 @@ export function EvaluasiRubuTab({
                     onChange={(e) => setNilaiFashahah(e.target.value as NilaiSetoran)}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-medium min-h-[44px] bg-white"
                   >
+                    <option value="" disabled>Pilih predikat...</option>
                     <option value="MUMTAZ">Mumtaz (Istimewa)</option>
                     <option value="JAYYID_JIDDAN">Jayyid Jiddan (Baik Sekali)</option>
                     <option value="JAYYID">Jayyid (Baik)</option>
@@ -328,6 +344,7 @@ export function EvaluasiRubuTab({
                     onChange={(e) => setNilaiKelancaran(e.target.value as NilaiSetoran)}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-medium min-h-[44px] bg-white"
                   >
+                    <option value="" disabled>Pilih predikat...</option>
                     <option value="MUMTAZ">Mumtaz (Istimewa)</option>
                     <option value="JAYYID_JIDDAN">Jayyid Jiddan (Baik Sekali)</option>
                     <option value="JAYYID">Jayyid (Baik)</option>
@@ -343,14 +360,20 @@ export function EvaluasiRubuTab({
                   Predikat Keseluruhan (Dihitung otomatis dari dimensi terendah):
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge
-                    data-testid="badge-rubu-derived-overall"
-                    variant={getBadgeVariant(derivedOverall)}
-                    size="sm"
-                    className="font-bold text-xs uppercase"
-                  >
-                    {NILAI_LABELS[derivedOverall]?.label || derivedOverall}
-                  </Badge>
+                  {derivedOverall ? (
+                    <Badge
+                      data-testid="badge-rubu-derived-overall"
+                      variant={getBadgeVariant(derivedOverall)}
+                      size="sm"
+                      className="font-bold text-xs uppercase"
+                    >
+                      {NILAI_LABELS[derivedOverall]?.label || derivedOverall}
+                    </Badge>
+                  ) : (
+                    <span className="text-xs text-slate-400 italic">
+                      Pilih ketiga dimensi
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

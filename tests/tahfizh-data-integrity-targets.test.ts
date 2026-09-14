@@ -706,6 +706,16 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (43 Skena
       nilaiTajwid: "MUMTAZ",
       nilaiFashahah: "MUMTAZ",
       nilaiKelancaran: "MUMTAZ",
+      rincianKesalahan: {
+        makhrajDanSifat: 0,
+        mad: 0,
+        ghunnahDanAhkamNunMim: 0,
+        waqafIbtida: 0,
+        harakatLafadz: 0,
+        tawaqqufLupa: 0,
+        tasyabuhAyat: 0,
+        lainnya: 0,
+      },
       nilai: "MUMTAZ",
     });
 
@@ -1128,6 +1138,9 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (43 Skena
       juz: 1,
       nilai: 90,
       predikat: "MUMTAZ",
+      nilaiTajwid: "MUMTAZ",
+      nilaiFashahah: "MUMTAZ",
+      nilaiKelancaran: "MUMTAZ",
     });
 
     assert.equal(res.success, false);

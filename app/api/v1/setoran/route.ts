@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { apiGuard, recordAuditLog } from '@/lib/auth';
+import { apiGuard } from '@/lib/auth';
 import { setoranSchema, validateData } from '@/lib/validations';
-import { JenisSetoran, NilaiSetoran } from '@prisma/client';
+import { JenisSetoran } from '@prisma/client';
+import { executeCanonicalCreateSetoran } from '@/lib/tahfizh-persistence';
 
 /**
  * GET /api/v1/setoran
  * Daftar riwayat setoran tahfizh
+ * Locked: PR #8 detailed quality = INTERNAL TAHFIZH ONLY. PR #11 owns Wali-safe exposure.
  */
 export async function GET(req: Request) {
   try {
@@ -57,6 +59,32 @@ export async function GET(req: Request) {
       },
     });
 
+    // Jalur Aman WS / ST: Hilangkan seluruh dimensi kualitas internal, rincian kesalahan, dan detail evaluator
+    if (session.role === 'WS' || session.role === 'ST') {
+      const safeData = setoranList.map((item) => ({
+        id: item.id,
+        setoranCode: item.setoranCode,
+        santriId: item.santriId,
+        santri: item.santri,
+        jenis: item.jenis,
+        juz: item.juz,
+        halamanMulai: item.halamanMulai,
+        halamanSelesai: item.halamanSelesai,
+        jumlahHalaman: item.jumlahHalaman,
+        jumlahJuzMufar: item.jumlahJuzMufar,
+        nilai: item.nilai,
+        catatan: item.catatan,
+        tanggal: item.tanggal,
+        createdAt: item.createdAt,
+      }));
+
+      return NextResponse.json({
+        success: true,
+        data: safeData,
+        meta: { total: safeData.length },
+      });
+    }
+
     return NextResponse.json({
       success: true,
       data: setoranList,
@@ -73,7 +101,7 @@ export async function GET(req: Request) {
 
 /**
  * POST /api/v1/setoran
- * Input setoran tahfizh baru (MT, PH, KS, ADM) dengan verifikasi halaqoh binaan
+ * Input setoran tahfizh baru (MT, PH, KS, ADM) menggunakan eksekutor kanonikal tunggal
  */
 export async function POST(req: Request) {
   try {
@@ -97,100 +125,51 @@ export async function POST(req: Request) {
       );
     }
 
-    const { santriId, jenis, juz, halamanMulai, halamanSelesai, jumlahHalaman, nilai, catatan } = validation.data;
+    const res = await executeCanonicalCreateSetoran(prisma, {
+      input: {
+        santriId: validation.data.santriId,
+        jenis: validation.data.jenis,
+        juz: validation.data.juz,
+        halamanMulai: validation.data.halamanMulai,
+        halamanSelesai: validation.data.halamanSelesai,
+        jumlahHalaman: validation.data.jumlahHalaman,
+        nilaiTajwid: validation.data.nilaiTajwid,
+        nilaiFashahah: validation.data.nilaiFashahah,
+        nilaiKelancaran: validation.data.nilaiKelancaran,
+        rincianKesalahan: validation.data.rincianKesalahan,
+        nilai: validation.data.nilai,
+        catatan: validation.data.catatan,
+      },
+      session: {
+        userId: session.userId,
+        username: session.username,
+        role: session.role,
+        staffId: session.staffId,
+        isKepalaBidangTahfidz: Boolean((session as { isKepalaBidangTahfidz?: boolean }).isKepalaBidangTahfidz),
+      },
+    });
 
-    const santri = await prisma.santri.findUnique({ where: { id: santriId } });
-    if (!santri) {
+    if (!res.success) {
+      const isForbidden = res.message.includes("Akses Ditolak");
+      const isNotFound = res.message.includes("tidak ditemukan");
+      const statusCode = isForbidden ? 403 : isNotFound ? 404 : 400;
       return NextResponse.json(
-        { success: false, error: { code: 'NOT_FOUND', message: 'Data santri tidak ditemukan.' } },
-        { status: 404 }
-      );
-    }
-
-    // Verifikasi kepemilikan data ABAC: MT dan PH hanya boleh mencatat santri di halaqoh binaannya
-    if (session.role === 'MT' || session.role === 'PH') {
-      if (!session.staffId) {
-        return NextResponse.json(
-          { success: false, error: { code: 'FORBIDDEN', message: 'Profil staf pembina Anda belum terhubung.' } },
-          { status: 403 }
-        );
-      }
-
-      const isBinaan = await prisma.halaqoh.findFirst({
-        where: {
-          pembinaId: session.staffId,
-          santriList: { some: { id: santriId } },
-        },
-      });
-
-      if (!isBinaan) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: {
-              code: 'FORBIDDEN',
-              message: 'Akses Ditolak: Anda hanya berwenang mencatat setoran santri di dalam halaqoh binaan Anda.',
-            },
+        {
+          success: false,
+          error: {
+            code: isForbidden ? 'FORBIDDEN' : isNotFound ? 'NOT_FOUND' : 'VALIDATION_ERROR',
+            message: res.message,
           },
-          { status: 403 }
-        );
-      }
-    }
-
-    const count = await prisma.setoranTahfizh.count();
-    const setoranCode = `SET-${String(count + 1).padStart(6, '0')}`;
-
-    const musyrifStaff = session.staffId
-      ? await prisma.staff.findUnique({ where: { id: session.staffId } })
-      : await prisma.staff.findFirst({ where: { roleStaff: 'MT' } });
-
-    if (!musyrifStaff) {
-      return NextResponse.json(
-        { success: false, error: { code: 'NOT_FOUND', message: 'Musyrif penilai tidak valid.' } },
-        { status: 400 }
+        },
+        { status: statusCode }
       );
     }
-
-    const newSetoran = await prisma.setoranTahfizh.create({
-      data: {
-        setoranCode,
-        santriId,
-        musyrifId: musyrifStaff.id,
-        jenis: jenis as JenisSetoran,
-        juz: parseInt(String(juz)),
-        halamanMulai: parseInt(String(halamanMulai)),
-        halamanSelesai: parseInt(String(halamanSelesai)),
-        jumlahHalaman: parseFloat(String(jumlahHalaman)),
-        nilai: nilai as NilaiSetoran,
-        catatan,
-        createdBy: session.username,
-      },
-      include: {
-        santri: true,
-        musyrif: true,
-      },
-    });
-
-    await recordAuditLog({
-      userId: session.userId,
-      action: 'API_CREATE_SETORAN',
-      entity: 'SetoranTahfizh',
-      entityId: newSetoran.id,
-      details: {
-        setoranCode,
-        santri: santri.nama,
-        juz,
-        halaman: `${halamanMulai}-${halamanSelesai}`,
-        jumlahHalaman,
-        nilai,
-      },
-    });
 
     return NextResponse.json(
       {
         success: true,
         message: 'Setoran berhasil dicatat.',
-        data: newSetoran,
+        data: res.data,
       },
       { status: 201 }
     );

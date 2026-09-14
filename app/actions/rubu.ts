@@ -34,11 +34,12 @@ export async function createEvaluasiRubuAction(input: EvaluasiRubuInput) {
     };
   }
 
-  const ALLOWED_ROLES = ["MT", "PH", "KS", "ADM"];
+  // Canonical minimum allowed roles: MT (Musyrif Tahfizh) and KS (Mudir Pesantren)
+  const ALLOWED_ROLES = ["MT", "KS"];
   if (!ALLOWED_ROLES.includes(session.role)) {
     return {
       success: false,
-      message: `Role ${session.role} tidak memiliki izin input evaluasi Rubu'.`,
+      message: `Akses Ditolak: Role ${session.role} tidak memiliki wewenang evaluasi kualitas Rubu'.`,
     };
   }
 
@@ -61,14 +62,11 @@ export async function createEvaluasiRubuAction(input: EvaluasiRubuInput) {
     return { success: false, message: "Data santri tidak ditemukan di pangkalan data." };
   }
 
-  // 4. ABAC Guard (Section 13)
-  const isManagerial =
-    session.isKepalaBidangTahfidz ||
-    session.role === "KS" ||
-    session.role === "ADM";
+  // 4. ABAC Guard: MT dibatasi ke halaqoh binaan, Kabid Tahfizh & Mudir KS memiliki wewenang manajerial
+  const isManagerial = Boolean(session.isKepalaBidangTahfidz || session.role === "KS");
 
   if (!isManagerial) {
-    // Ordinary MT / PH: fail-closed jika staffId tidak terhubung
+    // Ordinary MT: fail-closed jika staffId tidak terhubung
     if (!session.staffId) {
       return {
         success: false,
@@ -219,16 +217,22 @@ export async function getEvaluasiRubuListAction(params?: {
     };
   }
 
-  const isManagerial =
-    session.isKepalaBidangTahfidz ||
-    session.role === "KS" ||
-    session.role === "ADM" ||
-    session.role === "YAY";
+  // Canonical minimum allowed roles: MT and KS
+  const ALLOWED_ROLES = ["MT", "KS"];
+  if (!ALLOWED_ROLES.includes(session.role)) {
+    return {
+      success: false,
+      message: `Akses Ditolak: Role ${session.role} tidak memiliki wewenang evaluasi kualitas Rubu'.`,
+      data: [],
+    };
+  }
+
+  const isManagerial = Boolean(session.isKepalaBidangTahfidz || session.role === "KS");
 
   const whereClause: Prisma.EvaluasiRubuTahfizhWhereInput = {};
 
   if (!isManagerial) {
-    // Ordinary MT / PH: fail-closed jika staffId tidak terhubung
+    // Ordinary MT: fail-closed jika staffId tidak terhubung
     if (!session.staffId) {
       return {
         success: false,

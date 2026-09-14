@@ -4,9 +4,9 @@ process.env.ALLOW_ISOLATED_TEST_DB = "true";
 
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { PrismaClient, StatusIkhtibar, JenisUjiHafalan } from "@prisma/client";
-import { startTestDatabase, stopTestDatabase } from "./test-db-manager";
-import { setTestSession } from "../lib/auth";
+import { PrismaClient, StatusIkhtibar, JenisUjiHafalan, NilaiSetoran } from "@prisma/client";
+import { startTestDatabase, stopTestDatabase, runIsolatedMigrationChainVerification } from "./test-db-manager";
+import { setTestSession, createSessionToken } from "../lib/auth";
 import { UserSession } from "../types/auth";
 import {
   NILAI_SETORAN_ORDER,
@@ -27,6 +27,7 @@ import { createEvaluasiRubuAction, getEvaluasiRubuListAction } from "../app/acti
 import { recordTasmiSimaanAction } from "../app/actions/laporan-bulanan";
 import { inputHasilTahap1Action, inputHasilTahap2Action } from "../app/actions/ikhtibar";
 import { getSantriListForSession } from "../lib/server/santri-list-service";
+import { GET as getSetoranApi, POST as postSetoranApi } from "../app/api/v1/setoran/route";
 
 describe("PR #8 — Tahfizh Quality & Evaluation Engine (Comprehensive Test Suite)", () => {
   let prisma: PrismaClient;
@@ -36,6 +37,9 @@ describe("PR #8 — Tahfizh Quality & Evaluation Engine (Comprehensive Test Suit
   const STAFF_MT_2_ID = "stf-q-mt-02";
   const STAFF_KABID_ID = "stf-q-kabid";
   const STAFF_MUDIR_ID = "stf-q-mudir";
+  const STAFF_PH_ID = "stf-q-ph";
+  const STAFF_ADM_ID = "stf-q-adm";
+  const STAFF_YAY_ID = "stf-q-yay";
 
   const HALAQOH_1_ID = "hlq-q-01";
   const HALAQOH_2_ID = "hlq-q-02";
@@ -80,6 +84,42 @@ describe("PR #8 — Tahfizh Quality & Evaluation Engine (Comprehensive Test Suit
     isKepalaBidangTahfidz: false,
   };
 
+  const sessionPH: UserSession = {
+    userId: "usr-q-ph",
+    username: "pengasuhan.q",
+    name: "Ust. Pengasuhan",
+    role: "PH",
+    staffId: STAFF_PH_ID,
+    isKepalaBidangTahfidz: false,
+  };
+
+  const sessionADM: UserSession = {
+    userId: "usr-q-adm",
+    username: "admin.q",
+    name: "Admin Tahfizh",
+    role: "ADM",
+    staffId: STAFF_ADM_ID,
+    isKepalaBidangTahfidz: false,
+  };
+
+  const sessionYAY: UserSession = {
+    userId: "usr-q-yay",
+    username: "yayasan.q",
+    name: "Pengurus Yayasan",
+    role: "YAY",
+    staffId: STAFF_YAY_ID,
+    isKepalaBidangTahfidz: false,
+  };
+
+  const sessionMTNoStaff: UserSession = {
+    userId: "usr-q-mt-nostaff",
+    username: "musyrif.nostaff",
+    name: "Ust. Musyrif Tanpa Staf",
+    role: "MT",
+    staffId: undefined,
+    isKepalaBidangTahfidz: false,
+  };
+
   const sessionWali: UserSession = {
     userId: "usr-q-wali",
     username: "wali.q",
@@ -93,7 +133,7 @@ describe("PR #8 — Tahfizh Quality & Evaluation Engine (Comprehensive Test Suit
     username: "santri.q",
     name: "Santri Q",
     role: "ST",
-    santriId: SANTRI_1_ID,
+    santriId: SANTRI_2_ID,
   };
 
   before(async () => {
@@ -106,9 +146,9 @@ describe("PR #8 — Tahfizh Quality & Evaluation Engine (Comprehensive Test Suit
     await prisma.setoranTahfizh.deleteMany();
     await prisma.targetSantri.deleteMany();
     await prisma.auditLog.deleteMany();
+    await prisma.user.deleteMany();
     await prisma.santri.deleteMany();
     await prisma.halaqoh.deleteMany();
-    await prisma.user.deleteMany();
     await prisma.staff.deleteMany();
 
     // Create staff
@@ -118,18 +158,9 @@ describe("PR #8 — Tahfizh Quality & Evaluation Engine (Comprehensive Test Suit
         { id: STAFF_MT_2_ID, staffCode: "STF-Q02", nama: "Ust. Musyrif Q2", roleStaff: "MT", status: "AKTIF", noHp: "08222222222" },
         { id: STAFF_KABID_ID, staffCode: "STF-QK", nama: "Ust. Kabid Q", roleStaff: "MT", isKepalaBidangTahfidz: true, status: "AKTIF", noHp: "08333333333" },
         { id: STAFF_MUDIR_ID, staffCode: "STF-QM", nama: "Kyai Mudir Q", roleStaff: "KS", status: "AKTIF", noHp: "08444444444" },
-      ],
-    });
-
-    // Create users
-    await prisma.user.createMany({
-      data: [
-        { id: sessionMT1.userId, username: sessionMT1.username, passwordHash: "dummy", role: "MT", staffId: STAFF_MT_1_ID },
-        { id: sessionMT2.userId, username: sessionMT2.username, passwordHash: "dummy", role: "MT", staffId: STAFF_MT_2_ID },
-        { id: sessionKabid.userId, username: sessionKabid.username, passwordHash: "dummy", role: "MT", staffId: STAFF_KABID_ID },
-        { id: sessionMudir.userId, username: sessionMudir.username, passwordHash: "dummy", role: "KS", staffId: STAFF_MUDIR_ID },
-        { id: sessionWali.userId, username: sessionWali.username, passwordHash: "dummy", role: "WS" },
-        { id: sessionSantri.userId, username: sessionSantri.username, passwordHash: "dummy", role: "ST" },
+        { id: STAFF_PH_ID, staffCode: "STF-QPH", nama: "Ust. Pengasuhan", roleStaff: "PH", status: "AKTIF", noHp: "08555555555" },
+        { id: STAFF_ADM_ID, staffCode: "STF-QADM", nama: "Admin Tahfizh", roleStaff: "ADM", status: "AKTIF", noHp: "08666666666" },
+        { id: STAFF_YAY_ID, staffCode: "STF-QYAY", nama: "Yayasan", roleStaff: "YAY", status: "AKTIF", noHp: "08777777777" },
       ],
     });
 
@@ -141,12 +172,27 @@ describe("PR #8 — Tahfizh Quality & Evaluation Engine (Comprehensive Test Suit
       ],
     });
 
-    // Create santri
+    // Create santri first so users can link santriId
     await prisma.santri.createMany({
       data: [
         { id: SANTRI_1_ID, nis: "SAN-Q01", nama: "Ahmad Santri Q1", kelas: "7A", jenisKelamin: "L", halaqohId: HALAQOH_1_ID, status: "AKTIF" },
         { id: SANTRI_2_ID, nis: "SAN-Q02", nama: "Bilal Santri Q2", kelas: "7A", jenisKelamin: "L", halaqohId: HALAQOH_2_ID, status: "AKTIF" },
         { id: SANTRI_3_ID, nis: "SAN-Q03", nama: "Choirul Santri Q3", kelas: "7B", jenisKelamin: "L", halaqohId: HALAQOH_1_ID, status: "AKTIF" },
+      ],
+    });
+
+    // Create users
+    await prisma.user.createMany({
+      data: [
+        { id: sessionMT1.userId, username: sessionMT1.username, passwordHash: "dummy", role: "MT", staffId: STAFF_MT_1_ID },
+        { id: sessionMT2.userId, username: sessionMT2.username, passwordHash: "dummy", role: "MT", staffId: STAFF_MT_2_ID },
+        { id: sessionKabid.userId, username: sessionKabid.username, passwordHash: "dummy", role: "MT", staffId: STAFF_KABID_ID },
+        { id: sessionMudir.userId, username: sessionMudir.username, passwordHash: "dummy", role: "KS", staffId: STAFF_MUDIR_ID },
+        { id: sessionPH.userId, username: sessionPH.username, passwordHash: "dummy", role: "PH", staffId: STAFF_PH_ID },
+        { id: sessionADM.userId, username: sessionADM.username, passwordHash: "dummy", role: "ADM", staffId: STAFF_ADM_ID },
+        { id: sessionYAY.userId, username: sessionYAY.username, passwordHash: "dummy", role: "YAY", staffId: STAFF_YAY_ID },
+        { id: sessionWali.userId, username: sessionWali.username, passwordHash: "dummy", role: "WS", santriId: SANTRI_1_ID },
+        { id: sessionSantri.userId, username: sessionSantri.username, passwordHash: "dummy", role: "ST", santriId: SANTRI_2_ID },
       ],
     });
   });
@@ -383,6 +429,221 @@ describe("PR #8 — Tahfizh Quality & Evaluation Engine (Comprehensive Test Suit
       assert.equal(santri3.hasStructuredQuality, false);
       assert.equal(santri3.nilaiTajwidTerakhir, null);
     });
+
+    it("saveSetoranTahfizhCore: menolak setoran baru tanpa 3 dimensi terstruktur (fallback legacy dilarang keras)", async () => {
+      const res = await saveSetoranTahfizhCore(prisma, {
+        input: {
+          santriId: SANTRI_1_ID,
+          jenis: "SABAQ",
+          juz: 1,
+          halamanMulai: 1,
+          halamanSelesai: 1,
+          jumlahHalaman: 1,
+          nilai: "MUMTAZ",
+        } as unknown as Parameters<typeof saveSetoranTahfizhCore>[1]["input"],
+        context: {
+          userId: sessionMT1.userId,
+          username: sessionMT1.username,
+          musyrifStaffId: STAFF_MT_1_ID,
+        },
+      });
+      assert.equal(res.success, false);
+      assert.match(res.message, /Nilai Tajwid wajib diisi/);
+    });
+
+    it("saveSetoranTahfizhCore: menolak setoran dengan rincianKesalahan absen atau tidak lengkap 8 dimensi", async () => {
+      const res = await saveSetoranTahfizhCore(prisma, {
+        input: {
+          santriId: SANTRI_1_ID,
+          jenis: "SABAQ",
+          juz: 1,
+          halamanMulai: 1,
+          halamanSelesai: 1,
+          jumlahHalaman: 1,
+          nilaiTajwid: "MUMTAZ",
+          nilaiFashahah: "MUMTAZ",
+          nilaiKelancaran: "MUMTAZ",
+        } as unknown as Parameters<typeof saveSetoranTahfizhCore>[1]["input"],
+        context: {
+          userId: sessionMT1.userId,
+          username: sessionMT1.username,
+          musyrifStaffId: STAFF_MT_1_ID,
+        },
+      });
+      assert.equal(res.success, false);
+      assert.match(res.message, /Rincian kesalahan.*wajib disertakan lengkap/);
+    });
+
+    it("POST /api/v1/setoran: menolak legacy-only nilai (400) dan menerima structured quality dengan override overall", async () => {
+      const tokenMT = await createSessionToken({
+        sub: sessionMT1.userId,
+        username: sessionMT1.username,
+        role: sessionMT1.role,
+        staffId: sessionMT1.staffId,
+      });
+
+      // 1. Legacy-only nilai -> 400
+      const reqLegacy = new Request("http://localhost:3000/api/v1/setoran", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${tokenMT}`,
+        },
+        body: JSON.stringify({
+          santriId: SANTRI_1_ID,
+          jenis: "SABAQ",
+          juz: 1,
+          halamanMulai: 1,
+          halamanSelesai: 1,
+          jumlahHalaman: 1,
+          nilai: "MUMTAZ",
+        }),
+      });
+      const resLegacy = await postSetoranApi(reqLegacy);
+      assert.equal(resLegacy.status, 400);
+      const jsonLegacy = await resLegacy.json();
+      assert.equal(jsonLegacy.success, false);
+      assert.equal(jsonLegacy.error.code, "VALIDATION_ERROR");
+
+      // 2. Structured quality with incorrect client overall nilai -> succeeds 201 and derives worst dimension
+      const reqValid = new Request("http://localhost:3000/api/v1/setoran", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${tokenMT}`,
+        },
+        body: JSON.stringify({
+          santriId: SANTRI_1_ID,
+          jenis: "SABAQ",
+          juz: 1,
+          halamanMulai: 2,
+          halamanSelesai: 2,
+          jumlahHalaman: 1,
+          nilaiTajwid: "MUMTAZ",
+          nilaiFashahah: "JAYYID",
+          nilaiKelancaran: "DHOIF",
+          rincianKesalahan: DEFAULT_MISTAKE_COUNTS,
+          nilai: "MUMTAZ", // Client sends MUMTAZ, server must override with DHOIF
+        }),
+      });
+      const resValid = await postSetoranApi(reqValid);
+      assert.equal(resValid.status, 201);
+      const jsonValid = await resValid.json();
+      assert.equal(jsonValid.success, true);
+      assert.equal(jsonValid.data.nilai, "DHOIF");
+      assert.equal(jsonValid.data.nilaiTajwid, "MUMTAZ");
+      assert.equal(jsonValid.data.nilaiFashahah, "JAYYID");
+      assert.equal(jsonValid.data.nilaiKelancaran, "DHOIF");
+    });
+
+    it("GET /api/v1/setoran: respon untuk WS dan ST tidak mengekspos dimensi kualitas internal atau evaluator", async () => {
+      const tokenWS = await createSessionToken({
+        sub: sessionWali.userId,
+        username: sessionWali.username,
+        role: "WS",
+        santriId: SANTRI_1_ID,
+      });
+
+      const reqWS = new Request(`http://localhost:3000/api/v1/setoran?santri_id=${SANTRI_1_ID}`, {
+        headers: {
+          Authorization: `Bearer ${tokenWS}`,
+        },
+      });
+
+      const resWS = await getSetoranApi(reqWS);
+      assert.equal(resWS.status, 200);
+      const jsonWS = await resWS.json();
+      assert.equal(jsonWS.success, true);
+      assert.ok(jsonWS.data.length > 0);
+
+      for (const item of jsonWS.data) {
+        assert.equal("nilaiTajwid" in item, false, "nilaiTajwid harus absent dari output WS");
+        assert.equal("nilaiFashahah" in item, false, "nilaiFashahah harus absent dari output WS");
+        assert.equal("nilaiKelancaran" in item, false, "nilaiKelancaran harus absent dari output WS");
+        assert.equal("rincianKesalahan" in item, false, "rincianKesalahan harus absent dari output WS");
+        assert.equal("qualityTrend" in item, false, "qualityTrend harus absent dari output WS");
+        assert.equal("musyrif" in item, false, "detail musyrif evaluator harus absent dari output WS");
+      }
+
+      // Pastikan terdapat data setoran untuk santri 2
+      await saveSetoranTahfizhCore(prisma, {
+        input: {
+          santriId: SANTRI_2_ID,
+          jenis: "SABAQ",
+          juz: 1,
+          halamanMulai: 1,
+          halamanSelesai: 1,
+          jumlahHalaman: 1,
+          nilaiTajwid: "MUMTAZ",
+          nilaiFashahah: "MUMTAZ",
+          nilaiKelancaran: "MUMTAZ",
+          rincianKesalahan: DEFAULT_MISTAKE_COUNTS,
+        },
+        context: {
+          userId: sessionMT2.userId,
+          username: sessionMT2.username,
+          musyrifStaffId: STAFF_MT_2_ID,
+        },
+      });
+
+      const tokenST = await createSessionToken({
+        sub: sessionSantri.userId,
+        username: sessionSantri.username,
+        role: "ST",
+        santriId: SANTRI_2_ID,
+      });
+
+      const reqST = new Request(`http://localhost:3000/api/v1/setoran?santri_id=${SANTRI_2_ID}`, {
+        headers: {
+          Authorization: `Bearer ${tokenST}`,
+        },
+      });
+
+      const resST = await getSetoranApi(reqST);
+      assert.equal(resST.status, 200);
+      const jsonST = await resST.json();
+      assert.equal(jsonST.success, true);
+      assert.ok(jsonST.data.length > 0);
+
+      for (const item of jsonST.data) {
+        assert.equal("nilaiTajwid" in item, false, "nilaiTajwid harus absent dari output ST");
+        assert.equal("nilaiFashahah" in item, false, "nilaiFashahah harus absent dari output ST");
+        assert.equal("nilaiKelancaran" in item, false, "nilaiKelancaran harus absent dari output ST");
+        assert.equal("rincianKesalahan" in item, false, "rincianKesalahan harus absent dari output ST");
+        assert.equal("qualityTrend" in item, false, "qualityTrend harus absent dari output ST");
+        assert.equal("musyrif" in item, false, "detail musyrif evaluator harus absent dari output ST");
+      }
+    });
+
+    it("getSantriListForSession: payload WS dan ST tidak mengekspos properti kualitas (absent, bukan null)", async () => {
+      setTestSession(sessionWali);
+      const resWali = await getSantriListForSession({}, sessionWali, prisma);
+      assert.equal(resWali.success, true);
+      assert.ok(resWali.data.length > 0);
+
+      for (const santri of resWali.data) {
+        assert.equal("hasStructuredQuality" in santri, false, "hasStructuredQuality harus absent dari output WS");
+        assert.equal("nilaiTajwidTerakhir" in santri, false, "nilaiTajwidTerakhir harus absent dari output WS");
+        assert.equal("nilaiFashahahTerakhir" in santri, false, "nilaiFashahahTerakhir harus absent dari output WS");
+        assert.equal("nilaiKelancaranTerakhir" in santri, false, "nilaiKelancaranTerakhir harus absent dari output WS");
+        assert.equal("qualityTrend" in santri, false, "qualityTrend harus absent dari output WS");
+        assert.equal("rincianKesalahan" in santri, false, "rincianKesalahan harus absent dari output WS");
+      }
+
+      setTestSession(sessionSantri);
+      const resSantri = await getSantriListForSession({}, sessionSantri, prisma);
+      assert.equal(resSantri.success, true);
+      assert.ok(resSantri.data.length > 0);
+
+      for (const santri of resSantri.data) {
+        assert.equal("hasStructuredQuality" in santri, false, "hasStructuredQuality harus absent dari output ST");
+        assert.equal("nilaiTajwidTerakhir" in santri, false, "nilaiTajwidTerakhir harus absent dari output ST");
+        assert.equal("nilaiFashahahTerakhir" in santri, false, "nilaiFashahahTerakhir harus absent dari output ST");
+        assert.equal("nilaiKelancaranTerakhir" in santri, false, "nilaiKelancaranTerakhir harus absent dari output ST");
+        assert.equal("qualityTrend" in santri, false, "qualityTrend harus absent dari output ST");
+        assert.equal("rincianKesalahan" in santri, false, "rincianKesalahan harus absent dari output ST");
+      }
+    });
   });
 
   // -------------------------------------------------------------
@@ -590,6 +851,145 @@ describe("PR #8 — Tahfizh Quality & Evaluation Engine (Comprehensive Test Suit
       });
       assert.equal(resSantri.success, false);
     });
+
+    it("Rubu ABAC: pengujian otoritas menyeluruh untuk seluruh role diizinkan dan ditolak (canonical minimum)", async () => {
+      // ALLOWED:
+      // 1. Assigned MT (sessionMT1 on SANTRI_1_ID)
+      setTestSession(sessionMT1);
+      const resMT = await createEvaluasiRubuAction({
+        santriId: SANTRI_1_ID,
+        juz: 2,
+        rubuKe: 1,
+        nilaiTajwid: "MUMTAZ",
+        nilaiFashahah: "MUMTAZ",
+        nilaiKelancaran: "MUMTAZ",
+      });
+      assert.equal(resMT.success, true);
+
+      // 2. Kabid Tahfidz (isKepalaBidangTahfidz = true)
+      setTestSession(sessionKabid);
+      const resKabid = await createEvaluasiRubuAction({
+        santriId: SANTRI_2_ID,
+        juz: 2,
+        rubuKe: 1,
+        nilaiTajwid: "MUMTAZ",
+        nilaiFashahah: "MUMTAZ",
+        nilaiKelancaran: "MUMTAZ",
+      });
+      assert.equal(resKabid.success, true);
+
+      // 3. Mudir (KS)
+      setTestSession(sessionMudir);
+      const resMudir = await createEvaluasiRubuAction({
+        santriId: SANTRI_2_ID,
+        juz: 2,
+        rubuKe: 2,
+        nilaiTajwid: "MUMTAZ",
+        nilaiFashahah: "MUMTAZ",
+        nilaiKelancaran: "MUMTAZ",
+      });
+      assert.equal(resMudir.success, true);
+
+      // DENIED:
+      // 1. Unassigned MT (sessionMT1 on SANTRI_2_ID)
+      setTestSession(sessionMT1);
+      const resUnassigned = await createEvaluasiRubuAction({
+        santriId: SANTRI_2_ID,
+        juz: 2,
+        rubuKe: 1,
+        nilaiTajwid: "MUMTAZ",
+        nilaiFashahah: "MUMTAZ",
+        nilaiKelancaran: "MUMTAZ",
+      });
+      assert.equal(resUnassigned.success, false);
+      assert.match(resUnassigned.message, /Akses Ditolak/);
+
+      // 2. Missing staff (sessionMTNoStaff) -> fail-closed
+      setTestSession(sessionMTNoStaff);
+      const resNoStaff = await createEvaluasiRubuAction({
+        santriId: SANTRI_1_ID,
+        juz: 2,
+        rubuKe: 1,
+        nilaiTajwid: "MUMTAZ",
+        nilaiFashahah: "MUMTAZ",
+        nilaiKelancaran: "MUMTAZ",
+      });
+      assert.equal(resNoStaff.success, false);
+      assert.match(resNoStaff.message, /Akses Ditolak/);
+
+      // 3. PH
+      setTestSession(sessionPH);
+      const resPH = await createEvaluasiRubuAction({
+        santriId: SANTRI_1_ID,
+        juz: 2,
+        rubuKe: 1,
+        nilaiTajwid: "MUMTAZ",
+        nilaiFashahah: "MUMTAZ",
+        nilaiKelancaran: "MUMTAZ",
+      });
+      assert.equal(resPH.success, false);
+      assert.match(resPH.message, /Akses Ditolak/);
+
+      // 4. ADM
+      setTestSession(sessionADM);
+      const resADM = await createEvaluasiRubuAction({
+        santriId: SANTRI_1_ID,
+        juz: 2,
+        rubuKe: 1,
+        nilaiTajwid: "MUMTAZ",
+        nilaiFashahah: "MUMTAZ",
+        nilaiKelancaran: "MUMTAZ",
+      });
+      assert.equal(resADM.success, false);
+      assert.match(resADM.message, /Akses Ditolak/);
+
+      // 5. YAY
+      setTestSession(sessionYAY);
+      const resYAY = await createEvaluasiRubuAction({
+        santriId: SANTRI_1_ID,
+        juz: 2,
+        rubuKe: 1,
+        nilaiTajwid: "MUMTAZ",
+        nilaiFashahah: "MUMTAZ",
+        nilaiKelancaran: "MUMTAZ",
+      });
+      assert.equal(resYAY.success, false);
+      assert.match(resYAY.message, /Akses Ditolak/);
+
+      // 6. WS
+      setTestSession(sessionWali);
+      const resWS = await createEvaluasiRubuAction({
+        santriId: SANTRI_1_ID,
+        juz: 2,
+        rubuKe: 1,
+        nilaiTajwid: "MUMTAZ",
+        nilaiFashahah: "MUMTAZ",
+        nilaiKelancaran: "MUMTAZ",
+      });
+      assert.equal(resWS.success, false);
+      assert.match(resWS.message, /Akses Ditolak/);
+
+      // 7. ST
+      setTestSession(sessionSantri);
+      const resST = await createEvaluasiRubuAction({
+        santriId: SANTRI_1_ID,
+        juz: 2,
+        rubuKe: 1,
+        nilaiTajwid: "MUMTAZ",
+        nilaiFashahah: "MUMTAZ",
+        nilaiKelancaran: "MUMTAZ",
+      });
+      assert.equal(resST.success, false);
+      assert.match(resST.message, /Akses Ditolak/);
+
+      // Also assert getEvaluasiRubuListAction denies WS, ST, PH, ADM, YAY
+      for (const deniedSession of [sessionPH, sessionADM, sessionYAY, sessionWali, sessionSantri]) {
+        setTestSession(deniedSession);
+        const listRes = await getEvaluasiRubuListAction({});
+        assert.equal(listRes.success, false);
+        assert.match(listRes.message || "", /Akses Ditolak/);
+      }
+    });
   });
 
   // -------------------------------------------------------------
@@ -626,6 +1026,24 @@ describe("PR #8 — Tahfizh Quality & Evaluation Engine (Comprehensive Test Suit
       assert.equal(saved.nilaiFashahah, "JAYYID_JIDDAN");
       assert.equal(saved.nilaiKelancaran, "MUMTAZ");
       assert.ok(saved.rincianKesalahan);
+    });
+
+    it("menolak pencatatan Tasmi/Sima'an baru jika dimensi kualitas terstruktur tidak lengkap", async () => {
+      setTestSession(sessionMT1);
+
+      const res = await recordTasmiSimaanAction({
+        santriId: SANTRI_1_ID,
+        jenis: JenisUjiHafalan.TASMI,
+        juz: 1,
+        nilai: 92,
+        predikat: "MUMTAZ",
+        nilaiTajwid: "" as unknown as NilaiSetoran,
+        nilaiFashahah: "MUMTAZ",
+        nilaiKelancaran: "MUMTAZ",
+      });
+
+      assert.equal(res.success, false);
+      assert.match(res.message, /Ketiga dimensi kualitas.*wajib diisi lengkap/);
     });
   });
 
@@ -688,6 +1106,51 @@ describe("PR #8 — Tahfizh Quality & Evaluation Engine (Comprehensive Test Suit
       assert.equal(afterTahap2.nilaiFashahahTahap2, "MUMTAZ");
       assert.equal(afterTahap2.nilaiKelancaranTahap2, "MUMTAZ");
     });
+
+    it("menolak input hasil Tahap 1 atau Tahap 2 jika dimensi kualitas tidak lengkap", async () => {
+      const ikhtibar = await prisma.ikhtibarTahfizh.create({
+        data: {
+          santriId: SANTRI_1_ID,
+          juz: 4,
+          status: StatusIkhtibar.PENGAJUAN,
+        },
+      });
+
+      setTestSession(sessionMT1);
+      const resT1 = await inputHasilTahap1Action({
+        ikhtibarId: ikhtibar.id,
+        nilai: 85,
+        nilaiTajwid: "" as unknown as NilaiSetoran,
+        nilaiFashahah: "MUMTAZ",
+        nilaiKelancaran: "MUMTAZ",
+        lulus: true,
+      });
+      assert.equal(resT1.success, false);
+      assert.match(resT1.message, /Ketiga dimensi kualitas.*wajib diisi lengkap/);
+
+      await prisma.ikhtibarTahfizh.update({
+        where: { id: ikhtibar.id },
+        data: {
+          status: StatusIkhtibar.LULUS_TAHAP_1,
+          nilaiTahap1: 85,
+          nilaiTajwidTahap1: "MUMTAZ",
+          nilaiFashahahTahap1: "MUMTAZ",
+          nilaiKelancaranTahap1: "MUMTAZ",
+        },
+      });
+
+      setTestSession(sessionMudir);
+      const resT2 = await inputHasilTahap2Action({
+        ikhtibarId: ikhtibar.id,
+        nilai: 85,
+        nilaiTajwid: "MUMTAZ",
+        nilaiFashahah: "" as unknown as NilaiSetoran,
+        nilaiKelancaran: "MUMTAZ",
+        lulus: true,
+      });
+      assert.equal(resT2.success, false);
+      assert.match(resT2.message, /Ketiga dimensi kualitas.*wajib diisi lengkap/);
+    });
   });
 
   // -------------------------------------------------------------
@@ -719,6 +1182,100 @@ describe("PR #8 — Tahfizh Quality & Evaluation Engine (Comprehensive Test Suit
       assert.equal(santriRecord.compositeKpi, undefined);
       assert.equal(santriRecord.qualityScore, undefined);
       assert.equal(santriRecord.skorKualitas, undefined);
+    });
+  });
+
+  // -------------------------------------------------------------
+  // 9. PR #8 MIGRATION CHAIN VERIFICATION (POSTGRESQL ISOLATED)
+  // -------------------------------------------------------------
+  describe("9. PR #8 Migration Chain Verification on Isolated PostgreSQL", () => {
+    it("memverifikasi seluruh 6 migrasi applied (0 failed, status up to date) dan skema PR #8 terisolasi", { timeout: 90000 }, async () => {
+      const res = await runIsolatedMigrationChainVerification();
+
+      assert.ok(res.migrationCount >= 6, `Setidaknya terdapat 6 migrasi repositori, ditemukan: ${res.migrationCount}`);
+      assert.equal(res.migrationsApplied, res.migrationCount, "Seluruh 6 migrasi harus berstatus applied");
+      assert.equal(res.failedCount, 0, "0 migrasi gagal");
+      assert.equal(res.isUpToDate, true, "Status migrasi harus up to date");
+
+      const p8 = res.pr8Schema;
+      assert.ok(p8, "pr8Schema harus ada dalam hasil verifikasi migrasi");
+
+      // 1. setoran_tahfizh
+      const setoranCols = p8.setoranTahfizhCols;
+      const setoranTajwid = setoranCols.find((c) => c.column_name === "nilai_tajwid");
+      const setoranFashahah = setoranCols.find((c) => c.column_name === "nilai_fashahah");
+      const setoranKelancaran = setoranCols.find((c) => c.column_name === "nilai_kelancaran");
+      const setoranKesalahan = setoranCols.find((c) => c.column_name === "rincian_kesalahan");
+
+      assert.ok(setoranTajwid && setoranTajwid.udt_name === "NilaiSetoran" && setoranTajwid.is_nullable === "YES", "setoran.nilai_tajwid harus enum nullable");
+      assert.ok(setoranFashahah && setoranFashahah.udt_name === "NilaiSetoran" && setoranFashahah.is_nullable === "YES", "setoran.nilai_fashahah harus enum nullable");
+      assert.ok(setoranKelancaran && setoranKelancaran.udt_name === "NilaiSetoran" && setoranKelancaran.is_nullable === "YES", "setoran.nilai_kelancaran harus enum nullable");
+      assert.ok(setoranKesalahan && setoranKesalahan.data_type === "jsonb" && setoranKesalahan.is_nullable === "YES", "setoran.rincian_kesalahan harus jsonb nullable");
+
+      // 2. tasmi_simaan
+      const tasmiCols = p8.tasmiSimaanCols;
+      const tasmiTajwid = tasmiCols.find((c) => c.column_name === "nilai_tajwid");
+      const tasmiFashahah = tasmiCols.find((c) => c.column_name === "nilai_fashahah");
+      const tasmiKelancaran = tasmiCols.find((c) => c.column_name === "nilai_kelancaran");
+      const tasmiKesalahan = tasmiCols.find((c) => c.column_name === "rincian_kesalahan");
+
+      assert.ok(tasmiTajwid && tasmiTajwid.udt_name === "NilaiSetoran" && tasmiTajwid.is_nullable === "YES", "tasmi.nilai_tajwid harus enum nullable");
+      assert.ok(tasmiFashahah && tasmiFashahah.udt_name === "NilaiSetoran" && tasmiFashahah.is_nullable === "YES", "tasmi.nilai_fashahah harus enum nullable");
+      assert.ok(tasmiKelancaran && tasmiKelancaran.udt_name === "NilaiSetoran" && tasmiKelancaran.is_nullable === "YES", "tasmi.nilai_kelancaran harus enum nullable");
+      assert.ok(tasmiKesalahan && tasmiKesalahan.data_type === "jsonb" && tasmiKesalahan.is_nullable === "YES", "tasmi.rincian_kesalahan harus jsonb nullable");
+
+      // 3. ikhtibar_tahfizh (stage 1 & stage 2)
+      const ikhtibarCols = p8.ikhtibarTahfizhCols;
+      const st1Tajwid = ikhtibarCols.find((c) => c.column_name === "nilai_tajwid_tahap_1");
+      const st1Fashahah = ikhtibarCols.find((c) => c.column_name === "nilai_fashahah_tahap_1");
+      const st1Kelancaran = ikhtibarCols.find((c) => c.column_name === "nilai_kelancaran_tahap_1");
+      const st1Kesalahan = ikhtibarCols.find((c) => c.column_name === "rincian_kesalahan_tahap_1");
+
+      const st2Tajwid = ikhtibarCols.find((c) => c.column_name === "nilai_tajwid_tahap_2");
+      const st2Fashahah = ikhtibarCols.find((c) => c.column_name === "nilai_fashahah_tahap_2");
+      const st2Kelancaran = ikhtibarCols.find((c) => c.column_name === "nilai_kelancaran_tahap_2");
+      const st2Kesalahan = ikhtibarCols.find((c) => c.column_name === "rincian_kesalahan_tahap_2");
+
+      assert.ok(st1Tajwid && st1Tajwid.udt_name === "NilaiSetoran" && st1Tajwid.is_nullable === "YES", "ikhtibar.st1Tajwid harus enum nullable");
+      assert.ok(st1Fashahah && st1Fashahah.udt_name === "NilaiSetoran" && st1Fashahah.is_nullable === "YES", "ikhtibar.st1Fashahah harus enum nullable");
+      assert.ok(st1Kelancaran && st1Kelancaran.udt_name === "NilaiSetoran" && st1Kelancaran.is_nullable === "YES", "ikhtibar.st1Kelancaran harus enum nullable");
+      assert.ok(st1Kesalahan && st1Kesalahan.data_type === "jsonb" && st1Kesalahan.is_nullable === "YES", "ikhtibar.st1Kesalahan harus jsonb nullable");
+
+      assert.ok(st2Tajwid && st2Tajwid.udt_name === "NilaiSetoran" && st2Tajwid.is_nullable === "YES", "ikhtibar.st2Tajwid harus enum nullable");
+      assert.ok(st2Fashahah && st2Fashahah.udt_name === "NilaiSetoran" && st2Fashahah.is_nullable === "YES", "ikhtibar.st2Fashahah harus enum nullable");
+      assert.ok(st2Kelancaran && st2Kelancaran.udt_name === "NilaiSetoran" && st2Kelancaran.is_nullable === "YES", "ikhtibar.st2Kelancaran harus enum nullable");
+      assert.ok(st2Kesalahan && st2Kesalahan.data_type === "jsonb" && st2Kesalahan.is_nullable === "YES", "ikhtibar.st2Kesalahan harus jsonb nullable");
+
+      // 4. evaluasi_rubu_tahfizh
+      const rubuCols = p8.evaluasiRubuCols;
+      assert.ok(rubuCols.length > 0, "Tabel evaluasi_rubu_tahfizh harus ada");
+
+      const rubuTajwid = rubuCols.find((c) => c.column_name === "nilai_tajwid");
+      const rubuFashahah = rubuCols.find((c) => c.column_name === "nilai_fashahah");
+      const rubuKelancaran = rubuCols.find((c) => c.column_name === "nilai_kelancaran");
+      const rubuNilai = rubuCols.find((c) => c.column_name === "nilai");
+      const rubuJuz = rubuCols.find((c) => c.column_name === "juz");
+      const rubuKe = rubuCols.find((c) => c.column_name === "rubu_ke");
+
+      assert.equal(rubuTajwid?.is_nullable, "NO", "nilai_tajwid pada evaluasi rubu wajib NOT NULL");
+      assert.equal(rubuFashahah?.is_nullable, "NO", "nilai_fashahah pada evaluasi rubu wajib NOT NULL");
+      assert.equal(rubuKelancaran?.is_nullable, "NO", "nilai_kelancaran pada evaluasi rubu wajib NOT NULL");
+      assert.equal(rubuNilai?.is_nullable, "NO", "nilai pada evaluasi rubu wajib NOT NULL");
+      assert.equal(rubuJuz?.data_type, "integer", "juz pada evaluasi rubu harus integer");
+      assert.equal(rubuKe?.data_type, "integer", "rubu_ke pada evaluasi rubu harus integer");
+
+      // Constraints: PK, FK santri, FK musyrif
+      const constraints = p8.evaluasiRubuConstraints;
+      const pk = constraints.find((c) => c.constraint_type === "PRIMARY KEY");
+      const fkSantri = constraints.find((c) => c.constraint_name.includes("santri_id"));
+      const fkMusyrif = constraints.find((c) => c.constraint_name.includes("musyrif_id"));
+
+      assert.ok(pk, "Primary Key evaluasi_rubu_tahfizh harus ada");
+      assert.ok(fkSantri, "Foreign Key santri_id evaluasi_rubu_tahfizh harus ada");
+      assert.ok(fkMusyrif, "Foreign Key musyrif_id evaluasi_rubu_tahfizh harus ada");
+
+      // 5. Legacy rows compatibility
+      assert.equal(p8.legacyRowsNoBackfillRequired, true, "Baris legacy dapat dibaca dan dibuat tanpa backfill");
     });
   });
 });

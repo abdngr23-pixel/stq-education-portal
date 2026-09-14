@@ -128,9 +128,9 @@ export function TahfizhModule({
   const [jumlahHalaman, setJumlahHalaman] = useState("1");
   const [jumlahJuzMufar, setJumlahJuzMufar] = useState("");
   const [rincianJuzMufar, setRincianJuzMufar] = useState("");
-  const [nilaiTajwid, setNilaiTajwid] = useState<NilaiSetoran>("MUMTAZ");
-  const [nilaiFashahah, setNilaiFashahah] = useState<NilaiSetoran>("MUMTAZ");
-  const [nilaiKelancaran, setNilaiKelancaran] = useState<NilaiSetoran>("MUMTAZ");
+  const [nilaiTajwid, setNilaiTajwid] = useState<NilaiSetoran | "">("");
+  const [nilaiFashahah, setNilaiFashahah] = useState<NilaiSetoran | "">("");
+  const [nilaiKelancaran, setNilaiKelancaran] = useState<NilaiSetoran | "">("");
   const [rincianKesalahan, setRincianKesalahan] = useState<MistakeCounts>({ ...DEFAULT_MISTAKE_COUNTS });
   const [isKesalahanOpen, setIsKesalahanOpen] = useState(false);
   const [catatan, setCatatan] = useState("");
@@ -138,6 +138,7 @@ export function TahfizhModule({
   const [alasanManualSabaqi, setAlasanManualSabaqi] = useState("");
 
   const derivedOverallNilai = useMemo(() => {
+    if (!nilaiTajwid || !nilaiFashahah || !nilaiKelancaran) return null;
     return deriveOverallNilai({
       tajwid: nilaiTajwid,
       fashahah: nilaiFashahah,
@@ -628,6 +629,14 @@ export function TahfizhModule({
       }
     }
 
+    if (!nilaiTajwid || !nilaiFashahah || !nilaiKelancaran) {
+      setFeedback({
+        type: "error",
+        message: "Ketiga dimensi kualitas (Tajwid, Fashahah, Kelancaran) wajib dipilih.",
+      });
+      return;
+    }
+
     const hlmMulaiNum = parseInt(halamanMulai, 10);
     if (isNaN(hlmMulaiNum) || hlmMulaiNum < 1 || hlmMulaiNum > 604) {
       setFeedback({ type: "error", message: "Halaman mulai harus antara 1 sampai 604." });
@@ -677,7 +686,7 @@ export function TahfizhModule({
 
   // Eksekusi Simpan Setoran dengan Synchronous Submit Lock & Idempotency Key (Poin 11 & Poin 9)
   const executeSaveSetoran = (extra?: { alasanLompatanHalaman?: string }) => {
-    if (submitLockRef.current || isSubmitting) return;
+    if (submitLockRef.current || isSubmitting || !activeSantri) return;
     submitLockRef.current = true;
     setIsSubmitting(true);
 
@@ -711,18 +720,18 @@ export function TahfizhModule({
         const finalCatatan = catatan ? `${catatanRincian}. ${catatan}`.trim() : catatanRincian;
 
         const res = await createSetoranAction({
-          santriId: activeSantri!.id,
+          santriId: activeSantri.id,
           jenis: inputJenis,
           juz: juzNum,
           halamanMulai: hlmMulaiNum,
           halamanSelesai: hlmSelesaiNum,
           jumlahHalaman: jmlHlmNum,
           jumlahJuzMufar: inputJenis === "MUFAR" ? (parseInt(jumlahJuzMufar, 10) || null) : null,
-          nilaiTajwid,
-          nilaiFashahah,
-          nilaiKelancaran,
+          nilaiTajwid: nilaiTajwid as NilaiSetoran,
+          nilaiFashahah: nilaiFashahah as NilaiSetoran,
+          nilaiKelancaran: nilaiKelancaran as NilaiSetoran,
           rincianKesalahan,
-          nilai: derivedOverallNilai,
+          nilai: derivedOverallNilai || undefined,
           catatan: finalCatatan,
           clientRequestId,
           alasanLompatanHalaman: extra?.alasanLompatanHalaman,
@@ -731,10 +740,10 @@ export function TahfizhModule({
         });
 
         if (res.success) {
-          // Reset quality fields to defaults
-          setNilaiTajwid("MUMTAZ");
-          setNilaiFashahah("MUMTAZ");
-          setNilaiKelancaran("MUMTAZ");
+          // Reset quality fields to unselected
+          setNilaiTajwid("");
+          setNilaiFashahah("");
+          setNilaiKelancaran("");
           setRincianKesalahan({ ...DEFAULT_MISTAKE_COUNTS });
           setCatatan("");
           setIsKesalahanOpen(false);
@@ -857,9 +866,9 @@ export function TahfizhModule({
   const [inputNilaiIkhtibar, setInputNilaiIkhtibar] = useState("");
   const [inputCatatanIkhtibar, setInputCatatanIkhtibar] = useState("");
   const [inputHasilTahap2, setInputHasilTahap2] = useState<"LULUS" | "MENGULANG_SEBAGIAN" | "MENGULANG_SATU_JUZ">("LULUS");
-  const [inputTajwidIkhtibar, setInputTajwidIkhtibar] = useState<NilaiSetoran>("MUMTAZ");
-  const [inputFashahahIkhtibar, setInputFashahahIkhtibar] = useState<NilaiSetoran>("MUMTAZ");
-  const [inputKelancaranIkhtibar, setInputKelancaranIkhtibar] = useState<NilaiSetoran>("MUMTAZ");
+  const [inputTajwidIkhtibar, setInputTajwidIkhtibar] = useState<NilaiSetoran | "">("");
+  const [inputFashahahIkhtibar, setInputFashahahIkhtibar] = useState<NilaiSetoran | "">("");
+  const [inputKelancaranIkhtibar, setInputKelancaranIkhtibar] = useState<NilaiSetoran | "">("");
   const [inputMistakesIkhtibar, setInputMistakesIkhtibar] = useState<MistakeCounts>({ ...DEFAULT_MISTAKE_COUNTS });
   const [inputMistakesIkhtibarOpen, setInputMistakesIkhtibarOpen] = useState(false);
 
@@ -922,6 +931,10 @@ export function TahfizhModule({
     });
     setInputNilaiIkhtibar(item.nilai !== null ? String(item.nilai) : "");
     setInputCatatanIkhtibar(item.catatan || "");
+    setInputTajwidIkhtibar("");
+    setInputFashahahIkhtibar("");
+    setInputKelancaranIkhtibar("");
+    setInputMistakesIkhtibar({ ...DEFAULT_MISTAKE_COUNTS });
     setInputHasilTahap2(
       item.status === "MENGULANG_SEBAGIAN"
         ? "MENGULANG_SEBAGIAN"
@@ -935,6 +948,13 @@ export function TahfizhModule({
     if (!gradingUjian) return;
     if (!inputNilaiIkhtibar.trim()) {
       setFeedback({ type: "error", message: "Nilai ujian tidak boleh kosong." });
+      return;
+    }
+    if (!inputTajwidIkhtibar || !inputFashahahIkhtibar || !inputKelancaranIkhtibar) {
+      setFeedback({
+        type: "error",
+        message: "Ketiga dimensi kualitas (Tajwid, Fashahah, Kelancaran) wajib dipilih.",
+      });
       return;
     }
     const numNilai = parseFloat(inputNilaiIkhtibar) || 0;
@@ -1760,23 +1780,31 @@ export function TahfizhModule({
                       <Sliders className="w-3.5 h-3.5 text-emerald-600" />
                       Evaluasi Kualitas Hafalan
                     </span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] text-slate-500 font-medium">Predikat Keseluruhan:</span>
-                      <Badge
-                        variant={
-                          derivedOverallNilai === "MUMTAZ"
-                            ? "green"
-                            : derivedOverallNilai === "JAYYID_JIDDAN"
-                            ? "sky"
-                            : derivedOverallNilai === "JAYYID"
-                            ? "gold"
-                            : "neutral"
-                        }
-                        size="sm"
-                        className="font-bold text-xs"
-                      >
-                        {derivedOverallNilai}
-                      </Badge>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-semibold text-slate-500">Nilai Keseluruhan:</span>
+                      {derivedOverallNilai ? (
+                        <Badge
+                          variant={
+                            derivedOverallNilai === "MUMTAZ"
+                              ? "mumtaz"
+                              : derivedOverallNilai === "JAYYID_JIDDAN"
+                              ? "jayyid_jiddan"
+                              : derivedOverallNilai === "JAYYID"
+                              ? "jayyid"
+                              : derivedOverallNilai === "MAQBUL"
+                              ? "maqbul"
+                              : "dhoif"
+                          }
+                          size="sm"
+                          className="font-bold text-xs"
+                        >
+                          {derivedOverallNilai}
+                        </Badge>
+                      ) : (
+                        <span className="text-[11px] font-medium text-slate-400 italic">
+                          Pilih ketiga dimensi
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -1786,10 +1814,12 @@ export function TahfizhModule({
                         1. Tajwid
                       </label>
                       <select
+                        data-testid="select-nilai-tajwid"
                         value={nilaiTajwid}
                         onChange={(e) => setNilaiTajwid(e.target.value as NilaiSetoran)}
                         className="w-full min-h-[44px] px-2.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500"
                       >
+                        <option value="" disabled>Pilih predikat...</option>
                         {Object.entries(NILAI_LABELS).map(([k, v]) => (
                           <option key={k} value={k}>{v.label}</option>
                         ))}
@@ -1801,10 +1831,12 @@ export function TahfizhModule({
                         2. Fashahah
                       </label>
                       <select
+                        data-testid="select-nilai-fashahah"
                         value={nilaiFashahah}
                         onChange={(e) => setNilaiFashahah(e.target.value as NilaiSetoran)}
                         className="w-full min-h-[44px] px-2.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500"
                       >
+                        <option value="" disabled>Pilih predikat...</option>
                         {Object.entries(NILAI_LABELS).map(([k, v]) => (
                           <option key={k} value={k}>{v.label}</option>
                         ))}
@@ -1816,10 +1848,12 @@ export function TahfizhModule({
                         3. Kelancaran
                       </label>
                       <select
+                        data-testid="select-nilai-kelancaran"
                         value={nilaiKelancaran}
                         onChange={(e) => setNilaiKelancaran(e.target.value as NilaiSetoran)}
                         className="w-full min-h-[44px] px-2.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500"
                       >
+                        <option value="" disabled>Pilih predikat...</option>
                         {Object.entries(NILAI_LABELS).map(([k, v]) => (
                           <option key={k} value={k}>{v.label}</option>
                         ))}
@@ -2414,8 +2448,9 @@ export function TahfizhModule({
                     <select
                       value={inputTajwidIkhtibar}
                       onChange={(e) => setInputTajwidIkhtibar(e.target.value as NilaiSetoran)}
-                      className="w-full px-2 py-1.5 rounded-xl border border-slate-200 text-xs bg-white min-h-[38px]"
+                      className="w-full px-2 py-1.5 rounded-xl border border-slate-200 text-xs bg-white min-h-[44px]"
                     >
+                      <option value="" disabled>Pilih predikat...</option>
                       <option value="MUMTAZ">Mumtaz</option>
                       <option value="JAYYID_JIDDAN">Jayyid Jiddan</option>
                       <option value="JAYYID">Jayyid</option>
@@ -2430,8 +2465,9 @@ export function TahfizhModule({
                     <select
                       value={inputFashahahIkhtibar}
                       onChange={(e) => setInputFashahahIkhtibar(e.target.value as NilaiSetoran)}
-                      className="w-full px-2 py-1.5 rounded-xl border border-slate-200 text-xs bg-white min-h-[38px]"
+                      className="w-full px-2 py-1.5 rounded-xl border border-slate-200 text-xs bg-white min-h-[44px]"
                     >
+                      <option value="" disabled>Pilih predikat...</option>
                       <option value="MUMTAZ">Mumtaz</option>
                       <option value="JAYYID_JIDDAN">Jayyid Jiddan</option>
                       <option value="JAYYID">Jayyid</option>
@@ -2446,8 +2482,9 @@ export function TahfizhModule({
                     <select
                       value={inputKelancaranIkhtibar}
                       onChange={(e) => setInputKelancaranIkhtibar(e.target.value as NilaiSetoran)}
-                      className="w-full px-2 py-1.5 rounded-xl border border-slate-200 text-xs bg-white min-h-[38px]"
+                      className="w-full px-2 py-1.5 rounded-xl border border-slate-200 text-xs bg-white min-h-[44px]"
                     >
+                      <option value="" disabled>Pilih predikat...</option>
                       <option value="MUMTAZ">Mumtaz</option>
                       <option value="JAYYID_JIDDAN">Jayyid Jiddan</option>
                       <option value="JAYYID">Jayyid</option>
@@ -2462,7 +2499,7 @@ export function TahfizhModule({
                   <button
                     type="button"
                     onClick={() => setInputMistakesIkhtibarOpen(!inputMistakesIkhtibarOpen)}
-                    className="w-full py-1.5 px-2.5 bg-white rounded-xl border border-slate-200 text-left flex items-center justify-between text-xs font-semibold text-slate-700 hover:bg-slate-50 min-h-[36px]"
+                    className="w-full py-1.5 px-2.5 bg-white rounded-xl border border-slate-200 text-left flex items-center justify-between text-xs font-semibold text-slate-700 hover:bg-slate-50 min-h-[44px]"
                   >
                     <span>Rincian Kesalahan ({Object.values(inputMistakesIkhtibar).reduce((a, b) => a + b, 0)} tercatat)</span>
                     {inputMistakesIkhtibarOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}

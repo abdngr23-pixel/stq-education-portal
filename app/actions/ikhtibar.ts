@@ -121,9 +121,9 @@ export async function ajukanIkhtibarAction(formData: {
 export async function inputHasilTahap1Action(formData: {
   ikhtibarId: string;
   nilai: number; // 0 - 100
-  nilaiTajwid?: NilaiSetoran;
-  nilaiFashahah?: NilaiSetoran;
-  nilaiKelancaran?: NilaiSetoran;
+  nilaiTajwid: NilaiSetoran;
+  nilaiFashahah: NilaiSetoran;
+  nilaiKelancaran: NilaiSetoran;
   rincianKesalahan?: MistakeCounts | null;
   catatan?: string;
   lulus: boolean;
@@ -156,24 +156,22 @@ export async function inputHasilTahap1Action(formData: {
       return { success: false, message: validation.error };
     }
 
-    // Validasi dimensi kualitas terstruktur jika disertakan
-    if (formData.nilaiTajwid || formData.nilaiFashahah || formData.nilaiKelancaran) {
-      if (!formData.nilaiTajwid || !formData.nilaiFashahah || !formData.nilaiKelancaran) {
-        return {
-          success: false,
-          message: 'Ketiga dimensi kualitas (Tajwid, Fashahah, Kelancaran) wajib diisi lengkap.',
-        };
-      }
-      if (
-        !VALID_NILAI_SETORAN_VALUES.includes(formData.nilaiTajwid) ||
-        !VALID_NILAI_SETORAN_VALUES.includes(formData.nilaiFashahah) ||
-        !VALID_NILAI_SETORAN_VALUES.includes(formData.nilaiKelancaran)
-      ) {
-        return {
-          success: false,
-          message: 'Predikat kualitas tidak valid (DHOIF, MAQBUL, JAYYID, JAYYID_JIDDAN, MUMTAZ).',
-        };
-      }
+    // Validasi dimensi kualitas terstruktur: wajib untuk submission hasil Ikhtibar baru
+    if (!formData.nilaiTajwid || !formData.nilaiFashahah || !formData.nilaiKelancaran) {
+      return {
+        success: false,
+        message: 'Ketiga dimensi kualitas (Tajwid, Fashahah, Kelancaran) wajib diisi lengkap.',
+      };
+    }
+    if (
+      !VALID_NILAI_SETORAN_VALUES.includes(formData.nilaiTajwid) ||
+      !VALID_NILAI_SETORAN_VALUES.includes(formData.nilaiFashahah) ||
+      !VALID_NILAI_SETORAN_VALUES.includes(formData.nilaiKelancaran)
+    ) {
+      return {
+        success: false,
+        message: 'Predikat kualitas tidak valid (DHOIF, MAQBUL, JAYYID, JAYYID_JIDDAN, MUMTAZ).',
+      };
     }
 
     let structuredMistakesTahap1: Prisma.InputJsonValue | undefined = undefined;
@@ -237,9 +235,9 @@ export async function inputHasilTahap1Action(formData: {
 export async function inputHasilTahap2Action(formData: {
   ikhtibarId: string;
   nilai: number; // 0 - 100
-  nilaiTajwid?: NilaiSetoran;
-  nilaiFashahah?: NilaiSetoran;
-  nilaiKelancaran?: NilaiSetoran;
+  nilaiTajwid: NilaiSetoran;
+  nilaiFashahah: NilaiSetoran;
+  nilaiKelancaran: NilaiSetoran;
   rincianKesalahan?: MistakeCounts | null;
   catatan?: string;
   lulus: boolean;
@@ -275,24 +273,22 @@ export async function inputHasilTahap2Action(formData: {
       return { success: false, message: validation.error };
     }
 
-    // Validasi dimensi kualitas terstruktur jika disertakan
-    if (formData.nilaiTajwid || formData.nilaiFashahah || formData.nilaiKelancaran) {
-      if (!formData.nilaiTajwid || !formData.nilaiFashahah || !formData.nilaiKelancaran) {
-        return {
-          success: false,
-          message: 'Ketiga dimensi kualitas (Tajwid, Fashahah, Kelancaran) wajib diisi lengkap.',
-        };
-      }
-      if (
-        !VALID_NILAI_SETORAN_VALUES.includes(formData.nilaiTajwid) ||
-        !VALID_NILAI_SETORAN_VALUES.includes(formData.nilaiFashahah) ||
-        !VALID_NILAI_SETORAN_VALUES.includes(formData.nilaiKelancaran)
-      ) {
-        return {
-          success: false,
-          message: 'Predikat kualitas tidak valid (DHOIF, MAQBUL, JAYYID, JAYYID_JIDDAN, MUMTAZ).',
-        };
-      }
+    // Validasi dimensi kualitas terstruktur: wajib untuk submission hasil Ikhtibar baru
+    if (!formData.nilaiTajwid || !formData.nilaiFashahah || !formData.nilaiKelancaran) {
+      return {
+        success: false,
+        message: 'Ketiga dimensi kualitas (Tajwid, Fashahah, Kelancaran) wajib diisi lengkap.',
+      };
+    }
+    if (
+      !VALID_NILAI_SETORAN_VALUES.includes(formData.nilaiTajwid) ||
+      !VALID_NILAI_SETORAN_VALUES.includes(formData.nilaiFashahah) ||
+      !VALID_NILAI_SETORAN_VALUES.includes(formData.nilaiKelancaran)
+    ) {
+      return {
+        success: false,
+        message: 'Predikat kualitas tidak valid (DHOIF, MAQBUL, JAYYID, JAYYID_JIDDAN, MUMTAZ).',
+      };
     }
 
     let structuredMistakesTahap2: Prisma.InputJsonValue | undefined = undefined;

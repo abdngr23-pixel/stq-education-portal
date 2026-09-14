@@ -488,6 +488,17 @@ describe("PR #7 — Tahfizh Operational Monitoring & Action Center (Comprehensiv
   // KELOMPOK 4: PERSISTENCE STRUCTURED MUFAR FIELD & SERVER ACTION
   // =========================================================================
   describe("4. Structured MUFAR Field Persistence & Validation", () => {
+    const defaultMistakes = {
+      makhrajDanSifat: 0,
+      mad: 0,
+      ghunnahDanAhkamNunMim: 0,
+      waqafIbtida: 0,
+      harakatLafadz: 0,
+      tawaqqufLupa: 0,
+      tasyabuhAyat: 0,
+      lainnya: 0,
+    };
+
     it("4.1. Input MUFAR dengan jumlahJuzMufar valid (1–6) tersimpan ke DB", async () => {
       setTestSession(sessionMT1);
       const res = await createSetoranAction({
@@ -501,6 +512,7 @@ describe("PR #7 — Tahfizh Operational Monitoring & Action Center (Comprehensiv
         nilaiTajwid: "MUMTAZ",
         nilaiFashahah: "MUMTAZ",
         nilaiKelancaran: "MUMTAZ",
+        rincianKesalahan: defaultMistakes,
         nilai: "MUMTAZ",
         catatan: "Setoran MUFAR 2 Juz",
       });
@@ -527,6 +539,7 @@ describe("PR #7 — Tahfizh Operational Monitoring & Action Center (Comprehensiv
         nilaiTajwid: "MUMTAZ",
         nilaiFashahah: "MUMTAZ",
         nilaiKelancaran: "MUMTAZ",
+        rincianKesalahan: defaultMistakes,
         nilai: "MUMTAZ",
       });
       assert.equal(resNegative.success, false);
@@ -543,6 +556,7 @@ describe("PR #7 — Tahfizh Operational Monitoring & Action Center (Comprehensiv
         nilaiTajwid: "MUMTAZ",
         nilaiFashahah: "MUMTAZ",
         nilaiKelancaran: "MUMTAZ",
+        rincianKesalahan: defaultMistakes,
         nilai: "MUMTAZ",
       });
       assert.equal(resOver.success, false);
@@ -562,6 +576,7 @@ describe("PR #7 — Tahfizh Operational Monitoring & Action Center (Comprehensiv
         nilaiTajwid: "MUMTAZ",
         nilaiFashahah: "MUMTAZ",
         nilaiKelancaran: "MUMTAZ",
+        rincianKesalahan: defaultMistakes,
         nilai: "MUMTAZ",
       });
       assert.equal(res.success, true);

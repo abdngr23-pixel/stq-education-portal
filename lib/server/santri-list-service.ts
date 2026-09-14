@@ -363,7 +363,9 @@ export async function getSantriListForSession(
           : null
       );
 
-      return {
+      const isParentOrStudent = session.role === "WS" || session.role === "ST";
+
+      const baseItem: SantriListItem = {
         id: s.id,
         nis: s.nis,
         nama: s.nama,
@@ -405,13 +407,21 @@ export async function getSantriListForSession(
         setoranTerakhirAt,
         sudahSetorHariIni: statusTahfizhHariIni.sudahSetorHariIni,
         nilaiTerakhir,
+        poinPelanggaran: s._count.pelanggaranList || 0,
+        bintangKebaikan: s._count.bintangList || 0,
+      };
+
+      if (isParentOrStudent) {
+        return baseItem;
+      }
+
+      return {
+        ...baseItem,
         hasStructuredQuality,
         nilaiTajwidTerakhir: latestStructured?.nilaiTajwid || null,
         nilaiFashahahTerakhir: latestStructured?.nilaiFashahah || null,
         nilaiKelancaranTerakhir: latestStructured?.nilaiKelancaran || null,
         qualityTrend,
-        poinPelanggaran: s._count.pelanggaranList || 0,
-        bintangKebaikan: s._count.bintangList || 0,
       };
     });
 

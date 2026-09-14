@@ -209,9 +209,9 @@ export function RekapLaporanBulanan({
   const [testJuz, setTestJuz] = useState<number>(30);
   const [testNilai, setTestNilai] = useState<number>(90);
   const [testPredikat, setTestPredikat] = useState<NilaiSetoran>("MUMTAZ");
-  const [testTajwid, setTestTajwid] = useState<NilaiSetoran>("MUMTAZ");
-  const [testFashahah, setTestFashahah] = useState<NilaiSetoran>("MUMTAZ");
-  const [testKelancaran, setTestKelancaran] = useState<NilaiSetoran>("MUMTAZ");
+  const [testTajwid, setTestTajwid] = useState<NilaiSetoran | "">("");
+  const [testFashahah, setTestFashahah] = useState<NilaiSetoran | "">("");
+  const [testKelancaran, setTestKelancaran] = useState<NilaiSetoran | "">("");
   const [testMistakes, setTestMistakes] = useState<MistakeCounts>({ ...DEFAULT_MISTAKE_COUNTS });
   const [testMistakesOpen, setTestMistakesOpen] = useState(false);
   const [testCatatan, setTestCatatan] = useState<string>("");
@@ -393,6 +393,13 @@ export function RekapLaporanBulanan({
 
   const handleSaveTest = async () => {
     if (!testSantriId || !effectiveTahunAjaran) return;
+    if (!testTajwid || !testFashahah || !testKelancaran) {
+      setNotification({
+        type: "error",
+        message: "Ketiga dimensi kualitas (Tajwid, Fashahah, Kelancaran) wajib dipilih.",
+      });
+      return;
+    }
     const targetHalaqoh = isLockedMusyrif ? resolvedHalaqoh.id : selectedHalaqohId;
     startTransition(async () => {
       const res = await recordTasmiSimaanAction({
@@ -412,6 +419,9 @@ export function RekapLaporanBulanan({
         setNotification({ type: "success", message: res.message });
         setShowModalTest(false);
         setTestCatatan("");
+        setTestTajwid("");
+        setTestFashahah("");
+        setTestKelancaran("");
         setTestMistakes({ ...DEFAULT_MISTAKE_COUNTS });
         loadData(targetHalaqoh, selectedBulan, effectiveTahunAjaran);
       } else {
@@ -1423,8 +1433,9 @@ export function RekapLaporanBulanan({
                     <select
                       value={testTajwid}
                       onChange={(e) => setTestTajwid(e.target.value as NilaiSetoran)}
-                      className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs bg-white min-h-[36px]"
+                      className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs bg-white min-h-[44px]"
                     >
+                      <option value="" disabled>Pilih predikat...</option>
                       <option value="MUMTAZ">Mumtaz</option>
                       <option value="JAYYID_JIDDAN">Jayyid Jiddan</option>
                       <option value="JAYYID">Jayyid</option>
@@ -1439,8 +1450,9 @@ export function RekapLaporanBulanan({
                     <select
                       value={testFashahah}
                       onChange={(e) => setTestFashahah(e.target.value as NilaiSetoran)}
-                      className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs bg-white min-h-[36px]"
+                      className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs bg-white min-h-[44px]"
                     >
+                      <option value="" disabled>Pilih predikat...</option>
                       <option value="MUMTAZ">Mumtaz</option>
                       <option value="JAYYID_JIDDAN">Jayyid Jiddan</option>
                       <option value="JAYYID">Jayyid</option>
@@ -1455,8 +1467,9 @@ export function RekapLaporanBulanan({
                     <select
                       value={testKelancaran}
                       onChange={(e) => setTestKelancaran(e.target.value as NilaiSetoran)}
-                      className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs bg-white min-h-[36px]"
+                      className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs bg-white min-h-[44px]"
                     >
+                      <option value="" disabled>Pilih predikat...</option>
                       <option value="MUMTAZ">Mumtaz</option>
                       <option value="JAYYID_JIDDAN">Jayyid Jiddan</option>
                       <option value="JAYYID">Jayyid</option>
@@ -1471,7 +1484,7 @@ export function RekapLaporanBulanan({
                   <button
                     type="button"
                     onClick={() => setTestMistakesOpen(!testMistakesOpen)}
-                    className="w-full py-1.5 px-2 bg-white rounded-lg border border-slate-200 text-left flex items-center justify-between text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                    className="w-full py-1.5 px-2 bg-white rounded-lg border border-slate-200 text-left flex items-center justify-between text-[11px] font-semibold text-slate-600 hover:bg-slate-50 min-h-[44px]"
                   >
                     <span>Rincian Kesalahan ({Object.values(testMistakes).reduce((a, b) => a + b, 0)} tercatat)</span>
                     {testMistakesOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
