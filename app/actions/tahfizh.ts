@@ -4,16 +4,13 @@ import prisma from "@/lib/prisma";
 import { getCurrentSession } from "@/lib/auth";
 import { JenisSetoran, NilaiSetoran, Prisma } from "@prisma/client";
 
-import { getJuzByPage, JUZ_LIST } from "@/lib/quran-metadata";
 import { hitungRekomendasiSabaqiPekan, getStartOfWeekWITA } from "@/lib/sabaqi";
-import {
-  allocateSabaqPages,
-} from "@/lib/tahfizh-page-allocation";
-import { saveSetoranTahfizhCore } from "@/lib/tahfizh-persistence";
+import { executeCanonicalCreateSetoran } from "@/lib/tahfizh-persistence";
 import {
   getTahfizhOperationalMonitoring,
   GetTahfizhMonitoringParams,
 } from "@/lib/server/tahfizh-monitoring-service";
+import { MistakeCounts } from "@/lib/tahfizh-quality";
 
 export interface CreateSetoranInput {
   santriId: string;
@@ -23,7 +20,11 @@ export interface CreateSetoranInput {
   halamanSelesai: number;
   jumlahHalaman: number;
   jumlahJuzMufar?: number | null;
-  nilai: NilaiSetoran;
+  nilaiTajwid: NilaiSetoran;
+  nilaiFashahah: NilaiSetoran;
+  nilaiKelancaran: NilaiSetoran;
+  rincianKesalahan: MistakeCounts;
+  nilai?: NilaiSetoran;
   catatan?: string;
   clientRequestId?: string;
   alasanLompatanHalaman?: string;
@@ -32,7 +33,7 @@ export interface CreateSetoranInput {
 }
 
 /**
- * Server Action: Input Setoran Baru (dengan validasi ketat, quran-metadata, dan pencegahan tabrakan konkuren)
+ * Server Action: Input Setoran Baru (mendelegasikan ke eksekutor kanonikal tunggal)
  */
 export async function createSetoranAction(input: CreateSetoranInput) {
   const session = await getCurrentSession();
@@ -40,186 +41,15 @@ export async function createSetoranAction(input: CreateSetoranInput) {
     return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
   }
 
-  // 1. Role validation: Hanya MT, PH, KS, dan ADM yang boleh input
-  if (!["MT", "PH", "KS", "ADM"].includes(session.role)) {
-    return { success: false, message: `Role ${session.role} tidak memiliki izin input setoran.` };
-  }
-
-  // 2. Validasi Jenis Setoran
-  const VALID_JENIS: JenisSetoran[] = ["SABAQ", "SABQI", "MANZIL", "MUFAR"];
-  if (!input.jenis || !VALID_JENIS.includes(input.jenis)) {
-    return {
-      success: false,
-      message: "Jenis setoran tidak valid. Harus salah satu dari: SABAQ, SABQI, MANZIL, atau MUFAR.",
-    };
-  }
-
-  // 3. Validasi Server Nilai Halaman, Volume, & Juz
-  const halMulai = Number(input.halamanMulai);
-  const halSelesai = Number(input.halamanSelesai);
-  const jmlHalaman = Number(input.jumlahHalaman);
-  const declaredJuz = Number(input.juz);
-
-  if (!Number.isInteger(declaredJuz) || declaredJuz < 1 || declaredJuz > 30) {
-    return { success: false, message: "Juz wajib berupa bilangan bulat antara 1 sampai 30." };
-  }
-
-  if (!Number.isInteger(halMulai) || halMulai < 1 || halMulai > 604) {
-    return { success: false, message: "Halaman mulai harus berupa bilangan bulat antara 1 sampai 604." };
-  }
-  if (!Number.isInteger(halSelesai) || halSelesai < 1 || halSelesai > 604) {
-    return { success: false, message: "Halaman selesai harus berupa bilangan bulat antara 1 sampai 604." };
-  }
-  if (halSelesai < halMulai) {
-    return { success: false, message: "Halaman selesai tidak boleh lebih kecil dari halaman mulai." };
-  }
-  if (isNaN(jmlHalaman) || !isFinite(jmlHalaman) || jmlHalaman < 0.5) {
-    return { success: false, message: "Jumlah halaman tidak valid. Minimal setoran adalah 0.5 halaman." };
-  }
-
-  // Validasi Khusus MUFAR (Structured Data Contract: wajib integer 1–6)
-  let validatedJumlahJuzMufar: number | null = null;
-  if (input.jenis === "MUFAR") {
-    const rawJuzMufar = Number(input.jumlahJuzMufar);
-    if (!Number.isInteger(rawJuzMufar) || rawJuzMufar < 1 || rawJuzMufar > 6) {
-      return {
-        success: false,
-        message: "Untuk setoran MUFAR, jumlah juz wajib berupa bilangan bulat antara 1 sampai 6.",
-      };
-    }
-    validatedJumlahJuzMufar = rawJuzMufar;
-  }
-
-  // Hubungan volume dan rentang halaman secara konsisten
-  if (input.jenis === "SABAQ") {
-    try {
-      allocateSabaqPages(halMulai, halSelesai, jmlHalaman);
-    } catch (err) {
-      return {
-        success: false,
-        message: (err as Error).message,
-      };
-    }
-  } else {
-    const rentangHalaman = halSelesai - halMulai + 1;
-    if (jmlHalaman === 0.5) {
-      if (halMulai !== halSelesai) {
-        return {
-          success: false,
-          message: "Untuk setoran 0.5 halaman, halaman mulai dan selesai harus sama.",
-        };
-      }
-    } else if (Number.isInteger(jmlHalaman)) {
-      if (jmlHalaman !== rentangHalaman) {
-        return {
-          success: false,
-          message: `Jumlah halaman (${jmlHalaman}) tidak sesuai dengan rentang halaman (${halMulai}–${halSelesai} = ${rentangHalaman} halaman).`,
-        };
-      }
-    } else {
-      if (rentangHalaman < Math.floor(jmlHalaman) || rentangHalaman > Math.ceil(jmlHalaman)) {
-        return {
-          success: false,
-          message: `Volume halaman (${jmlHalaman}) tidak konsisten dengan rentang halaman ${halMulai}–${halSelesai}.`,
-        };
-      }
-    }
-  }
-
-  // Validasi batas Juz (Mushaf Madinah) untuk halaman mulai dan halaman selesai
-  const juzInfo = JUZ_LIST.find((j) => j.juz === declaredJuz);
-  if (!juzInfo) {
-    return { success: false, message: `Data referensi batas Juz ${declaredJuz} tidak ditemukan.` };
-  }
-  if (halMulai < juzInfo.startPage || halSelesai > juzInfo.endPage) {
-    const juzMulai = getJuzByPage(halMulai);
-    const juzSelesai = getJuzByPage(halSelesai);
-    if (juzMulai !== juzSelesai) {
-      return {
-        success: false,
-        message: `Rentang halaman ${halMulai}–${halSelesai} melintasi batas Juz (Halaman ${halMulai} adalah Juz ${juzMulai}, sedangkan Halaman ${halSelesai} adalah Juz ${juzSelesai}). Satu transaksi setoran harus dalam satu juz.`,
-      };
-    }
-    return {
-      success: false,
-      message: `Rentang halaman ${halMulai}–${halSelesai} di luar rentang resmi Juz ${declaredJuz} (Halaman ${juzInfo.startPage}–${juzInfo.endPage}).`,
-    };
-  }
-
   try {
-    // 4. Verifikasi Keberadaan Santri di Database
-    const santri = await prisma.santri.findUnique({
-      where: { id: input.santriId },
-      select: {
-        id: true,
-        nama: true,
-        nis: true,
-        halaqohId: true,
-        modalHafalanAwalHalaman: true,
-        tanggalBaselineTahfizh: true,
-      },
-    });
-
-    if (!santri) {
-      return { success: false, message: "Data santri tidak ditemukan di pangkalan data." };
-    }
-
-    // 5. Data Ownership ABAC: MT/PH hanya boleh input santri binaannya (fail-closed)
-    if (session.role === "MT" || session.role === "PH") {
-      if (!session.staffId) {
-        return {
-          success: false,
-          message: "Akses Ditolak: Profil staf pembina Anda belum terhubung. Hubungi Administrator.",
-        };
-      }
-
-      const isBinaan = await prisma.halaqoh.findFirst({
-        where: {
-          pembinaId: session.staffId,
-          santriList: { some: { id: input.santriId } },
-        },
-      });
-
-      if (!isBinaan && !session.isKepalaBidangTahfidz) {
-        return {
-          success: false,
-          message: "Akses Ditolak: Anda hanya berwenang mencatat setoran santri di dalam halaqoh binaan Anda.",
-        };
-      }
-    }
-
-    // 6. Staf Penilai / Pencatat: Fail-closed (Tanpa fallback staf acak)
-    let musyrifStaffId = session.staffId;
-    if (!musyrifStaffId) {
-      const userWithStaff = await prisma.user.findUnique({
-        where: { id: session.userId },
-        select: { staffId: true },
-      });
-      musyrifStaffId = userWithStaff?.staffId || null;
-    }
-
-    if (!musyrifStaffId) {
-      return {
-        success: false,
-        message: "Akses Ditolak: Akun Anda tidak memiliki relasi profil staf resmi untuk mencatat setoran.",
-      };
-    }
-
-    const musyrifStaff = await prisma.staff.findUnique({ where: { id: musyrifStaffId } });
-    if (!musyrifStaff) {
-      return { success: false, message: "Data staf pengampu/pencatat tidak ditemukan di sistem." };
-    }
-
-    // 7. Simpan Setoran menggunakan Core Persistence Service (Atomic Serializable Transaction & Concurrency Protection)
-    return await saveSetoranTahfizhCore(prisma, {
-      input: {
-        ...input,
-        jumlahJuzMufar: input.jenis === "MUFAR" ? validatedJumlahJuzMufar : null,
-      },
-      context: {
+    return await executeCanonicalCreateSetoran(prisma, {
+      input,
+      session: {
         userId: session.userId,
         username: session.username,
-        musyrifStaffId: musyrifStaff.id,
+        role: session.role,
+        staffId: session.staffId,
+        isKepalaBidangTahfidz: session.isKepalaBidangTahfidz,
       },
     });
   } catch (error) {
@@ -392,6 +222,31 @@ export async function getRecentSetoranAction(limit: number = 10) {
         musyrif: true,
       },
     });
+
+    if (session.role === "WS" || session.role === "ST") {
+      const safeList = list.map((item) => ({
+        id: item.id,
+        setoranCode: item.setoranCode,
+        santriId: item.santriId,
+        santri: {
+          id: item.santri.id,
+          nama: item.santri.nama,
+          nis: item.santri.nis,
+          kelas: item.santri.kelas,
+        },
+        jenis: item.jenis,
+        juz: item.juz,
+        halamanMulai: item.halamanMulai,
+        halamanSelesai: item.halamanSelesai,
+        jumlahHalaman: item.jumlahHalaman,
+        jumlahJuzMufar: item.jumlahJuzMufar,
+        nilai: item.nilai,
+        tanggal: item.tanggal,
+        createdAt: item.createdAt,
+      }));
+      return { success: true, data: safeList };
+    }
+
     return { success: true, data: list };
   } catch (error) {
     console.error("Gagal mengambil riwayat setoran:", error);
@@ -474,6 +329,55 @@ export async function getSantriProgresAction(santriId: string) {
     const totalHalaman = modalAwal + tambahanSabaq;
     const totalJuz = Math.floor(totalHalaman / 20);
     const sisaHalaman = totalHalaman % 20;
+
+    const isParentOrStudent = session.role === "WS" || session.role === "ST";
+    if (isParentOrStudent) {
+      const safeSetoranList = santri.setoranList.map((item) => ({
+        id: item.id,
+        setoranCode: item.setoranCode,
+        santriId: item.santriId,
+        jenis: item.jenis,
+        juz: item.juz,
+        halamanMulai: item.halamanMulai,
+        halamanSelesai: item.halamanSelesai,
+        jumlahHalaman: item.jumlahHalaman,
+        jumlahJuzMufar: item.jumlahJuzMufar,
+        nilai: item.nilai,
+        tanggal: item.tanggal,
+        createdAt: item.createdAt,
+      }));
+
+      return {
+        success: true,
+        data: {
+          id: santri.id,
+          nis: santri.nis,
+          nama: santri.nama,
+          kelas: santri.kelas,
+          jenisKelamin: santri.jenisKelamin,
+          status: santri.status,
+          targetAkhirProgramJuz: santri.targetAkhirProgramJuz,
+          modalHafalanAwalHalaman: santri.modalHafalanAwalHalaman,
+          tanggalBaselineTahfizh: santri.tanggalBaselineTahfizh
+            ? santri.tanggalBaselineTahfizh.toISOString()
+            : null,
+          halaqoh: santri.halaqoh
+            ? {
+                id: santri.halaqoh.id,
+                nama: santri.halaqoh.nama,
+              }
+            : null,
+          setoranList: safeSetoranList,
+          totalSetoran,
+          modalHalamanAwal: modalAwal,
+          tambahanSabaq,
+          totalHalamanSabaq: totalHalaman,
+          totalJuzSabaq: totalJuz,
+          sisaHalamanSabaq: sisaHalaman,
+          capaianLabel: `${totalJuz} Juz ${sisaHalaman} Halaman`,
+        },
+      };
+    }
 
     return {
       success: true,

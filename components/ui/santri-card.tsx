@@ -14,6 +14,7 @@ export interface SantriCardProps {
   targetJuz?: number;
   setoranTerakhir?: string;
   nilaiTerakhir?: string;
+  hasStructuredQuality?: boolean;
   poinPelanggaran?: number;
   bintangKebaikan?: number;
   status?: string;
@@ -33,6 +34,7 @@ export function SantriCard({
   targetJuz,
   setoranTerakhir,
   nilaiTerakhir,
+  hasStructuredQuality,
   poinPelanggaran,
   bintangKebaikan,
   status = "AKTIF",
@@ -138,9 +140,16 @@ export function SantriCard({
               {setoranTerakhir}
             </span>
             {nilaiTerakhir && (
-              <Badge variant={nilaiBadge.variant} size="sm" className="ml-auto shrink-0 text-[10px]">
-                {nilaiBadge.label}
-              </Badge>
+              <div className="ml-auto shrink-0 flex flex-col items-end">
+                <Badge variant={nilaiBadge.variant} size="sm" className="text-[10px]">
+                  {nilaiBadge.label}
+                </Badge>
+                {hasStructuredQuality === false && nilaiTerakhir !== "Belum ada data" && (
+                  <span className="text-[9px] text-slate-400 mt-0.5" title="Evaluasi rinci belum tersedia untuk rekaman historis ini">
+                    Evaluasi rinci belum tersedia
+                  </span>
+                )}
+              </div>
             )}
           </div>
         )}

@@ -267,6 +267,9 @@ describe("P1 Audit Keamanan ABAC Ikhtibar (Multi-Role & Cross-Halaqoh Isolation)
     const resMT1 = await inputHasilTahap1Action({
       ikhtibarId: ikhtibarSantriH2Id,
       nilai: 85,
+      nilaiTajwid: "MUMTAZ",
+      nilaiFashahah: "MUMTAZ",
+      nilaiKelancaran: "MUMTAZ",
       lulus: true,
       catatan: "Ujian lintas halaqoh tidak diizinkan",
     });
@@ -282,6 +285,9 @@ describe("P1 Audit Keamanan ABAC Ikhtibar (Multi-Role & Cross-Halaqoh Isolation)
     const resMT2 = await inputHasilTahap1Action({
       ikhtibarId: ikhtibarSantriH2Id,
       nilai: 85,
+      nilaiTajwid: "MUMTAZ",
+      nilaiFashahah: "MUMTAZ",
+      nilaiKelancaran: "MUMTAZ",
       lulus: true,
       catatan: "Penilaian oleh pembina sah",
     });
@@ -295,6 +301,9 @@ describe("P1 Audit Keamanan ABAC Ikhtibar (Multi-Role & Cross-Halaqoh Isolation)
     const res = await inputHasilTahap1Action({
       ikhtibarId: ikhtibarSantriH1Id,
       nilai: 88,
+      nilaiTajwid: "MUMTAZ",
+      nilaiFashahah: "MUMTAZ",
+      nilaiKelancaran: "MUMTAZ",
       lulus: true,
       catatan: "Lancar dan fasih",
     });
@@ -310,6 +319,9 @@ describe("P1 Audit Keamanan ABAC Ikhtibar (Multi-Role & Cross-Halaqoh Isolation)
     const resMT = await inputHasilTahap2Action({
       ikhtibarId: ikhtibarSantriH1Id,
       nilai: 90,
+      nilaiTajwid: "MUMTAZ",
+      nilaiFashahah: "MUMTAZ",
+      nilaiKelancaran: "MUMTAZ",
       lulus: true,
       hasilTahap2: "LULUS",
     });
@@ -320,6 +332,9 @@ describe("P1 Audit Keamanan ABAC Ikhtibar (Multi-Role & Cross-Halaqoh Isolation)
     const resADM = await inputHasilTahap2Action({
       ikhtibarId: ikhtibarSantriH1Id,
       nilai: 90,
+      nilaiTajwid: "MUMTAZ",
+      nilaiFashahah: "MUMTAZ",
+      nilaiKelancaran: "MUMTAZ",
       lulus: true,
       hasilTahap2: "LULUS",
     });
@@ -330,6 +345,9 @@ describe("P1 Audit Keamanan ABAC Ikhtibar (Multi-Role & Cross-Halaqoh Isolation)
     const resPH = await inputHasilTahap2Action({
       ikhtibarId: ikhtibarSantriH1Id,
       nilai: 90,
+      nilaiTajwid: "MUMTAZ",
+      nilaiFashahah: "MUMTAZ",
+      nilaiKelancaran: "MUMTAZ",
       lulus: true,
       hasilTahap2: "LULUS",
     });
@@ -340,6 +358,9 @@ describe("P1 Audit Keamanan ABAC Ikhtibar (Multi-Role & Cross-Halaqoh Isolation)
     const resKSNoStaff = await inputHasilTahap2Action({
       ikhtibarId: ikhtibarSantriH1Id,
       nilai: 90,
+      nilaiTajwid: "MUMTAZ",
+      nilaiFashahah: "MUMTAZ",
+      nilaiKelancaran: "MUMTAZ",
       lulus: true,
       hasilTahap2: "LULUS",
     });
@@ -355,6 +376,9 @@ describe("P1 Audit Keamanan ABAC Ikhtibar (Multi-Role & Cross-Halaqoh Isolation)
     const res = await inputHasilTahap2Action({
       ikhtibarId: ikhtibarSantriH1Id,
       nilai: 92,
+      nilaiTajwid: "MUMTAZ",
+      nilaiFashahah: "MUMTAZ",
+      nilaiKelancaran: "MUMTAZ",
       lulus: true,
       hasilTahap2: "LULUS",
       catatan: "Mumtaz! Disahkan Mudir",
@@ -427,10 +451,24 @@ describe("P1 Audit Keamanan ABAC Ikhtibar (Multi-Role & Cross-Halaqoh Isolation)
     const resAjukan = await ajukanIkhtibarAction({ santriId: SANTRI_H1, juz: 3 });
     assert.equal(resAjukan.success, false);
 
-    const resTahap1 = await inputHasilTahap1Action({ ikhtibarId: ikhtibarSantriH1Id, nilai: 80, lulus: true });
+    const resTahap1 = await inputHasilTahap1Action({
+      ikhtibarId: ikhtibarSantriH1Id,
+      nilai: 80,
+      nilaiTajwid: "MUMTAZ",
+      nilaiFashahah: "MUMTAZ",
+      nilaiKelancaran: "MUMTAZ",
+      lulus: true,
+    });
     assert.equal(resTahap1.success, false);
 
-    const resTahap2 = await inputHasilTahap2Action({ ikhtibarId: ikhtibarSantriH1Id, nilai: 80, lulus: true });
+    const resTahap2 = await inputHasilTahap2Action({
+      ikhtibarId: ikhtibarSantriH1Id,
+      nilai: 80,
+      nilaiTajwid: "MUMTAZ",
+      nilaiFashahah: "MUMTAZ",
+      nilaiKelancaran: "MUMTAZ",
+      lulus: true,
+    });
     assert.equal(resTahap2.success, false);
 
     const resDaftar = await getDaftarIkhtibarAction();

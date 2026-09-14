@@ -7,7 +7,13 @@ import {
   JenisSetoran,
   NilaiSetoran,
   JenisUjiHafalan,
+  Prisma,
 } from "@prisma/client";
+import {
+  VALID_NILAI_SETORAN_VALUES,
+  mistakeCountsSchema,
+  MistakeCounts,
+} from "@/lib/tahfizh-quality";
 import {
   getPekanDariTanggal,
   hitungCapaianSabaq,
@@ -48,6 +54,10 @@ export interface RecordTasmiSimaanInput {
   halaman?: number;
   nilai: number;
   predikat: NilaiSetoran;
+  nilaiTajwid: NilaiSetoran;
+  nilaiFashahah: NilaiSetoran;
+  nilaiKelancaran: NilaiSetoran;
+  rincianKesalahan?: MistakeCounts | null;
   catatan?: string;
 }
 
@@ -856,6 +866,39 @@ export async function recordTasmiSimaanAction(input: RecordTasmiSimaanInput) {
       return { success: false, message: "Profil penguji staf tidak ditemukan." };
     }
 
+    // Validasi dimensi kualitas terstruktur: wajib untuk seluruh pencatatan Tasmi/Sima'an baru
+    if (!input.nilaiTajwid || !input.nilaiFashahah || !input.nilaiKelancaran) {
+      return {
+        success: false,
+        message: "Ketiga dimensi kualitas (Tajwid, Fashahah, Kelancaran) wajib diisi lengkap.",
+      };
+    }
+    if (
+      !VALID_NILAI_SETORAN_VALUES.includes(input.nilaiTajwid) ||
+      !VALID_NILAI_SETORAN_VALUES.includes(input.nilaiFashahah) ||
+      !VALID_NILAI_SETORAN_VALUES.includes(input.nilaiKelancaran)
+    ) {
+      return {
+        success: false,
+        message: "Predikat kualitas tidak valid. Pilihan: MUMTAZ, JAYYID_JIDDAN, JAYYID, MAQBUL, DHOIF.",
+      };
+    }
+    const structuredTajwid = input.nilaiTajwid;
+    const structuredFashahah = input.nilaiFashahah;
+    const structuredKelancaran = input.nilaiKelancaran;
+    let structuredMistakes: Prisma.InputJsonValue | null = null;
+
+    if (input.rincianKesalahan) {
+      const parsedMistakes = mistakeCountsSchema.safeParse(input.rincianKesalahan);
+      if (!parsedMistakes.success) {
+        return {
+          success: false,
+          message: "Rincian kesalahan Tasmi/Sima'an tidak valid.",
+        };
+      }
+      structuredMistakes = parsedMistakes.data as unknown as Prisma.InputJsonValue;
+    }
+
     const testRecord = await prisma.tasmiSimaan.create({
       data: {
         santriId: input.santriId,
@@ -866,6 +909,10 @@ export async function recordTasmiSimaanAction(input: RecordTasmiSimaanInput) {
         halaman: input.halaman ? Number(input.halaman) : null,
         nilai: Number(input.nilai),
         predikat: input.predikat,
+        nilaiTajwid: structuredTajwid,
+        nilaiFashahah: structuredFashahah,
+        nilaiKelancaran: structuredKelancaran,
+        rincianKesalahan: structuredMistakes ?? undefined,
         catatan: input.catatan,
       },
       include: {
@@ -885,6 +932,9 @@ export async function recordTasmiSimaanAction(input: RecordTasmiSimaanInput) {
         juz: input.juz,
         nilai: input.nilai,
         predikat: input.predikat,
+        nilaiTajwid: structuredTajwid,
+        nilaiFashahah: structuredFashahah,
+        nilaiKelancaran: structuredKelancaran,
       },
     });
 

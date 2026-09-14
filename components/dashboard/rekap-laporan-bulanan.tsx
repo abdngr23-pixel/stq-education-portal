@@ -19,9 +19,19 @@ import {
   PlusCircle,
   ChevronRight,
   Lock,
+  ChevronDown,
+  ChevronUp,
+  Plus,
+  Minus,
 } from "lucide-react";
 import { exportToCSV } from "@/lib/export-csv";
 import { getCurrentWITAMonth } from "@/lib/wita-date";
+import {
+  DEFAULT_MISTAKE_COUNTS,
+  CANONICAL_MISTAKE_KEYS,
+  MISTAKE_LABELS,
+  MistakeCounts,
+} from "@/lib/tahfizh-quality";
 import {
   getLaporanBulananHalaqohAction,
   inputCapaianPekananAction,
@@ -199,6 +209,11 @@ export function RekapLaporanBulanan({
   const [testJuz, setTestJuz] = useState<number>(30);
   const [testNilai, setTestNilai] = useState<number>(90);
   const [testPredikat, setTestPredikat] = useState<NilaiSetoran>("MUMTAZ");
+  const [testTajwid, setTestTajwid] = useState<NilaiSetoran | "">("");
+  const [testFashahah, setTestFashahah] = useState<NilaiSetoran | "">("");
+  const [testKelancaran, setTestKelancaran] = useState<NilaiSetoran | "">("");
+  const [testMistakes, setTestMistakes] = useState<MistakeCounts>({ ...DEFAULT_MISTAKE_COUNTS });
+  const [testMistakesOpen, setTestMistakesOpen] = useState(false);
   const [testCatatan, setTestCatatan] = useState<string>("");
 
   // Fetch report data callback (bisa digunakan untuk coba lagi)
@@ -378,6 +393,13 @@ export function RekapLaporanBulanan({
 
   const handleSaveTest = async () => {
     if (!testSantriId || !effectiveTahunAjaran) return;
+    if (!testTajwid || !testFashahah || !testKelancaran) {
+      setNotification({
+        type: "error",
+        message: "Ketiga dimensi kualitas (Tajwid, Fashahah, Kelancaran) wajib dipilih.",
+      });
+      return;
+    }
     const targetHalaqoh = isLockedMusyrif ? resolvedHalaqoh.id : selectedHalaqohId;
     startTransition(async () => {
       const res = await recordTasmiSimaanAction({
@@ -386,6 +408,10 @@ export function RekapLaporanBulanan({
         juz: Number(testJuz),
         nilai: Number(testNilai),
         predikat: testPredikat,
+        nilaiTajwid: testTajwid,
+        nilaiFashahah: testFashahah,
+        nilaiKelancaran: testKelancaran,
+        rincianKesalahan: testMistakes,
         catatan: testCatatan,
       });
 
@@ -393,6 +419,10 @@ export function RekapLaporanBulanan({
         setNotification({ type: "success", message: res.message });
         setShowModalTest(false);
         setTestCatatan("");
+        setTestTajwid("");
+        setTestFashahah("");
+        setTestKelancaran("");
+        setTestMistakes({ ...DEFAULT_MISTAKE_COUNTS });
         loadData(targetHalaqoh, selectedBulan, effectiveTahunAjaran);
       } else {
         setNotification({ type: "error", message: res.message });
@@ -1387,6 +1417,111 @@ export function RekapLaporanBulanan({
                     value={testPredikat}
                     className="w-full px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 text-xs font-bold text-[#0E7C3A]"
                   />
+                </div>
+              </div>
+
+              {/* 3 Dimensi Kualitas Terstruktur (Business Contract PR #8) */}
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
+                <span className="text-[11px] font-bold text-slate-700 block">
+                  Evaluasi Kualitas 3 Dimensi Resmi
+                </span>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-600 block mb-1">
+                      Tajwid
+                    </label>
+                    <select
+                      value={testTajwid}
+                      onChange={(e) => setTestTajwid(e.target.value as NilaiSetoran)}
+                      className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs bg-white min-h-[44px]"
+                    >
+                      <option value="" disabled>Pilih predikat...</option>
+                      <option value="MUMTAZ">Mumtaz</option>
+                      <option value="JAYYID_JIDDAN">Jayyid Jiddan</option>
+                      <option value="JAYYID">Jayyid</option>
+                      <option value="MAQBUL">Maqbul</option>
+                      <option value="DHOIF">Dhoif</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-600 block mb-1">
+                      Fashahah
+                    </label>
+                    <select
+                      value={testFashahah}
+                      onChange={(e) => setTestFashahah(e.target.value as NilaiSetoran)}
+                      className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs bg-white min-h-[44px]"
+                    >
+                      <option value="" disabled>Pilih predikat...</option>
+                      <option value="MUMTAZ">Mumtaz</option>
+                      <option value="JAYYID_JIDDAN">Jayyid Jiddan</option>
+                      <option value="JAYYID">Jayyid</option>
+                      <option value="MAQBUL">Maqbul</option>
+                      <option value="DHOIF">Dhoif</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-600 block mb-1">
+                      Kelancaran
+                    </label>
+                    <select
+                      value={testKelancaran}
+                      onChange={(e) => setTestKelancaran(e.target.value as NilaiSetoran)}
+                      className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs bg-white min-h-[44px]"
+                    >
+                      <option value="" disabled>Pilih predikat...</option>
+                      <option value="MUMTAZ">Mumtaz</option>
+                      <option value="JAYYID_JIDDAN">Jayyid Jiddan</option>
+                      <option value="JAYYID">Jayyid</option>
+                      <option value="MAQBUL">Maqbul</option>
+                      <option value="DHOIF">Dhoif</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Collapsible Rincian Kesalahan */}
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setTestMistakesOpen(!testMistakesOpen)}
+                    className="w-full py-1.5 px-2 bg-white rounded-lg border border-slate-200 text-left flex items-center justify-between text-[11px] font-semibold text-slate-600 hover:bg-slate-50 min-h-[44px]"
+                  >
+                    <span>Rincian Kesalahan ({Object.values(testMistakes).reduce((a, b) => a + b, 0)} tercatat)</span>
+                    {testMistakesOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                  </button>
+
+                  {testMistakesOpen && (
+                    <div className="p-2.5 bg-white border border-slate-200 rounded-lg mt-1 grid grid-cols-2 gap-2 text-[11px]">
+                      {CANONICAL_MISTAKE_KEYS.map((key) => {
+                        const count = testMistakes[key] || 0;
+                        return (
+                          <div key={key} className="flex items-center justify-between p-1.5 bg-slate-50 rounded-md">
+                            <span className="text-[10px] font-medium text-slate-700 truncate mr-1" title={MISTAKE_LABELS[key].label}>
+                              {MISTAKE_LABELS[key].label}
+                            </span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                disabled={count <= 0}
+                                onClick={() => setTestMistakes((p) => ({ ...p, [key]: Math.max(0, (p[key] || 0) - 1) }))}
+                                className="w-6 h-6 rounded bg-white border border-slate-200 flex items-center justify-center text-slate-600 disabled:opacity-30"
+                              >
+                                <Minus className="h-3 w-3" />
+                              </button>
+                              <span className="w-5 text-center font-bold text-xs">{count}</span>
+                              <button
+                                type="button"
+                                onClick={() => setTestMistakes((p) => ({ ...p, [key]: (p[key] || 0) + 1 }))}
+                                className="w-6 h-6 rounded bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-100"
+                              >
+                                <Plus className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
 

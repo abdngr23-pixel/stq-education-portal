@@ -1347,6 +1347,14 @@ export interface MigrationChainVerificationResult {
   isUpToDate: boolean;
   dataType: string;
   isNullable: string;
+  pr8Schema?: {
+    setoranTahfizhCols: Array<{ column_name: string; data_type: string; udt_name: string; is_nullable: string }>;
+    tasmiSimaanCols: Array<{ column_name: string; data_type: string; udt_name: string; is_nullable: string }>;
+    ikhtibarTahfizhCols: Array<{ column_name: string; data_type: string; udt_name: string; is_nullable: string }>;
+    evaluasiRubuCols: Array<{ column_name: string; data_type: string; udt_name: string; is_nullable: string }>;
+    evaluasiRubuConstraints: Array<{ constraint_name: string; constraint_type: string; table_name: string }>;
+    legacyRowsNoBackfillRequired: boolean;
+  };
 }
 
 /**
@@ -1476,9 +1484,68 @@ export async function runIsolatedMigrationChainVerification(): Promise<Migration
         WHERE table_name = 'setoran_tahfizh' AND column_name = 'jumlah_juz_mufar';
       `);
 
+    const col = cols[0] || { data_type: "unknown", is_nullable: "NO" };
+
+    // Query PR #8 schema details
+    const allCols: Array<{ table_name: string; column_name: string; data_type: string; udt_name: string; is_nullable: string }> =
+      await client.$queryRawUnsafe(`
+        SELECT table_name, column_name, data_type, udt_name, is_nullable
+        FROM information_schema.columns
+        WHERE table_name IN ('setoran_tahfizh', 'tasmi_simaan', 'ikhtibar_tahfizh', 'evaluasi_rubu_tahfizh');
+      `);
+
+    const evaluasiRubuConstraints: Array<{ constraint_name: string; constraint_type: string; table_name: string }> =
+      await client.$queryRawUnsafe(`
+        SELECT tc.constraint_name, tc.constraint_type, tc.table_name
+        FROM information_schema.table_constraints tc
+        WHERE tc.table_name = 'evaluasi_rubu_tahfizh';
+      `);
+
+    // Verify inserting and reading legacy production-equivalent row requires no backfill
+    let legacyRowsNoBackfillRequired = false;
+    try {
+      await client.$executeRawUnsafe(`
+        INSERT INTO "santri" ("id", "nis", "nama", "kelas", "jenis_kelamin", "status", "updated_at")
+        VALUES ('san-mig-01', 'NIS-MIG-01', 'Santri Migrasi', '7A', 'L', 'AKTIF', now())
+        ON CONFLICT DO NOTHING;
+      `);
+      await client.$executeRawUnsafe(`
+        INSERT INTO "staff" ("id", "staff_code", "nama", "no_hp", "role_staff", "status", "updated_at")
+        VALUES ('stf-mig-01', 'STF-MIG-01', 'Musyrif Migrasi', '0812345678', 'MT', 'AKTIF', now())
+        ON CONFLICT DO NOTHING;
+      `);
+      await client.$executeRawUnsafe(`
+        INSERT INTO "setoran_tahfizh" (
+          "id", "setoran_code", "santri_id", "musyrif_id", "jenis",
+          "juz", "halaman_mulai", "halaman_selesai", "jumlah_halaman",
+          "nilai", "status", "tanggal", "updated_at"
+        ) VALUES (
+          'set-mig-legacy-01', 'SET-LEGACY-01', 'san-mig-01', 'stf-mig-01', 'SABAQ',
+          1, 1, 1, 1,
+          'MUMTAZ', 'AKTIF', now(), now()
+        );
+      `);
+      const legacyRows = await client.$queryRawUnsafe<
+        Array<{ id: string; nilai: string; nilai_tajwid: string | null }>
+      >(`
+        SELECT "id", "nilai", "nilai_tajwid", "nilai_fashahah", "nilai_kelancaran", "rincian_kesalahan"
+        FROM "setoran_tahfizh"
+        WHERE "id" = 'set-mig-legacy-01';
+      `);
+      if (legacyRows.length > 0 && legacyRows[0].nilai === "MUMTAZ" && legacyRows[0].nilai_tajwid === null) {
+        legacyRowsNoBackfillRequired = true;
+      }
+    } catch (err) {
+      console.error("Error inserting legacy migration check row:", err);
+      legacyRowsNoBackfillRequired = false;
+    }
+
     await client.$disconnect();
 
-    const col = cols[0] || { data_type: "unknown", is_nullable: "NO" };
+    const setoranTahfizhCols = allCols.filter((c) => c.table_name === "setoran_tahfizh");
+    const tasmiSimaanCols = allCols.filter((c) => c.table_name === "tasmi_simaan");
+    const ikhtibarTahfizhCols = allCols.filter((c) => c.table_name === "ikhtibar_tahfizh");
+    const evaluasiRubuCols = allCols.filter((c) => c.table_name === "evaluasi_rubu_tahfizh");
 
     return {
       migrationDirectoriesFound: migrationDirectories,
@@ -1489,6 +1556,14 @@ export async function runIsolatedMigrationChainVerification(): Promise<Migration
       isUpToDate,
       dataType: col.data_type,
       isNullable: col.is_nullable,
+      pr8Schema: {
+        setoranTahfizhCols,
+        tasmiSimaanCols,
+        ikhtibarTahfizhCols,
+        evaluasiRubuCols,
+        evaluasiRubuConstraints,
+        legacyRowsNoBackfillRequired,
+      },
     };
   } finally {
     const pgCtl = getPgCtlPath();
