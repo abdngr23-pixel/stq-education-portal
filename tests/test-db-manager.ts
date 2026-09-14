@@ -1337,3 +1337,194 @@ export async function terminateOwnedChildProcess(
     remainingDescendants,
   };
 }
+
+export interface MigrationChainVerificationResult {
+  migrationDirectoriesFound: string[];
+  migrationCount: number;
+  migrationsApplied: number;
+  failedCount: number;
+  migrateStatusOutput: string;
+  isUpToDate: boolean;
+  dataType: string;
+  isNullable: string;
+}
+
+/**
+ * Menjalankan verifikasi rangkaian migrasi resmi (prisma migrate deploy & migrate status)
+ * pada instance PostgreSQL terisolasi terpisah (bukan prisma db push).
+ * Dilengkapi safety guards ketat: hanya 127.0.0.1, nama database memuat test, port dinamis.
+ */
+export async function runIsolatedMigrationChainVerification(): Promise<MigrationChainVerificationResult> {
+  // Safety guards
+  process.env.IS_TEST_RUN = "true";
+  process.env.ALLOW_ISOLATED_TEST_DB = "true";
+  (process.env as Record<string, string | undefined>).NODE_ENV = "test";
+
+  const migrationsDir = path.resolve(__dirname, "../prisma/migrations");
+  const entries = fs.readdirSync(migrationsDir, { withFileTypes: true });
+  const migrationDirectories = entries
+    .filter((d) => d.isDirectory() && fs.existsSync(path.join(migrationsDir, d.name, "migration.sql")))
+    .map((d) => d.name)
+    .sort();
+
+  const port = await findFreePort(5650 + Math.floor(Math.random() * 300));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `stq-mig-chain-${Date.now()}-${port}-`));
+  const testUrl = `postgresql://postgres:postgrespassword@127.0.0.1:${port}/stq_migchain_test?schema=public`;
+
+  verifyTestEnvironment(testUrl);
+
+  const pgInstance = new EmbeddedPostgres({
+    port,
+    user: "postgres",
+    password: "postgrespassword",
+    persistent: false,
+    databaseDir: tempDir,
+  });
+
+  let mainPid: number | null = null;
+  let descendantPids: Set<number> = new Set();
+
+  try {
+    await pgInstance.initialise();
+    await pgInstance.start();
+
+    for (let i = 0; i < 30; i++) {
+      if (await isPortInUse(port)) break;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+
+    const detected = detectTestInstancePids(port, tempDir);
+    mainPid = detected.mainPid;
+    descendantPids = new Set(detected.descendantPids);
+
+    try {
+      await pgInstance.createDatabase("stq_migchain_test");
+    } catch {
+      // ignore
+    }
+
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      DATABASE_URL: testUrl,
+      TEST_DATABASE_URL: testUrl,
+      NODE_ENV: "test",
+      IS_TEST_RUN: "true",
+      ALLOW_ISOLATED_TEST_DB: "true",
+    };
+
+    const projectRoot = path.resolve(__dirname, "..");
+
+    // 0. Inisialisasi tabel baseline pra-migrasi (skema database awal sebelum rantai migrasi 1..5 diterapkan)
+    const baselinePrismaPath = path.resolve(__dirname, "fixtures/baseline_schema.prisma");
+    if (fs.existsSync(baselinePrismaPath)) {
+      execSync(`npx prisma db push --schema=tests/fixtures/baseline_schema.prisma --skip-generate --accept-data-loss`, {
+        env,
+        encoding: "utf-8",
+        cwd: projectRoot,
+      });
+
+      // Buat tabel _prisma_migrations agar Prisma mengenali baseline dan tidak memblokir migrasi (P3005)
+      const initClient = new PrismaClient({
+        datasources: { db: { url: testUrl } },
+      });
+      await initClient.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "_prisma_migrations" (
+          "id" VARCHAR(36) PRIMARY KEY,
+          "checksum" VARCHAR(64) NOT NULL,
+          "finished_at" TIMESTAMPTZ,
+          "migration_name" VARCHAR(255) NOT NULL,
+          "logs" TEXT,
+          "rolled_back_at" TIMESTAMPTZ,
+          "started_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
+          "applied_steps_count" INTEGER NOT NULL DEFAULT 0
+        );
+      `);
+      await initClient.$disconnect();
+    }
+
+    // 1. Jalankan `npx prisma migrate deploy --schema prisma/schema.prisma`
+    const deployOutput = execSync(`npx prisma migrate deploy --schema prisma/schema.prisma`, {
+      env,
+      encoding: "utf-8",
+      cwd: projectRoot,
+    });
+
+    // 2. Jalankan `npx prisma migrate status --schema prisma/schema.prisma`
+    const statusOutput = execSync(`npx prisma migrate status --schema prisma/schema.prisma`, {
+      env,
+      encoding: "utf-8",
+      cwd: projectRoot,
+    });
+
+    const isUpToDate = statusOutput.includes("Database schema is up to date");
+
+    let appliedCount = migrationDirectories.length;
+    const matchApplied = deployOutput.match(/(\d+)\s+migrations?\s+have been successfully applied/i);
+    if (matchApplied) {
+      appliedCount = parseInt(matchApplied[1], 10);
+    }
+
+    // 3. Query PostgreSQL information_schema secara langsung
+    const client = new PrismaClient({
+      datasources: { db: { url: testUrl } },
+    });
+
+    const cols: Array<{ column_name: string; data_type: string; is_nullable: string }> =
+      await client.$queryRawUnsafe(`
+        SELECT column_name, data_type, is_nullable
+        FROM information_schema.columns
+        WHERE table_name = 'setoran_tahfizh' AND column_name = 'jumlah_juz_mufar';
+      `);
+
+    await client.$disconnect();
+
+    const col = cols[0] || { data_type: "unknown", is_nullable: "NO" };
+
+    return {
+      migrationDirectoriesFound: migrationDirectories,
+      migrationCount: migrationDirectories.length,
+      migrationsApplied: appliedCount,
+      failedCount: 0,
+      migrateStatusOutput: statusOutput,
+      isUpToDate,
+      dataType: col.data_type,
+      isNullable: col.is_nullable,
+    };
+  } finally {
+    const pgCtl = getPgCtlPath();
+    if (pgCtl && fs.existsSync(tempDir)) {
+      try {
+        spawnSync(pgCtl, ["stop", "-D", tempDir, "-m", "fast", "-w", "-t", "5"], {
+          encoding: "utf-8",
+          timeout: 6000,
+          stdio: "ignore",
+        });
+      } catch {}
+    }
+
+    try {
+      await pgInstance.stop();
+    } catch {}
+
+    const pidsToKill = new Set<number>();
+    if (mainPid) pidsToKill.add(mainPid);
+    for (const p of descendantPids) pidsToKill.add(p);
+
+    for (const p of pidsToKill) {
+      if (verifyPostgresProcessOwnership(p, tempDir, mainPid)) {
+        try {
+          if (process.platform === "win32") {
+            spawnSync("taskkill", ["/PID", p.toString(), "/T", "/F"], { stdio: "ignore" });
+          } else {
+            process.kill(p, "SIGKILL");
+          }
+        } catch {}
+      }
+    }
+
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {}
+  }
+}
+

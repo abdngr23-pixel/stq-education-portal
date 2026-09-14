@@ -2,10 +2,12 @@
 process.env.IS_TEST_RUN = "true";
 process.env.ALLOW_ISOLATED_TEST_DB = "true";
 
+import fs from "fs";
+import path from "path";
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
-import { startTestDatabase, stopTestDatabase } from "./test-db-manager";
+import { startTestDatabase, stopTestDatabase, runIsolatedMigrationChainVerification } from "./test-db-manager";
 import { setTestSession } from "../lib/auth";
 import { UserSession } from "../types/auth";
 import {
@@ -810,17 +812,16 @@ describe("PR #7 — Tahfizh Operational Monitoring & Action Center (Comprehensiv
       );
     });
 
-    it("6.7. Isolated Migration Database Schema Check: jumlah_juz_mufar = INTEGER NULL", async () => {
-      const columns: Array<{ column_name: string; data_type: string; is_nullable: string }> =
-        await prisma.$queryRawUnsafe(`
-          SELECT column_name, data_type, is_nullable
-          FROM information_schema.columns
-          WHERE table_name = 'setoran_tahfizh' AND column_name = 'jumlah_juz_mufar';
-        `);
+    it("6.7. Real Migration Chain Test on Fresh Isolated PostgreSQL (migrate deploy & status)", { timeout: 60000 }, async () => {
+      const res = await runIsolatedMigrationChainVerification();
 
-      assert.equal(columns.length, 1, "Kolom jumlah_juz_mufar harus ada pada tabel setoran_tahfizh");
-      assert.equal(columns[0].data_type, "integer", "Tipe data kolom harus integer");
-      assert.equal(columns[0].is_nullable, "YES", "Kolom jumlah_juz_mufar harus nullable (INTEGER NULL)");
+      assert.ok(res.migrationCount >= 5, "Setidaknya terdapat 5 migrasi di repositori");
+      assert.equal(res.migrationsApplied, res.migrationCount, "Seluruh migrasi repositori harus applied");
+      assert.equal(res.failedCount, 0, "Tidak boleh ada migrasi yang gagal (0 failed)");
+      assert.equal(res.isUpToDate, true, "Status migrasi harus up to date");
+      assert.match(res.migrateStatusOutput, /Database schema is up to date/i, "Output status harus 'Database schema is up to date'");
+      assert.equal(res.dataType, "integer", "Tipe data kolom jumlah_juz_mufar harus integer");
+      assert.equal(res.isNullable, "YES", "Kolom jumlah_juz_mufar harus nullable (INTEGER NULL)");
     });
 
     it("6.8. Weekly Sabaq Terminology: BELUM_TERCAPAI bukan kegagalan otomatis attention hari ini", () => {
@@ -839,6 +840,72 @@ describe("PR #7 — Tahfizh Operational Monitoring & Action Center (Comprehensiv
         isMufarApplicable: false,
       });
       assert.equal(dailyStatus.sabaq, "SELESAI");
+    });
+
+    it("6.9. MUFAR canonical target zero never becomes 1 under any condition", () => {
+      // Santri dengan posisiTerakhirHalaman = 0 (completedJuz = 0)
+      // isMufarApplicable = true, tidak ada target eksplisit
+      const completedJuz = getCompletedJuzCount(0, false);
+      assert.equal(completedJuz, 0);
+      const canonicalTarget = getDailyMufarTargetJuz(completedJuz);
+      assert.equal(canonicalTarget, 0);
+
+      const status = determineTahfizhDailyStatus({
+        refDate: new Date("2026-09-16T10:00:00.000Z"),
+        validSetoranToday: [],
+        posisiTerakhirHalaman: 0,
+        isHalamanTerakhirParsial: false,
+        isMufarApplicable: true,
+        // no explicit targetDailyMufarJuz
+      });
+
+      assert.equal(
+        status.targetDailyMufarJuz,
+        0,
+        "Canonical target 0 TIDAK BOLEH difabrikasi menjadi 1 meskipun isMufarApplicable=true"
+      );
+      assert.equal(
+        status.mufar,
+        "TIDAK_BERLAKU",
+        "Target daily mufar 0 harus menghasilkan status TIDAK_BERLAKU"
+      );
+    });
+
+    it("6.10. Dashboard Musyrif Tahfizh has zero client-side domain recalculations", () => {
+      const dashboardPath = path.resolve(
+        __dirname,
+        "../components/dashboard/dashboard-musyrif-tahfizh.tsx"
+      );
+      const content = fs.readFileSync(dashboardPath, "utf-8");
+
+      // Verifikasi komponen tidak mengimpor helper domain recalculation
+      assert.equal(
+        content.includes("getCompletedJuzCount"),
+        false,
+        "Dashboard tidak boleh mengimpor atau memanggil getCompletedJuzCount"
+      );
+      assert.equal(
+        content.includes("getDailyMufarTargetJuz"),
+        false,
+        "Dashboard tidak boleh mengimpor atau memanggil getDailyMufarTargetJuz"
+      );
+      assert.equal(
+        content.includes("isTodayWita"),
+        false,
+        "Dashboard tidak boleh mengimpor atau memanggil isTodayWita untuk menebak status"
+      );
+
+      // Verifikasi dashboard hanya menggunakan authoritative payload dari server
+      assert.match(
+        content,
+        /completedJuzCanonical:\s*s\.completedJuzCanonical/,
+        "Dashboard harus meneruskan completedJuzCanonical authoritative dari server"
+      );
+      assert.match(
+        content,
+        /targetDailyMufarJuz:\s*s\.targetDailyMufarJuz/,
+        "Dashboard harus meneruskan targetDailyMufarJuz authoritative dari server"
+      );
     });
   });
 });

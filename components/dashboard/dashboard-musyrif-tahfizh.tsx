@@ -19,13 +19,10 @@ import {
   Sparkles,
   Layers,
 } from "lucide-react";
-import { isTodayWita } from "@/lib/wita-date";
 import { AppNavId } from "@/types/navigation";
 import { TahfizhDailyStatus } from "@/lib/tahfizh-status";
 import {
   WeeklySabaqProgress,
-  getCompletedJuzCount,
-  getDailyMufarTargetJuz,
   HalaqohWorkloadSummary,
 } from "@/lib/tahfizh-mufar-tier";
 
@@ -118,40 +115,19 @@ export function DashboardMusyrifTahfizh({
   // Resolusi data operasional santri (murni presentasi dari authoritative server payload)
   const resolvedSantriList = useMemo(() => {
     return santriList.map((s) => {
-      const posHalaman = s.posisiTerakhirHalaman || 1;
-      const completedJuz =
-        s.completedJuzCanonical !== undefined
-          ? s.completedJuzCanonical
-          : getCompletedJuzCount(posHalaman, s.isHalamanTerakhirParsial);
-
-      const targetDailyMufar =
-        s.targetDailyMufarJuz !== undefined
-          ? s.targetDailyMufarJuz
-          : getDailyMufarTargetJuz(completedJuz);
-
-      const isSudahSetor =
-        typeof s.sudahSetorHariIni === "boolean"
-          ? s.sudahSetorHariIni
-          : s.setoranTerakhirAt
-          ? isTodayWita(s.setoranTerakhirAt)
-          : false;
-
-      // Status harian 4 komponen: murni dari server payload, dilarang fabrikasi status di client
-      const status: TahfizhDailyStatus | undefined = s.statusTahfizhHariIni;
-
-      // Weekly progress: murni dari server payload, dilarang fabrikasi actual=0 di client
-      const weeklyProgress = s.weeklySabaqProgress;
-
+      // Authoritative server payload only — zero client domain recalculation / guessing
+      const isSudahSetor = Boolean(s.sudahSetorHariIni);
       const needsAttention = Boolean(s.needsAttention);
       const reasons: string[] = s.attentionReasons ? [...s.attentionReasons] : [];
 
       return {
         ...s,
         sudahSetorHariIni: isSudahSetor,
-        completedJuzCanonical: completedJuz,
-        targetDailyMufarJuz: targetDailyMufar,
-        weeklySabaqProgress: weeklyProgress,
-        statusTahfizhHariIni: status,
+        completedJuzCanonical: s.completedJuzCanonical,
+        targetDailyMufarJuz: s.targetDailyMufarJuz,
+        actualDailyMufarJuz: s.actualDailyMufarJuz,
+        weeklySabaqProgress: s.weeklySabaqProgress,
+        statusTahfizhHariIni: s.statusTahfizhHariIni,
         needsAttention,
         attentionReasons: reasons,
         mufarProgressLabel: s.mufarProgressLabel,

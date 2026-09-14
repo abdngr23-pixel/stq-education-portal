@@ -116,19 +116,10 @@ export function determineTahfizhDailyStatus(
   const canonicalDailyMufarTarget = getDailyMufarTargetJuz(completedJuz);
 
   const targetDailyMufarJuz =
-    params.targetDailyMufarJuz !== undefined && params.targetDailyMufarJuz !== null
-      ? params.targetDailyMufarJuz
-      : (params.isMufarApplicable === false
-          ? 0
-          : (params.isMufarApplicable === true
-              ? (canonicalDailyMufarTarget || 1)
-              : canonicalDailyMufarTarget));
+    params.targetDailyMufarJuz ?? canonicalDailyMufarTarget;
 
-  // Applicability MUFAR: hanya berlaku jika target harian > 0
   const isMufarApplicable =
-    params.isMufarApplicable !== undefined
-      ? params.isMufarApplicable
-      : targetDailyMufarJuz > 0;
+    params.isMufarApplicable ?? targetDailyMufarJuz > 0;
 
   if (!isEffective) {
     // Akhir pekan (Sabtu & Ahad): Bukan hari pokok monitoring Tahfizh

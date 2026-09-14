@@ -7,7 +7,7 @@ import { isTodayWita, getWitaDateString } from "@/lib/wita-date";
 import { getStartOfWeekWITA } from "@/lib/sabaqi";
 import { calculateLatestSabaqPosition } from "@/lib/tahfizh-page-allocation";
 
-import { determineTahfizhDailyStatus, TahfizhDailyStatus } from "@/lib/tahfizh-status";
+import { determineTahfizhDailyStatus, isHariEfektifTahfizh, TahfizhDailyStatus } from "@/lib/tahfizh-status";
 import {
   getCompletedJuzCount,
   getDailyMufarTargetJuz,
@@ -55,6 +55,9 @@ export interface SantriListItem {
   actualDailyMufarJuz: number;
   weeklySabaqProgress: WeeklySabaqProgress;
   statusTahfizhHariIni: TahfizhDailyStatus;
+  mufarProgressLabel?: string;
+  needsAttention?: boolean;
+  attentionReasons?: string[];
   setoranTerakhir: string;
   setoranTerakhirAt: string | null;
   sudahSetorHariIni: boolean;
@@ -301,6 +304,33 @@ export async function getSantriListForSession(
 
       const setoranTerakhirAt = latestSetoran ? latestSetoran.tanggal.toISOString() : null;
 
+      // Label visual untuk MUFAR
+      let mufarProgressLabel: string;
+      if (targetDailyMufarJuz <= 0 || statusTahfizhHariIni.mufar === "TIDAK_BERLAKU") {
+        mufarProgressLabel = "Tidak Berlaku";
+      } else if (statusTahfizhHariIni.mufar === "SELESAI") {
+        mufarProgressLabel = `Tercapai (${actualDailyMufarJuz}/${targetDailyMufarJuz} Juz)`;
+      } else {
+        mufarProgressLabel = `${actualDailyMufarJuz}/${targetDailyMufarJuz} Juz`;
+      }
+
+      const isEffective = isHariEfektifTahfizh(targetRefDate);
+      const attentionReasons: string[] = [];
+      if (isEffective) {
+        if (!statusTahfizhHariIni.sudahSetorHariIni) {
+          attentionReasons.push("Belum menyetorkan hafalan hari ini");
+        }
+        if (
+          statusTahfizhHariIni.mufar === "BELUM_SELESAI" &&
+          statusTahfizhHariIni.sudahSetorHariIni
+        ) {
+          attentionReasons.push(
+            `Target harian Mufar belum terpenuhi (${actualDailyMufarJuz}/${targetDailyMufarJuz} Juz)`
+          );
+        }
+      }
+      const needsAttention = attentionReasons.length > 0;
+
       return {
         id: s.id,
         nis: s.nis,
@@ -328,12 +358,15 @@ export async function getSantriListForSession(
         targetDailyMufarJuz,
         actualDailyMufarJuz,
         weeklySabaqProgress,
+        statusTahfizhHariIni,
+        mufarProgressLabel,
+        needsAttention,
+        attentionReasons,
         targetJuz: s.targetAkhirProgramJuz && s.targetAkhirProgramJuz > 0 ? s.targetAkhirProgramJuz : null,
         targetSabaq,
         targetSabaqLabel,
         targetSabaqBulanan,
         targetSabaqPekanan,
-        statusTahfizhHariIni,
         setoranTerakhir: latestSetoran
           ? `${latestSetoran.jenis} Juz ${latestSetoran.juz} Hlm ${latestSetoran.halamanMulai}-${latestSetoran.halamanSelesai}`
           : "-",
