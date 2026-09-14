@@ -405,6 +405,7 @@ model SetoranTahfizh {
   halamanMulai   Int           @map("halaman_mulai")
   halamanSelesai Int           @map("halaman_selesai")
   jumlahHalaman  Float         @map("jumlah_halaman")
+  jumlahJuzMufar Int?          @map("jumlah_juz_mufar")
   nilai          NilaiSetoran
   catatan        String?
   clientRequestId String?      @unique @map("client_request_id")

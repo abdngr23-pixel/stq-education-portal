@@ -666,6 +666,7 @@ export function TahfizhModule({
           halamanMulai: hlmMulaiNum,
           halamanSelesai: hlmSelesaiNum,
           jumlahHalaman: jmlHlmNum,
+          jumlahJuzMufar: inputJenis === "MUFAR" ? (parseInt(jumlahJuzMufar, 10) || null) : null,
           nilai,
           catatan: finalCatatan,
           clientRequestId,
