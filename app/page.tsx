@@ -285,7 +285,7 @@ export default function Home() {
             kelas: s.kelas,
             halaqoh: s.halaqoh || s.halaqohNama || "Belum Ditentukan",
             capaianJuz: s.capaianJuz ?? 0,
-            targetJuz: s.targetJuz ?? 0,
+            targetJuz: s.targetJuz ?? null,
             targetSabaq: s.targetSabaq,
             targetSabaqLabel: s.targetSabaqLabel,
             targetSabaqBulanan: s.targetSabaqBulanan,
@@ -787,7 +787,7 @@ export default function Home() {
                 kelas: santri.kelas,
                 halaqoh: (santri.halaqoh as unknown as { nama?: string })?.nama || "Halaqoh",
                 capaianJuz: 0,
-                targetJuz: 30,
+                targetJuz: (santri as unknown as { targetAkhirProgramJuz?: number; targetJuz?: number }).targetAkhirProgramJuz ?? (santri as unknown as { targetJuz?: number }).targetJuz ?? null,
                 setoranTerakhir: "-",
                 status: santri.status,
                 nilaiTerakhir: "MUMTAZ",
@@ -1152,7 +1152,7 @@ export default function Home() {
                           kelas: santriList[0]?.kelas || "-",
                           halaqoh: santriList[0]?.halaqoh || "-",
                           capaianJuz: santriList[0]?.capaianJuz || 0,
-                          targetJuz: 30,
+                          targetJuz: santriList[0]?.targetJuz ?? null,
                         }
                   }
                   nilaiAkademik={[

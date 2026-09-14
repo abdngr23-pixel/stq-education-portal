@@ -17,6 +17,7 @@ import {
   generateRingkasanTasmiSimaan,
   TARGET_MIN_KOMPONEN,
 } from "@/lib/laporan-bulanan";
+import { getWITAMonthRange } from "@/lib/wita-date";
 
 export interface TargetSantriInput {
   santriId: string;
@@ -81,45 +82,70 @@ export async function getLaporanBulananHalaqohAction(
       return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
     }
 
-    // 1. ABAC Role Enforcement
+    // 1. ABAC Role Enforcement (Explicit Allowlist & Default Deny)
     let effectiveHalaqohId = halaqohId || "ALL";
-
     const isKabidTahfidz = Boolean(session.isKepalaBidangTahfidz);
 
     if (["KS", "ADM", "YAY"].includes(session.role) || isKabidTahfidz) {
-      // KS, ADM, YAY, dan Kepala Bidang Tahfidz: Memiliki otoritas manajerial untuk melihat halaqoh manapun atau agregasi seluruh halaqoh
+      // KS, ADM, YAY, dan Kepala Bidang Tahfidz: Otoritas manajerial untuk melihat halaqoh manapun atau agregasi seluruh halaqoh
       effectiveHalaqohId = halaqohId || "ALL";
     } else if (session.role === "MT" || session.role === "PH") {
-      // Role Musyrif/Pembina biasa (selain Kabid): PAKSA selalu memakai halaqoh milik sendiri (Fail-closed)
-      let staffHalaqohId: string | null = null;
-
-      if (session.staffId) {
-        const h = await prisma.halaqoh.findFirst({
-          where: { pembinaId: session.staffId },
-          select: { id: true, halaqohCode: true },
-        });
-        if (h) staffHalaqohId = h.id || h.halaqohCode;
-      }
-
-      if (!staffHalaqohId) {
+      // Musyrif/Pembina biasa (selain Kabid): Wajib memiliki profil staf dan dibatasi ke halaqoh binaan sendiri
+      if (!session.staffId) {
         return {
           success: false,
-          message: "Akun belum ditugaskan ke halaqoh mana pun. Hubungi Admin.",
+          message: "Profil staf pembina Anda belum terhubung. Hubungi Admin.",
+          error: "Akses Ditolak",
+          data: null,
         };
       }
 
-      effectiveHalaqohId = staffHalaqohId;
+      const halaqohRecord = await prisma.halaqoh.findFirst({
+        where: { pembinaId: session.staffId },
+        select: { id: true, halaqohCode: true },
+      });
+
+      if (!halaqohRecord) {
+        return {
+          success: false,
+          message: "Akun belum ditugaskan ke halaqoh mana pun. Hubungi Admin.",
+          error: "Akses Ditolak",
+          data: null,
+        };
+      }
+
+      // Jika meminta halaqoh lain selain binaannya sendiri: tolak tegas
+      if (
+        halaqohId &&
+        halaqohId !== "ALL" &&
+        halaqohId !== halaqohRecord.id &&
+        halaqohId !== halaqohRecord.halaqohCode
+      ) {
+        return {
+          success: false,
+          message: "Akses Ditolak: Anda hanya berwenang melihat laporan halaqoh binaan Anda.",
+          error: "Akses Ditolak",
+          data: null,
+        };
+      }
+
+      effectiveHalaqohId = halaqohRecord.id;
     } else {
-      effectiveHalaqohId = halaqohId || "ALL";
+      // Default Deny untuk seluruh role lain (GMR, MK, WS, ST, dll)
+      return {
+        success: false,
+        message: "Akses Ditolak: Anda tidak memiliki wewenang mengakses rekap laporan bulanan halaqoh.",
+        error: "Akses Ditolak",
+        data: null,
+      };
     }
 
-    // 2. Tentukan range tanggal bulan
+    // 2. Tentukan range tanggal bulan berdasarkan batas WITA resmi
     const [thnAwalStr, thnAkhirStr] = tahunAjaran.split("/");
     const tahunKalender =
       bulan >= 7 ? parseInt(thnAwalStr, 10) || 2026 : parseInt(thnAkhirStr, 10) || 2027;
 
-    const startDate = new Date(tahunKalender, bulan - 1, 1);
-    const endDate = new Date(tahunKalender, bulan, 0, 23, 59, 59, 999);
+    const { startDate, endDate } = getWITAMonthRange(tahunKalender, bulan);
 
     // 3. Query ke database PostgreSQL
     if (effectiveHalaqohId.toUpperCase() === "ALL") {
@@ -633,6 +659,14 @@ export async function getTargetSantriAction(
         };
       }
     }
+  } else if (["KS", "ADM", "YAY"].includes(session.role) || session.isKepalaBidangTahfidz) {
+    // Otoritas manajerial diperkenankan
+  } else {
+    // Default Deny untuk seluruh role lain
+    return {
+      success: false,
+      message: "Akses Ditolak: Anda tidak memiliki wewenang mengakses target santri.",
+    };
   }
 
   try {
@@ -784,10 +818,12 @@ export async function recordTasmiSimaanAction(input: RecordTasmiSimaanInput) {
     }
   }
 
+  if (!session.staffId) {
+    return { success: false, message: "Profil staf penguji Anda belum terhubung. Akses ditolak." };
+  }
+
   try {
-    const musyrifStaff = session.staffId
-      ? await prisma.staff.findUnique({ where: { id: session.staffId } })
-      : await prisma.staff.findFirst({ where: { roleStaff: "MT" } });
+    const musyrifStaff = await prisma.staff.findUnique({ where: { id: session.staffId } });
 
     if (!musyrifStaff) {
       return { success: false, message: "Profil penguji staf tidak ditemukan." };

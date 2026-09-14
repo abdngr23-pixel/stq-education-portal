@@ -41,6 +41,7 @@ export interface DetermineTahfizhDailyStatusParams {
     targetPekanan?: number | null;
   } | null;
   isMufarApplicable?: boolean;
+  hasValidSabaqThisWeek?: boolean;
 }
 
 /**
@@ -112,8 +113,16 @@ export function determineTahfizhDailyStatus(
     sabaqStatus = "BELUM_SELESAI";
   }
 
-  // 2. SABQI: Murojaah sepekan
-  const sabqiStatus: OperationalStatus = hasSabqi ? "SELESAI" : "BELUM_SELESAI";
+  // 2. SABQI: Murojaah sepekan (bersumber dari SABAQ valid pekan berjalan sejak Senin WITA)
+  let sabqiStatus: OperationalStatus;
+  if (hasSabqi) {
+    sabqiStatus = "SELESAI";
+  } else if (params.hasValidSabaqThisWeek === false) {
+    // Santri belum memiliki setoran SABAQ sah pekan berjalan -> SABQI belum applicable, bukan kegagalan
+    sabqiStatus = "TIDAK_BERLAKU";
+  } else {
+    sabqiStatus = "BELUM_SELESAI";
+  }
 
   // 3. MANZIL: Murojaah hafalan lama, dipantau independen dari Sabaq dan Sabqi
   const manzilStatus: OperationalStatus = hasManzil ? "SELESAI" : "BELUM_SELESAI";

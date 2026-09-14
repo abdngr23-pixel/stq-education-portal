@@ -283,7 +283,11 @@ export function buildPelanggaranSPWAMessage(p: PelanggaranSPWAParams): string {
  */
 export function buildProgressSantriWAMessage(p: ProgressSantriWAParams): string {
   const waliGreeting = p.namaWali ? `Ayah/Bunda *${p.namaWali}*` : "Ayah/Bunda Wali Santri";
-  const persentase = Math.round((p.capaianJuz / (p.targetJuz || 30)) * 100);
+  const hasTarget = typeof p.targetJuz === "number" && p.targetJuz > 0;
+  const persentase = hasTarget ? Math.round((p.capaianJuz / (p.targetJuz as number)) * 100) : null;
+  const targetText = hasTarget
+    ? `dari target ${p.targetJuz} Juz (${persentase}%) — Target Akhir ${p.targetJuz} Juz`
+    : `(Target belum ditetapkan)`;
 
   let msg = `*LAPORAN PERKEMBANGAN HAFALAN AL-QUR'AN*\n`;
   msg += `*STQ DARUL ULUM CENDEKIA*\n\n`;
@@ -291,7 +295,7 @@ export function buildProgressSantriWAMessage(p: ProgressSantriWAParams): string 
   msg += `Yth. ${waliGreeting} dari ananda *${p.santriNama}* (${p.santriNis}, Kelas ${p.kelas}),\n\n`;
   msg += `Berikut ringkasan capaian tahfizh Al-Qur'an ananda saat ini:\n`;
   msg += `• *Kelompok Halaqoh*: ${p.halaqoh}\n`;
-  msg += `• *Capaian Hafalan*: *${p.capaianJuz} Juz* dari target ${p.targetJuz || 30} Juz (${persentase}%) — Target Akhir 30 Juz\n`;
+  msg += `• *Capaian Hafalan*: *${p.capaianJuz} Juz* ${targetText}\n`;
 
   if (p.setoranTerakhir) {
     msg += `• *Setoran Terakhir*: ${p.setoranTerakhir}\n`;

@@ -3,7 +3,8 @@ import "server-only";
 import { PrismaClient, Prisma, JenisKelamin } from "@prisma/client";
 import { UserSession } from "@/types/auth";
 import { prisma as defaultPrisma } from "@/lib/prisma";
-import { isTodayWita } from "@/lib/wita-date";
+import { isTodayWita, getWitaDateString } from "@/lib/wita-date";
+import { getStartOfWeekWITA } from "@/lib/sabaqi";
 import { calculateLatestSabaqPosition } from "@/lib/tahfizh-page-allocation";
 
 import { determineTahfizhDailyStatus, TahfizhDailyStatus } from "@/lib/tahfizh-status";
@@ -220,15 +221,34 @@ export async function getSantriListForSession(
       const posisiTerakhirHalaman = sabaqPosition.posisiTerakhirHalaman;
       const isHalamanTerakhirParsial = sabaqPosition.isHalamanTerakhirParsial;
 
-      // Target individual dari TargetSantri (tanpa default sintetis universal)
+      // Target individual dari TargetSantri berbasis periode aktif WITA
+      const nowWitaStr = getWitaDateString();
+      const [nowYearStr, nowMonthStr] = nowWitaStr.split("-");
+      const activeMonth = parseInt(nowMonthStr, 10);
+      const activeYearNum = parseInt(nowYearStr, 10);
+      const defaultTahunAjaran = activeMonth >= 7
+        ? `${activeYearNum}/${activeYearNum + 1}`
+        : `${activeYearNum - 1}/${activeYearNum}`;
+      const targetTahunAjaran = s.halaqoh?.tahunAjaran || defaultTahunAjaran;
+
       const targetList = s.targetList || [];
-      const sabaqTarget = targetList.find((t) => t.jenis === "SABAQ");
-      const mufarTarget = targetList.find((t) => t.jenis === "MUFAR");
+      const sabaqTarget = targetList.find(
+        (t) => t.jenis === "SABAQ" && t.bulan === activeMonth && t.tahunAjaran === targetTahunAjaran
+      );
+      const mufarTarget = targetList.find(
+        (t) => t.jenis === "MUFAR" && t.bulan === activeMonth && t.tahunAjaran === targetTahunAjaran
+      );
 
       const targetSabaq = sabaqTarget?.targetBulanan ?? null;
       const targetSabaqLabel = targetSabaq !== null ? `${targetSabaq} Halaman` : "Target belum ditetapkan";
       const targetSabaqBulanan = targetSabaq;
       const targetSabaqPekanan = sabaqTarget?.targetPekanan ?? null;
+
+      // Cek apakah ada SABAQ sah pada pekan berjalan sejak Senin 00:00 WITA (untuk applicability SABQI)
+      const startOfWeek = getStartOfWeekWITA(new Date());
+      const hasValidSabaqThisWeek = validSetoranList.some(
+        (st) => st.jenis === "SABAQ" && new Date(st.tanggal) >= startOfWeek
+      );
 
       // Status setoran 4 jenis (SABAQ, SABQI, MANZIL, MUFAR) berdasarkan batas hari WITA & hari efektif
       const setoranHariIni = validSetoranList.filter((st) => isTodayWita(st.tanggal));
@@ -241,6 +261,7 @@ export async function getSantriListForSession(
               targetPekanan: mufarTarget.targetPekanan,
             }
           : null,
+        hasValidSabaqThisWeek,
       });
 
       const setoranTerakhirAt = latestSetoran ? latestSetoran.tanggal.toISOString() : null;
@@ -268,7 +289,7 @@ export async function getSantriListForSession(
         capaianJuz,
         posisiTerakhirHalaman,
         isHalamanTerakhirParsial,
-        targetJuz: null,
+        targetJuz: s.targetAkhirProgramJuz && s.targetAkhirProgramJuz > 0 ? s.targetAkhirProgramJuz : null,
         targetSabaq,
         targetSabaqLabel,
         targetSabaqBulanan,

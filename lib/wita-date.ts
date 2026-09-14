@@ -106,3 +106,18 @@ export function formatWitaDateIndonesian(date?: Date | string | number | null): 
   if (isNaN(d.getTime())) return "";
   return witaIndonesianDateFormatter.format(d);
 }
+
+/**
+ * Mengembalikan batas rentang waktu bulan di zona WITA dalam format Date UTC.
+ * - startDate: 00:00:00.000 WITA pada hari pertama bulan (16:00:00.000 UTC hari sebelumnya)
+ * - endDate: 23:59:59.999 WITA pada hari terakhir bulan (15:59:59.999 UTC hari yang sama)
+ */
+export function getWITAMonthRange(year: number, month: number): { startDate: Date; endDate: Date } {
+  // Awal bulan: tanggal 1 pukul 00:00:00.000 WITA = tanggal 1 - 8 jam di UTC
+  const startDate = new Date(Date.UTC(year, month - 1, 1, -8, 0, 0, 0));
+  // Jumlah hari dalam bulan kalender
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  // Akhir bulan: tanggal lastDay pukul 23:59:59.999 WITA = pukul 15:59:59.999 UTC
+  const endDate = new Date(Date.UTC(year, month - 1, lastDay, 15, 59, 59, 999));
+  return { startDate, endDate };
+}

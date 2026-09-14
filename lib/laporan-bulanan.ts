@@ -1,4 +1,5 @@
 import { KategoriCapaian, JenisUjiHafalan } from "@prisma/client";
+import { getWitaDateString } from "@/lib/wita-date";
 
 /**
  * Standar Mushaf Madinah: 1 Juz = 20 Halaman
@@ -27,9 +28,10 @@ export function konversiHalamanKeJuz(totalHalaman: number): {
   sisaHalaman: number;
   label: string;
 } {
-  const safeHalaman = Math.max(0, Math.round(totalHalaman));
+  const safeHalaman = Math.max(0, Number(totalHalaman) || 0);
   const juz = Math.floor(safeHalaman / HALAMAN_PER_JUZ);
-  const sisaHalaman = safeHalaman % HALAMAN_PER_JUZ;
+  const rawSisa = safeHalaman - juz * HALAMAN_PER_JUZ;
+  const sisaHalaman = parseFloat(rawSisa.toFixed(1));
 
   let label = "";
   if (juz > 0 && sisaHalaman > 0) {
@@ -51,7 +53,8 @@ export function konversiHalamanKeJuz(totalHalaman: number): {
  * - Hari 22+: Pekan 4
  */
 export function getPekanDariTanggal(date: Date): 1 | 2 | 3 | 4 {
-  const day = date.getDate();
+  const witaStr = getWitaDateString(date);
+  const day = witaStr ? parseInt(witaStr.split("-")[2], 10) : date.getDate();
   if (day <= 7) return 1;
   if (day <= 14) return 2;
   if (day <= 21) return 3;
@@ -76,14 +79,20 @@ export function hitungCapaianSabaq(
   isTercapai: boolean;
   hasTarget: boolean;
 } {
-  const safeModal = Math.max(0, Math.round(modalAwalHalaman));
-  const totalHalaman =
-    realisasiHalaman.p1 + realisasiHalaman.p2 + realisasiHalaman.p3 + realisasiHalaman.p4;
-  const akumulasiTotalHalaman = safeModal + totalHalaman;
+  const safeModal = Math.max(0, Number(modalAwalHalaman) || 0);
+  const totalHalaman = parseFloat(
+    (
+      (Number(realisasiHalaman.p1) || 0) +
+      (Number(realisasiHalaman.p2) || 0) +
+      (Number(realisasiHalaman.p3) || 0) +
+      (Number(realisasiHalaman.p4) || 0)
+    ).toFixed(1)
+  );
+  const akumulasiTotalHalaman = parseFloat((safeModal + totalHalaman).toFixed(1));
   const konversi = konversiHalamanKeJuz(totalHalaman);
   const konversiAkumulasi = konversiHalamanKeJuz(akumulasiTotalHalaman);
 
-  if (targetBulananHalaman === null || targetBulananHalaman === undefined) {
+  if (targetBulananHalaman === null || targetBulananHalaman === undefined || targetBulananHalaman <= 0) {
     return {
       totalHalaman,
       modalAwalHalaman: safeModal,
@@ -96,7 +105,7 @@ export function hitungCapaianSabaq(
     };
   }
 
-  const target = Math.max(1, targetBulananHalaman);
+  const target = targetBulananHalaman;
   const persentase = Math.min(200, parseFloat(((totalHalaman / target) * 100).toFixed(1)));
   const isTercapai = persentase >= 100;
 
@@ -130,7 +139,7 @@ export function hitungCapaianSabaq(
 export function hitungAkumulasiSabaqSantri(params: {
   modalAwalHalaman: number;
   pekan: { p1: number; p2: number; p3: number; p4: number };
-  targetBulananHalaman?: number;
+  targetBulananHalaman?: number | null;
 }): {
   modalAwalHalaman: number;
   konversiAwal: { juz: number; sisaHalaman: number; label: string };
@@ -140,18 +149,25 @@ export function hitungAkumulasiSabaqSantri(params: {
   konversiAkumulasi: { juz: number; sisaHalaman: number; label: string };
   persentaseTarget: number;
   isTercapai: boolean;
+  hasTarget: boolean;
 } {
-  const modalAwal = Math.max(0, Math.round(params.modalAwalHalaman));
+  const modalAwal = Math.max(0, Number(params.modalAwalHalaman) || 0);
   const p1 = Math.max(0, Number(params.pekan.p1) || 0);
   const p2 = Math.max(0, Number(params.pekan.p2) || 0);
   const p3 = Math.max(0, Number(params.pekan.p3) || 0);
   const p4 = Math.max(0, Number(params.pekan.p4) || 0);
-  const tambahanBulanIni = p1 + p2 + p3 + p4;
-  const totalAkumulasiHalaman = modalAwal + tambahanBulanIni;
+  const tambahanBulanIni = parseFloat((p1 + p2 + p3 + p4).toFixed(1));
+  const totalAkumulasiHalaman = parseFloat((modalAwal + tambahanBulanIni).toFixed(1));
 
-  const target = Math.max(1, params.targetBulananHalaman || 20);
-  const persentaseTarget = Math.min(200, parseFloat(((tambahanBulanIni / target) * 100).toFixed(1)));
-  const isTercapai = persentaseTarget >= 100;
+  const hasTarget = typeof params.targetBulananHalaman === "number" && params.targetBulananHalaman > 0;
+  let persentaseTarget = 0;
+  let isTercapai = false;
+
+  if (hasTarget && params.targetBulananHalaman) {
+    const target = params.targetBulananHalaman;
+    persentaseTarget = Math.min(200, parseFloat(((tambahanBulanIni / target) * 100).toFixed(1)));
+    isTercapai = persentaseTarget >= 100;
+  }
 
   return {
     modalAwalHalaman: modalAwal,
@@ -162,6 +178,7 @@ export function hitungAkumulasiSabaqSantri(params: {
     konversiAkumulasi: konversiHalamanKeJuz(totalAkumulasiHalaman),
     persentaseTarget,
     isTercapai,
+    hasTarget,
   };
 }
 

@@ -33,7 +33,7 @@ export interface SantriItem {
   kelas: string;
   halaqoh: string;
   capaianJuz: number;
-  targetJuz: number;
+  targetJuz: number | null;
   setoranTerakhir: string;
   status: string;
   nilaiTerakhir: string;

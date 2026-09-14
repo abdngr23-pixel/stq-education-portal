@@ -11,7 +11,7 @@ export interface PrintRaporProps {
     kelas: string;
     halaqoh: string;
     capaianJuz: number;
-    targetJuz: number;
+    targetJuz?: number | null;
     setoranTerakhir?: string;
     nilaiTerakhir?: string;
     catatanPembina?: string;
@@ -117,8 +117,12 @@ export function PrintRapor({
           </thead>
           <tbody>
             <tr>
-              <td className="border border-black py-1.5 px-2 font-bold text-emerald-800">Capaian {santri.capaianJuz} Juz dari Target Akhir 30 Juz</td>
-              <td className="border border-black py-1.5 px-2 font-bold">30 Juz</td>
+              <td className="border border-black py-1.5 px-2 font-bold text-emerald-800">
+                Capaian {santri.capaianJuz} Juz {santri.targetJuz ? `dari Target Akhir ${santri.targetJuz} Juz` : "(Target belum ditetapkan)"}
+              </td>
+              <td className="border border-black py-1.5 px-2 font-bold">
+                {santri.targetJuz ? `${santri.targetJuz} Juz` : "Target belum ditetapkan"}
+              </td>
               <td className="border border-black py-1.5 px-2 font-medium">{santri.setoranTerakhir || "-"}</td>
               <td className="border border-black py-1.5 px-2 text-gray-500 font-medium">-</td>
               <td className="border border-black py-1.5 px-2 font-semibold">

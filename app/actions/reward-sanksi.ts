@@ -2,7 +2,7 @@
 
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
-import { StatusHakLibur, JenisTransaksiBintang, StatusSanksiKunjungan } from "@prisma/client";
+import { StatusHakLibur, JenisTransaksiBintang, StatusSanksiKunjungan, Prisma } from "@prisma/client";
 
 /**
  * Mengambil konfigurasi kebijakan reward & sanksi aktif
@@ -143,11 +143,26 @@ export async function prosesRewardTasmiSimaanAction(tasmiSimaanId: string) {
   try {
     const tasmi = await prisma.tasmiSimaan.findUnique({
       where: { id: tasmiSimaanId },
-      include: { santri: true },
+      include: { santri: { include: { halaqoh: true } } },
     });
 
     if (!tasmi) {
       return { success: false, message: "Data Tasmi'/Sima'an tidak ditemukan." };
+    }
+
+    // ABAC: MT biasa hanya berwenang memproses reward santri halaqoh binaannya
+    if (session.role === "MT") {
+      if (!session.staffId) {
+        return { success: false, message: "Profil staf pembina Anda belum terhubung." };
+      }
+      if (!session.isKepalaBidangTahfidz) {
+        if (!tasmi.santri.halaqoh || tasmi.santri.halaqoh.pembinaId !== session.staffId) {
+          return {
+            success: false,
+            message: "Akses Ditolak: Anda hanya berwenang memproses reward Tasmi'/Sima'an santri di dalam halaqoh binaan Anda.",
+          };
+        }
+      }
     }
 
     // Ambil kebijakan aktif
@@ -325,6 +340,17 @@ export async function previewFinalisasiBulananAction(params: {
     return { success: false, message: "Anda tidak memiliki akses ke pratinjau finalisasi bulanan." };
   }
 
+  // ABAC: MT biasa hanya melihat halaqoh binaannya; Kabid/KS/ADM melihat global
+  const whereSantri: Prisma.SantriWhereInput = { status: "AKTIF" };
+  if (session.role === "MT") {
+    if (!session.staffId) {
+      return { success: false, message: "Profil staf pembina Anda belum terhubung." };
+    }
+    if (!session.isKepalaBidangTahfidz) {
+      whereSantri.halaqoh = { pembinaId: session.staffId };
+    }
+  }
+
   try {
     const kebijakan = await prisma.kebijakanRewardSanksi.findFirst({
       where: { isActive: true },
@@ -344,7 +370,7 @@ export async function previewFinalisasiBulananAction(params: {
     const endDate = new Date(Date.UTC(tahunKalender, params.bulan - 1, lastDayOfMonth, 15, 59, 59, 999));
 
     const santriList = await prisma.santri.findMany({
-      where: { status: "AKTIF" },
+      where: whereSantri,
       include: {
         halaqoh: { select: { nama: true } },
         targetList: {
@@ -366,12 +392,13 @@ export async function previewFinalisasiBulananAction(params: {
         const hasValidTarget = typeof rawTarget === "number" && rawTarget > 0;
         const targetBulanan = hasValidTarget ? rawTarget : null;
 
-        // Ambil setoran riil tersimpan di bulan ini (SABAQ)
+        // Ambil setoran riil tersimpan di bulan ini (SABAQ) — eksklusi DIBATALKAN
         const setoranBulan = await prisma.setoranTahfizh.aggregate({
           where: {
             santriId: s.id,
             jenis: "SABAQ",
             tanggal: { gte: startDate, lte: endDate },
+            status: { not: "DIBATALKAN" },
           },
           _sum: { jumlahHalaman: true },
         });

@@ -13,6 +13,7 @@ import {
   getLaporanBulananHalaqohAction,
   upsertTargetSantriAction,
   getTargetSantriAction,
+  recordTasmiSimaanAction,
 } from "../app/actions/laporan-bulanan";
 import {
   getSantriKumulatifHalamanAction,
@@ -20,11 +21,21 @@ import {
   createSetoranAction,
 } from "../app/actions/tahfizh";
 import {
+  previewFinalisasiBulananAction,
+  prosesRewardTasmiSimaanAction,
+} from "../app/actions/reward-sanksi";
+import {
   determineTahfizhDailyStatus,
   isHariEfektifTahfizh,
 } from "../lib/tahfizh-status";
 import { allocateSabaqPages, validateProposedSabaqAllocation } from "../lib/tahfizh-page-allocation";
-import { hitungCapaianSabaq } from "../lib/laporan-bulanan";
+import {
+  hitungCapaianSabaq,
+  konversiHalamanKeJuz,
+  hitungAkumulasiSabaqSantri,
+  getPekanDariTanggal,
+} from "../lib/laporan-bulanan";
+import { getWITAMonthRange } from "../lib/wita-date";
 
 describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (24 Skenario Wajib)", () => {
   let prisma: PrismaClient;
@@ -76,6 +87,25 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (24 Skena
     isKepalaBidangTahfidz: true,
   };
 
+  const sessionMK: UserSession = {
+    userId: "usr-mk-01",
+    username: "guru.mk",
+    name: "Ust. Guru MK",
+    role: "MK",
+    staffId: null,
+    isKepalaBidangTahfidz: false,
+  };
+
+  const sessionWSAhmad: UserSession = {
+    userId: "usr-ws-ahmad",
+    username: "wali.ahmad",
+    name: "Wali Ahmad",
+    role: "WS",
+    santriId: SANTRI_AHMAD_ID,
+    staffId: null,
+    isKepalaBidangTahfidz: false,
+  };
+
   before(async () => {
     prisma = await startTestDatabase();
 
@@ -105,40 +135,6 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (24 Skena
           roleStaff: "MT",
           status: "AKTIF",
           noHp: "08333333333",
-        },
-      ],
-    });
-
-    // 1b. Seed Users (for clean audit log foreign keys)
-    await prisma.user.createMany({
-      data: [
-        {
-          id: sessionMT1.userId,
-          username: sessionMT1.username,
-          passwordHash: "hash-test",
-          role: "MT",
-          staffId: STAFF_MT_1_ID,
-        },
-        {
-          id: sessionMT2.userId,
-          username: sessionMT2.username,
-          passwordHash: "hash-test",
-          role: "MT",
-          staffId: STAFF_MT_2_ID,
-        },
-        {
-          id: sessionKabid.userId,
-          username: sessionKabid.username,
-          passwordHash: "hash-test",
-          role: "MT",
-          staffId: STAFF_KABID_ID,
-        },
-        {
-          id: sessionMTNoStaff.userId,
-          username: sessionMTNoStaff.username,
-          passwordHash: "hash-test",
-          role: "MT",
-          staffId: null,
         },
       ],
     });
@@ -177,6 +173,7 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (24 Skena
           status: "AKTIF",
           halaqohId: HALAQOH_1_ID,
           modalHafalanAwalHalaman: 20,
+          targetAkhirProgramJuz: 0,
           tanggalBaselineTahfizh: new Date("2026-09-01T00:00:00Z"),
         },
         {
@@ -188,6 +185,7 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (24 Skena
           status: "AKTIF",
           halaqohId: HALAQOH_2_ID,
           modalHafalanAwalHalaman: 40,
+          targetAkhirProgramJuz: 20,
           tanggalBaselineTahfizh: new Date("2026-09-01T00:00:00Z"),
         },
         {
@@ -199,9 +197,76 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (24 Skena
           status: "AKTIF",
           halaqohId: HALAQOH_1_ID,
           modalHafalanAwalHalaman: 604,
+          targetAkhirProgramJuz: 30,
           tanggalBaselineTahfizh: new Date("2026-09-01T00:00:00Z"),
         },
       ],
+    });
+
+    // 3b. Seed Users (for clean audit log foreign keys)
+    await prisma.user.createMany({
+      data: [
+        {
+          id: sessionMT1.userId,
+          username: sessionMT1.username,
+          passwordHash: "hash-test",
+          role: "MT",
+          staffId: STAFF_MT_1_ID,
+        },
+        {
+          id: sessionMT2.userId,
+          username: sessionMT2.username,
+          passwordHash: "hash-test",
+          role: "MT",
+          staffId: STAFF_MT_2_ID,
+        },
+        {
+          id: sessionKabid.userId,
+          username: sessionKabid.username,
+          passwordHash: "hash-test",
+          role: "MT",
+          staffId: STAFF_KABID_ID,
+        },
+        {
+          id: sessionMTNoStaff.userId,
+          username: sessionMTNoStaff.username,
+          passwordHash: "hash-test",
+          role: "MT",
+          staffId: null,
+        },
+        {
+          id: sessionMK.userId,
+          username: sessionMK.username,
+          passwordHash: "hash-test",
+          role: "MK",
+          staffId: null,
+        },
+        {
+          id: sessionWSAhmad.userId,
+          username: sessionWSAhmad.username,
+          passwordHash: "hash-test",
+          role: "WS",
+          santriId: SANTRI_AHMAD_ID,
+          staffId: null,
+        },
+      ],
+    });
+
+    // 4. Seed Kebijakan Reward Sanksi
+    await prisma.kebijakanRewardSanksi.create({
+      data: {
+        id: "kebijakan-test-01",
+        nama: "Kebijakan Test STQ",
+        minNilaiTasmi: 80.0,
+        minNilaiSimaan: 85.0,
+        bintangTasmi: 1,
+        bintangSimaan: 2,
+        hakLiburTasmiHari: 1,
+        hakLiburSimaanHari: 2,
+        minPersenTargetBulanan: 100.0,
+        durasiKehilanganKunjunganHari: 30,
+        isActive: true,
+      },
     });
   });
 
@@ -686,5 +751,348 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (24 Skena
       },
     });
     assert.equal(isBinaanMT1, null);
+  });
+
+  // -------------------------------------------------------------
+  // 25: DIBATALKAN Dieksklusi dalam Finalisasi Bulanan
+  // -------------------------------------------------------------
+  it("25. Finalisasi bulanan mengecualikan setoran DIBATALKAN", async () => {
+    setTestSession(sessionKabid);
+
+    // Setup Target Ahmad bulan 10: 10 halaman
+    await upsertTargetSantriAction({
+      santriId: SANTRI_AHMAD_ID,
+      jenis: "SABAQ",
+      targetPekanan: 2.5,
+      targetBulanan: 10,
+      bulan: 10,
+      tahunAjaran: "2026/2027",
+    });
+
+    // SABAQ aktif 5 halaman di bulan 10 (5 Okt 2026 10:00 WITA -> 5 Okt 02:00 UTC)
+    await prisma.setoranTahfizh.create({
+      data: {
+        setoranCode: "STR-TEST-FIN-01",
+        santriId: SANTRI_AHMAD_ID,
+        musyrifId: STAFF_MT_1_ID,
+        jenis: "SABAQ",
+        status: "AKTIF",
+        juz: 2,
+        halamanMulai: 26,
+        halamanSelesai: 30,
+        jumlahHalaman: 5,
+        nilai: "MUMTAZ",
+        tanggal: new Date("2026-10-05T02:00:00Z"),
+      },
+    });
+
+    // SABAQ dibatalkan 5 halaman di bulan 10
+    await prisma.setoranTahfizh.create({
+      data: {
+        setoranCode: "STR-TEST-FIN-02",
+        santriId: SANTRI_AHMAD_ID,
+        musyrifId: STAFF_MT_1_ID,
+        jenis: "SABAQ",
+        status: "DIBATALKAN",
+        juz: 2,
+        halamanMulai: 31,
+        halamanSelesai: 35,
+        jumlahHalaman: 5,
+        nilai: "MUMTAZ",
+        tanggal: new Date("2026-10-06T02:00:00Z"),
+        alasanPembatalan: "Salah input",
+      },
+    });
+
+    const previewRes = await previewFinalisasiBulananAction({ bulan: 10, tahunAjaran: "2026/2027" });
+    assert.equal(previewRes.success, true);
+    const itemAhmad = previewRes.data?.items.find((it) => it.santriId === SANTRI_AHMAD_ID);
+    assert.ok(itemAhmad);
+    assert.equal(itemAhmad.targetHalaman, 10);
+    assert.equal(itemAhmad.capaianHalaman, 5); // Tetap 5, bukan 10!
+    assert.equal(itemAhmad.persentase, 50);
+    assert.equal(itemAhmad.isTercapai, false);
+  });
+
+  // -------------------------------------------------------------
+  // 26: ABAC Preview Finalisasi Bulanan
+  // -------------------------------------------------------------
+  it("26. ABAC preview finalisasi bulanan fail-closed & scoped", async () => {
+    // MT1 hanya melihat santri di halaqoh binaan 1
+    setTestSession(sessionMT1);
+    const resMT1 = await previewFinalisasiBulananAction({ bulan: 9, tahunAjaran: "2026/2027" });
+    assert.equal(resMT1.success, true);
+    const santriIdsMT1 = resMT1.data?.items.map((i) => i.santriId) ?? [];
+    assert.ok(santriIdsMT1.includes(SANTRI_AHMAD_ID));
+    assert.equal(santriIdsMT1.includes(SANTRI_ZAID_ID), false); // Zaid di halaqoh 2 tidak boleh muncul
+
+    // MT tanpa staffId fail closed
+    setTestSession(sessionMTNoStaff);
+    const resNoStaff = await previewFinalisasiBulananAction({ bulan: 9, tahunAjaran: "2026/2027" });
+    assert.equal(resNoStaff.success, false);
+    assert.match(resNoStaff.message ?? "", /profil staf/i);
+
+    // Role lain (MK) fail closed
+    setTestSession(sessionMK);
+    const resMK = await previewFinalisasiBulananAction({ bulan: 9, tahunAjaran: "2026/2027" });
+    assert.equal(resMK.success, false);
+    assert.match(resMK.message ?? "", /tidak memiliki akses/i);
+  });
+
+  // -------------------------------------------------------------
+  // 27: ABAC Reward Tasmi/Sima'an Cross-Halaqoh
+  // -------------------------------------------------------------
+  it("27. ABAC reward Tasmi/Sima'an cross-halaqoh fail-closed", async () => {
+    // Buat data tasmi untuk Zaid (Halaqoh 2)
+    const tasmiZaid = await prisma.tasmiSimaan.create({
+      data: {
+        santriId: SANTRI_ZAID_ID,
+        musyrifId: STAFF_MT_2_ID,
+        tanggal: new Date("2026-09-08T08:00:00Z"),
+        jenis: "TASMI",
+        juz: 1,
+        nilai: 90,
+        predikat: "MUMTAZ",
+      },
+    });
+
+    // MT1 (Halaqoh 1) mencoba memproses reward santri Zaid (Halaqoh 2) -> Access Denied
+    setTestSession(sessionMT1);
+    const resMT1 = await prosesRewardTasmiSimaanAction(tasmiZaid.id);
+    assert.equal(resMT1.success, false);
+    assert.match(resMT1.message ?? "", /Akses Ditolak/i);
+
+    // MT tanpa staffId -> fail closed
+    setTestSession(sessionMTNoStaff);
+    const resNoStaff = await prosesRewardTasmiSimaanAction(tasmiZaid.id);
+    assert.equal(resNoStaff.success, false);
+    assert.match(resNoStaff.message ?? "", /profil staf/i);
+
+    // Kabid -> boleh lintas halaqoh
+    setTestSession(sessionKabid);
+    const resKabid = await prosesRewardTasmiSimaanAction(tasmiZaid.id);
+    assert.equal(resKabid.success, true);
+  });
+
+  // -------------------------------------------------------------
+  // 28: Read Action Default-Deny untuk Role Non-Tahfizh
+  // -------------------------------------------------------------
+  it("28. Read action default-deny untuk role non-Tahfizh dan unauthorized", async () => {
+    setTestSession(sessionMK);
+
+    // getLaporanBulananHalaqohAction deny
+    const resLaporan = await getLaporanBulananHalaqohAction(HALAQOH_1_ID, 9, "2026/2027");
+    assert.equal(resLaporan.success, false);
+    assert.match(resLaporan.message ?? "", /Akses Ditolak/i);
+
+    // getTargetSantriAction deny
+    const resTarget = await getTargetSantriAction(SANTRI_AHMAD_ID, 9, "2026/2027");
+    assert.equal(resTarget.success, false);
+    assert.match(resTarget.message ?? "", /Akses Ditolak/i);
+
+    // Wali santri A mencoba membaca target santri B
+    setTestSession(sessionWSAhmad);
+    const resWaliZaid = await getTargetSantriAction(SANTRI_ZAID_ID, 9, "2026/2027");
+    assert.equal(resWaliZaid.success, false);
+    assert.match(resWaliZaid.message ?? "", /Akses Ditolak/i);
+  });
+
+  // -------------------------------------------------------------
+  // 29: Target Dashboard Period-Aware
+  // -------------------------------------------------------------
+  it("29. Target dashboard period-aware", async () => {
+    setTestSession(sessionMT1);
+
+    // Target September = 20
+    await upsertTargetSantriAction({
+      santriId: SANTRI_AHMAD_ID,
+      jenis: "SABAQ",
+      targetPekanan: 5,
+      targetBulanan: 20,
+      bulan: 9,
+      tahunAjaran: "2026/2027",
+    });
+
+    // Target Oktober = 30
+    await upsertTargetSantriAction({
+      santriId: SANTRI_AHMAD_ID,
+      jenis: "SABAQ",
+      targetPekanan: 7.5,
+      targetBulanan: 30,
+      bulan: 10,
+      tahunAjaran: "2026/2027",
+    });
+
+    // Ambil santri list saat September aktif
+    const resList = await getSantriListForSession({}, sessionMT1, prisma);
+    assert.equal(resList.success, true);
+    const ahmad = resList.data.find((s) => s.id === SANTRI_AHMAD_ID);
+    assert.ok(ahmad);
+    // Di bulan September aktif (bulan 9), targetSabaq harus 20 (bukan 30)
+    assert.equal(ahmad.targetSabaq, 20);
+    assert.equal(ahmad.targetSabaqLabel, "20 Halaman");
+  });
+
+  // -------------------------------------------------------------
+  // 30: targetAkhirProgramJuz Dibaca dari Database
+  // -------------------------------------------------------------
+  it("30. targetAkhirProgramJuz dibaca dari database", async () => {
+    setTestSession(sessionKabid);
+
+    // Update Ahmad dengan target 30 juz di DB untuk verifikasi pembacaan dinamis
+    await prisma.santri.update({
+      where: { id: SANTRI_AHMAD_ID },
+      data: { targetAkhirProgramJuz: 30 },
+    });
+
+    const resList = await getSantriListForSession({}, sessionKabid, prisma);
+    assert.equal(resList.success, true);
+    const ahmad = resList.data.find((s) => s.id === SANTRI_AHMAD_ID);
+    const zaid = resList.data.find((s) => s.id === SANTRI_ZAID_ID);
+
+    assert.ok(ahmad);
+    assert.ok(zaid);
+    assert.equal(ahmad.targetJuz, 30);
+    assert.equal(zaid.targetJuz, 20);
+  });
+
+  // -------------------------------------------------------------
+  // 31: Target Pecahan 0.5 Round-Trip
+  // -------------------------------------------------------------
+  it("31. Target pecahan 0.5 round-trip", async () => {
+    setTestSession(sessionMT1);
+
+    const upsertRes = await upsertTargetSantriAction({
+      santriId: SANTRI_AHMAD_ID,
+      jenis: "SABAQ",
+      targetPekanan: 1.5,
+      targetBulanan: 3.5,
+      bulan: 11,
+      tahunAjaran: "2026/2027",
+    });
+    assert.equal(upsertRes.success, true);
+
+    const getRes = await getTargetSantriAction(SANTRI_AHMAD_ID, 11, "2026/2027");
+    assert.equal(getRes.success, true);
+    const targetSabaq = getRes.data?.find((t) => t.jenis === "SABAQ");
+    assert.ok(targetSabaq);
+    assert.equal(targetSabaq.targetPekanan, 1.5);
+    assert.equal(targetSabaq.targetBulanan, 3.5);
+  });
+
+  // -------------------------------------------------------------
+  // 32: Non-Rounded Decimal Page Calculations
+  // -------------------------------------------------------------
+  it("32. Non-rounded decimal page calculations", () => {
+    // 0.5 Halaman
+    const k05 = konversiHalamanKeJuz(0.5);
+    assert.equal(k05.juz, 0);
+    assert.equal(k05.sisaHalaman, 0.5);
+    assert.equal(k05.label, "0.5 Halaman");
+
+    // 20.5 Halaman
+    const k205 = konversiHalamanKeJuz(20.5);
+    assert.equal(k205.juz, 1);
+    assert.equal(k205.sisaHalaman, 0.5);
+    assert.equal(k205.label, "1 Juz 0.5 Halaman");
+
+    // Baseline 40.5 + SABAQ 0.5 = 41.0
+    const capaian = hitungCapaianSabaq({ p1: 0.5, p2: 0, p3: 0, p4: 0 }, 10, 40.5);
+    assert.equal(capaian.totalHalaman, 0.5);
+    assert.equal(capaian.modalAwalHalaman, 40.5);
+    assert.equal(capaian.akumulasiTotalHalaman, 41.0);
+    assert.equal(capaian.konversiAkumulasi.juz, 2);
+    assert.equal(capaian.konversiAkumulasi.sisaHalaman, 1.0);
+    assert.equal(capaian.konversiAkumulasi.label, "2 Juz 1 Halaman");
+  });
+
+  // -------------------------------------------------------------
+  // 33: Eliminasi Fallback 20 pada hitungAkumulasiSabaqSantri
+  // -------------------------------------------------------------
+  it("33. Eliminasi fallback 20 pada hitungAkumulasiSabaqSantri", () => {
+    const ak = hitungAkumulasiSabaqSantri({
+      modalAwalHalaman: 10,
+      pekan: { p1: 5, p2: 0, p3: 0, p4: 0 },
+    });
+    assert.equal(ak.hasTarget, false);
+    assert.equal(ak.persentaseTarget, 0);
+    assert.equal(ak.isTercapai, false);
+  });
+
+  // -------------------------------------------------------------
+  // 34: Batas Rentang Bulanan dan Pekan WITA
+  // -------------------------------------------------------------
+  it("34. Batas rentang bulanan dan pekan WITA", () => {
+    const { startDate, endDate } = getWITAMonthRange(2026, 9);
+    // 1 Sept 00:00 WITA = 31 Aug 16:00 UTC
+    assert.equal(startDate.toISOString(), "2026-08-31T16:00:00.000Z");
+    // 30 Sept 23:59:59.999 WITA = 30 Sept 15:59:59.999 UTC
+    assert.equal(endDate.toISOString(), "2026-09-30T15:59:59.999Z");
+
+    // 30 Sept 23:59 WITA (15:59 UTC) masuk September
+    const t30Sep = new Date("2026-09-30T15:59:00.000Z");
+    assert.ok(t30Sep >= startDate && t30Sep <= endDate);
+
+    // 1 Okt 00:00 WITA (30 Sept 16:00 UTC) di luar September
+    const t1Okt = new Date("2026-09-30T16:00:00.000Z");
+    assert.ok(t1Okt > endDate);
+
+    // getPekanDariTanggal berdasarkan kalender WITA
+    // 7 Sept 23:00 WITA -> Pekan 1
+    assert.equal(getPekanDariTanggal(new Date("2026-09-07T15:00:00.000Z")), 1);
+    // 8 Sept 01:00 WITA -> Pekan 2
+    assert.equal(getPekanDariTanggal(new Date("2026-09-07T17:00:00.000Z")), 2);
+  });
+
+  // -------------------------------------------------------------
+  // 35: SABQI Applicability Berbasis SABAQ Valid Pekan Berjalan
+  // -------------------------------------------------------------
+  it("35. SABQI applicability berbasis SABAQ valid pekan berjalan", () => {
+    const refDateRabu = new Date("2026-09-09T10:00:00Z");
+
+    // Kasus A: Belum ada SABAQ pekan berjalan -> SABQI TIDAK_BERLAKU
+    const statusNoSabaq = determineTahfizhDailyStatus({
+      refDate: refDateRabu,
+      validSetoranToday: [],
+      posisiTerakhirHalaman: 25,
+      hasValidSabaqThisWeek: false,
+    });
+    assert.equal(statusNoSabaq.sabqi, "TIDAK_BERLAKU");
+
+    // Kasus B: Ada SABAQ valid pekan berjalan + belum SABQI hari ini -> BELUM_SELESAI
+    const statusHasSabaq = determineTahfizhDailyStatus({
+      refDate: refDateRabu,
+      validSetoranToday: [],
+      posisiTerakhirHalaman: 25,
+      hasValidSabaqThisWeek: true,
+    });
+    assert.equal(statusHasSabaq.sabqi, "BELUM_SELESAI");
+
+    // Kasus C: Ada SABAQ tapi statusnya DIBATALKAN -> tidak membuat SABQI applicable
+    const statusBatalSabaq = determineTahfizhDailyStatus({
+      refDate: refDateRabu,
+      validSetoranToday: [],
+      posisiTerakhirHalaman: 25,
+      hasValidSabaqThisWeek: false, // Dibatalkan -> false
+    });
+    assert.equal(statusBatalSabaq.sabqi, "TIDAK_BERLAKU");
+  });
+
+  // -------------------------------------------------------------
+  // 36: Examiner Attribution Tasmi/Sima'an Fail-Closed
+  // -------------------------------------------------------------
+  it("36. Examiner attribution Tasmi/Sima'an fail-closed", async () => {
+    setTestSession(sessionMTNoStaff);
+
+    const res = await recordTasmiSimaanAction({
+      santriId: SANTRI_AHMAD_ID,
+      jenis: "TASMI",
+      juz: 1,
+      nilai: 90,
+      predikat: "MUMTAZ",
+    });
+
+    assert.equal(res.success, false);
+    assert.match(res.message ?? "", /profil staf penguji/i);
   });
 });

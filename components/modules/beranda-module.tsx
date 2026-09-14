@@ -31,7 +31,7 @@ export interface DashboardSantriSummary {
   jenisKelamin?: string;
   halaqoh: string;
   capaianJuz: number;
-  targetJuz: number;
+  targetJuz: number | null;
   targetSabaq?: number | null;
   targetSabaqLabel?: string;
   targetSabaqBulanan?: number | null;

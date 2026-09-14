@@ -31,7 +31,7 @@ export interface DashboardMusyrifTahfizhSantriItem {
   namaWali?: string | null;
   noHpWali?: string | null;
   capaianJuz: number;
-  targetJuz: number;
+  targetJuz: number | null;
   setoranTerakhir: string;
   setoranTerakhirAt?: string | null;
   sudahSetorHariIni?: boolean;
