@@ -10,6 +10,10 @@ import {
   allocateSabaqPages,
 } from "@/lib/tahfizh-page-allocation";
 import { saveSetoranTahfizhCore } from "@/lib/tahfizh-persistence";
+import {
+  getTahfizhOperationalMonitoring,
+  GetTahfizhMonitoringParams,
+} from "@/lib/server/tahfizh-monitoring-service";
 
 export interface CreateSetoranInput {
   santriId: string;
@@ -574,6 +578,14 @@ export async function getSantriKumulatifHalamanAction(santriId: string) {
     console.error("Gagal menghitung kumulatif santri:", error);
     return { success: false, message: "Gagal menghitung kumulatif santri." };
   }
+}
+
+/**
+ * Server Action: Mengambil data monitoring operasional Tahfizh terpadu untuk Musyrif & Mudir.
+ */
+export async function getTahfizhOperationalMonitoringAction(params?: GetTahfizhMonitoringParams) {
+  const session = await getCurrentSession();
+  return await getTahfizhOperationalMonitoring(params, session, prisma);
 }
 
 

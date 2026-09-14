@@ -18,9 +18,18 @@ import {
   Send,
   GraduationCap,
   Sparkles,
+  Layers,
 } from "lucide-react";
 import { isTodayWita } from "@/lib/wita-date";
 import { AppNavId } from "@/types/navigation";
+import { TahfizhDailyStatus } from "@/lib/tahfizh-status";
+import {
+  WeeklySabaqProgress,
+  getCompletedJuzCount,
+  getDailyMufarTargetJuz,
+  calculateWeeklySabaqProgress,
+} from "@/lib/tahfizh-mufar-tier";
+import { HalaqohWorkloadSummary } from "@/lib/server/tahfizh-monitoring-service";
 
 export interface DashboardMusyrifTahfizhSantriItem {
   id: string;
@@ -28,6 +37,8 @@ export interface DashboardMusyrifTahfizhSantriItem {
   nama: string;
   kelas: string;
   halaqoh: string;
+  halaqohId?: string | null;
+  pembina?: string;
   namaWali?: string | null;
   noHpWali?: string | null;
   capaianJuz: number;
@@ -38,8 +49,29 @@ export interface DashboardMusyrifTahfizhSantriItem {
   nilaiTerakhir: string;
   poinPelanggaran: number;
   posisiTerakhirHalaman?: number;
+  isHalamanTerakhirParsial?: boolean;
   bintangKebaikan?: number;
+  targetSabaq?: number | null;
+  targetSabaqLabel?: string;
+  targetSabaqBulanan?: number | null;
+  targetSabaqPekanan?: number | null;
+  completedJuzCanonical?: number;
+  targetDailyMufarJuz?: number;
+  actualDailyMufarJuz?: number;
+  weeklySabaqProgress?: WeeklySabaqProgress;
+  statusTahfizhHariIni?: TahfizhDailyStatus;
+  mufarProgressLabel?: string;
+  needsAttention?: boolean;
+  attentionReasons?: string[];
 }
+
+export type TahfizhDashboardFilter =
+  | "ALL"
+  | "PERLU_TINDAKAN"
+  | "BELUM_SETOR"
+  | "SABAQ_TERTINGGAL"
+  | "MUFAR_BELUM_TERPENUHI"
+  | "TARGET_BELUM_DITETAPKAN";
 
 export interface DashboardMusyrifTahfizhProps {
   santriList: DashboardMusyrifTahfizhSantriItem[];
@@ -55,6 +87,8 @@ export interface DashboardMusyrifTahfizhProps {
   izinPendingCount?: number;
   santriSakitCount?: number;
   onNavigate?: (tab: AppNavId) => void;
+  isKabidOrManagerial?: boolean;
+  halaqohWorkloads?: HalaqohWorkloadSummary[] | null;
 }
 
 export function DashboardMusyrifTahfizh({
@@ -71,41 +105,198 @@ export function DashboardMusyrifTahfizh({
   izinPendingCount = 0,
   santriSakitCount = 0,
   onNavigate,
+  isKabidOrManagerial = false,
+  halaqohWorkloads = null,
 }: DashboardMusyrifTahfizhProps) {
   const [showCompletedList, setShowCompletedList] = useState(false);
   const [showAllSantriModal, setShowAllSantriModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedFilter, setSelectedFilter] = useState<TahfizhDashboardFilter>("ALL");
 
   // Refs untuk aksesibilitas modal (focus management, focus trap, and restore)
   const modalContentRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const triggerButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  // Penentuan status setoran hari ini berbasis data terstruktur dari server (WITA Asia/Makassar)
-  const santriSudahSetor = useMemo(() => {
-    return santriList.filter((s) => {
-      if (typeof s.sudahSetorHariIni === "boolean") {
-        return s.sudahSetorHariIni;
+  // Resolusi data operasional terpadu per santri (memastikan backward-compatibility penuh)
+  const resolvedSantriList = useMemo(() => {
+    return santriList.map((s) => {
+      const posHalaman = s.posisiTerakhirHalaman || 1;
+      const completedJuz =
+        s.completedJuzCanonical !== undefined
+          ? s.completedJuzCanonical
+          : getCompletedJuzCount(posHalaman, s.isHalamanTerakhirParsial);
+
+      const targetDailyMufar =
+        s.targetDailyMufarJuz !== undefined
+          ? s.targetDailyMufarJuz
+          : getDailyMufarTargetJuz(completedJuz);
+
+      const weeklyProgress =
+        s.weeklySabaqProgress ||
+        calculateWeeklySabaqProgress(s.targetSabaqPekanan, 0);
+
+      // Status harian 4 komponen
+      const isSudahSetor =
+        typeof s.sudahSetorHariIni === "boolean"
+          ? s.sudahSetorHariIni
+          : s.setoranTerakhirAt
+          ? isTodayWita(s.setoranTerakhirAt)
+          : false;
+
+      const status: TahfizhDailyStatus = s.statusTahfizhHariIni || {
+        sabaq: isSudahSetor ? "SELESAI" : "BELUM_SELESAI",
+        sabqi: "TIDAK_BERLAKU",
+        manzil: "TIDAK_BERLAKU",
+        mufar:
+          targetDailyMufar > 0
+            ? isSudahSetor
+              ? "SELESAI"
+              : "BELUM_SELESAI"
+            : "TIDAK_BERLAKU",
+        isHariEfektif: true,
+        sudahSetorHariIni: isSudahSetor,
+        actualDailyMufarJuz: s.actualDailyMufarJuz || 0,
+        targetDailyMufarJuz: targetDailyMufar,
+      };
+
+      const reasons: string[] = s.attentionReasons ? [...s.attentionReasons] : [];
+      if (!s.attentionReasons) {
+        if (weeklyProgress.status === "TARGET_BELUM_DITETAPKAN") {
+          reasons.push("Target Sabaq pekanan belum ditetapkan");
+        } else if (weeklyProgress.status === "BELUM_TERCAPAI") {
+          reasons.push(
+            `Target Sabaq pekanan tertinggal (${weeklyProgress.remaining} hal lagi)`
+          );
+        }
+        if (status.sabaq === "BELUM_SELESAI") {
+          reasons.push("Belum setor Sabaq hari ini");
+        }
+        if (status.mufar === "BELUM_SELESAI") {
+          reasons.push(
+            `Target MUFAR hari ini belum tuntas (${status.actualDailyMufarJuz || 0}/${targetDailyMufar} Juz)`
+          );
+        }
       }
-      if (s.setoranTerakhirAt) {
-        return isTodayWita(s.setoranTerakhirAt);
+
+      const needsAttention =
+        s.needsAttention !== undefined ? s.needsAttention : reasons.length > 0;
+
+      let mufarLabel = s.mufarProgressLabel;
+      if (!mufarLabel) {
+        if (targetDailyMufar <= 0 || status.mufar === "TIDAK_BERLAKU") {
+          mufarLabel = "Tidak Berlaku";
+        } else if (status.mufar === "SELESAI") {
+          mufarLabel = `Tercapai (${status.actualDailyMufarJuz || targetDailyMufar}/${targetDailyMufar} Juz)`;
+        } else {
+          mufarLabel = `${status.actualDailyMufarJuz || 0}/${targetDailyMufar} Juz`;
+        }
       }
-      return false;
+
+      return {
+        ...s,
+        sudahSetorHariIni: isSudahSetor,
+        completedJuzCanonical: completedJuz,
+        targetDailyMufarJuz: targetDailyMufar,
+        weeklySabaqProgress: weeklyProgress,
+        statusTahfizhHariIni: status,
+        needsAttention,
+        attentionReasons: reasons,
+        mufarProgressLabel: mufarLabel,
+      };
     });
   }, [santriList]);
 
+  // Santri yang sudah setor hari ini
+  const santriSudahSetor = useMemo(() => {
+    return resolvedSantriList.filter((s) => s.sudahSetorHariIni);
+  }, [resolvedSantriList]);
+
+  // Santri yang belum setor hari ini
   const santriBelumSetor = useMemo(() => {
-    return santriList.filter(
-      (s) => !santriSudahSetor.some((sudah) => sudah.id === s.id || sudah.nis === s.nis)
-    );
-  }, [santriList, santriSudahSetor]);
+    return resolvedSantriList.filter((s) => !s.sudahSetorHariIni);
+  }, [resolvedSantriList]);
 
   // Statistik Operasional Riil
-  const totalBinaan = santriList.length;
+  const totalBinaan = resolvedSantriList.length;
   const countSudahSetor = santriSudahSetor.length;
   const countBelumSetor = santriBelumSetor.length;
-  const percentSetor = totalBinaan > 0 ? Math.round((countSudahSetor / totalBinaan) * 100) : 0;
-  const izinKesehatanCount = (izinPendingCount || 0) + (santriSakitCount || 0);
+  const countPerluTindakan = useMemo(() => {
+    return resolvedSantriList.filter((s) => s.needsAttention).length;
+  }, [resolvedSantriList]);
+
+  const countSabaqTertinggal = useMemo(() => {
+    return resolvedSantriList.filter(
+      (s) => s.weeklySabaqProgress?.status === "BELUM_TERCAPAI"
+    ).length;
+  }, [resolvedSantriList]);
+
+  const countMufarBelumTerpenuhi = useMemo(() => {
+    return resolvedSantriList.filter(
+      (s) => s.statusTahfizhHariIni?.mufar === "BELUM_SELESAI"
+    ).length;
+  }, [resolvedSantriList]);
+
+  const countTargetBelumDitetapkan = useMemo(() => {
+    return resolvedSantriList.filter(
+      (s) => s.weeklySabaqProgress?.status === "TARGET_BELUM_DITETAPKAN"
+    ).length;
+  }, [resolvedSantriList]);
+
+  const percentSetor =
+    totalBinaan > 0 ? Math.round((countSudahSetor / totalBinaan) * 100) : 0;
+
+  // Filter tabs definition
+  const filterTabs = [
+    { id: "ALL" as const, label: "Semua Santri", count: totalBinaan },
+    {
+      id: "PERLU_TINDAKAN" as const,
+      label: "Perlu Tindakan",
+      count: countPerluTindakan,
+      highlight: countPerluTindakan > 0,
+    },
+    { id: "BELUM_SETOR" as const, label: "Belum Setor", count: countBelumSetor },
+    {
+      id: "SABAQ_TERTINGGAL" as const,
+      label: "Target Sabaq Tertinggal",
+      count: countSabaqTertinggal,
+    },
+    {
+      id: "MUFAR_BELUM_TERPENUHI" as const,
+      label: "Mufar Belum Tuntas",
+      count: countMufarBelumTerpenuhi,
+    },
+    {
+      id: "TARGET_BELUM_DITETAPKAN" as const,
+      label: "Target Belum Ada",
+      count: countTargetBelumDitetapkan,
+    },
+  ];
+
+  // Filter daftar santri untuk Action Center
+  const activeFilteredList = useMemo(() => {
+    switch (selectedFilter) {
+      case "PERLU_TINDAKAN":
+        return resolvedSantriList.filter((s) => s.needsAttention);
+      case "BELUM_SETOR":
+        return santriBelumSetor;
+      case "SABAQ_TERTINGGAL":
+        return resolvedSantriList.filter(
+          (s) => s.weeklySabaqProgress?.status === "BELUM_TERCAPAI"
+        );
+      case "MUFAR_BELUM_TERPENUHI":
+        return resolvedSantriList.filter(
+          (s) => s.statusTahfizhHariIni?.mufar === "BELUM_SELESAI"
+        );
+      case "TARGET_BELUM_DITETAPKAN":
+        return resolvedSantriList.filter(
+          (s) => s.weeklySabaqProgress?.status === "TARGET_BELUM_DITETAPKAN"
+        );
+      case "ALL":
+      default:
+        return santriBelumSetor;
+    }
+  }, [selectedFilter, resolvedSantriList, santriBelumSetor]);
 
   // Filter daftar santri belum setor untuk modal pencarian
   const filteredModalSantri = useMemo(() => {
@@ -129,11 +320,23 @@ export function DashboardMusyrifTahfizh({
     setSearchQuery("");
     // Kembalikan fokus ke trigger button setelah modal ditutup
     triggerButtonRef.current?.focus();
-    const btn = triggerButtonRef.current || (typeof document !== "undefined" ? document.querySelector<HTMLButtonElement>('[data-testid="btn-lihat-semua-santri"]') : null);
+    const btn =
+      triggerButtonRef.current ||
+      (typeof document !== "undefined"
+        ? document.querySelector<HTMLButtonElement>(
+            '[data-testid="btn-lihat-semua-santri"]'
+          )
+        : null);
     btn?.focus();
     setTimeout(() => {
       triggerButtonRef.current?.focus();
-      const b = triggerButtonRef.current || (typeof document !== "undefined" ? document.querySelector<HTMLButtonElement>('[data-testid="btn-lihat-semua-santri"]') : null);
+      const b =
+        triggerButtonRef.current ||
+        (typeof document !== "undefined"
+          ? document.querySelector<HTMLButtonElement>(
+              '[data-testid="btn-lihat-semua-santri"]'
+            )
+          : null);
       b?.focus();
     }, 0);
   };
@@ -188,7 +391,13 @@ export function DashboardMusyrifTahfizh({
       document.body.style.overflow = originalOverflow;
       document.removeEventListener("keydown", handleKeyDown);
       clearTimeout(focusTimer);
-      const b = triggerButtonRef.current || (typeof document !== "undefined" ? document.querySelector<HTMLButtonElement>('[data-testid="btn-lihat-semua-santri"]') : null);
+      const b =
+        triggerButtonRef.current ||
+        (typeof document !== "undefined"
+          ? document.querySelector<HTMLButtonElement>(
+              '[data-testid="btn-lihat-semua-santri"]'
+            )
+          : null);
       b?.focus();
     };
   }, [showAllSantriModal]);
@@ -205,8 +414,14 @@ export function DashboardMusyrifTahfizh({
       }
       if (onSelectSantriNis) {
         // Cari record santri berdasarkan ID untuk mendapatkan santri.nis yang valid
-        const matched = santriList.find((s) => s.id === targetId || s.nis === targetId);
-        const targetNis = matched ? matched.nis : (santriId ? undefined : selectedSantriNis);
+        const matched = santriList.find(
+          (s) => s.id === targetId || s.nis === targetId
+        );
+        const targetNis = matched
+          ? matched.nis
+          : santriId
+          ? undefined
+          : selectedSantriNis;
         if (targetNis) {
           onSelectSantriNis(targetNis);
           return;
@@ -222,20 +437,30 @@ export function DashboardMusyrifTahfizh({
     }
   };
 
-  // Maksimal 5 santri di dashboard utama
-  const displayedBelumSetor = santriBelumSetor.slice(0, 5);
+  // Tampilan ringkas maksimal 5 santri di dashboard utama
+  const displayedBelumSetor = activeFilteredList.slice(0, 5);
 
   return (
-    <div data-testid="dashboard-musyrif-tahfizh" className="space-y-5 sm:space-y-6 pb-20 sm:pb-8">
+    <div
+      data-testid="dashboard-musyrif-tahfizh"
+      className="space-y-5 sm:space-y-6 pb-20 sm:pb-8"
+    >
       {/* ========================================================================= */}
       {/* 1. HERO BANNER HIJAU STQ (Identitas Visual Pesantren, Tinggi 120-150px)   */}
       {/* ========================================================================= */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#0E7C3A] via-[#0B642E] to-[#074D22] text-white p-5 sm:p-6 shadow-xs border border-emerald-800/40">
-        {/* Ornamen Aksen Geometris Halus (Densitas Rendah & Elegan) */}
         <div className="absolute right-0 top-0 bottom-0 w-1/3 opacity-10 pointer-events-none flex items-center justify-end pr-4">
-          <svg className="h-32 w-32 text-white" viewBox="0 0 100 100" fill="none" stroke="currentColor">
+          <svg
+            className="h-32 w-32 text-white"
+            viewBox="0 0 100 100"
+            fill="none"
+            stroke="currentColor"
+          >
             <polygon points="50,5 90,25 90,75 50,95 10,75 10,25" strokeWidth="2" />
-            <polygon points="50,15 80,30 80,70 50,85 20,70 20,30" strokeWidth="1.5" />
+            <polygon
+              points="50,15 80,30 80,70 50,85 20,70 20,30"
+              strokeWidth="1.5"
+            />
             <circle cx="50" cy="50" r="18" strokeWidth="1.5" />
           </svg>
         </div>
@@ -247,13 +472,14 @@ export function DashboardMusyrifTahfizh({
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-300" />
                 Halaqoh Tahfizh
               </span>
-              <span className="text-emerald-100/80 text-xs">
-                Zona WITA (UTC+8)
-              </span>
+              <span className="text-emerald-100/80 text-xs">Zona WITA (UTC+8)</span>
             </div>
 
             <h1 className="text-lg sm:text-2xl font-bold tracking-tight text-white font-heading truncate">
-              Assalamu’alaikum, {userName && !userName.startsWith("Memuat") ? userName : "Musyrif Tahfizh"}
+              Assalamu’alaikum,{" "}
+              {userName && !userName.startsWith("Memuat")
+                ? userName
+                : "Musyrif Tahfizh"}
             </h1>
 
             <p className="text-xs sm:text-sm text-emerald-100/90 mt-0.5 truncate">
@@ -277,10 +503,7 @@ export function DashboardMusyrifTahfizh({
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. EMPAT KARTU STATISTIK RINGKAS & HIDUP (1 Baris Desktop / 2x2 Mobile)  */}
-      {/* ========================================================================= */}
-      {/* ========================================================================= */}
-      {/* 2. PANEL STATISTIK OPERASIONAL TERPADU (Single subtle container, anti-slop) */}
+      {/* 2. PANEL STATISTIK OPERASIONAL TERPADU (Single subtle container)           */}
       {/* ========================================================================= */}
       <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xs overflow-hidden">
         <div className="grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 divide-x-0 sm:divide-x divide-slate-100">
@@ -317,7 +540,10 @@ export function DashboardMusyrifTahfizh({
             <div>
               <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-heading">
                 {countSudahSetor}
-                <span className="text-slate-500 text-sm font-normal"> / {totalBinaan}</span>
+                <span className="text-slate-500 text-sm font-normal">
+                  {" "}
+                  / {totalBinaan}
+                </span>
               </div>
               <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
                 <div
@@ -331,7 +557,39 @@ export function DashboardMusyrifTahfizh({
             </div>
           </div>
 
-          {/* Metrik 3: Antrean Ikhtibar Riil */}
+          {/* Metrik 3: Perlu Tindakan */}
+          <div className="p-4 sm:p-5 flex flex-col justify-between">
+            <div className="flex items-start justify-between gap-1.5 mb-2">
+              <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider leading-snug">
+                Perlu Tindakan
+              </span>
+              <div
+                className={`p-1.5 sm:p-2 rounded-xl shrink-0 ${
+                  countPerluTindakan > 0
+                    ? "bg-rose-50 text-rose-600"
+                    : "bg-slate-50 text-slate-500"
+                }`}
+              >
+                <AlertTriangle className="h-4 w-4" />
+              </div>
+            </div>
+            <div>
+              <div
+                className={`text-2xl sm:text-3xl font-extrabold font-heading ${
+                  countPerluTindakan > 0 ? "text-rose-600" : "text-slate-800"
+                }`}
+              >
+                {countPerluTindakan}
+              </div>
+              <span className="text-[11px] sm:text-xs text-slate-500 block mt-1 truncate">
+                {countPerluTindakan > 0
+                  ? `${countPerluTindakan} santri butuh perhatian`
+                  : "Semua target aman"}
+              </span>
+            </div>
+          </div>
+
+          {/* Metrik 4: Antrean Ikhtibar Riil */}
           <div
             data-testid="card-antrean-ikhtibar"
             className="p-4 sm:p-5 flex flex-col justify-between"
@@ -361,27 +619,8 @@ export function DashboardMusyrifTahfizh({
                   ? `${ikhtibarPendingCount} Antrean Ikhtibar`
                   : "0 Antrean Ikhtibar"}
               </span>
-            </div>
-          </div>
-
-          {/* Metrik 4: Izin & Kesehatan */}
-          <div className="p-4 sm:p-5 flex flex-col justify-between">
-            <div className="flex items-start justify-between gap-1.5 mb-2">
-              <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider leading-snug">
-                Izin & Kesehatan
-              </span>
-              <div className="p-1.5 sm:p-2 rounded-xl bg-orange-50 text-orange-600 shrink-0">
-                <AlertTriangle className="h-4 w-4" />
-              </div>
-            </div>
-            <div>
-              <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-heading">
-                {izinKesehatanCount}
-              </div>
-              <span className="text-[11px] sm:text-xs text-slate-500 block mt-1 truncate">
-                {izinKesehatanCount > 0
-                  ? `${izinPendingCount} izin • ${santriSakitCount} sakit`
-                  : "Kondisi aman & terpantau"}
+              <span className="text-[10px] text-slate-400 block mt-0.5 truncate">
+                Izin & Kesehatan: {izinPendingCount} izin • {santriSakitCount} sakit
               </span>
             </div>
           </div>
@@ -389,167 +628,164 @@ export function DashboardMusyrifTahfizh({
       </div>
 
       {/* ========================================================================= */}
-      {/* 3. KOMPOSISI DESKTOP GRID (8 Kolom Utama : 4 Kolom Akses Cepat & Info)    */}
+      {/* 3. KABID TAHFIZH / MUDIR: NEEDS-ATTENTION OVERVIEW (ZERO RANKING)          */}
+      {/* ========================================================================= */}
+      {isKabidOrManagerial && halaqohWorkloads && halaqohWorkloads.length > 0 && (
+        <Card rounded="2xl" className="border border-slate-200/90 shadow-2xs overflow-hidden">
+          <CardHeader className="pb-3 border-b border-slate-100 flex flex-row items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Layers className="h-4 w-4 text-[#0E7C3A]" />
+              <CardTitle className="text-base sm:text-lg font-bold text-slate-900 font-heading">
+                Ringkasan Operasional Antar-Halaqoh
+              </CardTitle>
+            </div>
+            <span className="text-xs text-slate-500 font-medium">
+              Pemantauan Beban Kerja & Perhatian
+            </span>
+          </CardHeader>
+          <CardContent className="p-0 overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-600 border-collapse">
+              <thead>
+                <tr className="bg-slate-50/80 border-b border-slate-100 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <th className="py-3 px-4">Halaqoh & Pembina</th>
+                  <th className="py-3 px-3 text-center">Santri</th>
+                  <th className="py-3 px-3 text-center">Perlu Tindakan</th>
+                  <th className="py-3 px-3 text-center">Belum Setor</th>
+                  <th className="py-3 px-3 text-center">Sabaq Tertinggal</th>
+                  <th className="py-3 px-3 text-center">Mufar Belum Tuntas</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {halaqohWorkloads.map((hlq) => (
+                  <tr key={hlq.halaqohId} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="py-3 px-4">
+                      <div className="font-bold text-slate-900">{hlq.halaqohNama}</div>
+                      <div className="text-[11px] text-slate-400">{hlq.pembinaNama}</div>
+                    </td>
+                    <td className="py-3 px-3 text-center font-medium text-slate-700">
+                      {hlq.totalSantri}
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <span
+                        className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                          hlq.perluTindakanCount > 0
+                            ? "bg-rose-100 text-rose-800"
+                            : "bg-emerald-100 text-emerald-800"
+                        }`}
+                      >
+                        {hlq.perluTindakanCount}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-center font-semibold text-amber-700">
+                      {hlq.belumSetorCount}
+                    </td>
+                    <td className="py-3 px-3 text-center font-medium text-slate-700">
+                      {hlq.sabaqTertinggalCount}
+                    </td>
+                    <td className="py-3 px-3 text-center font-medium text-slate-700">
+                      {hlq.mufarBelumTerpenuhiCount}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 4. ACTION CENTER & FOKUS KERJA (8 Kolom Utama : 4 Kolom Info)             */}
       {/* ========================================================================= */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start">
-        {/* --------------------------------------------------------------------- */}
-        {/* KOLOM KIRI (8 Kolom): Fokus Kerja & Santri Belum Setor                */}
-        {/* --------------------------------------------------------------------- */}
+        {/* KOLOM KIRI (8 Kolom): Action Center & Filter Tabs */}
         <div className="lg:col-span-8 space-y-5 sm:space-y-6">
-          {/* Fokus Kerja Hari Ini (Tugas & Antrean Hari Ini) */}
+          {/* Action Center Operasional Tahfizh */}
           <Card rounded="2xl" className="border border-slate-200/90 shadow-2xs overflow-hidden">
-            <CardHeader className="pb-3 border-b border-slate-100 flex flex-row items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-[#0E7C3A]" />
-                <CardTitle className="text-base sm:text-lg font-bold text-slate-900 font-heading">
-                  Tugas & Antrean Hari Ini
-                </CardTitle>
+            <CardHeader className="pb-3 border-b border-slate-100 flex flex-col gap-3">
+              <div className="flex flex-row items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                  <CardTitle className="text-base sm:text-lg font-bold text-slate-900 font-heading">
+                    Santri Belum Setor Hari Ini
+                  </CardTitle>
+                  <Badge variant="orange" size="sm">
+                    {countBelumSetor}
+                  </Badge>
+                </div>
+
+                {santriBelumSetor.length > 5 && (
+                  <button
+                    type="button"
+                    ref={triggerButtonRef}
+                    data-testid="btn-lihat-semua-santri"
+                    onClick={(e) => handleOpenModal(e)}
+                    className="text-xs font-bold text-[#0E7C3A] hover:text-[#0B642E] flex items-center gap-1 min-h-[44px] px-2"
+                  >
+                    Lihat Semua ({countBelumSetor})
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
-              <span className="text-xs text-slate-500 font-medium">Prioritas Sesi</span>
+
+              {/* Operational Filter Tabs */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs font-semibold">
+                {filterTabs.map((tab) => {
+                  const isActive = selectedFilter === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setSelectedFilter(tab.id)}
+                      className={`px-3 py-1.5 rounded-xl transition-all shrink-0 flex items-center gap-1.5 min-h-[36px] ${
+                        isActive
+                          ? "bg-[#0E7C3A] text-white shadow-xs"
+                          : tab.highlight
+                          ? "bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      }`}
+                    >
+                      <span>{tab.label}</span>
+                      <span
+                        className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                          isActive
+                            ? "bg-white/20 text-white font-bold"
+                            : tab.highlight
+                            ? "bg-amber-200 text-amber-900 font-bold"
+                            : "bg-slate-200 text-slate-700"
+                        }`}
+                      >
+                        {tab.count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </CardHeader>
 
-            <CardContent className="pt-2 divide-y divide-slate-100">
-              {/* Tugas 1: Setoran Sesi Ini */}
-              <div className="py-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="p-2 rounded-xl bg-emerald-50 text-[#0E7C3A] shrink-0">
-                    <BookCheck className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs sm:text-sm font-semibold text-slate-900 truncate">
-                      Setoran Hafalan Halaqoh
-                    </p>
-                    <p className="text-[11px] sm:text-xs text-slate-500 truncate mt-0.5">
-                      {countBelumSetor > 0
-                        ? `${countBelumSetor} santri belum menyetorkan hafalan sesi ini.`
-                        : "Alhamdulillah, seluruh santri binaan telah menyetorkan hafalan."}
-                    </p>
-                  </div>
-                </div>
-                {countBelumSetor > 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => handleStartSetoran()}
-                    className="min-h-[44px] px-3 py-1.5 text-xs font-bold rounded-xl bg-emerald-50 text-[#0E7C3A] hover:bg-[#0E7C3A] hover:text-white transition-colors motion-reduce:transition-none shrink-0"
-                  >
-                    Catat Sekarang
-                  </button>
-                ) : (
-                  <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1 shrink-0">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> Tuntas
-                  </span>
-                )}
-              </div>
-
-              {/* Tugas 2: Antrean Ikhtibar */}
-              <div className="py-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="p-2 rounded-xl bg-amber-50 text-amber-600 shrink-0">
-                    <GraduationCap className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs sm:text-sm font-semibold text-slate-900 truncate">
-                      Antrean Ujian Ikhtibar Juz
-                    </p>
-                    <p className="text-[11px] sm:text-xs text-slate-500 truncate mt-0.5">
-                      {(ikhtibarPendingCount || 0) > 0
-                        ? `${ikhtibarPendingCount} santri siap mengikuti ujian kelulusan juz.`
-                        : "Belum ada antrean pengajuan ujian ikhtibar baru."}
-                    </p>
-                  </div>
-                </div>
-                {(ikhtibarPendingCount || 0) > 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => onNavigate?.("tahfizh")}
-                    className="min-h-[44px] px-3 py-1.5 text-xs font-bold rounded-xl bg-amber-50 text-amber-700 hover:bg-amber-600 hover:text-white transition-colors motion-reduce:transition-none shrink-0"
-                  >
-                    Tinjau Ikhtibar
-                  </button>
-                ) : (
-                  <span className="text-xs text-slate-400 shrink-0">0 Antrean</span>
-                )}
-              </div>
-
-              {/* Tugas 3: Perizinan & Sakit */}
-              <div className="py-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="p-2 rounded-xl bg-blue-50 text-blue-600 shrink-0">
-                    <AlertTriangle className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs sm:text-sm font-semibold text-slate-900 truncate">
-                      Perizinan & Kondisi Santri
-                    </p>
-                    <p className="text-[11px] sm:text-xs text-slate-500 truncate mt-0.5">
-                      {izinPendingCount > 0
-                        ? `${izinPendingCount} perizinan santri menunggu evaluasi.`
-                        : santriSakitCount > 0
-                        ? `${santriSakitCount} santri tercatat dalam perawatan medis.`
-                        : "Semua santri hadir dan dalam kondisi sehat."}
-                    </p>
-                  </div>
-                </div>
-                {izinPendingCount > 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => onNavigate?.("perizinan")}
-                    className="min-h-[44px] px-3 py-1.5 text-xs font-bold rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white transition-colors motion-reduce:transition-none shrink-0"
-                  >
-                    Tinjau Izin
-                  </button>
-                ) : (
-                  <span className="text-xs text-slate-400 shrink-0">Aman</span>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Santri Belum Setor Hari Ini (Ringkas Maksimal 5 Santri) */}
-          <Card rounded="2xl" className="border border-slate-200/90 shadow-2xs overflow-hidden">
-            <CardHeader className="pb-3 border-b border-slate-100 flex flex-row items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-                <CardTitle className="text-base sm:text-lg font-bold text-slate-900 font-heading">
-                  Santri Belum Setor Hari Ini
-                </CardTitle>
-                <Badge variant="orange" size="sm">
-                  {countBelumSetor}
-                </Badge>
-              </div>
-
-              {santriBelumSetor.length > 5 && (
-                <button
-                  type="button"
-                  ref={triggerButtonRef}
-                  data-testid="btn-lihat-semua-santri"
-                  onClick={(e) => handleOpenModal(e)}
-                  className="text-xs font-bold text-[#0E7C3A] hover:text-[#0B642E] flex items-center gap-1 min-h-[44px] px-2"
-                >
-                  Lihat Semua ({countBelumSetor})
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </CardHeader>
-
-            <CardContent data-testid="santri-belum-setor-list" className="pt-1 divide-y divide-slate-100">
-              {countBelumSetor === 0 ? (
+            <CardContent
+              data-testid="santri-belum-setor-list"
+              className="pt-1 divide-y divide-slate-100"
+            >
+              {displayedBelumSetor.length === 0 ? (
                 <div className="py-8 text-center text-slate-500 space-y-1">
                   <CheckCircle2 className="h-8 w-8 mx-auto text-[#0E7C3A]" />
                   <p className="text-sm font-semibold text-slate-800">
-                    Semua santri telah menyetorkan hafalan hari ini.
+                    Tidak ada santri pada filter ini.
                   </p>
                 </div>
               ) : (
                 displayedBelumSetor.map((santri) => {
                   const posHalaman = santri.posisiTerakhirHalaman || 1;
+                  const statusToday = santri.statusTahfizhHariIni;
+                  const weekly = santri.weeklySabaqProgress;
+
                   return (
                     <div
                       key={santri.id || santri.nis}
                       data-testid="santri-belum-setor-item"
-                      className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 hover:bg-slate-50/80 px-2 rounded-xl transition-colors motion-reduce:transition-none"
+                      className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/80 px-2 rounded-xl transition-colors motion-reduce:transition-none"
                     >
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0 flex-1 space-y-1.5">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold text-sm text-slate-900 truncate">
                             {santri.nama}
@@ -557,10 +793,103 @@ export function DashboardMusyrifTahfizh({
                           <span className="text-xs text-slate-500 font-mono">
                             ({santri.nis})
                           </span>
+                          <span className="text-xs text-slate-400">• Kelas {santri.kelas}</span>
                         </div>
-                        <p className="text-xs text-slate-500 truncate mt-0.5">
-                          Kelas {santri.kelas} • Capaian: {santri.capaianJuz} Juz (Hlm {posHalaman}) • Terakhir: {santri.setoranTerakhir}
-                        </p>
+
+                        {/* Status 4 Komponen Tahfizh */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {/* SABAQ */}
+                          <span
+                            aria-label={`Status Sabaq: ${statusToday?.sabaq}`}
+                            className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
+                              statusToday?.sabaq === "SELESAI"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : statusToday?.sabaq === "BELUM_SELESAI"
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : "bg-slate-100 text-slate-600 border-slate-200"
+                            }`}
+                          >
+                            Sabaq: {statusToday?.sabaq === "SELESAI" ? "Selesai" : statusToday?.sabaq === "BELUM_SELESAI" ? "Belum" : "Libur/Khatam"}
+                          </span>
+
+                          {/* SABQI */}
+                          <span
+                            aria-label={`Status Sabqi: ${statusToday?.sabqi}`}
+                            className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
+                              statusToday?.sabqi === "SELESAI"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : statusToday?.sabqi === "BELUM_SELESAI"
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : "bg-slate-100 text-slate-600 border-slate-200"
+                            }`}
+                          >
+                            Sabqi: {statusToday?.sabqi === "SELESAI" ? "Selesai" : statusToday?.sabqi === "BELUM_SELESAI" ? "Belum" : "T/A"}
+                          </span>
+
+                          {/* MANZIL */}
+                          <span
+                            aria-label={`Status Manzil: ${statusToday?.manzil}`}
+                            className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
+                              statusToday?.manzil === "SELESAI"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : statusToday?.manzil === "BELUM_SELESAI"
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : "bg-slate-100 text-slate-600 border-slate-200"
+                            }`}
+                          >
+                            Manzil: {statusToday?.manzil === "SELESAI" ? "Selesai" : statusToday?.manzil === "BELUM_SELESAI" ? "Belum" : "T/A"}
+                          </span>
+
+                          {/* MUFAR */}
+                          <span
+                            aria-label={`Status Mufar: ${santri.mufarProgressLabel}`}
+                            className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
+                              statusToday?.mufar === "SELESAI"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : statusToday?.mufar === "BELUM_SELESAI"
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : "bg-slate-100 text-slate-600 border-slate-200"
+                            }`}
+                          >
+                            Mufar: {santri.mufarProgressLabel || "T/A"}
+                          </span>
+                        </div>
+
+                        {/* Progres Target Sabaq Pekanan */}
+                        <div className="text-[11px] text-slate-500 flex items-center gap-2 flex-wrap">
+                          <span>
+                            Capaian: {santri.capaianJuz} Juz (Hlm {posHalaman})
+                          </span>
+                          <span>•</span>
+                          {weekly?.status === "TARGET_BELUM_DITETAPKAN" ? (
+                            <span className="text-amber-600 font-semibold">
+                              Target pekanan belum ditetapkan
+                            </span>
+                          ) : weekly?.status === "TERCAPAI" ? (
+                            <span className="text-emerald-700 font-semibold">
+                              Pekan Ini: {weekly.actual}/{weekly.target} Halaman (Tercapai)
+                            </span>
+                          ) : (
+                            <span className="text-slate-600">
+                              Pekan Ini: {weekly?.actual || 0}/{weekly?.target || 0} Halaman (Kurang {weekly?.remaining || 0} Hlm)
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Attention Reasons */}
+                        {santri.attentionReasons && santri.attentionReasons.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {santri.attentionReasons.map((reason, idx) => (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200"
+                              >
+                                <AlertTriangle className="h-3 w-3 text-rose-500 shrink-0" />
+                                {reason}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       <div className="shrink-0 self-start sm:self-center">
@@ -569,6 +898,7 @@ export function DashboardMusyrifTahfizh({
                           size="sm"
                           data-testid={`btn-catat-setoran-santri-${santri.id || santri.nis}`}
                           onClick={() => handleStartSetoran(santri.id)}
+                          aria-label={`Catat setoran untuk ${santri.nama}`}
                           className="text-xs font-bold text-[#0E7C3A] border-emerald-200 hover:bg-emerald-50 min-h-[44px] sm:min-h-[38px] gap-1 rounded-xl transition-all motion-reduce:transition-none"
                         >
                           Catat Setoran
@@ -581,9 +911,11 @@ export function DashboardMusyrifTahfizh({
               )}
 
               {/* Tautan Footer jika jumlah santri > 5 */}
-              {countBelumSetor > 5 && (
+              {activeFilteredList.length > 5 && (
                 <div className="pt-3 pb-1 flex items-center justify-between text-xs text-slate-500">
-                  <span>Menampilkan 5 dari {countBelumSetor} santri belum setor</span>
+                  <span>
+                    Menampilkan 5 dari {activeFilteredList.length} santri pada filter ini
+                  </span>
                   <button
                     type="button"
                     onClick={(e) => handleOpenModal(e)}
@@ -613,7 +945,11 @@ export function DashboardMusyrifTahfizh({
                 <button
                   type="button"
                   className="text-slate-500 hover:text-slate-800 p-1 min-h-[44px] min-w-[44px] flex items-center justify-center"
-                  aria-label={showCompletedList ? "Ciutkan daftar sudah setor" : "Buka daftar sudah setor"}
+                  aria-label={
+                    showCompletedList
+                      ? "Ciutkan daftar sudah setor"
+                      : "Buka daftar sudah setor"
+                  }
                 >
                   {showCompletedList ? (
                     <ChevronUp className="h-4 w-4" />
@@ -624,7 +960,10 @@ export function DashboardMusyrifTahfizh({
               </CardHeader>
 
               {showCompletedList && (
-                <CardContent data-testid="santri-sudah-setor-list" className="pt-1 divide-y divide-slate-100">
+                <CardContent
+                  data-testid="santri-sudah-setor-list"
+                  className="pt-1 divide-y divide-slate-100"
+                >
                   {santriSudahSetor.map((santri) => (
                     <div
                       key={santri.id || santri.nis}
@@ -655,11 +994,9 @@ export function DashboardMusyrifTahfizh({
           )}
         </div>
 
-        {/* --------------------------------------------------------------------- */}
-        {/* KOLOM KANAN (4 Kolom): Akses Cepat & Info Halaqoh Faktual            */}
-        {/* --------------------------------------------------------------------- */}
+        {/* KOLOM KANAN (4 Kolom): Akses Cepat & Info Halaqoh Faktual */}
         <div className="lg:col-span-4 space-y-5 sm:space-y-6">
-          {/* Akses Cepat (4 Shortcuts) */}
+          {/* Akses Cepat */}
           <Card rounded="2xl" className="border border-slate-200/90 shadow-2xs overflow-hidden">
             <CardHeader className="pb-3 border-b border-slate-100">
               <CardTitle className="text-sm sm:text-base font-bold text-slate-900 font-heading">
@@ -680,7 +1017,7 @@ export function DashboardMusyrifTahfizh({
                     Catat Setoran Baru
                   </p>
                   <p className="text-[11px] text-slate-500 truncate">
-                    Input sabaq, sabaqi, manzil
+                    Input sabaq, sabaqi, manzil, mufar
                   </p>
                 </div>
                 <ArrowRight className="h-3.5 w-3.5 text-slate-400 group-hover:text-[#0E7C3A] group-hover:translate-x-0.5 transition-all motion-reduce:transition-none" />
@@ -758,14 +1095,16 @@ export function DashboardMusyrifTahfizh({
             </p>
             <div className="mt-3 pt-2.5 border-t border-emerald-200/50 flex items-center justify-between text-[11px] text-slate-600">
               <span>Total Santri Binaan</span>
-              <span className="font-semibold text-emerald-800">{totalBinaan} Santri</span>
+              <span className="font-semibold text-emerald-800">
+                {totalBinaan} Santri
+              </span>
             </div>
           </div>
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* 4. MODAL/DRAWER AKSESIBEL: DAFTAR LENGKAP SANTRI BELUM SETOR              */}
+      {/* 5. MODAL/DRAWER AKSESIBEL: DAFTAR LENGKAP SANTRI BELUM SETOR              */}
       {/* ========================================================================= */}
       {showAllSantriModal && (
         <div
@@ -785,7 +1124,10 @@ export function DashboardMusyrifTahfizh({
             {/* Header Modal */}
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-2">
               <div>
-                <h3 id="modal-santri-title" className="text-base sm:text-lg font-bold text-slate-900 font-heading">
+                <h3
+                  id="modal-santri-title"
+                  className="text-base sm:text-lg font-bold text-slate-900 font-heading"
+                >
                   Daftar Lengkap Santri Belum Setor ({countBelumSetor})
                 </h3>
                 <p id="modal-santri-desc" className="text-xs text-slate-500 mt-0.5">
@@ -842,7 +1184,8 @@ export function DashboardMusyrifTahfizh({
                           </span>
                         </div>
                         <p className="text-xs text-slate-500 truncate mt-0.5">
-                          Kelas {santri.kelas} • Capaian: {santri.capaianJuz} Juz (Hlm {posHalaman}) • Terakhir: {santri.setoranTerakhir}
+                          Kelas {santri.kelas} • Capaian: {santri.capaianJuz} Juz (Hlm{" "}
+                          {posHalaman}) • Terakhir: {santri.setoranTerakhir}
                         </p>
                       </div>
 
@@ -882,4 +1225,3 @@ export function DashboardMusyrifTahfizh({
     </div>
   );
 }
-

@@ -22,6 +22,8 @@ import {
   HeartHandshake,
 } from "lucide-react";
 import { DashboardMusyrifTahfizh } from "@/components/dashboard/dashboard-musyrif-tahfizh";
+import { TahfizhDailyStatus } from "@/lib/tahfizh-status";
+import { WeeklySabaqProgress } from "@/lib/tahfizh-mufar-tier";
 
 export interface DashboardSantriSummary {
   id: string;
@@ -30,13 +32,22 @@ export interface DashboardSantriSummary {
   kelas: string;
   jenisKelamin?: string;
   halaqoh: string;
+  halaqohId?: string | null;
+  pembina?: string;
   capaianJuz: number;
   targetJuz: number | null;
   targetSabaq?: number | null;
   targetSabaqLabel?: string;
   targetSabaqBulanan?: number | null;
   targetSabaqPekanan?: number | null;
-  statusTahfizhHariIni?: unknown;
+  completedJuzCanonical?: number;
+  targetDailyMufarJuz?: number;
+  actualDailyMufarJuz?: number;
+  weeklySabaqProgress?: WeeklySabaqProgress;
+  statusTahfizhHariIni?: TahfizhDailyStatus;
+  mufarProgressLabel?: string;
+  needsAttention?: boolean;
+  attentionReasons?: string[];
   setoranTerakhir: string;
   setoranTerakhirAt?: string | null;
   sudahSetorHariIni?: boolean;
