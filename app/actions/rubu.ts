@@ -227,20 +227,33 @@ export async function getEvaluasiRubuListAction(params?: {
     };
   }
 
+  // Wajib memiliki identitas staf resmi di pangkalan data (Fail-Closed)
+  // Berlaku untuk seluruh peran yang diizinkan: MT biasa, Kabid Tahfizh, dan KS/Mudir
+  if (!session.staffId) {
+    return {
+      success: false,
+      message: "Akses Ditolak: Profil staf belum terhubung dengan akun Anda.",
+      data: [],
+    };
+  }
+
+  const staff = await prisma.staff.findUnique({
+    where: { id: session.staffId },
+  });
+
+  if (!staff) {
+    return {
+      success: false,
+      message: "Akses Ditolak: Data profil staf tidak ditemukan di pangkalan data.",
+      data: [],
+    };
+  }
+
   const isManagerial = Boolean(session.isKepalaBidangTahfidz || session.role === "KS");
 
   const whereClause: Prisma.EvaluasiRubuTahfizhWhereInput = {};
 
   if (!isManagerial) {
-    // Ordinary MT: fail-closed jika staffId tidak terhubung
-    if (!session.staffId) {
-      return {
-        success: false,
-        message: "Akses Ditolak: Profil staf pembina Anda belum terhubung.",
-        data: [],
-      };
-    }
-
     if (params?.santriId) {
       // Periksa apakah santri yang diminta berada di halaqoh binaan MT
       const isBinaan = await prisma.halaqoh.findFirst({

@@ -22,7 +22,11 @@ import {
 } from "../lib/tahfizh-quality";
 import { setoranSchema, evaluasiRubuSchema } from "../lib/validations";
 import { saveSetoranTahfizhCore } from "../lib/tahfizh-persistence";
-import { createSetoranAction } from "../app/actions/tahfizh";
+import {
+  createSetoranAction,
+  getRecentSetoranAction,
+  getSantriProgresAction,
+} from "../app/actions/tahfizh";
 import { createEvaluasiRubuAction, getEvaluasiRubuListAction } from "../app/actions/rubu";
 import { recordTasmiSimaanAction } from "../app/actions/laporan-bulanan";
 import { inputHasilTahap1Action, inputHasilTahap2Action } from "../app/actions/ikhtibar";
@@ -562,6 +566,7 @@ describe("PR #8 — Tahfizh Quality & Evaluation Engine (Comprehensive Test Suit
         assert.equal("nilaiKelancaran" in item, false, "nilaiKelancaran harus absent dari output WS");
         assert.equal("rincianKesalahan" in item, false, "rincianKesalahan harus absent dari output WS");
         assert.equal("qualityTrend" in item, false, "qualityTrend harus absent dari output WS");
+        assert.equal("catatan" in item, false, "catatan internal harus absent dari output WS");
         assert.equal("musyrif" in item, false, "detail musyrif evaluator harus absent dari output WS");
       }
 
@@ -611,6 +616,7 @@ describe("PR #8 — Tahfizh Quality & Evaluation Engine (Comprehensive Test Suit
         assert.equal("nilaiKelancaran" in item, false, "nilaiKelancaran harus absent dari output ST");
         assert.equal("rincianKesalahan" in item, false, "rincianKesalahan harus absent dari output ST");
         assert.equal("qualityTrend" in item, false, "qualityTrend harus absent dari output ST");
+        assert.equal("catatan" in item, false, "catatan internal harus absent dari output ST");
         assert.equal("musyrif" in item, false, "detail musyrif evaluator harus absent dari output ST");
       }
     });
@@ -1192,8 +1198,8 @@ describe("PR #8 — Tahfizh Quality & Evaluation Engine (Comprehensive Test Suit
     it("memverifikasi seluruh 6 migrasi applied (0 failed, status up to date) dan skema PR #8 terisolasi", { timeout: 90000 }, async () => {
       const res = await runIsolatedMigrationChainVerification();
 
-      assert.ok(res.migrationCount >= 6, `Setidaknya terdapat 6 migrasi repositori, ditemukan: ${res.migrationCount}`);
-      assert.equal(res.migrationsApplied, res.migrationCount, "Seluruh 6 migrasi harus berstatus applied");
+      assert.equal(res.migrationCount, 6, "Tepat 6 migrasi repositori yang terdefinisi");
+      assert.equal(res.migrationsApplied, 6, "Seluruh 6 migrasi harus berstatus applied");
       assert.equal(res.failedCount, 0, "0 migrasi gagal");
       assert.equal(res.isUpToDate, true, "Status migrasi harus up to date");
 
@@ -1267,15 +1273,413 @@ describe("PR #8 — Tahfizh Quality & Evaluation Engine (Comprehensive Test Suit
       // Constraints: PK, FK santri, FK musyrif
       const constraints = p8.evaluasiRubuConstraints;
       const pk = constraints.find((c) => c.constraint_type === "PRIMARY KEY");
-      const fkSantri = constraints.find((c) => c.constraint_name.includes("santri_id"));
-      const fkMusyrif = constraints.find((c) => c.constraint_name.includes("musyrif_id"));
+      const fkSantri = constraints.find((c) => c.constraint_name.includes("santri_id") && c.constraint_type === "FOREIGN KEY");
+      const fkMusyrif = constraints.find((c) => c.constraint_name.includes("musyrif_id") && c.constraint_type === "FOREIGN KEY");
 
       assert.ok(pk, "Primary Key evaluasi_rubu_tahfizh harus ada");
       assert.ok(fkSantri, "Foreign Key santri_id evaluasi_rubu_tahfizh harus ada");
+      assert.equal(fkSantri?.constraint_type, "FOREIGN KEY", "santri FK constraint_type = FOREIGN KEY");
       assert.ok(fkMusyrif, "Foreign Key musyrif_id evaluasi_rubu_tahfizh harus ada");
+      assert.equal(fkMusyrif?.constraint_type, "FOREIGN KEY", "musyrif FK constraint_type = FOREIGN KEY");
 
       // 5. Legacy rows compatibility
       assert.equal(p8.legacyRowsNoBackfillRequired, true, "Baris legacy dapat dibaca dan dibuat tanpa backfill");
+    });
+  });
+
+  // -------------------------------------------------------------
+  // 10. PRIVACY, API PARITY & ABAC HARDENING (ROUND 2 REMEDIATION)
+  // -------------------------------------------------------------
+  describe("10. Privacy, API Parity & ABAC Hardening (Round 2)", () => {
+    // 10.1: getRecentSetoranAction for WS & ST
+    it("getRecentSetoranAction: WS dan ST tidak mengekspos properti internal (absent, bukan null)", async () => {
+      // Pastikan ada setoran untuk SANTRI_1
+      setTestSession(sessionMT1);
+      await createSetoranAction({
+        santriId: SANTRI_1_ID,
+        jenis: "SABAQ",
+        juz: 1,
+        halamanMulai: 3,
+        halamanSelesai: 3,
+        jumlahHalaman: 1,
+        nilaiTajwid: "MUMTAZ",
+        nilaiFashahah: "MUMTAZ",
+        nilaiKelancaran: "MUMTAZ",
+        rincianKesalahan: DEFAULT_MISTAKE_COUNTS,
+        catatan: "Catatan internal musyrif rahasia",
+      });
+
+      // Uji WS
+      setTestSession(sessionWali);
+      const resWS = await getRecentSetoranAction(10);
+      assert.equal(resWS.success, true);
+      assert.ok(resWS.data.length > 0);
+      for (const item of resWS.data) {
+        assert.equal("nilaiTajwid" in item, false, "nilaiTajwid harus absent dari getRecentSetoran WS");
+        assert.equal("nilaiFashahah" in item, false, "nilaiFashahah harus absent dari getRecentSetoran WS");
+        assert.equal("nilaiKelancaran" in item, false, "nilaiKelancaran harus absent dari getRecentSetoran WS");
+        assert.equal("rincianKesalahan" in item, false, "rincianKesalahan harus absent dari getRecentSetoran WS");
+        assert.equal("qualityTrend" in item, false, "qualityTrend harus absent dari getRecentSetoran WS");
+        assert.equal("catatan" in item, false, "catatan internal harus absent dari getRecentSetoran WS");
+        assert.equal("musyrif" in item, false, "musyrif detail harus absent dari getRecentSetoran WS");
+        assert.equal("musyrifId" in item, false, "musyrifId harus absent dari getRecentSetoran WS");
+      }
+
+      // Uji ST
+      setTestSession(sessionSantri);
+      const resST = await getRecentSetoranAction(10);
+      assert.equal(resST.success, true);
+      assert.ok(resST.data.length > 0);
+      for (const item of resST.data) {
+        assert.equal("nilaiTajwid" in item, false, "nilaiTajwid harus absent dari getRecentSetoran ST");
+        assert.equal("nilaiFashahah" in item, false, "nilaiFashahah harus absent dari getRecentSetoran ST");
+        assert.equal("nilaiKelancaran" in item, false, "nilaiKelancaran harus absent dari getRecentSetoran ST");
+        assert.equal("rincianKesalahan" in item, false, "rincianKesalahan harus absent dari getRecentSetoran ST");
+        assert.equal("qualityTrend" in item, false, "qualityTrend harus absent dari getRecentSetoran ST");
+        assert.equal("catatan" in item, false, "catatan internal harus absent dari getRecentSetoran ST");
+        assert.equal("musyrif" in item, false, "musyrif detail harus absent dari getRecentSetoran ST");
+        assert.equal("musyrifId" in item, false, "musyrifId harus absent dari getRecentSetoran ST");
+      }
+    });
+
+    // 10.2: getSantriProgresAction for WS & ST
+    it("getSantriProgresAction: WS dan ST tidak mengekspos properti internal (absent, bukan null)", async () => {
+      // Uji WS
+      setTestSession(sessionWali);
+      const progWS = await getSantriProgresAction(SANTRI_1_ID);
+      assert.equal(progWS.success, true);
+      assert.ok(progWS.data);
+      const wsData = progWS.data as Record<string, unknown>;
+      assert.equal("catatan" in wsData, false, "catatan pembina harus absent dari progres WS");
+      assert.equal("qualityTrend" in wsData, false, "qualityTrend harus absent dari progres WS");
+      if (wsData.halaqoh && typeof wsData.halaqoh === "object") {
+        assert.equal("pembina" in (wsData.halaqoh as Record<string, unknown>), false, "detail pembina internal harus absent dari halaqoh progres WS");
+      }
+      assert.ok(Array.isArray(wsData.setoranList));
+      for (const stItem of wsData.setoranList as Array<Record<string, unknown>>) {
+        assert.equal("nilaiTajwid" in stItem, false, "nilaiTajwid harus absent dari setoranList progres WS");
+        assert.equal("nilaiFashahah" in stItem, false, "nilaiFashahah harus absent dari setoranList progres WS");
+        assert.equal("nilaiKelancaran" in stItem, false, "nilaiKelancaran harus absent dari setoranList progres WS");
+        assert.equal("rincianKesalahan" in stItem, false, "rincianKesalahan harus absent dari setoranList progres WS");
+        assert.equal("qualityTrend" in stItem, false, "qualityTrend harus absent dari setoranList progres WS");
+        assert.equal("catatan" in stItem, false, "catatan internal harus absent dari setoranList progres WS");
+        assert.equal("musyrifId" in stItem, false, "musyrifId harus absent dari setoranList progres WS");
+      }
+
+      // Uji ST
+      setTestSession(sessionSantri);
+      const progST = await getSantriProgresAction(SANTRI_2_ID);
+      assert.equal(progST.success, true);
+      assert.ok(progST.data);
+      const stData = progST.data as Record<string, unknown>;
+      assert.equal("catatan" in stData, false, "catatan pembina harus absent dari progres ST");
+      assert.equal("qualityTrend" in stData, false, "qualityTrend harus absent dari progres ST");
+      if (stData.halaqoh && typeof stData.halaqoh === "object") {
+        assert.equal("pembina" in (stData.halaqoh as Record<string, unknown>), false, "detail pembina internal harus absent dari halaqoh progres ST");
+      }
+      assert.ok(Array.isArray(stData.setoranList));
+      for (const stItem of stData.setoranList as Array<Record<string, unknown>>) {
+        assert.equal("nilaiTajwid" in stItem, false, "nilaiTajwid harus absent dari setoranList progres ST");
+        assert.equal("nilaiFashahah" in stItem, false, "nilaiFashahah harus absent dari setoranList progres ST");
+        assert.equal("nilaiKelancaran" in stItem, false, "nilaiKelancaran harus absent dari setoranList progres ST");
+        assert.equal("rincianKesalahan" in stItem, false, "rincianKesalahan harus absent dari setoranList progres ST");
+        assert.equal("qualityTrend" in stItem, false, "qualityTrend harus absent dari setoranList progres ST");
+        assert.equal("catatan" in stItem, false, "catatan internal harus absent dari setoranList progres ST");
+        assert.equal("musyrifId" in stItem, false, "musyrifId harus absent dari setoranList progres ST");
+      }
+    });
+
+    // 10.3: getEvaluasiRubuListAction Fail Closed for Missing Staff
+    it("getEvaluasiRubuListAction: fail closed jika profil staf tidak terhubung atau tidak ditemukan di DB", async () => {
+      // MT without staff -> DENY
+      setTestSession(sessionMTNoStaff);
+      const resMTNoStaff = await getEvaluasiRubuListAction();
+      assert.equal(resMTNoStaff.success, false);
+      assert.match(resMTNoStaff.message || "", /Akses Ditolak/);
+
+      // Kabid flag without staff -> DENY
+      const sessionKabidNoStaff: UserSession = { ...sessionKabid, staffId: undefined };
+      setTestSession(sessionKabidNoStaff);
+      const resKabidNoStaff = await getEvaluasiRubuListAction();
+      assert.equal(resKabidNoStaff.success, false);
+      assert.match(resKabidNoStaff.message || "", /Akses Ditolak/);
+
+      // KS without staff -> DENY
+      const sessionMudirNoStaff: UserSession = { ...sessionMudir, staffId: undefined };
+      setTestSession(sessionMudirNoStaff);
+      const resMudirNoStaff = await getEvaluasiRubuListAction();
+      assert.equal(resMudirNoStaff.success, false);
+      assert.match(resMudirNoStaff.message || "", /Akses Ditolak/);
+
+      // StaffId non-existent in database -> DENY
+      const sessionGhostStaff: UserSession = { ...sessionMT1, staffId: "stf-ghost-unknown" };
+      setTestSession(sessionGhostStaff);
+      const resGhost = await getEvaluasiRubuListAction();
+      assert.equal(resGhost.success, false);
+      assert.match(resGhost.message || "", /Akses Ditolak/);
+
+      // Kabid with Ghost Staff -> DENY
+      setTestSession({ ...sessionKabid, staffId: "stf-ghost-unknown" });
+      const resKabidGhost = await getEvaluasiRubuListAction();
+      assert.equal(resKabidGhost.success, false);
+      assert.match(resKabidGhost.message || "", /Akses Ditolak/);
+
+      // KS with Ghost Staff -> DENY
+      setTestSession({ ...sessionMudir, staffId: "stf-ghost-unknown" });
+      const resMudirGhost = await getEvaluasiRubuListAction();
+      assert.equal(resMudirGhost.success, false);
+      assert.match(resMudirGhost.message || "", /Akses Ditolak/);
+
+      // Assigned MT with valid staff -> own halaqoh ALLOW
+      setTestSession(sessionMT1);
+      const resMT1Valid = await getEvaluasiRubuListAction();
+      assert.equal(resMT1Valid.success, true);
+
+      // Kabid with valid staff -> managerial ALLOW
+      setTestSession(sessionKabid);
+      const resKabidValid = await getEvaluasiRubuListAction();
+      assert.equal(resKabidValid.success, true);
+
+      // KS with valid staff -> managerial ALLOW
+      setTestSession(sessionMudir);
+      const resMudirValid = await getEvaluasiRubuListAction();
+      assert.equal(resMudirValid.success, true);
+
+      // Denied roles: PH, ADM, YAY, WS, ST
+      for (const sess of [sessionPH, sessionADM, sessionYAY, sessionWali, sessionSantri]) {
+        setTestSession(sess);
+        const resDenied = await getEvaluasiRubuListAction();
+        assert.equal(resDenied.success, false);
+        assert.match(resDenied.message || "", /Akses Ditolak/);
+      }
+    });
+
+    // 10.4: Complete API Canonical Setoran Contract
+    it("POST /api/v1/setoran: keselarasan kontrak kanonikal (MUFAR, non-MUFAR, idempotensi, manual Sabaqi)", async () => {
+      const tokenMT = await createSessionToken({
+        sub: sessionMT1.userId,
+        username: sessionMT1.username,
+        role: "MT",
+        staffId: STAFF_MT_1_ID,
+      });
+
+      // A. API MUFAR + valid jumlahJuzMufar -> SUCCESS 201, persisted jumlahJuzMufar correct
+      const reqMufar = new Request("http://localhost:3000/api/v1/setoran", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenMT}` },
+        body: JSON.stringify({
+          santriId: SANTRI_1_ID,
+          jenis: "MUFAR",
+          juz: 1,
+          halamanMulai: 1,
+          halamanSelesai: 20,
+          jumlahHalaman: 20,
+          jumlahJuzMufar: 1.0,
+          nilaiTajwid: "MUMTAZ",
+          nilaiFashahah: "MUMTAZ",
+          nilaiKelancaran: "MUMTAZ",
+          rincianKesalahan: DEFAULT_MISTAKE_COUNTS,
+        }),
+      });
+      const resMufar = await postSetoranApi(reqMufar);
+      assert.equal(resMufar.status, 201);
+      const jsonMufar = await resMufar.json();
+      assert.equal(jsonMufar.success, true);
+      assert.equal(jsonMufar.data.jumlahJuzMufar, 1.0);
+
+      const dbMufar = await prisma.setoranTahfizh.findUnique({ where: { id: jsonMufar.data.id } });
+      assert.equal(dbMufar?.jumlahJuzMufar, 1.0, "jumlahJuzMufar harus tersimpan 1.0 di database");
+
+      // B. non-MUFAR (SABAQ) + jumlahJuzMufar -> canonical result stores NULL
+      const reqSabaqMufar = new Request("http://localhost:3000/api/v1/setoran", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenMT}` },
+        body: JSON.stringify({
+          santriId: SANTRI_1_ID,
+          jenis: "SABAQ",
+          juz: 1,
+          halamanMulai: 4,
+          halamanSelesai: 4,
+          jumlahHalaman: 1,
+          jumlahJuzMufar: 2.0, // Should be stored as NULL for non-MUFAR
+          nilaiTajwid: "MUMTAZ",
+          nilaiFashahah: "MUMTAZ",
+          nilaiKelancaran: "MUMTAZ",
+          rincianKesalahan: DEFAULT_MISTAKE_COUNTS,
+        }),
+      });
+      const resSabaqMufar = await postSetoranApi(reqSabaqMufar);
+      assert.equal(resSabaqMufar.status, 201);
+      const jsonSabaqMufar = await resSabaqMufar.json();
+      assert.equal(jsonSabaqMufar.success, true);
+      assert.equal(jsonSabaqMufar.data.jumlahJuzMufar, null, "jumlahJuzMufar harus null untuk SABAQ");
+
+      const dbSabaqMufar = await prisma.setoranTahfizh.findUnique({ where: { id: jsonSabaqMufar.data.id } });
+      assert.equal(dbSabaqMufar?.jumlahJuzMufar, null);
+
+      // C. API duplicate clientRequestId -> idempotent
+      const clientReqId = `idem-test-${Date.now()}`;
+      const reqIdem1 = new Request("http://localhost:3000/api/v1/setoran", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenMT}` },
+        body: JSON.stringify({
+          santriId: SANTRI_1_ID,
+          jenis: "MANZIL",
+          juz: 1,
+          halamanMulai: 1,
+          halamanSelesai: 5,
+          jumlahHalaman: 5,
+          clientRequestId: clientReqId,
+          nilaiTajwid: "JAYYID",
+          nilaiFashahah: "JAYYID",
+          nilaiKelancaran: "JAYYID",
+          rincianKesalahan: DEFAULT_MISTAKE_COUNTS,
+        }),
+      });
+      const resIdem1 = await postSetoranApi(reqIdem1);
+      assert.equal(resIdem1.status, 201);
+      const jsonIdem1 = await resIdem1.json();
+      const firstId = jsonIdem1.data.id;
+
+      // Duplicate call
+      const reqIdem2 = new Request("http://localhost:3000/api/v1/setoran", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenMT}` },
+        body: JSON.stringify({
+          santriId: SANTRI_1_ID,
+          jenis: "MANZIL",
+          juz: 1,
+          halamanMulai: 1,
+          halamanSelesai: 5,
+          jumlahHalaman: 5,
+          clientRequestId: clientReqId,
+          nilaiTajwid: "JAYYID",
+          nilaiFashahah: "JAYYID",
+          nilaiKelancaran: "JAYYID",
+          rincianKesalahan: DEFAULT_MISTAKE_COUNTS,
+        }),
+      });
+      const resIdem2 = await postSetoranApi(reqIdem2);
+      assert.equal(resIdem2.status, 201);
+      const jsonIdem2 = await resIdem2.json();
+      assert.equal(jsonIdem2.data.id, firstId, "Idempotent call harus mengembalikan id record yang sama");
+
+      const countIdem = await prisma.setoranTahfizh.count({ where: { clientRequestId: clientReqId } });
+      assert.equal(countIdem, 1, "Hanya tepat 1 record tersimpan untuk clientRequestId yang sama");
+
+      // D. manual SABAQI without required reason -> FAIL
+      // Buat santri khusus yang belum memiliki setoran SABAQ pekan ini
+      const santriNoSabaq = await prisma.santri.create({
+        data: {
+          id: `san-q-nosabaq-${Date.now()}`,
+          nis: `NIS-NOSABAQ-${Date.now()}`,
+          nama: "Santri Tanpa Sabaq Pekan Ini",
+          kelas: "7A",
+          jenisKelamin: "L",
+          status: "AKTIF",
+          halaqohId: HALAQOH_1_ID,
+          updatedAt: new Date(),
+        },
+      });
+
+      const reqSabqiNoReason = new Request("http://localhost:3000/api/v1/setoran", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenMT}` },
+        body: JSON.stringify({
+          santriId: santriNoSabaq.id,
+          jenis: "SABQI",
+          juz: 1,
+          halamanMulai: 1,
+          halamanSelesai: 2,
+          jumlahHalaman: 2,
+          isManualSabaqi: false,
+          nilaiTajwid: "MUMTAZ",
+          nilaiFashahah: "MUMTAZ",
+          nilaiKelancaran: "MUMTAZ",
+          rincianKesalahan: DEFAULT_MISTAKE_COUNTS,
+        }),
+      });
+      const resSabqiNoReason = await postSetoranApi(reqSabqiNoReason);
+      assert.equal(resSabqiNoReason.status, 400);
+      const jsonSabqiNoReason = await resSabqiNoReason.json();
+      assert.match(jsonSabqiNoReason.error.message, /Belum ada Sabaq tersimpan/);
+
+      // E. manual SABAQI with valid reason -> SUCCESS 201
+      const reqSabqiValid = new Request("http://localhost:3000/api/v1/setoran", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenMT}` },
+        body: JSON.stringify({
+          santriId: santriNoSabaq.id,
+          jenis: "SABQI",
+          juz: 1,
+          halamanMulai: 1,
+          halamanSelesai: 2,
+          jumlahHalaman: 2,
+          isManualSabaqi: true,
+          alasanManualSabaqi: "Pengulangan sabaqi mandiri berizin dari musyrif halaqoh",
+          nilaiTajwid: "MUMTAZ",
+          nilaiFashahah: "MUMTAZ",
+          nilaiKelancaran: "MUMTAZ",
+          rincianKesalahan: DEFAULT_MISTAKE_COUNTS,
+        }),
+      });
+      const resSabqiValid = await postSetoranApi(reqSabqiValid);
+      assert.equal(resSabqiValid.status, 201);
+      const jsonSabqiValid = await resSabqiValid.json();
+      assert.equal(jsonSabqiValid.success, true);
+    });
+
+    // 10.5: Complete 3 Dimensions Required for Structured Quality
+    it("santri-list-service: record dengan dimensi parsial/hilang TIDAK dianggap terstruktur", async () => {
+      // Buat santri baru khusus uji dimensi parsial
+      const santriPartial = await prisma.santri.create({
+        data: {
+          id: "san-q-partial",
+          nis: "NIS-Q-PARTIAL",
+          nama: "Santri Partial Test",
+          kelas: "7A",
+          jenisKelamin: "L",
+          status: "AKTIF",
+          halaqohId: HALAQOH_1_ID,
+          updatedAt: new Date(),
+        },
+      });
+
+      // Insert record parsial: Tajwid MUMTAZ, Fashahah NULL, Kelancaran MUMTAZ
+      await prisma.setoranTahfizh.create({
+        data: {
+          setoranCode: `SET-PARTIAL-${Date.now()}`,
+          santriId: santriPartial.id,
+          musyrifId: STAFF_MT_1_ID,
+          tanggal: new Date(),
+          jenis: "SABAQ",
+          juz: 1,
+          halamanMulai: 1,
+          halamanSelesai: 1,
+          jumlahHalaman: 1,
+          nilaiTajwid: "MUMTAZ",
+          nilaiFashahah: null, // Partial / corrupt!
+          nilaiKelancaran: "MUMTAZ",
+          nilai: "MUMTAZ",
+          rincianKesalahan: DEFAULT_MISTAKE_COUNTS,
+          status: "AKTIF",
+        },
+      });
+
+      setTestSession(sessionMT1);
+      const listRes = await getSantriListForSession({ search: "Santri Partial" }, sessionMT1, prisma);
+      assert.equal(listRes.success, true);
+      const santriData = listRes.data[0];
+      assert.ok(santriData);
+
+      // Karena record tidak memiliki ketiga dimensi lengkap, hasStructuredQuality HARUS false
+      assert.equal(santriData.hasStructuredQuality, false, "Record dengan fashahah null tidak boleh dianggap terstruktur");
+      assert.equal(santriData.nilaiTajwidTerakhir, null);
+      assert.equal(santriData.nilaiFashahahTerakhir, null);
+      assert.equal(santriData.nilaiKelancaranTerakhir, null);
+      if (santriData.qualityTrend) {
+        assert.equal(santriData.qualityTrend.overall, "BELUM_CUKUP_DATA");
+      }
     });
   });
 });

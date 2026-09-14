@@ -338,8 +338,16 @@ export async function getSantriListForSession(
         refDate: targetRefDate,
       });
 
-      // 2 setoran terstruktur valid terakhir (non-DIBATALKAN dan memiliki nilaiTajwid)
-      const validStructuredSetoran = validSetoranList.filter((st) => st.nilaiTajwid !== null);
+      // 2 setoran terstruktur valid terakhir (non-DIBATALKAN dan wajib memiliki ketiga dimensi lengkap)
+      const validStructuredSetoran = validSetoranList.filter(
+        (st) =>
+          st.nilaiTajwid !== null &&
+          st.nilaiTajwid !== undefined &&
+          st.nilaiFashahah !== null &&
+          st.nilaiFashahah !== undefined &&
+          st.nilaiKelancaran !== null &&
+          st.nilaiKelancaran !== undefined
+      );
       const latestStructured = validStructuredSetoran[0] || null;
       const previousStructured = validStructuredSetoran[1] || null;
 

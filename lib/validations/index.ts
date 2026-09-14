@@ -83,6 +83,15 @@ export const setoranSchema = z.object({
   jumlahHalaman: z.coerce
     .number()
     .min(0.5, { message: 'Jumlah halaman minimal 0.5' }),
+  jumlahJuzMufar: z.coerce
+    .number()
+    .min(0.5, { message: 'Jumlah juz mufar minimal 0.5' })
+    .optional()
+    .nullable(),
+  clientRequestId: z.string().max(100).optional().nullable(),
+  alasanLompatanHalaman: z.string().max(500).optional().nullable(),
+  isManualSabaqi: z.boolean().optional(),
+  alasanManualSabaqi: z.string().max(500).optional().nullable(),
   nilaiTajwid: z.enum(VALID_NILAI_SETORAN_VALUES, {
     message: 'Nilai Tajwid wajib dipilih',
   }),

@@ -222,6 +222,31 @@ export async function getRecentSetoranAction(limit: number = 10) {
         musyrif: true,
       },
     });
+
+    if (session.role === "WS" || session.role === "ST") {
+      const safeList = list.map((item) => ({
+        id: item.id,
+        setoranCode: item.setoranCode,
+        santriId: item.santriId,
+        santri: {
+          id: item.santri.id,
+          nama: item.santri.nama,
+          nis: item.santri.nis,
+          kelas: item.santri.kelas,
+        },
+        jenis: item.jenis,
+        juz: item.juz,
+        halamanMulai: item.halamanMulai,
+        halamanSelesai: item.halamanSelesai,
+        jumlahHalaman: item.jumlahHalaman,
+        jumlahJuzMufar: item.jumlahJuzMufar,
+        nilai: item.nilai,
+        tanggal: item.tanggal,
+        createdAt: item.createdAt,
+      }));
+      return { success: true, data: safeList };
+    }
+
     return { success: true, data: list };
   } catch (error) {
     console.error("Gagal mengambil riwayat setoran:", error);
@@ -304,6 +329,55 @@ export async function getSantriProgresAction(santriId: string) {
     const totalHalaman = modalAwal + tambahanSabaq;
     const totalJuz = Math.floor(totalHalaman / 20);
     const sisaHalaman = totalHalaman % 20;
+
+    const isParentOrStudent = session.role === "WS" || session.role === "ST";
+    if (isParentOrStudent) {
+      const safeSetoranList = santri.setoranList.map((item) => ({
+        id: item.id,
+        setoranCode: item.setoranCode,
+        santriId: item.santriId,
+        jenis: item.jenis,
+        juz: item.juz,
+        halamanMulai: item.halamanMulai,
+        halamanSelesai: item.halamanSelesai,
+        jumlahHalaman: item.jumlahHalaman,
+        jumlahJuzMufar: item.jumlahJuzMufar,
+        nilai: item.nilai,
+        tanggal: item.tanggal,
+        createdAt: item.createdAt,
+      }));
+
+      return {
+        success: true,
+        data: {
+          id: santri.id,
+          nis: santri.nis,
+          nama: santri.nama,
+          kelas: santri.kelas,
+          jenisKelamin: santri.jenisKelamin,
+          status: santri.status,
+          targetAkhirProgramJuz: santri.targetAkhirProgramJuz,
+          modalHafalanAwalHalaman: santri.modalHafalanAwalHalaman,
+          tanggalBaselineTahfizh: santri.tanggalBaselineTahfizh
+            ? santri.tanggalBaselineTahfizh.toISOString()
+            : null,
+          halaqoh: santri.halaqoh
+            ? {
+                id: santri.halaqoh.id,
+                nama: santri.halaqoh.nama,
+              }
+            : null,
+          setoranList: safeSetoranList,
+          totalSetoran,
+          modalHalamanAwal: modalAwal,
+          tambahanSabaq,
+          totalHalamanSabaq: totalHalaman,
+          totalJuzSabaq: totalJuz,
+          sisaHalamanSabaq: sisaHalaman,
+          capaianLabel: `${totalJuz} Juz ${sisaHalaman} Halaman`,
+        },
+      };
+    }
 
     return {
       success: true,

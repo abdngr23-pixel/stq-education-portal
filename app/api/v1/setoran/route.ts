@@ -59,7 +59,7 @@ export async function GET(req: Request) {
       },
     });
 
-    // Jalur Aman WS / ST: Hilangkan seluruh dimensi kualitas internal, rincian kesalahan, dan detail evaluator
+    // Jalur Aman WS / ST: Hilangkan seluruh dimensi kualitas internal, rincian kesalahan, catatan internal, dan detail evaluator
     if (session.role === 'WS' || session.role === 'ST') {
       const safeData = setoranList.map((item) => ({
         id: item.id,
@@ -73,7 +73,6 @@ export async function GET(req: Request) {
         jumlahHalaman: item.jumlahHalaman,
         jumlahJuzMufar: item.jumlahJuzMufar,
         nilai: item.nilai,
-        catatan: item.catatan,
         tanggal: item.tanggal,
         createdAt: item.createdAt,
       }));
@@ -133,6 +132,11 @@ export async function POST(req: Request) {
         halamanMulai: validation.data.halamanMulai,
         halamanSelesai: validation.data.halamanSelesai,
         jumlahHalaman: validation.data.jumlahHalaman,
+        jumlahJuzMufar: validation.data.jumlahJuzMufar,
+        clientRequestId: validation.data.clientRequestId,
+        alasanLompatanHalaman: validation.data.alasanLompatanHalaman,
+        isManualSabaqi: validation.data.isManualSabaqi,
+        alasanManualSabaqi: validation.data.alasanManualSabaqi,
         nilaiTajwid: validation.data.nilaiTajwid,
         nilaiFashahah: validation.data.nilaiFashahah,
         nilaiKelancaran: validation.data.nilaiKelancaran,

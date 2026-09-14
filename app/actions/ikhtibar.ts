@@ -392,6 +392,27 @@ export async function getDaftarIkhtibarAction(filterStatus?: StatusIkhtibar): Pr
       take: 50,
     });
 
+    if (session.role === 'WS' || session.role === 'ST') {
+      const safeList = list.map((item) => ({
+        id: item.id,
+        santriId: item.santriId,
+        santri: item.santri,
+        juz: item.juz,
+        status: item.status,
+        nilaiTahap1: item.nilaiTahap1,
+        tanggalTahap1: item.tanggalTahap1,
+        nilaiTahap2: item.nilaiTahap2,
+        tanggalTahap2: item.tanggalTahap2,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      }));
+      return {
+        success: true,
+        message: 'Berhasil memuat daftar ikhtibar',
+        data: safeList,
+      };
+    }
+
     return {
       success: true,
       message: 'Berhasil memuat daftar ikhtibar',

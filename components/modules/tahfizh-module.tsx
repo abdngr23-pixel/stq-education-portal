@@ -89,6 +89,8 @@ export function TahfizhModule({
     initialOpenForm ? "setoran" : "setoran"
   );
 
+  const canAccessRubu = userRole === "MT" || userRole === "KS";
+
   const [isPending, startTransition] = useTransition();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -447,10 +449,10 @@ export function TahfizhModule({
             halamanSelesai: r.halamanSelesai,
             jumlahHalaman: r.jumlahHalaman,
             nilai: r.nilai,
-            nilaiTajwid: r.nilaiTajwid,
-            nilaiFashahah: r.nilaiFashahah,
-            nilaiKelancaran: r.nilaiKelancaran,
-            rincianKesalahan: r.rincianKesalahan,
+            nilaiTajwid: "nilaiTajwid" in r ? (r as Record<string, unknown>).nilaiTajwid as string | null : undefined,
+            nilaiFashahah: "nilaiFashahah" in r ? (r as Record<string, unknown>).nilaiFashahah as string | null : undefined,
+            nilaiKelancaran: "nilaiKelancaran" in r ? (r as Record<string, unknown>).nilaiKelancaran as string | null : undefined,
+            rincianKesalahan: "rincianKesalahan" in r ? (r as Record<string, unknown>).rincianKesalahan : undefined,
             tanggal:
               new Date(r.tanggal).toLocaleString("id-ID", {
                 timeZone: "Asia/Makassar",
@@ -483,10 +485,10 @@ export function TahfizhModule({
             halamanSelesai: r.halamanSelesai,
             jumlahHalaman: r.jumlahHalaman,
             nilai: r.nilai,
-            nilaiTajwid: r.nilaiTajwid,
-            nilaiFashahah: r.nilaiFashahah,
-            nilaiKelancaran: r.nilaiKelancaran,
-            rincianKesalahan: r.rincianKesalahan,
+            nilaiTajwid: "nilaiTajwid" in r ? (r as Record<string, unknown>).nilaiTajwid as string | null : undefined,
+            nilaiFashahah: "nilaiFashahah" in r ? (r as Record<string, unknown>).nilaiFashahah as string | null : undefined,
+            nilaiKelancaran: "nilaiKelancaran" in r ? (r as Record<string, unknown>).nilaiKelancaran as string | null : undefined,
+            rincianKesalahan: "rincianKesalahan" in r ? (r as Record<string, unknown>).rincianKesalahan : undefined,
             tanggal:
               new Date(r.tanggal).toLocaleString("id-ID", {
                 timeZone: "Asia/Makassar",
@@ -1084,19 +1086,21 @@ export function TahfizhModule({
             <Star className="h-4 w-4" />
             Reward &amp; Evaluasi Bulanan
           </button>
-          <button
-            type="button"
-            data-testid="tab-rubu"
-            onClick={() => setActiveSubTab("rubu")}
-            className={`px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 min-h-[44px] shrink-0 ${
-              activeSubTab === "rubu"
-                ? "bg-[#0E7C3A] text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
-            }`}
-          >
-            <BookmarkCheck className="h-4 w-4" />
-            Evaluasi Rubu&apos; (1/4 Juz)
-          </button>
+          {canAccessRubu && (
+            <button
+              type="button"
+              data-testid="tab-rubu"
+              onClick={() => setActiveSubTab("rubu")}
+              className={`px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 min-h-[44px] shrink-0 ${
+                activeSubTab === "rubu"
+                  ? "bg-[#0E7C3A] text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              }`}
+            >
+              <BookmarkCheck className="h-4 w-4" />
+              Evaluasi Rubu&apos; (1/4 Juz)
+            </button>
+          )}
         </div>
 
         {currentHalaqohName && (
@@ -2638,7 +2642,7 @@ export function TahfizhModule({
       )}
 
       {/* 5. Tab Evaluasi Rubu' Tahfizh */}
-      {activeSubTab === "rubu" && (
+      {canAccessRubu && activeSubTab === "rubu" && (
         <EvaluasiRubuTab
           userRole={userRole}
           santriList={santriList}
