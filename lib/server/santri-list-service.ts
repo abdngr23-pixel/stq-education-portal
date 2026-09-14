@@ -251,9 +251,6 @@ export async function getSantriListForSession(
       const sabaqTarget = targetList.find(
         (t) => t.jenis === "SABAQ" && t.bulan === activeMonth && t.tahunAjaran === targetTahunAjaran
       );
-      const mufarTarget = targetList.find(
-        (t) => t.jenis === "MUFAR" && t.bulan === activeMonth && t.tahunAjaran === targetTahunAjaran
-      );
 
       const targetSabaq = sabaqTarget?.targetBulanan ?? null;
       const targetSabaqLabel = targetSabaq !== null ? `${targetSabaq} Halaman` : "Target belum ditetapkan";

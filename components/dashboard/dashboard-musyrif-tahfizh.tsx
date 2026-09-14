@@ -16,7 +16,6 @@ import {
   Search,
   X,
   Send,
-  GraduationCap,
   Sparkles,
   Layers,
 } from "lucide-react";
