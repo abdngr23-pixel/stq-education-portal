@@ -12,7 +12,6 @@ import {
   getPekanDariTanggal,
   hitungCapaianSabaq,
   hitungKepatuhanFrekuensi,
-  hitungTargetMufar,
   evaluasiCapaianNonTahfizh,
   generateRingkasanTasmiSimaan,
   TARGET_MIN_KOMPONEN,
@@ -141,9 +140,19 @@ export async function getLaporanBulananHalaqohAction(
     }
 
     // 2. Tentukan range tanggal bulan berdasarkan batas WITA resmi
+    if (typeof bulan !== "number" || !Number.isInteger(bulan) || bulan < 1 || bulan > 12) {
+      return { success: false, message: "Parameter bulan tidak valid (harus 1–12).", error: "Parameter tidak valid", data: null };
+    }
+    if (!tahunAjaran || !/^\d{4}\/\d{4}$/.test(tahunAjaran)) {
+      return { success: false, message: "Format tahun ajaran tidak valid. Gunakan format YYYY/YYYY (contoh: 2026/2027).", error: "Parameter tidak valid", data: null };
+    }
     const [thnAwalStr, thnAkhirStr] = tahunAjaran.split("/");
-    const tahunKalender =
-      bulan >= 7 ? parseInt(thnAwalStr, 10) || 2026 : parseInt(thnAkhirStr, 10) || 2027;
+    const thnAwal = parseInt(thnAwalStr, 10);
+    const thnAkhir = parseInt(thnAkhirStr, 10);
+    if (thnAkhir !== thnAwal + 1) {
+      return { success: false, message: "Tahun ajaran tidak valid. Tahun kedua harus tepat satu tahun setelah tahun pertama.", error: "Parameter tidak valid", data: null };
+    }
+    const tahunKalender = bulan >= 7 ? thnAwal : thnAkhir;
 
     const { startDate, endDate } = getWITAMonthRange(tahunKalender, bulan);
 
@@ -182,6 +191,11 @@ export async function getLaporanBulananHalaqohAction(
             orderBy: { tanggal: "asc" },
           });
 
+          const modalAwal = Number(santri.modalHafalanAwalHalaman) || 0;
+          const baselineDate = santri.tanggalBaselineTahfizh
+            ? new Date(santri.tanggalBaselineTahfizh)
+            : null;
+
           const sabaqPages = { p1: 0, p2: 0, p3: 0, p4: 0 };
           const sabqiFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
           const manzilFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
@@ -191,7 +205,9 @@ export async function getLaporanBulananHalaqohAction(
             const pekan = getPekanDariTanggal(s.tanggal);
             const pKey = `p${pekan}` as const;
             if (s.jenis === "SABAQ") {
-              sabaqPages[pKey] += s.jumlahHalaman || extractHalamanFromSetoran(s.catatan);
+              if (baselineDate && new Date(s.tanggal) >= baselineDate) {
+                sabaqPages[pKey] += s.jumlahHalaman || extractHalamanFromSetoran(s.catatan);
+              }
             } else if (s.jenis === "SABQI") {
               sabqiFreq[pKey] += 1;
             } else if (s.jenis === "MANZIL") {
@@ -201,37 +217,24 @@ export async function getLaporanBulananHalaqohAction(
             }
           });
 
-          const modalAwal = Number(santri.modalHafalanAwalHalaman) || 0;
-          const baselineDate = santri.tanggalBaselineTahfizh
-            ? new Date(santri.tanggalBaselineTahfizh)
-            : null;
-
-          const priorSabaqWhere: {
-            santriId: string;
-            jenis: JenisSetoran;
-            status: { not: string };
-            tanggal: { gte?: Date; lt: Date };
-          } = {
-            santriId: santri.id,
-            jenis: "SABAQ",
-            status: { not: "DIBATALKAN" },
-            tanggal: { lt: startDate },
-          };
-          if (baselineDate) {
-            priorSabaqWhere.tanggal = { gte: baselineDate, lt: startDate };
+          let priorSabaqHalaman = 0;
+          if (baselineDate && baselineDate < startDate) {
+            const priorSabaq = await prisma.setoranTahfizh.aggregate({
+              where: {
+                santriId: santri.id,
+                jenis: "SABAQ",
+                status: { not: "DIBATALKAN" },
+                tanggal: { gte: baselineDate, lt: startDate },
+              },
+              _sum: { jumlahHalaman: true },
+            });
+            priorSabaqHalaman = priorSabaq._sum.jumlahHalaman || 0;
           }
-
-          const priorSabaq = await prisma.setoranTahfizh.aggregate({
-            where: priorSabaqWhere,
-            _sum: { jumlahHalaman: true },
-          });
-          const modalAwalHalaman = modalAwal + (priorSabaq._sum.jumlahHalaman || 0);
+          const modalAwalHalaman = modalAwal + priorSabaqHalaman;
 
           const rekapSabaq = hitungCapaianSabaq(sabaqPages, targetSabaq, modalAwalHalaman);
           const rekapSabqi = hitungKepatuhanFrekuensi(sabqiFreq, targetSabqi, 90.0);
           const rekapManzil = hitungKepatuhanFrekuensi(manzilFreq, targetManzil, 90.0);
-          const totalJuzSantri = rekapSabaq.konversiAkumulasi.juz || 1;
-          const targetMufarJuzHarian = targetMufar ? hitungTargetMufar(totalJuzSantri) : 0;
           const rekapMufar = hitungKepatuhanFrekuensi(mufarFreq, targetMufar, 90.0);
 
           const capaianNonTahfizh = await prisma.capaianBulanan.findMany({
@@ -306,8 +309,7 @@ export async function getLaporanBulananHalaqohAction(
               },
               mufar: {
                 targetBulanan: targetMufar,
-                targetHarianJuz: targetMufarJuzHarian,
-                targetLabel: targetMufar !== null ? `${targetMufarJuzHarian} Juz/hari` : "Target belum ditetapkan",
+                targetLabel: targetMufar !== null ? `${targetMufar} Kali` : "Target belum ditetapkan",
                 pekan: mufarFreq,
                 ...rekapMufar,
               },
@@ -379,6 +381,11 @@ export async function getLaporanBulananHalaqohAction(
             orderBy: { tanggal: "asc" },
           });
 
+          const modalAwal = Number(santri.modalHafalanAwalHalaman) || 0;
+          const baselineDate = santri.tanggalBaselineTahfizh
+            ? new Date(santri.tanggalBaselineTahfizh)
+            : null;
+
           const sabaqPages = { p1: 0, p2: 0, p3: 0, p4: 0 };
           const sabqiFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
           const manzilFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
@@ -388,7 +395,9 @@ export async function getLaporanBulananHalaqohAction(
             const pekan = getPekanDariTanggal(s.tanggal);
             const pKey = `p${pekan}` as const;
             if (s.jenis === "SABAQ") {
-              sabaqPages[pKey] += s.jumlahHalaman || extractHalamanFromSetoran(s.catatan);
+              if (baselineDate && new Date(s.tanggal) >= baselineDate) {
+                sabaqPages[pKey] += s.jumlahHalaman || extractHalamanFromSetoran(s.catatan);
+              }
             } else if (s.jenis === "SABQI") {
               sabqiFreq[pKey] += 1;
             } else if (s.jenis === "MANZIL") {
@@ -398,37 +407,24 @@ export async function getLaporanBulananHalaqohAction(
             }
           });
 
-          const modalAwal = Number(santri.modalHafalanAwalHalaman) || 0;
-          const baselineDate = santri.tanggalBaselineTahfizh
-            ? new Date(santri.tanggalBaselineTahfizh)
-            : null;
-
-          const priorSabaqWhere: {
-            santriId: string;
-            jenis: JenisSetoran;
-            status: { not: string };
-            tanggal: { gte?: Date; lt: Date };
-          } = {
-            santriId: santri.id,
-            jenis: "SABAQ",
-            status: { not: "DIBATALKAN" },
-            tanggal: { lt: startDate },
-          };
-          if (baselineDate) {
-            priorSabaqWhere.tanggal = { gte: baselineDate, lt: startDate };
+          let priorSabaqHalaman = 0;
+          if (baselineDate && baselineDate < startDate) {
+            const priorSabaq = await prisma.setoranTahfizh.aggregate({
+              where: {
+                santriId: santri.id,
+                jenis: "SABAQ",
+                status: { not: "DIBATALKAN" },
+                tanggal: { gte: baselineDate, lt: startDate },
+              },
+              _sum: { jumlahHalaman: true },
+            });
+            priorSabaqHalaman = priorSabaq._sum.jumlahHalaman || 0;
           }
-
-          const priorSabaq = await prisma.setoranTahfizh.aggregate({
-            where: priorSabaqWhere,
-            _sum: { jumlahHalaman: true },
-          });
-          const modalAwalHalaman = modalAwal + (priorSabaq._sum.jumlahHalaman || 0);
+          const modalAwalHalaman = modalAwal + priorSabaqHalaman;
 
           const rekapSabaq = hitungCapaianSabaq(sabaqPages, targetSabaq, modalAwalHalaman);
           const rekapSabqi = hitungKepatuhanFrekuensi(sabqiFreq, targetSabqi, 90.0);
           const rekapManzil = hitungKepatuhanFrekuensi(manzilFreq, targetManzil, 90.0);
-          const totalJuzSantri = rekapSabaq.konversiAkumulasi.juz || 1;
-          const targetMufarJuzHarian = targetMufar ? hitungTargetMufar(totalJuzSantri) : 0;
           const rekapMufar = hitungKepatuhanFrekuensi(mufarFreq, targetMufar, 90.0);
 
           const capaianNonTahfizh = await prisma.capaianBulanan.findMany({
@@ -503,8 +499,7 @@ export async function getLaporanBulananHalaqohAction(
               },
               mufar: {
                 targetBulanan: targetMufar,
-                targetHarianJuz: targetMufarJuzHarian,
-                targetLabel: targetMufar !== null ? `${targetMufarJuzHarian} Juz/hari` : "Target belum ditetapkan",
+                targetLabel: targetMufar !== null ? `${targetMufar} Kali` : "Target belum ditetapkan",
                 pekan: mufarFreq,
                 ...rekapMufar,
               },
@@ -571,6 +566,38 @@ export async function upsertTargetSantriAction(input: TargetSantriInput) {
           message: "Akses Ditolak: Anda hanya berwenang mengatur target santri di dalam halaqoh binaan Anda.",
         };
       }
+    }
+  }
+
+  // Validasi input server-side target santri
+  if (typeof input.bulan !== "number" || !Number.isInteger(input.bulan) || input.bulan < 1 || input.bulan > 12) {
+    return { success: false, message: "Bulan harus berupa bilangan bulat antara 1 dan 12." };
+  }
+  if (!input.tahunAjaran || !/^\d{4}\/\d{4}$/.test(input.tahunAjaran)) {
+    return { success: false, message: "Format tahun ajaran tidak valid. Gunakan format YYYY/YYYY (contoh: 2026/2027)." };
+  }
+  const [thn1, thn2] = input.tahunAjaran.split("/").map(Number);
+  if (thn2 !== thn1 + 1) {
+    return { success: false, message: "Tahun ajaran tidak valid. Tahun kedua harus tepat satu tahun setelah tahun pertama (contoh: 2026/2027)." };
+  }
+  if (typeof input.targetPekanan !== "number" || !Number.isFinite(input.targetPekanan) || input.targetPekanan <= 0) {
+    return { success: false, message: "Target pekanan harus berupa angka positif lebih dari 0." };
+  }
+  if (typeof input.targetBulanan !== "number" || !Number.isFinite(input.targetBulanan) || input.targetBulanan <= 0) {
+    return { success: false, message: "Target bulanan harus berupa angka positif lebih dari 0." };
+  }
+  if (input.jenis === "SABAQ") {
+    if ((input.targetPekanan * 2) % 1 !== 0 || (input.targetBulanan * 2) % 1 !== 0) {
+      return { success: false, message: "Target Sabaq harus berupa bilangan bulat atau kelipatan 0.5 halaman." };
+    }
+  } else if (["SABQI", "MANZIL", "MUFAR"].includes(input.jenis)) {
+    if (!Number.isInteger(input.targetPekanan) || !Number.isInteger(input.targetBulanan)) {
+      return { success: false, message: `Target ${input.jenis} harus berupa bilangan bulat (frekuensi kali).` };
+    }
+  }
+  if (input.ambangKepatuhan !== undefined && input.ambangKepatuhan !== null) {
+    if (typeof input.ambangKepatuhan !== "number" || !Number.isFinite(input.ambangKepatuhan) || input.ambangKepatuhan < 0 || input.ambangKepatuhan > 100) {
+      return { success: false, message: "Ambang kepatuhan harus bernilai antara 0 dan 100 persen." };
     }
   }
 

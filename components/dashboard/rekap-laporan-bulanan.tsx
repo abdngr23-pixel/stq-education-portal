@@ -27,10 +27,6 @@ import {
   recordTasmiSimaanAction,
   type LaporanBulananData,
 } from "@/app/actions/laporan-bulanan";
-import {
-  MASTER_HALAQOH_LIST,
-  hitungTargetMufar,
-} from "@/lib/laporan-bulanan";
 import { KategoriCapaian, NilaiSetoran, JenisUjiHafalan } from "@prisma/client";
 
 const BULAN_NAMES = [
@@ -59,6 +55,7 @@ export interface RekapLaporanBulananProps {
 }
 
 export function RekapLaporanBulanan({
+  halaqohList = [],
   initialHalaqohId,
   userRole = "MT",
   currentHalaqohName,
@@ -71,26 +68,26 @@ export function RekapLaporanBulanan({
 
   // Resolusi halaqoh binaan staf untuk role MT / PH (ABAC Enforced)
   const resolvedHalaqoh = useMemo(() => {
+    const list = halaqohList || [];
     if (initialHalaqohId && initialHalaqohId !== "ALL") {
-      const match = MASTER_HALAQOH_LIST.find(
-        (h) => h.id === initialHalaqohId || h.code === initialHalaqohId
+      const match = list.find(
+        (h) => h.id === initialHalaqohId || (h as { code?: string }).code === initialHalaqohId
       );
       if (match) return match;
     }
     if (currentHalaqohName) {
-      const match = MASTER_HALAQOH_LIST.find(
+      const match = list.find(
         (h) =>
           h.nama.toLowerCase().includes(currentHalaqohName.toLowerCase()) ||
-          currentHalaqohName.toLowerCase().includes(h.pembina.toLowerCase()) ||
           currentHalaqohName.toLowerCase().includes(h.nama.toLowerCase())
       );
       if (match) return match;
     }
-    if (userRole === "PH") {
-      return MASTER_HALAQOH_LIST.find((h) => h.id === "HLQ-0002") || MASTER_HALAQOH_LIST[1];
+    if (list.length > 0) {
+      return list[0];
     }
-    return MASTER_HALAQOH_LIST[0]; // HLQ-0001 (Ust. Razan Mufli)
-  }, [initialHalaqohId, currentHalaqohName, userRole]);
+    return { id: initialHalaqohId || "", nama: currentHalaqohName || "Halaqoh Binaan" };
+  }, [initialHalaqohId, currentHalaqohName, halaqohList]);
 
   // Role MT / PH non-kabid DIKUNCI ke halaqoh sendiri; KS / ADM / YAY / Kabid bebas memilih halaqoh atau "ALL"
   const [selectedHalaqohId, setSelectedHalaqohId] = useState<string>(() => {
@@ -206,7 +203,7 @@ export function RekapLaporanBulanan({
         "% Kepatuhan Sabqi",
         "Manzil Total Freq",
         "% Kepatuhan Manzil",
-        "Target Mufar (Juz/Hari)",
+        "Target Mufar",
         "Mufar Total Freq",
       ];
       const rows = laporanData.rekapSantri.map((r) => [
@@ -423,7 +420,7 @@ export function RekapLaporanBulanan({
                     <option value="ALL">
                       📊 Semua Halaqoh (Rekap Gabungan Seluruh Pesantren)
                     </option>
-                    {MASTER_HALAQOH_LIST.map((h) => (
+                    {(halaqohList || []).map((h) => (
                       <option key={h.id} value={h.id}>
                         {h.nama}
                       </option>
@@ -431,7 +428,7 @@ export function RekapLaporanBulanan({
                   </select>
                   {isKabid ? (
                     <p className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
-                      ⭐ Akses Kepala Bidang Tahfidz (Ust. Razan Mufli): Dapat memantau seluruh halaqoh &amp; rekap gabungan.
+                      ⭐ Akses Kepala Bidang Tahfidz: Dapat memantau seluruh halaqoh &amp; rekap gabungan.
                     </p>
                   ) : (
                     <p className="text-[10px] text-emerald-700 font-medium">
@@ -790,11 +787,11 @@ export function RekapLaporanBulanan({
                         )}
                       </td>
 
-                      {/* Mufar Data (Target Juz/Hari Dinamis berdasarkan Total Hafalan) */}
+                      {/* Mufar Data */}
                       <td className="px-2 py-2 text-center font-bold text-purple-800 bg-purple-50/30">
                         {mfr.targetBulanan !== null ? (
                           (mfr as { targetLabel?: string }).targetLabel ||
-                          `${(mfr as { targetHarianJuz?: number }).targetHarianJuz || hitungTargetMufar(sbq.konversiAkumulasi.juz || 1)} Juz/hari`
+                          `${mfr.targetBulanan} Kali`
                         ) : (
                           <span className="text-slate-400 text-[10px] font-normal italic">Target belum ditetapkan</span>
                         )}

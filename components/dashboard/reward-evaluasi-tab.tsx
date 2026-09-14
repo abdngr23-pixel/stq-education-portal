@@ -98,7 +98,7 @@ export function RewardEvaluasiTab({ userRole }: RewardEvaluasiTabProps) {
     bintangSimaan: 2,
     hakLiburTasmiHari: 1,
     hakLiburSimaanHari: 2,
-    minPersenTargetBulanan: 80,
+    minPersenTargetBulanan: 100,
     durasiKehilanganKunjunganHari: 30,
   });
   const [isEditingKebijakan, setIsEditingKebijakan] = useState(false);

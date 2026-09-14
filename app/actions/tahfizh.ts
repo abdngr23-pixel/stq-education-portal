@@ -481,23 +481,21 @@ export async function getSantriKumulatifHalamanAction(santriId: string) {
     const modalAwal = Number(santri?.modalHafalanAwalHalaman) || 0;
     const baselineDate = santri?.tanggalBaselineTahfizh ? new Date(santri.tanggalBaselineTahfizh) : null;
 
-    const sabaqWhere: Prisma.SetoranTahfizhWhereInput = {
-      santriId,
-      jenis: "SABAQ",
-      status: { not: "DIBATALKAN" },
-    };
+    let tambahanSabaq = 0;
     if (baselineDate) {
-      sabaqWhere.tanggal = { gte: baselineDate };
+      const sabaqAggregate = await prisma.setoranTahfizh.aggregate({
+        where: {
+          santriId,
+          jenis: "SABAQ",
+          status: { not: "DIBATALKAN" },
+          tanggal: { gte: baselineDate },
+        },
+        _sum: {
+          jumlahHalaman: true,
+        },
+      });
+      tambahanSabaq = sabaqAggregate._sum.jumlahHalaman || 0;
     }
-
-    const sabaqAggregate = await prisma.setoranTahfizh.aggregate({
-      where: sabaqWhere,
-      _sum: {
-        jumlahHalaman: true,
-      },
-    });
-
-    const tambahanSabaq = sabaqAggregate._sum.jumlahHalaman || 0;
     const totalHalaman = modalAwal + tambahanSabaq;
     const totalJuz = Math.floor(totalHalaman / 20);
     const sisaHalaman = totalHalaman % 20;

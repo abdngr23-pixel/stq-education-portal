@@ -27,7 +27,7 @@ export async function getKebijakanRewardSanksiAction() {
           bintangSimaan: 2,
           hakLiburTasmiHari: 1,
           hakLiburSimaanHari: 2,
-          minPersenTargetBulanan: 80.0,
+          minPersenTargetBulanan: 100.0,
           durasiKehilanganKunjunganHari: 30,
           isActive: true,
         },

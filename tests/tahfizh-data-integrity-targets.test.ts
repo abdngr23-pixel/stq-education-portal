@@ -23,7 +23,9 @@ import {
 import {
   previewFinalisasiBulananAction,
   prosesRewardTasmiSimaanAction,
+  getKebijakanRewardSanksiAction,
 } from "../app/actions/reward-sanksi";
+import { getRingkasanAnakAction } from "../app/actions/portal-wali";
 import {
   determineTahfizhDailyStatus,
   isHariEfektifTahfizh,
@@ -37,7 +39,7 @@ import {
 } from "../lib/laporan-bulanan";
 import { getWITAMonthRange } from "../lib/wita-date";
 
-describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (24 Skenario Wajib)", () => {
+describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (43 Skenario Lengkap)", () => {
   let prisma: PrismaClient;
 
   const STAFF_MT_1_ID = "stf-tahfizh-mt-01";
@@ -102,6 +104,15 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (24 Skena
     name: "Wali Ahmad",
     role: "WS",
     santriId: SANTRI_AHMAD_ID,
+    staffId: null,
+    isKepalaBidangTahfidz: false,
+  };
+
+  const sessionKS: UserSession = {
+    userId: "usr-ks-01",
+    username: "mudir.ks",
+    name: "Ust. Mudir",
+    role: "KS",
     staffId: null,
     isKepalaBidangTahfidz: false,
   };
@@ -923,14 +934,30 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (24 Skena
       tahunAjaran: "2026/2027",
     });
 
-    // Ambil santri list saat September aktif
-    const resList = await getSantriListForSession({}, sessionMT1, prisma);
+    // Ambil santri list saat September aktif (injeksi refDate September secara deterministik)
+    const resList = await getSantriListForSession(
+      { refDate: new Date("2026-09-15T08:00:00Z") },
+      sessionMT1,
+      prisma
+    );
     assert.equal(resList.success, true);
     const ahmad = resList.data.find((s) => s.id === SANTRI_AHMAD_ID);
     assert.ok(ahmad);
     // Di bulan September aktif (bulan 9), targetSabaq harus 20 (bukan 30)
     assert.equal(ahmad.targetSabaq, 20);
     assert.equal(ahmad.targetSabaqLabel, "20 Halaman");
+
+    // Ambil santri list saat Oktober aktif (injeksi refDate Oktober secara deterministik)
+    const resListOkt = await getSantriListForSession(
+      { refDate: new Date("2026-10-15T08:00:00Z") },
+      sessionMT1,
+      prisma
+    );
+    assert.equal(resListOkt.success, true);
+    const ahmadOkt = resListOkt.data.find((s) => s.id === SANTRI_AHMAD_ID);
+    assert.ok(ahmadOkt);
+    assert.equal(ahmadOkt.targetSabaq, 30);
+    assert.equal(ahmadOkt.targetSabaqLabel, "30 Halaman");
   });
 
   // -------------------------------------------------------------
@@ -1095,4 +1122,381 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (24 Skena
     assert.equal(res.success, false);
     assert.match(res.message ?? "", /profil staf penguji/i);
   });
+
+  // -------------------------------------------------------------
+  // 37: Baseline Null: Eliminasi Total Legacy Cumulative Fallback
+  // -------------------------------------------------------------
+  it("37. Baseline null: eliminasi total legacy cumulative fallback", async () => {
+    // Buat santri tanpa baseline
+    const santriNoBaseline = await prisma.santri.create({
+      data: {
+        nis: "TEST-NO-BASE",
+        nama: "Santri Tanpa Baseline",
+        kelas: "7A",
+        jenisKelamin: "L",
+        status: "AKTIF",
+        halaqohId: HALAQOH_1_ID,
+        modalHafalanAwalHalaman: 15,
+        tanggalBaselineTahfizh: null,
+      },
+    });
+
+    // Buat setoran Sabaq historis untuk santri ini
+    await prisma.setoranTahfizh.create({
+      data: {
+        setoranCode: "STR-TEST-NOBASE-1",
+        santriId: santriNoBaseline.id,
+        musyrifId: STAFF_MT_1_ID,
+        tanggal: new Date("2026-09-08T08:00:00Z"),
+        jenis: "SABAQ",
+        halamanMulai: 16,
+        halamanSelesai: 20,
+        jumlahHalaman: 5,
+        juz: 1,
+        nilai: "JAYYID",
+        status: "AKTIF",
+      },
+    });
+
+    // getSantriKumulatifHalamanAction wajib mengembalikan tambahanSabaq = 0
+    setTestSession(sessionMT1);
+    const kumulatifRes = await getSantriKumulatifHalamanAction(santriNoBaseline.id);
+    assert.equal(kumulatifRes.success, true);
+    assert.equal(kumulatifRes.data?.modalAwal, 15);
+    assert.equal(kumulatifRes.data?.tambahanSabaq, 0);
+    assert.equal(kumulatifRes.data?.totalHalaman, 15);
+
+    // getSantriListForSession wajib mengembalikan tambahanSabaq = 0
+    const listRes = await getSantriListForSession(
+      { search: "TEST-NO-BASE", refDate: new Date("2026-09-15T08:00:00Z") },
+      sessionMT1,
+      prisma
+    );
+    assert.equal(listRes.success, true);
+    const found = listRes.data.find((s) => s.id === santriNoBaseline.id);
+    assert.ok(found);
+    assert.equal(found.tambahanSabaq, 0);
+    assert.equal(found.totalHafalan, 15);
+
+    // getLaporanBulananHalaqohAction tidak menghitung sabaq tanpa baseline
+    const laporanRes = await getLaporanBulananHalaqohAction(HALAQOH_1_ID, 9, "2026/2027");
+    assert.equal(laporanRes.success, true);
+    const santriLaporan = laporanRes.data?.rekapSantri.find((r) => r.santri.id === santriNoBaseline.id);
+    assert.ok(santriLaporan);
+    assert.equal(santriLaporan.tahfizh.sabaq.totalHalaman, 0);
+  });
+
+  // -------------------------------------------------------------
+  // 38: Baseline Mid-Month: Eksklusi Setoran Sebelum Tanggal Baseline
+  // -------------------------------------------------------------
+  it("38. Baseline mid-month: eksklusi setoran sebelum tanggal baseline", async () => {
+    // Buat santri dengan baseline 15 September 2026
+    const santriMidMonth = await prisma.santri.create({
+      data: {
+        nis: "TEST-MID-BASE",
+        nama: "Santri Baseline Tengah Bulan",
+        kelas: "7A",
+        jenisKelamin: "L",
+        status: "AKTIF",
+        halaqohId: HALAQOH_1_ID,
+        modalHafalanAwalHalaman: 20,
+        tanggalBaselineTahfizh: new Date("2026-09-15T00:00:00.000Z"),
+      },
+    });
+
+    // Setoran sebelum baseline: 5 September (5 halaman)
+    await prisma.setoranTahfizh.create({
+      data: {
+        setoranCode: "STR-TEST-MID-PRE",
+        santriId: santriMidMonth.id,
+        musyrifId: STAFF_MT_1_ID,
+        tanggal: new Date("2026-09-05T08:00:00Z"),
+        jenis: "SABAQ",
+        halamanMulai: 21,
+        halamanSelesai: 25,
+        jumlahHalaman: 5,
+        juz: 2,
+        nilai: "MUMTAZ",
+        status: "AKTIF",
+      },
+    });
+
+    // Setoran setelah baseline: 20 September (3 halaman)
+    await prisma.setoranTahfizh.create({
+      data: {
+        setoranCode: "STR-TEST-MID-POST",
+        santriId: santriMidMonth.id,
+        musyrifId: STAFF_MT_1_ID,
+        tanggal: new Date("2026-09-20T08:00:00Z"),
+        jenis: "SABAQ",
+        halamanMulai: 21,
+        halamanSelesai: 23,
+        jumlahHalaman: 3,
+        juz: 2,
+        nilai: "MUMTAZ",
+        status: "AKTIF",
+      },
+    });
+
+    // getLaporanBulananHalaqohAction hanya boleh menghitung 3 halaman post-baseline
+    setTestSession(sessionMT1);
+    const laporanRes = await getLaporanBulananHalaqohAction(HALAQOH_1_ID, 9, "2026/2027");
+    assert.equal(laporanRes.success, true);
+    const santriLaporan = laporanRes.data?.rekapSantri.find((r) => r.santri.id === santriMidMonth.id);
+    assert.ok(santriLaporan);
+    assert.equal(santriLaporan.tahfizh.sabaq.totalHalaman, 3);
+
+    // getSantriListForSession juga hanya menghitung 3 halaman
+    const listRes = await getSantriListForSession(
+      { search: "TEST-MID-BASE", refDate: new Date("2026-09-22T08:00:00Z") },
+      sessionMT1,
+      prisma
+    );
+    assert.equal(listRes.success, true);
+    const found = listRes.data.find((s) => s.id === santriMidMonth.id);
+    assert.ok(found);
+    assert.equal(found.tambahanSabaq, 3);
+    assert.equal(found.totalHafalan, 23);
+  });
+
+  // -------------------------------------------------------------
+  // 39: SABQI Week Applicability dengan Baseline Tengah Pekan
+  // -------------------------------------------------------------
+  it("39. SABQI week applicability dengan baseline tengah pekan", async () => {
+    // Pekan berjalan: Senin 7 Sept 2026 s/d Ahad 13 Sept 2026
+    // Santri baseline ditetapkan Kamis 10 Sept 2026
+    const santriMidWeek = await prisma.santri.create({
+      data: {
+        nis: "TEST-MID-WEEK",
+        nama: "Santri Baseline Tengah Pekan",
+        kelas: "7A",
+        jenisKelamin: "L",
+        status: "AKTIF",
+        halaqohId: HALAQOH_1_ID,
+        modalHafalanAwalHalaman: 10,
+        tanggalBaselineTahfizh: new Date("2026-09-10T00:00:00.000Z"),
+      },
+    });
+
+    // Setoran Rabu 9 Sept 2026 (sebelum baseline)
+    await prisma.setoranTahfizh.create({
+      data: {
+        setoranCode: "STR-TEST-WEEK-PRE",
+        santriId: santriMidWeek.id,
+        musyrifId: STAFF_MT_1_ID,
+        tanggal: new Date("2026-09-09T08:00:00Z"),
+        jenis: "SABAQ",
+        halamanMulai: 11,
+        halamanSelesai: 12,
+        jumlahHalaman: 2,
+        juz: 1,
+        nilai: "MUMTAZ",
+        status: "AKTIF",
+      },
+    });
+
+    // Cek status pada hari Kamis 10 Sept (belum ada sabaq post-baseline)
+    setTestSession(sessionMT1);
+    const listKamis = await getSantriListForSession(
+      { search: "TEST-MID-WEEK", refDate: new Date("2026-09-10T08:00:00Z") },
+      sessionMT1,
+      prisma
+    );
+    assert.equal(listKamis.success, true);
+    const itemKamis = listKamis.data.find((s) => s.id === santriMidWeek.id);
+    assert.ok(itemKamis);
+    // Karena sabaq hari Rabu sebelum baseline, SABQI harus TIDAK_BERLAKU
+    assert.equal(itemKamis.statusTahfizhHariIni.sabqi, "TIDAK_BERLAKU");
+
+    // Sekarang tambahkan setoran post-baseline pada Jumat 11 Sept
+    await prisma.setoranTahfizh.create({
+      data: {
+        setoranCode: "STR-TEST-WEEK-POST",
+        santriId: santriMidWeek.id,
+        musyrifId: STAFF_MT_1_ID,
+        tanggal: new Date("2026-09-11T08:00:00Z"),
+        jenis: "SABAQ",
+        halamanMulai: 11,
+        halamanSelesai: 12,
+        jumlahHalaman: 2,
+        juz: 1,
+        nilai: "MUMTAZ",
+        status: "AKTIF",
+      },
+    });
+
+    const listJumat = await getSantriListForSession(
+      { search: "TEST-MID-WEEK", refDate: new Date("2026-09-11T09:00:00Z") },
+      sessionMT1,
+      prisma
+    );
+    assert.equal(listJumat.success, true);
+    const itemJumat = listJumat.data.find((s) => s.id === santriMidWeek.id);
+    assert.ok(itemJumat);
+    // Sekarang SABQI menjadi applicable (BELUM_SELESAI karena ada post-baseline sabaq pekan ini)
+    assert.equal(itemJumat.statusTahfizhHariIni.sabqi, "BELUM_SELESAI");
+  });
+
+  // -------------------------------------------------------------
+  // 40: Validasi Ketat Server-Side upsertTargetSantriAction
+  // -------------------------------------------------------------
+  it("40. Validasi ketat server-side upsertTargetSantriAction", async () => {
+    setTestSession(sessionMT1);
+
+    // Bulan di luar 1-12
+    const resBulanInvalid = await upsertTargetSantriAction({
+      santriId: SANTRI_AHMAD_ID,
+      jenis: "SABAQ",
+      targetPekanan: 5,
+      targetBulanan: 20,
+      bulan: 13,
+      tahunAjaran: "2026/2027",
+    });
+    assert.equal(resBulanInvalid.success, false);
+    assert.match(resBulanInvalid.message, /Bulan/i);
+
+    // Tahun ajaran format salah
+    const resThnFormat = await upsertTargetSantriAction({
+      santriId: SANTRI_AHMAD_ID,
+      jenis: "SABAQ",
+      targetPekanan: 5,
+      targetBulanan: 20,
+      bulan: 9,
+      tahunAjaran: "2026",
+    });
+    assert.equal(resThnFormat.success, false);
+    assert.match(resThnFormat.message, /tahun ajaran/i);
+
+    // Tahun ajaran rentang salah (bukan +1)
+    const resThnRange = await upsertTargetSantriAction({
+      santriId: SANTRI_AHMAD_ID,
+      jenis: "SABAQ",
+      targetPekanan: 5,
+      targetBulanan: 20,
+      bulan: 9,
+      tahunAjaran: "2026/2028",
+    });
+    assert.equal(resThnRange.success, false);
+    assert.match(resThnRange.message, /tepat satu tahun/i);
+
+    // Target negatif / nol
+    const resNeg = await upsertTargetSantriAction({
+      santriId: SANTRI_AHMAD_ID,
+      jenis: "SABAQ",
+      targetPekanan: -5,
+      targetBulanan: 20,
+      bulan: 9,
+      tahunAjaran: "2026/2027",
+    });
+    assert.equal(resNeg.success, false);
+    assert.match(resNeg.message, /positif/i);
+
+    // SABAQ bukan kelipatan 0.5
+    const resSabaqNonHalf = await upsertTargetSantriAction({
+      santriId: SANTRI_AHMAD_ID,
+      jenis: "SABAQ",
+      targetPekanan: 5.3,
+      targetBulanan: 20,
+      bulan: 9,
+      tahunAjaran: "2026/2027",
+    });
+    assert.equal(resSabaqNonHalf.success, false);
+    assert.match(resSabaqNonHalf.message, /kelipatan 0.5/i);
+
+    // SABQI bukan bilangan bulat
+    const resSabqiFloat = await upsertTargetSantriAction({
+      santriId: SANTRI_AHMAD_ID,
+      jenis: "SABQI",
+      targetPekanan: 2.5,
+      targetBulanan: 10,
+      bulan: 9,
+      tahunAjaran: "2026/2027",
+    });
+    assert.equal(resSabqiFloat.success, false);
+    assert.match(resSabqiFloat.message, /bilangan bulat/i);
+
+    // Ambang kepatuhan di luar 0-100
+    const resAmbangInvalid = await upsertTargetSantriAction({
+      santriId: SANTRI_AHMAD_ID,
+      jenis: "SABAQ",
+      targetPekanan: 5,
+      targetBulanan: 20,
+      ambangKepatuhan: 120,
+      bulan: 9,
+      tahunAjaran: "2026/2027",
+    });
+    assert.equal(resAmbangInvalid.success, false);
+    assert.match(resAmbangInvalid.message, /ambang kepatuhan/i);
+  });
+
+  // -------------------------------------------------------------
+  // 41: Validasi Fail-Closed getLaporanBulananHalaqohAction
+  // -------------------------------------------------------------
+  it("41. Validasi fail-closed getLaporanBulananHalaqohAction tanpa fallback diam-diam", async () => {
+    setTestSession(sessionMT1);
+
+    // Bulan corrupt
+    const resBulan = await getLaporanBulananHalaqohAction(HALAQOH_1_ID, 13, "2026/2027");
+    assert.equal(resBulan.success, false);
+    assert.match(resBulan.message ?? "", /bulan tidak valid/i);
+
+    // Tahun ajaran corrupt
+    const resThn = await getLaporanBulananHalaqohAction(HALAQOH_1_ID, 9, "corrupt-year");
+    assert.equal(resThn.success, false);
+    assert.match(resThn.message ?? "", /tahun ajaran tidak valid/i);
+  });
+
+  // -------------------------------------------------------------
+  // 42: ABAC Scoping Portal Wali getRingkasanAnakAction
+  // -------------------------------------------------------------
+  it("42. ABAC scoping portal wali getRingkasanAnakAction", async () => {
+    // 1. Wali Santri dipaksa ke anak sendiri
+    setTestSession(sessionWSAhmad);
+    const resWaliAhmad = await getRingkasanAnakAction(SANTRI_ZAID_ID); // coba intip Zaid
+    assert.equal(resWaliAhmad.success, true);
+    // Data yang kembali harus anak sendiri (Ahmad), bukan Zaid
+    assert.equal((resWaliAhmad.data as { santri: { id: string } }).santri.id, SANTRI_AHMAD_ID);
+
+    // 2. MT1 boleh mengakses Ahmad (halaqoh binaan sendiri)
+    setTestSession(sessionMT1);
+    const resMT1Ahmad = await getRingkasanAnakAction(SANTRI_AHMAD_ID);
+    assert.equal(resMT1Ahmad.success, true);
+    assert.equal((resMT1Ahmad.data as { santri: { id: string } }).santri.id, SANTRI_AHMAD_ID);
+
+    // 3. MT1 DITOLAK saat mengakses Zaid (halaqoh 2 / cross-halaqoh)
+    const resMT1Zaid = await getRingkasanAnakAction(SANTRI_ZAID_ID);
+    assert.equal(resMT1Zaid.success, false);
+    assert.match(resMT1Zaid.message, /Akses Ditolak/i);
+
+    // 4. MT Kabid Tahfidz JUGA DITOLAK saat mengakses santri di luar binaannya
+    // (karena getRingkasanAnakAction berisi data kesehatan & pelanggaran, Kabid bukan manajer lintas domain)
+    setTestSession(sessionKabid);
+    const resKabidZaid = await getRingkasanAnakAction(SANTRI_ZAID_ID);
+    assert.equal(resKabidZaid.success, false);
+    assert.match(resKabidZaid.message, /Akses Ditolak/i);
+
+    // 5. Role non-authorized (MK) -> Ditolak
+    setTestSession(sessionMK);
+    const resMK = await getRingkasanAnakAction(SANTRI_AHMAD_ID);
+    assert.equal(resMK.success, false);
+    assert.match(resMK.message, /Akses Ditolak/i);
+
+    // 6. Role manajerial (KS) -> Diizinkan
+    setTestSession(sessionKS);
+    const resKS = await getRingkasanAnakAction(SANTRI_AHMAD_ID);
+    assert.equal(resKS.success, true);
+  });
+
+  // -------------------------------------------------------------
+  // 43: Konsistensi Nilai Default Kebijakan minPersenTargetBulanan = 100.0%
+  // -------------------------------------------------------------
+  it("43. Konsistensi nilai default kebijakan minPersenTargetBulanan = 100.0%", async () => {
+    // Pastikan getKebijakanRewardSanksiAction mengembalikan default 100.0%
+    const resKebijakan = await getKebijakanRewardSanksiAction();
+    assert.equal(resKebijakan.success, true);
+    if (resKebijakan.data) {
+      assert.equal(resKebijakan.data.minPersenTargetBulanan, 100.0);
+    }
+  });
 });
+

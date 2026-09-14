@@ -790,7 +790,7 @@ export default function Home() {
                 targetJuz: (santri as unknown as { targetAkhirProgramJuz?: number; targetJuz?: number }).targetAkhirProgramJuz ?? (santri as unknown as { targetJuz?: number }).targetJuz ?? null,
                 setoranTerakhir: "-",
                 status: santri.status,
-                nilaiTerakhir: "MUMTAZ",
+                nilaiTerakhir: (santri as { nilaiTerakhir?: string }).nilaiTerakhir || "Belum ada data",
                 poinPelanggaran: 0,
               };
               setSelectedSantriForPrint(matched);
