@@ -15,10 +15,14 @@ import {
   getTargetSantriAction,
   recordTasmiSimaanAction,
 } from "../app/actions/laporan-bulanan";
+import fs from "node:fs";
+import path from "node:path";
 import {
   getSantriKumulatifHalamanAction,
   getSantriProgresAction,
   createSetoranAction,
+  getSetoranSabaqPekanSantriAction,
+  getRecentSetoranAction,
 } from "../app/actions/tahfizh";
 import {
   previewFinalisasiBulananAction,
@@ -1497,6 +1501,271 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (43 Skena
     if (resKebijakan.data) {
       assert.equal(resKebijakan.data.minPersenTargetBulanan, 100.0);
     }
+  });
+
+  // -------------------------------------------------------------
+  // 44: getSantriProgresAction Baseline Null (Zero Historical Sabaq)
+  // -------------------------------------------------------------
+  it("44. getSantriProgresAction baseline null: tidak mengagregasi historical SABAQ", async () => {
+    setTestSession(sessionMT1);
+
+    // Buat santri dengan baseline null
+    const santriTest = await prisma.santri.create({
+      data: {
+        nis: "TEST-PROG-NULL-BASE",
+        nama: "Santri Progres Null Base",
+        kelas: "7A",
+        jenisKelamin: "L",
+        status: "AKTIF",
+        halaqohId: HALAQOH_1_ID,
+        modalHafalanAwalHalaman: 20,
+        tanggalBaselineTahfizh: null,
+      },
+    });
+
+    // Buat setoran SABAQ
+    await prisma.setoranTahfizh.create({
+      data: {
+        setoranCode: "STR-TEST-PROG-NULL-1",
+        santriId: santriTest.id,
+        musyrifId: STAFF_MT_1_ID,
+        tanggal: new Date("2026-09-08T08:00:00Z"),
+        jenis: "SABAQ",
+        halamanMulai: 21,
+        halamanSelesai: 22,
+        jumlahHalaman: 2,
+        juz: 2,
+        nilai: "MUMTAZ",
+        status: "DISETUJUI",
+      },
+    });
+
+    const res = await getSantriProgresAction(santriTest.id);
+    assert.equal(res.success, true);
+    assert.ok(res.data);
+    // Baseline null -> tambahanSabaq = 0, totalHalaman = modalAwal (20), bukan 22
+    assert.equal(res.data.tambahanSabaq, 0);
+    assert.equal(res.data.totalHalamanSabaq, 20);
+    assert.equal(res.data.totalJuzSabaq, 1);
+    assert.equal(res.data.sisaHalamanSabaq, 0);
+  });
+
+  // -------------------------------------------------------------
+  // 45: getSetoranSabaqPekanSantriAction Boundary Baseline Mid-Week
+  // -------------------------------------------------------------
+  it("45. getSetoranSabaqPekanSantriAction boundary baseline mid-week", async () => {
+    setTestSession(sessionMT1);
+
+    // Pekan berjalan September 2026:
+    // Senin: 2026-09-07
+    // Rabu: 2026-09-09
+    // Kamis: 2026-09-10
+    const tSenin = new Date("2026-09-07T08:00:00+08:00");
+    const tRabu = new Date("2026-09-09T08:00:00+08:00");
+    const tKamis = new Date("2026-09-10T10:00:00+08:00");
+
+    // Buat santri dengan baseline Rabu
+    const santriMidWeek = await prisma.santri.create({
+      data: {
+        nis: "TEST-SABAQI-MIDWEEK",
+        nama: "Santri Sabaqi Midweek",
+        kelas: "7A",
+        jenisKelamin: "L",
+        status: "AKTIF",
+        halaqohId: HALAQOH_1_ID,
+        modalHafalanAwalHalaman: 10,
+        tanggalBaselineTahfizh: tRabu,
+      },
+    });
+
+    // Setoran SABAQ Senin (sebelum baseline Rabu)
+    await prisma.setoranTahfizh.create({
+      data: {
+        setoranCode: "STR-TEST-SAB-SENIN",
+        santriId: santriMidWeek.id,
+        musyrifId: STAFF_MT_1_ID,
+        tanggal: tSenin,
+        jenis: "SABAQ",
+        halamanMulai: 11,
+        halamanSelesai: 12,
+        jumlahHalaman: 2,
+        juz: 1,
+        nilai: "MUMTAZ",
+        status: "DISETUJUI",
+      },
+    });
+
+    // Setoran SABAQ Kamis (setelah baseline Rabu)
+    await prisma.setoranTahfizh.create({
+      data: {
+        setoranCode: "STR-TEST-SAB-KAMIS",
+        santriId: santriMidWeek.id,
+        musyrifId: STAFF_MT_1_ID,
+        tanggal: tKamis,
+        jenis: "SABAQ",
+        halamanMulai: 13,
+        halamanSelesai: 14,
+        jumlahHalaman: 2,
+        juz: 1,
+        nilai: "MUMTAZ",
+        status: "DISETUJUI",
+      },
+    });
+
+    // Setoran SABAQ Kamis yang DIBATALKAN -> tidak boleh masuk
+    await prisma.setoranTahfizh.create({
+      data: {
+        setoranCode: "STR-TEST-SAB-BATAL",
+        santriId: santriMidWeek.id,
+        musyrifId: STAFF_MT_1_ID,
+        tanggal: tKamis,
+        jenis: "SABAQ",
+        halamanMulai: 15,
+        halamanSelesai: 16,
+        jumlahHalaman: 2,
+        juz: 1,
+        nilai: "MUMTAZ",
+        status: "DIBATALKAN",
+      },
+    });
+
+    // Query pada hari Kamis
+    const res = await getSetoranSabaqPekanSantriAction(santriMidWeek.id, tKamis.toISOString());
+    assert.equal(res.success, true);
+    assert.ok(res.data);
+    // SABAQ Senin TIDAK boleh masuk rekomendasi karena sebelum baseline
+    // SABAQ DIBATALKAN juga TIDAK boleh masuk
+    // Hanya SABAQ Kamis valid yang masuk
+    assert.equal(res.data.sabaqRecords.length, 1);
+    assert.equal(res.data.sabaqRecords[0].halamanMulai, 13);
+    assert.equal(res.data.rekomendasi.totalHalaman, 2);
+
+    // Kasus santri baseline null -> jangan gunakan SABAQ historis/pekan berjalan
+    const santriNoBase = await prisma.santri.create({
+      data: {
+        nis: "TEST-SABAQI-NOBASE",
+        nama: "Santri Sabaqi No Base",
+        kelas: "7A",
+        jenisKelamin: "L",
+        status: "AKTIF",
+        halaqohId: HALAQOH_1_ID,
+        modalHafalanAwalHalaman: 10,
+        tanggalBaselineTahfizh: null,
+      },
+    });
+    await prisma.setoranTahfizh.create({
+      data: {
+        setoranCode: "STR-TEST-SAB-NOBASE",
+        santriId: santriNoBase.id,
+        musyrifId: STAFF_MT_1_ID,
+        tanggal: tKamis,
+        jenis: "SABAQ",
+        halamanMulai: 11,
+        halamanSelesai: 12,
+        jumlahHalaman: 2,
+        juz: 1,
+        nilai: "MUMTAZ",
+        status: "DISETUJUI",
+      },
+    });
+    const resNoBase = await getSetoranSabaqPekanSantriAction(santriNoBase.id, tKamis.toISOString());
+    assert.equal(resNoBase.success, true);
+    assert.equal(resNoBase.data?.sabaqRecords.length, 0);
+    assert.equal(resNoBase.data?.rekomendasi.totalHalaman, 0);
+  });
+
+  // -------------------------------------------------------------
+  // 46: Default-Deny Seluruh Tahfizh Read Action untuk Non-Authorized Role
+  // -------------------------------------------------------------
+  it("46. Default-deny seluruh Tahfizh read action untuk role non-authorized / cross-scope", async () => {
+    // 1. Role MK (non-tahfizh) harus fail-closed pada 4 action
+    setTestSession(sessionMK);
+
+    const resRec = await getRecentSetoranAction();
+    assert.equal(resRec.success, false);
+    assert.match(resRec.message ?? "", /Akses Ditolak/i);
+
+    const resProg = await getSantriProgresAction(SANTRI_AHMAD_ID);
+    assert.equal(resProg.success, false);
+    assert.match(resProg.message ?? "", /Akses Ditolak/i);
+
+    const resKum = await getSantriKumulatifHalamanAction(SANTRI_AHMAD_ID);
+    assert.equal(resKum.success, false);
+    assert.match(resKum.message ?? "", /Akses Ditolak/i);
+
+    const resSab = await getSetoranSabaqPekanSantriAction(SANTRI_AHMAD_ID);
+    assert.equal(resSab.success, false);
+    assert.match(resSab.message ?? "", /Akses Ditolak/i);
+
+    // 2. MT cross-scope (MT2 mencoba membaca santri Ahmad di halaqoh 1)
+    setTestSession(sessionMT2);
+
+    const resProgCross = await getSantriProgresAction(SANTRI_AHMAD_ID);
+    assert.equal(resProgCross.success, false);
+    assert.match(resProgCross.message ?? "", /Akses Ditolak/i);
+
+    const resKumCross = await getSantriKumulatifHalamanAction(SANTRI_AHMAD_ID);
+    assert.equal(resKumCross.success, false);
+    assert.match(resKumCross.message ?? "", /Akses Ditolak/i);
+
+    const resSabCross = await getSetoranSabaqPekanSantriAction(SANTRI_AHMAD_ID);
+    assert.equal(resSabCross.success, false);
+    assert.match(resSabCross.message ?? "", /Akses Ditolak/i);
+
+    // 3. MT tanpa profil staf -> fail-closed
+    setTestSession(sessionMTNoStaff);
+    const resNoStaff = await getRecentSetoranAction();
+    assert.equal(resNoStaff.success, false);
+    assert.match(resNoStaff.message ?? "", /Akses Ditolak/i);
+  });
+
+  // -------------------------------------------------------------
+  // 47: No Default MUFAR Quantity Ketika Target Tidak Ada
+  // -------------------------------------------------------------
+  it("47. No default MUFAR quantity ketika target tidak ada", () => {
+    const content = fs.readFileSync(
+      path.resolve(process.cwd(), "components/modules/tahfizh-module.tsx"),
+      "utf-8"
+    );
+
+    assert.ok(!content.includes('useState("2")'));
+    assert.ok(!content.includes('useState("Juz 1, 2")'));
+    assert.ok(!content.includes("targetMufar || 1"));
+    assert.ok(!content.includes("Harian 1-6 Juz"));
+    assert.ok(content.includes("Target belum ditetapkan"));
+    assert.ok(content.includes("Referensi Sabqi berasal dari Sabaq sah pada pekan berjalan."));
+  });
+
+  // -------------------------------------------------------------
+  // 48: Rekap Laporan Fail-Closed Jika Halaqoh MT Unresolved
+  // -------------------------------------------------------------
+  it("48. Rekap laporan fail-closed jika halaqoh MT tidak dapat di-resolve", () => {
+    const content = fs.readFileSync(
+      path.resolve(process.cwd(), "components/dashboard/rekap-laporan-bulanan.tsx"),
+      "utf-8"
+    );
+
+    // Pastikan tidak ada return list[0] yang dieksekusi untuk locked MT/PH
+    assert.ok(content.includes("Halaqoh binaan belum terhubung / gagal dimuat"));
+    assert.ok(content.includes("if (isLockedMusyrif) {"));
+    assert.ok(content.includes('return { id: "", nama: "Halaqoh binaan belum terhubung / gagal dimuat" };'));
+  });
+
+  // -------------------------------------------------------------
+  // 49: Production app/page.tsx Bebas dari Hardcoded Halaqoh Fallback
+  // -------------------------------------------------------------
+  it("49. Production app/page.tsx tidak memiliki hardcoded operational halaqoh fallback", () => {
+    const content = fs.readFileSync(
+      path.resolve(process.cwd(), "app/page.tsx"),
+      "utf-8"
+    );
+
+    // Tidak boleh ada HLQ-0001 sampai HLQ-0006 statis di dynamicHalaqohList
+    assert.ok(!content.includes("HLQ-0001"));
+    assert.ok(!content.includes("HLQ-0002"));
+    assert.ok(!content.includes("HLQ-0006"));
+    assert.ok(content.includes("fetchHalaqohData"));
+    assert.ok(content.includes("halaqohListError"));
   });
 });
 

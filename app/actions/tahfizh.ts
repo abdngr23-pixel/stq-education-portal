@@ -225,33 +225,61 @@ export async function getSetoranSabaqPekanSantriAction(santriId: string, tanggal
     return { success: false, message: "ID santri wajib diberikan." };
   }
 
-  // ABAC check
-  if (session.role === "WS" || session.role === "ST") {
-    if (!session.santriId || session.santriId !== santriId) {
-      return { success: false, message: "Akses Ditolak: Anda hanya berwenang melihat data santri Anda sendiri." };
-    }
+  // Explicit Allowlist ABAC
+  if (["KS", "ADM", "YAY"].includes(session.role) || session.isKepalaBidangTahfidz) {
+    // Diizinkan membaca global
   } else if (session.role === "MT" || session.role === "PH") {
     if (!session.staffId) {
       return { success: false, message: "Akses Ditolak: Akun MT/PH belum terhubung dengan staf." };
     }
-    if (!session.isKepalaBidangTahfidz) {
-      const isBinaan = await prisma.halaqoh.findFirst({
-        where: {
-          pembinaId: session.staffId,
-          santriList: { some: { id: santriId } },
-        },
-      });
-      if (!isBinaan) {
-        return { success: false, message: "Akses Ditolak: Santri berada di luar halaqoh binaan Anda." };
-      }
+    const isBinaan = await prisma.halaqoh.findFirst({
+      where: {
+        pembinaId: session.staffId,
+        santriList: { some: { id: santriId } },
+      },
+    });
+    if (!isBinaan) {
+      return { success: false, message: "Akses Ditolak: Santri berada di luar halaqoh binaan Anda." };
     }
+  } else if (session.role === "WS" || session.role === "ST") {
+    if (!session.santriId || session.santriId !== santriId) {
+      return { success: false, message: "Akses Ditolak: Anda hanya berwenang melihat data santri Anda sendiri." };
+    }
+  } else {
+    return { success: false, message: "Akses Ditolak: Anda tidak memiliki wewenang untuk melihat rekomendasi Sabaqi santri ini." };
   }
 
   try {
     const refDate = tanggalStr ? new Date(tanggalStr) : new Date();
     const startOfWeek = getStartOfWeekWITA(refDate);
 
-    // Ambil seluruh setoran SABAQ tersimpan sejak Senin 00:00:00 WITA sampai waktu referensi
+    // Ambil data santri untuk verifikasi tanggal baseline tahfizh
+    const santri = await prisma.santri.findUnique({
+      where: { id: santriId },
+      select: { tanggalBaselineTahfizh: true },
+    });
+
+    if (!santri) {
+      return { success: false, message: "Santri tidak ditemukan." };
+    }
+
+    // Canonical rule: Jika baseline belum ditetapkan, jangan gunakan SABAQ historis/pekan berjalan sebagai referensi official Sabaqi
+    if (!santri.tanggalBaselineTahfizh) {
+      return {
+        success: true,
+        data: {
+          rekomendasi: hitungRekomendasiSabaqiPekan([], refDate),
+          sabaqRecords: [],
+          startOfWeekWITA: startOfWeek.toISOString(),
+        },
+      };
+    }
+
+    const baselineDate = new Date(santri.tanggalBaselineTahfizh);
+    // Boundary baseline: max(getStartOfWeekWITA(refDate), tanggalBaselineTahfizh)
+    const effectiveStart = baselineDate > startOfWeek ? baselineDate : startOfWeek;
+
+    // Ambil seluruh setoran SABAQ tersimpan sejak effectiveStart sampai waktu referensi
     // Kriteria Ketat: HANYA jenis SABAQ, status BUKAN DIBATALKAN
     const sabaqRecords = await prisma.setoranTahfizh.findMany({
       where: {
@@ -259,7 +287,7 @@ export async function getSetoranSabaqPekanSantriAction(santriId: string, tanggal
         jenis: "SABAQ",
         status: { not: "DIBATALKAN" },
         tanggal: {
-          gte: startOfWeek,
+          gte: effectiveStart,
           lte: refDate,
         },
       },
@@ -313,20 +341,23 @@ export async function getRecentSetoranAction(limit: number = 10) {
       status: { not: "DIBATALKAN" },
     };
 
-    if (session.role === "MT" || session.role === "PH") {
+    // Explicit Allowlist ABAC
+    if (["KS", "ADM", "YAY"].includes(session.role) || session.isKepalaBidangTahfidz) {
+      // Diizinkan membaca global
+    } else if (session.role === "MT" || session.role === "PH") {
       if (!session.staffId) {
         return { success: false, message: "Akses Ditolak: Profil staf belum terhubung.", data: [] };
       }
-      if (!session.isKepalaBidangTahfidz) {
-        where.santri = {
-          halaqoh: { pembinaId: session.staffId },
-        };
-      }
+      where.santri = {
+        halaqoh: { pembinaId: session.staffId },
+      };
     } else if (session.role === "WS" || session.role === "ST") {
       if (!session.santriId) {
         return { success: false, message: "Akun Anda belum terhubung dengan data santri.", data: [] };
       }
       where.santriId = session.santriId;
+    } else {
+      return { success: false, message: "Akses Ditolak: Anda tidak memiliki wewenang untuk melihat data setoran.", data: [] };
     }
 
     const list = await prisma.setoranTahfizh.findMany({
@@ -356,26 +387,29 @@ export async function getSantriProgresAction(santriId: string) {
     return { success: false, message: "Silakan login terlebih dahulu." };
   }
 
-  if (session.role === "WS" || session.role === "ST") {
-    if (!session.santriId || session.santriId !== santriId) {
-      return { success: false, message: "Akses Ditolak: Anda hanya berhak melihat progres santri Anda sendiri." };
-    }
+  // Explicit Allowlist ABAC
+  if (["KS", "ADM", "YAY"].includes(session.role) || session.isKepalaBidangTahfidz) {
+    // Diizinkan membaca global
   } else if (session.role === "MT" || session.role === "PH") {
     // Fail-closed: MT/PH tanpa staffId wajib langsung ditolak
     if (!session.staffId) {
       return { success: false, message: "Akses Ditolak: Akun MT/PH belum terhubung dengan data staf." };
     }
-    if (!session.isKepalaBidangTahfidz) {
-      const isBinaan = await prisma.halaqoh.findFirst({
-        where: {
-          pembinaId: session.staffId,
-          santriList: { some: { id: santriId } },
-        },
-      });
-      if (!isBinaan) {
-        return { success: false, message: "Akses Ditolak: Santri berada di luar halaqoh binaan Anda." };
-      }
+    const isBinaan = await prisma.halaqoh.findFirst({
+      where: {
+        pembinaId: session.staffId,
+        santriList: { some: { id: santriId } },
+      },
+    });
+    if (!isBinaan) {
+      return { success: false, message: "Akses Ditolak: Santri berada di luar halaqoh binaan Anda." };
     }
+  } else if (session.role === "WS" || session.role === "ST") {
+    if (!session.santriId || session.santriId !== santriId) {
+      return { success: false, message: "Akses Ditolak: Anda hanya berhak melihat progres santri Anda sendiri." };
+    }
+  } else {
+    return { success: false, message: "Akses Ditolak: Anda tidak memiliki wewenang untuk melihat data santri ini." };
   }
 
   try {
@@ -400,21 +434,22 @@ export async function getSantriProgresAction(santriId: string) {
     const modalAwal = Number(santri.modalHafalanAwalHalaman) || 0;
     const baselineDate = santri.tanggalBaselineTahfizh ? new Date(santri.tanggalBaselineTahfizh) : null;
 
-    const sabaqWhere: Prisma.SetoranTahfizhWhereInput = {
-      santriId,
-      jenis: "SABAQ",
-      status: { not: "DIBATALKAN" },
-    };
+    // Canonical rule: modalHafalanAwalHalaman + valid SABAQ >= tanggalBaselineTahfizh
+    // Jika baseline null: tambahanSabaq = 0. Jangan aggregate historical SABAQ.
+    let tambahanSabaq = 0;
     if (baselineDate) {
-      sabaqWhere.tanggal = { gte: baselineDate };
+      const sabaqAggregate = await prisma.setoranTahfizh.aggregate({
+        where: {
+          santriId,
+          jenis: "SABAQ",
+          status: { not: "DIBATALKAN" },
+          tanggal: { gte: baselineDate },
+        },
+        _sum: { jumlahHalaman: true },
+      });
+      tambahanSabaq = sabaqAggregate._sum.jumlahHalaman || 0;
     }
 
-    const sabaqAggregate = await prisma.setoranTahfizh.aggregate({
-      where: sabaqWhere,
-      _sum: { jumlahHalaman: true },
-    });
-
-    const tambahanSabaq = sabaqAggregate._sum.jumlahHalaman || 0;
     const totalHalaman = modalAwal + tambahanSabaq;
     const totalJuz = Math.floor(totalHalaman / 20);
     const sisaHalaman = totalHalaman % 20;
@@ -449,27 +484,29 @@ export async function getSantriKumulatifHalamanAction(santriId: string) {
     return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
   }
 
-  // ABAC Check
-  if (session.role === "WS" || session.role === "ST") {
-    if (!session.santriId || session.santriId !== santriId) {
-      return { success: false, message: "Akses Ditolak: Anda hanya berhak melihat progres santri Anda sendiri." };
-    }
+  // Explicit Allowlist ABAC
+  if (["KS", "ADM", "YAY"].includes(session.role) || session.isKepalaBidangTahfidz) {
+    // Diizinkan membaca global
   } else if (session.role === "MT" || session.role === "PH") {
     // Fail-closed: MT/PH tanpa staffId wajib langsung ditolak
     if (!session.staffId) {
       return { success: false, message: "Akses Ditolak: Akun MT/PH belum terhubung dengan data staf." };
     }
-    if (!session.isKepalaBidangTahfidz) {
-      const isBinaan = await prisma.halaqoh.findFirst({
-        where: {
-          pembinaId: session.staffId,
-          santriList: { some: { id: santriId } },
-        },
-      });
-      if (!isBinaan) {
-        return { success: false, message: "Akses Ditolak: Santri berada di luar halaqoh binaan Anda." };
-      }
+    const isBinaan = await prisma.halaqoh.findFirst({
+      where: {
+        pembinaId: session.staffId,
+        santriList: { some: { id: santriId } },
+      },
+    });
+    if (!isBinaan) {
+      return { success: false, message: "Akses Ditolak: Santri berada di luar halaqoh binaan Anda." };
     }
+  } else if (session.role === "WS" || session.role === "ST") {
+    if (!session.santriId || session.santriId !== santriId) {
+      return { success: false, message: "Akses Ditolak: Anda hanya berhak melihat progres santri Anda sendiri." };
+    }
+  } else {
+    return { success: false, message: "Akses Ditolak: Anda tidak memiliki wewenang untuk melihat kumulatif santri ini." };
   }
 
   try {

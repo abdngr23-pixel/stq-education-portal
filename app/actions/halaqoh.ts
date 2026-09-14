@@ -24,10 +24,10 @@ export async function getHalaqohListAction() {
       },
     });
 
-    return { success: true, data: list };
+    return { success: true, data: list, message: "Berhasil mengambil data halaqoh." };
   } catch (error) {
     console.error("Gagal mengambil data halaqoh:", error);
-    return { success: false, data: [] };
+    return { success: false, data: [], message: "Gagal mengambil data halaqoh dari pangkalan data." };
   }
 }
 

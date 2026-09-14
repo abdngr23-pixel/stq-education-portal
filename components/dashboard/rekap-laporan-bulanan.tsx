@@ -83,11 +83,15 @@ export function RekapLaporanBulanan({
       );
       if (match) return match;
     }
+    if (isLockedMusyrif) {
+      // Fail-closed untuk role MT/PH: jangan fallback ke list[0] atau memilih halaqoh lain
+      return { id: "", nama: "Halaqoh binaan belum terhubung / gagal dimuat" };
+    }
     if (list.length > 0) {
       return list[0];
     }
     return { id: initialHalaqohId || "", nama: currentHalaqohName || "Halaqoh Binaan" };
-  }, [initialHalaqohId, currentHalaqohName, halaqohList]);
+  }, [initialHalaqohId, currentHalaqohName, halaqohList, isLockedMusyrif]);
 
   // Role MT / PH non-kabid DIKUNCI ke halaqoh sendiri; KS / ADM / YAY / Kabid bebas memilih halaqoh atau "ALL"
   const [selectedHalaqohId, setSelectedHalaqohId] = useState<string>(() => {
@@ -98,8 +102,10 @@ export function RekapLaporanBulanan({
   });
 
   const [prevRole, setPrevRole] = useState(userRole);
-  if (prevRole !== userRole) {
+  const [prevResolvedId, setPrevResolvedId] = useState(resolvedHalaqoh.id);
+  if (prevRole !== userRole || (isLockedMusyrif && prevResolvedId !== resolvedHalaqoh.id)) {
     setPrevRole(userRole);
+    setPrevResolvedId(resolvedHalaqoh.id);
     if (isLockedMusyrif) {
       setSelectedHalaqohId(resolvedHalaqoh.id);
     } else {
@@ -517,6 +523,21 @@ export function RekapLaporanBulanan({
             Coba Lagi
           </Button>
         </div>
+      )}
+
+      {/* Fail-Closed State: Halaqoh binaan belum terhubung / gagal dimuat */}
+      {isLockedMusyrif && !resolvedHalaqoh.id && (
+        <Card rounded="3xl" className="border border-amber-200 bg-amber-50/70 p-8 text-center my-4 shadow-xs">
+          <div className="flex flex-col items-center justify-center space-y-3">
+            <AlertCircle className="w-10 h-10 text-amber-600" />
+            <h4 className="text-base font-bold text-slate-800">
+              Halaqoh binaan belum terhubung / gagal dimuat
+            </h4>
+            <p className="text-xs text-slate-600 max-w-md">
+              Sistem tidak dapat menghubungkan profil Anda ke halaqoh binaan terdaftar. Laporan halaqoh lain tidak dapat diakses untuk menjaga integritas data (ABAC).
+            </p>
+          </div>
+        </Card>
       )}
 
       {/* 2. Ringkasan Eksekutif Halaqoh */}

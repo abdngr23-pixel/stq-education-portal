@@ -248,15 +248,9 @@ export default function Home() {
     message: "",
   });
 
-  // Halaqoh list mapping dinamis dari server
-  const [dynamicHalaqohList, setDynamicHalaqohList] = useState<Array<{ id: string; nama: string; pembina: string }>>([
-    { id: "HLQ-0001", nama: "Halaqoh Ust. Razan Mufli, S.Pd", pembina: "Ust. Razan Mufli, S.Pd" },
-    { id: "HLQ-0002", nama: "Halaqoh Ust. Kamal", pembina: "Ust. Kamal" },
-    { id: "HLQ-0003", nama: "Halaqoh Ust. Rizaldi", pembina: "Ust. Rizaldi" },
-    { id: "HLQ-0004", nama: "Halaqoh Ust. Abi Hudzaifah", pembina: "Ust. Abi Hudzaifah" },
-    { id: "HLQ-0005", nama: "Halaqoh Ust. Alwan", pembina: "Ust. Alwan" },
-    { id: "HLQ-0006", nama: "Halaqoh Ustadzah Lisa Dwina Fitri", pembina: "Ustadzah Lisa Dwina Fitri" },
-  ]);
+  // Halaqoh list mapping dinamis murni dari server/database (Eliminasi fallback statis)
+  const [dynamicHalaqohList, setDynamicHalaqohList] = useState<Array<{ id: string; nama: string; pembina: string }>>([]);
+  const [halaqohListError, setHalaqohListError] = useState<string | null>(null);
 
   const halaqohList = dynamicHalaqohList;
 
@@ -269,6 +263,28 @@ export default function Home() {
   const allowedTabs = useMemo(() => {
     return ROLE_NAV_MAP[selectedRole] || ["beranda"];
   }, [selectedRole]);
+
+  // Helper untuk memuat ulang daftar halaqoh dari server secara aman
+  const fetchHalaqohData = async () => {
+    setHalaqohListError(null);
+    try {
+      const res = await getHalaqohListAction();
+      if (res.success && res.data) {
+        setDynamicHalaqohList(
+          res.data.map((h) => ({
+            id: h.id,
+            nama: h.nama,
+            pembina: h.pembina?.nama || "Pembina",
+          }))
+        );
+      } else {
+        setHalaqohListError(res.message || "Gagal memuat daftar halaqoh dari basis data.");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Terjadi kesalahan jaringan saat memuat data halaqoh.";
+      setHalaqohListError(msg);
+    }
+  };
 
   // Helper untuk memuat ulang daftar santri dari server secara aman
   const fetchSantriData = async (filter?: string) => {
@@ -396,19 +412,8 @@ export default function Home() {
         }
 
         // Sinkronisasi data server sekunder (halaqoh, santri, rekam medis)
-        try {
-          const hlqRes = await getHalaqohListAction();
-          if (isMounted && hlqRes.success && hlqRes.data && hlqRes.data.length > 0) {
-            setDynamicHalaqohList(
-              hlqRes.data.map((h) => ({
-                id: h.id,
-                nama: h.nama,
-                pembina: h.pembina?.nama || "Pembina",
-              }))
-            );
-          }
-        } catch {
-          // ignore
+        if (isMounted) {
+          await fetchHalaqohData();
         }
 
         try {
@@ -1044,6 +1049,30 @@ export default function Home() {
               >
                 <X className="h-4 w-4" />
               </button>
+            </div>
+          )}
+
+          {/* Halaqoh Load Error Banner */}
+          {halaqohListError && (
+            <div
+              role="alert"
+              className="p-4 rounded-2xl border border-amber-200 bg-amber-50 text-amber-800 flex items-center justify-between text-sm shadow-xs"
+            >
+              <div className="flex items-center gap-2.5">
+                <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" />
+                <div>
+                  <p className="font-semibold text-xs text-amber-900">Gagal Memuat Daftar Halaqoh</p>
+                  <p className="text-xs text-amber-700 mt-0.5">{halaqohListError}</p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="text-xs bg-white text-amber-700 hover:bg-amber-100 border-amber-200"
+                onClick={() => fetchHalaqohData()}
+              >
+                Coba Lagi
+              </Button>
             </div>
           )}
 

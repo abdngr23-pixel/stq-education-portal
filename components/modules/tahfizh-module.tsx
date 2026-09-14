@@ -111,8 +111,8 @@ export function TahfizhModule({
   const [halamanMulai, setHalamanMulai] = useState("");
   const [halamanSelesai, setHalamanSelesai] = useState("");
   const [jumlahHalaman, setJumlahHalaman] = useState("1");
-  const [jumlahJuzMufar, setJumlahJuzMufar] = useState("2");
-  const [rincianJuzMufar, setRincianJuzMufar] = useState("Juz 1, 2");
+  const [jumlahJuzMufar, setJumlahJuzMufar] = useState("");
+  const [rincianJuzMufar, setRincianJuzMufar] = useState("");
   const [nilai, setNilai] = useState<"MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "DHOIF">("MUMTAZ");
   const [catatan, setCatatan] = useState("");
   const [isManualSabaqi, setIsManualSabaqi] = useState(false);
@@ -159,9 +159,14 @@ export function TahfizhModule({
       setHalamanSelesai("");
       setJumlahHalaman("");
       setJuz("30");
-      const mufarTgt = (santri as { targetMufar?: number })?.targetMufar || 1;
-      setJumlahJuzMufar(String(mufarTgt));
-      setRincianJuzMufar(`Juz 1 s/d ${mufarTgt}`);
+      const mufarTgt = (santri as { targetMufar?: number })?.targetMufar;
+      if (mufarTgt) {
+        setJumlahJuzMufar(String(mufarTgt));
+        setRincianJuzMufar(`Juz 1 s/d ${mufarTgt}`);
+      } else {
+        setJumlahJuzMufar("");
+        setRincianJuzMufar("");
+      }
       pendingRequestIdRef.current = null;
       return;
     } else if (posisiTerakhir === 0) {
@@ -185,10 +190,15 @@ export function TahfizhModule({
     const detectedJuz = getJuzByPage(saranHlm) || 1;
     setJuz(String(detectedJuz));
 
-    // Sinkronkan target Mufar sesuai data santri
-    const mufarTgt = (santri as { targetMufar?: number })?.targetMufar || 1;
-    setJumlahJuzMufar(String(mufarTgt));
-    setRincianJuzMufar(`Juz 1 s/d ${mufarTgt}`);
+    // Sinkronkan target Mufar hanya jika benar-benar tersedia dari basis data
+    const mufarTgt = (santri as { targetMufar?: number })?.targetMufar;
+    if (mufarTgt) {
+      setJumlahJuzMufar(String(mufarTgt));
+      setRincianJuzMufar(`Juz 1 s/d ${mufarTgt}`);
+    } else {
+      setJumlahJuzMufar("");
+      setRincianJuzMufar("");
+    }
 
     // Reset requestId untuk form draft baru
     pendingRequestIdRef.current = null;
@@ -1137,9 +1147,14 @@ export function TahfizhModule({
                           if (j === "SABAQ") {
                             applySuggestedSabaqPosition(activeSantri);
                           } else if (j === "MUFAR") {
-                            const tgtVal = (activeSantri as { targetMufar?: number })?.targetMufar || 1;
-                            setJumlahJuzMufar(String(tgtVal));
-                            setRincianJuzMufar(`Juz 1 s/d ${tgtVal}`);
+                            const tgtVal = (activeSantri as { targetMufar?: number })?.targetMufar;
+                            if (tgtVal) {
+                              setJumlahJuzMufar(String(tgtVal));
+                              setRincianJuzMufar(`Juz 1 s/d ${tgtVal}`);
+                            } else {
+                              setJumlahJuzMufar("");
+                              setRincianJuzMufar("");
+                            }
                           } else if (j === "SABQI") {
                             handleApplySabaqiReference();
                           }
@@ -1166,7 +1181,9 @@ export function TahfizhModule({
                             ? "Muroja'ah Sepekan"
                             : j === "MANZIL"
                             ? "Muroja'ah 1 Juz"
-                            : "Harian 1-6 Juz"}
+                            : ((activeSantri as { targetMufar?: number })?.targetMufar
+                                ? `${(activeSantri as { targetMufar?: number }).targetMufar} Juz`
+                                : "Target belum ditetapkan")}
                         </span>
                       </button>
                     ))}
@@ -1328,7 +1345,7 @@ export function TahfizhModule({
                             {sabaqiPekan.labelRentang} ({sabaqiPekan.totalHalamanSabaq} Halaman)
                           </span>
                           <span className="text-[10px] text-slate-500 block mt-0.5">
-                            Muroja&apos;ah wajib sabqi pekanan santri sebelum menambah sabaq baru.
+                            Referensi Sabqi berasal dari Sabaq sah pada pekan berjalan.
                           </span>
                         </div>
 
@@ -1608,6 +1625,12 @@ export function TahfizhModule({
 
                 {inputJenis === "MUFAR" && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {!(activeSantri as { targetMufar?: number })?.targetMufar && (
+                      <div className="sm:col-span-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Target belum ditetapkan</span>
+                      </div>
+                    )}
                     <div>
                       <label className="text-xs font-bold text-slate-700 block mb-1">
                         Jumlah Juz Muroja&apos;ah Mufar
@@ -1617,6 +1640,7 @@ export function TahfizhModule({
                         onChange={(e) => setJumlahJuzMufar(e.target.value)}
                         className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-purple-500"
                       >
+                        <option value="">-- Pilih Jumlah Juz --</option>
                         <option value="1">1 Juz</option>
                         <option value="2">2 Juz</option>
                         <option value="3">3 Juz</option>
