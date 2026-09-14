@@ -46,7 +46,7 @@ export async function getRingkasanAnakAction(santriIdInput?: string): Promise<Po
       where: { id: targetSantriId },
       include: {
         halaqoh: { include: { pembina: true } },
-        setoranList: { take: 10, orderBy: { createdAt: 'desc' } },
+        setoranList: { where: { status: { not: 'DIBATALKAN' } }, take: 10, orderBy: { createdAt: 'desc' } },
         ikhtibarList: { orderBy: { createdAt: 'desc' } },
         nilaiList: { include: { mapel: true }, take: 10 },
         bintangList: { orderBy: { createdAt: 'desc' } },
@@ -62,7 +62,9 @@ export async function getRingkasanAnakAction(santriIdInput?: string): Promise<Po
 
     const totalPoinPelanggaran = santri.pelanggaranList.reduce((acc, p) => acc + p.poinFinal, 0);
     const totalBintang = santri.bintangList.length;
-    const totalSetoran = await prisma.setoranTahfizh.count({ where: { santriId: targetSantriId } });
+    const totalSetoran = await prisma.setoranTahfizh.count({
+      where: { santriId: targetSantriId, status: { not: 'DIBATALKAN' } },
+    });
     const ikhtibarLulus = santri.ikhtibarList.filter((i) => i.status === 'LULUS_SEMPURNA_TAHAP_2').length;
 
     return {

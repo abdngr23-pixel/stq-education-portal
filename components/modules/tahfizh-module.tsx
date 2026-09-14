@@ -1104,10 +1104,12 @@ export function TahfizhModule({
                       </div>
                       <div className="pt-1 sm:pt-0 sm:px-1.5 col-span-2 sm:col-span-1">
                         <span className="text-[10px] uppercase font-semibold text-slate-400 block">
-                          Target Akhir 30 Juz
+                          Target Hafalan
                         </span>
                         <span className="text-sm font-bold text-slate-800 block mt-0.5">
-                          {activeSantri.targetJuz ?? 30} Juz
+                          {activeSantri.targetJuz
+                            ? `${activeSantri.targetJuz} Juz`
+                            : (activeSantri.targetSabaqLabel || "Target belum ditetapkan")}
                         </span>
                       </div>
                     </div>

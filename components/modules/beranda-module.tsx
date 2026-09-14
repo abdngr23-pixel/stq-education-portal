@@ -32,6 +32,11 @@ export interface DashboardSantriSummary {
   halaqoh: string;
   capaianJuz: number;
   targetJuz: number;
+  targetSabaq?: number | null;
+  targetSabaqLabel?: string;
+  targetSabaqBulanan?: number | null;
+  targetSabaqPekanan?: number | null;
+  statusTahfizhHariIni?: unknown;
   setoranTerakhir: string;
   setoranTerakhirAt?: string | null;
   sudahSetorHariIni?: boolean;

@@ -120,7 +120,9 @@ export function SantriCard({
         {capaianJuz !== undefined && (
           <div className="shrink-0 text-right">
             <Badge variant="green" size="sm" className="font-bold">
-              {capaianJuz} dari Target Akhir {targetJuz ?? 30} Juz
+              {targetJuz
+                ? `${capaianJuz} dari Target Akhir ${targetJuz} Juz`
+                : `${capaianJuz} Juz • Target belum ditetapkan`}
             </Badge>
           </div>
         )}

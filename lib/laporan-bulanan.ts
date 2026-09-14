@@ -64,7 +64,7 @@ export function getPekanDariTanggal(date: Date): 1 | 2 | 3 | 4 {
  */
 export function hitungCapaianSabaq(
   realisasiHalaman: { p1: number; p2: number; p3: number; p4: number },
-  targetBulananHalaman: number,
+  targetBulananHalaman: number | null | undefined,
   modalAwalHalaman: number = 0
 ): {
   totalHalaman: number;
@@ -74,6 +74,7 @@ export function hitungCapaianSabaq(
   konversiAkumulasi: { juz: number; sisaHalaman: number; label: string };
   persentase: number;
   isTercapai: boolean;
+  hasTarget: boolean;
 } {
   const safeModal = Math.max(0, Math.round(modalAwalHalaman));
   const totalHalaman =
@@ -81,6 +82,20 @@ export function hitungCapaianSabaq(
   const akumulasiTotalHalaman = safeModal + totalHalaman;
   const konversi = konversiHalamanKeJuz(totalHalaman);
   const konversiAkumulasi = konversiHalamanKeJuz(akumulasiTotalHalaman);
+
+  if (targetBulananHalaman === null || targetBulananHalaman === undefined) {
+    return {
+      totalHalaman,
+      modalAwalHalaman: safeModal,
+      akumulasiTotalHalaman,
+      konversi,
+      konversiAkumulasi,
+      persentase: 0,
+      isTercapai: false,
+      hasTarget: false,
+    };
+  }
+
   const target = Math.max(1, targetBulananHalaman);
   const persentase = Math.min(200, parseFloat(((totalHalaman / target) * 100).toFixed(1)));
   const isTercapai = persentase >= 100;
@@ -93,6 +108,7 @@ export function hitungCapaianSabaq(
     konversiAkumulasi,
     persentase,
     isTercapai,
+    hasTarget: true,
   };
 }
 
@@ -154,20 +170,31 @@ export function hitungAkumulasiSabaqSantri(params: {
  */
 export function hitungKepatuhanFrekuensi(
   realisasiFrekuensi: { p1: number; p2: number; p3: number; p4: number },
-  targetBulananFrekuensi: number,
+  targetBulananFrekuensi: number | null | undefined,
   ambangKepatuhanPercent: number = 90.0
 ): {
   totalFrekuensi: number;
   persentase: number;
   isPatuh: boolean;
+  hasTarget: boolean;
 } {
   const totalFrekuensi =
     realisasiFrekuensi.p1 + realisasiFrekuensi.p2 + realisasiFrekuensi.p3 + realisasiFrekuensi.p4;
+
+  if (targetBulananFrekuensi === null || targetBulananFrekuensi === undefined) {
+    return {
+      totalFrekuensi,
+      persentase: 0,
+      isPatuh: false,
+      hasTarget: false,
+    };
+  }
+
   const target = Math.max(1, targetBulananFrekuensi);
   const persentase = parseFloat(((totalFrekuensi / target) * 100).toFixed(1));
   const isPatuh = persentase >= ambangKepatuhanPercent;
 
-  return { totalFrekuensi, persentase, isPatuh };
+  return { totalFrekuensi, persentase, isPatuh, hasTarget: true };
 }
 
 /**

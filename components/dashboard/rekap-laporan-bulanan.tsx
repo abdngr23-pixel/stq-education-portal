@@ -28,7 +28,6 @@ import {
   type LaporanBulananData,
 } from "@/app/actions/laporan-bulanan";
 import {
-  generateLaporanBulananMock,
   MASTER_HALAQOH_LIST,
   hitungTargetMufar,
 } from "@/lib/laporan-bulanan";
@@ -116,6 +115,7 @@ export function RekapLaporanBulanan({
   const [activeSubTab, setActiveSubTab] = useState<"tahfizh" | "mutabaah" | "tasmi_simaan">("tahfizh");
   
   const [laporanData, setLaporanData] = useState<LaporanBulananData | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -141,16 +141,20 @@ export function RekapLaporanBulanan({
   // Fetch report data
   const loadData = React.useCallback(async (hId: string, bln: number, ta: string) => {
     if (!hId) return;
+    setErrorMessage(null);
     try {
       const res = await getLaporanBulananHalaqohAction(hId, bln, ta);
       if (res.success && res.data) {
         setLaporanData(res.data);
+        setErrorMessage(null);
       } else {
-        setLaporanData(generateLaporanBulananMock(hId, bln, ta));
+        setLaporanData(null);
+        setErrorMessage(res.message || "Gagal memuat rekap laporan bulanan.");
       }
     } catch (err) {
       console.error("Gagal memuat rekap laporan bulanan:", err);
-      setLaporanData(generateLaporanBulananMock(hId, bln, ta));
+      setLaporanData(null);
+      setErrorMessage("Gagal memuat data laporan bulanan dari pangkalan data.");
     }
   }, []);
 
@@ -164,14 +168,17 @@ export function RekapLaporanBulanan({
         if (ignore) return;
         if (res.success && res.data) {
           setLaporanData(res.data);
+          setErrorMessage(null);
         } else {
-          setLaporanData(generateLaporanBulananMock(targetHalaqoh, selectedBulan, selectedTahunAjaran));
+          setLaporanData(null);
+          setErrorMessage(res.message || "Gagal memuat rekap laporan bulanan.");
         }
       })
       .catch((err) => {
         if (ignore) return;
         console.error("Gagal mengambil data laporan bulanan:", err);
-        setLaporanData(generateLaporanBulananMock(targetHalaqoh, selectedBulan, selectedTahunAjaran));
+        setLaporanData(null);
+        setErrorMessage("Gagal memuat data laporan bulanan dari pangkalan data.");
       });
 
     return () => {
@@ -206,20 +213,20 @@ export function RekapLaporanBulanan({
         r.santri.nis,
         r.santri.nama,
         r.santri.kelas,
-        r.tahfizh.sabaq.targetBulanan,
+        r.tahfizh.sabaq.targetBulanan !== null ? r.tahfizh.sabaq.targetBulanan : "Target belum ditetapkan",
         r.tahfizh.sabaq.pekan.p1,
         r.tahfizh.sabaq.pekan.p2,
         r.tahfizh.sabaq.pekan.p3,
         r.tahfizh.sabaq.pekan.p4,
         r.tahfizh.sabaq.totalHalaman,
         r.tahfizh.sabaq.konversi.label,
-        `${r.tahfizh.sabaq.persentase}%`,
+        r.tahfizh.sabaq.targetBulanan !== null ? `${r.tahfizh.sabaq.persentase}%` : "-",
         r.tahfizh.sabqi.totalFrekuensi,
-        `${r.tahfizh.sabqi.persentase}%`,
+        r.tahfizh.sabqi.targetBulanan !== null ? `${r.tahfizh.sabqi.persentase}%` : "-",
         r.tahfizh.manzil.totalFrekuensi,
-        `${r.tahfizh.manzil.persentase}%`,
-        (r.tahfizh.mufar as { targetLabel?: string; targetHarianJuz?: number }).targetLabel ||
-          `${(r.tahfizh.mufar as { targetLabel?: string; targetHarianJuz?: number }).targetHarianJuz || hitungTargetMufar(r.tahfizh.sabaq.konversiAkumulasi.juz || 1)} Juz/hari`,
+        r.tahfizh.manzil.targetBulanan !== null ? `${r.tahfizh.manzil.persentase}%` : "-",
+        (r.tahfizh.mufar as { targetLabel?: string }).targetLabel ||
+          (r.tahfizh.mufar.targetBulanan !== null ? `${r.tahfizh.mufar.targetBulanan}x` : "Target belum ditetapkan"),
         r.tahfizh.mufar.totalFrekuensi,
       ]);
       exportToCSV(`Laporan_Tahfizh_${BULAN_NAMES[selectedBulan - 1]}_${selectedTahunAjaran.replace("/", "_")}`, headers, rows);
@@ -495,6 +502,26 @@ export function RekapLaporanBulanan({
         </div>
       )}
 
+      {/* Error State Honest */}
+      {errorMessage && (
+        <div className="p-6 rounded-2xl border border-rose-200 bg-rose-50/70 text-center my-2 shadow-xs">
+          <AlertCircle className="w-8 h-8 text-rose-500 mx-auto mb-2" />
+          <h4 className="text-sm font-bold text-slate-800">Gagal Memuat Data</h4>
+          <p className="text-xs text-slate-600 mt-1 mb-3">{errorMessage}</p>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="bg-white hover:bg-slate-50 border border-slate-200 text-xs"
+            onClick={() => {
+              const targetHalaqoh = isLockedMusyrif ? resolvedHalaqoh.id : selectedHalaqohId;
+              loadData(targetHalaqoh, selectedBulan, selectedTahunAjaran);
+            }}
+          >
+            Coba Lagi
+          </Button>
+        </div>
+      )}
+
       {/* 2. Ringkasan Eksekutif Halaqoh */}
       {laporanData && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -684,7 +711,13 @@ export function RekapLaporanBulanan({
                       </td>
 
                       {/* Sabaq Data */}
-                      <td className="px-2 py-2 text-center text-slate-500 font-medium">{sbq.targetBulanan}</td>
+                      <td className="px-2 py-2 text-center text-slate-500 font-medium">
+                        {sbq.targetBulanan !== null ? (
+                          `${sbq.targetBulanan} Hlm`
+                        ) : (
+                          <span className="text-amber-600 text-[10px] italic">Target belum ditetapkan</span>
+                        )}
+                      </td>
                       <td className="px-2 py-2 text-center text-slate-700">{sbq.pekan.p1}</td>
                       <td className="px-2 py-2 text-center text-slate-700">{sbq.pekan.p2}</td>
                       <td className="px-2 py-2 text-center text-slate-700">{sbq.pekan.p3}</td>
@@ -696,47 +729,75 @@ export function RekapLaporanBulanan({
                         {sbq.konversi.label}
                       </td>
                       <td className="px-2 py-2 text-center border-r border-slate-100">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            sbq.isTercapai
-                              ? "bg-emerald-100 text-emerald-800"
-                              : "bg-amber-100 text-amber-800"
-                          }`}
-                        >
-                          {sbq.persentase}%
-                        </span>
+                        {sbq.targetBulanan !== null ? (
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              sbq.isTercapai
+                                ? "bg-emerald-100 text-emerald-800"
+                                : "bg-amber-100 text-amber-800"
+                            }`}
+                          >
+                            {sbq.persentase}%
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-[10px]">-</span>
+                        )}
                       </td>
 
                       {/* Sabqi Data */}
-                      <td className="px-2 py-2 text-center text-slate-500">{sbqi.targetBulanan}x</td>
+                      <td className="px-2 py-2 text-center text-slate-500">
+                        {sbqi.targetBulanan !== null ? (
+                          `${sbqi.targetBulanan}x`
+                        ) : (
+                          <span className="text-amber-600 text-[10px] italic">Target belum ditetapkan</span>
+                        )}
+                      </td>
                       <td className="px-2 py-2 text-center font-bold text-slate-900">{sbqi.totalFrekuensi}x</td>
                       <td className="px-2 py-2 text-center border-r border-slate-100">
-                        <span
-                          className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                            sbqi.isPatuh ? "text-emerald-700 bg-emerald-50" : "text-rose-700 bg-rose-50"
-                          }`}
-                        >
-                          {sbqi.persentase}%
-                        </span>
+                        {sbqi.targetBulanan !== null ? (
+                          <span
+                            className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              sbqi.isPatuh ? "text-emerald-700 bg-emerald-50" : "text-rose-700 bg-rose-50"
+                            }`}
+                          >
+                            {sbqi.persentase}%
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-[10px]">-</span>
+                        )}
                       </td>
 
                       {/* Manzil Data */}
-                      <td className="px-2 py-2 text-center text-slate-500">{mzl.targetBulanan}x</td>
+                      <td className="px-2 py-2 text-center text-slate-500">
+                        {mzl.targetBulanan !== null ? (
+                          `${mzl.targetBulanan}x`
+                        ) : (
+                          <span className="text-amber-600 text-[10px] italic">Target belum ditetapkan</span>
+                        )}
+                      </td>
                       <td className="px-2 py-2 text-center font-bold text-slate-900">{mzl.totalFrekuensi}x</td>
                       <td className="px-2 py-2 text-center border-r border-slate-100">
-                        <span
-                          className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                            mzl.isPatuh ? "text-emerald-700 bg-emerald-50" : "text-rose-700 bg-rose-50"
-                          }`}
-                        >
-                          {mzl.persentase}%
-                        </span>
+                        {mzl.targetBulanan !== null ? (
+                          <span
+                            className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              mzl.isPatuh ? "text-emerald-700 bg-emerald-50" : "text-rose-700 bg-rose-50"
+                            }`}
+                          >
+                            {mzl.persentase}%
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-[10px]">-</span>
+                        )}
                       </td>
 
                       {/* Mufar Data (Target Juz/Hari Dinamis berdasarkan Total Hafalan) */}
                       <td className="px-2 py-2 text-center font-bold text-purple-800 bg-purple-50/30">
-                        {(mfr as { targetLabel?: string; targetHarianJuz?: number }).targetLabel ||
-                          `${(mfr as { targetLabel?: string; targetHarianJuz?: number }).targetHarianJuz || hitungTargetMufar(sbq.konversiAkumulasi.juz || 1)} Juz/hari`}
+                        {mfr.targetBulanan !== null ? (
+                          (mfr as { targetLabel?: string }).targetLabel ||
+                          `${(mfr as { targetHarianJuz?: number }).targetHarianJuz || hitungTargetMufar(sbq.konversiAkumulasi.juz || 1)} Juz/hari`
+                        ) : (
+                          <span className="text-slate-400 text-[10px] font-normal italic">Target belum ditetapkan</span>
+                        )}
                       </td>
                       <td className="px-2 py-2 text-center font-bold text-slate-900">{mfr.totalFrekuensi}x</td>
                     </tr>

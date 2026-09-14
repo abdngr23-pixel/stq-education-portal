@@ -6,6 +6,8 @@ import { prisma as defaultPrisma } from "@/lib/prisma";
 import { isTodayWita } from "@/lib/wita-date";
 import { calculateLatestSabaqPosition } from "@/lib/tahfizh-page-allocation";
 
+import { determineTahfizhDailyStatus, TahfizhDailyStatus } from "@/lib/tahfizh-status";
+
 export interface SantriListParams {
   search?: string;
   kelas?: string;
@@ -35,7 +37,12 @@ export interface SantriListItem {
   capaianJuz: number;
   posisiTerakhirHalaman: number;
   isHalamanTerakhirParsial: boolean;
-  targetJuz: number;
+  targetJuz: number | null;
+  targetSabaq: number | null;
+  targetSabaqLabel: string;
+  targetSabaqBulanan: number | null;
+  targetSabaqPekanan: number | null;
+  statusTahfizhHariIni: TahfizhDailyStatus;
   setoranTerakhir: string;
   setoranTerakhirAt: string | null;
   sudahSetorHariIni: boolean;
@@ -150,6 +157,16 @@ export async function getSantriListForSession(
             nilai: true,
           },
         },
+        targetList: {
+          select: {
+            jenis: true,
+            targetPekanan: true,
+            targetBulanan: true,
+            ambangKepatuhan: true,
+            bulan: true,
+            tahunAjaran: true,
+          },
+        },
         _count: {
           select: {
             pelanggaranList: true,
@@ -187,10 +204,6 @@ export async function getSantriListForSession(
       const latestSetoran = validSetoranList[0] || null;
       const nilaiTerakhir = latestSetoran ? latestSetoran.nilai : "Belum ada data";
 
-      // Status setoran hari ini berdasarkan zona waktu resmi WITA (Asia/Makassar)
-      const sudahSetorHariIni = validSetoranList.some((st) => isTodayWita(st.tanggal));
-      const setoranTerakhirAt = latestSetoran ? latestSetoran.tanggal.toISOString() : null;
-
       const sabaqPosition = calculateLatestSabaqPosition(
         sabaqAfterBaseline.map((st) => ({
           jenis: st.jenis,
@@ -206,6 +219,31 @@ export async function getSantriListForSession(
 
       const posisiTerakhirHalaman = sabaqPosition.posisiTerakhirHalaman;
       const isHalamanTerakhirParsial = sabaqPosition.isHalamanTerakhirParsial;
+
+      // Target individual dari TargetSantri (tanpa default sintetis universal)
+      const targetList = s.targetList || [];
+      const sabaqTarget = targetList.find((t) => t.jenis === "SABAQ");
+      const mufarTarget = targetList.find((t) => t.jenis === "MUFAR");
+
+      const targetSabaq = sabaqTarget?.targetBulanan ?? null;
+      const targetSabaqLabel = targetSabaq !== null ? `${targetSabaq} Halaman` : "Target belum ditetapkan";
+      const targetSabaqBulanan = targetSabaq;
+      const targetSabaqPekanan = sabaqTarget?.targetPekanan ?? null;
+
+      // Status setoran 4 jenis (SABAQ, SABQI, MANZIL, MUFAR) berdasarkan batas hari WITA & hari efektif
+      const setoranHariIni = validSetoranList.filter((st) => isTodayWita(st.tanggal));
+      const statusTahfizhHariIni = determineTahfizhDailyStatus({
+        validSetoranToday: setoranHariIni,
+        posisiTerakhirHalaman,
+        targetMufar: mufarTarget
+          ? {
+              targetBulanan: mufarTarget.targetBulanan,
+              targetPekanan: mufarTarget.targetPekanan,
+            }
+          : null,
+      });
+
+      const setoranTerakhirAt = latestSetoran ? latestSetoran.tanggal.toISOString() : null;
 
       return {
         id: s.id,
@@ -230,12 +268,17 @@ export async function getSantriListForSession(
         capaianJuz,
         posisiTerakhirHalaman,
         isHalamanTerakhirParsial,
-        targetJuz: 30,
+        targetJuz: null,
+        targetSabaq,
+        targetSabaqLabel,
+        targetSabaqBulanan,
+        targetSabaqPekanan,
+        statusTahfizhHariIni,
         setoranTerakhir: latestSetoran
           ? `${latestSetoran.jenis} Juz ${latestSetoran.juz} Hlm ${latestSetoran.halamanMulai}-${latestSetoran.halamanSelesai}`
           : "-",
         setoranTerakhirAt,
-        sudahSetorHariIni,
+        sudahSetorHariIni: statusTahfizhHariIni.sudahSetorHariIni,
         nilaiTerakhir,
         poinPelanggaran: s._count.pelanggaranList || 0,
         bintangKebaikan: s._count.bintangList || 0,
