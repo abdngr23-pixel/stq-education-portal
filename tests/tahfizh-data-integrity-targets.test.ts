@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
 import { startTestDatabase, stopTestDatabase } from "./test-db-manager";
 import { setTestSession, resolveVerifiedSessionPayload } from "../lib/auth";
-import { UserSession, AuthTokenPayload } from "../types/auth";
+import { UserSession, AuthTokenPayload, hasModuleAccess, Role } from "../types/auth";
 import { getSantriListForSession } from "../lib/server/santri-list-service";
 import {
   getLaporanBulananHalaqohAction,
@@ -1956,6 +1956,100 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (43 Skena
     assert.ok(rekapContent.includes("h.tahunAjaran"));
     assert.ok(rekapContent.includes("effectiveTahunAjaran"));
   });
+
+  // -------------------------------------------------------------
+  // 53: Role-aware Halaqoh Fetching (Client & Server Canonical Permissions)
+  // -------------------------------------------------------------
+  it("53. Role-aware halaqoh fetching prevents unpermitted roles from triggering default-deny or false error banner", async () => {
+    // 1. Canonical PERMISSION_MATRIX & hasModuleAccess check
+    const allowedRoles: Role[] = ["KS", "ADM", "YAY", "MK", "MT", "PH"];
+    const deniedRoles: Role[] = ["WS", "ST", "OSDA", "GA"];
+
+    for (const r of allowedRoles) {
+      assert.equal(
+        hasModuleAccess(r, "halaqoh", "READ"),
+        true,
+        `Role ${r} should have READ access to halaqoh`
+      );
+    }
+
+    for (const r of deniedRoles) {
+      assert.equal(
+        hasModuleAccess(r, "halaqoh", "READ"),
+        false,
+        `Role ${r} should NOT have READ access to halaqoh`
+      );
+    }
+
+    // 2. Server action fail-closed verification for denied roles
+    for (const r of deniedRoles) {
+      setTestSession({
+        userId: `usr-test-denied-${r.toLowerCase()}`,
+        username: `user.${r.toLowerCase()}`,
+        role: r,
+        name: `User ${r}`,
+        isKepalaBidangTahfidz: false,
+      });
+      const listRes = await getHalaqohListAction();
+      assert.equal(listRes.success, false);
+      assert.equal(listRes.data.length, 0);
+      assert.ok(listRes.message?.includes("Akses Ditolak"));
+    }
+
+    // 3. Audit app/page.tsx client implementation
+    const pageContent = fs.readFileSync(path.resolve(process.cwd(), "app/page.tsx"), "utf-8");
+    assert.ok(pageContent.includes('hasModuleAccess(activeRole, "halaqoh", "READ")'));
+    assert.ok(pageContent.includes('hasModuleAccess(session.role, "halaqoh", "READ")'));
+    assert.ok(pageContent.includes("setDynamicHalaqohList([])"));
+    assert.ok(pageContent.includes("setHalaqohListError(null)"));
+  });
+
+  // -------------------------------------------------------------
+  // 54: Prevent Stale Monthly Report Display (Query-Key Matching)
+  // -------------------------------------------------------------
+  it("54. RekapLaporanBulanan query-key matching prevents stale monthly report rendering across filter changes", () => {
+    const rekapContent = fs.readFileSync(
+      path.resolve(process.cwd(), "components/dashboard/rekap-laporan-bulanan.tsx"),
+      "utf-8"
+    );
+
+    // Pastikan terdapat query key matching yang mencakup halaqohId, bulan, dan tahunAjaran
+    assert.ok(rekapContent.includes("activeQueryKey"));
+    assert.ok(rekapContent.includes("${currentTargetHalaqohId}|${selectedBulan}|${effectiveTahunAjaran}"));
+    assert.ok(rekapContent.includes("reportState.key === activeQueryKey"));
+    assert.ok(rekapContent.includes("isLoadingReport"));
+    assert.ok(rekapContent.includes("Memuat rekapitulasi laporan bulanan..."));
+  });
+
+  // -------------------------------------------------------------
+  // 55: Controlled Fail-Closed DB Error Handling in getHalaqohDetailAction
+  // -------------------------------------------------------------
+  it("55. Controlled fail-closed DB error handling in getHalaqohDetailAction prevents unhandled exceptions", async () => {
+    // Sesi MT dengan staffId
+    setTestSession({
+      userId: "usr-test-mt-error-hdl",
+      username: "mt.errortest",
+      role: "MT",
+      name: "Ust. MT Error Test",
+      staffId: STAFF_MT_1_ID,
+      isKepalaBidangTahfidz: false,
+    });
+
+    // Simulasikan database error saat pengecekan binaan
+    const originalFindFirst = prisma.halaqoh.findFirst;
+    try {
+      (prisma.halaqoh as unknown as { findFirst: () => Promise<unknown> }).findFirst = async () => {
+        throw new Error("DB_CONNECTION_TIMEOUT: database pool exhausted");
+      };
+
+      const result = await getHalaqohDetailAction(HALAQOH_1_ID);
+      assert.equal(result.success, false);
+      assert.ok(result.message && result.message.includes("Gagal memverifikasi"));
+    } finally {
+      prisma.halaqoh.findFirst = originalFindFirst;
+    }
+  });
 });
+
 
 

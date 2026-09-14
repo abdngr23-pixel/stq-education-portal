@@ -82,12 +82,17 @@ export async function getHalaqohDetailAction(halaqohId: string) {
     if (!session.staffId) {
       return { success: false, message: "Akses Ditolak: Profil staf belum terhubung." };
     }
-    const checkBinaan = await prisma.halaqoh.findFirst({
-      where: { id: halaqohId, pembinaId: session.staffId },
-      select: { id: true },
-    });
-    if (!checkBinaan) {
-      return { success: false, message: "Akses Ditolak: Anda hanya berwenang melihat detail halaqoh binaan Anda sendiri." };
+    try {
+      const checkBinaan = await prisma.halaqoh.findFirst({
+        where: { id: halaqohId, pembinaId: session.staffId },
+        select: { id: true },
+      });
+      if (!checkBinaan) {
+        return { success: false, message: "Akses Ditolak: Anda hanya berwenang melihat detail halaqoh binaan Anda sendiri." };
+      }
+    } catch (err) {
+      console.error("Gagal memverifikasi hak akses halaqoh:", err);
+      return { success: false, message: "Gagal memverifikasi wewenang halaqoh dari pangkalan data." };
     }
   } else if (session.role === "MK") {
     // MK diperbolehkan membaca detail halaqoh untuk kebutuhan asrama

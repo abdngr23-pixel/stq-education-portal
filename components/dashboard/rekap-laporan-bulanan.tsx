@@ -158,11 +158,27 @@ export function RekapLaporanBulanan({
 
   const [activeSubTab, setActiveSubTab] = useState<"tahfizh" | "mutabaah" | "tasmi_simaan">("tahfizh");
   
-  const [rawLaporanData, setRawLaporanData] = useState<LaporanBulananData | null>(null);
-  const currentTargetHalaqohId = isLockedMusyrif ? resolvedHalaqoh.id : selectedHalaqohId;
-  const laporanData = (currentTargetHalaqohId && effectiveTahunAjaran) ? rawLaporanData : null;
+  // State data laporan terikat pada query key (halaqohId|bulan|tahunAjaran) untuk mencegah render data stale
+  const [reportState, setReportState] = useState<{
+    key: string;
+    data: LaporanBulananData | null;
+    error: string | null;
+  } | null>(null);
 
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const currentTargetHalaqohId = isLockedMusyrif ? resolvedHalaqoh.id : selectedHalaqohId;
+  const activeQueryKey = (currentTargetHalaqohId && effectiveTahunAjaran)
+    ? `${currentTargetHalaqohId}|${selectedBulan}|${effectiveTahunAjaran}`
+    : "";
+
+  // Data hanya dirender jika key query aktif persis sesuai dengan data yang telah dimuat
+  const laporanData = (reportState && reportState.key === activeQueryKey) ? reportState.data : null;
+  const errorMessage = (reportState && reportState.key === activeQueryKey) ? reportState.error : null;
+
+  // Status memuat laporan secara jujur dan reaktif: true saat filter aktif belum memiliki hasil di reportState
+  const isLoadingReport = Boolean(
+    activeQueryKey && (!reportState || reportState.key !== activeQueryKey)
+  );
+
   const [isPending, startTransition] = useTransition();
   const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -185,26 +201,23 @@ export function RekapLaporanBulanan({
   const [testPredikat, setTestPredikat] = useState<NilaiSetoran>("MUMTAZ");
   const [testCatatan, setTestCatatan] = useState<string>("");
 
-  // Fetch report data
+  // Fetch report data callback (bisa digunakan untuk coba lagi)
   const loadData = React.useCallback(async (hId: string, bln: number, ta: string) => {
     if (!hId || !ta) {
-      setRawLaporanData(null);
+      setReportState(null);
       return;
     }
-    setErrorMessage(null);
+    const requestKey = `${hId}|${bln}|${ta}`;
     try {
       const res = await getLaporanBulananHalaqohAction(hId, bln, ta);
       if (res.success && res.data) {
-        setRawLaporanData(res.data);
-        setErrorMessage(null);
+        setReportState({ key: requestKey, data: res.data, error: null });
       } else {
-        setRawLaporanData(null);
-        setErrorMessage(res.message || "Gagal memuat rekap laporan bulanan.");
+        setReportState({ key: requestKey, data: null, error: res.message || "Gagal memuat rekap laporan bulanan." });
       }
     } catch (err) {
       console.error("Gagal memuat rekap laporan bulanan:", err);
-      setRawLaporanData(null);
-      setErrorMessage("Gagal memuat data laporan bulanan dari pangkalan data.");
+      setReportState({ key: requestKey, data: null, error: "Gagal memuat data laporan bulanan dari pangkalan data." });
     }
   }, []);
 
@@ -215,22 +228,21 @@ export function RekapLaporanBulanan({
       return;
     }
 
+    const requestKey = `${targetHalaqoh}|${selectedBulan}|${effectiveTahunAjaran}`;
+
     getLaporanBulananHalaqohAction(targetHalaqoh, selectedBulan, effectiveTahunAjaran)
       .then((res) => {
         if (ignore) return;
         if (res.success && res.data) {
-          setRawLaporanData(res.data);
-          setErrorMessage(null);
+          setReportState({ key: requestKey, data: res.data, error: null });
         } else {
-          setRawLaporanData(null);
-          setErrorMessage(res.message || "Gagal memuat rekap laporan bulanan.");
+          setReportState({ key: requestKey, data: null, error: res.message || "Gagal memuat rekap laporan bulanan." });
         }
       })
       .catch((err) => {
         if (ignore) return;
         console.error("Gagal mengambil data laporan bulanan:", err);
-        setRawLaporanData(null);
-        setErrorMessage("Gagal memuat data laporan bulanan dari pangkalan data.");
+        setReportState({ key: requestKey, data: null, error: "Gagal memuat data laporan bulanan dari pangkalan data." });
       });
 
     return () => {
@@ -649,6 +661,16 @@ export function RekapLaporanBulanan({
                 ? "Tidak ada data tahun ajaran aktif yang ditemukan pada pangkalan data halaqoh."
                 : "Terdapat lebih dari satu tahun ajaran di pangkalan data. Silakan pilih tahun ajaran pada menu dropdown di atas."}
             </p>
+          </div>
+        </Card>
+      )}
+
+      {/* Honest State: Loading data rekapitulasi */}
+      {isLoadingReport && (
+        <Card rounded="3xl" className="border border-slate-200 bg-white p-8 text-center my-4 shadow-xs">
+          <div className="flex flex-col items-center justify-center space-y-3">
+            <div className="w-8 h-8 border-3 border-[#0E7C3A] border-t-transparent rounded-full animate-spin" />
+            <p className="text-xs font-semibold text-slate-600">Memuat rekapitulasi laporan bulanan...</p>
           </div>
         </Card>
       )}

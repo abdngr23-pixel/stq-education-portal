@@ -13,6 +13,7 @@ import {
 } from "@/types/navigation";
 import {
   Role,
+  hasModuleAccess,
 } from "@/types/auth";
 import { getCurrentUserAction, logoutAction } from "@/app/actions/auth";
 import { getSantriListAction } from "@/app/actions/santri";
@@ -260,8 +261,15 @@ export default function Home() {
     return ROLE_NAV_MAP[selectedRole] || ["beranda"];
   }, [selectedRole]);
 
-  // Helper untuk memuat ulang daftar halaqoh dari server secara aman
-  const fetchHalaqohData = async () => {
+  // Helper untuk memuat ulang daftar halaqoh dari server secara aman (Role-aware & fail-closed)
+  const fetchHalaqohData = async (roleToCheck?: Role) => {
+    const activeRole = roleToCheck || selectedRole;
+    if (!hasModuleAccess(activeRole, "halaqoh", "READ")) {
+      setDynamicHalaqohList([]);
+      setHalaqohListError(null);
+      return;
+    }
+
     setHalaqohListError(null);
     try {
       const res = await getHalaqohListAction();
@@ -409,7 +417,12 @@ export default function Home() {
 
         // Sinkronisasi data server sekunder (halaqoh, santri, rekam medis)
         if (isMounted) {
-          await fetchHalaqohData();
+          if (hasModuleAccess(session.role, "halaqoh", "READ")) {
+            await fetchHalaqohData(session.role);
+          } else {
+            setDynamicHalaqohList([]);
+            setHalaqohListError(null);
+          }
         }
 
         try {
