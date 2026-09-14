@@ -315,7 +315,7 @@ export default function Home() {
             targetSabaqBulanan: s.targetSabaqBulanan,
             targetSabaqPekanan: s.targetSabaqPekanan,
             statusTahfizhHariIni: s.statusTahfizhHariIni,
-            sudahSetorHariIni: Boolean(s.sudahSetorHariIni),
+            sudahSetorHariIni: s.sudahSetorHariIni,
             setoranTerakhir: s.setoranTerakhir || "-",
             setoranTerakhirAt: s.setoranTerakhirAt ?? null,
             completedJuzCanonical: s.completedJuzCanonical,

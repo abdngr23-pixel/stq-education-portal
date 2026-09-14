@@ -182,3 +182,80 @@ export function determineTahfizhDailyStatus(
     targetDailyMufarJuz,
   };
 }
+
+export interface ComputeTahfizhAttentionParams {
+  weeklySabaqStatus: string;
+  statusTahfizhHariIni: Pick<TahfizhDailyStatus, "sabaq" | "mufar"> & { isHariEfektif?: boolean };
+  targetDailyMufarJuz?: number;
+  actualDailyMufarJuz?: number;
+  refDate?: Date;
+}
+
+export interface TahfizhAttentionResult {
+  needsAttention: boolean;
+  attentionReasons: string[];
+}
+
+/**
+ * Pure canonical domain calculation untuk status perhatian operasional (Needs Attention).
+ * SATU-SATUNYA source of truth business logic untuk needsAttention & attentionReasons.
+ *
+ * Aturan Baku Terkunci (Locked Attention Rules):
+ * 1. TARGET_BELUM_DITETAPKAN -> memicu attention reason.
+ * 2. Hari Efektif (Senin–Jumat WITA):
+ *    - SABAQ BELUM_SELESAI -> memicu attention reason.
+ *    - MUFAR BELUM_SELESAI -> memicu attention reason.
+ * 3. Weekly Sabaq BELUM_TERCAPAI pada pekan berjalan adalah status progres informasional,
+ *    BUKAN kegagalan otomatis hari ini dan TIDAK memicu attention harian karena tidak ada daily pacing rule.
+ */
+export function computeTahfizhAttentionState(
+  params: ComputeTahfizhAttentionParams
+): TahfizhAttentionResult {
+  const reasons: string[] = [];
+
+  // 1. Target Belum Ditetapkan -> attention reason
+  if (params.weeklySabaqStatus === "TARGET_BELUM_DITETAPKAN") {
+    reasons.push("Target Sabaq pekanan belum ditetapkan");
+  }
+
+  // 2. Hari Efektif (Senin–Jumat WITA): evaluasi kewajiban harian
+  const isEffective =
+    params.statusTahfizhHariIni.isHariEfektif ??
+    isHariEfektifTahfizh(params.refDate || new Date());
+
+  if (isEffective) {
+    if (params.statusTahfizhHariIni.sabaq === "BELUM_SELESAI") {
+      reasons.push("Belum setor Sabaq hari ini");
+    }
+    if (params.statusTahfizhHariIni.mufar === "BELUM_SELESAI") {
+      const actual = params.actualDailyMufarJuz ?? 0;
+      const target = params.targetDailyMufarJuz ?? 0;
+      reasons.push(
+        `Target MUFAR hari ini belum tuntas (${actual}/${target} Juz)`
+      );
+    }
+  }
+
+  return {
+    needsAttention: reasons.length > 0,
+    attentionReasons: reasons,
+  };
+}
+
+/**
+ * Pure helper untuk menyusun label visual kemajuan MUFAR harian secara konsisten.
+ */
+export function formatMufarProgressLabel(
+  targetDailyMufarJuz: number,
+  actualDailyMufarJuz: number,
+  mufarStatus: OperationalStatus
+): string {
+  if (targetDailyMufarJuz <= 0 || mufarStatus === "TIDAK_BERLAKU") {
+    return "Tidak Berlaku";
+  }
+  if (mufarStatus === "SELESAI") {
+    return `Tercapai (${actualDailyMufarJuz}/${targetDailyMufarJuz} Juz)`;
+  }
+  return `${actualDailyMufarJuz}/${targetDailyMufarJuz} Juz`;
+}
+

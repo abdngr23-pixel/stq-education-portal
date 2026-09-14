@@ -21,7 +21,10 @@ import {
   DollarSign,
   HeartHandshake,
 } from "lucide-react";
-import { DashboardMusyrifTahfizh } from "@/components/dashboard/dashboard-musyrif-tahfizh";
+import {
+  DashboardMusyrifTahfizh,
+  DashboardMusyrifTahfizhSantriItem,
+} from "@/components/dashboard/dashboard-musyrif-tahfizh";
 import { TahfizhDailyStatus } from "@/lib/tahfizh-status";
 import { WeeklySabaqProgress, HalaqohWorkloadSummary } from "@/lib/tahfizh-mufar-tier";
 
@@ -67,6 +70,62 @@ export interface DashboardSantriSummary {
   bintangKebaikan?: number;
 }
 
+/**
+ * Adapter & validator fail-closed untuk data operasional Tahfizh.
+ * Memastikan setiap item yang masuk ke DashboardMusyrifTahfizh memiliki payload authoritative lengkap.
+ * Jika payload authoritative hilang (e.g. sudahSetorHariIni undefined, needsAttention undefined),
+ * item ditolak dan TIDAK diubah menjadi nilai default palsu (fail closed).
+ */
+export function validateTahfizhOperationalItem(
+  s: DashboardSantriSummary
+): DashboardMusyrifTahfizhSantriItem | null {
+  if (
+    typeof s.sudahSetorHariIni !== "boolean" ||
+    typeof s.completedJuzCanonical !== "number" ||
+    typeof s.targetDailyMufarJuz !== "number" ||
+    typeof s.actualDailyMufarJuz !== "number" ||
+    !s.weeklySabaqProgress ||
+    !s.statusTahfizhHariIni ||
+    typeof s.mufarProgressLabel !== "string" ||
+    typeof s.needsAttention !== "boolean" ||
+    !Array.isArray(s.attentionReasons)
+  ) {
+    return null;
+  }
+
+  return {
+    id: s.id,
+    nis: s.nis,
+    nama: s.nama,
+    kelas: s.kelas,
+    halaqoh: s.halaqoh,
+    halaqohId: s.halaqohId,
+    pembina: s.pembina,
+    capaianJuz: s.capaianJuz,
+    targetJuz: s.targetJuz,
+    setoranTerakhir: s.setoranTerakhir,
+    setoranTerakhirAt: s.setoranTerakhirAt,
+    nilaiTerakhir: s.nilaiTerakhir,
+    poinPelanggaran: s.poinPelanggaran,
+    posisiTerakhirHalaman: s.posisiTerakhirHalaman,
+    isHalamanTerakhirParsial: s.isHalamanTerakhirParsial,
+    bintangKebaikan: s.bintangKebaikan,
+    targetSabaq: s.targetSabaq,
+    targetSabaqLabel: s.targetSabaqLabel,
+    targetSabaqBulanan: s.targetSabaqBulanan,
+    targetSabaqPekanan: s.targetSabaqPekanan,
+    sudahSetorHariIni: s.sudahSetorHariIni,
+    completedJuzCanonical: s.completedJuzCanonical,
+    targetDailyMufarJuz: s.targetDailyMufarJuz,
+    actualDailyMufarJuz: s.actualDailyMufarJuz,
+    weeklySabaqProgress: s.weeklySabaqProgress,
+    statusTahfizhHariIni: s.statusTahfizhHariIni,
+    mufarProgressLabel: s.mufarProgressLabel,
+    needsAttention: s.needsAttention,
+    attentionReasons: s.attentionReasons,
+  };
+}
+
 export interface BerandaModuleProps {
   userRole: Role;
   userName: string;
@@ -103,9 +162,14 @@ export function BerandaModule({
   // Role MT dialihkan ke Dashboard Musyrif Tahfizh terfokus (Pilot UI/UX B2)
   if (userRole === "MT") {
     const isKabidOrManagerial = Boolean(isKepalaBidangTahfidz);
+    // Adapter fail-closed: hanya santri dengan authoritative operational payload lengkap yang disajikan
+    const tahfizhSantriList: DashboardMusyrifTahfizhSantriItem[] = santriList
+      .map(validateTahfizhOperationalItem)
+      .filter((item): item is DashboardMusyrifTahfizhSantriItem => item !== null);
+
     return (
       <DashboardMusyrifTahfizh
-        santriList={santriList}
+        santriList={tahfizhSantriList}
         halaqohName={currentHalaqohName || "Halaqoh Binaan"}
         userName={userName}
         ikhtibarPendingCount={ikhtibarPendingCount}

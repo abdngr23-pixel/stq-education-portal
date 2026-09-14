@@ -5,7 +5,7 @@ import defaultPrisma from "@/lib/prisma";
 import { UserSession } from "@/types/auth";
 import { getSantriListForSession } from "@/lib/server/santri-list-service";
 import { getIkhtibarPendingCountForSession } from "@/lib/server/ikhtibar-pending-service";
-import { isHariEfektifTahfizh, TahfizhDailyStatus } from "@/lib/tahfizh-status";
+import { TahfizhDailyStatus } from "@/lib/tahfizh-status";
 import { WeeklySabaqProgress, HalaqohWorkloadSummary } from "@/lib/tahfizh-mufar-tier";
 export type { HalaqohWorkloadSummary };
 
@@ -155,68 +155,31 @@ export async function getTahfizhOperationalMonitoring(
       };
     }
 
-    const refDate = params?.refDate || new Date();
-    const isEffective = isHariEfektifTahfizh(refDate);
-
-    // 4. Transform dan evaluasi Needs-Attention serta MUFAR progress label
-    const allItems: TahfizhMonitoringSantriItem[] = santriListRes.data.map((s) => {
-      const reasons: string[] = [];
-
-      // Evaluasi Target Sabaq Pekanan: Target belum ditetapkan memicu perhatian operasional
-      if (s.weeklySabaqProgress.status === "TARGET_BELUM_DITETAPKAN") {
-        reasons.push("Target Sabaq pekanan belum ditetapkan");
-      }
-      // CATATAN: BELUM_TERCAPAI pada pekan berjalan adalah status progres,
-      // bukan kegagalan otomatis hari ini karena tidak ada pacing rule harian resmi.
-
-      // Evaluasi Kewajiban Harian pada Hari Efektif (Senin–Jumat WITA)
-      if (isEffective) {
-        if (s.statusTahfizhHariIni.sabaq === "BELUM_SELESAI") {
-          reasons.push("Belum setor Sabaq hari ini");
-        }
-        if (s.statusTahfizhHariIni.mufar === "BELUM_SELESAI") {
-          reasons.push(
-            `Target MUFAR hari ini belum tuntas (${s.actualDailyMufarJuz}/${s.targetDailyMufarJuz} Juz)`
-          );
-        }
-      }
-
-      const needsAttention = reasons.length > 0;
-
-      // Label visual untuk MUFAR
-      let mufarProgressLabel: string;
-      if (s.targetDailyMufarJuz <= 0 || s.statusTahfizhHariIni.mufar === "TIDAK_BERLAKU") {
-        mufarProgressLabel = "Tidak Berlaku";
-      } else if (s.statusTahfizhHariIni.mufar === "SELESAI") {
-        mufarProgressLabel = `Tercapai (${s.actualDailyMufarJuz}/${s.targetDailyMufarJuz} Juz)`;
-      } else {
-        mufarProgressLabel = `${s.actualDailyMufarJuz}/${s.targetDailyMufarJuz} Juz`;
-      }
-
-      return {
-        id: s.id,
-        nis: s.nis,
-        nama: s.nama,
-        kelas: s.kelas,
-        halaqohId: s.halaqohId,
-        halaqoh: s.halaqoh,
-        pembina: s.pembina,
-        posisiTerakhirHalaman: s.posisiTerakhirHalaman,
-        capaianJuz: s.capaianJuz,
-        completedJuzCanonical: s.completedJuzCanonical,
-        statusTahfizhHariIni: s.statusTahfizhHariIni,
-        weeklySabaq: s.weeklySabaqProgress,
-        mufarProgressLabel,
-        needsAttention,
-        attentionReasons: reasons,
-        setoranTerakhir: s.setoranTerakhir,
-        setoranTerakhirAt: s.setoranTerakhirAt,
-        sudahSetorHariIni: s.sudahSetorHariIni,
-        nilaiTerakhir: s.nilaiTerakhir,
-        bintangKebaikan: s.bintangKebaikan,
-        poinPelanggaran: s.poinPelanggaran,
-      };
-    });
+    // 4. Transform items: Langsung gunakan operational fields kanonikal dari getSantriListForSession
+    // DILARANG menghitung ulang needsAttention, attentionReasons, atau mufarProgressLabel di sini!
+    const allItems: TahfizhMonitoringSantriItem[] = santriListRes.data.map((s) => ({
+      id: s.id,
+      nis: s.nis,
+      nama: s.nama,
+      kelas: s.kelas,
+      halaqohId: s.halaqohId,
+      halaqoh: s.halaqoh,
+      pembina: s.pembina,
+      posisiTerakhirHalaman: s.posisiTerakhirHalaman,
+      capaianJuz: s.capaianJuz,
+      completedJuzCanonical: s.completedJuzCanonical,
+      statusTahfizhHariIni: s.statusTahfizhHariIni,
+      weeklySabaq: s.weeklySabaqProgress,
+      mufarProgressLabel: s.mufarProgressLabel,
+      needsAttention: s.needsAttention,
+      attentionReasons: s.attentionReasons,
+      setoranTerakhir: s.setoranTerakhir,
+      setoranTerakhirAt: s.setoranTerakhirAt,
+      sudahSetorHariIni: s.sudahSetorHariIni,
+      nilaiTerakhir: s.nilaiTerakhir,
+      bintangKebaikan: s.bintangKebaikan,
+      poinPelanggaran: s.poinPelanggaran,
+    }));
 
     // 5. Antrean Ikhtibar (Tanpa mengubah error menjadi 0)
     let antreanIkhtibar: number | null = null;

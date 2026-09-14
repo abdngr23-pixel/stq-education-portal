@@ -17,9 +17,15 @@ import {
 } from "../lib/tahfizh-mufar-tier";
 import {
   determineTahfizhDailyStatus,
+  computeTahfizhAttentionState,
+  formatMufarProgressLabel,
 } from "../lib/tahfizh-status";
 import {
+  getSantriListForSession,
+} from "../lib/server/santri-list-service";
+import {
   getTahfizhOperationalMonitoring,
+  TahfizhMonitoringSantriItem,
 } from "../lib/server/tahfizh-monitoring-service";
 import { createSetoranAction } from "../app/actions/tahfizh";
 
@@ -905,6 +911,175 @@ describe("PR #7 — Tahfizh Operational Monitoring & Action Center (Comprehensiv
         content,
         /targetDailyMufarJuz:\s*s\.targetDailyMufarJuz/,
         "Dashboard harus meneruskan targetDailyMufarJuz authoritative dari server"
+      );
+    });
+  });
+
+  // =========================================================================
+  // KELOMPOK 7: REMEDIATION ROUND 3 SOURCE-OF-TRUTH HARDENING
+  // =========================================================================
+  describe("7. Remediation Round 3 Source-of-Truth Hardening & Consistency Guards", () => {
+    it("7.1. Pure Domain Canonical Attention: target missing, sabaq belum selesai, mufar belum selesai -> attention; weekly BELUM_TERCAPAI alone -> NOT attention", () => {
+      // 1. Target Missing -> attention reason
+      const resTargetMissing = computeTahfizhAttentionState({
+        weeklySabaqStatus: "TARGET_BELUM_DITETAPKAN",
+        statusTahfizhHariIni: { sabaq: "SELESAI", mufar: "SELESAI", isHariEfektif: true },
+      });
+      assert.equal(resTargetMissing.needsAttention, true);
+      assert.deepEqual(resTargetMissing.attentionReasons, ["Target Sabaq pekanan belum ditetapkan"]);
+
+      // 2. SABAQ Belum Selesai pada hari efektif -> attention reason
+      const resSabaqBelum = computeTahfizhAttentionState({
+        weeklySabaqStatus: "TERCAPAI",
+        statusTahfizhHariIni: { sabaq: "BELUM_SELESAI", mufar: "SELESAI", isHariEfektif: true },
+      });
+      assert.equal(resSabaqBelum.needsAttention, true);
+      assert.deepEqual(resSabaqBelum.attentionReasons, ["Belum setor Sabaq hari ini"]);
+
+      // 3. MUFAR Belum Selesai pada hari efektif -> attention reason
+      const resMufarBelum = computeTahfizhAttentionState({
+        weeklySabaqStatus: "TERCAPAI",
+        statusTahfizhHariIni: { sabaq: "SELESAI", mufar: "BELUM_SELESAI", isHariEfektif: true },
+        targetDailyMufarJuz: 2,
+        actualDailyMufarJuz: 1,
+      });
+      assert.equal(resMufarBelum.needsAttention, true);
+      assert.deepEqual(resMufarBelum.attentionReasons, [
+        "Target MUFAR hari ini belum tuntas (1/2 Juz)",
+      ]);
+
+      // 4. Weekly Sabaq BELUM_TERCAPAI alone pada hari efektif -> BUKAN attention (informational progress only)
+      const resWeeklyAlone = computeTahfizhAttentionState({
+        weeklySabaqStatus: "BELUM_TERCAPAI",
+        statusTahfizhHariIni: { sabaq: "SELESAI", mufar: "SELESAI", isHariEfektif: true },
+      });
+      assert.equal(
+        resWeeklyAlone.needsAttention,
+        false,
+        "Weekly Sabaq BELUM_TERCAPAI saja DILARANG memicu needsAttention (tanpa daily pacing rule)"
+      );
+      assert.equal(resWeeklyAlone.attentionReasons.length, 0);
+
+      // 5. Akhir pekan (tidak efektif) -> kewajiban harian tidak memicu attention
+      const resWeekend = computeTahfizhAttentionState({
+        weeklySabaqStatus: "TERCAPAI",
+        statusTahfizhHariIni: { sabaq: "BELUM_SELESAI", mufar: "BELUM_SELESAI", isHariEfektif: false },
+      });
+      assert.equal(resWeekend.needsAttention, false, "Akhir pekan tidak boleh memicu attention untuk sabaq/mufar harian");
+
+      // 6. formatMufarProgressLabel canonical formatting
+      assert.equal(formatMufarProgressLabel(2, 2, "SELESAI"), "Tercapai (2/2 Juz)");
+      assert.equal(formatMufarProgressLabel(2, 1, "BELUM_SELESAI"), "1/2 Juz");
+      assert.equal(formatMufarProgressLabel(0, 0, "TIDAK_BERLAKU"), "Tidak Berlaku");
+    });
+
+    it("7.2. Identical attention predicate across all layers: canonical item == monitoring item == summary.perluTindakan == halaqohWorkload.perluTindakanCount", async () => {
+      // Ambil data untuk Kabid / ALL halaqoh
+      const santriListRes = await getSantriListForSession(
+        { halaqohId: "ALL", refDate: new Date("2026-09-16T10:00:00.000Z") },
+        sessionKabid,
+        prisma
+      );
+      assert.equal(santriListRes.success, true);
+
+      const monAllRes = await getTahfizhOperationalMonitoring(
+        { halaqohId: "ALL", filter: "ALL", refDate: new Date("2026-09-16T10:00:00.000Z") },
+        sessionKabid,
+        prisma
+      );
+      assert.equal(monAllRes.success, true);
+      assert.ok(monAllRes.data);
+
+      const monFilteredRes = await getTahfizhOperationalMonitoring(
+        { halaqohId: "ALL", filter: "PERLU_TINDAKAN", refDate: new Date("2026-09-16T10:00:00.000Z") },
+        sessionKabid,
+        prisma
+      );
+      assert.equal(monFilteredRes.success, true);
+      assert.ok(monFilteredRes.data);
+
+      // 1. Verifikasi per-santri: canonical item attention == monitoring item attention
+      const monitoringItems: TahfizhMonitoringSantriItem[] = monAllRes.data!.items;
+      for (const canonicalSantri of santriListRes.data) {
+        const found = monitoringItems.find((m) => m.id === canonicalSantri.id);
+        assert.ok(found, `Item monitoring harus ditemukan untuk santri ${canonicalSantri.id}`);
+        assert.equal(
+          canonicalSantri.needsAttention,
+          found.needsAttention,
+          `needsAttention harus identik antara canonical item dan monitoring item untuk ${canonicalSantri.id}`
+        );
+        assert.deepEqual(
+          canonicalSantri.attentionReasons,
+          found.attentionReasons,
+          `attentionReasons harus identik antara canonical item dan monitoring item untuk ${canonicalSantri.id}`
+        );
+        assert.equal(
+          canonicalSantri.mufarProgressLabel,
+          found.mufarProgressLabel,
+          `mufarProgressLabel harus identik untuk ${canonicalSantri.id}`
+        );
+      }
+
+      // 2. Verifikasi summary.perluTindakan == filtered PERLU_TINDAKAN rows
+      const expectedPerluTindakanCount = monAllRes.data!.items.filter((i) => i.needsAttention).length;
+      assert.equal(
+        monAllRes.data!.summary.perluTindakan,
+        expectedPerluTindakanCount,
+        "summary.perluTindakan harus tepat sama dengan jumlah item dengan needsAttention=true"
+      );
+      assert.equal(
+        monFilteredRes.data!.items.length,
+        expectedPerluTindakanCount,
+        "Jumlah item pada filter PERLU_TINDAKAN harus tepat sama dengan summary.perluTindakan"
+      );
+
+      // 3. Verifikasi Kabid halaqoh workload perluTindakanCount == canonical attention rows in that halaqoh
+      assert.ok(monAllRes.data!.halaqohWorkloads);
+      for (const wl of monAllRes.data!.halaqohWorkloads!) {
+        const halaqohSantriInList = santriListRes.data.filter((s) => s.halaqohId === wl.halaqohId);
+        const halaqohNeedsAttentionCount = halaqohSantriInList.filter((s) => s.needsAttention).length;
+        assert.equal(
+          wl.perluTindakanCount,
+          halaqohNeedsAttentionCount,
+          `perluTindakanCount halaqoh ${wl.halaqohNama} (${wl.perluTindakanCount}) harus tepat sama dengan santri needsAttention (${halaqohNeedsAttentionCount})`
+        );
+      }
+    });
+
+    it("7.3. Authoritative dashboard fields required and missing payload never silently becomes false/zero", () => {
+      const dashboardPath = path.resolve(
+        __dirname,
+        "../components/dashboard/dashboard-musyrif-tahfizh.tsx"
+      );
+      const content = fs.readFileSync(dashboardPath, "utf-8");
+
+      // Verifikasi Boolean() casting telah dihilangkan
+      assert.equal(
+        content.includes("Boolean(s.sudahSetorHariIni)"),
+        false,
+        "DILARANG mengubah s.sudahSetorHariIni yang undefined menjadi false via Boolean()"
+      );
+      assert.equal(
+        content.includes("Boolean(s.needsAttention)"),
+        false,
+        "DILARANG mengubah s.needsAttention yang undefined menjadi false via Boolean()"
+      );
+
+      // Verifikasi filter menggunakan strict comparison (=== true dan === false)
+      assert.match(
+        content,
+        /s\.sudahSetorHariIni\s*===\s*true/,
+        "Filter santriSudahSetor harus secara ketat memeriksa s.sudahSetorHariIni === true"
+      );
+      assert.match(
+        content,
+        /s\.sudahSetorHariIni\s*===\s*false/,
+        "Filter santriBelumSetor harus secara ketat memeriksa s.sudahSetorHariIni === false (bukan !s.sudahSetorHariIni)"
+      );
+      assert.match(
+        content,
+        /s\.needsAttention\s*===\s*true/,
+        "Filter perluTindakan harus secara ketat memeriksa s.needsAttention === true"
       );
     });
   });

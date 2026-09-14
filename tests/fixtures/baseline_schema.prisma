@@ -1,3 +1,17 @@
+// ======================================================================================
+// IMMUTABLE HISTORICAL PRE-PRISMA-MIGRATE BASELINE FIXTURE
+// ======================================================================================
+// PERINGATAN KERAS: DILARANG MENGUBAH ATAU MEMPERBARUI FILE INI MENJADI SKEMA TERKINI!
+// File ini adalah snapshot skema historis database sebelum diterapkannya rangkaian migrasi resmi
+// (pre-Prisma-Migrate baseline fixture, commit sumber historis: 8e67b67 sebelum 8da3a0f).
+//
+// File ini digunakan secara eksklusif oleh harness pengujian rantai migrasi:
+//   tests/test-db-manager.ts -> runIsolatedMigrationChainVerification()
+// untuk menginisialisasi database warisan kosong (baseline state), sebelum menjalankan:
+//   `npx prisma migrate deploy --schema prisma/schema.prisma`
+// Pengubahan file ini menjadi schema terbaru akan merusak validitas pembuktian rantai migrasi.
+// ======================================================================================
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")

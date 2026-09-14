@@ -38,7 +38,6 @@ export interface DashboardMusyrifTahfizhSantriItem {
   targetJuz: number | null;
   setoranTerakhir: string;
   setoranTerakhirAt?: string | null;
-  sudahSetorHariIni?: boolean;
   nilaiTerakhir: string;
   poinPelanggaran: number;
   posisiTerakhirHalaman?: number;
@@ -48,14 +47,17 @@ export interface DashboardMusyrifTahfizhSantriItem {
   targetSabaqLabel?: string;
   targetSabaqBulanan?: number | null;
   targetSabaqPekanan?: number | null;
-  completedJuzCanonical?: number;
-  targetDailyMufarJuz?: number;
-  actualDailyMufarJuz?: number;
-  weeklySabaqProgress?: WeeklySabaqProgress;
-  statusTahfizhHariIni?: TahfizhDailyStatus;
-  mufarProgressLabel?: string;
-  needsAttention?: boolean;
-  attentionReasons?: string[];
+
+  // Authoritative operational fields (REQUIRED - strictly authoritative from server)
+  sudahSetorHariIni: boolean;
+  completedJuzCanonical: number;
+  targetDailyMufarJuz: number;
+  actualDailyMufarJuz: number;
+  weeklySabaqProgress: WeeklySabaqProgress;
+  statusTahfizhHariIni: TahfizhDailyStatus;
+  mufarProgressLabel: string;
+  needsAttention: boolean;
+  attentionReasons: string[];
 }
 
 export type TahfizhDashboardFilter =
@@ -116,33 +118,30 @@ export function DashboardMusyrifTahfizh({
   const resolvedSantriList = useMemo(() => {
     return santriList.map((s) => {
       // Authoritative server payload only — zero client domain recalculation / guessing
-      const isSudahSetor = Boolean(s.sudahSetorHariIni);
-      const needsAttention = Boolean(s.needsAttention);
-      const reasons: string[] = s.attentionReasons ? [...s.attentionReasons] : [];
-
+      // Nilai authoritative dipertahankan persis dari server: missing data DILARANG diubah menjadi false atau default bisnis!
       return {
         ...s,
-        sudahSetorHariIni: isSudahSetor,
+        sudahSetorHariIni: s.sudahSetorHariIni,
         completedJuzCanonical: s.completedJuzCanonical,
         targetDailyMufarJuz: s.targetDailyMufarJuz,
         actualDailyMufarJuz: s.actualDailyMufarJuz,
         weeklySabaqProgress: s.weeklySabaqProgress,
         statusTahfizhHariIni: s.statusTahfizhHariIni,
-        needsAttention,
-        attentionReasons: reasons,
+        needsAttention: s.needsAttention,
+        attentionReasons: s.attentionReasons ? [...s.attentionReasons] : [],
         mufarProgressLabel: s.mufarProgressLabel,
       };
     });
   }, [santriList]);
 
-  // Santri yang sudah setor hari ini
+  // Santri yang sudah setor hari ini (hanya jika eksplisit true dari server)
   const santriSudahSetor = useMemo(() => {
-    return resolvedSantriList.filter((s) => s.sudahSetorHariIni);
+    return resolvedSantriList.filter((s) => s.sudahSetorHariIni === true);
   }, [resolvedSantriList]);
 
-  // Santri yang belum setor hari ini
+  // Santri yang belum setor hari ini (hanya jika eksplisit false dari server, BUKAN undefined/missing)
   const santriBelumSetor = useMemo(() => {
-    return resolvedSantriList.filter((s) => !s.sudahSetorHariIni);
+    return resolvedSantriList.filter((s) => s.sudahSetorHariIni === false);
   }, [resolvedSantriList]);
 
   // Statistik Operasional Riil (Predikat 100% konsisten antara count badge dan daftar item)
@@ -150,7 +149,7 @@ export function DashboardMusyrifTahfizh({
   const countSudahSetor = santriSudahSetor.length;
   const countBelumSetor = santriBelumSetor.length;
   const countPerluTindakan = useMemo(() => {
-    return resolvedSantriList.filter((s) => s.needsAttention).length;
+    return resolvedSantriList.filter((s) => s.needsAttention === true).length;
   }, [resolvedSantriList]);
 
   const countSabaqBelumTercapai = useMemo(() => {
@@ -205,7 +204,7 @@ export function DashboardMusyrifTahfizh({
   const activeFilteredList = useMemo(() => {
     switch (selectedFilter) {
       case "PERLU_TINDAKAN":
-        return resolvedSantriList.filter((s) => s.needsAttention);
+        return resolvedSantriList.filter((s) => s.needsAttention === true);
       case "BELUM_SETOR":
         return santriBelumSetor;
       case "SABAQ_BELUM_TERCAPAI":
@@ -783,7 +782,7 @@ export function DashboardMusyrifTahfizh({
 
                             {/* MUFAR */}
                             <span
-                              aria-label={`Status Mufar: ${santri.mufarProgressLabel || statusToday.mufar}`}
+                              aria-label={`Status Mufar: ${santri.mufarProgressLabel || "Data Mufar tidak tersedia"}`}
                               className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
                                 statusToday.mufar === "SELESAI"
                                   ? "bg-emerald-50 text-emerald-700 border-emerald-200"
@@ -792,7 +791,7 @@ export function DashboardMusyrifTahfizh({
                                   : "bg-slate-100 text-slate-600 border-slate-200"
                               }`}
                             >
-                              Mufar: {santri.mufarProgressLabel || (statusToday.mufar === "SELESAI" ? "Selesai" : statusToday.mufar === "BELUM_SELESAI" ? "Belum" : "T/A")}
+                              Mufar: {santri.mufarProgressLabel || "Data Mufar tidak tersedia"}
                             </span>
                           </div>
                         ) : (
