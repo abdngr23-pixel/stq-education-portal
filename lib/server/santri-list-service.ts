@@ -278,25 +278,20 @@ export async function getSantriListForSession(
       const isMufarApplicable = completedJuzCanonical >= 1;
 
       // Status setoran 4 jenis (SABAQ, SABQI, MANZIL, MUFAR) berdasarkan batas hari WITA & volume actual MUFAR
+      // Locked Contract: jumlahJuzMufar adalah satu-satunya source of truth volume MUFAR
       const setoranHariIni = validSetoranList.filter((st) => isTodayWita(st.tanggal, targetRefDate));
       const setoranMufarHariIni = setoranHariIni.filter((st) => st.jenis === "MUFAR");
       const actualDailyMufarJuz = setoranMufarHariIni.reduce((sum, st) => {
-        if (typeof st.jumlahJuzMufar === "number" && st.jumlahJuzMufar > 0) {
+        if (typeof st.jumlahJuzMufar === "number" && !isNaN(st.jumlahJuzMufar) && st.jumlahJuzMufar > 0) {
           return sum + st.jumlahJuzMufar;
         }
-        if (st.catatan) {
-          const match = st.catatan.match(/\[Mufar:\s*(\d+(?:\.\d+)?)\s*Juz/i);
-          if (match && match[1]) {
-            const parsed = parseInt(match[1], 10);
-            if (!isNaN(parsed) && parsed > 0) return sum + parsed;
-          }
-        }
-        return sum + 1;
+        return sum;
       }, 0);
 
       const statusTahfizhHariIni = determineTahfizhDailyStatus({
         validSetoranToday: setoranHariIni,
         posisiTerakhirHalaman,
+        isHalamanTerakhirParsial,
         targetDailyMufarJuz,
         actualDailyMufarJuz,
         isMufarApplicable,

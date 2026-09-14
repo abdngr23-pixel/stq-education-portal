@@ -26,9 +26,8 @@ import {
   WeeklySabaqProgress,
   getCompletedJuzCount,
   getDailyMufarTargetJuz,
-  calculateWeeklySabaqProgress,
+  HalaqohWorkloadSummary,
 } from "@/lib/tahfizh-mufar-tier";
-import { HalaqohWorkloadSummary } from "@/lib/server/tahfizh-monitoring-service";
 
 export interface DashboardMusyrifTahfizhSantriItem {
   id: string;
@@ -38,8 +37,6 @@ export interface DashboardMusyrifTahfizhSantriItem {
   halaqoh: string;
   halaqohId?: string | null;
   pembina?: string;
-  namaWali?: string | null;
-  noHpWali?: string | null;
   capaianJuz: number;
   targetJuz: number | null;
   setoranTerakhir: string;
@@ -68,6 +65,7 @@ export type TahfizhDashboardFilter =
   | "ALL"
   | "PERLU_TINDAKAN"
   | "BELUM_SETOR"
+  | "SABAQ_BELUM_TERCAPAI"
   | "SABAQ_TERTINGGAL"
   | "MUFAR_BELUM_TERPENUHI"
   | "TARGET_BELUM_DITETAPKAN";
@@ -117,7 +115,7 @@ export function DashboardMusyrifTahfizh({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const triggerButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  // Resolusi data operasional terpadu per santri (memastikan backward-compatibility penuh)
+  // Resolusi data operasional santri (murni presentasi dari authoritative server payload)
   const resolvedSantriList = useMemo(() => {
     return santriList.map((s) => {
       const posHalaman = s.posisiTerakhirHalaman || 1;
@@ -131,11 +129,6 @@ export function DashboardMusyrifTahfizh({
           ? s.targetDailyMufarJuz
           : getDailyMufarTargetJuz(completedJuz);
 
-      const weeklyProgress =
-        s.weeklySabaqProgress ||
-        calculateWeeklySabaqProgress(s.targetSabaqPekanan, 0);
-
-      // Status harian 4 komponen
       const isSudahSetor =
         typeof s.sudahSetorHariIni === "boolean"
           ? s.sudahSetorHariIni
@@ -143,54 +136,14 @@ export function DashboardMusyrifTahfizh({
           ? isTodayWita(s.setoranTerakhirAt)
           : false;
 
-      const status: TahfizhDailyStatus = s.statusTahfizhHariIni || {
-        sabaq: isSudahSetor ? "SELESAI" : "BELUM_SELESAI",
-        sabqi: "TIDAK_BERLAKU",
-        manzil: "TIDAK_BERLAKU",
-        mufar:
-          targetDailyMufar > 0
-            ? isSudahSetor
-              ? "SELESAI"
-              : "BELUM_SELESAI"
-            : "TIDAK_BERLAKU",
-        isHariEfektif: true,
-        sudahSetorHariIni: isSudahSetor,
-        actualDailyMufarJuz: s.actualDailyMufarJuz || 0,
-        targetDailyMufarJuz: targetDailyMufar,
-      };
+      // Status harian 4 komponen: murni dari server payload, dilarang fabrikasi status di client
+      const status: TahfizhDailyStatus | undefined = s.statusTahfizhHariIni;
 
+      // Weekly progress: murni dari server payload, dilarang fabrikasi actual=0 di client
+      const weeklyProgress = s.weeklySabaqProgress;
+
+      const needsAttention = Boolean(s.needsAttention);
       const reasons: string[] = s.attentionReasons ? [...s.attentionReasons] : [];
-      if (!s.attentionReasons) {
-        if (weeklyProgress.status === "TARGET_BELUM_DITETAPKAN") {
-          reasons.push("Target Sabaq pekanan belum ditetapkan");
-        } else if (weeklyProgress.status === "BELUM_TERCAPAI") {
-          reasons.push(
-            `Target Sabaq pekanan tertinggal (${weeklyProgress.remaining} hal lagi)`
-          );
-        }
-        if (status.sabaq === "BELUM_SELESAI") {
-          reasons.push("Belum setor Sabaq hari ini");
-        }
-        if (status.mufar === "BELUM_SELESAI") {
-          reasons.push(
-            `Target MUFAR hari ini belum tuntas (${status.actualDailyMufarJuz || 0}/${targetDailyMufar} Juz)`
-          );
-        }
-      }
-
-      const needsAttention =
-        s.needsAttention !== undefined ? s.needsAttention : reasons.length > 0;
-
-      let mufarLabel = s.mufarProgressLabel;
-      if (!mufarLabel) {
-        if (targetDailyMufar <= 0 || status.mufar === "TIDAK_BERLAKU") {
-          mufarLabel = "Tidak Berlaku";
-        } else if (status.mufar === "SELESAI") {
-          mufarLabel = `Tercapai (${status.actualDailyMufarJuz || targetDailyMufar}/${targetDailyMufar} Juz)`;
-        } else {
-          mufarLabel = `${status.actualDailyMufarJuz || 0}/${targetDailyMufar} Juz`;
-        }
-      }
 
       return {
         ...s,
@@ -201,7 +154,7 @@ export function DashboardMusyrifTahfizh({
         statusTahfizhHariIni: status,
         needsAttention,
         attentionReasons: reasons,
-        mufarProgressLabel: mufarLabel,
+        mufarProgressLabel: s.mufarProgressLabel,
       };
     });
   }, [santriList]);
@@ -216,7 +169,7 @@ export function DashboardMusyrifTahfizh({
     return resolvedSantriList.filter((s) => !s.sudahSetorHariIni);
   }, [resolvedSantriList]);
 
-  // Statistik Operasional Riil
+  // Statistik Operasional Riil (Predikat 100% konsisten antara count badge dan daftar item)
   const totalBinaan = resolvedSantriList.length;
   const countSudahSetor = santriSudahSetor.length;
   const countBelumSetor = santriBelumSetor.length;
@@ -224,7 +177,7 @@ export function DashboardMusyrifTahfizh({
     return resolvedSantriList.filter((s) => s.needsAttention).length;
   }, [resolvedSantriList]);
 
-  const countSabaqTertinggal = useMemo(() => {
+  const countSabaqBelumTercapai = useMemo(() => {
     return resolvedSantriList.filter(
       (s) => s.weeklySabaqProgress?.status === "BELUM_TERCAPAI"
     ).length;
@@ -245,7 +198,7 @@ export function DashboardMusyrifTahfizh({
   const percentSetor =
     totalBinaan > 0 ? Math.round((countSudahSetor / totalBinaan) * 100) : 0;
 
-  // Filter tabs definition
+  // Filter tabs definition (Identical predicate with activeFilteredList)
   const filterTabs = [
     { id: "ALL" as const, label: "Semua Santri", count: totalBinaan },
     {
@@ -256,9 +209,9 @@ export function DashboardMusyrifTahfizh({
     },
     { id: "BELUM_SETOR" as const, label: "Belum Setor", count: countBelumSetor },
     {
-      id: "SABAQ_TERTINGGAL" as const,
-      label: "Target Sabaq Tertinggal",
-      count: countSabaqTertinggal,
+      id: "SABAQ_BELUM_TERCAPAI" as const,
+      label: "Target Sabaq Belum Tercapai",
+      count: countSabaqBelumTercapai,
     },
     {
       id: "MUFAR_BELUM_TERPENUHI" as const,
@@ -272,13 +225,14 @@ export function DashboardMusyrifTahfizh({
     },
   ];
 
-  // Filter daftar santri untuk Action Center
+  // Filter daftar santri untuk Action Center (Predikat identik dengan filterTabs)
   const activeFilteredList = useMemo(() => {
     switch (selectedFilter) {
       case "PERLU_TINDAKAN":
         return resolvedSantriList.filter((s) => s.needsAttention);
       case "BELUM_SETOR":
         return santriBelumSetor;
+      case "SABAQ_BELUM_TERCAPAI":
       case "SABAQ_TERTINGGAL":
         return resolvedSantriList.filter(
           (s) => s.weeklySabaqProgress?.status === "BELUM_TERCAPAI"
@@ -293,18 +247,19 @@ export function DashboardMusyrifTahfizh({
         );
       case "ALL":
       default:
-        return santriBelumSetor;
+        return resolvedSantriList;
     }
   }, [selectedFilter, resolvedSantriList, santriBelumSetor]);
 
-  // Filter daftar santri belum setor untuk modal pencarian
+  // Filter daftar santri untuk modal pencarian (berdasarkan filter aktif agar konsisten)
   const filteredModalSantri = useMemo(() => {
-    if (!searchQuery.trim()) return santriBelumSetor;
+    const baseList = activeFilteredList;
+    if (!searchQuery.trim()) return baseList;
     const q = searchQuery.toLowerCase();
-    return santriBelumSetor.filter(
+    return baseList.filter(
       (s) => s.nama.toLowerCase().includes(q) || s.nis.toLowerCase().includes(q)
     );
-  }, [santriBelumSetor, searchQuery]);
+  }, [activeFilteredList, searchQuery]);
 
   // Modal handlers
   const handleOpenModal = (e?: React.MouseEvent<HTMLButtonElement>) => {
@@ -650,7 +605,7 @@ export function DashboardMusyrifTahfizh({
                   <th className="py-3 px-3 text-center">Santri</th>
                   <th className="py-3 px-3 text-center">Perlu Tindakan</th>
                   <th className="py-3 px-3 text-center">Belum Setor</th>
-                  <th className="py-3 px-3 text-center">Sabaq Tertinggal</th>
+                  <th className="py-3 px-3 text-center">Sabaq Belum Tercapai</th>
                   <th className="py-3 px-3 text-center">Mufar Belum Tuntas</th>
                 </tr>
               </thead>
@@ -679,7 +634,7 @@ export function DashboardMusyrifTahfizh({
                       {hlq.belumSetorCount}
                     </td>
                     <td className="py-3 px-3 text-center font-medium text-slate-700">
-                      {hlq.sabaqTertinggalCount}
+                      {hlq.sabaqBelumTercapaiCount}
                     </td>
                     <td className="py-3 px-3 text-center font-medium text-slate-700">
                       {hlq.mufarBelumTerpenuhiCount}
@@ -705,14 +660,24 @@ export function DashboardMusyrifTahfizh({
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
                   <CardTitle className="text-base sm:text-lg font-bold text-slate-900 font-heading">
-                    Santri Belum Setor Hari Ini
+                    {selectedFilter === "ALL"
+                      ? "Semua Santri Binaan"
+                      : selectedFilter === "BELUM_SETOR"
+                      ? "Santri Belum Setor Hari Ini"
+                      : selectedFilter === "PERLU_TINDAKAN"
+                      ? "Santri Perlu Tindakan"
+                      : selectedFilter === "SABAQ_BELUM_TERCAPAI" || selectedFilter === "SABAQ_TERTINGGAL"
+                      ? "Target Sabaq Belum Tercapai"
+                      : selectedFilter === "MUFAR_BELUM_TERPENUHI"
+                      ? "Mufar Belum Tuntas"
+                      : "Target Belum Ditetapkan"}
                   </CardTitle>
                   <Badge variant="orange" size="sm">
-                    {countBelumSetor}
+                    {activeFilteredList.length}
                   </Badge>
                 </div>
 
-                {santriBelumSetor.length > 5 && (
+                {activeFilteredList.length > 5 && (
                   <button
                     type="button"
                     ref={triggerButtonRef}
@@ -720,7 +685,7 @@ export function DashboardMusyrifTahfizh({
                     onClick={(e) => handleOpenModal(e)}
                     className="text-xs font-bold text-[#0E7C3A] hover:text-[#0B642E] flex items-center gap-1 min-h-[44px] px-2"
                   >
-                    Lihat Semua ({countBelumSetor})
+                    Lihat Semua ({activeFilteredList.length})
                     <ArrowRight className="h-3.5 w-3.5" />
                   </button>
                 )}
@@ -796,63 +761,69 @@ export function DashboardMusyrifTahfizh({
                         </div>
 
                         {/* Status 4 Komponen Tahfizh */}
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {/* SABAQ */}
-                          <span
-                            aria-label={`Status Sabaq: ${statusToday?.sabaq}`}
-                            className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
-                              statusToday?.sabaq === "SELESAI"
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                : statusToday?.sabaq === "BELUM_SELESAI"
-                                ? "bg-amber-50 text-amber-700 border-amber-200"
-                                : "bg-slate-100 text-slate-600 border-slate-200"
-                            }`}
-                          >
-                            Sabaq: {statusToday?.sabaq === "SELESAI" ? "Selesai" : statusToday?.sabaq === "BELUM_SELESAI" ? "Belum" : "Libur/Khatam"}
-                          </span>
+                        {statusToday ? (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {/* SABAQ */}
+                            <span
+                              aria-label={`Status Sabaq: ${statusToday.sabaq}`}
+                              className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
+                                statusToday.sabaq === "SELESAI"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  : statusToday.sabaq === "BELUM_SELESAI"
+                                  ? "bg-amber-50 text-amber-700 border-amber-200"
+                                  : "bg-slate-100 text-slate-600 border-slate-200"
+                              }`}
+                            >
+                              Sabaq: {statusToday.sabaq === "SELESAI" ? "Selesai" : statusToday.sabaq === "BELUM_SELESAI" ? "Belum" : "Libur/Khatam"}
+                            </span>
 
-                          {/* SABQI */}
-                          <span
-                            aria-label={`Status Sabqi: ${statusToday?.sabqi}`}
-                            className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
-                              statusToday?.sabqi === "SELESAI"
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                : statusToday?.sabqi === "BELUM_SELESAI"
-                                ? "bg-amber-50 text-amber-700 border-amber-200"
-                                : "bg-slate-100 text-slate-600 border-slate-200"
-                            }`}
-                          >
-                            Sabqi: {statusToday?.sabqi === "SELESAI" ? "Selesai" : statusToday?.sabqi === "BELUM_SELESAI" ? "Belum" : "T/A"}
-                          </span>
+                            {/* SABQI */}
+                            <span
+                              aria-label={`Status Sabqi: ${statusToday.sabqi}`}
+                              className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
+                                statusToday.sabqi === "SELESAI"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  : statusToday.sabqi === "BELUM_SELESAI"
+                                  ? "bg-amber-50 text-amber-700 border-amber-200"
+                                  : "bg-slate-100 text-slate-600 border-slate-200"
+                              }`}
+                            >
+                              Sabqi: {statusToday.sabqi === "SELESAI" ? "Selesai" : statusToday.sabqi === "BELUM_SELESAI" ? "Belum" : "T/A"}
+                            </span>
 
-                          {/* MANZIL */}
-                          <span
-                            aria-label={`Status Manzil: ${statusToday?.manzil}`}
-                            className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
-                              statusToday?.manzil === "SELESAI"
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                : statusToday?.manzil === "BELUM_SELESAI"
-                                ? "bg-amber-50 text-amber-700 border-amber-200"
-                                : "bg-slate-100 text-slate-600 border-slate-200"
-                            }`}
-                          >
-                            Manzil: {statusToday?.manzil === "SELESAI" ? "Selesai" : statusToday?.manzil === "BELUM_SELESAI" ? "Belum" : "T/A"}
-                          </span>
+                            {/* MANZIL */}
+                            <span
+                              aria-label={`Status Manzil: ${statusToday.manzil}`}
+                              className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
+                                statusToday.manzil === "SELESAI"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  : statusToday.manzil === "BELUM_SELESAI"
+                                  ? "bg-amber-50 text-amber-700 border-amber-200"
+                                  : "bg-slate-100 text-slate-600 border-slate-200"
+                              }`}
+                            >
+                              Manzil: {statusToday.manzil === "SELESAI" ? "Selesai" : statusToday.manzil === "BELUM_SELESAI" ? "Belum" : "T/A"}
+                            </span>
 
-                          {/* MUFAR */}
-                          <span
-                            aria-label={`Status Mufar: ${santri.mufarProgressLabel}`}
-                            className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
-                              statusToday?.mufar === "SELESAI"
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                : statusToday?.mufar === "BELUM_SELESAI"
-                                ? "bg-amber-50 text-amber-700 border-amber-200"
-                                : "bg-slate-100 text-slate-600 border-slate-200"
-                            }`}
-                          >
-                            Mufar: {santri.mufarProgressLabel || "T/A"}
-                          </span>
-                        </div>
+                            {/* MUFAR */}
+                            <span
+                              aria-label={`Status Mufar: ${santri.mufarProgressLabel || statusToday.mufar}`}
+                              className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
+                                statusToday.mufar === "SELESAI"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  : statusToday.mufar === "BELUM_SELESAI"
+                                  ? "bg-amber-50 text-amber-700 border-amber-200"
+                                  : "bg-slate-100 text-slate-600 border-slate-200"
+                              }`}
+                            >
+                              Mufar: {santri.mufarProgressLabel || (statusToday.mufar === "SELESAI" ? "Selesai" : statusToday.mufar === "BELUM_SELESAI" ? "Belum" : "T/A")}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 text-[11px] text-slate-400 italic">
+                            <span>Status harian tidak tersedia</span>
+                          </div>
+                        )}
 
                         {/* Progres Target Sabaq Pekanan */}
                         <div className="text-[11px] text-slate-500 flex items-center gap-2 flex-wrap">
@@ -860,18 +831,22 @@ export function DashboardMusyrifTahfizh({
                             Capaian: {santri.capaianJuz} Juz (Hlm {posHalaman})
                           </span>
                           <span>•</span>
-                          {weekly?.status === "TARGET_BELUM_DITETAPKAN" ? (
-                            <span className="text-amber-600 font-semibold">
-                              Target pekanan belum ditetapkan
-                            </span>
-                          ) : weekly?.status === "TERCAPAI" ? (
-                            <span className="text-emerald-700 font-semibold">
-                              Pekan Ini: {weekly.actual}/{weekly.target} Halaman (Tercapai)
-                            </span>
+                          {weekly ? (
+                            weekly.status === "TARGET_BELUM_DITETAPKAN" ? (
+                              <span className="text-amber-600 font-semibold">
+                                Target pekanan belum ditetapkan
+                              </span>
+                            ) : weekly.status === "TERCAPAI" ? (
+                              <span className="text-emerald-700 font-semibold">
+                                Pekan Ini: {weekly.actual}/{weekly.target} Halaman (Tercapai)
+                              </span>
+                            ) : (
+                              <span className="text-slate-600">
+                                Pekan Ini: {weekly.actual}/{weekly.target} Halaman (Target pekanan belum tercapai)
+                              </span>
+                            )
                           ) : (
-                            <span className="text-slate-600">
-                              Pekan Ini: {weekly?.actual || 0}/{weekly?.target || 0} Halaman (Kurang {weekly?.remaining || 0} Hlm)
-                            </span>
+                            <span className="text-slate-400 italic">Target pekanan: data belum tersedia</span>
                           )}
                         </div>
 
@@ -1127,7 +1102,14 @@ export function DashboardMusyrifTahfizh({
                   id="modal-santri-title"
                   className="text-base sm:text-lg font-bold text-slate-900 font-heading"
                 >
-                  Daftar Lengkap Santri Belum Setor ({countBelumSetor})
+                  {selectedFilter === "ALL"
+                    ? "Daftar Semua Santri"
+                    : selectedFilter === "BELUM_SETOR"
+                    ? "Daftar Santri Belum Setor"
+                    : selectedFilter === "PERLU_TINDAKAN"
+                    ? "Daftar Santri Perlu Tindakan"
+                    : "Daftar Santri"}{" "}
+                  ({activeFilteredList.length})
                 </h3>
                 <p id="modal-santri-desc" className="text-xs text-slate-500 mt-0.5">
                   {halaqohName} • Pilih santri untuk memulai input hafalan

@@ -17,6 +17,8 @@ import {
 } from "@/types/auth";
 import { getCurrentUserAction, logoutAction } from "@/app/actions/auth";
 import { getSantriListAction } from "@/app/actions/santri";
+import { getTahfizhOperationalMonitoringAction } from "@/app/actions/tahfizh";
+import { HalaqohWorkloadSummary } from "@/lib/tahfizh-mufar-tier";
 import { getIkhtibarPendingCountAction } from "@/app/actions/ikhtibar";
 import { getHalaqohListAction } from "@/app/actions/halaqoh";
 import { getDaftarKesehatanAction } from "@/app/actions/kesehatan";
@@ -106,6 +108,7 @@ export default function Home() {
   const [currentUserName, setCurrentUserName] = useState<string>("");
   const [serverHalaqohName, setServerHalaqohName] = useState<string | null>(null);
   const [isKepalaBidangTahfidz, setIsKepalaBidangTahfidz] = useState<boolean>(false);
+  const [halaqohWorkloads, setHalaqohWorkloads] = useState<HalaqohWorkloadSummary[] | null>(null);
   const [selectedSantriForPrint, setSelectedSantriForPrint] = useState<DashboardSantriSummary | null>(null);
   const [activeKesehatanRecordsCount, setActiveKesehatanRecordsCount] = useState<number>(0);
   const [halaqohFilter, setHalaqohFilter] = useState<string>("ALL");
@@ -365,6 +368,21 @@ export default function Home() {
     }
   }, []);
 
+  const fetchOperationalMonitoring = useCallback(async (role: Role) => {
+    if (role !== "MT" && !["KS", "ADM", "YAY"].includes(role)) {
+      setHalaqohWorkloads(null);
+      return;
+    }
+    try {
+      const res = await getTahfizhOperationalMonitoringAction();
+      if (res && res.success && res.data?.halaqohWorkloads) {
+        setHalaqohWorkloads(res.data.halaqohWorkloads);
+      }
+    } catch (err) {
+      console.error("Gagal memuat operational monitoring:", err);
+    }
+  }, []);
+
   // Ref stabil untuk selectedRole agar tidak memicu re-render / re-fetch pada popstate listener
   const selectedRoleRef = useRef<Role>(selectedRole);
   useEffect(() => {
@@ -440,6 +458,9 @@ export default function Home() {
         if (isMounted) {
           await fetchSantriData();
           await fetchIkhtibarData();
+          if (session.role === "MT" || ["KS", "ADM", "YAY"].includes(session.role)) {
+            await fetchOperationalMonitoring(session.role);
+          }
         }
 
         if (isMounted) {
@@ -783,6 +804,8 @@ export default function Home() {
               setSelectedSantriIdForTahfizh(undefined);
               handleSelectTab("tahfizh");
             }}
+            isKepalaBidangTahfidz={isKepalaBidangTahfidz}
+            halaqohWorkloads={halaqohWorkloads}
           />
         );
 
@@ -985,6 +1008,8 @@ export default function Home() {
               setSelectedSantriIdForTahfizh(santriId);
               handleSelectTab("tahfizh");
             }}
+            isKepalaBidangTahfidz={isKepalaBidangTahfidz}
+            halaqohWorkloads={halaqohWorkloads}
           />
         );
     }

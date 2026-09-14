@@ -6,13 +6,15 @@ import { UserSession } from "@/types/auth";
 import { getSantriListForSession } from "@/lib/server/santri-list-service";
 import { getIkhtibarPendingCountForSession } from "@/lib/server/ikhtibar-pending-service";
 import { isHariEfektifTahfizh, TahfizhDailyStatus } from "@/lib/tahfizh-status";
-import { WeeklySabaqProgress } from "@/lib/tahfizh-mufar-tier";
+import { WeeklySabaqProgress, HalaqohWorkloadSummary } from "@/lib/tahfizh-mufar-tier";
+export type { HalaqohWorkloadSummary };
 
 export type TahfizhOperationalFilter =
   | "ALL"
   | "PERLU_TINDAKAN"
   | "BELUM_SETOR"
-  | "SABAQ_TERTINGGAL"
+  | "SABAQ_BELUM_TERCAPAI"
+  | "SABAQ_TERTINGGAL" // Alias for backward compatibility
   | "MUFAR_BELUM_TERPENUHI"
   | "TARGET_BELUM_DITETAPKAN";
 
@@ -24,8 +26,6 @@ export interface TahfizhMonitoringSantriItem {
   halaqohId: string | null;
   halaqoh: string;
   pembina: string;
-  namaWali?: string;
-  noHpWali?: string;
   posisiTerakhirHalaman: number;
   capaianJuz: number;
   completedJuzCanonical: number;
@@ -47,22 +47,11 @@ export interface TahfizhMonitoringSummary {
   sudahSetor: number;
   belumSetor: number;
   perluTindakan: number;
-  targetSabaqTertinggal: number;
+  targetSabaqBelumTercapai: number;
   mufarBelumTerpenuhi: number;
   targetBelumDitetapkan: number;
-  antreanIkhtibar: number;
-  antreanIzin: number;
-}
-
-export interface HalaqohWorkloadSummary {
-  halaqohId: string;
-  halaqohNama: string;
-  pembinaNama: string;
-  totalSantri: number;
-  perluTindakanCount: number;
-  belumSetorCount: number;
-  sabaqTertinggalCount: number;
-  mufarBelumTerpenuhiCount: number;
+  antreanIkhtibar: number | null;
+  antreanIkhtibarError?: string | null;
 }
 
 export interface TahfizhOperationalMonitoringResult {
@@ -173,14 +162,14 @@ export async function getTahfizhOperationalMonitoring(
     const allItems: TahfizhMonitoringSantriItem[] = santriListRes.data.map((s) => {
       const reasons: string[] = [];
 
-      // Evaluasi Target Sabaq Pekanan
+      // Evaluasi Target Sabaq Pekanan: Target belum ditetapkan memicu perhatian operasional
       if (s.weeklySabaqProgress.status === "TARGET_BELUM_DITETAPKAN") {
         reasons.push("Target Sabaq pekanan belum ditetapkan");
-      } else if (s.weeklySabaqProgress.status === "BELUM_TERCAPAI") {
-        reasons.push(`Target Sabaq pekanan tertinggal (${s.weeklySabaqProgress.remaining} hal lagi)`);
       }
+      // CATATAN: BELUM_TERCAPAI pada pekan berjalan adalah status progres,
+      // bukan kegagalan otomatis hari ini karena tidak ada pacing rule harian resmi.
 
-      // Evaluasi Harian pada Hari Efektif
+      // Evaluasi Kewajiban Harian pada Hari Efektif (Senin–Jumat WITA)
       if (isEffective) {
         if (s.statusTahfizhHariIni.sabaq === "BELUM_SELESAI") {
           reasons.push("Belum setor Sabaq hari ini");
@@ -212,8 +201,6 @@ export async function getTahfizhOperationalMonitoring(
         halaqohId: s.halaqohId,
         halaqoh: s.halaqoh,
         pembina: s.pembina,
-        namaWali: s.namaWali,
-        noHpWali: s.noHpWali,
         posisiTerakhirHalaman: s.posisiTerakhirHalaman,
         capaianJuz: s.capaianJuz,
         completedJuzCanonical: s.completedJuzCanonical,
@@ -231,15 +218,18 @@ export async function getTahfizhOperationalMonitoring(
       };
     });
 
-    // 5. Antrean Ikhtibar
-    let antreanIkhtibar = 0;
+    // 5. Antrean Ikhtibar (Tanpa mengubah error menjadi 0)
+    let antreanIkhtibar: number | null = null;
+    let antreanIkhtibarError: string | null = null;
     try {
       const ikhtibarRes = await getIkhtibarPendingCountForSession(session, db);
       if (ikhtibarRes.success && typeof ikhtibarRes.count === "number") {
         antreanIkhtibar = ikhtibarRes.count;
+      } else {
+        antreanIkhtibarError = ikhtibarRes.error || "Gagal memuat antrean ikhtibar";
       }
-    } catch {
-      antreanIkhtibar = 0;
+    } catch (err: unknown) {
+      antreanIkhtibarError = err instanceof Error ? err.message : "Error ikhtibar";
     }
 
     // 6. Hitung Summary Metrics (Basis Seluruh Santri pada Scope Aktif)
@@ -247,7 +237,7 @@ export async function getTahfizhOperationalMonitoring(
     const sudahSetor = allItems.filter((i) => i.sudahSetorHariIni).length;
     const belumSetor = totalSantri - sudahSetor;
     const perluTindakan = allItems.filter((i) => i.needsAttention).length;
-    const targetSabaqTertinggal = allItems.filter(
+    const targetSabaqBelumTercapai = allItems.filter(
       (i) => i.weeklySabaq.status === "BELUM_TERCAPAI"
     ).length;
     const mufarBelumTerpenuhi = allItems.filter(
@@ -262,14 +252,14 @@ export async function getTahfizhOperationalMonitoring(
       sudahSetor,
       belumSetor,
       perluTindakan,
-      targetSabaqTertinggal,
+      targetSabaqBelumTercapai,
       mufarBelumTerpenuhi,
       targetBelumDitetapkan,
       antreanIkhtibar,
-      antreanIzin: 0,
+      antreanIkhtibarError,
     };
 
-    // 7. Filter items sesuai tab operasional jika diberikan
+    // 7. Filter items sesuai tab operasional jika diberikan (Predicate 100% konsisten)
     const activeFilter = (params?.filter || "ALL").toUpperCase();
     let filteredItems = allItems;
 
@@ -280,6 +270,7 @@ export async function getTahfizhOperationalMonitoring(
       case "BELUM_SETOR":
         filteredItems = allItems.filter((i) => !i.sudahSetorHariIni);
         break;
+      case "SABAQ_BELUM_TERCAPAI":
       case "SABAQ_TERTINGGAL":
         filteredItems = allItems.filter((i) => i.weeklySabaq.status === "BELUM_TERCAPAI");
         break;
@@ -316,7 +307,7 @@ export async function getTahfizhOperationalMonitoring(
           totalSantri: santriHalaqoh.length,
           perluTindakanCount: santriHalaqoh.filter((s) => s.needsAttention).length,
           belumSetorCount: santriHalaqoh.filter((s) => !s.sudahSetorHariIni).length,
-          sabaqTertinggalCount: santriHalaqoh.filter(
+          sabaqBelumTercapaiCount: santriHalaqoh.filter(
             (s) => s.weeklySabaq.status === "BELUM_TERCAPAI"
           ).length,
           mufarBelumTerpenuhiCount: santriHalaqoh.filter(

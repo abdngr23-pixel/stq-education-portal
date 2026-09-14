@@ -631,6 +631,7 @@ describe("PR #7 — Tahfizh Operational Monitoring & Action Center (Comprehensiv
       // Verifikasi metrik kerja (hanya angka perhatian/workload)
       assert.ok(typeof workloads[0].perluTindakanCount === "number");
       assert.ok(typeof workloads[0].belumSetorCount === "number");
+      assert.ok(typeof workloads[0].sabaqBelumTercapaiCount === "number");
     });
 
     it("5.7. Summary metrics matematis konsisten dengan detail baris", async () => {
@@ -692,6 +693,152 @@ describe("PR #7 — Tahfizh Operational Monitoring & Action Center (Comprehensiv
       assert.ok(
         santri2?.attentionReasons.some((r) => r.includes("Target Sabaq pekanan belum ditetapkan"))
       );
+    });
+  });
+
+  // =========================================================================
+  // KELOMPOK 6: REMEDIATION ROUND 1 SPECIFIC GUARDS
+  // =========================================================================
+  describe("6. Remediation Round 1 Authoritative Rules", () => {
+    it("6.1. Structured MUFAR Only: jumlahJuzMufar null MUST NEVER yield +1 volume (fail-closed = 0)", () => {
+      const status = determineTahfizhDailyStatus({
+        refDate: new Date("2026-09-16T10:00:00.000Z"),
+        validSetoranToday: [
+          { jenis: "MUFAR", status: "AKTIF", jumlahJuzMufar: null },
+        ],
+        posisiTerakhirHalaman: 100,
+        targetDailyMufarJuz: 2,
+        isMufarApplicable: true,
+      });
+      assert.equal(status.actualDailyMufarJuz, 0, "MUFAR dengan jumlahJuzMufar null HARUS bernilai actual 0, dilarang fallback +1");
+      assert.equal(status.mufar, "BELUM_SELESAI");
+    });
+
+    it("6.2. No Catatan Parser: [Mufar: 3 Juz ...] di catatan diabaikan sepenuhnya", () => {
+      const statusWithCatatan = determineTahfizhDailyStatus({
+        refDate: new Date("2026-09-16T10:00:00.000Z"),
+        validSetoranToday: [
+          { jenis: "MUFAR", status: "AKTIF", jumlahJuzMufar: null, catatan: "[Mufar: 3 Juz, Juz 1-3]" },
+        ],
+        posisiTerakhirHalaman: 100,
+        targetDailyMufarJuz: 2,
+        isMufarApplicable: true,
+      });
+      assert.equal(statusWithCatatan.actualDailyMufarJuz, 0, "Catatan lama dilarang diparse sebagai volume actual");
+
+      const statusWithStructured = determineTahfizhDailyStatus({
+        refDate: new Date("2026-09-16T10:00:00.000Z"),
+        validSetoranToday: [
+          { jenis: "MUFAR", status: "AKTIF", jumlahJuzMufar: 2, catatan: "[Mufar: 5 Juz]" },
+        ],
+        posisiTerakhirHalaman: 100,
+        targetDailyMufarJuz: 2,
+        isMufarApplicable: true,
+      });
+      assert.equal(statusWithStructured.actualDailyMufarJuz, 2, "Hanya jumlahJuzMufar terstruktur yang menjadi source of truth");
+      assert.equal(statusWithStructured.mufar, "SELESAI");
+    });
+
+    it("6.3. Old TargetSantri 5/20 never used as daily MUFAR volume", () => {
+      // Santri dengan completedJuz = 12 -> target daily mufar = 3 Juz/hari
+      // TargetSantri frequency 5/20 tidak boleh dijadikan daily volume target
+      const completedJuz = 12;
+      const canonicalTarget = getDailyMufarTargetJuz(completedJuz);
+      assert.equal(canonicalTarget, 3, "Target daily MUFAR untuk 12 Juz adalah 3 Juz/hari");
+
+      const status = determineTahfizhDailyStatus({
+        refDate: new Date("2026-09-16T10:00:00.000Z"),
+        validSetoranToday: [
+          { jenis: "MUFAR", status: "AKTIF", jumlahJuzMufar: 3 },
+        ],
+        posisiTerakhirHalaman: 242,
+        targetDailyMufarJuz: canonicalTarget,
+        isMufarApplicable: true,
+      });
+      assert.equal(status.mufar, "SELESAI", "Status selesai karena actual 3 memenuhi daily target canonical 3");
+    });
+
+    it("6.4. ALL filter count and list consistency: badge count === rendered list count", async () => {
+      const resAll = await getTahfizhOperationalMonitoring(
+        { filter: "ALL" },
+        sessionMT1,
+        prisma
+      );
+      assert.equal(resAll.success, true);
+      assert.equal(
+        resAll.data!.items.length,
+        resAll.data!.summary.totalSantri,
+        "ALL filter list length HARUS sama dengan summary totalSantri"
+      );
+    });
+
+    it("6.5. Ordinary MT Isolation: tidak dapat mengakses data santri lintas-halaqoh", async () => {
+      // MT 1 hanya membina Halaqoh 1 (2 santri)
+      const res = await getTahfizhOperationalMonitoring(
+        {},
+        sessionMT1,
+        prisma
+      );
+      assert.equal(res.success, true);
+      assert.equal(res.data!.isKabidOrManagerial, false);
+      assert.equal(res.data!.items.length, 2);
+      assert.equal(res.data!.halaqohWorkloads, null, "Ordinary MT tidak boleh menerima halaqohWorkloads lintas halaqoh");
+
+      // Coba akses Halaqoh 2 milik MT 2 -> Ditolak
+      const resCross = await getTahfizhOperationalMonitoring(
+        { halaqohId: HALAQOH_2_ID },
+        sessionMT1,
+        prisma
+      );
+      assert.equal(resCross.success, false);
+      assert.match(resCross.message || "", /Akses Ditolak/i);
+    });
+
+    it("6.6. Controlled error vs real zero: antreanIzin dihapus dan antreanIkhtibar error tidak menjadi 0 palsu", async () => {
+      const res = await getTahfizhOperationalMonitoring(
+        {},
+        sessionMT1,
+        prisma
+      );
+      assert.equal(res.success, true);
+      // Field antreanIzin dilarang ada bila bernilai fake 0
+      assert.equal("antreanIzin" in res.data!.summary, false, "antreanIzin tidak boleh ada sebagai fake zero");
+      // antreanIkhtibar bernilai angka riil jika sukses (misal 0), bukan fake hardcode
+      assert.ok(
+        res.data!.summary.antreanIkhtibar === null ||
+        typeof res.data!.summary.antreanIkhtibar === "number"
+      );
+    });
+
+    it("6.7. Isolated Migration Database Schema Check: jumlah_juz_mufar = INTEGER NULL", async () => {
+      const columns: Array<{ column_name: string; data_type: string; is_nullable: string }> =
+        await prisma.$queryRawUnsafe(`
+          SELECT column_name, data_type, is_nullable
+          FROM information_schema.columns
+          WHERE table_name = 'setoran_tahfizh' AND column_name = 'jumlah_juz_mufar';
+        `);
+
+      assert.equal(columns.length, 1, "Kolom jumlah_juz_mufar harus ada pada tabel setoran_tahfizh");
+      assert.equal(columns[0].data_type, "integer", "Tipe data kolom harus integer");
+      assert.equal(columns[0].is_nullable, "YES", "Kolom jumlah_juz_mufar harus nullable (INTEGER NULL)");
+    });
+
+    it("6.8. Weekly Sabaq Terminology: BELUM_TERCAPAI bukan kegagalan otomatis attention hari ini", () => {
+      // Periksa perhitungan weekly progress
+      const weekly = calculateWeeklySabaqProgress(5, 3);
+      assert.equal(weekly.status, "BELUM_TERCAPAI");
+
+      // Status daily sabaq hari ini sudah setor
+      const dailyStatus = determineTahfizhDailyStatus({
+        refDate: new Date("2026-09-16T10:00:00.000Z"),
+        validSetoranToday: [
+          { jenis: "SABAQ", status: "AKTIF" },
+        ],
+        posisiTerakhirHalaman: 50,
+        targetDailyMufarJuz: 0,
+        isMufarApplicable: false,
+      });
+      assert.equal(dailyStatus.sabaq, "SELESAI");
     });
   });
 });

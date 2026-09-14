@@ -119,3 +119,15 @@ export function calculateWeeklySabaqProgress(
     status: isTercapai ? "TERCAPAI" : "BELUM_TERCAPAI",
   };
 }
+
+export interface HalaqohWorkloadSummary {
+  halaqohId: string;
+  halaqohNama: string;
+  pembinaNama: string;
+  totalSantri: number;
+  perluTindakanCount: number;
+  belumSetorCount: number;
+  sabaqBelumTercapaiCount: number;
+  sabaqTertinggalCount?: number;
+  mufarBelumTerpenuhiCount: number;
+}

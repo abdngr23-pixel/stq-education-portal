@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { DashboardMusyrifTahfizh } from "@/components/dashboard/dashboard-musyrif-tahfizh";
 import { TahfizhDailyStatus } from "@/lib/tahfizh-status";
-import { WeeklySabaqProgress } from "@/lib/tahfizh-mufar-tier";
+import { WeeklySabaqProgress, HalaqohWorkloadSummary } from "@/lib/tahfizh-mufar-tier";
 
 export interface DashboardSantriSummary {
   id: string;
@@ -80,6 +80,8 @@ export interface BerandaModuleProps {
   onNavigate: (tab: AppNavId) => void;
   onSelectSantriForSetoran?: (santriId: string) => void;
   onOpenSetoranQuick?: () => void;
+  isKepalaBidangTahfidz?: boolean;
+  halaqohWorkloads?: HalaqohWorkloadSummary[] | null;
 }
 
 export function BerandaModule({
@@ -95,9 +97,12 @@ export function BerandaModule({
   onNavigate,
   onSelectSantriForSetoran,
   onOpenSetoranQuick,
+  isKepalaBidangTahfidz = false,
+  halaqohWorkloads = null,
 }: BerandaModuleProps) {
   // Role MT dialihkan ke Dashboard Musyrif Tahfizh terfokus (Pilot UI/UX B2)
   if (userRole === "MT") {
+    const isKabidOrManagerial = Boolean(isKepalaBidangTahfidz);
     return (
       <DashboardMusyrifTahfizh
         santriList={santriList}
@@ -110,6 +115,8 @@ export function BerandaModule({
         santriSakitCount={santriSakitCount}
         onNavigate={onNavigate}
         onSelectSantriId={onSelectSantriForSetoran}
+        isKabidOrManagerial={isKabidOrManagerial}
+        halaqohWorkloads={halaqohWorkloads}
       />
     );
   }

@@ -49,10 +49,7 @@ export interface DetermineTahfizhDailyStatusParams {
   refDate?: Date;
   validSetoranToday: SetoranSummaryItem[];
   posisiTerakhirHalaman: number;
-  targetMufar?: {
-    targetBulanan?: number | null;
-    targetPekanan?: number | null;
-  } | null;
+  isHalamanTerakhirParsial?: boolean;
   targetDailyMufarJuz?: number | null;
   actualDailyMufarJuz?: number | null;
   isMufarApplicable?: boolean;
@@ -95,42 +92,43 @@ export function determineTahfizhDailyStatus(
   // Cek apakah santri sudah khatam halaman 604
   const isKhatam = (params.posisiTerakhirHalaman || 0) >= 604;
 
-  // Hitung volume actual MUFAR hari ini jika tidak diberikan eksplisit
+  // Hitung volume actual MUFAR hari ini: LOCKED CONTRACT jumlahJuzMufar adalah satu-satunya source of truth
+  // Record MUFAR dengan jumlahJuzMufar null TIDAK BOLEH difabrikasi sebagai 1 juz atau diparse dari catatan
   const calculatedActualMufar = activeSetoran
     .filter((s) => s.jenis === "MUFAR")
     .reduce((sum, s) => {
-      if (typeof s.jumlahJuzMufar === "number" && s.jumlahJuzMufar > 0) {
+      if (typeof s.jumlahJuzMufar === "number" && !isNaN(s.jumlahJuzMufar) && s.jumlahJuzMufar > 0) {
         return sum + s.jumlahJuzMufar;
       }
-      if (s.catatan) {
-        const match = s.catatan.match(/\[Mufar:\s*(\d+(?:\.\d+)?)\s*Juz/i);
-        if (match && match[1]) {
-          const parsed = parseInt(match[1], 10);
-          if (!isNaN(parsed) && parsed > 0) return sum + parsed;
-        }
-      }
-      return sum + 1;
+      return sum;
     }, 0);
 
   const actualDailyMufarJuz = params.actualDailyMufarJuz !== undefined && params.actualDailyMufarJuz !== null
     ? params.actualDailyMufarJuz
     : calculatedActualMufar;
 
-  // Target MUFAR harian
-  const targetDailyMufarJuz = params.targetDailyMufarJuz !== undefined && params.targetDailyMufarJuz !== null
-    ? params.targetDailyMufarJuz
-    : (params.isMufarApplicable === false
-        ? 0
-        : (params.targetMufar && ((params.targetMufar.targetBulanan ?? 0) > 0 || (params.targetMufar.targetPekanan ?? 0) > 0)
-            ? 1
-            : (params.isMufarApplicable === true
-                ? (params.posisiTerakhirHalaman > 0 ? (getDailyMufarTargetJuz(getCompletedJuzCount(params.posisiTerakhirHalaman)) || 1) : 1)
-                : 0)));
+  // Target MUFAR harian kanonikal: HANYA berasal dari completed Juz Mushaf Madinah & Tier Resmi
+  // TargetSantri frequency (5/20 kali) TIDAK BOLEH dijadikan volume juz harian
+  const completedJuz = getCompletedJuzCount(
+    params.posisiTerakhirHalaman || 0,
+    params.isHalamanTerakhirParsial
+  );
+  const canonicalDailyMufarTarget = getDailyMufarTargetJuz(completedJuz);
 
-  // Applicability MUFAR
-  const isMufarApplicable = params.isMufarApplicable !== undefined
-    ? params.isMufarApplicable
-    : targetDailyMufarJuz > 0;
+  const targetDailyMufarJuz =
+    params.targetDailyMufarJuz !== undefined && params.targetDailyMufarJuz !== null
+      ? params.targetDailyMufarJuz
+      : (params.isMufarApplicable === false
+          ? 0
+          : (params.isMufarApplicable === true
+              ? (canonicalDailyMufarTarget || 1)
+              : canonicalDailyMufarTarget));
+
+  // Applicability MUFAR: hanya berlaku jika target harian > 0
+  const isMufarApplicable =
+    params.isMufarApplicable !== undefined
+      ? params.isMufarApplicable
+      : targetDailyMufarJuz > 0;
 
   if (!isEffective) {
     // Akhir pekan (Sabtu & Ahad): Bukan hari pokok monitoring Tahfizh
