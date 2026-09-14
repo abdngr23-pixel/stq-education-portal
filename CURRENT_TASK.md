@@ -1,70 +1,91 @@
 # CURRENT TASK — STQ EDUCATION PORTAL
 
-## 1. Tujuan Saat Ini
-PR #6 — Tahfizh Data Integrity & Target Operationalization untuk STQ Education Portal (`abdngr23-pixel/stq-education-portal`):
-1. **Eliminasi Total Mock Generator & Isolasi Fixtures**:
-   - Menghapus `generateLaporanBulananMock()`, `MASTER_HALAQOH_LIST`, dan `MASTER_SANTRI_57` dari seluruh library produksi (`lib/laporan-bulanan.ts`) dan UI komponen.
-   - Seluruh mock data dipindahkan ke `tests/fixtures/laporan-bulanan-fixtures.ts` khusus untuk pengujian regresi.
-   - Bila data gagal dimuat atau halaqoh tidak ditemukan, sistem mengembalikan error jujur (*honest error card*) disertai tombol retry "Coba Lagi" tanpa pernah menampilkan data sintetis.
-2. **Eliminasi Total Old Cumulative Fallback Baseline**:
-   - Formula resmi: `modalHafalanAwalHalaman + SABAQ sah setelah tanggalBaselineTahfizh` adalah satu-satunya formula hafalan resmi.
-   - Jika `tanggalBaselineTahfizh` bernilai null / belum ditetapkan: sistem TIDAK menjumlahkan seluruh SABAQ historis dan TIDAK menganggapnya sebagai post-baseline (`tambahanSabaq: 0`, `totalHafalan: modalAwal`). Berlaku seragam di `app/actions/tahfizh.ts`, `lib/server/santri-list-service.ts`, dan `app/actions/laporan-bulanan.ts`.
-   - Santri dengan baseline tengah bulan: setoran SABAQ sebelum tanggal baseline dieksklusi dari perhitungan capaian bulanan.
-   - Aplikabilitas SABQI mensyaratkan SABAQ sah terjadi pada/setelah `max(startOfWeek, baselineDate)`.
-3. **Pemisahan Domain PR #6 & PR #7 (Decoupling Target Mufar)**:
-   - PR #6 tidak memvalidasi atau memaksakan formula dinamis 1–5 juz/hari (kewenangan PR #7).
-   - Seluruh pemanggilan `hitungTargetMufar()` dihapus dari `app/actions/laporan-bulanan.ts`, `components/dashboard/rekap-laporan-bulanan.tsx`, dan `components/modules/tahfizh-module.tsx`.
-   - Menggunakan target resmi santri dari `TargetSantri` (atau state `"Target belum ditetapkan"` bila null).
-4. **Validasi Server-Side Ketat Target Santri & Laporan Bulanan**:
-   - `upsertTargetSantriAction()`: validasi bulan (1–12), tahunAjaran `YYYY/YYYY` (+1 tahun), target finit > 0, SABAQ kelipatan 0.5, SABQI/MANZIL/MUFAR bilangan bulat, ambang kepatuhan 0–100.
-   - `getLaporanBulananHalaqohAction()`: fail-closed saat parameter bulan atau tahun ajaran corrupt (tanpa silent fallback).
-5. **Pengetatan ABAC Portal Wali Lintas-Domain (`app/actions/portal-wali.ts`)**:
-   - `getRingkasanAnakAction`: WS/ST dibatasi ke anak sendiri (`session.santriId`).
-   - Pembina MT/PH wajib terhubung `staffId` dan hanya berwenang mengakses santri di halaqoh binaan sendiri (tolak cross-halaqoh).
-   - Flag `isKepalaBidangTahfidz` tidak memberikan hak manajerial lintas-domain (kesehatan, pelanggaran, mapel). Hak manajerial global lintas-domain hanya untuk KS, ADM, YAY.
-   - Role non-authorized (MK, GMR) ditolak (*default-deny*).
-6. **Konsistensi Kebijakan Default Reward/Sanksi**:
-   - `minPersenTargetBulanan` diselaraskan ke default resmi 100.0% (sesuai schema `@default(100.0)`) di `getKebijakanRewardSanksiAction()`, `previewFinalisasiBulananAction()`, dan `reward-evaluasi-tab.tsx`.
-7. **Penyelarasan Nilai Terakhir Rapor**:
-   - `app/page.tsx` line 793 diperbaiki dari hardcoded `"MUMTAZ"` menjadi `santri.nilaiTerakhir || "Belum ada data"`.
-8. **Eksklusi Status `DIBATALKAN` & Separasi 4 Jenis Setoran 3-State**:
-   - Status `DIBATALKAN` dieksklusi seragam dari seluruh agregasi capaian, laporan bulanan, status harian, dan preview finalisasi bulanan.
-   - Status 3-state (`SELESAI`, `BELUM_SELESAI`, `TIDAK_BERLAKU`) dievaluasi per jenis setoran berbasis hari efektif Senin–Jumat WITA.
+## 1. Status Terkini: PR #6 — Draft Dibuka & Code Audit PASS
 
-## 2. Baseline Commit & Git Working State
+PR #6 — Tahfizh Data Integrity & Target Operationalization (`abdngr23-pixel/stq-education-portal`):
+* **Draft PR Status:** Draft PR #6 telah resmi dibuka pada branch `review/tahfizh-data-integrity-targets` menuju `main`.
+* **PR Link:** [PR #6 — Tahfizh Data Integrity & Target Operationalization](https://github.com/abdngr23-pixel/stq-education-portal/pull/6)
+* **Independent ChatGPT Final Code Audit:** **PASS** (Seluruh scope fungsional, integritas data, dan keamanan ABAC telah disetujui).
+* **Current Status:** Menunggu eksekusi/verifikasi migrasi skema produksi (`TargetSantri.targetPekanan` dan `targetBulanan` Double Precision) serta otorisasi final merge.
+
+---
+
+## 2. Riwayat Commit & State Git
+
 * **Repository:** `abdngr23-pixel/stq-education-portal`
-* **Baseline Commit (main):** `8ed8688ba9d6483d0d223aae976cac8a27ca7c01`
-* **Audited HEAD Commit 1:** `d1655650386e79a28b7d6231533dbdaac11d7c8c`
-* **Audited HEAD Commit 2:** `b2f20cbd60f8231cb93939c2dc8c5708bcc04cf8`
-* **Working Branch:** `review/tahfizh-data-integrity-targets` (Bekerja pada branch yang sama, commit koreksi audit ke-3, TIDAK auto-merge, TIDAK membuka PR sebelum re-audit ChatGPT)
+* **Target PR Base (`main`):** `8ed8688ba9d6483d0d223aae976cac8a27ca7c01`
+* **Branch:** `review/tahfizh-data-integrity-targets`
+* **Approved Code HEAD:** `79e4c1d6d3f7c3122ab2a42d5d3cff096d4b07c7`
 
-## 3. Perubahan Berkas PR #6 (Commit 3 Final Remediation)
-### File Baru
-* `tests/fixtures/laporan-bulanan-fixtures.ts` (Isolasi MASTER_HALAQOH_LIST, MASTER_SANTRI_57, generateLaporanBulananMock, hitungTargetMufarLegacy khusus test fixtures)
+### Jejak Commit PR #6:
+1. `d165565` — Commit 1: `feat(tahfizh): operationalize targets, eliminate mock data, and enforce data integrity`
+2. `b2f20cb` — Commit 2: `fix(tahfizh): audit remediation for ABAC, fractional targets, SABQI applicability, and WITA boundaries`
+3. `cdd3f33` — Commit 3: `fix(tahfizh): final audit remediation for baseline fallback, static fixtures, and ABAC portal wali`
+4. `b3b5d58` — Commit 4: `fix(tahfizh): final closeout patch for baseline progress, sabaqi boundaries, and read ABAC`
+5. `06ac467` — Commit 5: `fix(security): secure halaqoh read actions, remove static halaqoh fallbacks, and make report period dynamic`
+6. `79e4c1d` — Pre-Merge Polish: `fix(tahfizh): pre-merge polish for role-aware halaqoh fetch, stale report prevention, and DB error handling`
 
-### File Dimodifikasi
-* `lib/laporan-bulanan.ts` (Pembersihan static mock fixtures, pembersihan hitungReferensiSabaqiKumulatif dari compatibility branches, hanya mengandalkan riil setoranSabaqList)
-* `lib/server/santri-list-service.ts` (Eliminasi total old cumulative fallback bila baseline null, pengetatan SABAQ pekan berjalan terhadap baselineDate, dukungan injection refDate untuk determinisme test)
-* `app/actions/tahfizh.ts` (getSantriKumulatifHalamanAction: eliminasi fallback kumulatif bila baseline null)
-* `app/actions/laporan-bulanan.ts` (Eksklusi sabaq sebelum baseline pada baseline tengah bulan, eliminasi hitungTargetMufar dan target harian juz label, validasi server-side input target santri dan fail-closed laporan bulanan)
-* `components/dashboard/rekap-laporan-bulanan.tsx` (Eliminasi static fixture imports, resolusi halaqoh prop fail-closed, label generic Kepala Bidang Tahfidz, pembersihan target mufar)
-* `components/modules/tahfizh-module.tsx` (Eliminasi hitungTargetMufar dan dynamic mufar scale 1-5 juz/hari, sinkronisasi murni target terdaftar santri)
-* `app/actions/portal-wali.ts` (ABAC ketat getRingkasanAnakAction: MT/PH binaan only, fail-closed no staffId, no cross-domain bypass for Kabid)
-* `app/actions/reward-sanksi.ts` & `components/dashboard/reward-evaluasi-tab.tsx` (Penyelarasan canonical default minPersenTargetBulanan = 100.0%)
-* `app/page.tsx` (Perbaikan nilaiTerakhir rapor dari hardcoded MUMTAZ menjadi dinamis)
-* `tests/laporan-bulanan.test.ts` (Update import fixtures dan pengetatan uji referensi sabaqi murni riil)
-* `tests/tahfizh-data-integrity-targets.test.ts` (Perbaikan determinisme Test #29 dengan refDate, penambahan 7 skenario pengujian 37 s.d. 43)
-* `scripts/verify-halaqoh-filter.ts` & `scripts/verify-kabid-mufar-sabaqi.ts` (Update import fixtures)
-* `CURRENT_TASK.md` (Dokumentasi audit remediation Commit 3)
+---
 
-## 4. Status Quality Gates Lokal
+## 3. Ringkasan Perubahan Utama PR #6
+
+1. **Penghapusan Fake/Mock Operational Tahfizh**:
+   - Menghapus fallback array statis, mock santri, mock setoran, dan mock target pada seluruh jalur produksi.
+   - Semua data santri, halaqoh, setoran, dan progress di-resolve murni dari PostgreSQL.
+2. **Baseline Tahfizh Authoritative**:
+   - Boundary resmi: `modalHafalanAwalHalaman + SABAQ sah >= tanggalBaselineTahfizh`.
+   - Jika `tanggalBaselineTahfizh` null: sistem fail-closed (`tambahanSabaq: 0`, `totalHafalan: modalAwal`) tanpa aggregate SABAQ historis.
+   - Setoran sebelum tanggal baseline dieksklusi dari perhitungan bulanan.
+3. **Konsistensi Eksklusi Status DIBATALKAN**:
+   - Status `DIBATALKAN` dieksklusi secara seragam dari seluruh agregasi capaian, laporan bulanan, mutabaah, dan progress santri.
+4. **TargetSantri sebagai Source of Truth & Target Pecahan 0.5**:
+   - Model `TargetSantri` menjadi sumber kebenaran target bulanan dan pekanan.
+   - Migrasi tipe kolom `targetPekanan` dan `targetBulanan` ke `Double Precision` (`Float` di Prisma) untuk mendukung target pecahan (0.5 halaman).
+5. **Target Akhir Program dari Database**:
+   - Target akhir program santri dihitung dinamis dari profil pangkalan data santri, bukan konstanta statis hardcoded.
+6. **WITA-Safe Reporting & Dynamic Period**:
+   - Boundary penanggalan, awal/akhir bulan, dan rekapitulasi menggunakan `lib/wita-date.ts` (`Asia/Makassar`).
+   - Bulan default dinamis mengikuti kalender WITA berjalan.
+   - Tahun ajaran dihimpun dinamis dari relasi database `Halaqoh` (zero hardcoded `2026/2027` / `2025/2026`).
+   - Komponen rekap laporan bulanan dilengkapi query-key matching untuk mencegah render laporan stale.
+7. **Status SABAQ / SABQI / MANZIL / MUFAR**:
+   - Validasi kelayakan SABQI berbasis SABAQ sah pekan berjalan setelah effective baseline boundary.
+8. **Tahfizh ABAC Hardening & Role Authorization**:
+   - Scoping `getHalaqohListAction()` dan `getHalaqohDetailAction()`:
+     - KS / ADM / YAY / Kabid Tahfizh: global read.
+     - MT / PH: strictly scoped ke `pembinaId === session.staffId` (cross-halaqoh -> deny).
+     - Fail-closed error handling pada lookup database otorisasi halaqoh.
+     - Minimal projection staf `{ id, nama }` tanpa membocorkan field sensitif.
+     - Default-deny untuk unauthenticated dan role tanpa izin.
+   - Client `app/page.tsx` bersifat role-aware menggunakan `hasModuleAccess` kanonikal (role tanpa izin halaqoh tidak memicu fetch / banner error palsu).
+9. **Reward & Finalization Hardening**:
+   - Finalisasi reward dan sertifikat hafalan diverifikasi fail-closed terhadap hak akses pengguna dan capaian aktual.
+10. **Portal Wali Tahfizh-related ABAC**:
+    - Akses data portal wali (WS) dan santri (ST) dibatasi pada `santriId` yang terhubung ke akun session aktif. Akses ke santri lain ditolak secara eksplisit.
+11. **Dynamic Halaqoh DB & Penghapusan Fallback Statis**:
+    - Menghapus fallback `getHalaqohByStaff()` dari seluruh jalur autentikasi produksi (`resolveVerifiedSessionPayload`, `loginAction`, `app/page.tsx`).
+    - Staf tanpa halaqoh DB menghasilkan `halaqohName: null` (fail-closed).
+12. **Migrasi Skema Database**:
+    - File migrasi `prisma/migrations/20260914100000_target_santri_float/migration.sql` disiapkan untuk migrasi aman `Double Precision`.
+
+---
+
+## 4. Status Quality Gates Lokal & CI/CD
+
 - [x] `npx tsc --noEmit` — PASS (0 errors)
 - [x] `npm run typecheck:test` — PASS (0 errors)
-- [x] `npm run lint` — PASS (0 warnings, 0 errors)
-- [x] `npm test` — PASS (459/459 tests passed, 127 suites, 43/43 skenario PR #6 lulus)
-- [x] `npm run build` — PASS (14 rute terkompilasi, 0 errors)
-- [x] `npx tsx scripts/verify-test-db-cleanup.ts` — PASS (100% proses/port/temp terisolasi dan bersih)
-- [x] `npx tsx scripts/puppeteer-p0-1-verify.ts` — PASS (6/6 skenario riil E2E)
-- [x] `npm run qa:structural` — PASS (98/98 assertions bebas overflow/overlap)
-- [x] `npm run qa:pwa` — PASS (8/8 tahapan: manifest, icons, privacy, cross-cache collision, offline fallback)
+- [x] `npm run lint` — PASS (0 errors, 0 warnings)
+- [x] `npm test` — PASS (471/471 tests passed, 127 suites, 55/55 skenario PR #6 lulus)
+- [x] `npm run build` — PASS (14 rute Next.js Turbopack terkompilasi, 0 errors)
+- [x] `npx tsx scripts/verify-test-db-cleanup.ts` — PASS (6/6 skenario multi-cycle PostgreSQL cleanup 100% terisolasi dan bersih)
+- [x] `npx tsx scripts/puppeteer-p0-1-verify.ts` — PASS (6/6 skenario riil E2E Puppeteer)
+- [x] `npm run qa:structural` — PASS (98/98 structural layout assertions lulus, 0 findings)
+- [x] `npm run qa:pwa` — PASS (8/8 tahapan verifikasi Service Worker, cache allowlist, & offline fallback)
+- [x] GitHub Actions CI — SUCCESS (Runs: 34811841416, 34811838197)
+- [x] Vercel Production Deployments — SUCCESS (`stq-education-portal-app`, `stq-education-portal`)
 
+---
+
+## 5. Rencana Langkah Berikutnya
+1. Preflight read-only migrasi skema database produksi (`TargetSantri` float/double precision).
+2. Menunggu otorisasi final dari ChatGPT/User untuk eksekusi migrasi produksi dan merge PR #6.
