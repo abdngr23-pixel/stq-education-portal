@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { exportToCSV } from "@/lib/export-csv";
 import { getCurrentWITAMonth } from "@/lib/wita-date";
-import { hitungRataRataKepatuhanMurojaah } from "@/lib/laporan-bulanan";
+import { hitungRataRataKepatuhanMurojaah, buildMutabaahCSVRows } from "@/lib/laporan-bulanan";
 import {
   getLaporanBulananHalaqohAction,
   inputCapaianPekananAction,
@@ -306,6 +306,15 @@ export function RekapLaporanBulanan({
       ]);
       exportToCSV(`Laporan_Tahfizh_${BULAN_NAMES[selectedBulan - 1]}_${(effectiveTahunAjaran || "").replace("/", "_")}`, headers, rows);
     } else if (activeSubTab === "mutabaah") {
+      const hasAnyRealData = laporanData.rekapSantri.some((r) =>
+        r.nonTahfizh.some((n) => n.isDataTersedia && !n.isSynthetic)
+      );
+      if (!hasAnyRealData) {
+        alert(
+          "Ekspor Mutaba'ah belum tersedia karena data periode ini masih mengandung data inisialisasi/sintetis."
+        );
+        return;
+      }
       const headers = [
         "NIS",
         "Nama Santri",
@@ -319,32 +328,7 @@ export function RekapLaporanBulanan({
         "Literasi (Hlm)",
         "Status Keseluruhan",
       ];
-      const rows = laporanData.rekapSantri.map((r) => {
-        const getK = (cat: string) => r.nonTahfizh.find((n) => n.kategori === cat);
-        const hadits = getK("HAFALAN_HADITS");
-        const mufrodat = getK("HAFALAN_MUFRODAT");
-        const vocab = getK("HAFALAN_VOCABULARY");
-        const tahajjud = getK("SHOLAT_TAHAJJUD");
-        const dhuha = getK("SHOLAT_DHUHA");
-        const puasa = getK("PUASA_SUNNAH");
-        const literasi = getK("LITERASI");
-
-        const allTuntas = r.nonTahfizh.every((n) => n.isTuntas);
-
-        return [
-          r.santri.nis,
-          r.santri.nama,
-          r.santri.kelas,
-          `${hadits?.hbl || 0} + ${hadits?.penambahanBulanIni || 0} = ${hadits?.totalKumulatif || 0} (Target: ${hadits?.targetMin})`,
-          `${mufrodat?.hbl || 0} + ${mufrodat?.penambahanBulanIni || 0} = ${mufrodat?.totalKumulatif || 0} (Target: ${mufrodat?.targetMin})`,
-          `${vocab?.hbl || 0} + ${vocab?.penambahanBulanIni || 0} = ${vocab?.totalKumulatif || 0} (Target: ${vocab?.targetMin})`,
-          `${tahajjud?.penambahanBulanIni || 0} / ${tahajjud?.targetMin}`,
-          `${dhuha?.penambahanBulanIni || 0} / ${dhuha?.targetMin}`,
-          `${puasa?.penambahanBulanIni || 0} / ${puasa?.targetMin}`,
-          `${literasi?.penambahanBulanIni || 0} / ${literasi?.targetMin}`,
-          allTuntas ? "Tuntas Seluruhnya" : "Sebagian Belum Tuntas",
-        ];
-      });
+      const rows = buildMutabaahCSVRows(laporanData.rekapSantri);
       exportToCSV(`Laporan_Mutabaah_${BULAN_NAMES[selectedBulan - 1]}_${(effectiveTahunAjaran || "").replace("/", "_")}`, headers, rows);
     } else {
       const headers = ["NIS", "Nama Santri", "Kelas", "Simaan (Kali)", "Tasmi (Kali)", "Rata-rata Nilai", "Ringkasan Resmi"];
@@ -1059,10 +1043,11 @@ export function RekapLaporanBulanan({
                   const puasa = getK("PUASA_SUNNAH");
                   const literasi = getK("LITERASI");
 
-                  const isSyntheticSantri = item.nonTahfizh.some(
-                    (n) => (n as { isSynthetic?: boolean }).isSynthetic
+                  const hasAnySyntheticOrMissing = item.nonTahfizh.some(
+                    (n) => !n.isDataTersedia || (n as { isSynthetic?: boolean }).isSynthetic
                   );
-                  const isAllTuntas = !isSyntheticSantri && item.nonTahfizh.every((n) => n.isTuntas);
+                  const isAllTuntas =
+                    !hasAnySyntheticOrMissing && item.nonTahfizh.every((n) => n.isTuntas);
 
                   return (
                     <tr key={item.santri.id} className="hover:bg-slate-50/80 transition-colors">
@@ -1081,7 +1066,7 @@ export function RekapLaporanBulanan({
 
                       {/* Hadits */}
                       <td className="px-2 py-2 text-center border-r border-slate-100">
-                        {isSyntheticSantri ? (
+                        {!hadits?.isDataTersedia || hadits?.isSynthetic ? (
                           <span className="text-slate-400 font-medium">-</span>
                         ) : (
                           <>
@@ -1093,7 +1078,7 @@ export function RekapLaporanBulanan({
 
                       {/* Mufrodat */}
                       <td className="px-2 py-2 text-center border-r border-slate-100">
-                        {isSyntheticSantri ? (
+                        {!mufrodat?.isDataTersedia || mufrodat?.isSynthetic ? (
                           <span className="text-slate-400 font-medium">-</span>
                         ) : (
                           <>
@@ -1105,7 +1090,7 @@ export function RekapLaporanBulanan({
 
                       {/* Vocab */}
                       <td className="px-2 py-2 text-center border-r border-slate-100">
-                        {isSyntheticSantri ? (
+                        {!vocab?.isDataTersedia || vocab?.isSynthetic ? (
                           <span className="text-slate-400 font-medium">-</span>
                         ) : (
                           <>
@@ -1117,7 +1102,7 @@ export function RekapLaporanBulanan({
 
                       {/* Tahajjud */}
                       <td className="px-2 py-2 text-center border-r border-slate-100">
-                        {isSyntheticSantri ? (
+                        {!tahajjud?.isDataTersedia || tahajjud?.isSynthetic ? (
                           <span className="text-slate-400 font-medium">-</span>
                         ) : (
                           <span className={`font-bold ${tahajjud?.isTuntas ? "text-emerald-700" : "text-rose-700"}`}>
@@ -1128,7 +1113,7 @@ export function RekapLaporanBulanan({
 
                       {/* Dhuha */}
                       <td className="px-2 py-2 text-center border-r border-slate-100">
-                        {isSyntheticSantri ? (
+                        {!dhuha?.isDataTersedia || dhuha?.isSynthetic ? (
                           <span className="text-slate-400 font-medium">-</span>
                         ) : (
                           <span className={`font-bold ${dhuha?.isTuntas ? "text-emerald-700" : "text-rose-700"}`}>
@@ -1139,7 +1124,7 @@ export function RekapLaporanBulanan({
 
                       {/* Puasa */}
                       <td className="px-2 py-2 text-center border-r border-slate-100">
-                        {isSyntheticSantri ? (
+                        {!puasa?.isDataTersedia || puasa?.isSynthetic ? (
                           <span className="text-slate-400 font-medium">-</span>
                         ) : (
                           <span className={`font-bold ${puasa?.isTuntas ? "text-emerald-700" : "text-rose-700"}`}>
@@ -1150,7 +1135,7 @@ export function RekapLaporanBulanan({
 
                       {/* Literasi */}
                       <td className="px-2 py-2 text-center border-r border-slate-100">
-                        {isSyntheticSantri ? (
+                        {!literasi?.isDataTersedia || literasi?.isSynthetic ? (
                           <span className="text-slate-400 font-medium">-</span>
                         ) : (
                           <span className={`font-bold ${literasi?.isTuntas ? "text-emerald-700" : "text-rose-700"}`}>
@@ -1162,7 +1147,7 @@ export function RekapLaporanBulanan({
                       {/* Aksi / Status */}
                       <td className="px-3 py-2 text-center space-y-1">
                         <div>
-                          {isSyntheticSantri ? (
+                          {hasAnySyntheticOrMissing ? (
                             <Badge variant="neutral" size="sm">
                               Menunggu Data Riil
                             </Badge>

@@ -209,18 +209,19 @@ export async function getSantriListForSession(
     const mappedData: SantriListItem[] = sortedList.map((s) => {
       const modalAwal = s.modalHafalanAwalHalaman || 0;
       const baselineDate = s.tanggalBaselineTahfizh ? new Date(s.tanggalBaselineTahfizh) : null;
+      // Batas awal sistem yang terbukti: s.createdAt jika modalAwal === 0 dan tanggalBaselineTahfizh null
+      const systemStartBoundary = (!baselineDate && modalAwal === 0 && s.createdAt)
+        ? new Date(s.createdAt)
+        : null;
+      const effectiveBaseline = baselineDate ?? systemStartBoundary;
 
-      // Filter SABAQ aktif (non-dibatalkan) yang terjadi setelah tanggal baseline
-      // ATURAN RESMI: Jika baselineDate ada, SABAQ >= baselineDate dihitung.
-      // Jika baselineDate null dan modalAwal === 0, seluruh SABAQ valid dihitung (santri mulai dari awal).
-      // Jika baselineDate null dan modalAwal > 0, fail-closed [] untuk mencegah double counting historis.
-      const sabaqAfterBaseline = (s.setoranList || []).filter((st) => {
-        if (st.jenis !== "SABAQ" || st.status === "DIBATALKAN") return false;
-        if (baselineDate) {
-          return new Date(st.tanggal) >= baselineDate;
-        }
-        return modalAwal === 0;
-      });
+      // Filter SABAQ aktif (non-dibatalkan) yang terjadi setelah tanggal baseline atau batas awal sistem terbukti
+      const sabaqAfterBaseline = effectiveBaseline
+        ? (s.setoranList || []).filter((st) => {
+            if (st.jenis !== "SABAQ" || st.status === "DIBATALKAN") return false;
+            return new Date(st.tanggal) >= effectiveBaseline;
+          })
+        : [];
 
       const tambahanSabaq = sabaqAfterBaseline.reduce((acc, cur) => acc + (cur.jumlahHalaman || 0), 0);
       const totalHafalan = modalAwal + tambahanSabaq;
@@ -241,7 +242,7 @@ export async function getSantriListForSession(
           tanggal: st.tanggal,
         })),
         modalAwal,
-        s.tanggalBaselineTahfizh
+        effectiveBaseline
       );
 
       const posisiTerakhirHalaman = sabaqPosition.posisiTerakhirHalaman;
@@ -269,11 +270,11 @@ export async function getSantriListForSession(
       const targetSabaqPekanan = sabaqTarget?.targetPekanan ?? null;
 
       // Cek apakah ada SABAQ sah pada pekan berjalan sejak Senin 00:00 WITA (untuk applicability SABQI & progres pekanan)
-      // Wajib memerlukan baselineDate (atau modalAwal === 0) dan SABAQ harus terjadi >= max(startOfWeek, baselineDate)
+      // Memerlukan effectiveBaseline dan SABAQ harus terjadi >= max(startOfWeek, effectiveBaseline)
       const startOfWeek = getStartOfWeekWITA(targetRefDate);
-      const minValidSabaqDate = baselineDate
-        ? (baselineDate > startOfWeek ? baselineDate : startOfWeek)
-        : (modalAwal === 0 ? startOfWeek : null);
+      const minValidSabaqDate = effectiveBaseline
+        ? (effectiveBaseline > startOfWeek ? effectiveBaseline : startOfWeek)
+        : null;
       const sabaqThisWeek = minValidSabaqDate
         ? validSetoranList.filter(
             (st) => st.jenis === "SABAQ" && new Date(st.tanggal) >= minValidSabaqDate

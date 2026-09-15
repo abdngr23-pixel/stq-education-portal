@@ -386,6 +386,7 @@ export function hitungRataRataKepatuhanMurojaah(
   persentase: number | null;
   label: string;
   totalRealisasi: number;
+  totalEffectiveActual: number;
   totalTarget: number;
   hasApplicableData: boolean;
 } {
@@ -394,26 +395,36 @@ export function hitungRataRataKepatuhanMurojaah(
       persentase: null,
       label: "Belum ada data",
       totalRealisasi: 0,
+      totalEffectiveActual: 0,
       totalTarget: 0,
       hasApplicableData: false,
     };
   }
 
   let totalRealisasi = 0;
+  let totalEffectiveActual = 0;
   let totalTarget = 0;
   let countApplicable = 0;
 
   for (const item of rekapSantri) {
     const sbqi = item.tahfizh?.sabqi;
     if (sbqi && sbqi.hasTarget && typeof sbqi.targetBulanan === "number" && sbqi.targetBulanan > 0) {
-      totalTarget += sbqi.targetBulanan;
-      totalRealisasi += sbqi.totalFrekuensi || 0;
+      const tgt = sbqi.targetBulanan;
+      const actual = Math.max(0, sbqi.totalFrekuensi || 0);
+      const effective = Math.min(actual, tgt);
+      totalTarget += tgt;
+      totalRealisasi += actual;
+      totalEffectiveActual += effective;
       countApplicable++;
     }
     const mzl = item.tahfizh?.manzil;
     if (mzl && mzl.hasTarget && typeof mzl.targetBulanan === "number" && mzl.targetBulanan > 0) {
-      totalTarget += mzl.targetBulanan;
-      totalRealisasi += mzl.totalFrekuensi || 0;
+      const tgt = mzl.targetBulanan;
+      const actual = Math.max(0, mzl.totalFrekuensi || 0);
+      const effective = Math.min(actual, tgt);
+      totalTarget += tgt;
+      totalRealisasi += actual;
+      totalEffectiveActual += effective;
       countApplicable++;
     }
   }
@@ -423,56 +434,209 @@ export function hitungRataRataKepatuhanMurojaah(
       persentase: null,
       label: "Belum ada data",
       totalRealisasi: 0,
+      totalEffectiveActual: 0,
       totalTarget: 0,
       hasApplicableData: false,
     };
   }
 
-  const persentase = parseFloat(((totalRealisasi / totalTarget) * 100).toFixed(1));
+  // Formula bounded: sum(effectiveActual) / sum(target) * 100, dibatasi [0, 100]
+  const rawPercentage = (totalEffectiveActual / totalTarget) * 100;
+  const persentase = Math.min(100, Math.max(0, parseFloat(rawPercentage.toFixed(1))));
 
   return {
     persentase,
     label: `${persentase}%`,
     totalRealisasi,
+    totalEffectiveActual,
     totalTarget,
     hasApplicableData: true,
   };
 }
 
+export interface MutabaahRecordLike {
+  kategori: string;
+  pekan1?: number;
+  pekan2?: number;
+  pekan3?: number;
+  pekan4?: number;
+  catatan?: string | null;
+}
+
 /**
- * Mendeteksi apakah data capaian bulanan non-tahfizh merupakan data sintetis bawaan seed
- * (+4 Hadits, +12 Mufrodat, +12 Vocab, 16 Tahajjud, 16 Dhuha, 7 Puasa, 85 Literasi seragam tanpa catatan)
+ * Mendeteksi apakah satu kategori capaian non-tahfizh tertentu merupakan data sintetis bawaan seed
+ */
+export function isCategorySyntheticSeed(
+  kategori: string,
+  record: MutabaahRecordLike | null | undefined
+): boolean {
+  if (!record) return false;
+  // Jika ada catatan eksplisit bukan kosong, berarti ada input manusia
+  if (record.catatan && record.catatan.trim().length > 0) {
+    return false;
+  }
+
+  const p1 = record.pekan1 ?? 0;
+  const p2 = record.pekan2 ?? 0;
+  const p3 = record.pekan3 ?? 0;
+  const p4 = record.pekan4 ?? 0;
+
+  switch (kategori) {
+    case "HAFALAN_HADITS":
+      return p1 === 1 && p2 === 1 && p3 === 1 && p4 === 1;
+    case "HAFALAN_MUFRODAT":
+    case "HAFALAN_VOCABULARY":
+      return p1 === 3 && p2 === 3 && p3 === 3 && p4 === 3;
+    case "SHOLAT_TAHAJJUD":
+    case "SHOLAT_DHUHA":
+      return p1 === 4 && p2 === 4 && p3 === 4 && p4 === 4;
+    case "PUASA_SUNNAH":
+      return p1 === 2 && p2 === 2 && (p3 === 1 || p3 === 2) && (p4 === 2 || p4 === 1);
+    case "LITERASI":
+      return (
+        (p1 === 20 && p2 === 25 && p3 === 20 && p4 === 20) ||
+        (p1 === 20 && p2 === 20 && p3 === 25 && p4 === 20)
+      );
+    default:
+      return false;
+  }
+}
+
+/**
+ * Evaluasi status ketersediaan dan provenance per kategori secara aman dan fail-closed.
+ */
+export function evaluateCategoryProvenance(
+  kategori: string,
+  record: MutabaahRecordLike | null | undefined
+): {
+  isDataTersedia: boolean;
+  isSynthetic: boolean;
+} {
+  if (!record) {
+    return { isDataTersedia: false, isSynthetic: false };
+  }
+  const isSynthetic = isCategorySyntheticSeed(kategori, record);
+  return {
+    isDataTersedia: !isSynthetic,
+    isSynthetic,
+  };
+}
+
+/**
+ * Mendeteksi apakah sekumpulan data capaian bulanan non-tahfizh memuat data sintetis bawaan seed
  */
 export function isSyntheticMutabaahSeed(
-  records: Array<{
-    kategori: string;
-    pekan1?: number;
-    pekan2?: number;
-    pekan3?: number;
-    pekan4?: number;
-    catatan?: string | null;
-  }>
+  records: MutabaahRecordLike[] | null | undefined
 ): boolean {
   if (!records || records.length === 0) return false;
-  const getK = (cat: string) => records.find((r) => r.kategori === cat);
-  const hadits = getK("HAFALAN_HADITS");
-  const mufrodat = getK("HAFALAN_MUFRODAT");
-  const vocab = getK("HAFALAN_VOCABULARY");
-  const tahajjud = getK("SHOLAT_TAHAJJUD");
-  const dhuha = getK("SHOLAT_DHUHA");
-  const puasa = getK("PUASA_SUNNAH");
-  const literasi = getK("LITERASI");
-
-  const isSeed =
-    hadits?.pekan1 === 1 && hadits?.pekan2 === 1 && hadits?.pekan3 === 1 && hadits?.pekan4 === 1 &&
-    mufrodat?.pekan1 === 3 && mufrodat?.pekan2 === 3 && mufrodat?.pekan3 === 3 && mufrodat?.pekan4 === 3 &&
-    vocab?.pekan1 === 3 && vocab?.pekan2 === 3 && vocab?.pekan3 === 3 && vocab?.pekan4 === 3 &&
-    tahajjud?.pekan1 === 4 && tahajjud?.pekan2 === 4 && tahajjud?.pekan3 === 4 && tahajjud?.pekan4 === 4 &&
-    dhuha?.pekan1 === 4 && dhuha?.pekan2 === 4 && dhuha?.pekan3 === 4 && dhuha?.pekan4 === 4 &&
-    puasa?.pekan1 === 2 && puasa?.pekan2 === 2 && puasa?.pekan3 === 2 && puasa?.pekan4 === 1 &&
-    literasi?.pekan1 === 20 && literasi?.pekan2 === 20 && literasi?.pekan3 === 25 && literasi?.pekan4 === 20 &&
-    !hadits?.catatan && !mufrodat?.catatan && !tahajjud?.catatan;
-
-  return Boolean(isSeed);
+  return records.some((r) => isCategorySyntheticSeed(r.kategori, r));
 }
+
+export interface MutabaahCategoryItem {
+  kategori: string;
+  label?: string;
+  hbl?: number;
+  penambahanBulanIni?: number;
+  totalKumulatif?: number;
+  targetMin?: number;
+  isTuntas?: boolean;
+  isDataTersedia?: boolean;
+  isSynthetic?: boolean;
+}
+
+export interface MutabaahSantriReport {
+  santri: {
+    id: string;
+    nis: string;
+    nama: string;
+    kelas: string;
+  };
+  nonTahfizh: MutabaahCategoryItem[];
+}
+
+/**
+ * Format sel Mutaba'ah untuk tampilan cetak resmi.
+ * Menjamin data sintetis atau belum tersedia tidak pernah mencetak angka dummy.
+ */
+export function formatPrintMutabaahCell(
+  item: MutabaahCategoryItem | null | undefined
+): string {
+  if (!item || !item.isDataTersedia || item.isSynthetic) {
+    return "-";
+  }
+  return `+${item.penambahanBulanIni || 0} (Tot: ${item.totalKumulatif || 0})`;
+}
+
+/**
+ * Menghasilkan baris ekspor CSV untuk sub-tab Mutaba'ah secara aman.
+ * Menjamin tidak membocorkan angka sintetis dan tidak memancarkan status "Tuntas Seluruhnya" palsu.
+ */
+export function buildMutabaahCSVRows(
+  rekapSantri: MutabaahSantriReport[]
+): (string | number)[][] {
+  return rekapSantri.map((r) => {
+    const getK = (cat: string) => r.nonTahfizh.find((n) => n.kategori === cat);
+    const hadits = getK("HAFALAN_HADITS");
+    const mufrodat = getK("HAFALAN_MUFRODAT");
+    const vocab = getK("HAFALAN_VOCABULARY");
+    const tahajjud = getK("SHOLAT_TAHAJJUD");
+    const dhuha = getK("SHOLAT_DHUHA");
+    const puasa = getK("PUASA_SUNNAH");
+    const literasi = getK("LITERASI");
+
+    const formatCategoryCell = (
+      item: MutabaahCategoryItem | undefined,
+      isCumulative: boolean
+    ): string => {
+      if (!item || !item.isDataTersedia || item.isSynthetic) {
+        return "Menunggu Data Riil";
+      }
+      if (isCumulative) {
+        return `${item.hbl || 0} + ${item.penambahanBulanIni || 0} = ${item.totalKumulatif || 0} (Target: ${item.targetMin || 0})`;
+      }
+      return `${item.penambahanBulanIni || 0} / ${item.targetMin || 0}`;
+    };
+
+    // Status keseluruhan: hanya boleh "Tuntas Seluruhnya" jika SEMUA 7 kategori memiliki data riil valid dan tuntas
+    const requiredCategories = [
+      "HAFALAN_HADITS",
+      "HAFALAN_MUFRODAT",
+      "HAFALAN_VOCABULARY",
+      "SHOLAT_TAHAJJUD",
+      "SHOLAT_DHUHA",
+      "PUASA_SUNNAH",
+      "LITERASI",
+    ];
+
+    const hasAnySyntheticOrMissing = requiredCategories.some((cat) => {
+      const itm = getK(cat);
+      return !itm || !itm.isDataTersedia || itm.isSynthetic;
+    });
+
+    let statusKeseluruhan = "Menunggu Data Riil";
+    if (!hasAnySyntheticOrMissing) {
+      const allTuntas = requiredCategories.every((cat) => {
+        const itm = getK(cat);
+        return itm?.isTuntas === true;
+      });
+      statusKeseluruhan = allTuntas ? "Tuntas Seluruhnya" : "Sebagian Belum Tuntas";
+    }
+
+    return [
+      r.santri.nis,
+      r.santri.nama,
+      r.santri.kelas,
+      formatCategoryCell(hadits, true),
+      formatCategoryCell(mufrodat, true),
+      formatCategoryCell(vocab, true),
+      formatCategoryCell(tahajjud, false),
+      formatCategoryCell(dhuha, false),
+      formatCategoryCell(puasa, false),
+      formatCategoryCell(literasi, false),
+      statusKeseluruhan,
+    ];
+  });
+}
+
+
 

@@ -4,6 +4,7 @@ import React from "react";
 import { KopSurat } from "./kop-surat";
 import { cn } from "@/lib/utils";
 import { type LaporanBulananData } from "@/app/actions/laporan-bulanan";
+import { formatPrintMutabaahCell } from "@/lib/laporan-bulanan";
 
 export interface PrintLaporanBulananProps {
   laporanData: LaporanBulananData;
@@ -150,13 +151,13 @@ export function PrintLaporanBulanan({
 
                   {/* Mutaba'ah */}
                   <td className="border border-slate-700 px-1 py-1">
-                    +{hadits?.penambahanBulanIni || 0} (Tot: {hadits?.totalKumulatif || 0})
+                    {formatPrintMutabaahCell(hadits)}
                   </td>
                   <td className="border border-slate-700 px-1 py-1">
-                    +{mufrodat?.penambahanBulanIni || 0} (Tot: {mufrodat?.totalKumulatif || 0})
+                    {formatPrintMutabaahCell(mufrodat)}
                   </td>
                   <td className="border border-slate-700 px-1 py-1">
-                    +{vocab?.penambahanBulanIni || 0} (Tot: {vocab?.totalKumulatif || 0})
+                    {formatPrintMutabaahCell(vocab)}
                   </td>
 
                   {/* Ringkasan Ujian */}
