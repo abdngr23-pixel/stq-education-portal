@@ -5,6 +5,8 @@ import { KopSurat } from "./kop-surat";
 import { cn } from "@/lib/utils";
 import { type LaporanBulananData } from "@/app/actions/laporan-bulanan";
 import { formatPrintMutabaahCell } from "@/lib/laporan-bulanan";
+import { INSTITUTION_CONFIG } from "@/lib/institution-config";
+import { formatWitaDateIndonesian } from "@/lib/wita-date";
 
 export interface PrintLaporanBulananProps {
   laporanData: LaporanBulananData;
@@ -29,11 +31,12 @@ const BULAN_NAMES = [
 
 export function PrintLaporanBulanan({
   laporanData,
-  tanggalCetak = "08 September 2026",
+  tanggalCetak,
   className,
 }: PrintLaporanBulananProps) {
   const { halaqoh, periode, rekapSantri } = laporanData;
   const namaBulan = BULAN_NAMES[periode.bulan - 1] || "Bulan Berjalan";
+  const effectiveTanggalCetak = tanggalCetak || formatWitaDateIndonesian();
 
   return (
     <div
@@ -180,17 +183,15 @@ export function PrintLaporanBulanan({
             {/* Ruang Tanda Tangan */}
           </div>
           <p className="font-bold underline">{halaqoh.pembina}</p>
-          <p className="text-[10px] text-slate-500">NIP / ID Staf: STQ-MT-003</p>
         </div>
 
         <div className="text-center">
-          <p>Depok, {tanggalCetak}</p>
+          <p>{INSTITUTION_CONFIG.kota}, {effectiveTanggalCetak}</p>
           <p className="font-bold">Mudir / Kepala Sekolah</p>
           <div className="h-16 flex items-center justify-center">
             {/* Ruang Tanda Tangan & Cap Lembaga */}
           </div>
-          <p className="font-bold underline">Ust. Andi Quarzy Ayatullah, S.H, M.H</p>
-          <p className="text-[10px] text-slate-500">NIP: STQ-KS-001</p>
+          <p className="font-bold underline">{INSTITUTION_CONFIG.mudirName}</p>
         </div>
       </div>
     </div>

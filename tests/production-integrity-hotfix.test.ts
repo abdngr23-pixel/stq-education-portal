@@ -10,6 +10,8 @@ import {
   type MutabaahSantriReport,
 } from "../lib/laporan-bulanan";
 import { getDailyMufarTargetJuz, getCompletedJuzCount } from "../lib/tahfizh-mufar-tier";
+import { INSTITUTION_CONFIG } from "../lib/institution-config";
+import { formatWitaDateIndonesian } from "../lib/wita-date";
 
 describe("Production Integrity Hotfix - Regression Suite", () => {
   // --------------------------------------------------------------------------
@@ -321,7 +323,7 @@ describe("Production Integrity Hotfix - Regression Suite", () => {
     it("1. Pure synthetic seed data: semua 7 kategori ter-masking 'Menunggu Data Riil' & status 'Menunggu Data Riil'", () => {
       const syntheticReport: MutabaahSantriReport[] = [
         {
-          santri: { id: "s1", nis: "SAN-001", nama: "Ahmad Santri", kelas: "7A" },
+          santri: { id: "s1", nis: "SAN-TEST-001", nama: "Santri Alpha", kelas: "7A" },
           nonTahfizh: [
             { kategori: "HAFALAN_HADITS", isDataTersedia: false, isSynthetic: true, penambahanBulanIni: 4, totalKumulatif: 82, targetMin: 4, isTuntas: true },
             { kategori: "HAFALAN_MUFRODAT", isDataTersedia: false, isSynthetic: true, penambahanBulanIni: 12, totalKumulatif: 132, targetMin: 12, isTuntas: true },
@@ -338,9 +340,9 @@ describe("Production Integrity Hotfix - Regression Suite", () => {
       assert.equal(rows.length, 1);
       const row = rows[0];
 
-      // Metadata santri
-      assert.equal(row[0], "SAN-001");
-      assert.equal(row[1], "Ahmad Santri");
+      // Metadata santri terisolasi secara aman
+      assert.equal(row[0], "SAN-TEST-001");
+      assert.equal(row[1], "Santri Alpha");
       assert.equal(row[2], "7A");
 
       // Kategori 1..7 (indeks 3..9) harus "Menunggu Data Riil", TIDAK BOLEH membocorkan angka 4, 12, 16, 85
@@ -356,7 +358,7 @@ describe("Production Integrity Hotfix - Regression Suite", () => {
     it("2. Real authoritative data: mengekspor angka riil terformat dan status keseluruhan yang valid", () => {
       const realReport: MutabaahSantriReport[] = [
         {
-          santri: { id: "s2", nis: "SAN-002", nama: "Muhammad Fardhan", kelas: "9A" },
+          santri: { id: "s2", nis: "SAN-TEST-002", nama: "Santri Beta", kelas: "9A" },
           nonTahfizh: [
             { kategori: "HAFALAN_HADITS", isDataTersedia: true, isSynthetic: false, hbl: 50, penambahanBulanIni: 4, totalKumulatif: 54, targetMin: 4, isTuntas: true },
             { kategori: "HAFALAN_MUFRODAT", isDataTersedia: true, isSynthetic: false, hbl: 100, penambahanBulanIni: 15, totalKumulatif: 115, targetMin: 12, isTuntas: true },
@@ -373,8 +375,8 @@ describe("Production Integrity Hotfix - Regression Suite", () => {
       assert.equal(rows.length, 1);
       const row = rows[0];
 
-      assert.equal(row[0], "SAN-002");
-      assert.equal(row[1], "Muhammad Fardhan");
+      assert.equal(row[0], "SAN-TEST-002");
+      assert.equal(row[1], "Santri Beta");
       assert.equal(row[3], "50 + 4 = 54 (Target: 4)");
       assert.equal(row[4], "100 + 15 = 115 (Target: 12)");
       assert.equal(row[6], "18 / 15");
@@ -384,7 +386,7 @@ describe("Production Integrity Hotfix - Regression Suite", () => {
     it("3. Mixed / partial-edit data: kategori sintetis tetap ter-masking dan status keseluruhan mencatat status pending", () => {
       const mixedReport: MutabaahSantriReport[] = [
         {
-          santri: { id: "s3", nis: "SAN-003", nama: "Santri Mixed", kelas: "8A" },
+          santri: { id: "s3", nis: "SAN-TEST-003", nama: "Santri Gamma", kelas: "8A" },
           nonTahfizh: [
             // Hadits diinput riil
             { kategori: "HAFALAN_HADITS", isDataTersedia: true, isSynthetic: false, hbl: 10, penambahanBulanIni: 4, totalKumulatif: 14, targetMin: 4, isTuntas: true },
@@ -415,9 +417,9 @@ describe("Production Integrity Hotfix - Regression Suite", () => {
   });
 
   // --------------------------------------------------------------------------
-  // SECTION D: Mutaba'ah Print Data Transform & Protection
+  // SECTION D: Mutaba'ah Print Data Transform & Official Metadata Protection
   // --------------------------------------------------------------------------
-  describe("D. Mutaba'ah Print Data Transform & Protection", () => {
+  describe("D. Mutaba'ah Print Data Transform & Official Metadata Protection", () => {
     it("1. Pure synthetic item: formatPrintMutabaahCell menghasilkan '-' (bukan '+4' atau '+12')", () => {
       const syntheticItem = {
         kategori: "HAFALAN_HADITS",
@@ -450,6 +452,31 @@ describe("Production Integrity Hotfix - Regression Suite", () => {
       assert.equal(formatPrintMutabaahCell(undefined), "-");
       assert.equal(formatPrintMutabaahCell({ kategori: "HAFALAN_HADITS", isDataTersedia: false }), "-");
     });
+
+    it("4. Tanggal cetak laporan bulanan default ke tanggal WITA dinamis hari ini dalam bahasa Indonesia", () => {
+      // Simulasikan tanggal tetap untuk pengujian format deterministik
+      const testDate = new Date(Date.UTC(2026, 8, 15, 6, 0, 0)); // 2026-09-15 14:00 WITA
+      const formatted = formatWitaDateIndonesian(testDate);
+      assert.equal(formatted, "15 September 2026");
+
+      // Verifikasi format default (tanpa argumen) mengembalikan string berformat "D MMMM YYYY"
+      const defaultToday = formatWitaDateIndonesian();
+      assert.match(defaultToday, /^\d{1,2}\s+[A-Za-z]+\s+\d{4}$/);
+    });
+
+    it("5. Metadata pengesahan cetak bersumber dari INSTITUTION_CONFIG dan terbebas dari identitas statis palsu", () => {
+      // Kota resmi harus Makassar dari INSTITUTION_CONFIG.kota (bukan Depok)
+      assert.equal(INSTITUTION_CONFIG.kota, "Makassar");
+      assert.notEqual(INSTITUTION_CONFIG.kota, "Depok");
+
+      // Nama Mudir resmi bersumber dari INSTITUTION_CONFIG
+      assert.ok(INSTITUTION_CONFIG.mudirName.includes("Andi Quarzy"));
+
+      // Verifikasi ketiadaan ID/NIP statis palsu dalam konfigurasi lembaga
+      const serialized = JSON.stringify(INSTITUTION_CONFIG);
+      assert.ok(!serialized.includes("STQ-MT-003"), "Konfigurasi tidak boleh memuat STQ-MT-003");
+      assert.ok(!serialized.includes("STQ-KS-001"), "Konfigurasi tidak boleh memuat STQ-KS-001");
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -481,14 +508,14 @@ describe("Production Integrity Hotfix - Regression Suite", () => {
     });
 
     it("3. Skenario 2: 1 kategori (Hadits) diedit riil -> HANYA Hadits yang lolos, 6 lainnya tetap suppressed", () => {
-      // Guru menginput Hadits riil: Arbain #1-2, 2 hadits, catatan jelas
+      // Guru menginput Hadits riil dengan catatan jelas
       const editedHaditsRecord = {
         kategori: "HAFALAN_HADITS",
         pekan1: 1,
         pekan2: 1,
         pekan3: 0,
         pekan4: 0,
-        catatan: "Hadits Arbain 1 & 2",
+        catatan: "Hadits Pilihan 1 & 2",
       };
 
       const partialEditRecords = [
@@ -528,7 +555,7 @@ describe("Production Integrity Hotfix - Regression Suite", () => {
         { kategori: "SHOLAT_TAHAJJUD", pekan1: 3, pekan2: 4, pekan3: 2, pekan4: 3, catatan: "Jurnal santri" },
         { kategori: "SHOLAT_DHUHA", pekan1: 5, pekan2: 5, pekan3: 4, pekan4: 5, catatan: "Jurnal santri" },
         { kategori: "PUASA_SUNNAH", pekan1: 1, pekan2: 1, pekan3: 1, pekan4: 1, catatan: "Senin Kamis" },
-        { kategori: "LITERASI", pekan1: 15, pekan2: 10, pekan3: 12, pekan4: 18, catatan: "Kitab Riyadhus Shalihin" },
+        { kategori: "LITERASI", pekan1: 15, pekan2: 10, pekan3: 12, pekan4: 18, catatan: "Kitab Pilihan" },
       ];
 
       for (const rec of allRealRecords) {
@@ -557,7 +584,7 @@ describe("Production Integrity Hotfix - Regression Suite", () => {
       assert.equal(getDailyMufarTargetJuz(30), 5);
     });
 
-    it("2. Santri 21-juz (seperti Obama): Dashboard dan Formulir Setoran harus sepakat pada 5 Juz/hari", () => {
+    it("2. Santri 21-juz pada tier 5 Juz/hari: Dashboard dan Formulir Setoran harus sepakat pada 5 Juz/hari", () => {
       const completedJuz = getCompletedJuzCount(421, false);
       assert.equal(completedJuz, 21);
 
@@ -623,9 +650,9 @@ describe("Production Integrity Hotfix - Regression Suite", () => {
       };
     }
 
-    it("1. Santri baru dengan modalAwal=0 dan baseline=null (seperti Fardhan) menghitung SABAQ sah >= createdAt", () => {
-      const createdAt = new Date("2026-09-09T23:47:48.882Z");
-      const fardhanSantri = {
+    it("1. Santri baru dengan modalAwal=0 dan baseline=null menghitung SABAQ sah >= createdAt", () => {
+      const createdAt = new Date("2026-09-01T00:00:00.000Z");
+      const santriBaru = {
         modalAwalHalaman: 0,
         tanggalBaselineTahfizh: null,
         createdAt,
@@ -634,12 +661,12 @@ describe("Production Integrity Hotfix - Regression Suite", () => {
             jenis: "SABAQ",
             status: "AKTIF",
             jumlahHalaman: 3,
-            tanggal: new Date("2026-09-10T03:16:02.143Z"), // >= createdAt
+            tanggal: new Date("2026-09-02T08:00:00.000Z"), // >= createdAt
           },
         ],
       };
 
-      const result = calculateSabaqWithSystemStartBoundary(fardhanSantri);
+      const result = calculateSabaqWithSystemStartBoundary(santriBaru);
       assert.equal(result.sabaqCount, 1);
       assert.equal(result.tambahanSabaq, 3);
       assert.equal(result.totalHalaman, 3);
@@ -647,7 +674,7 @@ describe("Production Integrity Hotfix - Regression Suite", () => {
     });
 
     it("2. SABAQ yang bertanggal SEBELUM createdAt santri TIDAK BOLEH dihitung untuk modalAwal=0", () => {
-      const createdAt = new Date("2026-09-09T23:47:48.882Z");
+      const createdAt = new Date("2026-09-01T00:00:00.000Z");
       const santriWithPreEnrollmentSabaq = {
         modalAwalHalaman: 0,
         tanggalBaselineTahfizh: null,
@@ -657,13 +684,13 @@ describe("Production Integrity Hotfix - Regression Suite", () => {
             jenis: "SABAQ",
             status: "AKTIF",
             jumlahHalaman: 5,
-            tanggal: new Date("2026-09-01T10:00:00.000Z"), // < createdAt (anomali historis)
+            tanggal: new Date("2026-08-25T10:00:00.000Z"), // < createdAt (anomali historis)
           },
           {
             jenis: "SABAQ",
             status: "AKTIF",
             jumlahHalaman: 2,
-            tanggal: new Date("2026-09-10T10:00:00.000Z"), // >= createdAt
+            tanggal: new Date("2026-09-02T10:00:00.000Z"), // >= createdAt
           },
         ],
       };
@@ -685,7 +712,7 @@ describe("Production Integrity Hotfix - Regression Suite", () => {
             jenis: "SABAQ",
             status: "AKTIF",
             jumlahHalaman: 5,
-            tanggal: new Date("2026-09-10T08:00:00Z"),
+            tanggal: new Date("2026-09-02T08:00:00Z"),
           },
         ],
       };
@@ -697,29 +724,29 @@ describe("Production Integrity Hotfix - Regression Suite", () => {
       assert.equal(result.totalHalaman, 200); // Murni modal awal
     });
 
-    it("4. Santri dengan baseline != null (seperti Ahmad Santri SAN-0001) hanya menghitung SABAQ >= tanggalBaselineTahfizh", () => {
-      const baselineDate = new Date("2026-09-08T00:00:00.000Z");
-      const ahmadSantri = {
+    it("4. Santri dengan baseline != null hanya menghitung SABAQ >= tanggalBaselineTahfizh", () => {
+      const baselineDate = new Date("2026-09-01T00:00:00.000Z");
+      const santriWithBaseline = {
         modalAwalHalaman: 420,
         tanggalBaselineTahfizh: baselineDate,
-        createdAt: new Date("2026-09-01T00:00:00.000Z"),
+        createdAt: new Date("2026-08-01T00:00:00.000Z"),
         setoranList: [
           {
             jenis: "SABAQ",
             status: "AKTIF",
             jumlahHalaman: 2,
-            tanggal: new Date("2026-09-05T08:00:00Z"), // < baseline
+            tanggal: new Date("2026-08-25T08:00:00Z"), // < baseline
           },
           {
             jenis: "SABAQ",
             status: "AKTIF",
             jumlahHalaman: 3,
-            tanggal: new Date("2026-09-09T08:00:00Z"), // >= baseline
+            tanggal: new Date("2026-09-02T08:00:00Z"), // >= baseline
           },
         ],
       };
 
-      const result = calculateSabaqWithSystemStartBoundary(ahmadSantri);
+      const result = calculateSabaqWithSystemStartBoundary(santriWithBaseline);
       assert.equal(result.sabaqCount, 1);
       assert.equal(result.tambahanSabaq, 3);
       assert.equal(result.totalHalaman, 423);
@@ -727,7 +754,7 @@ describe("Production Integrity Hotfix - Regression Suite", () => {
     });
 
     it("5. Setoran berstatus DIBATALKAN wajib dieksklusi secara ketat dari capaian", () => {
-      const createdAt = new Date("2026-09-09T00:00:00.000Z");
+      const createdAt = new Date("2026-09-01T00:00:00.000Z");
       const santriWithCancelled = {
         modalAwalHalaman: 0,
         tanggalBaselineTahfizh: null,
@@ -737,13 +764,13 @@ describe("Production Integrity Hotfix - Regression Suite", () => {
             jenis: "SABAQ",
             status: "DIBATALKAN",
             jumlahHalaman: 3,
-            tanggal: new Date("2026-09-10T07:15:00Z"),
+            tanggal: new Date("2026-09-02T07:15:00Z"),
           },
           {
             jenis: "SABAQ",
             status: "AKTIF",
             jumlahHalaman: 2,
-            tanggal: new Date("2026-09-11T07:15:00Z"),
+            tanggal: new Date("2026-09-03T07:15:00Z"),
           },
         ],
       };
