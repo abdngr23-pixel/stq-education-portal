@@ -15,14 +15,24 @@ import {
   KategoriCapaian,
   JenisUjiHafalan,
 } from "@prisma/client";
+import { validateSeedExecutionSafety } from "../lib/seed-guard";
 import bcrypt from "bcryptjs";
+
+// Menjalankan validasi keamanan sebelum menginisialisasi PrismaClient atau mutasi apa pun
+const seedAuth = validateSeedExecutionSafety();
 
 const prisma = new PrismaClient();
 
 async function main() {
+  console.log("🔒 Seed safety guard passed. Target host terverifikasi aman untuk development/test.");
   console.log("🌱 Mulai proses seeding database STQ Portal (Master Data Riil Pesantren)...");
+  if (seedAuth.isEphemeralPassword) {
+    console.log("ℹ️  Menggunakan ephemeral password acak untuk akun dev/test lokal.");
+  } else {
+    console.log("ℹ️  Menggunakan STQ_SEED_DEFAULT_PASSWORD yang dikonfigurasi.");
+  }
 
-  const defaultPasswordHash = await bcrypt.hash("password123", 10);
+  const defaultPasswordHash = await bcrypt.hash(seedAuth.resolvedSeedPassword, 10);
 
   // 1. Bersihkan data lama sesuai urutan relasi foreign key
   await prisma.tasmiSimaan.deleteMany();
@@ -513,7 +523,7 @@ async function main() {
     });
   }
 
-  console.log("✅ 11 Akun pengguna resmi berhasil dibuat (Password: 'password123').");
+  console.log("✅ 11 Akun pengguna resmi berhasil dibuat.");
 
   // 6. Buat Sample Setoran Tahfizh Riil
   await prisma.setoranTahfizh.create({
