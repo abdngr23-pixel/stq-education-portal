@@ -15,6 +15,7 @@ import {
   evaluasiCapaianNonTahfizh,
   generateRingkasanTasmiSimaan,
   TARGET_MIN_KOMPONEN,
+  evaluateCategoryProvenance,
 } from "@/lib/laporan-bulanan";
 import { getWITAMonthRange } from "@/lib/wita-date";
 
@@ -201,11 +202,16 @@ export async function getLaporanBulananHalaqohAction(
           const manzilFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
           const mufarFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
 
+          const systemStartBoundary = (!baselineDate && modalAwal === 0 && santri.createdAt)
+            ? new Date(santri.createdAt)
+            : null;
+          const effectiveBaseline = baselineDate ?? systemStartBoundary;
+
           setoranList.forEach((s) => {
             const pekan = getPekanDariTanggal(s.tanggal);
             const pKey = `p${pekan}` as const;
             if (s.jenis === "SABAQ") {
-              if (baselineDate && new Date(s.tanggal) >= baselineDate) {
+              if (effectiveBaseline && new Date(s.tanggal) >= effectiveBaseline) {
                 sabaqPages[pKey] += s.jumlahHalaman || extractHalamanFromSetoran(s.catatan);
               }
             } else if (s.jenis === "SABQI") {
@@ -218,13 +224,13 @@ export async function getLaporanBulananHalaqohAction(
           });
 
           let priorSabaqHalaman = 0;
-          if (baselineDate && baselineDate < startDate) {
+          if (effectiveBaseline) {
             const priorSabaq = await prisma.setoranTahfizh.aggregate({
               where: {
                 santriId: santri.id,
                 jenis: "SABAQ",
                 status: { not: "DIBATALKAN" },
-                tanggal: { gte: baselineDate, lt: startDate },
+                tanggal: { gte: effectiveBaseline, lt: startDate },
               },
               _sum: { jumlahHalaman: true },
             });
@@ -260,6 +266,7 @@ export async function getLaporanBulananHalaqohAction(
             const p4 = record?.pekan4 || 0;
             const targetMin = record?.targetMin || TARGET_MIN_KOMPONEN[kategori].target;
             const evaluasi = evaluasiCapaianNonTahfizh(kategori, hbl, { p1, p2, p3, p4 }, targetMin);
+            const provenance = evaluateCategoryProvenance(kategori, record);
 
             return {
               kategori,
@@ -269,6 +276,8 @@ export async function getLaporanBulananHalaqohAction(
               p2,
               p3,
               p4,
+              isDataTersedia: provenance.isDataTersedia,
+              isSynthetic: provenance.isSynthetic,
               ...evaluasi,
             };
           });
@@ -391,11 +400,16 @@ export async function getLaporanBulananHalaqohAction(
           const manzilFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
           const mufarFreq = { p1: 0, p2: 0, p3: 0, p4: 0 };
 
+          const systemStartBoundary = (!baselineDate && modalAwal === 0 && santri.createdAt)
+            ? new Date(santri.createdAt)
+            : null;
+          const effectiveBaseline = baselineDate ?? systemStartBoundary;
+
           setoranList.forEach((s) => {
             const pekan = getPekanDariTanggal(s.tanggal);
             const pKey = `p${pekan}` as const;
             if (s.jenis === "SABAQ") {
-              if (baselineDate && new Date(s.tanggal) >= baselineDate) {
+              if (effectiveBaseline && new Date(s.tanggal) >= effectiveBaseline) {
                 sabaqPages[pKey] += s.jumlahHalaman || extractHalamanFromSetoran(s.catatan);
               }
             } else if (s.jenis === "SABQI") {
@@ -408,13 +422,13 @@ export async function getLaporanBulananHalaqohAction(
           });
 
           let priorSabaqHalaman = 0;
-          if (baselineDate && baselineDate < startDate) {
+          if (effectiveBaseline) {
             const priorSabaq = await prisma.setoranTahfizh.aggregate({
               where: {
                 santriId: santri.id,
                 jenis: "SABAQ",
                 status: { not: "DIBATALKAN" },
-                tanggal: { gte: baselineDate, lt: startDate },
+                tanggal: { gte: effectiveBaseline, lt: startDate },
               },
               _sum: { jumlahHalaman: true },
             });
@@ -450,6 +464,7 @@ export async function getLaporanBulananHalaqohAction(
             const p4 = record?.pekan4 || 0;
             const targetMin = record?.targetMin || TARGET_MIN_KOMPONEN[kategori].target;
             const evaluasi = evaluasiCapaianNonTahfizh(kategori, hbl, { p1, p2, p3, p4 }, targetMin);
+            const provenance = evaluateCategoryProvenance(kategori, record);
 
             return {
               kategori,
@@ -459,6 +474,8 @@ export async function getLaporanBulananHalaqohAction(
               p2,
               p3,
               p4,
+              isDataTersedia: provenance.isDataTersedia,
+              isSynthetic: provenance.isSynthetic,
               ...evaluasi,
             };
           });
