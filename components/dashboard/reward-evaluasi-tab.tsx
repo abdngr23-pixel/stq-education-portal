@@ -175,12 +175,29 @@ export function RewardEvaluasiTab({ userRole }: RewardEvaluasiTabProps) {
         tahunAjaran: tahunAjaranPilihan,
       });
       if (res.success && res.data) {
-        setPreviewList(res.data as unknown as PreviewSantri[]);
-        setPreviewLoaded(true);
+        const rawItems = Array.isArray(res.data)
+          ? res.data
+          : (res.data as { items?: unknown })?.items;
+
+        if (Array.isArray(rawItems)) {
+          setPreviewList(rawItems as PreviewSantri[]);
+          setPreviewLoaded(true);
+        } else {
+          setPreviewList([]);
+          setPreviewLoaded(false);
+          setFeedback({
+            type: "error",
+            text: "Format data pratinjau tidak valid (daftar santri tidak ditemukan).",
+          });
+        }
       } else {
+        setPreviewList([]);
+        setPreviewLoaded(false);
         setFeedback({ type: "error", text: res.message || "Gagal memuat pratinjau evaluasi bulanan." });
       }
     } catch {
+      setPreviewList([]);
+      setPreviewLoaded(false);
       setFeedback({ type: "error", text: "Terjadi kesalahan jaringan saat memuat pratinjau." });
     } finally {
       setIsPreviewLoading(false);
@@ -682,6 +699,7 @@ export function RewardEvaluasiTab({ userRole }: RewardEvaluasiTabProps) {
             <Button
               size="sm"
               variant="secondary"
+              data-testid="btn-muat-pratinjau"
               className="text-xs flex items-center gap-1.5 text-slate-700"
               onClick={handleLoadPreview}
               disabled={isPreviewLoading}
@@ -695,7 +713,7 @@ export function RewardEvaluasiTab({ userRole }: RewardEvaluasiTabProps) {
                 size="sm"
                 className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs flex items-center gap-1.5"
                 onClick={handleFinalisasi}
-                disabled={isPending || previewList.length === 0}
+                disabled={isPending || !Array.isArray(previewList) || previewList.length === 0}
               >
                 <FileCheck className="w-3.5 h-3.5" />
                 Finalisasi Laporan Bulanan
@@ -705,60 +723,68 @@ export function RewardEvaluasiTab({ userRole }: RewardEvaluasiTabProps) {
         </CardHeader>
 
         <CardContent className="pt-4">
-          {!previewLoaded ? (
-            <div className="text-center py-10 text-slate-400 space-y-2">
-              <Calendar className="w-8 h-8 mx-auto text-slate-300" />
-              <p className="text-sm">Klik tombol <strong>&ldquo;Muat Pratinjau&rdquo;</strong> untuk menghitung capaian seluruh santri.</p>
-            </div>
-          ) : previewList.length === 0 ? (
-            <div className="text-center py-8 text-slate-400 text-sm">
-              Tidak ada data santri aktif untuk dievaluasi.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {/* Ringkasan Cepat Pratinjau */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                <div className="p-3 bg-slate-50 rounded-lg border">
-                  <span className="text-slate-500 block">Total Santri Dievaluasi:</span>
-                  <span className="text-base font-bold text-slate-800">{previewList.length} Santri</span>
+          {(() => {
+            const safePreviewList = Array.isArray(previewList) ? previewList : [];
+            if (!previewLoaded) {
+              return (
+                <div className="text-center py-10 text-slate-400 space-y-2">
+                  <Calendar className="w-8 h-8 mx-auto text-slate-300" />
+                  <p className="text-sm">Klik tombol <strong>&ldquo;Muat Pratinjau&rdquo;</strong> untuk menghitung capaian seluruh santri.</p>
                 </div>
-                <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200">
-                  <span className="text-emerald-700 block">Target Tercapai (Bebas):</span>
-                  <span className="text-base font-bold text-emerald-800">
-                    {previewList.filter((p) => p.statusSanksi === "BEBAS").length} Santri
-                  </span>
+              );
+            }
+            if (safePreviewList.length === 0) {
+              return (
+                <div className="text-center py-8 text-slate-400 text-sm">
+                  Tidak ada data santri aktif untuk dievaluasi.
                 </div>
-                <div className="p-3 bg-rose-50 rounded-lg border border-rose-200">
-                  <span className="text-rose-700 block">Kehilangan Kunjungan:</span>
-                  <span className="text-base font-bold text-rose-800">
-                    {previewList.filter((p) => p.statusSanksi === "KEHILANGAN_KUNJUNGAN").length} Santri
-                  </span>
+              );
+            }
+            return (
+              <div className="space-y-4">
+                {/* Ringkasan Cepat Pratinjau */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                  <div className="p-3 bg-slate-50 rounded-lg border">
+                    <span className="text-slate-500 block">Total Santri Dievaluasi:</span>
+                    <span className="text-base font-bold text-slate-800">{safePreviewList.length} Santri</span>
+                  </div>
+                  <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200">
+                    <span className="text-emerald-700 block">Target Tercapai (Bebas):</span>
+                    <span className="text-base font-bold text-emerald-800">
+                      {safePreviewList.filter((p) => p.statusSanksi === "BEBAS").length} Santri
+                    </span>
+                  </div>
+                  <div className="p-3 bg-rose-50 rounded-lg border border-rose-200">
+                    <span className="text-rose-700 block">Kehilangan Kunjungan:</span>
+                    <span className="text-base font-bold text-rose-800">
+                      {safePreviewList.filter((p) => p.statusSanksi === "KEHILANGAN_KUNJUNGAN").length} Santri
+                    </span>
+                  </div>
+                  <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                    <span className="text-amber-700 block">Perlu Penetapan Target / Dikecualikan:</span>
+                    <span className="text-base font-bold text-amber-800">
+                      {safePreviewList.filter((p) => p.statusSanksi === "DIKECUALIKAN").length} Santri
+                    </span>
+                  </div>
                 </div>
-                <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
-                  <span className="text-amber-700 block">Perlu Penetapan Target / Dikecualikan:</span>
-                  <span className="text-base font-bold text-amber-800">
-                    {previewList.filter((p) => p.statusSanksi === "DIKECUALIKAN").length} Santri
-                  </span>
-                </div>
-              </div>
 
-              {/* Tabel Detail Santri */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-50 text-slate-700 font-semibold border-b">
-                    <tr>
-                      <th className="p-2.5">Santri</th>
-                      <th className="p-2.5">Halaqoh</th>
-                      <th className="p-2.5 text-center">Target (Hlm)</th>
-                      <th className="p-2.5 text-center">Capaian SABAQ</th>
-                      <th className="p-2.5 text-center">Persentase</th>
-                      <th className="p-2.5">Status Evaluasi</th>
-                      <th className="p-2.5">Sanksi Kunjungan</th>
-                      {isMudir && <th className="p-2.5 text-right">Otoritas Mudir</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y text-slate-600">
-                    {previewList.map((item) => (
+                {/* Tabel Detail Santri */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50 text-slate-700 font-semibold border-b">
+                      <tr>
+                        <th className="p-2.5">Santri</th>
+                        <th className="p-2.5">Halaqoh</th>
+                        <th className="p-2.5 text-center">Target (Hlm)</th>
+                        <th className="p-2.5 text-center">Capaian SABAQ</th>
+                        <th className="p-2.5 text-center">Persentase</th>
+                        <th className="p-2.5">Status Evaluasi</th>
+                        <th className="p-2.5">Sanksi Kunjungan</th>
+                        {isMudir && <th className="p-2.5 text-right">Otoritas Mudir</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y text-slate-600">
+                      {safePreviewList.map((item) => (
                       <tr key={item.santriId} className="hover:bg-slate-50/80">
                         <td className="p-2.5 font-medium text-slate-900">
                           {item.nama}
@@ -848,7 +874,8 @@ export function RewardEvaluasiTab({ userRole }: RewardEvaluasiTabProps) {
                 </table>
               </div>
             </div>
-          )}
+          );
+          })()}
         </CardContent>
       </Card>
 

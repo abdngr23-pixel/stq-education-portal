@@ -455,15 +455,14 @@ export function TahfizhModule({
   // Santri yang sedang dipilih (Strict: Jangan fallback palsu ke index 0 jika belum ada yang terpilih)
   const activeSantri = santriList.find((s) => s.id === effectiveSantriId) || null;
 
-  // Target Mufar Resmi dari Profil Santri
+  // Target Mufar Harian Resmi dari Profil Santri (Standar Jenjang Juz Tuntas)
+  const mufarDailyTargetJuz = activeSantri?.targetDailyMufarJuz ?? 0;
   const mufarTargetDisplay = useMemo(() => {
-    const t = (activeSantri as { targetMufar?: number | null; targetMufarBulanan?: number | null })?.targetMufar ??
-      (activeSantri as { targetMufar?: number | null; targetMufarBulanan?: number | null })?.targetMufarBulanan;
-    if (t !== undefined && t !== null) {
-      return `${t} Kali`;
+    if (mufarDailyTargetJuz > 0) {
+      return `${mufarDailyTargetJuz} Juz/hari`;
     }
-    return "Belum ditetapkan";
-  }, [activeSantri]);
+    return "Target belum berlaku";
+  }, [mufarDailyTargetJuz]);
 
   // Kalkulasi Cerdas Halaman & Konversi Juz Dinamis untuk Santri
   // Mengikuti formula resmi:
@@ -1148,8 +1147,8 @@ export function TahfizhModule({
                           if (j === "SABAQ") {
                             applySuggestedSabaqPosition(activeSantri);
                           } else if (j === "MUFAR") {
-                            const tgtVal = (activeSantri as { targetMufar?: number })?.targetMufar;
-                            if (tgtVal) {
+                            const tgtVal = activeSantri?.targetDailyMufarJuz;
+                            if (tgtVal && tgtVal > 0) {
                               setJumlahJuzMufar(String(tgtVal));
                               setRincianJuzMufar(`Juz 1 s/d ${tgtVal}`);
                             } else {
@@ -1182,9 +1181,9 @@ export function TahfizhModule({
                             ? "Muroja'ah Sepekan"
                             : j === "MANZIL"
                             ? "Muroja'ah 1 Juz"
-                            : ((activeSantri as { targetMufar?: number })?.targetMufar
-                                ? `${(activeSantri as { targetMufar?: number }).targetMufar} Juz`
-                                : "Target belum ditetapkan")}
+                            : (activeSantri?.targetDailyMufarJuz && activeSantri.targetDailyMufarJuz > 0
+                                ? `${activeSantri.targetDailyMufarJuz} Juz/hari`
+                                : "Target belum berlaku")}
                         </span>
                       </button>
                     ))}
@@ -1626,10 +1625,20 @@ export function TahfizhModule({
 
                 {inputJenis === "MUFAR" && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {!(activeSantri as { targetMufar?: number })?.targetMufar && (
+                    {activeSantri?.targetDailyMufarJuz && activeSantri.targetDailyMufarJuz > 0 ? (
+                      <div className="sm:col-span-2 p-2.5 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-900 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-purple-600 shrink-0" />
+                          <span className="font-semibold">Target Harian MUFAR (Standar Jenjang):</span>
+                        </div>
+                        <Badge variant="purple" size="sm">
+                          {activeSantri.targetDailyMufarJuz} Juz/hari
+                        </Badge>
+                      </div>
+                    ) : (
                       <div className="sm:col-span-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center gap-2">
                         <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                        <span>Target belum ditetapkan</span>
+                        <span>Target MUFAR belum berlaku (Belum mencapai 1 Juz tuntas)</span>
                       </div>
                     )}
                     <div>

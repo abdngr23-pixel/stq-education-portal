@@ -354,3 +354,125 @@ export function generateRingkasanTasmiSimaan(
     ringkasanTeks,
   };
 }
+
+export interface SabqiManzilReportSantri {
+  tahfizh?: {
+    sabqi?: {
+      targetBulanan?: number | null;
+      totalFrekuensi?: number;
+      hasTarget?: boolean;
+    };
+    manzil?: {
+      targetBulanan?: number | null;
+      totalFrekuensi?: number;
+      hasTarget?: boolean;
+    };
+  };
+}
+
+/**
+ * Hitung rata-rata kepatuhan muroja'ah (Sabqi & Manzil) murni dari data rekapitulasi santri
+ * Tanpa angka rekaan/fallback fiktif (seperti 94.2%).
+ *
+ * Aturan Integritas Data:
+ * - Jika ada target muroja'ah valid: hitung (total frekuensi riil / total target) * 100
+ * - Jika seluruh frekuensi riil = 0: menghasilkan persentase 0% (tidak boleh menampilkan angka fiktif)
+ * - Jika tidak ada data target/komponen berlaku (denominator = 0 atau belum ada target):
+ *   menghasilkan label "Belum ada data", persentase: null
+ */
+export function hitungRataRataKepatuhanMurojaah(
+  rekapSantri: SabqiManzilReportSantri[] | null | undefined
+): {
+  persentase: number | null;
+  label: string;
+  totalRealisasi: number;
+  totalTarget: number;
+  hasApplicableData: boolean;
+} {
+  if (!rekapSantri || rekapSantri.length === 0) {
+    return {
+      persentase: null,
+      label: "Belum ada data",
+      totalRealisasi: 0,
+      totalTarget: 0,
+      hasApplicableData: false,
+    };
+  }
+
+  let totalRealisasi = 0;
+  let totalTarget = 0;
+  let countApplicable = 0;
+
+  for (const item of rekapSantri) {
+    const sbqi = item.tahfizh?.sabqi;
+    if (sbqi && sbqi.hasTarget && typeof sbqi.targetBulanan === "number" && sbqi.targetBulanan > 0) {
+      totalTarget += sbqi.targetBulanan;
+      totalRealisasi += sbqi.totalFrekuensi || 0;
+      countApplicable++;
+    }
+    const mzl = item.tahfizh?.manzil;
+    if (mzl && mzl.hasTarget && typeof mzl.targetBulanan === "number" && mzl.targetBulanan > 0) {
+      totalTarget += mzl.targetBulanan;
+      totalRealisasi += mzl.totalFrekuensi || 0;
+      countApplicable++;
+    }
+  }
+
+  if (countApplicable === 0 || totalTarget === 0) {
+    return {
+      persentase: null,
+      label: "Belum ada data",
+      totalRealisasi: 0,
+      totalTarget: 0,
+      hasApplicableData: false,
+    };
+  }
+
+  const persentase = parseFloat(((totalRealisasi / totalTarget) * 100).toFixed(1));
+
+  return {
+    persentase,
+    label: `${persentase}%`,
+    totalRealisasi,
+    totalTarget,
+    hasApplicableData: true,
+  };
+}
+
+/**
+ * Mendeteksi apakah data capaian bulanan non-tahfizh merupakan data sintetis bawaan seed
+ * (+4 Hadits, +12 Mufrodat, +12 Vocab, 16 Tahajjud, 16 Dhuha, 7 Puasa, 85 Literasi seragam tanpa catatan)
+ */
+export function isSyntheticMutabaahSeed(
+  records: Array<{
+    kategori: string;
+    pekan1?: number;
+    pekan2?: number;
+    pekan3?: number;
+    pekan4?: number;
+    catatan?: string | null;
+  }>
+): boolean {
+  if (!records || records.length === 0) return false;
+  const getK = (cat: string) => records.find((r) => r.kategori === cat);
+  const hadits = getK("HAFALAN_HADITS");
+  const mufrodat = getK("HAFALAN_MUFRODAT");
+  const vocab = getK("HAFALAN_VOCABULARY");
+  const tahajjud = getK("SHOLAT_TAHAJJUD");
+  const dhuha = getK("SHOLAT_DHUHA");
+  const puasa = getK("PUASA_SUNNAH");
+  const literasi = getK("LITERASI");
+
+  const isSeed =
+    hadits?.pekan1 === 1 && hadits?.pekan2 === 1 && hadits?.pekan3 === 1 && hadits?.pekan4 === 1 &&
+    mufrodat?.pekan1 === 3 && mufrodat?.pekan2 === 3 && mufrodat?.pekan3 === 3 && mufrodat?.pekan4 === 3 &&
+    vocab?.pekan1 === 3 && vocab?.pekan2 === 3 && vocab?.pekan3 === 3 && vocab?.pekan4 === 3 &&
+    tahajjud?.pekan1 === 4 && tahajjud?.pekan2 === 4 && tahajjud?.pekan3 === 4 && tahajjud?.pekan4 === 4 &&
+    dhuha?.pekan1 === 4 && dhuha?.pekan2 === 4 && dhuha?.pekan3 === 4 && dhuha?.pekan4 === 4 &&
+    puasa?.pekan1 === 2 && puasa?.pekan2 === 2 && puasa?.pekan3 === 2 && puasa?.pekan4 === 1 &&
+    literasi?.pekan1 === 20 && literasi?.pekan2 === 20 && literasi?.pekan3 === 25 && literasi?.pekan4 === 20 &&
+    !hadits?.catatan && !mufrodat?.catatan && !tahajjud?.catatan;
+
+  return Boolean(isSeed);
+}
+

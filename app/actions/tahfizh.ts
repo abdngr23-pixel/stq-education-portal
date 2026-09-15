@@ -456,7 +456,8 @@ export async function getSantriProgresAction(santriId: string) {
     const baselineDate = santri.tanggalBaselineTahfizh ? new Date(santri.tanggalBaselineTahfizh) : null;
 
     // Canonical rule: modalHafalanAwalHalaman + valid SABAQ >= tanggalBaselineTahfizh
-    // Jika baseline null: tambahanSabaq = 0. Jangan aggregate historical SABAQ.
+    // Jika baseline null dan modalAwal === 0: seluruh SABAQ valid dihitung (santri mulai dari awal).
+    // Jika baseline null dan modalAwal > 0: fail-closed tambahanSabaq = 0 untuk mencegah double counting.
     let tambahanSabaq = 0;
     if (baselineDate) {
       const sabaqAggregate = await prisma.setoranTahfizh.aggregate({
@@ -465,6 +466,16 @@ export async function getSantriProgresAction(santriId: string) {
           jenis: "SABAQ",
           status: { not: "DIBATALKAN" },
           tanggal: { gte: baselineDate },
+        },
+        _sum: { jumlahHalaman: true },
+      });
+      tambahanSabaq = sabaqAggregate._sum.jumlahHalaman || 0;
+    } else if (modalAwal === 0) {
+      const sabaqAggregate = await prisma.setoranTahfizh.aggregate({
+        where: {
+          santriId,
+          jenis: "SABAQ",
+          status: { not: "DIBATALKAN" },
         },
         _sum: { jumlahHalaman: true },
       });
@@ -547,6 +558,18 @@ export async function getSantriKumulatifHalamanAction(santriId: string) {
           jenis: "SABAQ",
           status: { not: "DIBATALKAN" },
           tanggal: { gte: baselineDate },
+        },
+        _sum: {
+          jumlahHalaman: true,
+        },
+      });
+      tambahanSabaq = sabaqAggregate._sum.jumlahHalaman || 0;
+    } else if (modalAwal === 0) {
+      const sabaqAggregate = await prisma.setoranTahfizh.aggregate({
+        where: {
+          santriId,
+          jenis: "SABAQ",
+          status: { not: "DIBATALKAN" },
         },
         _sum: {
           jumlahHalaman: true,

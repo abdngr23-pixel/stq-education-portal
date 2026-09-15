@@ -15,6 +15,7 @@ import {
   evaluasiCapaianNonTahfizh,
   generateRingkasanTasmiSimaan,
   TARGET_MIN_KOMPONEN,
+  isSyntheticMutabaahSeed,
 } from "@/lib/laporan-bulanan";
 import { getWITAMonthRange } from "@/lib/wita-date";
 
@@ -207,6 +208,8 @@ export async function getLaporanBulananHalaqohAction(
             if (s.jenis === "SABAQ") {
               if (baselineDate && new Date(s.tanggal) >= baselineDate) {
                 sabaqPages[pKey] += s.jumlahHalaman || extractHalamanFromSetoran(s.catatan);
+              } else if (!baselineDate && modalAwal === 0) {
+                sabaqPages[pKey] += s.jumlahHalaman || extractHalamanFromSetoran(s.catatan);
               }
             } else if (s.jenis === "SABQI") {
               sabqiFreq[pKey] += 1;
@@ -229,6 +232,17 @@ export async function getLaporanBulananHalaqohAction(
               _sum: { jumlahHalaman: true },
             });
             priorSabaqHalaman = priorSabaq._sum.jumlahHalaman || 0;
+          } else if (!baselineDate && modalAwal === 0) {
+            const priorSabaq = await prisma.setoranTahfizh.aggregate({
+              where: {
+                santriId: santri.id,
+                jenis: "SABAQ",
+                status: { not: "DIBATALKAN" },
+                tanggal: { lt: startDate },
+              },
+              _sum: { jumlahHalaman: true },
+            });
+            priorSabaqHalaman = priorSabaq._sum.jumlahHalaman || 0;
           }
           const modalAwalHalaman = modalAwal + priorSabaqHalaman;
 
@@ -240,6 +254,8 @@ export async function getLaporanBulananHalaqohAction(
           const capaianNonTahfizh = await prisma.capaianBulanan.findMany({
             where: { santriId: santri.id, bulan, tahunAjaran },
           });
+
+          const isSynthetic = isSyntheticMutabaahSeed(capaianNonTahfizh);
 
           const listKategori: KategoriCapaian[] = [
             "HAFALAN_HADITS",
@@ -269,6 +285,8 @@ export async function getLaporanBulananHalaqohAction(
               p2,
               p3,
               p4,
+              isDataTersedia: !isSynthetic && Boolean(record),
+              isSynthetic,
               ...evaluasi,
             };
           });
@@ -397,6 +415,8 @@ export async function getLaporanBulananHalaqohAction(
             if (s.jenis === "SABAQ") {
               if (baselineDate && new Date(s.tanggal) >= baselineDate) {
                 sabaqPages[pKey] += s.jumlahHalaman || extractHalamanFromSetoran(s.catatan);
+              } else if (!baselineDate && modalAwal === 0) {
+                sabaqPages[pKey] += s.jumlahHalaman || extractHalamanFromSetoran(s.catatan);
               }
             } else if (s.jenis === "SABQI") {
               sabqiFreq[pKey] += 1;
@@ -419,6 +439,17 @@ export async function getLaporanBulananHalaqohAction(
               _sum: { jumlahHalaman: true },
             });
             priorSabaqHalaman = priorSabaq._sum.jumlahHalaman || 0;
+          } else if (!baselineDate && modalAwal === 0) {
+            const priorSabaq = await prisma.setoranTahfizh.aggregate({
+              where: {
+                santriId: santri.id,
+                jenis: "SABAQ",
+                status: { not: "DIBATALKAN" },
+                tanggal: { lt: startDate },
+              },
+              _sum: { jumlahHalaman: true },
+            });
+            priorSabaqHalaman = priorSabaq._sum.jumlahHalaman || 0;
           }
           const modalAwalHalaman = modalAwal + priorSabaqHalaman;
 
@@ -430,6 +461,8 @@ export async function getLaporanBulananHalaqohAction(
           const capaianNonTahfizh = await prisma.capaianBulanan.findMany({
             where: { santriId: santri.id, bulan, tahunAjaran },
           });
+
+          const isSynthetic = isSyntheticMutabaahSeed(capaianNonTahfizh);
 
           const listKategori: KategoriCapaian[] = [
             "HAFALAN_HADITS",
@@ -459,6 +492,8 @@ export async function getLaporanBulananHalaqohAction(
               p2,
               p3,
               p4,
+              isDataTersedia: !isSynthetic && Boolean(record),
+              isSynthetic,
               ...evaluasi,
             };
           });
