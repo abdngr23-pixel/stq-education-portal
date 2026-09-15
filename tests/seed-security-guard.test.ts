@@ -11,23 +11,33 @@ import {
 describe("Seed Security Guard & Production Protection Suite", () => {
   const SAFE_LOCAL_URL = "postgresql://postgres:postgrespassword@127.0.0.1:5433/stq_test?schema=test_portal";
 
-  // 1. Production target rejected
-  it("1. Database target produksi / cloud wajib ditolak mutlak", () => {
-    const cloudUrls = [
-      "prisma://accelerate.prisma-data.net/?api_key=secret_token",
-      "postgresql://postgres.xxx:pass@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres",
-      "postgresql://stq_user:pass@ep-cool-fog-123.ap-southeast-1.aws.neon.tech/neondb",
-      "postgresql://admin:secret@prod-db.c7x8y9.rds.amazonaws.com:5432/stq_prod",
-      "postgresql://root:secret@stq-production.railway.app:5432/railway",
-      "postgres://user:pass@dpg-abc1234-a.oregon-postgres.render.com/stq_prod",
-      "postgresql://user:pass@192.168.1.100:5432/stq_prod", // non-loopback IP
+  // 1. Production target and deceptive hostname rejection
+  it("1. Database target produksi, cloud, remote deceptive host, dan IP publik/LAN wajib ditolak mutlak", () => {
+    const rejectedHosts = [
+      "stq-test-production.example.com",
+      "stq-test.remote.internal",
+      "stq-test-evil.com",
+      "local-postgres.example.com",
+      "test-db.example.com",
+      "192.168.1.100",
+      "10.0.0.20",
+      "172.16.0.5",
+      "203.0.113.195", // arbitrary public IP
+      "0.0.0.0",       // removed 0.0.0.0
+      "accelerate.prisma-data.net",
+      "aws-0-ap-southeast-1.pooler.supabase.com",
+      "ep-cool-fog-123.ap-southeast-1.aws.neon.tech",
+      "prod-db.c7x8y9.rds.amazonaws.com",
+      "stq-production.railway.app",
+      "dpg-abc1234-a.oregon-postgres.render.com",
     ];
 
-    for (const url of cloudUrls) {
+    for (const host of rejectedHosts) {
+      const url = `postgresql://user:pass@${host}:5432/stq_db`;
       assert.equal(
         isDemonstrablyLocalOrTestDatabase(url),
         false,
-        `URL ${url} seharusnya ditolak sebagai non-local target`
+        `Host '${host}' wajib ditolak sebagai non-local / untrusted target`
       );
 
       assert.throws(
@@ -42,7 +52,7 @@ describe("Seed Security Guard & Production Protection Suite", () => {
           assert.match((err as Error).message, /does not resolve to an approved local/);
           return true;
         },
-        `URL ${url} wajib melempar SeedSecurityError`
+        `URL dengan host '${host}' wajib melempar SeedSecurityError`
       );
     }
   });
@@ -66,7 +76,7 @@ describe("Seed Security Guard & Production Protection Suite", () => {
 
   // 3. Missing explicit seed flag rejected
   it("3. Tidak adanya flag eksplisit ALLOW_DESTRUCTIVE_SEED='true' wajib menolak eksekusi", () => {
-    const invalidFlags = [undefined, "", "false", "0", "ALLOW", "yes"];
+    const invalidFlags = [undefined, "", "false", "0", "ALLOW", "yes", "truee", "TRUE"];
 
     for (const flag of invalidFlags) {
       assert.throws(
@@ -86,28 +96,29 @@ describe("Seed Security Guard & Production Protection Suite", () => {
     }
   });
 
-  // 4. Approved isolated test/dev target allowed
-  it("4. Target lokal / isolated test database dengan konfigurasi valid diizinkan", () => {
-    const validLocalUrls = [
-      SAFE_LOCAL_URL,
-      "postgresql://postgres:password@localhost:5432/stq_dev",
-      "postgresql://postgres:password@127.0.0.1:5432/stq_dev",
-      "postgresql://postgres:password@[::1]:5432/stq_dev",
-      "postgresql://postgres:password@0.0.0.0:5432/stq_dev",
-      "postgresql://postgres:password@stq-test-db:5432/stq_test",
+  // 4. Approved isolated test/dev target allowed (exact allow-list)
+  it("4. Target lokal / isolated test database dengan exact allow-list diizinkan", () => {
+    const allowedTargets = [
+      { host: "localhost", url: "postgresql://postgres:password@localhost:5432/stq_dev" },
+      { host: "127.0.0.1", url: "postgresql://postgres:password@127.0.0.1:5432/stq_dev" },
+      { host: "::1", url: "postgresql://postgres:password@[::1]:5432/stq_dev" },
+      { host: "test-db", url: "postgresql://postgres:password@test-db:5432/stq_test" },
+      { host: "stq-test-db", url: "postgresql://postgres:password@stq-test-db:5432/stq_test" },
+      { host: "local-postgres", url: "postgresql://postgres:password@local-postgres:5432/stq_test" },
+      { host: "127.0.0.1 (isolated test runner)", url: SAFE_LOCAL_URL },
     ];
 
-    for (const url of validLocalUrls) {
+    for (const target of allowedTargets) {
       assert.equal(
-        isDemonstrablyLocalOrTestDatabase(url),
+        isDemonstrablyLocalOrTestDatabase(target.url),
         true,
-        `URL lokal ${url} seharusnya disetujui`
+        `Target '${target.host}' seharusnya disetujui`
       );
 
       const result = validateSeedExecutionSafety({
         nodeEnv: "development",
         allowDestructiveSeed: "true",
-        databaseUrl: url,
+        databaseUrl: target.url,
       });
 
       assert.ok(result.targetDatabaseHost);

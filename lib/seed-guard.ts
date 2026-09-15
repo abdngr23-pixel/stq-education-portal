@@ -55,23 +55,16 @@ export function isDemonstrablyLocalOrTestDatabase(databaseUrl?: string): boolean
     const parsed = new URL(normalized);
     const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
 
-    const allowedLocalHosts = [
+    const allowedLocalHosts = new Set([
       "localhost",
       "127.0.0.1",
       "::1",
-      "0.0.0.0",
-    ];
+      "test-db",
+      "stq-test-db",
+      "local-postgres",
+    ]);
 
-    if (allowedLocalHosts.includes(host)) {
-      return true;
-    }
-
-    // Hostname khusus test container lokal
-    if (host.startsWith("stq-test") || host === "test-db" || host === "local-postgres") {
-      return true;
-    }
-
-    return false;
+    return allowedLocalHosts.has(host);
   } catch {
     return false;
   }
