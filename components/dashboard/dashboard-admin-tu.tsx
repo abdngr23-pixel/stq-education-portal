@@ -34,7 +34,7 @@ export function DashboardAdminTU({
             value={`${totalSantri} Santri`}
             description="Klik untuk Buka Direktori"
             icon={<Users className="h-5 w-5" />}
-            badgeText="57 Santri"
+            badgeText={`${totalSantri} Santri`}
             badgeVariant="green"
             accentBorder
           />

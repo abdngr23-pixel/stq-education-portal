@@ -48,6 +48,7 @@ export async function getHalaqohListAction() {
           select: {
             id: true,
             nama: true,
+            staffCode: true,
           },
         },
         _count: {
@@ -327,3 +328,51 @@ export async function pindahkanSantriHalaqohAction(santriId: string, newHalaqohI
     return { success: false, message: "Gagal memperbarui halaqoh santri." };
   }
 }
+
+/**
+ * Server Action: Mengambil daftar staf yang dapat ditugaskan sebagai pembina halaqoh (Restricted to KS & ADM)
+ */
+export async function getAssignableStaffAction() {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Sesi telah berakhir. Silakan login kembali.", data: [] };
+  }
+
+  if (!["KS", "ADM"].includes(session.role)) {
+    return {
+      success: false,
+      message: "Akses Ditolak: Hanya Kepala Sekolah / Mudir dan Admin yang berwenang mengambil daftar staf penugasan halaqoh.",
+      data: [],
+    };
+  }
+
+  try {
+    const staffList = await prisma.staff.findMany({
+      where: {
+        status: "AKTIF",
+      },
+      select: {
+        id: true,
+        staffCode: true,
+        nama: true,
+        roleStaff: true,
+        status: true,
+      },
+      orderBy: { staffCode: "asc" },
+    });
+
+    return {
+      success: true,
+      data: staffList,
+      message: "Berhasil memuat daftar staf pembina.",
+    };
+  } catch (error) {
+    console.error("Gagal mengambil daftar staf pembina:", error);
+    return {
+      success: false,
+      message: "Gagal memuat daftar staf dari basis data.",
+      data: [],
+    };
+  }
+}
+

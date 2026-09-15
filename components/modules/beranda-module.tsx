@@ -141,6 +141,7 @@ export interface BerandaModuleProps {
   onOpenSetoranQuick?: () => void;
   isKepalaBidangTahfidz?: boolean;
   halaqohWorkloads?: HalaqohWorkloadSummary[] | null;
+  santriLoadError?: string | null;
 }
 
 export function BerandaModule({
@@ -158,6 +159,7 @@ export function BerandaModule({
   onOpenSetoranQuick,
   isKepalaBidangTahfidz = false,
   halaqohWorkloads = null,
+  santriLoadError = null,
 }: BerandaModuleProps) {
   // Role MT dialihkan ke Dashboard Musyrif Tahfizh terfokus (Pilot UI/UX B2)
   if (userRole === "MT") {
@@ -181,6 +183,7 @@ export function BerandaModule({
         onSelectSantriId={onSelectSantriForSetoran}
         isKabidOrManagerial={isKabidOrManagerial}
         halaqohWorkloads={halaqohWorkloads}
+        loadError={santriLoadError}
       />
     );
   }
@@ -269,10 +272,10 @@ export function BerandaModule({
         {/* KPI 1: Santri Binaan */}
         <StatCard
           title={currentHalaqohName ? "Santri Binaan" : "Total Santri"}
-          value={`${totalSantri} Santri`}
-          description={`${santriAktif} santri berstatus aktif`}
+          value={santriLoadError ? "Data Tidak Tersedia" : `${totalSantri} Santri`}
+          description={santriLoadError ? "Gagal memuat dari server" : `${santriAktif} santri berstatus aktif`}
           icon={<Users className="h-5 w-5 text-emerald-600" />}
-          badgeVariant="green"
+          badgeVariant={santriLoadError ? "ditolak" : "green"}
         />
 
         {/* KPI 2: Rata-rata Hafalan */}
@@ -384,6 +387,11 @@ export function BerandaModule({
                     Uji Santri
                     <ArrowRight className="h-3.5 w-3.5" />
                   </Button>
+                </div>
+              ) : ikhtibarError ? (
+                <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+                  <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+                  <span>Gagal memuat antrean ikhtibar ({ikhtibarError}).</span>
                 </div>
               ) : (
                 <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-100 text-slate-500 text-xs">
