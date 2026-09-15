@@ -247,4 +247,141 @@ describe("P0 Data Honesty & Production Baseline Metric Integrity (Santri & Halaq
       );
     });
   });
+
+  // =========================================================================
+  // 6. REMEDIATION ROUND 2: DATA HONESTY & AUTHORITATIVE CONTRACTS
+  // =========================================================================
+  describe("6. Remediation Round 2: Data Honesty & Authoritative Contracts", () => {
+    const usersModulePath = path.resolve(process.cwd(), "components/modules/users-module.tsx");
+    const kalenderModulePath = path.resolve(process.cwd(), "components/modules/kalender-module.tsx");
+    const portalWaliModulePath = path.resolve(process.cwd(), "components/modules/portal-wali-module.tsx");
+    const kesehatanModulePath = path.resolve(process.cwd(), "components/modules/kesehatan-module.tsx");
+
+    const usersModuleContent = fs.readFileSync(usersModulePath, "utf-8");
+    const kalenderModuleContent = fs.readFileSync(kalenderModulePath, "utf-8");
+    const portalWaliModuleContent = fs.readFileSync(portalWaliModulePath, "utf-8");
+    const kesehatanModuleContent = fs.readFileSync(kesehatanModulePath, "utf-8");
+
+    it("kesehatan failure != 0 sakit (Beranda & MT Dashboard harus tampilkan data tidak lengkap / data tidak tersedia)", () => {
+      assert.ok(
+        appPageContent.includes("setKesehatanLoadError"),
+        "app/page.tsx harus melacak kesehatanLoadError"
+      );
+      assert.ok(
+        berandaModuleContent.includes("kesehatanLoadError"),
+        "BerandaModule harus menerima prop kesehatanLoadError"
+      );
+      assert.ok(
+        berandaModuleContent.includes("santriLoadError || spLoadError || kesehatanLoadError"),
+        "StatCard Perlu Perhatian harus mengecek kesehatanLoadError agar tidak menampilkan '0 Kasus' saat gagal"
+      );
+      assert.ok(
+        dashboardMusyrifContent.includes('kesehatanLoadError ? "Kesehatan (Data Tidak Tersedia)"'),
+        "DashboardMusyrifTahfizh dilarang menampilkan '0 sakit' saat kesehatan gagal dimuat"
+      );
+      assert.ok(
+        kesehatanModuleContent.includes("loadError"),
+        "KesehatanModule harus melacak loadError"
+      );
+    });
+
+    it("users failure != mock users & users success [] = legitimate empty", () => {
+      assert.ok(
+        appPageContent.includes("useState<UserAccountItem[]>([])"),
+        "usersList harus diinisialisasi kosong [] tanpa mock usr-01..usr-14"
+      );
+      assert.ok(
+        !appPageContent.includes('"mudir.ks"'),
+        "Mock username mudir.ks dilarang ada di inisialisasi state page.tsx"
+      );
+      assert.ok(
+        !appPageContent.includes('"aminah.adm"'),
+        "Mock username aminah.adm dilarang ada di inisialisasi state page.tsx"
+      );
+      assert.ok(
+        !appPageContent.includes("res.data.length > 0"),
+        "Syarat 'res.data.length > 0' dilarang agar legitimate empty [] diterima"
+      );
+      assert.ok(
+        usersModuleContent.includes("loadError"),
+        "UsersModule harus menerima prop loadError"
+      );
+      assert.ok(
+        usersModuleContent.includes("Gagal memuat daftar pengguna:"),
+        "UsersModule harus menampilkan baris error saat fetch gagal"
+      );
+    });
+
+    it("agenda failure != mock agenda & initialized as []", () => {
+      assert.ok(
+        appPageContent.includes("useState<AgendaItem[]>([])"),
+        "agendaList harus diinisialisasi kosong [] tanpa mock agd-01..agd-04"
+      );
+      assert.ok(
+        !appPageContent.includes('"agd-01"'),
+        "Mock agenda agd-01 dilarang ada di inisialisasi state page.tsx"
+      );
+      assert.ok(
+        kalenderModuleContent.includes("loadError"),
+        "KalenderModule harus menerima prop loadError"
+      );
+      assert.ok(
+        kalenderModuleContent.includes("Gagal Memuat Agenda Kalender"),
+        "KalenderModule harus menampilkan kartu error saat fetch gagal"
+      );
+    });
+
+    it("kotak saran failure != mock saran & initialized as []", () => {
+      assert.ok(
+        appPageContent.includes("useState<SaranItem[]>([])"),
+        "kotakSaranList harus diinisialisasi kosong [] tanpa mock srn-01"
+      );
+      assert.ok(
+        !appPageContent.includes('"srn-01"'),
+        "Mock saran srn-01 dilarang ada di inisialisasi state page.tsx"
+      );
+      assert.ok(
+        portalWaliModuleContent.includes("saranLoadError"),
+        "PortalWaliModule harus menerima prop saranLoadError"
+      );
+      assert.ok(
+        portalWaliModuleContent.includes("Gagal memuat aspirasi kotak saran:"),
+        "PortalWaliModule harus menampilkan status error saat fetch gagal"
+      );
+    });
+
+    it("tidak ada inferensi gender halaqoh berbasis nama (contains 'lisa' / 'putri')", () => {
+      assert.ok(
+        !masterDataSantriContent.includes('!h.nama.toLowerCase().includes("lisa")'),
+        "Inferensi nama halaqoh 'lisa' dilarang keras di master-data-santri.tsx"
+      );
+      assert.ok(
+        !masterDataSantriContent.includes('!h.nama.toLowerCase().includes("putri")'),
+        "Inferensi nama halaqoh 'putri' dilarang keras di master-data-santri.tsx"
+      );
+      assert.ok(
+        !masterDataSantriContent.includes("halaqohPutraCount"),
+        "halaqohPutraCount spekulatif dilarang di master-data-santri.tsx"
+      );
+      assert.ok(
+        !masterDataSantriContent.includes("Terdaftar Aktif 2026/2027"),
+        "Teks 'Terdaftar Aktif 2026/2027' dilarang dibuat-buat di master-data-santri.tsx"
+      );
+    });
+
+    it("tidak ada wording 'reset ke default' pada UI reset kata sandi", () => {
+      assert.ok(
+        !appPageContent.includes("ke default"),
+        "Wording 'ke default' dilarang pada dialog konfirmasi reset kata sandi"
+      );
+      assert.ok(
+        appPageContent.includes("Buat sandi sementara baru"),
+        "app/page.tsx harus menggunakan istilah 'Buat sandi sementara baru'"
+      );
+      assert.ok(
+        usersModuleContent.includes("Buat Sandi Baru"),
+        "UsersModule harus menggunakan wording Buat Sandi Baru"
+      );
+    });
+  });
 });

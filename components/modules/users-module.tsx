@@ -27,6 +27,7 @@ export interface UserAccountItem {
 export interface UsersModuleProps {
   usersList: UserAccountItem[];
   userRole: Role;
+  loadError?: string | null;
   onToggleStatus: (userId: string) => Promise<void> | void;
   onResetPassword: (username: string) => Promise<void> | void;
   onTogglePetugasPutri?: (userId: string) => Promise<void> | void;
@@ -36,6 +37,7 @@ export interface UsersModuleProps {
 export function UsersModule({
   usersList,
   userRole,
+  loadError = null,
   onToggleStatus,
   onResetPassword,
   onTogglePetugasPutri,
@@ -151,7 +153,13 @@ export function UsersModule({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredUsers.length === 0 ? (
+              {loadError ? (
+                <tr>
+                  <td colSpan={5} className="p-8 text-center text-rose-700 bg-rose-50/50 font-semibold">
+                    Gagal memuat daftar pengguna: {loadError}
+                  </td>
+                </tr>
+              ) : filteredUsers.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="p-8 text-center text-slate-400">
                     Tidak ada akun pengguna yang sesuai dengan pencarian atau filter.
@@ -225,7 +233,7 @@ export function UsersModule({
                             disabled={!canManageUsers || isPending}
                             leftIcon={<KeyRound className="h-3 w-3 text-amber-600" />}
                           >
-                            Reset Sandi
+                            Buat Sandi Baru
                           </Button>
                         </div>
                       </td>

@@ -172,13 +172,6 @@ export function MasterDataSantri({
 
   const totalPutra = santriList.length - totalPutri;
 
-  const halaqohPutraCount = useMemo(() => {
-    const count = halaqohList.filter(
-      (h) => !h.nama.toLowerCase().includes("lisa") && !h.nama.toLowerCase().includes("putri")
-    ).length;
-    return count > 0 ? count : halaqohList.length;
-  }, [halaqohList]);
-
   // Handler Tambah Santri Baru
   const handleCreateSantri = () => {
     if (!formNis.trim() || !formNama.trim()) {
@@ -337,7 +330,7 @@ export function MasterDataSantri({
         <StatCard
           title="Total Santri"
           value={loadError ? "Data Tidak Tersedia" : `${santriList.length} Santri`}
-          description={loadError ? "Gagal memuat data dari server" : "Terdaftar Aktif 2026/2027"}
+          description={loadError ? "Gagal memuat data dari server" : "Santri Terdaftar Aktif"}
           icon={<Users className="h-5 w-5" />}
           badgeText={loadError ? "Gagal" : "100% Aktif"}
           badgeVariant={loadError ? "ditolak" : "green"}
@@ -345,7 +338,7 @@ export function MasterDataSantri({
         <StatCard
           title="Santri Putra (Ikhwan)"
           value={loadError ? "Data Tidak Tersedia" : `${totalPutra} Santri`}
-          description={loadError ? "Gagal memuat data dari server" : `${halaqohPutraCount} Kelompok Halaqoh`}
+          description={loadError ? "Gagal memuat data dari server" : "Santri Asrama Putra"}
           icon={<GraduationCap className="h-5 w-5" />}
           badgeText="Asrama Putra"
           badgeVariant={loadError ? "ditolak" : "green"}

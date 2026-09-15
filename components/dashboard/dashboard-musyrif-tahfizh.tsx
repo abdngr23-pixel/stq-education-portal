@@ -83,6 +83,7 @@ export interface DashboardMusyrifTahfizhProps {
   izinPendingCount?: number;
   izinLoadError?: string | null;
   santriSakitCount?: number;
+  kesehatanLoadError?: string | null;
   onNavigate?: (tab: AppNavId) => void;
   isKabidOrManagerial?: boolean;
   halaqohWorkloads?: HalaqohWorkloadSummary[] | null;
@@ -103,6 +104,7 @@ export function DashboardMusyrifTahfizh({
   izinPendingCount = 0,
   izinLoadError = null,
   santriSakitCount = 0,
+  kesehatanLoadError = null,
   onNavigate,
   isKabidOrManagerial = false,
   halaqohWorkloads = null,
@@ -563,7 +565,7 @@ export function DashboardMusyrifTahfizh({
                   : "0 Antrean Ikhtibar"}
               </span>
               <span className="text-[10px] text-slate-400 block mt-0.5 truncate">
-                Izin & Kesehatan: {izinLoadError ? "Izin (Gagal Memuat)" : `${izinPendingCount} izin`} • {santriSakitCount} sakit
+                Izin & Kesehatan: {izinLoadError ? "Izin (Gagal Memuat)" : `${izinPendingCount} izin`} • {kesehatanLoadError ? "Kesehatan (Data Tidak Tersedia)" : `${santriSakitCount} sakit`}
               </span>
             </div>
           </div>

@@ -63,6 +63,7 @@ export interface SaranItem {
 export interface PortalWaliModuleProps {
   userRole: Role;
   kotakSaranList: SaranItem[];
+  saranLoadError?: string | null;
   onKirimSaran: (kategori: string, pesan: string) => Promise<void> | void;
   onPrintRapor: () => void;
   isPending?: boolean;
@@ -71,6 +72,7 @@ export interface PortalWaliModuleProps {
 export function PortalWaliModule({
   userRole,
   kotakSaranList,
+  saranLoadError = null,
   onKirimSaran,
   onPrintRapor,
   isPending = false,
@@ -315,23 +317,33 @@ export function PortalWaliModule({
               {/* Riwayat Aspirasi & Tanggapan */}
               <div className="pt-2 space-y-3">
                 <h5 className="text-xs font-bold text-slate-700">Aspirasi Anda Sebelumnya:</h5>
-                {kotakSaranList.map((s) => (
-                  <div key={s.id} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-800">{s.kategori}</span>
-                      <Badge variant={s.status === "DITANGGAPI" ? "green" : "gold"} size="sm">
-                        {s.status}
-                      </Badge>
-                    </div>
-                    <p className="text-slate-600 italic">&quot;{s.pesan}&quot;</p>
-                    {s.tanggapan && (
-                      <div className="p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-100 text-emerald-900 mt-2">
-                        <p className="font-bold text-[11px]">Tanggapan Pimpinan Pondok:</p>
-                        <p className="mt-0.5">{s.tanggapan}</p>
-                      </div>
-                    )}
+                {saranLoadError ? (
+                  <div className="p-3.5 text-center text-xs text-rose-700 bg-rose-50 rounded-2xl border border-rose-200 font-semibold">
+                    Gagal memuat aspirasi kotak saran: {saranLoadError}
                   </div>
-                ))}
+                ) : kotakSaranList.length === 0 ? (
+                  <div className="p-3.5 text-center text-xs text-slate-400 bg-slate-50 rounded-2xl border border-slate-200">
+                    Belum ada aspirasi atau saran yang diajukan.
+                  </div>
+                ) : (
+                  kotakSaranList.map((s) => (
+                    <div key={s.id} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-800">{s.kategori}</span>
+                        <Badge variant={s.status === "DITANGGAPI" ? "green" : "gold"} size="sm">
+                          {s.status}
+                        </Badge>
+                      </div>
+                      <p className="text-slate-600 italic">&quot;{s.pesan}&quot;</p>
+                      {s.tanggapan && (
+                        <div className="p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-100 text-emerald-900 mt-2">
+                          <p className="font-bold text-[11px]">Tanggapan Pimpinan Pondok:</p>
+                          <p className="mt-0.5">{s.tanggapan}</p>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>

@@ -68,11 +68,15 @@ export function ManajemenHalaqoh({
       setNotification({ type: "error", message: "Tahun ajaran wajib diisi (misal: 2024/2025)." });
       return;
     }
+    if (!newPembinaId || !newPembinaId.trim()) {
+      setNotification({ type: "error", message: "Musyrif pembina wajib dipilih." });
+      return;
+    }
 
     startTransition(async () => {
       const res = await createHalaqohAction({
         nama: newNama,
-        pembinaId: newPembinaId || undefined,
+        pembinaId: newPembinaId.trim(),
         tahunAjaran: newTahunAjaran,
       });
 

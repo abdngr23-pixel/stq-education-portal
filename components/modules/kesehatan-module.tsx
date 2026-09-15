@@ -39,56 +39,48 @@ export function KesehatanModule({
   currentUserName,
   santriList,
 }: KesehatanModuleProps) {
-  const [list, setList] = useState<KesehatanRecord[]>([
-    {
-      id: "kes-01",
-      santri: "Achmad Sufiyan",
-      nis: "SAN-0015",
-      keluhan: "Demam ringan dan pusing saat halaqoh subuh",
-      diagnosa: "Gejala flu & kecapekan",
-      tindakan: "Istirahat di UKS Asrama + Paracetamol 500mg & Madu",
-      status: "RAWAT_PONDOK",
-      tanggal: "07/09/2026",
-    },
-    {
-      id: "kes-02",
-      santri: "Muhammad Fardhan",
-      nis: "SAN-0002",
-      keluhan: "Nyeri lambung / maag kambuh",
-      diagnosa: "Gastritis ringan",
-      tindakan: "Antasida + bubur hangat dari dapur pesantren",
-      status: "SEMBUH",
-      tanggal: "06/09/2026",
-    },
-  ]);
+  const [list, setList] = useState<KesehatanRecord[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Load rekam medis riil dari server action on mount
   useEffect(() => {
     let isMounted = true;
-    getDaftarKesehatanAction().then((res) => {
-      if (isMounted && res.success && res.data && Array.isArray(res.data) && res.data.length > 0) {
-        setList(
-          (res.data as Array<{
-            id: string;
-            santri: { nama: string; nis: string };
-            keluhan: string;
-            diagnosa?: string | null;
-            tindakan?: string | null;
-            status: "RAWAT_PONDOK" | "DIRUJUK_PUSKESMAS" | "DIRUJUK_RS" | "SEMBUH";
-            tanggal: Date | string;
-          }>).map((item) => ({
-            id: item.id,
-            santri: item.santri.nama,
-            nis: item.santri.nis,
-            keluhan: item.keluhan,
-            diagnosa: item.diagnosa || "Dalam observasi Poskestren",
-            tindakan: item.tindakan || "Istirahat di UKS",
-            status: item.status,
-            tanggal: new Date(item.tanggal).toLocaleDateString("id-ID"),
-          }))
-        );
-      }
-    });
+    getDaftarKesehatanAction()
+      .then((res) => {
+        if (!isMounted) return;
+        if (res.success && res.data && Array.isArray(res.data)) {
+          setLoadError(null);
+          setList(
+            (res.data as Array<{
+              id: string;
+              santri: { nama: string; nis: string };
+              keluhan: string;
+              diagnosa?: string | null;
+              tindakan?: string | null;
+              status: "RAWAT_PONDOK" | "DIRUJUK_PUSKESMAS" | "DIRUJUK_RS" | "SEMBUH";
+              tanggal: Date | string;
+            }>).map((item) => ({
+              id: item.id,
+              santri: item.santri.nama,
+              nis: item.santri.nis,
+              keluhan: item.keluhan,
+              diagnosa: item.diagnosa || "Dalam observasi Poskestren",
+              tindakan: item.tindakan || "Istirahat di UKS",
+              status: item.status,
+              tanggal: new Date(item.tanggal).toLocaleDateString("id-ID"),
+            }))
+          );
+        } else {
+          setList([]);
+          setLoadError(res.message || "Gagal memuat rekam medis kesehatan.");
+        }
+      })
+      .catch((err) => {
+        if (isMounted) {
+          setList([]);
+          setLoadError((err as Error)?.message || "Koneksi data kesehatan gagal.");
+        }
+      });
     return () => {
       isMounted = false;
     };
@@ -302,6 +294,10 @@ export function KesehatanModule({
                   </div>
                 </div>
               ))}
+            </div>
+          ) : loadError ? (
+            <div className="text-center py-16 px-4 text-rose-600 bg-rose-50/50 text-xs font-semibold">
+              Gagal memuat rekam medis kesehatan santri: {loadError}
             </div>
           ) : (
             <div className="text-center py-16 text-slate-400 text-xs">

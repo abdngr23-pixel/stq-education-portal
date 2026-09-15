@@ -138,6 +138,8 @@ export interface BerandaModuleProps {
   ikhtibarLoading?: boolean;
   ikhtibarError?: string | null;
   santriSakitCount: number;
+  kesehatanLoadError?: string | null;
+  kesehatanLoaded?: boolean;
   onNavigate: (tab: AppNavId) => void;
   onSelectSantriForSetoran?: (santriId: string) => void;
   onOpenSetoranQuick?: () => void;
@@ -158,6 +160,8 @@ export function BerandaModule({
   ikhtibarLoading,
   ikhtibarError,
   santriSakitCount,
+  kesehatanLoadError = null,
+  kesehatanLoaded = true,
   onNavigate,
   onSelectSantriForSetoran,
   onOpenSetoranQuick,
@@ -184,6 +188,7 @@ export function BerandaModule({
         izinPendingCount={izinPendingCount}
         izinLoadError={izinLoadError}
         santriSakitCount={santriSakitCount}
+        kesehatanLoadError={kesehatanLoadError}
         onNavigate={onNavigate}
         onSelectSantriId={onSelectSantriForSetoran}
         isKabidOrManagerial={isKabidOrManagerial}
@@ -305,18 +310,18 @@ export function BerandaModule({
         <StatCard
           title="Perlu Perhatian"
           value={
-            santriLoadError || spLoadError
+            santriLoadError || spLoadError || kesehatanLoadError || !kesehatanLoaded
               ? "Data Tidak Lengkap"
               : `${santriSpCount + santriSakitCount} Kasus`
           }
           description={
-            santriLoadError || spLoadError
-              ? "Gagal memuat status disiplin santri"
+            santriLoadError || spLoadError || kesehatanLoadError || !kesehatanLoaded
+              ? "Gagal memuat status disiplin/kesehatan santri"
               : `${santriSpCount} SP aktif • ${santriSakitCount} dirawat`
           }
           icon={<AlertTriangle className="h-5 w-5 text-rose-600" />}
           badgeVariant={
-            santriLoadError || spLoadError
+            santriLoadError || spLoadError || kesehatanLoadError || !kesehatanLoaded
               ? "ditolak"
               : santriSpCount + santriSakitCount > 0
               ? "ditolak"

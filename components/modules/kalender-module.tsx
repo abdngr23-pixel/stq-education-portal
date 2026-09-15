@@ -31,6 +31,7 @@ export interface AgendaItem {
 export interface KalenderModuleProps {
   agendaList: AgendaItem[];
   userRole: Role;
+  loadError?: string | null;
   onTambahAgenda: (data: { judul: string; tanggal: string; kategori: string; lokasi: string }) => Promise<void> | void;
   isPending?: boolean;
 }
@@ -38,6 +39,7 @@ export interface KalenderModuleProps {
 export function KalenderModule({
   agendaList,
   userRole,
+  loadError = null,
   onTambahAgenda,
   isPending = false,
 }: KalenderModuleProps) {
@@ -340,7 +342,13 @@ export function KalenderModule({
           </div>
 
           {/* Agenda Grid */}
-          {filteredAgendas.length === 0 ? (
+          {loadError ? (
+            <div className="p-12 text-center bg-rose-50 rounded-3xl border border-rose-200">
+              <Calendar className="h-8 w-8 text-rose-400 mx-auto mb-2" />
+              <p className="text-sm font-bold text-rose-700">Gagal Memuat Agenda Kalender</p>
+              <p className="text-xs text-rose-600 mt-1">{loadError}</p>
+            </div>
+          ) : filteredAgendas.length === 0 ? (
             <div className="p-12 text-center bg-white rounded-3xl border border-dashed border-slate-200">
               <Calendar className="h-8 w-8 text-slate-300 mx-auto mb-2" />
               <p className="text-sm font-bold text-slate-700">Tidak ada agenda ditemukan</p>

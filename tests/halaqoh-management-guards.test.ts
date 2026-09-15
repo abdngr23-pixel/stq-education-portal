@@ -23,6 +23,7 @@ describe("P0 RBAC & ABAC Enclosure: Halaqoh Management Actions", () => {
   const STAFF_KS = "stf-hlq-ks";
   const STAFF_PH1 = "stf-hlq-ph1";
   const STAFF_ADM1 = "stf-hlq-adm1";
+  const STAFF_INAKTIF = "stf-hlq-inaktif";
 
   const HALAQOH_1 = "hlq-test-01";
   const HALAQOH_2 = "hlq-test-02";
@@ -77,6 +78,7 @@ describe("P0 RBAC & ABAC Enclosure: Halaqoh Management Actions", () => {
         { id: STAFF_PH1, staffCode: "STF-PH-01", nama: "Mudhabbir Pengasuhan 1", roleStaff: "PH", status: "AKTIF", noHp: "0844444444" },
         { id: STAFF_KS, staffCode: "STF-KS-01", nama: "K.H. Mudir Pesantren", roleStaff: "KS", status: "AKTIF", noHp: "0833333333" },
         { id: STAFF_ADM1, staffCode: "STF-ADM-01", nama: "Staf Tata Usaha", roleStaff: "ADM", status: "AKTIF", noHp: "0855555555" },
+        { id: STAFF_INAKTIF, staffCode: "STF-IN-01", nama: "Staf Nonaktif", roleStaff: "MT", status: "NONAKTIF", noHp: "0899999999" },
       ],
     });
 
@@ -148,11 +150,32 @@ describe("P0 RBAC & ABAC Enclosure: Halaqoh Management Actions", () => {
       assert.ok(resMK.message.includes("Akses Ditolak"));
     });
 
-    it("mengizinkan KS membuat halaqoh baru", async () => {
+    it("menolak pembuatan halaqoh tanpa pembina (pembinaId wajib eksplisit)", async () => {
+      setTestSession(sessionKS);
+      const res = await createHalaqohAction({
+        nama: "Halaqoh Tanpa Pembina",
+        tahunAjaran: "2024/2025",
+      });
+      assert.strictEqual(res.success, false);
+      assert.ok(res.message.includes("Musyrif pembina wajib dipilih."));
+    });
+
+    it("mengizinkan KS membuat halaqoh baru dengan MT valid", async () => {
       setTestSession(sessionKS);
       const res = await createHalaqohAction({
         nama: "Halaqoh Utsman",
         pembinaId: STAFF_MT1,
+        tahunAjaran: "2024/2025",
+      });
+      assert.strictEqual(res.success, true);
+      assert.ok(res.message.includes("berhasil dibuat"));
+    });
+
+    it("mengizinkan KS membuat halaqoh baru dengan PH valid", async () => {
+      setTestSession(sessionKS);
+      const res = await createHalaqohAction({
+        nama: "Halaqoh PH Valid",
+        pembinaId: STAFF_PH1,
         tahunAjaran: "2024/2025",
       });
       assert.strictEqual(res.success, true);
@@ -168,6 +191,17 @@ describe("P0 RBAC & ABAC Enclosure: Halaqoh Management Actions", () => {
       });
       assert.strictEqual(res.success, true);
       assert.ok(res.message.includes("berhasil dibuat"));
+    });
+
+    it("menolak pembuatan halaqoh jika pembina nonaktif", async () => {
+      setTestSession(sessionKS);
+      const res = await createHalaqohAction({
+        nama: "Halaqoh Pembina Nonaktif",
+        pembinaId: STAFF_INAKTIF,
+        tahunAjaran: "2024/2025",
+      });
+      assert.strictEqual(res.success, false);
+      assert.ok(res.message.includes("tidak aktif"));
     });
 
     it("menolak pembuatan halaqoh dengan pembina dari role staf tidak memenuhi syarat (KS, ADM)", async () => {

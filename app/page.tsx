@@ -27,7 +27,7 @@ import { PrintSurat } from "@/components/print/print-surat";
 import { PrintSP } from "@/components/print/print-sp";
 import { PrintLaporanBulanan } from "@/components/print/print-laporan-bulanan";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
-import { tambahAgendaAction } from "@/app/actions/kalender";
+import { tambahAgendaAction, getDaftarAgendaAction } from "@/app/actions/kalender";
 import {
   toggleUserStatusAction,
   resetUserPasswordAction,
@@ -35,7 +35,7 @@ import {
   getUsersListAction,
 } from "@/app/actions/users";
 import { getAuditLogsAction, type AuditLogItem } from "@/app/actions/audit";
-import { kirimKotakSaranAction } from "@/app/actions/portal-wali";
+import { kirimKotakSaranAction, getDaftarKotakSaranAction } from "@/app/actions/portal-wali";
 import { type LaporanBulananData } from "@/app/actions/laporan-bulanan";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, AlertCircle, X, Printer } from "lucide-react";
@@ -100,41 +100,15 @@ export default function Home() {
   const [izinLoadError, setIzinLoadError] = useState<string | null>(null);
   const [pelanggaranLoadError, setPelanggaranLoadError] = useState<string | null>(null);
   const [spLoadError, setSpLoadError] = useState<string | null>(null);
+  const [kesehatanLoadError, setKesehatanLoadError] = useState<string | null>(null);
+  const [kesehatanLoaded, setKesehatanLoaded] = useState<boolean>(false);
+  const [agendaLoadError, setAgendaLoadError] = useState<string | null>(null);
+  const [usersLoadError, setUsersLoadError] = useState<string | null>(null);
+  const [saranLoadError, setSaranLoadError] = useState<string | null>(null);
 
-  const [agendaList, setAgendaList] = useState<AgendaItem[]>([
-    { id: "agd-01", judul: "Ujian Ikhtibar Tahfizh Semester Ganjil", tanggal: "15 - 20 September 2026", kategori: "TAHFIZH", lokasi: "Masjid Utama Pesantren" },
-    { id: "agd-02", judul: "Rihlah Tarbawiyah & Camping Qur'ani", tanggal: "01 - 03 Oktober 2026", kategori: "KEGIATAN_SANTRI", lokasi: "Bumi Perkemahan Mandiri" },
-    { id: "agd-03", judul: "Pertemuan Evaluasi Wali Santri & Mudir", tanggal: "18 Oktober 2026", kategori: "KEGIATAN_SANTRI", lokasi: "Aula STQ DUC" },
-    { id: "agd-04", judul: "Libur Kepulangan Pertengahan Semester", tanggal: "24 - 28 Oktober 2026", kategori: "LIBUR", lokasi: "Kompleks Pondok" },
-  ]);
-
-  const [usersList, setUsersList] = useState<UserAccountItem[]>([
-    { id: "usr-01", username: "mudir.ks", role: "KS", nama: "Ust. Andi Quarzy Ayatullah, S.H, M.H", status: "AKTIF" },
-    { id: "usr-02", username: "aminah.adm", role: "ADM", nama: "Siti Aminah, S.Kom.", status: "AKTIF" },
-    { id: "usr-03", username: "razan.mt", role: "MT", nama: "Ust. Razan Mufli, S.Pd", status: "AKTIF" },
-    { id: "usr-04", username: "mujaddid.mk", role: "MK", nama: "Ust. Mujaddid Zhohruddin", status: "AKTIF" },
-    { id: "usr-05", username: "lisa.mt", role: "MT", nama: "Ustadzah Lisa Dwina Fitri", status: "AKTIF" },
-    { id: "usr-06", username: "kamal.ph", role: "PH", nama: "Ust. Kamal", status: "AKTIF" },
-    { id: "usr-07", username: "rizaldi.ph", role: "PH", nama: "Ust. Rizaldi", status: "AKTIF" },
-    { id: "usr-08", username: "hudzaifah.ph", role: "PH", nama: "Ust. Abi Hudzaifah", status: "AKTIF" },
-    { id: "usr-09", username: "alwan.ph", role: "PH", nama: "Ust. Alwan", status: "AKTIF" },
-    { id: "usr-10", username: "nurul.ga", role: "GA", nama: "Ustzh. Nurul Hidayah, S.Pd.", status: "AKTIF" },
-    { id: "usr-11", username: "yayasan", role: "YAY", nama: "Pembina Yayasan DUC", status: "AKTIF" },
-    { id: "usr-12", username: "osda", role: "OSDA", nama: "Ketua OSDA Pesantren", status: "AKTIF" },
-    { id: "usr-13", username: "walisantri", role: "WS", nama: "Wali Obama Ozearld", status: "AKTIF" },
-    { id: "usr-14", username: "santri.obama", role: "ST", nama: "Obama Ozearld Egberted Turizqi", status: "AKTIF" },
-  ]);
-
-  const [kotakSaranList, setKotakSaranList] = useState<SaranItem[]>([
-    {
-      id: "srn-01",
-      nama: "Wali Santri Obama Ozearld",
-      kategori: "Gizi & Katering",
-      pesan: "Mohon porsi sayur mayur dan buah segar untuk santri dapat divariasikan setiap pekan.",
-      tanggapan: "Jazakallahu khairan atas masukannya. Menu dapur santri telah kami koordinasikan dengan bagian logistik keasramaan untuk penambahan buah pepaya dan pisang 3x seminggu.",
-      status: "DITANGGAPI",
-    },
-  ]);
+  const [agendaList, setAgendaList] = useState<AgendaItem[]>([]);
+  const [usersList, setUsersList] = useState<UserAccountItem[]>([]);
+  const [kotakSaranList, setKotakSaranList] = useState<SaranItem[]>([]);
 
   const [auditLogsList, setAuditLogsList] = useState<AuditLogItem[]>(INITIAL_AUDIT_LOGS);
 
@@ -373,14 +347,95 @@ export default function Home() {
 
         try {
           const kesRes = await getDaftarKesehatanAction();
-          if (isMounted && kesRes.success && kesRes.data && Array.isArray(kesRes.data)) {
-            const activePatients = kesRes.data.filter(
-              (k: { status: string }) => k.status === "RAWAT_PONDOK" || k.status === "DIRUJUK_PUSKESMAS" || k.status === "DIRUJUK_RS"
-            );
-            setActiveKesehatanRecordsCount(activePatients.length);
+          if (isMounted) {
+            if (kesRes.success && kesRes.data && Array.isArray(kesRes.data)) {
+              const activePatients = kesRes.data.filter(
+                (k: { status: string }) => k.status === "RAWAT_PONDOK" || k.status === "DIRUJUK_PUSKESMAS" || k.status === "DIRUJUK_RS"
+              );
+              setActiveKesehatanRecordsCount(activePatients.length);
+              setKesehatanLoadError(null);
+              setKesehatanLoaded(true);
+            } else {
+              setActiveKesehatanRecordsCount(0);
+              setKesehatanLoadError(kesRes.message || "Gagal memuat rekam medis kesehatan");
+              setKesehatanLoaded(false);
+            }
+          }
+        } catch (err) {
+          if (isMounted) {
+            setActiveKesehatanRecordsCount(0);
+            setKesehatanLoadError((err as Error)?.message || "Koneksi data kesehatan gagal");
+            setKesehatanLoaded(false);
+          }
+        }
+
+        try {
+          const [agdRes, srnRes] = await Promise.allSettled([
+            getDaftarAgendaAction(),
+            getDaftarKotakSaranAction(),
+          ]);
+
+          if (isMounted) {
+            if (agdRes.status === "fulfilled") {
+              const agd = agdRes.value;
+              if (agd.success && Array.isArray(agd.data)) {
+                setAgendaLoadError(null);
+                setAgendaList(
+                  agd.data.map((a: {
+                    id: string;
+                    judul: string;
+                    tanggalMulai: string | Date;
+                    kategori: string;
+                    lokasi?: string | null;
+                  }) => ({
+                    id: a.id,
+                    judul: a.judul,
+                    tanggal: new Date(a.tanggalMulai).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }),
+                    kategori: a.kategori as AgendaItem["kategori"],
+                    lokasi: a.lokasi || "-",
+                  }))
+                );
+              } else {
+                setAgendaList([]);
+                setAgendaLoadError(agd.message || "Gagal memuat agenda kalender");
+              }
+            } else {
+              setAgendaList([]);
+              setAgendaLoadError(agdRes.reason?.message || "Koneksi agenda kalender gagal");
+            }
+
+            if (srnRes.status === "fulfilled") {
+              const srn = srnRes.value;
+              if (srn.success && Array.isArray(srn.data)) {
+                setSaranLoadError(null);
+                setKotakSaranList(
+                  srn.data.map((s: {
+                    id: string;
+                    kategori: string;
+                    pesan: string;
+                    tanggapan?: string | null;
+                    status: string;
+                    santri?: { nama: string } | null;
+                  }) => ({
+                    id: s.id,
+                    nama: s.santri?.nama || "Wali Santri",
+                    kategori: s.kategori,
+                    pesan: s.pesan,
+                    tanggapan: s.tanggapan || null,
+                    status: s.status,
+                  }))
+                );
+              } else {
+                setKotakSaranList([]);
+                setSaranLoadError(srn.message || "Gagal memuat kotak saran");
+              }
+            } else {
+              setKotakSaranList([]);
+              setSaranLoadError(srnRes.reason?.message || "Koneksi kotak saran gagal");
+            }
           }
         } catch {
-          // ignore
+          // Handled in allSettled
         }
 
         const [izinResult, pelResult, spResult] = await Promise.allSettled([
@@ -654,10 +709,10 @@ export default function Home() {
 
   const handleResetPassword = async (username: string) => {
     if (selectedRole !== "ADM" && selectedRole !== "KS") {
-      setFeedback({ type: "error", text: "Hanya Admin & Mudir yang berwenang me-reset kata sandi." });
+      setFeedback({ type: "error", text: "Hanya Admin & Mudir yang berwenang membuat sandi sementara baru." });
       return;
     }
-    if (typeof window !== "undefined" && !window.confirm(`Reset kata sandi akun "${username}" ke default?`)) {
+    if (typeof window !== "undefined" && !window.confirm(`Buat sandi sementara baru untuk akun "${username}"?`)) {
       return;
     }
     startTransition(async () => {
@@ -665,12 +720,12 @@ export default function Home() {
       if (!targetUser) return;
       const res = await resetUserPasswordAction(targetUser.id);
       if (!res.success) {
-        setFeedback({ type: "error", text: res.message || "Gagal me-reset kata sandi." });
+        setFeedback({ type: "error", text: res.message || "Gagal membuat sandi sementara baru." });
         return;
       }
       setFeedback({
         type: "success",
-        text: res.message || `Kata sandi akun ${username} berhasil di-reset ke default.`,
+        text: res.message || `Sandi sementara baru untuk akun ${username} berhasil dibuat.`,
       });
     });
   };
@@ -699,7 +754,8 @@ export default function Home() {
     getUsersListAction()
       .then((res) => {
         if (!isMounted) return;
-        if (res.success && res.data && Array.isArray(res.data) && res.data.length > 0) {
+        if (res.success && Array.isArray(res.data)) {
+          setUsersLoadError(null);
           setUsersList(
             res.data.map((u: {
               id: string;
@@ -720,10 +776,16 @@ export default function Home() {
               santriId: u.santri?.id || null,
             }))
           );
+        } else {
+          setUsersList([]);
+          setUsersLoadError(res.message || "Gagal memuat daftar pengguna");
         }
       })
       .catch((e) => {
-        console.error("Gagal memuat pengguna riil:", e);
+        if (isMounted) {
+          setUsersList([]);
+          setUsersLoadError(e?.message || "Koneksi data pengguna gagal");
+        }
       });
 
     return () => {
@@ -788,6 +850,8 @@ export default function Home() {
             ikhtibarLoading={ikhtibarLoading}
             ikhtibarError={ikhtibarError}
             santriSakitCount={santriSakitCount}
+            kesehatanLoadError={kesehatanLoadError}
+            kesehatanLoaded={kesehatanLoaded}
             onNavigate={handleSelectTab}
             onSelectSantriForSetoran={(santriId: string) => {
               setSelectedSantriIdForTahfizh(santriId);
@@ -963,6 +1027,7 @@ export default function Home() {
         return (
           <KalenderModule
             agendaList={agendaList}
+            loadError={agendaLoadError}
             userRole={selectedRole}
             onTambahAgenda={handleTambahAgenda}
             isPending={isPending}
@@ -973,6 +1038,7 @@ export default function Home() {
         return (
           <UsersModule
             usersList={usersList}
+            loadError={usersLoadError}
             userRole={selectedRole}
             onToggleStatus={handleToggleUserStatus}
             onResetPassword={handleResetPassword}
@@ -996,6 +1062,7 @@ export default function Home() {
           <PortalWaliModule
             userRole={selectedRole}
             kotakSaranList={kotakSaranList}
+            saranLoadError={saranLoadError}
             onKirimSaran={handleKirimSaran}
             onPrintRapor={() => setShowPrintModal("rapor")}
             isPending={isPending}
@@ -1016,6 +1083,8 @@ export default function Home() {
             ikhtibarLoading={ikhtibarLoading}
             ikhtibarError={ikhtibarError}
             santriSakitCount={santriSakitCount}
+            kesehatanLoadError={kesehatanLoadError}
+            kesehatanLoaded={kesehatanLoaded}
             onNavigate={handleSelectTab}
             onSelectSantriForSetoran={(santriId: string) => {
               setSelectedSantriIdForTahfizh(santriId);
@@ -1249,7 +1318,7 @@ export default function Home() {
                   santriNama={selectedSantriForPrint?.nama || santriList[0]?.nama || "Santri"}
                   santriNis={selectedSantriForPrint?.nis || santriList[0]?.nis || "-"}
                   santriKelas={selectedSantriForPrint?.kelas || santriList[0]?.kelas || "-"}
-                  isiPokok="Menerangkan bahwa santri yang bersangkutan terdaftar aktif dalam program ketahfidzhan dan pendidikan kesantrian di STQ Darul Ulum Cendekia untuk Tahun Ajaran 2026/2027."
+                  isiPokok="Menerangkan bahwa santri yang bersangkutan terdaftar aktif dalam program ketahfidzhan dan pendidikan kesantrian di STQ Darul Ulum Cendekia."
                 />
               )}
               {showPrintModal === "sp" && (
