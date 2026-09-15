@@ -123,16 +123,23 @@ export function RewardEvaluasiTab({ userRole }: RewardEvaluasiTabProps) {
   // -------------------------------------------------------------
   const [tasmiList, setTasmiList] = useState<TasmiItem[]>([]);
   const [isTasmiLoading, setIsTasmiLoading] = useState(false);
+  const [tasmiError, setTasmiError] = useState<string | null>(null);
 
   const loadTasmiList = async () => {
     setIsTasmiLoading(true);
+    setTasmiError(null);
     try {
       const res = await getDaftarTasmiSimaanEligibleAction();
       if (res.success && res.data) {
         setTasmiList(res.data as unknown as TasmiItem[]);
+        setTasmiError(null);
+      } else {
+        setTasmiList([]); // Clear stale data fail-closed
+        setTasmiError(res.message || "Gagal memuat data evaluasi reward.");
       }
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      setTasmiList([]); // Clear stale data fail-closed
+      setTasmiError(err instanceof Error ? err.message : "Terjadi kesalahan saat memuat data.");
     } finally {
       setIsTasmiLoading(false);
     }
@@ -264,14 +271,26 @@ export function RewardEvaluasiTab({ userRole }: RewardEvaluasiTabProps) {
         setKebijakanForm(res.data as KebijakanData);
       }
     });
-    getDaftarTasmiSimaanEligibleAction().then((res) => {
-      if (isMounted && res.success && res.data) {
-        setTasmiList(res.data as unknown as TasmiItem[]);
-      }
-    });
+    getDaftarTasmiSimaanEligibleAction()
+      .then((res) => {
+        if (!isMounted) return;
+        if (res.success && res.data) {
+          setTasmiList(res.data as unknown as TasmiItem[]);
+          setTasmiError(null);
+        } else {
+          setTasmiList([]);
+          setTasmiError(res.message || "Gagal memuat data evaluasi reward.");
+        }
+      })
+      .catch((err: unknown) => {
+        if (!isMounted) return;
+        setTasmiList([]);
+        setTasmiError(err instanceof Error ? err.message : "Terjadi kesalahan saat memuat data.");
+      });
     return () => {
       isMounted = false;
     };
+
   }, []);
 
   return (
@@ -543,7 +562,26 @@ export function RewardEvaluasiTab({ userRole }: RewardEvaluasiTabProps) {
         </CardHeader>
 
         <CardContent className="pt-4">
-          {tasmiList.length === 0 ? (
+          {tasmiError ? (
+            <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-center space-y-2">
+              <div className="flex items-center justify-center gap-2 text-sm font-semibold">
+                <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
+                <span>{tasmiError}</span>
+              </div>
+              <p className="text-xs text-red-600">
+                Data evaluasi reward tidak dapat dimuat atau sesi tidak memiliki wewenang untuk membaca data ini.
+              </p>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={loadTasmiList}
+                disabled={isTasmiLoading}
+                className="mt-2 text-xs"
+              >
+                Coba Lagi
+              </Button>
+            </div>
+          ) : tasmiList.length === 0 ? (
             <div className="text-center py-8 text-slate-400 text-sm">
               Belum ada data ujian Tasmi&apos; atau Sima&apos;an yang tercatat di sistem.
             </div>

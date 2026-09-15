@@ -765,7 +765,7 @@ export async function batalkanFinalisasiBulananAction(params: {
 }
 
 /**
- * Mengambil daftar ujian Tasmi' dan Sima'an untuk panel evaluasi & reward
+ * Mengambil daftar ujian Tasmi' dan Sima'an untuk panel evaluasi & reward (ABAC Fail-Closed)
  */
 export async function getDaftarTasmiSimaanEligibleAction() {
   const session = await getCurrentSession();
@@ -773,8 +773,46 @@ export async function getDaftarTasmiSimaanEligibleAction() {
     return { success: false, message: "Sesi telah berakhir. Silakan login kembali.", data: [] };
   }
 
+  // ABAC fail-closed
+  let whereClause: Prisma.TasmiSimaanWhereInput = {};
+
+  if (["KS", "ADM"].includes(session.role)) {
+    // KS (Mudir) dan ADM memiliki otoritas managerial institusi global
+    whereClause = {};
+  } else if (session.role === "MT") {
+    if (!session.staffId) {
+      // Missing staff relation -> FAIL CLOSED immediately with empty data
+      return {
+        success: false,
+        message: "Akses Ditolak: Profil staf pembina Anda belum terhubung.",
+        data: [],
+      };
+    }
+    if (session.isKepalaBidangTahfidz) {
+      // Kepala Bidang Tahfidz memiliki otoritas managerial seluruh kelompok tahfizh
+      whereClause = {};
+    } else {
+      // MT biasa: HANYA ujian Tasmi/Sima'an santri dalam halaqoh binaannya sendiri
+      whereClause = {
+        santri: {
+          halaqoh: {
+            pembinaId: session.staffId,
+          },
+        },
+      };
+    }
+  } else {
+    // Role lainnya (PH, MK, YAY, WS, ST, dll.) tidak berwenang mengakses daftar evaluasi reward
+    return {
+      success: false,
+      message: "Akses Ditolak: Anda tidak memiliki wewenang untuk melihat data evaluasi reward.",
+      data: [],
+    };
+  }
+
   try {
     const list = await prisma.tasmiSimaan.findMany({
+      where: whereClause,
       include: {
         santri: {
           select: { id: true, nama: true, nis: true, kelas: true },
@@ -818,3 +856,4 @@ export async function getDaftarTasmiSimaanEligibleAction() {
     return { success: false, message: "Gagal memuat data dari database.", data: [] };
   }
 }
+

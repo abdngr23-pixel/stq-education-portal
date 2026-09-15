@@ -55,6 +55,7 @@ export interface MasterDataSantriProps {
   halaqohList?: Array<{ id: string; nama: string; pembina?: { nama: string } }>;
   onPrintRapor?: (santri: SantriItem) => void;
   onRefresh?: () => void;
+  loadError?: string | null;
 }
 
 export function MasterDataSantri({
@@ -63,6 +64,7 @@ export function MasterDataSantri({
   halaqohList = [],
   onPrintRapor,
   onRefresh,
+  loadError = null,
 }: MasterDataSantriProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedHalaqohFilter, setSelectedHalaqohFilter] = useState("ALL");
@@ -170,6 +172,13 @@ export function MasterDataSantri({
 
   const totalPutra = santriList.length - totalPutri;
 
+  const halaqohPutraCount = useMemo(() => {
+    const count = halaqohList.filter(
+      (h) => !h.nama.toLowerCase().includes("lisa") && !h.nama.toLowerCase().includes("putri")
+    ).length;
+    return count > 0 ? count : halaqohList.length;
+  }, [halaqohList]);
+
   // Handler Tambah Santri Baru
   const handleCreateSantri = () => {
     if (!formNis.trim() || !formNama.trim()) {
@@ -276,8 +285,8 @@ export function MasterDataSantri({
             <h2 className="text-xl font-bold text-slate-900 font-heading">
               Master Data Santri
             </h2>
-            <Badge variant="green" size="sm">
-              57 Santri Aktif
+            <Badge variant={loadError ? "ditolak" : "green"} size="sm">
+              {loadError ? "Data Tidak Tersedia" : `${santriList.length} Santri Aktif`}
             </Badge>
           </div>
           <p className="text-xs text-slate-500 mt-1">
@@ -327,35 +336,35 @@ export function MasterDataSantri({
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard
           title="Total Santri"
-          value={`${santriList.length} Santri`}
-          description="Terdaftar Aktif 2026/2027"
+          value={loadError ? "Data Tidak Tersedia" : `${santriList.length} Santri`}
+          description={loadError ? "Gagal memuat data dari server" : "Terdaftar Aktif 2026/2027"}
           icon={<Users className="h-5 w-5" />}
-          badgeText="100% Aktif"
-          badgeVariant="green"
+          badgeText={loadError ? "Gagal" : "100% Aktif"}
+          badgeVariant={loadError ? "ditolak" : "green"}
         />
         <StatCard
           title="Santri Putra (Ikhwan)"
-          value={`${totalPutra} Santri`}
-          description="5 Kelompok Halaqoh"
+          value={loadError ? "Data Tidak Tersedia" : `${totalPutra} Santri`}
+          description={loadError ? "Gagal memuat data dari server" : `${halaqohPutraCount} Kelompok Halaqoh`}
           icon={<GraduationCap className="h-5 w-5" />}
           badgeText="Asrama Putra"
-          badgeVariant="green"
+          badgeVariant={loadError ? "ditolak" : "green"}
         />
         <StatCard
           title="Santriwati Putri (Akhwat)"
-          value={`${totalPutri} Santriwati`}
-          description="Halaqoh Ustzh. Lisa Dwina"
+          value={loadError ? "Data Tidak Tersedia" : `${totalPutri} Santriwati`}
+          description={loadError ? "Gagal memuat data dari server" : "Santriwati Asrama Putri"}
           icon={<Building2 className="h-5 w-5" />}
           badgeText="Asrama Putri"
-          badgeVariant="gold"
+          badgeVariant={loadError ? "ditolak" : "gold"}
         />
         <StatCard
           title="Kelompok Halaqoh"
-          value="6 Halaqoh"
-          description="1 MT, 1 Putri, 4 Mudhabbir"
+          value={loadError ? "Data Tidak Tersedia" : `${halaqohList.length} Halaqoh`}
+          description={loadError ? "Gagal memuat data dari server" : "Terdistribusi Aktif"}
           icon={<BookCheck className="h-5 w-5" />}
-          badgeText="Terdistribusi"
-          badgeVariant="sky"
+          badgeText={loadError ? "Gagal" : "Terdistribusi"}
+          badgeVariant={loadError ? "ditolak" : "sky"}
         />
       </div>
 
@@ -568,6 +577,31 @@ export function MasterDataSantri({
                     </tr>
                   );
                 })
+              ) : loadError ? (
+                <tr>
+                  <td colSpan={10} className="py-12 text-center text-red-600 bg-red-50/50">
+                    <AlertCircle className="h-8 w-8 mx-auto mb-2 text-red-500" />
+                    <p className="font-bold text-sm">Gagal Memuat Data Santri</p>
+                    <p className="text-xs text-red-500 mt-1 max-w-md mx-auto">{loadError}</p>
+                    {onRefresh && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={onRefresh}
+                        className="mt-3 text-xs"
+                      >
+                        Coba Muat Ulang
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ) : santriList.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="py-12 text-center text-slate-400">
+                    <Users className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                    <p className="font-semibold">Belum ada data santri yang terdaftar di sistem.</p>
+                  </td>
+                </tr>
               ) : (
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-slate-400">

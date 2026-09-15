@@ -57,50 +57,12 @@ import { SuratModule } from "@/components/modules/surat-module";
 import { KalenderModule, AgendaItem } from "@/components/modules/kalender-module";
 import { UsersModule, UserAccountItem } from "@/components/modules/users-module";
 import { AuditModule } from "@/components/modules/audit-module";
+import { getPerizinanListAction } from "@/app/actions/kesantrian";
+import { getPelanggaranListAction, getSPListAction } from "@/app/actions/kedisiplinan";
 import { PortalWaliModule, SaranItem } from "@/components/modules/portal-wali-module";
 
-// =========================================================================
-// MOCK DATA AWAL SISTEM STQ DARUL ULUM CENDEKIA
-// =========================================================================
-
-const INITIAL_AUDIT_LOGS: AuditLogItem[] = [
-  {
-    id: "log-1",
-    action: "INPUT_SETORAN_TAHFIZH",
-    entity: "SetoranTahfizh",
-    entityId: "SET-00192",
-    details: { santri: "Obama Ozearld Egberted Turizqi", juz: 4, nilai: "MUMTAZ", jenis: "SABAQ" },
-    createdAt: new Date("2026-09-08T07:45:00.000Z"),
-    user: { username: "razan.mt", email: "razan.mt@stqduc.sch.id", role: "MT" },
-  },
-  {
-    id: "log-2",
-    action: "PENCATATAN_PELANGGARAN_X2",
-    entity: "PelanggaranSantri",
-    entityId: "PLG-00045",
-    details: { santri: "M. Hafizh Dzulqarnain", poin: 10, isPengulangan: false, catatan: "Terlambat halaqoh" },
-    createdAt: new Date("2026-09-08T07:20:00.000Z"),
-    user: { username: "mujaddid.mk", email: "mujaddid.mk@stqduc.sch.id", role: "MK" },
-  },
-  {
-    id: "log-3",
-    action: "APPROVAL_PERIZINAN_KS",
-    entity: "PerizinanSantri",
-    entityId: "IZN-00088",
-    details: { santri: "Obama Ozearld Egberted Turizqi", jenis: "PULANG", status: "DISETUJUI" },
-    createdAt: new Date("2026-09-08T06:30:00.000Z"),
-    user: { username: "mudir.ks", email: "mudir.ks@stqduc.sch.id", role: "KS" },
-  },
-  {
-    id: "log-4",
-    action: "GENERASI_SURAT_RESMI_AI",
-    entity: "SuratResmi",
-    entityId: "SRT-00012",
-    details: { nomorSurat: "012/STQ-DUC/SP/IX/2026", perihal: "Surat Keterangan Aktif" },
-    createdAt: new Date("2026-09-08T05:15:00.000Z"),
-    user: { username: "aminah.adm", email: "aminah.adm@stqduc.sch.id", role: "ADM" },
-  },
-];
+// Data Jejak Audit Awal Bersih Tanpa Mock Data
+const INITIAL_AUDIT_LOGS: AuditLogItem[] = [];
 
 export default function Home() {
   const [isSessionLoading, setIsSessionLoading] = useState<boolean>(true);
@@ -130,68 +92,11 @@ export default function Home() {
 
   // -------------------------------------------------------------
   // PERIZINAN, DISIPLIN, AGENDA, USERS, AUDIT, KOTAK SARAN
+  // Dimuat dinamis murni dari basis data riil (Zero Fallback Mock)
   // -------------------------------------------------------------
-  const [izinList] = useState<IzinItem[]>([
-    {
-      id: "iz_1",
-      kodeIzin: "IZN-000001",
-      santriNama: "Obama Ozearld Egberted Turizqi",
-      santriNis: "SAN-0001",
-      kelas: "9A Takhossus",
-      jenis: "SAKIT",
-      durasi: "2 Hari",
-      alasan: "Demam dan flu, istirahat di UKS pengawasan klinik pesantren",
-      status: "DISETUJUI",
-      diverifikasiOleh: "Ust. Mujaddid Zhohruddin (MK)",
-    },
-    {
-      id: "iz_2",
-      kodeIzin: "IZN-000002",
-      santriNama: "M. Hafizh Dzulqarnain",
-      santriNis: "SAN-0002",
-      kelas: "7A",
-      jenis: "PULANG",
-      durasi: "3 Hari",
-      alasan: "Acara pernikahan keluarga kandung di luar kota",
-      status: "MENUNGGU_KS",
-      diverifikasiOleh: "Disetujui MK, Menunggu Pengesahan Mudir",
-    },
-  ]);
-
-  const [pelanggaranHistory] = useState<PelanggaranRecord[]>([
-    {
-      id: "p_1",
-      kode: "PLG-000001",
-      santriNama: "Zaidan Al-Farisi",
-      kategori: "Terlambat Sholat Berjamaah",
-      poin: 5,
-      isPengulangan: false,
-      tanggal: "05/09/2026",
-      pencatat: "Ust. Mujaddid (MK)",
-    },
-    {
-      id: "p_2",
-      kode: "PLG-000002",
-      santriNama: "Zaidan Al-Farisi",
-      kategori: "Terlambat Sholat Berjamaah",
-      poin: 10,
-      isPengulangan: true,
-      tanggal: "07/09/2026",
-      pencatat: "Ust. Mujaddid (MK)",
-    },
-  ]);
-
-  const [spList] = useState<SPRecord[]>([
-    {
-      id: "sp_1",
-      nomorSP: "001/SP-1/DUC/2026",
-      santriNama: "Zaidan Al-Farisi",
-      tingkat: 1,
-      totalPoin: 25,
-      tanggal: "07/09/2026",
-      status: "AKTIF",
-    },
-  ]);
+  const [izinList, setIzinList] = useState<IzinItem[]>([]);
+  const [pelanggaranHistory, setPelanggaranHistory] = useState<PelanggaranRecord[]>([]);
+  const [spList, setSpList] = useState<SPRecord[]>([]);
 
   const [agendaList, setAgendaList] = useState<AgendaItem[]>([
     { id: "agd-01", judul: "Ujian Ikhtibar Tahfizh Semester Ganjil", tanggal: "15 - 20 September 2026", kategori: "TAHFIZH", lokasi: "Masjid Utama Pesantren" },
@@ -251,7 +156,17 @@ export default function Home() {
   });
 
   // Halaqoh list mapping dinamis murni dari server/database (Eliminasi fallback statis)
-  const [dynamicHalaqohList, setDynamicHalaqohList] = useState<Array<{ id: string; nama: string; pembina: string; tahunAjaran?: string }>>([]);
+  const [dynamicHalaqohList, setDynamicHalaqohList] = useState<
+    Array<{
+      id: string;
+      halaqohCode?: string;
+      nama: string;
+      pembina: string;
+      pembinaId?: string;
+      pembinaStaffCode?: string;
+      tahunAjaran?: string;
+    }>
+  >([]);
   const [halaqohListError, setHalaqohListError] = useState<string | null>(null);
 
   const halaqohList = dynamicHalaqohList;
@@ -280,8 +195,11 @@ export default function Home() {
         setDynamicHalaqohList(
           res.data.map((h) => ({
             id: h.id,
+            halaqohCode: h.halaqohCode,
             nama: h.nama,
             pembina: h.pembina?.nama || "Pembina",
+            pembinaId: h.pembina?.id,
+            pembinaStaffCode: (h.pembina as { staffCode?: string })?.staffCode,
             tahunAjaran: h.tahunAjaran,
           }))
         );
@@ -460,6 +378,50 @@ export default function Home() {
           }
         } catch {
           // ignore
+        }
+
+        try {
+          const [izinRes, pelRes, spRes] = await Promise.all([
+            getPerizinanListAction(),
+            getPelanggaranListAction(),
+            getSPListAction(),
+          ]);
+
+          if (isMounted && izinRes.success && izinRes.data) {
+            setIzinList(
+              (izinRes.data as Array<{
+                id: string;
+                kodeIzin: string;
+                santri: { nama: string; nis: string; kelas: string };
+                jenis: string;
+                tanggalMulai: string | Date;
+                tanggalSelesai: string | Date;
+                alasan: string;
+                status: string;
+                disetujuiKS?: { nama: string } | null;
+                disetujuiMK?: { nama: string } | null;
+              }>).map((i) => ({
+                id: i.id,
+                kodeIzin: i.kodeIzin,
+                santriNama: i.santri?.nama || "Santri",
+                santriNis: i.santri?.nis || "",
+                kelas: i.santri?.kelas || "",
+                jenis: i.jenis as IzinItem["jenis"],
+                durasi: `${Math.max(1, Math.round((new Date(i.tanggalSelesai).getTime() - new Date(i.tanggalMulai).getTime()) / (1000 * 60 * 60 * 24)))} Hari`,
+                alasan: i.alasan,
+                status: i.status as IzinItem["status"],
+                diverifikasiOleh: i.disetujuiKS?.nama || i.disetujuiMK?.nama || "-",
+              }))
+            );
+          }
+          if (isMounted && pelRes.success && pelRes.data) {
+            setPelanggaranHistory(pelRes.data as unknown as PelanggaranRecord[]);
+          }
+          if (isMounted && spRes.success && spRes.data) {
+            setSpList(spRes.data as unknown as SPRecord[]);
+          }
+        } catch {
+          // fail-closed: remains empty [] without mock fallback
         }
 
         if (isMounted) {
@@ -779,13 +741,7 @@ export default function Home() {
     return izinList.filter((i) => i.status === "MENUNGGU_MK" || i.status === "MENUNGGU_KS").length;
   }, [izinList]);
 
-  const santriSakitCount = useMemo(() => {
-    // Sesuai Tahap 2: Gunakan data rekam medis aktif server sebagai sumber kebenaran jika tersedia
-    if (activeKesehatanRecordsCount > 0) {
-      return activeKesehatanRecordsCount;
-    }
-    return izinList.filter((i) => i.jenis === "SAKIT" && i.status === "DISETUJUI").length;
-  }, [activeKesehatanRecordsCount, izinList]);
+  const santriSakitCount = activeKesehatanRecordsCount;
 
   // Render current module based on activeTab
   const renderModule = () => {
@@ -797,6 +753,7 @@ export default function Home() {
             userName={currentUserName}
             currentHalaqohName={currentHalaqohName}
             santriList={santriList}
+            santriLoadError={santriLoadError}
             izinPendingCount={izinPendingCount}
             ikhtibarPendingCount={ikhtibarPendingCount}
             ikhtibarLoading={ikhtibarLoading}
@@ -821,7 +778,22 @@ export default function Home() {
           <SantriModule
             santriList={santriList}
             userRole={selectedRole}
-            halaqohList={halaqohList.map((h) => ({ id: h.id, nama: h.nama, pembina: { nama: h.pembina } }))}
+            halaqohList={
+              dynamicHalaqohList.length > 0
+                ? dynamicHalaqohList.map((h) => ({
+                    id: h.id,
+                    halaqohCode: h.halaqohCode,
+                    nama: h.nama,
+                    pembina: { id: h.pembinaId, nama: h.pembina, staffCode: h.pembinaStaffCode },
+                    tahunAjaran: h.tahunAjaran,
+                  }))
+                : halaqohList.map((h) => ({
+                    id: h.id,
+                    nama: h.nama,
+                    pembina: { nama: h.pembina },
+                  }))
+            }
+            loadError={santriLoadError}
             onPrintRapor={(santri) => {
               // Teruskan santri terpilih secara eksklusif (Eliminasi fallback santriList[0])
               const matched = santriList.find((s) => s.nis === santri.nis) || {
