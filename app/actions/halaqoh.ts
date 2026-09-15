@@ -169,11 +169,23 @@ export async function createHalaqohAction(input: CreateHalaqohInput) {
     const halaqohCode = `HLQ-${String(count + 1).padStart(4, "0")}`;
     let pembinaId = input.pembinaId;
     if (!pembinaId) {
-      const defaultStaff = await prisma.staff.findFirst({ where: { roleStaff: "MT" } });
+      const defaultStaff = await prisma.staff.findFirst({
+        where: { roleStaff: "MT", status: "AKTIF" },
+      });
       if (!defaultStaff) {
         return { success: false, message: "Musyrif pembina wajib ditentukan." };
       }
       pembinaId = defaultStaff.id;
+    } else {
+      const staff = await prisma.staff.findUnique({
+        where: { id: pembinaId },
+      });
+      if (!staff || staff.status !== "AKTIF" || !["MT", "PH"].includes(staff.roleStaff)) {
+        return {
+          success: false,
+          message: "Akses Ditolak: Staf yang dipilih tidak memenuhi syarat sebagai pembina halaqoh (Hanya staf aktif dengan peran MT atau PH).",
+        };
+      }
     }
 
     const newHalaqoh = await prisma.halaqoh.create({
@@ -235,8 +247,11 @@ export async function assignPembinaHalaqohAction(halaqohId: string, pembinaId: s
       where: { id: pembinaId },
     });
 
-    if (!staff) {
-      return { success: false, message: "Staf musyrif pembina tidak ditemukan." };
+    if (!staff || staff.status !== "AKTIF" || !["MT", "PH"].includes(staff.roleStaff)) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Staf yang dipilih tidak memenuhi syarat sebagai pembina halaqoh (Hanya staf aktif dengan peran MT atau PH).",
+      };
     }
 
     const updated = await prisma.halaqoh.update({
@@ -350,6 +365,7 @@ export async function getAssignableStaffAction() {
     const staffList = await prisma.staff.findMany({
       where: {
         status: "AKTIF",
+        roleStaff: { in: ["MT", "PH"] },
       },
       select: {
         id: true,

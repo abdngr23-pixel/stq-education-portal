@@ -97,6 +97,9 @@ export default function Home() {
   const [izinList, setIzinList] = useState<IzinItem[]>([]);
   const [pelanggaranHistory, setPelanggaranHistory] = useState<PelanggaranRecord[]>([]);
   const [spList, setSpList] = useState<SPRecord[]>([]);
+  const [izinLoadError, setIzinLoadError] = useState<string | null>(null);
+  const [pelanggaranLoadError, setPelanggaranLoadError] = useState<string | null>(null);
+  const [spLoadError, setSpLoadError] = useState<string | null>(null);
 
   const [agendaList, setAgendaList] = useState<AgendaItem[]>([
     { id: "agd-01", judul: "Ujian Ikhtibar Tahfizh Semester Ganjil", tanggal: "15 - 20 September 2026", kategori: "TAHFIZH", lokasi: "Masjid Utama Pesantren" },
@@ -380,48 +383,72 @@ export default function Home() {
           // ignore
         }
 
-        try {
-          const [izinRes, pelRes, spRes] = await Promise.all([
-            getPerizinanListAction(),
-            getPelanggaranListAction(),
-            getSPListAction(),
-          ]);
+        const [izinResult, pelResult, spResult] = await Promise.allSettled([
+          getPerizinanListAction(),
+          getPelanggaranListAction(),
+          getSPListAction(),
+        ]);
 
-          if (isMounted && izinRes.success && izinRes.data) {
-            setIzinList(
-              (izinRes.data as Array<{
-                id: string;
-                kodeIzin: string;
-                santri: { nama: string; nis: string; kelas: string };
-                jenis: string;
-                tanggalMulai: string | Date;
-                tanggalSelesai: string | Date;
-                alasan: string;
-                status: string;
-                disetujuiKS?: { nama: string } | null;
-                disetujuiMK?: { nama: string } | null;
-              }>).map((i) => ({
-                id: i.id,
-                kodeIzin: i.kodeIzin,
-                santriNama: i.santri?.nama || "Santri",
-                santriNis: i.santri?.nis || "",
-                kelas: i.santri?.kelas || "",
-                jenis: i.jenis as IzinItem["jenis"],
-                durasi: `${Math.max(1, Math.round((new Date(i.tanggalSelesai).getTime() - new Date(i.tanggalMulai).getTime()) / (1000 * 60 * 60 * 24)))} Hari`,
-                alasan: i.alasan,
-                status: i.status as IzinItem["status"],
-                diverifikasiOleh: i.disetujuiKS?.nama || i.disetujuiMK?.nama || "-",
-              }))
-            );
+        if (isMounted) {
+          if (izinResult.status === "fulfilled") {
+            const izinRes = izinResult.value;
+            if (izinRes.success && Array.isArray(izinRes.data)) {
+              setIzinLoadError(null);
+              setIzinList(
+                (izinRes.data as Array<{
+                  id: string;
+                  kodeIzin: string;
+                  santri: { nama: string; nis: string; kelas: string };
+                  jenis: string;
+                  tanggalMulai: string | Date;
+                  tanggalSelesai: string | Date;
+                  alasan: string;
+                  status: string;
+                  disetujuiKS?: { nama: string } | null;
+                  disetujuiMK?: { nama: string } | null;
+                }>).map((i) => ({
+                  id: i.id,
+                  kodeIzin: i.kodeIzin,
+                  santriNama: i.santri?.nama || "Santri",
+                  santriNis: i.santri?.nis || "",
+                  kelas: i.santri?.kelas || "",
+                  jenis: i.jenis as IzinItem["jenis"],
+                  durasi: `${Math.max(1, Math.round((new Date(i.tanggalSelesai).getTime() - new Date(i.tanggalMulai).getTime()) / (1000 * 60 * 60 * 24)))} Hari`,
+                  alasan: i.alasan,
+                  status: i.status as IzinItem["status"],
+                  diverifikasiOleh: i.disetujuiKS?.nama || i.disetujuiMK?.nama || "-",
+                }))
+              );
+            } else {
+              setIzinLoadError((izinRes as { message?: string }).message || "Gagal memuat data perizinan");
+            }
+          } else {
+            setIzinLoadError(izinResult.reason?.message || "Koneksi data perizinan gagal");
           }
-          if (isMounted && pelRes.success && pelRes.data) {
-            setPelanggaranHistory(pelRes.data as unknown as PelanggaranRecord[]);
+
+          if (pelResult.status === "fulfilled") {
+            const pelRes = pelResult.value;
+            if (pelRes.success && Array.isArray(pelRes.data)) {
+              setPelanggaranLoadError(null);
+              setPelanggaranHistory(pelRes.data as unknown as PelanggaranRecord[]);
+            } else {
+              setPelanggaranLoadError(pelRes.message || "Gagal memuat riwayat pelanggaran");
+            }
+          } else {
+            setPelanggaranLoadError(pelResult.reason?.message || "Koneksi data pelanggaran gagal");
           }
-          if (isMounted && spRes.success && spRes.data) {
-            setSpList(spRes.data as unknown as SPRecord[]);
+
+          if (spResult.status === "fulfilled") {
+            const spRes = spResult.value;
+            if (spRes.success && Array.isArray(spRes.data)) {
+              setSpLoadError(null);
+              setSpList(spRes.data as unknown as SPRecord[]);
+            } else {
+              setSpLoadError(spRes.message || "Gagal memuat daftar SP santri");
+            }
+          } else {
+            setSpLoadError(spResult.reason?.message || "Koneksi data SP santri gagal");
           }
-        } catch {
-          // fail-closed: remains empty [] without mock fallback
         }
 
         if (isMounted) {
@@ -755,6 +782,8 @@ export default function Home() {
             santriList={santriList}
             santriLoadError={santriLoadError}
             izinPendingCount={izinPendingCount}
+            izinLoadError={izinLoadError}
+            spLoadError={spLoadError}
             ikhtibarPendingCount={ikhtibarPendingCount}
             ikhtibarLoading={ikhtibarLoading}
             ikhtibarError={ikhtibarError}
@@ -870,6 +899,7 @@ export default function Home() {
             currentUserName={currentUserName}
             santriList={santriList}
             izinList={izinList}
+            loadError={izinLoadError}
             onIzinUpdated={() => {
               setFeedback({ type: "success", text: "Data perizinan santri telah diperbarui." });
             }}
@@ -882,6 +912,8 @@ export default function Home() {
             userRole={selectedRole}
             currentUserName={currentUserName}
             santriList={santriList}
+            initialPelanggaranError={pelanggaranLoadError}
+            initialSpError={spLoadError}
           />
         );
 
@@ -978,6 +1010,8 @@ export default function Home() {
             currentHalaqohName={currentHalaqohName}
             santriList={santriList}
             izinPendingCount={izinPendingCount}
+            izinLoadError={izinLoadError}
+            spLoadError={spLoadError}
             ikhtibarPendingCount={ikhtibarPendingCount}
             ikhtibarLoading={ikhtibarLoading}
             ikhtibarError={ikhtibarError}

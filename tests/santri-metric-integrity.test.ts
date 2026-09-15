@@ -131,4 +131,120 @@ describe("P0 Data Honesty & Production Baseline Metric Integrity (Santri & Halaq
       );
     });
   });
+
+  // =========================================================================
+  // 4. ELIMINASI SYNTHETIC FALLBACK TAHUN AJARAN & METADATA HALAQOH (Item B)
+  // =========================================================================
+  describe("4. Eliminasi Synthetic Fallback Tahun Ajaran (Item B)", () => {
+    const santriModulePath = path.resolve(process.cwd(), "components/modules/santri-module.tsx");
+    const manajemenHalaqohPath = path.resolve(process.cwd(), "components/dashboard/manajemen-halaqoh.tsx");
+    const santriModuleContent = fs.readFileSync(santriModulePath, "utf-8");
+    const manajemenHalaqohContent = fs.readFileSync(manajemenHalaqohPath, "utf-8");
+
+    it("santri-module.tsx dilarang memalsukan tahunAjaran dengan fallback '2026/2027'", () => {
+      assert.ok(
+        !santriModuleContent.includes('"2026/2027"') && !santriModuleContent.includes("'2026/2027'"),
+        "santri-module.tsx tidak boleh memiliki fallback synthetic '2026/2027'"
+      );
+      assert.ok(
+        santriModuleContent.includes('tahunAjaran: h.tahunAjaran || "-"'),
+        "santri-module.tsx harus menggunakan authoritative tahunAjaran atau fallback '-'"
+      );
+    });
+
+    it("manajemen-halaqoh.tsx dilarang mengisi default newTahunAjaran dengan '2026/2027'", () => {
+      assert.ok(
+        !manajemenHalaqohContent.includes('useState("2026/2027")') &&
+        !manajemenHalaqohContent.includes("useState('2026/2027')"),
+        "newTahunAjaran tidak boleh di-default ke '2026/2027', wajib input eksplisit"
+      );
+      assert.ok(
+        manajemenHalaqohContent.includes('TA: {h.tahunAjaran || "-"}'),
+        "manajemen-halaqoh.tsx harus merender TA dari data authoritative atau '-'"
+      );
+      assert.ok(
+        manajemenHalaqohContent.includes('{h.halaqohCode || "-"}'),
+        "manajemen-halaqoh.tsx harus merender halaqohCode dari data authoritative atau '-'"
+      );
+    });
+  });
+
+  // =========================================================================
+  // 5. KONTRAK INTEGRITAS ERROR != EMPTY (Item C)
+  // =========================================================================
+  describe("5. Kontrak Integritas Error != Empty (Izin, Pelanggaran, SP)", () => {
+    const perizinanModulePath = path.resolve(process.cwd(), "components/modules/perizinan-module.tsx");
+    const kedisiplinanModulePath = path.resolve(process.cwd(), "components/modules/kedisiplinan-module.tsx");
+    const perizinanModuleContent = fs.readFileSync(perizinanModulePath, "utf-8");
+    const kedisiplinanModuleContent = fs.readFileSync(kedisiplinanModulePath, "utf-8");
+
+    it("app/page.tsx menggunakan Promise.allSettled untuk isolasi kegagalan perizinan, pelanggaran, SP", () => {
+      assert.ok(
+        appPageContent.includes("Promise.allSettled(["),
+        "app/page.tsx harus menggunakan Promise.allSettled agar kegagalan satu domain tidak mengosongkan domain lainnya"
+      );
+      assert.ok(
+        appPageContent.includes("setIzinLoadError"),
+        "app/page.tsx harus mencatat izinLoadError secara mandiri"
+      );
+      assert.ok(
+        appPageContent.includes("setPelanggaranLoadError"),
+        "app/page.tsx harus mencatat pelanggaranLoadError secara mandiri"
+      );
+      assert.ok(
+        appPageContent.includes("setSpLoadError"),
+        "app/page.tsx harus mencatat spLoadError secara mandiri"
+      );
+    });
+
+    it("izin fetch failure != zero izin (BerandaModule tidak boleh klaim 'Semua Tuntas' atau 0 berkas saat error)", () => {
+      assert.ok(
+        berandaModuleContent.includes("izinLoadError"),
+        "BerandaModule harus menerima prop izinLoadError"
+      );
+      assert.ok(
+        berandaModuleContent.includes('value={izinLoadError ? "Data Tidak Tersedia" : `${izinPendingCount} Berkas`}'),
+        "StatCard Izin Menunggu harus menyajikan 'Data Tidak Tersedia' saat izinLoadError, bukan 0 Berkas"
+      );
+      assert.ok(
+        berandaModuleContent.includes("Gagal memuat permohonan izin santri"),
+        "Item antrean izin di BerandaModule harus menampilkan error alert saat izinLoadError aktif"
+      );
+      assert.ok(
+        perizinanModuleContent.includes("Gagal Memuat Data Perizinan"),
+        "PerizinanModule harus membedakan fetchError dari legitimate empty list"
+      );
+    });
+
+    it("pelanggaran fetch failure != zero pelanggaran (KedisiplinanModule tidak boleh klaim 'Tidak ada pelanggaran' saat error)", () => {
+      assert.ok(
+        kedisiplinanModuleContent.includes("pelanggaranLoadError"),
+        "KedisiplinanModule harus melacak pelanggaranLoadError"
+      );
+      assert.ok(
+        kedisiplinanModuleContent.includes("Gagal memuat log pelanggaran"),
+        "Tabel pelanggaran harus menampilkan status error eksplisit, bukan klaim bersih/tidak ada saat gagal"
+      );
+    });
+
+    it("SP fetch failure != zero SP (StatCard Perlu Perhatian & KedisiplinanModule tidak boleh klaim aman saat error)", () => {
+      assert.ok(
+        berandaModuleContent.includes("spLoadError"),
+        "BerandaModule harus menerima prop spLoadError"
+      );
+      assert.ok(
+        berandaModuleContent.includes("spLoadError") &&
+        berandaModuleContent.includes('"Data Tidak Lengkap"'),
+        "StatCard Perlu Perhatian harus menampilkan 'Data Tidak Lengkap' saat spLoadError aktif"
+      );
+      assert.ok(
+        kedisiplinanModuleContent.includes("spLoadError"),
+        "KedisiplinanModule harus melacak spLoadError"
+      );
+      assert.ok(
+        kedisiplinanModuleContent.includes("Gagal memuat status Surat Peringatan (SP)"),
+        "KedisiplinanModule harus menampilkan error banner untuk SP saat spLoadError aktif"
+      );
+    });
+  });
 });

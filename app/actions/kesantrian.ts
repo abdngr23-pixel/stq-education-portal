@@ -171,7 +171,7 @@ export async function getPerizinanListAction(statusFilter?: StatusIzin) {
     return { success: true, data: list };
   } catch (error) {
     console.error("Gagal mengambil data perizinan:", error);
-    return { success: false, data: [] };
+    return { success: false, data: [], message: "Gagal mengambil data perizinan santri." };
   }
 }
 

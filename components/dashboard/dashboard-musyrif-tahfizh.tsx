@@ -81,6 +81,7 @@ export interface DashboardMusyrifTahfizhProps {
   ikhtibarLoading?: boolean;
   ikhtibarError?: string | null;
   izinPendingCount?: number;
+  izinLoadError?: string | null;
   santriSakitCount?: number;
   onNavigate?: (tab: AppNavId) => void;
   isKabidOrManagerial?: boolean;
@@ -100,6 +101,7 @@ export function DashboardMusyrifTahfizh({
   ikhtibarLoading = false,
   ikhtibarError = null,
   izinPendingCount = 0,
+  izinLoadError = null,
   santriSakitCount = 0,
   onNavigate,
   isKabidOrManagerial = false,
@@ -561,7 +563,7 @@ export function DashboardMusyrifTahfizh({
                   : "0 Antrean Ikhtibar"}
               </span>
               <span className="text-[10px] text-slate-400 block mt-0.5 truncate">
-                Izin & Kesehatan: {izinPendingCount} izin • {santriSakitCount} sakit
+                Izin & Kesehatan: {izinLoadError ? "Izin (Gagal Memuat)" : `${izinPendingCount} izin`} • {santriSakitCount} sakit
               </span>
             </div>
           </div>

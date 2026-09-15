@@ -22,10 +22,10 @@ import {
 export interface ManajemenHalaqohProps {
   halaqohList: Array<{
     id: string;
-    halaqohCode: string;
+    halaqohCode?: string | null;
     nama: string;
-    pembina?: { id: string; nama: string; staffCode?: string } | null;
-    tahunAjaran: string;
+    pembina?: { id?: string | null; nama: string; staffCode?: string | null } | null;
+    tahunAjaran?: string | null;
     _count?: { santriList: number };
     santriList?: Array<{ id: string; nis: string; nama: string; kelas: string }>;
   }>;
@@ -47,7 +47,7 @@ export function ManajemenHalaqoh({
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newNama, setNewNama] = useState("");
   const [newPembinaId, setNewPembinaId] = useState("");
-  const [newTahunAjaran, setNewTahunAjaran] = useState("2026/2027");
+  const [newTahunAjaran, setNewTahunAjaran] = useState("");
 
   // Modal State: Ganti Pembina
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -62,6 +62,10 @@ export function ManajemenHalaqoh({
   const handleCreateHalaqoh = () => {
     if (!newNama.trim()) {
       setNotification({ type: "error", message: "Nama halaqoh wajib diisi." });
+      return;
+    }
+    if (!newTahunAjaran.trim()) {
+      setNotification({ type: "error", message: "Tahun ajaran wajib diisi (misal: 2024/2025)." });
       return;
     }
 
@@ -181,10 +185,10 @@ export function ManajemenHalaqoh({
             <CardHeader className="pb-3 border-b border-slate-100">
               <div className="flex items-center justify-between">
                 <Badge variant="green" size="sm">
-                  {h.halaqohCode}
+                  {h.halaqohCode || "-"}
                 </Badge>
                 <span className="text-[11px] font-semibold text-slate-500">
-                  TA: {h.tahunAjaran}
+                  TA: {h.tahunAjaran || "-"}
                 </span>
               </div>
               <CardTitle className="text-base font-bold text-slate-900 mt-2">
@@ -266,6 +270,7 @@ export function ManajemenHalaqoh({
                 label="Tahun Ajaran"
                 value={newTahunAjaran}
                 onChange={(e) => setNewTahunAjaran(e.target.value)}
+                placeholder="misal: 2024/2025"
               />
             </div>
 

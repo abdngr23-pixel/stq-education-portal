@@ -68,12 +68,12 @@ export function SantriModule({
       nama: h.nama,
       pembina: h.pembina
         ? {
-            id: h.pembina.id || "",
+            id: h.pembina.id || null,
             nama: h.pembina.nama,
-            staffCode: h.pembina.staffCode,
+            staffCode: h.pembina.staffCode || null,
           }
         : null,
-      tahunAjaran: h.tahunAjaran || "2026/2027",
+      tahunAjaran: h.tahunAjaran || "-",
       _count: {
         santriList: santriList.filter((s) => s.halaqoh === h.nama).length,
       },

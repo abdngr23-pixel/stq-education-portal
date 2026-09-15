@@ -199,7 +199,7 @@ describe("P0 ABAC Fail-Closed: Reward & Sanksi Evaluasi Tasmi / Simaan", () => {
       const res = await getDaftarTasmiSimaanEligibleAction();
       assert.strictEqual(res.success, false);
       assert.deepStrictEqual(res.data, []);
-      assert.ok(res.message.includes("Sesi telah berakhir"));
+      assert.ok(res.message?.includes("Sesi telah berakhir"));
     });
 
     it("2. Menolak role yang tidak berwenang (PH, MK)", async () => {
@@ -207,13 +207,13 @@ describe("P0 ABAC Fail-Closed: Reward & Sanksi Evaluasi Tasmi / Simaan", () => {
       const resPH = await getDaftarTasmiSimaanEligibleAction();
       assert.strictEqual(resPH.success, false);
       assert.deepStrictEqual(resPH.data, []);
-      assert.ok(resPH.message.includes("wewenang") || resPH.message.includes("Akses Ditolak"));
+      assert.ok(Boolean(resPH.message?.includes("wewenang") || resPH.message?.includes("Akses Ditolak")));
 
       setTestSession(sessionMK);
       const resMK = await getDaftarTasmiSimaanEligibleAction();
       assert.strictEqual(resMK.success, false);
       assert.deepStrictEqual(resMK.data, []);
-      assert.ok(resMK.message.includes("wewenang") || resMK.message.includes("Akses Ditolak"));
+      assert.ok(Boolean(resMK.message?.includes("wewenang") || resMK.message?.includes("Akses Ditolak")));
     });
 
     it("3. MT tanpa profil staf gagal secara terkendali (fail-closed dengan array kosong)", async () => {
@@ -221,7 +221,7 @@ describe("P0 ABAC Fail-Closed: Reward & Sanksi Evaluasi Tasmi / Simaan", () => {
       const res = await getDaftarTasmiSimaanEligibleAction();
       assert.strictEqual(res.success, false);
       assert.deepStrictEqual(res.data, []);
-      assert.ok(res.message.includes("Profil staf pembina Anda belum terhubung"));
+      assert.ok(res.message?.includes("Profil staf pembina Anda belum terhubung"));
     });
 
     it("4. MT biasa hanya melihat santri dari halaqoh binaannya", async () => {

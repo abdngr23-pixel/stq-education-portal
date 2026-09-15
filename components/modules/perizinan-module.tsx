@@ -37,6 +37,7 @@ export interface PerizinanModuleProps {
   currentUserName: string;
   santriList: DashboardSantriSummary[];
   izinList: IzinItem[];
+  loadError?: string | null;
   onIzinUpdated?: () => void;
 }
 
@@ -45,46 +46,58 @@ export function PerizinanModule({
   currentUserName,
   santriList,
   izinList: initialIzinList,
+  loadError = null,
   onIzinUpdated,
 }: PerizinanModuleProps) {
   const [list, setList] = useState<IzinItem[]>(initialIzinList);
+  const [fetchError, setFetchError] = useState<string | null>(loadError);
   const [isPending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // Load perizinan riil dari server action on mount
   useEffect(() => {
     let isMounted = true;
-    getPerizinanListAction().then((res) => {
-      if (isMounted && res.success && res.data && res.data.length > 0) {
-        setList(
-          res.data.map((item) => {
-            const diffDays = Math.max(
-              1,
-              Math.round(
-                (new Date(item.tanggalSelesai).getTime() - new Date(item.tanggalMulai).getTime()) /
-                  (1000 * 60 * 60 * 24)
-              )
-            );
-            return {
-              id: item.id,
-              kodeIzin: item.kodeIzin,
-              santriNama: item.santri.nama,
-              santriNis: item.santri.nis,
-              kelas: item.santri.kelas,
-              jenis: item.jenis as "PULANG" | "KELUAR_KOMPLEK" | "SAKIT",
-              durasi: `${diffDays} Hari`,
-              alasan: item.alasan,
-              status: item.status as "MENUNGGU_MK" | "MENUNGGU_KS" | "DISETUJUI" | "DITOLAK",
-              diverifikasiOleh: item.disetujuiKS
-                ? `Disetujui KS: ${item.disetujuiKS.nama}`
-                : item.disetujuiMK
-                ? `Diverifikasi MK: ${item.disetujuiMK.nama}`
-                : undefined,
-            };
-          })
-        );
-      }
-    });
+    getPerizinanListAction()
+      .then((res) => {
+        if (!isMounted) return;
+        if (res.success && Array.isArray(res.data)) {
+          setFetchError(null);
+          setList(
+            res.data.map((item) => {
+              const diffDays = Math.max(
+                1,
+                Math.round(
+                  (new Date(item.tanggalSelesai).getTime() - new Date(item.tanggalMulai).getTime()) /
+                    (1000 * 60 * 60 * 24)
+                )
+              );
+              return {
+                id: item.id,
+                kodeIzin: item.kodeIzin,
+                santriNama: item.santri.nama,
+                santriNis: item.santri.nis,
+                kelas: item.santri.kelas,
+                jenis: item.jenis as "PULANG" | "KELUAR_KOMPLEK" | "SAKIT",
+                durasi: `${diffDays} Hari`,
+                alasan: item.alasan,
+                status: item.status as "MENUNGGU_MK" | "MENUNGGU_KS" | "DISETUJUI" | "DITOLAK",
+                diverifikasiOleh: item.disetujuiKS
+                  ? `Disetujui KS: ${item.disetujuiKS.nama}`
+                  : item.disetujuiMK
+                  ? `Diverifikasi MK: ${item.disetujuiMK.nama}`
+                  : undefined,
+              };
+            })
+          );
+        } else {
+          setFetchError((res as { message?: string }).message || "Gagal memuat data perizinan santri.");
+        }
+      })
+      .catch((err) => {
+        if (isMounted) {
+          setFetchError(err?.message || "Koneksi data perizinan santri gagal.");
+        }
+      });
     return () => {
       isMounted = false;
     };
@@ -414,6 +427,12 @@ export function PerizinanModule({
                   </div>
                 </div>
               ))}
+            </div>
+          ) : fetchError ? (
+            <div className="text-center py-16 px-4 space-y-2 bg-rose-50/50">
+              <AlertCircle className="h-8 w-8 text-rose-600 mx-auto" />
+              <p className="text-sm font-bold text-rose-900">Gagal Memuat Data Perizinan</p>
+              <p className="text-xs text-rose-600">{fetchError}</p>
             </div>
           ) : (
             <div className="text-center py-16 text-slate-400 text-xs">

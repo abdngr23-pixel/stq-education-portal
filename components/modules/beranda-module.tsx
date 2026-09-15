@@ -132,6 +132,8 @@ export interface BerandaModuleProps {
   currentHalaqohName?: string | null;
   santriList: DashboardSantriSummary[];
   izinPendingCount: number;
+  izinLoadError?: string | null;
+  spLoadError?: string | null;
   ikhtibarPendingCount: number;
   ikhtibarLoading?: boolean;
   ikhtibarError?: string | null;
@@ -150,6 +152,8 @@ export function BerandaModule({
   currentHalaqohName,
   santriList,
   izinPendingCount,
+  izinLoadError = null,
+  spLoadError = null,
   ikhtibarPendingCount,
   ikhtibarLoading,
   ikhtibarError,
@@ -178,6 +182,7 @@ export function BerandaModule({
         ikhtibarLoading={ikhtibarLoading}
         ikhtibarError={ikhtibarError}
         izinPendingCount={izinPendingCount}
+        izinLoadError={izinLoadError}
         santriSakitCount={santriSakitCount}
         onNavigate={onNavigate}
         onSelectSantriId={onSelectSantriForSetoran}
@@ -290,19 +295,33 @@ export function BerandaModule({
         {/* KPI 3: Antrean Tugas / Izin */}
         <StatCard
           title="Izin Menunggu"
-          value={`${izinPendingCount} Berkas`}
-          description="Perlu verifikasi & pengesahan"
+          value={izinLoadError ? "Data Tidak Tersedia" : `${izinPendingCount} Berkas`}
+          description={izinLoadError ? "Gagal memuat dari server" : "Perlu verifikasi & pengesahan"}
           icon={<Send className="h-5 w-5 text-sky-600" />}
-          badgeVariant={izinPendingCount > 0 ? "orange" : "sky"}
+          badgeVariant={izinLoadError ? "ditolak" : izinPendingCount > 0 ? "orange" : "sky"}
         />
 
         {/* KPI 4: Disiplin & Kesehatan */}
         <StatCard
           title="Perlu Perhatian"
-          value={`${santriSpCount + santriSakitCount} Kasus`}
-          description={`${santriSpCount} SP aktif • ${santriSakitCount} dirawat`}
+          value={
+            santriLoadError || spLoadError
+              ? "Data Tidak Lengkap"
+              : `${santriSpCount + santriSakitCount} Kasus`
+          }
+          description={
+            santriLoadError || spLoadError
+              ? "Gagal memuat status disiplin santri"
+              : `${santriSpCount} SP aktif • ${santriSakitCount} dirawat`
+          }
           icon={<AlertTriangle className="h-5 w-5 text-rose-600" />}
-          badgeVariant={santriSpCount + santriSakitCount > 0 ? "ditolak" : "sky"}
+          badgeVariant={
+            santriLoadError || spLoadError
+              ? "ditolak"
+              : santriSpCount + santriSakitCount > 0
+              ? "ditolak"
+              : "sky"
+          }
         />
       </div>
 
@@ -321,8 +340,19 @@ export function BerandaModule({
                     Aktivitas operasional yang memerlukan tindakan Anda hari ini
                   </CardDescription>
                 </div>
-                <Badge variant={izinPendingCount > 0 ? "orange" : "green"} size="sm">
-                  {izinPendingCount + ikhtibarPendingCount > 0
+                <Badge
+                  variant={
+                    izinLoadError || ikhtibarError
+                      ? "ditolak"
+                      : izinPendingCount > 0
+                      ? "orange"
+                      : "green"
+                  }
+                  size="sm"
+                >
+                  {izinLoadError || ikhtibarError
+                    ? "Status Tugas Belum Lengkap"
+                    : izinPendingCount + ikhtibarPendingCount > 0
                     ? `${izinPendingCount + ikhtibarPendingCount} Tugas Aktif`
                     : "Semua Tuntas"}
                 </Badge>
@@ -330,7 +360,12 @@ export function BerandaModule({
             </CardHeader>
             <CardContent className="space-y-3 pt-3">
               {/* Item 1: Izin Pulang / Keluar */}
-              {izinPendingCount > 0 ? (
+              {izinLoadError ? (
+                <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+                  <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+                  <span>Gagal memuat permohonan izin santri ({izinLoadError}).</span>
+                </div>
+              ) : izinPendingCount > 0 ? (
                 <div className="flex items-center justify-between p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/80">
                   <div className="flex items-start gap-3">
                     <div className="p-2 rounded-xl bg-amber-100 text-amber-800 shrink-0">

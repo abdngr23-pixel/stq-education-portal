@@ -21,6 +21,8 @@ describe("P0 RBAC & ABAC Enclosure: Halaqoh Management Actions", () => {
   const STAFF_MT1 = "stf-hlq-mt1";
   const STAFF_MT2 = "stf-hlq-mt2";
   const STAFF_KS = "stf-hlq-ks";
+  const STAFF_PH1 = "stf-hlq-ph1";
+  const STAFF_ADM1 = "stf-hlq-adm1";
 
   const HALAQOH_1 = "hlq-test-01";
   const HALAQOH_2 = "hlq-test-02";
@@ -72,7 +74,9 @@ describe("P0 RBAC & ABAC Enclosure: Halaqoh Management Actions", () => {
       data: [
         { id: STAFF_MT1, staffCode: "STF-MT-01", nama: "Musyrif Tahfizh 1", roleStaff: "MT", status: "AKTIF", noHp: "0811111111" },
         { id: STAFF_MT2, staffCode: "STF-MT-02", nama: "Musyrif Tahfizh 2", roleStaff: "MT", status: "AKTIF", noHp: "0822222222" },
+        { id: STAFF_PH1, staffCode: "STF-PH-01", nama: "Mudhabbir Pengasuhan 1", roleStaff: "PH", status: "AKTIF", noHp: "0844444444" },
         { id: STAFF_KS, staffCode: "STF-KS-01", nama: "K.H. Mudir Pesantren", roleStaff: "KS", status: "AKTIF", noHp: "0833333333" },
+        { id: STAFF_ADM1, staffCode: "STF-ADM-01", nama: "Staf Tata Usaha", roleStaff: "ADM", status: "AKTIF", noHp: "0855555555" },
       ],
     });
 
@@ -165,6 +169,25 @@ describe("P0 RBAC & ABAC Enclosure: Halaqoh Management Actions", () => {
       assert.strictEqual(res.success, true);
       assert.ok(res.message.includes("berhasil dibuat"));
     });
+
+    it("menolak pembuatan halaqoh dengan pembina dari role staf tidak memenuhi syarat (KS, ADM)", async () => {
+      setTestSession(sessionKS);
+      const resKS = await createHalaqohAction({
+        nama: "Halaqoh KS Pembina",
+        pembinaId: STAFF_KS,
+        tahunAjaran: "2024/2025",
+      });
+      assert.strictEqual(resKS.success, false);
+      assert.ok(resKS.message.includes("tidak memenuhi syarat"));
+
+      const resADM = await createHalaqohAction({
+        nama: "Halaqoh ADM Pembina",
+        pembinaId: STAFF_ADM1,
+        tahunAjaran: "2024/2025",
+      });
+      assert.strictEqual(resADM.success, false);
+      assert.ok(resADM.message.includes("tidak memenuhi syarat"));
+    });
   });
 
   // =========================================================================
@@ -203,6 +226,17 @@ describe("P0 RBAC & ABAC Enclosure: Halaqoh Management Actions", () => {
 
       const h1 = await prisma.halaqoh.findUnique({ where: { id: HALAQOH_1 } });
       assert.strictEqual(h1?.pembinaId, STAFF_MT1);
+    });
+
+    it("menolak penugasan pembina halaqoh dari role staf tidak memenuhi syarat (KS, ADM)", async () => {
+      setTestSession(sessionKS);
+      const resKS = await assignPembinaHalaqohAction(HALAQOH_1, STAFF_KS);
+      assert.strictEqual(resKS.success, false);
+      assert.ok(resKS.message.includes("tidak memenuhi syarat"));
+
+      const resADM = await assignPembinaHalaqohAction(HALAQOH_1, STAFF_ADM1);
+      assert.strictEqual(resADM.success, false);
+      assert.ok(resADM.message.includes("tidak memenuhi syarat"));
     });
   });
 
@@ -269,17 +303,24 @@ describe("P0 RBAC & ABAC Enclosure: Halaqoh Management Actions", () => {
       assert.deepStrictEqual(resMK.data, []);
     });
 
-    it("mengizinkan KS dan ADM mengambil daftar staf penugasan lengkap", async () => {
+    it("mengizinkan KS dan ADM mengambil daftar staf penugasan lengkap yang eligible (hanya MT dan PH)", async () => {
       setTestSession(sessionKS);
       const resKS = await getAssignableStaffAction();
       assert.strictEqual(resKS.success, true);
       assert.ok(resKS.data.length >= 3);
       assert.ok(resKS.data.every((s) => s.id && s.staffCode && s.nama && s.status === "AKTIF"));
+      // Memastikan hanya staf dengan role MT atau PH yang eligible
+      assert.ok(resKS.data.every((s) => s.roleStaff === "MT" || s.roleStaff === "PH"));
+      assert.ok(!resKS.data.some((s) => s.id === STAFF_KS || s.id === STAFF_ADM1));
+      assert.ok(resKS.data.some((s) => s.id === STAFF_MT1));
+      assert.ok(resKS.data.some((s) => s.id === STAFF_PH1));
 
       setTestSession(sessionADM);
       const resADM = await getAssignableStaffAction();
       assert.strictEqual(resADM.success, true);
       assert.ok(resADM.data.length >= 3);
+      assert.ok(resADM.data.every((s) => s.roleStaff === "MT" || s.roleStaff === "PH"));
+      assert.ok(!resADM.data.some((s) => s.id === STAFF_KS || s.id === STAFF_ADM1));
     });
   });
 });
