@@ -8,7 +8,7 @@ import fs from "fs";
 import path from "path";
 import { setTestSession } from "../lib/auth";
 import { UserSession } from "../types/auth";
-import { prosesRewardTasmiSimaanAction } from "../app/actions/reward-sanksi";
+import { prosesRewardTasmiSimaanAction, updateKebijakanRewardSanksiAction } from "../app/actions/reward-sanksi";
 import { getStatusKesehatanSemantics } from "../lib/kesehatan-status";
 
 describe("POST-PR11 HOTFIX VERIFICATION SUITE", () => {
@@ -218,6 +218,74 @@ describe("POST-PR11 HOTFIX VERIFICATION SUITE", () => {
       assert.ok(!authContent.includes("setTimeout(() => reject(new Error(\"DB_TIMEOUT\")), 2000)"), "Aggressive 2000ms timeout must be removed");
       assert.ok(authContent.includes("8000"), "Safe timeout must be configured");
       assert.ok(authContent.includes("clearTimeout"), "Timer must be cleaned up");
+    });
+  });
+
+  // =========================================================================
+  // POST-PR12: Kebijakan Policy Edit Authorization & Copy Clarity
+  // =========================================================================
+  describe("POST-PR12: Kebijakan Policy Edit Authorization & Copy Clarity", () => {
+    it("updateKebijakanRewardSanksiAction HANYA dapat diakses oleh Mudir (KS)", async () => {
+      // 1. Kabid Tahfizh (role = MT, isKepalaBidangTahfidz = true) DITOLAK mengedit kebijakan
+      const kabidSession: UserSession = {
+        userId: "usr-kabid",
+        username: "musyrif.tahfizh",
+        name: "Ust. Razan Mufli, S.Pd",
+        role: "MT",
+        staffId: "stf-razan",
+        isKepalaBidangTahfidz: true,
+      };
+      setTestSession(kabidSession);
+      const resKabid = await updateKebijakanRewardSanksiAction({
+        minNilaiTasmi: 80,
+        minNilaiSimaan: 85,
+        bintangTasmi: 1,
+        bintangSimaan: 2,
+        hakLiburTasmiHari: 1,
+        hakLiburSimaanHari: 2,
+        minPersenTargetBulanan: 100,
+        durasiKehilanganKunjunganHari: 30,
+      });
+      assert.strictEqual(resKabid.success, false);
+      assert.ok(resKabid.message.includes("Hanya Mudir (KS)"), "Kabid must NOT have policy edit authority");
+
+      // 2. Ordinary MT DITOLAK mengedit kebijakan
+      const mtSession: UserSession = {
+        userId: "usr-lisa",
+        username: "lisa.mt",
+        name: "Ustadzah Lisa Dwina Fitri",
+        role: "MT",
+        staffId: "stf-lisa",
+        isKepalaBidangTahfidz: false,
+      };
+      setTestSession(mtSession);
+      const resMT = await updateKebijakanRewardSanksiAction({
+        minNilaiTasmi: 80,
+        minNilaiSimaan: 85,
+        bintangTasmi: 1,
+        bintangSimaan: 2,
+        hakLiburTasmiHari: 1,
+        hakLiburSimaanHari: 2,
+        minPersenTargetBulanan: 100,
+        durasiKehilanganKunjunganHari: 30,
+      });
+      assert.strictEqual(resMT.success, false);
+      assert.ok(resMT.message.includes("Hanya Mudir (KS)"), "Ordinary MT must NOT have policy edit authority");
+    });
+
+    it("Copy clarity: ambiguous 'Read-Only (Hanya Mudir)' copy is removed and replaced", () => {
+      const rewardTabContent = fs.readFileSync(
+        path.resolve(process.cwd(), "components/dashboard/reward-evaluasi-tab.tsx"),
+        "utf-8"
+      );
+      assert.ok(
+        !rewardTabContent.includes("Read-Only (Hanya Mudir)"),
+        "Ambiguous copy 'Read-Only (Hanya Mudir)' must be completely eliminated"
+      );
+      assert.ok(
+        rewardTabContent.includes("Kebijakan hanya dapat diedit oleh Mudir"),
+        "Clear unambiguous copy 'Kebijakan hanya dapat diedit oleh Mudir' must be present"
+      );
     });
   });
 });
