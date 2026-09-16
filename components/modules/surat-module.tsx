@@ -40,7 +40,7 @@ export function SuratModule({
   const [perihal, setPerihal] = useState("Surat Keterangan Santri Aktif Pondok Pesantren");
   const [tujuan, setTujuan] = useState("Kementerian Agama / Lembaga Beasiswa");
   const [isiPokok, setIsiPokok] = useState(
-    "Menerangkan bahwa santri yang bersangkutan terdaftar aktif dalam program ketahfidzhan dan pendidikan kesantrian di STQ Darul Ulum Cendekia untuk Tahun Ajaran 2026/2027."
+    "Menerangkan bahwa santri yang bersangkutan terdaftar aktif dalam program ketahfidzhan dan pendidikan kesantrian di STQ Darul Ulum Cendekia."
   );
 
   const [nomorSurat, setNomorSurat] = useState("012/STQ-DUC/SK/IX/2026");

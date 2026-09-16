@@ -251,7 +251,6 @@ export const ROLE_NAV_MAP: Record<Role, AppNavId[]> = {
   ],
   OSDA: [
     "beranda",
-    "kesehatan",
     "logistik",
   ],
   YAY: [
@@ -290,7 +289,7 @@ export const ROLE_MOBILE_PRIMARY: Record<Role, AppNavId[]> = {
   KS: ["beranda", "tahfizh", "perizinan", "anggaran"],
   ADM: ["beranda", "data_santri", "surat", "anggaran"],
   YAY: ["beranda", "tahfizh", "anggaran", "sponsor"],
-  OSDA: ["beranda", "kesehatan", "logistik"],
+  OSDA: ["beranda", "logistik"],
   WS: ["beranda", "portal_wali", "tahfizh", "perizinan"],
   ST: ["beranda", "portal_wali", "tahfizh", "perizinan"],
 };

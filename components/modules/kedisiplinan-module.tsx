@@ -68,6 +68,8 @@ export interface KedisiplinanModuleProps {
   userRole: Role;
   currentUserName?: string;
   santriList: DashboardSantriSummary[];
+  initialPelanggaranError?: string | null;
+  initialSpError?: string | null;
   onUpdateSantriList?: () => void;
 }
 
@@ -75,6 +77,8 @@ export function KedisiplinanModule({
   userRole,
   currentUserName = "Staf Pengasuhan",
   santriList,
+  initialPelanggaranError = null,
+  initialSpError = null,
   onUpdateSantriList,
 }: KedisiplinanModuleProps) {
   const [isPending, startTransition] = useTransition();
@@ -83,6 +87,8 @@ export function KedisiplinanModule({
   // Data Pelanggaran & SP
   const [pelanggaranList, setPelanggaranList] = useState<PelanggaranRecord[]>([]);
   const [spList, setSpList] = useState<SPRecord[]>([]);
+  const [pelanggaranLoadError, setPelanggaranLoadError] = useState<string | null>(initialPelanggaranError);
+  const [spLoadError, setSpLoadError] = useState<string | null>(initialSpError);
 
   // 44 Master Data Kategori Pelanggaran dari Database
   const [masterKategoriList, setMasterKategoriList] = useState<MasterKategoriItem[]>([]);
@@ -95,48 +101,70 @@ export function KedisiplinanModule({
   const [kategoriSearchTerm, setKategoriSearchTerm] = useState<string>("");
   const [kategoriTingkatFilter, setKategoriTingkatFilter] = useState<string>("ALL");
 
-  // Load pelanggaran, SP, dan 44 master kategori riil dari server action on mount
+  // Load pelanggaran, SP, dan 44 master kategori riil dari server action on mount via Promise.allSettled
   useEffect(() => {
     let isMounted = true;
-    Promise.all([
+    Promise.allSettled([
       getPelanggaranListAction(),
       getSPListAction(),
       getMasterPelanggaranListAction(),
-    ]).then(([pRes, spRes, mRes]) => {
+    ]).then(([pResult, spResult, mResult]) => {
       if (!isMounted) return;
-      if (pRes.success && pRes.data) {
-        setPelanggaranList(
-          pRes.data.map((p) => ({
-            id: p.id,
-            kode: p.kode,
-            santriNama: p.santriNama,
-            santriNis: p.santriNis,
-            kategori: p.kategori,
-            poin: p.poin,
-            isPengulangan: p.isPengulangan,
-            tanggal: p.tanggal,
-            pencatat: p.pencatat,
-            kronologi: p.kronologi || "",
-          }))
-        );
+
+      if (pResult.status === "fulfilled") {
+        const pRes = pResult.value;
+        if (pRes.success && Array.isArray(pRes.data)) {
+          setPelanggaranLoadError(null);
+          setPelanggaranList(
+            pRes.data.map((p) => ({
+              id: p.id,
+              kode: p.kode,
+              santriNama: p.santriNama,
+              santriNis: p.santriNis,
+              kategori: p.kategori,
+              poin: p.poin,
+              isPengulangan: p.isPengulangan,
+              tanggal: p.tanggal,
+              pencatat: p.pencatat,
+              kronologi: p.kronologi || "",
+            }))
+          );
+        } else {
+          setPelanggaranLoadError(pRes.message || "Gagal memuat riwayat pelanggaran santri.");
+        }
+      } else {
+        setPelanggaranLoadError(pResult.reason?.message || "Koneksi data pelanggaran santri gagal.");
       }
-      if (spRes.success && spRes.data) {
-        setSpList(
-          spRes.data.map((sp) => ({
-            id: sp.id,
-            nomorSP: sp.nomorSP,
-            santriNama: sp.santriNama,
-            santriNis: sp.santriNis,
-            tingkat: sp.tingkat,
-            totalPoin: sp.totalPoin,
-            tanggal: sp.tanggal,
-            status: sp.status as "AKTIF" | "DIPUTIHKAN",
-          }))
-        );
+
+      if (spResult.status === "fulfilled") {
+        const spRes = spResult.value;
+        if (spRes.success && Array.isArray(spRes.data)) {
+          setSpLoadError(null);
+          setSpList(
+            spRes.data.map((sp) => ({
+              id: sp.id,
+              nomorSP: sp.nomorSP,
+              santriNama: sp.santriNama,
+              santriNis: sp.santriNis,
+              tingkat: sp.tingkat,
+              totalPoin: sp.totalPoin,
+              tanggal: sp.tanggal,
+              status: sp.status as "AKTIF" | "DIPUTIHKAN",
+            }))
+          );
+        } else {
+          setSpLoadError(spRes.message || "Gagal memuat data Surat Peringatan (SP).");
+        }
+      } else {
+        setSpLoadError(spResult.reason?.message || "Koneksi data SP santri gagal.");
       }
-      if (mRes.success && mRes.data && mRes.data.length > 0) {
-        setMasterKategoriList(mRes.data);
-        setSelectedKategoriId(mRes.data[0].id);
+
+      if (mResult.status === "fulfilled") {
+        const mRes = mResult.value;
+        if (mRes.success && mRes.data && mRes.data.length > 0) {
+          setMasterKategoriList(mRes.data);
+          setSelectedKategoriId(mRes.data[0].id);
+        }
       }
     });
     return () => {
@@ -194,6 +222,13 @@ export function KedisiplinanModule({
   // Handler Submit Pelanggaran
   const handleCatatPelanggaran = () => {
     setFeedback(null);
+    if (userRole !== "KS" && userRole !== "MK") {
+      setFeedback({
+        type: "error",
+        message: "Akses ditolak: Anda tidak memiliki kewenangan mencatat pelanggaran santri.",
+      });
+      return;
+    }
     const target = santriList.find((s) => s.id === effectiveSantriId);
     if (!target) {
       setFeedback({ type: "error", message: "Silakan pilih santri terlebih dahulu." });
@@ -326,7 +361,7 @@ export function KedisiplinanModule({
           </p>
         </div>
 
-        {["MK", "PH", "OSDA", "KS"].includes(userRole) && (
+        {(userRole === "KS" || userRole === "MK") && (
           <Button
             variant="primary"
             onClick={() => setShowAddDialog(true)}
@@ -367,8 +402,13 @@ export function KedisiplinanModule({
         </div>
       )}
 
-      {/* 2. Kartu Surat Peringatan (SP) Aktif */}
-      {spList.length > 0 && (
+      {/* 2. Kartu Surat Peringatan (SP) Aktif / Status Error */}
+      {spLoadError ? (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+          <span>Gagal memuat status Surat Peringatan (SP): {spLoadError}</span>
+        </div>
+      ) : spList.length > 0 ? (
         <div className="space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-slate-800 font-heading flex items-center gap-2">
@@ -429,7 +469,7 @@ export function KedisiplinanModule({
             ))}
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* 3. Daftar Pelanggaran Santri Terkini */}
       <Card rounded="3xl" className="border border-slate-200 shadow-xs overflow-hidden">
@@ -505,7 +545,14 @@ export function KedisiplinanModule({
               ) : (
                 <tr>
                   <td colSpan={7} className="text-center py-12 text-slate-400 text-xs">
-                    Tidak ada pelanggaran santri yang dicatat.
+                    {pelanggaranLoadError ? (
+                      <div className="flex flex-col items-center justify-center gap-1 text-rose-600">
+                        <AlertTriangle className="h-5 w-5 text-rose-600" />
+                        <span className="font-semibold">Gagal memuat log pelanggaran ({pelanggaranLoadError})</span>
+                      </div>
+                    ) : (
+                      "Tidak ada pelanggaran santri yang dicatat."
+                    )}
                   </td>
                 </tr>
               )}
@@ -515,7 +562,7 @@ export function KedisiplinanModule({
       </Card>
 
       {/* DIALOG FORM CATAT PELANGGARAN BARU */}
-      {showAddDialog && (
+      {showAddDialog && (userRole === "KS" || userRole === "MK") && (
         <div
           role="dialog"
           aria-modal="true"

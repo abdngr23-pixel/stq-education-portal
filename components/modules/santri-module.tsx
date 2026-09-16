@@ -1,18 +1,26 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { MasterDataSantri, SantriItem } from "@/components/dashboard/master-data-santri";
 import { ManajemenHalaqoh } from "@/components/dashboard/manajemen-halaqoh";
 import { Role } from "@/types/auth";
 import { Users, BookmarkCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getAssignableStaffAction } from "@/app/actions/halaqoh";
 
 export interface SantriModuleProps {
   santriList: SantriItem[];
   userRole: Role;
-  halaqohList?: Array<{ id: string; nama: string; pembina?: { nama: string } }>;
+  halaqohList?: Array<{
+    id: string;
+    halaqohCode?: string;
+    nama: string;
+    pembina?: { id?: string; nama: string; staffCode?: string } | null;
+    tahunAjaran?: string;
+  }>;
   onPrintRapor?: (santri: SantriItem) => void;
   onRefresh?: () => void;
+  loadError?: string | null;
 }
 
 export function SantriModule({
@@ -21,32 +29,68 @@ export function SantriModule({
   halaqohList = [],
   onPrintRapor,
   onRefresh,
+  loadError = null,
 }: SantriModuleProps) {
   const [activeSubTab, setActiveSubTab] = useState<"santri" | "halaqoh">("santri");
 
-  // Format halaqoh list untuk ManajemenHalaqoh
-  const formattedHalaqohList = halaqohList.map((h, idx) => ({
-    id: h.id,
-    halaqohCode: `HLQ-${String(idx + 1).padStart(4, "0")}`,
-    nama: h.nama,
-    pembina: h.pembina ? { id: `stf_${idx + 1}`, nama: h.pembina.nama } : null,
-    tahunAjaran: "2026/2027",
-    _count: {
-      santriList: santriList.filter((s) => s.halaqoh === h.nama).length,
-    },
-    santriList: santriList
-      .filter((s) => s.halaqoh === h.nama)
-      .map((s) => ({ id: s.id, nis: s.nis, nama: s.nama, kelas: s.kelas })),
-  }));
+  // Otoritas Manajemen Halaqoh: Hanya KS dan ADM
+  const canManageHalaqoh = userRole === "KS" || userRole === "ADM";
 
-  const staffMusyrifList = [
-    { id: "stf-1", nama: "Ust. Razan Mufli, S.Pd", staffCode: "STF-0001" },
-    { id: "stf-2", nama: "Ust. Kamal", staffCode: "STF-0002" },
-    { id: "stf-3", nama: "Ust. Rizaldi", staffCode: "STF-0003" },
-    { id: "stf-4", nama: "Ust. Abi Hudzaifah", staffCode: "STF-0004" },
-    { id: "stf-5", nama: "Ust. Alwan", staffCode: "STF-0005" },
-    { id: "stf-6", nama: "Ustadzah Lisa Dwina Fitri", staffCode: "STF-0006" },
-  ];
+  // State staf pembina dinamis dari server untuk KS/ADM
+  const [assignableStaff, setAssignableStaff] = useState<
+    Array<{ id: string; staffCode: string; nama: string; roleStaff: string; status: string }>
+  >([]);
+
+  useEffect(() => {
+    if (!canManageHalaqoh) return;
+
+    let isMounted = true;
+    getAssignableStaffAction()
+      .then((res) => {
+        if (isMounted && res.success && res.data) {
+          setAssignableStaff(res.data);
+        }
+      })
+      .catch((err) => {
+        console.error("Gagal memuat staf pembina:", err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [canManageHalaqoh]);
+
+  // Format halaqoh list untuk ManajemenHalaqoh (menggunakan data authoritative pangkalan data)
+  const formattedHalaqohList = useMemo(() => {
+    return halaqohList.map((h) => ({
+      id: h.id,
+      halaqohCode: h.halaqohCode || "-",
+      nama: h.nama,
+      pembina: h.pembina
+        ? {
+            id: h.pembina.id || null,
+            nama: h.pembina.nama,
+            staffCode: h.pembina.staffCode || null,
+          }
+        : null,
+      tahunAjaran: h.tahunAjaran || "-",
+      _count: {
+        santriList: santriList.filter((s) => s.halaqoh === h.nama).length,
+      },
+      santriList: santriList
+        .filter((s) => s.halaqoh === h.nama)
+        .map((s) => ({ id: s.id, nis: s.nis, nama: s.nama, kelas: s.kelas })),
+    }));
+  }, [halaqohList, santriList]);
+
+  // Staf musyrif list dari pangkalan data resmi (tanpa hardcoded/synthetic IDs)
+  const staffMusyrifList = useMemo(() => {
+    return assignableStaff.map((s) => ({
+      id: s.id,
+      nama: s.nama,
+      staffCode: s.staffCode,
+    }));
+  }, [assignableStaff]);
 
   return (
     <div className="space-y-6">
@@ -54,51 +98,58 @@ export function SantriModule({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-900 font-heading">
-            Data Santri & Halaqoh
+            Data Santri &amp; Halaqoh
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
             Master data santri STQ Darul Ulum Cendekia, pembagian kelompok halaqoh tahfizh, dan pembina
           </p>
         </div>
 
-        {/* Sub-tab Navigation (Tahap 5: Pemulihan Manajemen Halaqoh) */}
-        <div className="flex items-center gap-1 bg-slate-100 p-1.5 rounded-2xl border border-slate-200 shrink-0">
-          <button
-            type="button"
-            onClick={() => setActiveSubTab("santri")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all",
-              activeSubTab === "santri"
-                ? "bg-white text-emerald-800 shadow-xs border border-emerald-100"
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <Users className="h-4 w-4" />
-            Daftar Santri
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveSubTab("halaqoh")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all",
-              activeSubTab === "halaqoh"
-                ? "bg-white text-emerald-800 shadow-xs border border-emerald-100"
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <BookmarkCheck className="h-4 w-4" />
-            Kelola Halaqoh
-          </button>
-        </div>
+        {/* Sub-tab Navigation: Hanya ditampilkan untuk KS & ADM */}
+        {canManageHalaqoh && (
+          <div className="flex items-center gap-1 bg-slate-100 p-1.5 rounded-2xl border border-slate-200 shrink-0">
+            <button
+              type="button"
+              onClick={() => setActiveSubTab("santri")}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all",
+                activeSubTab === "santri"
+                  ? "bg-white text-emerald-800 shadow-xs border border-emerald-100"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Users className="h-4 w-4" />
+              Daftar Santri
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSubTab("halaqoh")}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all",
+                activeSubTab === "halaqoh"
+                  ? "bg-white text-emerald-800 shadow-xs border border-emerald-100"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <BookmarkCheck className="h-4 w-4" />
+              Kelola Halaqoh
+            </button>
+          </div>
+        )}
       </div>
 
-      {activeSubTab === "santri" ? (
+      {activeSubTab === "santri" || !canManageHalaqoh ? (
         <MasterDataSantri
           santriList={santriList}
           userRole={userRole}
-          halaqohList={halaqohList}
+          halaqohList={halaqohList.map((h) => ({
+            id: h.id,
+            nama: h.nama,
+            pembina: h.pembina ? { nama: h.pembina.nama } : undefined,
+          }))}
           onPrintRapor={onPrintRapor}
           onRefresh={onRefresh}
+          loadError={loadError}
         />
       ) : (
         <ManajemenHalaqoh
@@ -111,4 +162,3 @@ export function SantriModule({
     </div>
   );
 }
-

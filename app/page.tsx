@@ -27,7 +27,7 @@ import { PrintSurat } from "@/components/print/print-surat";
 import { PrintSP } from "@/components/print/print-sp";
 import { PrintLaporanBulanan } from "@/components/print/print-laporan-bulanan";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
-import { tambahAgendaAction } from "@/app/actions/kalender";
+import { tambahAgendaAction, getDaftarAgendaAction } from "@/app/actions/kalender";
 import {
   toggleUserStatusAction,
   resetUserPasswordAction,
@@ -35,7 +35,7 @@ import {
   getUsersListAction,
 } from "@/app/actions/users";
 import { getAuditLogsAction, type AuditLogItem } from "@/app/actions/audit";
-import { kirimKotakSaranAction } from "@/app/actions/portal-wali";
+import { kirimKotakSaranAction, getDaftarKotakSaranAction } from "@/app/actions/portal-wali";
 import { type LaporanBulananData } from "@/app/actions/laporan-bulanan";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, AlertCircle, X, Printer } from "lucide-react";
@@ -57,50 +57,12 @@ import { SuratModule } from "@/components/modules/surat-module";
 import { KalenderModule, AgendaItem } from "@/components/modules/kalender-module";
 import { UsersModule, UserAccountItem } from "@/components/modules/users-module";
 import { AuditModule } from "@/components/modules/audit-module";
+import { getPerizinanListAction } from "@/app/actions/kesantrian";
+import { getPelanggaranListAction, getSPListAction } from "@/app/actions/kedisiplinan";
 import { PortalWaliModule, SaranItem } from "@/components/modules/portal-wali-module";
 
-// =========================================================================
-// MOCK DATA AWAL SISTEM STQ DARUL ULUM CENDEKIA
-// =========================================================================
-
-const INITIAL_AUDIT_LOGS: AuditLogItem[] = [
-  {
-    id: "log-1",
-    action: "INPUT_SETORAN_TAHFIZH",
-    entity: "SetoranTahfizh",
-    entityId: "SET-00192",
-    details: { santri: "Obama Ozearld Egberted Turizqi", juz: 4, nilai: "MUMTAZ", jenis: "SABAQ" },
-    createdAt: new Date("2026-09-08T07:45:00.000Z"),
-    user: { username: "razan.mt", email: "razan.mt@stqduc.sch.id", role: "MT" },
-  },
-  {
-    id: "log-2",
-    action: "PENCATATAN_PELANGGARAN_X2",
-    entity: "PelanggaranSantri",
-    entityId: "PLG-00045",
-    details: { santri: "M. Hafizh Dzulqarnain", poin: 10, isPengulangan: false, catatan: "Terlambat halaqoh" },
-    createdAt: new Date("2026-09-08T07:20:00.000Z"),
-    user: { username: "mujaddid.mk", email: "mujaddid.mk@stqduc.sch.id", role: "MK" },
-  },
-  {
-    id: "log-3",
-    action: "APPROVAL_PERIZINAN_KS",
-    entity: "PerizinanSantri",
-    entityId: "IZN-00088",
-    details: { santri: "Obama Ozearld Egberted Turizqi", jenis: "PULANG", status: "DISETUJUI" },
-    createdAt: new Date("2026-09-08T06:30:00.000Z"),
-    user: { username: "mudir.ks", email: "mudir.ks@stqduc.sch.id", role: "KS" },
-  },
-  {
-    id: "log-4",
-    action: "GENERASI_SURAT_RESMI_AI",
-    entity: "SuratResmi",
-    entityId: "SRT-00012",
-    details: { nomorSurat: "012/STQ-DUC/SP/IX/2026", perihal: "Surat Keterangan Aktif" },
-    createdAt: new Date("2026-09-08T05:15:00.000Z"),
-    user: { username: "aminah.adm", email: "aminah.adm@stqduc.sch.id", role: "ADM" },
-  },
-];
+// Data Jejak Audit Awal Bersih Tanpa Mock Data
+const INITIAL_AUDIT_LOGS: AuditLogItem[] = [];
 
 export default function Home() {
   const [isSessionLoading, setIsSessionLoading] = useState<boolean>(true);
@@ -130,103 +92,23 @@ export default function Home() {
 
   // -------------------------------------------------------------
   // PERIZINAN, DISIPLIN, AGENDA, USERS, AUDIT, KOTAK SARAN
+  // Dimuat dinamis murni dari basis data riil (Zero Fallback Mock)
   // -------------------------------------------------------------
-  const [izinList] = useState<IzinItem[]>([
-    {
-      id: "iz_1",
-      kodeIzin: "IZN-000001",
-      santriNama: "Obama Ozearld Egberted Turizqi",
-      santriNis: "SAN-0001",
-      kelas: "9A Takhossus",
-      jenis: "SAKIT",
-      durasi: "2 Hari",
-      alasan: "Demam dan flu, istirahat di UKS pengawasan klinik pesantren",
-      status: "DISETUJUI",
-      diverifikasiOleh: "Ust. Mujaddid Zhohruddin (MK)",
-    },
-    {
-      id: "iz_2",
-      kodeIzin: "IZN-000002",
-      santriNama: "M. Hafizh Dzulqarnain",
-      santriNis: "SAN-0002",
-      kelas: "7A",
-      jenis: "PULANG",
-      durasi: "3 Hari",
-      alasan: "Acara pernikahan keluarga kandung di luar kota",
-      status: "MENUNGGU_KS",
-      diverifikasiOleh: "Disetujui MK, Menunggu Pengesahan Mudir",
-    },
-  ]);
+  const [izinList, setIzinList] = useState<IzinItem[]>([]);
+  const [pelanggaranHistory, setPelanggaranHistory] = useState<PelanggaranRecord[]>([]);
+  const [spList, setSpList] = useState<SPRecord[]>([]);
+  const [izinLoadError, setIzinLoadError] = useState<string | null>(null);
+  const [pelanggaranLoadError, setPelanggaranLoadError] = useState<string | null>(null);
+  const [spLoadError, setSpLoadError] = useState<string | null>(null);
+  const [kesehatanLoadError, setKesehatanLoadError] = useState<string | null>(null);
+  const [kesehatanLoaded, setKesehatanLoaded] = useState<boolean>(false);
+  const [agendaLoadError, setAgendaLoadError] = useState<string | null>(null);
+  const [usersLoadError, setUsersLoadError] = useState<string | null>(null);
+  const [saranLoadError, setSaranLoadError] = useState<string | null>(null);
 
-  const [pelanggaranHistory] = useState<PelanggaranRecord[]>([
-    {
-      id: "p_1",
-      kode: "PLG-000001",
-      santriNama: "Zaidan Al-Farisi",
-      kategori: "Terlambat Sholat Berjamaah",
-      poin: 5,
-      isPengulangan: false,
-      tanggal: "05/09/2026",
-      pencatat: "Ust. Mujaddid (MK)",
-    },
-    {
-      id: "p_2",
-      kode: "PLG-000002",
-      santriNama: "Zaidan Al-Farisi",
-      kategori: "Terlambat Sholat Berjamaah",
-      poin: 10,
-      isPengulangan: true,
-      tanggal: "07/09/2026",
-      pencatat: "Ust. Mujaddid (MK)",
-    },
-  ]);
-
-  const [spList] = useState<SPRecord[]>([
-    {
-      id: "sp_1",
-      nomorSP: "001/SP-1/DUC/2026",
-      santriNama: "Zaidan Al-Farisi",
-      tingkat: 1,
-      totalPoin: 25,
-      tanggal: "07/09/2026",
-      status: "AKTIF",
-    },
-  ]);
-
-  const [agendaList, setAgendaList] = useState<AgendaItem[]>([
-    { id: "agd-01", judul: "Ujian Ikhtibar Tahfizh Semester Ganjil", tanggal: "15 - 20 September 2026", kategori: "TAHFIZH", lokasi: "Masjid Utama Pesantren" },
-    { id: "agd-02", judul: "Rihlah Tarbawiyah & Camping Qur'ani", tanggal: "01 - 03 Oktober 2026", kategori: "KEGIATAN_SANTRI", lokasi: "Bumi Perkemahan Mandiri" },
-    { id: "agd-03", judul: "Pertemuan Evaluasi Wali Santri & Mudir", tanggal: "18 Oktober 2026", kategori: "KEGIATAN_SANTRI", lokasi: "Aula STQ DUC" },
-    { id: "agd-04", judul: "Libur Kepulangan Pertengahan Semester", tanggal: "24 - 28 Oktober 2026", kategori: "LIBUR", lokasi: "Kompleks Pondok" },
-  ]);
-
-  const [usersList, setUsersList] = useState<UserAccountItem[]>([
-    { id: "usr-01", username: "mudir.ks", role: "KS", nama: "Ust. Andi Quarzy Ayatullah, S.H, M.H", status: "AKTIF" },
-    { id: "usr-02", username: "aminah.adm", role: "ADM", nama: "Siti Aminah, S.Kom.", status: "AKTIF" },
-    { id: "usr-03", username: "razan.mt", role: "MT", nama: "Ust. Razan Mufli, S.Pd", status: "AKTIF" },
-    { id: "usr-04", username: "mujaddid.mk", role: "MK", nama: "Ust. Mujaddid Zhohruddin", status: "AKTIF" },
-    { id: "usr-05", username: "lisa.mt", role: "MT", nama: "Ustadzah Lisa Dwina Fitri", status: "AKTIF" },
-    { id: "usr-06", username: "kamal.ph", role: "PH", nama: "Ust. Kamal", status: "AKTIF" },
-    { id: "usr-07", username: "rizaldi.ph", role: "PH", nama: "Ust. Rizaldi", status: "AKTIF" },
-    { id: "usr-08", username: "hudzaifah.ph", role: "PH", nama: "Ust. Abi Hudzaifah", status: "AKTIF" },
-    { id: "usr-09", username: "alwan.ph", role: "PH", nama: "Ust. Alwan", status: "AKTIF" },
-    { id: "usr-10", username: "nurul.ga", role: "GA", nama: "Ustzh. Nurul Hidayah, S.Pd.", status: "AKTIF" },
-    { id: "usr-11", username: "yayasan", role: "YAY", nama: "Pembina Yayasan DUC", status: "AKTIF" },
-    { id: "usr-12", username: "osda", role: "OSDA", nama: "Ketua OSDA Pesantren", status: "AKTIF" },
-    { id: "usr-13", username: "walisantri", role: "WS", nama: "Wali Obama Ozearld", status: "AKTIF" },
-    { id: "usr-14", username: "santri.obama", role: "ST", nama: "Obama Ozearld Egberted Turizqi", status: "AKTIF" },
-  ]);
-
-  const [kotakSaranList, setKotakSaranList] = useState<SaranItem[]>([
-    {
-      id: "srn-01",
-      nama: "Wali Santri Obama Ozearld",
-      kategori: "Gizi & Katering",
-      pesan: "Mohon porsi sayur mayur dan buah segar untuk santri dapat divariasikan setiap pekan.",
-      tanggapan: "Jazakallahu khairan atas masukannya. Menu dapur santri telah kami koordinasikan dengan bagian logistik keasramaan untuk penambahan buah pepaya dan pisang 3x seminggu.",
-      status: "DITANGGAPI",
-    },
-  ]);
+  const [agendaList, setAgendaList] = useState<AgendaItem[]>([]);
+  const [usersList, setUsersList] = useState<UserAccountItem[]>([]);
+  const [kotakSaranList, setKotakSaranList] = useState<SaranItem[]>([]);
 
   const [auditLogsList, setAuditLogsList] = useState<AuditLogItem[]>(INITIAL_AUDIT_LOGS);
 
@@ -251,7 +133,17 @@ export default function Home() {
   });
 
   // Halaqoh list mapping dinamis murni dari server/database (Eliminasi fallback statis)
-  const [dynamicHalaqohList, setDynamicHalaqohList] = useState<Array<{ id: string; nama: string; pembina: string; tahunAjaran?: string }>>([]);
+  const [dynamicHalaqohList, setDynamicHalaqohList] = useState<
+    Array<{
+      id: string;
+      halaqohCode?: string;
+      nama: string;
+      pembina: string;
+      pembinaId?: string;
+      pembinaStaffCode?: string;
+      tahunAjaran?: string;
+    }>
+  >([]);
   const [halaqohListError, setHalaqohListError] = useState<string | null>(null);
 
   const halaqohList = dynamicHalaqohList;
@@ -280,8 +172,11 @@ export default function Home() {
         setDynamicHalaqohList(
           res.data.map((h) => ({
             id: h.id,
+            halaqohCode: h.halaqohCode,
             nama: h.nama,
             pembina: h.pembina?.nama || "Pembina",
+            pembinaId: h.pembina?.id,
+            pembinaStaffCode: (h.pembina as { staffCode?: string })?.staffCode,
             tahunAjaran: h.tahunAjaran,
           }))
         );
@@ -307,6 +202,7 @@ export default function Home() {
             nis: s.nis,
             nama: s.nama,
             kelas: s.kelas,
+            jenisKelamin: s.jenisKelamin,
             halaqoh: s.halaqoh || s.halaqohNama || "Belum Ditentukan",
             capaianJuz: s.capaianJuz ?? 0,
             targetJuz: s.targetJuz ?? null,
@@ -450,17 +346,14 @@ export default function Home() {
           }
         }
 
-        try {
-          const kesRes = await getDaftarKesehatanAction();
-          if (isMounted && kesRes.success && kesRes.data && Array.isArray(kesRes.data)) {
-            const activePatients = kesRes.data.filter(
-              (k: { status: string }) => k.status === "RAWAT_PONDOK" || k.status === "DIRUJUK_PUSKESMAS" || k.status === "DIRUJUK_RS"
-            );
-            setActiveKesehatanRecordsCount(activePatients.length);
-          }
-        } catch {
-          // ignore
-        }
+        // Remediation Round 4: Do not eagerly overfetch perizinan, pelanggaran, SP, and kesehatan on init.
+        // Controlled unavailable states preserve Error != Empty without sending full datasets across domains.
+        setIzinLoadError("Data perizinan belum dimuat.");
+        setPelanggaranLoadError("Data pelanggaran belum dimuat.");
+        setSpLoadError("Data SP belum dimuat.");
+        setKesehatanLoadError("Data kesehatan belum dimuat.");
+        setKesehatanLoaded(false);
+        setActiveKesehatanRecordsCount(0);
 
         if (isMounted) {
           await fetchSantriData();
@@ -546,6 +439,100 @@ export default function Home() {
       window.history.replaceState({}, "", newUrl);
     }
   }, [activeTab, halaqohFilter, isSessionLoading]);
+
+  // Remediation Round 4: Lazy-load module datasets only when the corresponding authorized tab is opened
+  useEffect(() => {
+    if (isSessionLoading) return;
+
+    if (activeTab === "perizinan" && ["KS", "ADM", "MK", "WS", "ST"].includes(selectedRole)) {
+      getPerizinanListAction().then((res) => {
+        if (res.success && Array.isArray(res.data)) {
+          setIzinLoadError(null);
+          setIzinList(
+            (res.data as Array<{
+              id: string;
+              kodeIzin: string;
+              santri: { nama: string; nis: string; kelas: string };
+              jenis: string;
+              tanggalMulai: string | Date;
+              tanggalSelesai: string | Date;
+              alasan: string;
+              status: string;
+              disetujuiKS?: { nama: string } | null;
+              disetujuiMK?: { nama: string } | null;
+            }>).map((i) => ({
+              id: i.id,
+              kodeIzin: i.kodeIzin,
+              santriNama: i.santri?.nama || "Santri",
+              santriNis: i.santri?.nis || "",
+              kelas: i.santri?.kelas || "",
+              jenis: i.jenis as IzinItem["jenis"],
+              durasi: `${Math.max(1, Math.round((new Date(i.tanggalSelesai).getTime() - new Date(i.tanggalMulai).getTime()) / (1000 * 60 * 60 * 24)))} Hari`,
+              alasan: i.alasan,
+              status: i.status as IzinItem["status"],
+              diverifikasiOleh: i.disetujuiKS?.nama || i.disetujuiMK?.nama || "-",
+            }))
+          );
+        } else {
+          setIzinLoadError((res as { message?: string }).message || "Gagal memuat data perizinan");
+        }
+      }).catch((err) => {
+        setIzinLoadError((err as Error)?.message || "Koneksi data perizinan gagal");
+      });
+    }
+
+    if (activeTab === "kedisiplinan" && ["KS", "ADM", "MK", "MT", "PH", "YAY", "WS", "ST"].includes(selectedRole)) {
+      Promise.allSettled([
+        getPelanggaranListAction(),
+        getSPListAction(),
+      ]).then(([pelResult, spResult]) => {
+        if (pelResult.status === "fulfilled") {
+          const pelRes = pelResult.value;
+          if (pelRes.success && Array.isArray(pelRes.data)) {
+            setPelanggaranLoadError(null);
+            setPelanggaranHistory(pelRes.data as unknown as PelanggaranRecord[]);
+          } else {
+            setPelanggaranLoadError(pelRes.message || "Gagal memuat riwayat pelanggaran");
+          }
+        } else {
+          setPelanggaranLoadError((pelResult.reason as Error)?.message || "Koneksi data pelanggaran gagal");
+        }
+
+        if (spResult.status === "fulfilled") {
+          const spRes = spResult.value;
+          if (spRes.success && Array.isArray(spRes.data)) {
+            setSpLoadError(null);
+            setSpList(spRes.data as unknown as SPRecord[]);
+          } else {
+            setSpLoadError(spRes.message || "Gagal memuat daftar SP santri");
+          }
+        } else {
+          setSpLoadError((spResult.reason as Error)?.message || "Koneksi data SP santri gagal");
+        }
+      });
+    }
+
+    if (activeTab === "kesehatan" && ["KS", "ADM", "MK", "OSDA", "WS", "ST"].includes(selectedRole)) {
+      getDaftarKesehatanAction().then((res) => {
+        if (res.success && res.data && Array.isArray(res.data)) {
+          const activePatients = res.data.filter(
+            (k: { status: string }) => k.status === "RAWAT_PONDOK" || k.status === "DIRUJUK_PUSKESMAS" || k.status === "DIRUJUK_RS"
+          );
+          setActiveKesehatanRecordsCount(activePatients.length);
+          setKesehatanLoadError(null);
+          setKesehatanLoaded(true);
+        } else {
+          setActiveKesehatanRecordsCount(0);
+          setKesehatanLoadError(res.message || "Gagal memuat rekam medis kesehatan");
+          setKesehatanLoaded(false);
+        }
+      }).catch((err) => {
+        setActiveKesehatanRecordsCount(0);
+        setKesehatanLoadError((err as Error)?.message || "Koneksi data kesehatan gagal");
+        setKesehatanLoaded(false);
+      });
+    }
+  }, [activeTab, selectedRole, isSessionLoading]);
 
   // Escape key listener untuk menutup modal global
   useEffect(() => {
@@ -665,10 +652,10 @@ export default function Home() {
 
   const handleResetPassword = async (username: string) => {
     if (selectedRole !== "ADM" && selectedRole !== "KS") {
-      setFeedback({ type: "error", text: "Hanya Admin & Mudir yang berwenang me-reset kata sandi." });
+      setFeedback({ type: "error", text: "Hanya Admin & Mudir yang berwenang membuat sandi sementara baru." });
       return;
     }
-    if (typeof window !== "undefined" && !window.confirm(`Reset kata sandi akun "${username}" ke default?`)) {
+    if (typeof window !== "undefined" && !window.confirm(`Buat sandi sementara baru untuk akun "${username}"?`)) {
       return;
     }
     startTransition(async () => {
@@ -676,12 +663,12 @@ export default function Home() {
       if (!targetUser) return;
       const res = await resetUserPasswordAction(targetUser.id);
       if (!res.success) {
-        setFeedback({ type: "error", text: res.message || "Gagal me-reset kata sandi." });
+        setFeedback({ type: "error", text: res.message || "Gagal membuat sandi sementara baru." });
         return;
       }
       setFeedback({
         type: "success",
-        text: res.message || `Kata sandi akun ${username} berhasil di-reset ke default.`,
+        text: res.message || `Sandi sementara baru untuk akun ${username} berhasil dibuat.`,
       });
     });
   };
@@ -710,7 +697,8 @@ export default function Home() {
     getUsersListAction()
       .then((res) => {
         if (!isMounted) return;
-        if (res.success && res.data && Array.isArray(res.data) && res.data.length > 0) {
+        if (res.success && Array.isArray(res.data)) {
+          setUsersLoadError(null);
           setUsersList(
             res.data.map((u: {
               id: string;
@@ -731,10 +719,100 @@ export default function Home() {
               santriId: u.santri?.id || null,
             }))
           );
+        } else {
+          setUsersList([]);
+          setUsersLoadError(res.message || "Gagal memuat daftar pengguna");
         }
       })
       .catch((e) => {
-        console.error("Gagal memuat pengguna riil:", e);
+        if (isMounted) {
+          setUsersList([]);
+          setUsersLoadError(e?.message || "Koneksi data pengguna gagal");
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeTab, selectedRole]);
+
+  // Lazy fetch untuk Kalender (hanya ketika tab kalender aktif dan role diizinkan: KS, ADM, GA)
+  useEffect(() => {
+    if (activeTab !== "kalender" || !["KS", "ADM", "GA"].includes(selectedRole)) return;
+    let isMounted = true;
+    getDaftarAgendaAction()
+      .then((res) => {
+        if (!isMounted) return;
+        if (res.success && Array.isArray(res.data)) {
+          setAgendaLoadError(null);
+          setAgendaList(
+            res.data.map((a: {
+              id: string;
+              judul: string;
+              tanggalMulai: string | Date;
+              kategori: string;
+              lokasi?: string | null;
+            }) => ({
+              id: a.id,
+              judul: a.judul,
+              tanggal: new Date(a.tanggalMulai).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }),
+              kategori: a.kategori as AgendaItem["kategori"],
+              lokasi: a.lokasi || "-",
+            }))
+          );
+        } else {
+          setAgendaList([]);
+          setAgendaLoadError(res.message || "Gagal memuat agenda kalender");
+        }
+      })
+      .catch((e) => {
+        if (isMounted) {
+          setAgendaList([]);
+          setAgendaLoadError(e?.message || "Koneksi agenda kalender gagal");
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeTab, selectedRole]);
+
+  // Lazy fetch untuk Kotak Saran (hanya ketika tab portal_wali aktif dan role diizinkan: WS, ST, KS, ADM)
+  useEffect(() => {
+    if (activeTab !== "portal_wali" || !["WS", "ST", "KS", "ADM"].includes(selectedRole)) return;
+    let isMounted = true;
+    getDaftarKotakSaranAction()
+      .then((res) => {
+        if (!isMounted) return;
+        if (res.success && Array.isArray(res.data)) {
+          setSaranLoadError(null);
+          setKotakSaranList(
+            res.data.map((s: {
+              id: string;
+              nama: string;
+              kategori: string;
+              pesan: string;
+              tanggapan?: string | null;
+              status: string;
+            }) => ({
+              id: s.id,
+              nama: s.nama || "Wali Santri",
+              kategori: s.kategori,
+              pesan: s.pesan,
+              tanggapan: s.tanggapan || null,
+              status: s.status,
+            }))
+          );
+        } else {
+          setKotakSaranList([]);
+          setSaranLoadError(res.message || "Gagal memuat kotak saran");
+        }
+      })
+      .catch((e) => {
+        if (isMounted) {
+          setKotakSaranList([]);
+          setSaranLoadError(e?.message || "Koneksi kotak saran gagal");
+        }
       });
 
     return () => {
@@ -779,13 +857,7 @@ export default function Home() {
     return izinList.filter((i) => i.status === "MENUNGGU_MK" || i.status === "MENUNGGU_KS").length;
   }, [izinList]);
 
-  const santriSakitCount = useMemo(() => {
-    // Sesuai Tahap 2: Gunakan data rekam medis aktif server sebagai sumber kebenaran jika tersedia
-    if (activeKesehatanRecordsCount > 0) {
-      return activeKesehatanRecordsCount;
-    }
-    return izinList.filter((i) => i.jenis === "SAKIT" && i.status === "DISETUJUI").length;
-  }, [activeKesehatanRecordsCount, izinList]);
+  const santriSakitCount = activeKesehatanRecordsCount;
 
   // Render current module based on activeTab
   const renderModule = () => {
@@ -797,11 +869,16 @@ export default function Home() {
             userName={currentUserName}
             currentHalaqohName={currentHalaqohName}
             santriList={santriList}
+            santriLoadError={santriLoadError}
             izinPendingCount={izinPendingCount}
+            izinLoadError={izinLoadError}
+            spLoadError={spLoadError}
             ikhtibarPendingCount={ikhtibarPendingCount}
             ikhtibarLoading={ikhtibarLoading}
             ikhtibarError={ikhtibarError}
             santriSakitCount={santriSakitCount}
+            kesehatanLoadError={kesehatanLoadError}
+            kesehatanLoaded={kesehatanLoaded}
             onNavigate={handleSelectTab}
             onSelectSantriForSetoran={(santriId: string) => {
               setSelectedSantriIdForTahfizh(santriId);
@@ -821,7 +898,22 @@ export default function Home() {
           <SantriModule
             santriList={santriList}
             userRole={selectedRole}
-            halaqohList={halaqohList.map((h) => ({ id: h.id, nama: h.nama, pembina: { nama: h.pembina } }))}
+            halaqohList={
+              dynamicHalaqohList.length > 0
+                ? dynamicHalaqohList.map((h) => ({
+                    id: h.id,
+                    halaqohCode: h.halaqohCode,
+                    nama: h.nama,
+                    pembina: { id: h.pembinaId, nama: h.pembina, staffCode: h.pembinaStaffCode },
+                    tahunAjaran: h.tahunAjaran,
+                  }))
+                : halaqohList.map((h) => ({
+                    id: h.id,
+                    nama: h.nama,
+                    pembina: { nama: h.pembina },
+                  }))
+            }
+            loadError={santriLoadError}
             onPrintRapor={(santri) => {
               // Teruskan santri terpilih secara eksklusif (Eliminasi fallback santriList[0])
               const matched = santriList.find((s) => s.nis === santri.nis) || {
@@ -898,6 +990,7 @@ export default function Home() {
             currentUserName={currentUserName}
             santriList={santriList}
             izinList={izinList}
+            loadError={izinLoadError}
             onIzinUpdated={() => {
               setFeedback({ type: "success", text: "Data perizinan santri telah diperbarui." });
             }}
@@ -910,6 +1003,8 @@ export default function Home() {
             userRole={selectedRole}
             currentUserName={currentUserName}
             santriList={santriList}
+            initialPelanggaranError={pelanggaranLoadError}
+            initialSpError={spLoadError}
           />
         );
 
@@ -959,6 +1054,7 @@ export default function Home() {
         return (
           <KalenderModule
             agendaList={agendaList}
+            loadError={agendaLoadError}
             userRole={selectedRole}
             onTambahAgenda={handleTambahAgenda}
             isPending={isPending}
@@ -969,6 +1065,7 @@ export default function Home() {
         return (
           <UsersModule
             usersList={usersList}
+            loadError={usersLoadError}
             userRole={selectedRole}
             onToggleStatus={handleToggleUserStatus}
             onResetPassword={handleResetPassword}
@@ -992,6 +1089,7 @@ export default function Home() {
           <PortalWaliModule
             userRole={selectedRole}
             kotakSaranList={kotakSaranList}
+            saranLoadError={saranLoadError}
             onKirimSaran={handleKirimSaran}
             onPrintRapor={() => setShowPrintModal("rapor")}
             isPending={isPending}
@@ -1006,10 +1104,14 @@ export default function Home() {
             currentHalaqohName={currentHalaqohName}
             santriList={santriList}
             izinPendingCount={izinPendingCount}
+            izinLoadError={izinLoadError}
+            spLoadError={spLoadError}
             ikhtibarPendingCount={ikhtibarPendingCount}
             ikhtibarLoading={ikhtibarLoading}
             ikhtibarError={ikhtibarError}
             santriSakitCount={santriSakitCount}
+            kesehatanLoadError={kesehatanLoadError}
+            kesehatanLoaded={kesehatanLoaded}
             onNavigate={handleSelectTab}
             onSelectSantriForSetoran={(santriId: string) => {
               setSelectedSantriIdForTahfizh(santriId);
@@ -1243,7 +1345,7 @@ export default function Home() {
                   santriNama={selectedSantriForPrint?.nama || santriList[0]?.nama || "Santri"}
                   santriNis={selectedSantriForPrint?.nis || santriList[0]?.nis || "-"}
                   santriKelas={selectedSantriForPrint?.kelas || santriList[0]?.kelas || "-"}
-                  isiPokok="Menerangkan bahwa santri yang bersangkutan terdaftar aktif dalam program ketahfidzhan dan pendidikan kesantrian di STQ Darul Ulum Cendekia untuk Tahun Ajaran 2026/2027."
+                  isiPokok="Menerangkan bahwa santri yang bersangkutan terdaftar aktif dalam program ketahfidzhan dan pendidikan kesantrian di STQ Darul Ulum Cendekia."
                 />
               )}
               {showPrintModal === "sp" && (

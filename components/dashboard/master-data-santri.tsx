@@ -31,6 +31,7 @@ export interface SantriItem {
   nis: string;
   nama: string;
   kelas: string;
+  jenisKelamin?: "L" | "P" | string | null;
   halaqoh: string;
   capaianJuz: number;
   targetJuz: number | null;
@@ -55,6 +56,7 @@ export interface MasterDataSantriProps {
   halaqohList?: Array<{ id: string; nama: string; pembina?: { nama: string } }>;
   onPrintRapor?: (santri: SantriItem) => void;
   onRefresh?: () => void;
+  loadError?: string | null;
 }
 
 export function MasterDataSantri({
@@ -63,6 +65,7 @@ export function MasterDataSantri({
   halaqohList = [],
   onPrintRapor,
   onRefresh,
+  loadError = null,
 }: MasterDataSantriProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedHalaqohFilter, setSelectedHalaqohFilter] = useState("ALL");
@@ -151,24 +154,25 @@ export function MasterDataSantri({
       const matchKelas =
         selectedKelasFilter === "ALL" || s.kelas.includes(selectedKelasFilter);
 
-      const isPutri = s.kelas.includes("Putri") || s.halaqoh.includes("Lisa Dwina");
+      const isPutra = s.jenisKelamin === "L";
+      const isPutri = s.jenisKelamin === "P";
       const matchGender =
         selectedGenderFilter === "ALL" ||
-        (selectedGenderFilter === "L" && !isPutri) ||
+        (selectedGenderFilter === "L" && isPutra) ||
         (selectedGenderFilter === "P" && isPutri);
 
       return matchSearch && matchHalaqoh && matchKelas && matchGender;
     });
   }, [santriList, searchTerm, selectedHalaqohFilter, selectedKelasFilter, selectedGenderFilter]);
 
-  // Statistik ringkasan
+  // Statistik ringkasan (Authoritative jenisKelamin)
   const totalPutri = useMemo(() => {
-    return santriList.filter(
-      (s) => s.kelas.includes("Putri") || s.halaqoh.includes("Lisa Dwina")
-    ).length;
+    return santriList.filter((s) => s.jenisKelamin === "P").length;
   }, [santriList]);
 
-  const totalPutra = santriList.length - totalPutri;
+  const totalPutra = useMemo(() => {
+    return santriList.filter((s) => s.jenisKelamin === "L").length;
+  }, [santriList]);
 
   // Handler Tambah Santri Baru
   const handleCreateSantri = () => {
@@ -218,12 +222,17 @@ export function MasterDataSantri({
     ];
 
     const rows = filteredSantri.map((s, idx) => {
-      const isPutri = s.kelas.includes("Putri") || s.halaqoh.includes("Lisa Dwina");
+      const genderLabel =
+        s.jenisKelamin === "P"
+          ? "Putri (P)"
+          : s.jenisKelamin === "L"
+          ? "Putra (L)"
+          : "Tidak diketahui";
       return [
         idx + 1,
         s.nis,
         s.nama,
-        isPutri ? "Putri (P)" : "Putra (L)",
+        genderLabel,
         s.kelas,
         s.halaqoh,
         s.capaianJuz,
@@ -276,8 +285,8 @@ export function MasterDataSantri({
             <h2 className="text-xl font-bold text-slate-900 font-heading">
               Master Data Santri
             </h2>
-            <Badge variant="green" size="sm">
-              57 Santri Aktif
+            <Badge variant={loadError ? "ditolak" : "green"} size="sm">
+              {loadError ? "Data Tidak Tersedia" : `${santriList.length} Santri Aktif`}
             </Badge>
           </div>
           <p className="text-xs text-slate-500 mt-1">
@@ -327,35 +336,35 @@ export function MasterDataSantri({
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard
           title="Total Santri"
-          value={`${santriList.length} Santri`}
-          description="Terdaftar Aktif 2026/2027"
+          value={loadError ? "Data Tidak Tersedia" : `${santriList.length} Santri`}
+          description={loadError ? "Gagal memuat data dari server" : "Santri Terdaftar Aktif"}
           icon={<Users className="h-5 w-5" />}
-          badgeText="100% Aktif"
-          badgeVariant="green"
+          badgeText={loadError ? "Gagal" : "100% Aktif"}
+          badgeVariant={loadError ? "ditolak" : "green"}
         />
         <StatCard
           title="Santri Putra (Ikhwan)"
-          value={`${totalPutra} Santri`}
-          description="5 Kelompok Halaqoh"
+          value={loadError ? "Data Tidak Tersedia" : `${totalPutra} Santri`}
+          description={loadError ? "Gagal memuat data dari server" : "Santri Asrama Putra"}
           icon={<GraduationCap className="h-5 w-5" />}
           badgeText="Asrama Putra"
-          badgeVariant="green"
+          badgeVariant={loadError ? "ditolak" : "green"}
         />
         <StatCard
           title="Santriwati Putri (Akhwat)"
-          value={`${totalPutri} Santriwati`}
-          description="Halaqoh Ustzh. Lisa Dwina"
+          value={loadError ? "Data Tidak Tersedia" : `${totalPutri} Santriwati`}
+          description={loadError ? "Gagal memuat data dari server" : "Santriwati Asrama Putri"}
           icon={<Building2 className="h-5 w-5" />}
           badgeText="Asrama Putri"
-          badgeVariant="gold"
+          badgeVariant={loadError ? "ditolak" : "gold"}
         />
         <StatCard
           title="Kelompok Halaqoh"
-          value="6 Halaqoh"
-          description="1 MT, 1 Putri, 4 Mudhabbir"
+          value={loadError ? "Data Tidak Tersedia" : `${halaqohList.length} Halaqoh`}
+          description={loadError ? "Gagal memuat data dari server" : "Terdistribusi Aktif"}
           icon={<BookCheck className="h-5 w-5" />}
-          badgeText="Terdistribusi"
-          badgeVariant="sky"
+          badgeText={loadError ? "Gagal" : "Terdistribusi"}
+          badgeVariant={loadError ? "ditolak" : "sky"}
         />
       </div>
 
@@ -382,13 +391,18 @@ export function MasterDataSantri({
                 onChange={(e) => setSelectedHalaqohFilter(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-medium focus:bg-white focus:ring-2 focus:ring-[#0E7C3A]/20 focus:border-[#0E7C3A]"
               >
-                <option value="ALL">Semua Halaqoh (6 Kelompok)</option>
-                <option value="Razan Mufli">Halaqoh Ust. Razan Mufli, S.Pd</option>
-                <option value="Kamal">Halaqoh Ust. Kamal</option>
-                <option value="Rizaldi">Halaqoh Ust. Rizaldi</option>
-                <option value="Abi Hudzaifah">Halaqoh Ust. Abi Hudzaifah</option>
-                <option value="Alwan">Halaqoh Ust. Alwan</option>
-                <option value="Lisa Dwina">Halaqoh Ustadzah Lisa Dwina Fitri</option>
+                <option value="ALL">Semua Kelompok Halaqoh</option>
+                {halaqohList && halaqohList.length > 0
+                  ? halaqohList.map((h) => (
+                      <option key={h.id} value={h.nama}>
+                        {h.nama}
+                      </option>
+                    ))
+                  : Array.from(new Set(santriList.map((s) => s.halaqoh).filter(Boolean))).map((hName) => (
+                      <option key={hName} value={hName}>
+                        {hName}
+                      </option>
+                    ))}
               </select>
             </div>
 
@@ -400,14 +414,13 @@ export function MasterDataSantri({
                 className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-medium focus:bg-white focus:ring-2 focus:ring-[#0E7C3A]/20 focus:border-[#0E7C3A]"
               >
                 <option value="ALL">Semua Tingkat Kelas</option>
-                <option value="7A">Kelas 7A Takhossus</option>
-                <option value="7B">Kelas 7B Takhossus</option>
-                <option value="7C">Kelas 7C Putri</option>
-                <option value="8A">Kelas 8A Takhossus</option>
-                <option value="8B">Kelas 8B Takhossus</option>
-                <option value="8C">Kelas 8C Putri</option>
-                <option value="9A">Kelas 9A Takhossus</option>
-                <option value="9C">Kelas 9C Putri</option>
+                {Array.from(new Set(santriList.map((s) => s.kelas).filter(Boolean)))
+                  .sort()
+                  .map((k) => (
+                    <option key={k} value={k}>
+                      Kelas {k}
+                    </option>
+                  ))}
               </select>
             </div>
 
@@ -471,8 +484,18 @@ export function MasterDataSantri({
             <tbody className="divide-y divide-slate-100 font-sans">
               {filteredSantri.length > 0 ? (
                 filteredSantri.map((santri, index) => {
-                  const isPutri =
-                    santri.kelas.includes("Putri") || santri.halaqoh.includes("Lisa Dwina");
+                  const genderLabel =
+                    santri.jenisKelamin === "P"
+                      ? "Akhwat (P)"
+                      : santri.jenisKelamin === "L"
+                      ? "Ikhwan (L)"
+                      : "Tidak diketahui";
+                  const genderBadgeStyle =
+                    santri.jenisKelamin === "P"
+                      ? "bg-rose-50 text-rose-700 border border-rose-200"
+                      : santri.jenisKelamin === "L"
+                      ? "bg-sky-50 text-sky-700 border border-sky-200"
+                      : "bg-slate-50 text-slate-700 border border-slate-200";
                   return (
                     <tr
                       key={santri.id || santri.nis}
@@ -489,13 +512,9 @@ export function MasterDataSantri({
                       </td>
                       <td className="py-3 px-3 text-center">
                         <span
-                          className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                            isPutri
-                              ? "bg-rose-50 text-rose-700 border border-rose-200"
-                              : "bg-sky-50 text-sky-700 border border-sky-200"
-                          }`}
+                          className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold ${genderBadgeStyle}`}
                         >
-                          {isPutri ? "Akhwat (P)" : "Ikhwan (L)"}
+                          {genderLabel}
                         </span>
                       </td>
                       <td className="py-3 px-3 text-center">
@@ -568,6 +587,31 @@ export function MasterDataSantri({
                     </tr>
                   );
                 })
+              ) : loadError ? (
+                <tr>
+                  <td colSpan={10} className="py-12 text-center text-red-600 bg-red-50/50">
+                    <AlertCircle className="h-8 w-8 mx-auto mb-2 text-red-500" />
+                    <p className="font-bold text-sm">Gagal Memuat Data Santri</p>
+                    <p className="text-xs text-red-500 mt-1 max-w-md mx-auto">{loadError}</p>
+                    {onRefresh && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={onRefresh}
+                        className="mt-3 text-xs"
+                      >
+                        Coba Muat Ulang
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ) : santriList.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="py-12 text-center text-slate-400">
+                    <Users className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                    <p className="font-semibold">Belum ada data santri yang terdaftar di sistem.</p>
+                  </td>
+                </tr>
               ) : (
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-slate-400">

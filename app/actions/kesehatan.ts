@@ -2,7 +2,7 @@
 
 import prisma from '@/lib/prisma';
 import { requireRole, getSession, recordAuditLog } from '@/lib/auth';
-import { StatusKesehatan } from '@prisma/client';
+import { StatusKesehatan, Prisma } from '@prisma/client';
 
 export interface KesehatanResponse<T = unknown> {
   success: boolean;
@@ -13,7 +13,9 @@ export interface KesehatanResponse<T = unknown> {
 
 /**
  * Catat Kejadian / Keluhan Sakit Santri (Poskestren)
- * Akses: OSDA, MK (Musyrif Keasramaan), PH (Pembina Asrama), KS
+ * Akses PR #11 Baseline: KS (Mudir), MK (Musyrif Keasramaan), ADM (Admin/TU)
+ * Catatan Bisnis: Mudabbir & OSDA Petugas Kesehatan berhak secara bisnis (ALLOW),
+ * namun implementasi teknis ditangguhkan (deferred) ke STQ Architecture Lock / Keasramaan V2 assignment model.
  */
 export async function catatKesehatanAction(formData: {
   santriId: string;
@@ -23,7 +25,7 @@ export async function catatKesehatanAction(formData: {
   status?: StatusKesehatan;
 }): Promise<KesehatanResponse> {
   try {
-    const session = await requireRole(['OSDA', 'MK', 'PH', 'KS', 'ADM']);
+    const session = await requireRole(['KS', 'MK', 'ADM']);
 
     const santri = await prisma.santri.findUnique({
       where: { id: formData.santriId },
@@ -65,7 +67,10 @@ export async function catatKesehatanAction(formData: {
 
 /**
  * Update Status Kesehatan & Rujukan Medis
- * Akses: MK (Musyrif Keasramaan), KS (Mudir)
+ * Akses PR #11 Baseline: KS (Mudir), MK (Musyrif Keasramaan)
+ * ADM dilarang (DENY update status medis); generic OSDA dilarang (DENY).
+ * Catatan Bisnis: Mudabbir & OSDA Petugas Kesehatan berhak secara bisnis (ALLOW),
+ * namun implementasi teknis ditangguhkan (deferred) ke STQ Architecture Lock / Keasramaan V2 assignment model.
  */
 export async function updateStatusKesehatanAction(formData: {
   id: string;
@@ -114,31 +119,60 @@ export async function updateStatusKesehatanAction(formData: {
 }
 
 /**
- * Ambil Daftar Catatan Kesehatan Santri
+ * Ambil Daftar Catatan Kesehatan Santri (Terkontrol Sesi, RBAC & ABAC Fail-Closed)
  */
 export async function getDaftarKesehatanAction(filterStatus?: StatusKesehatan): Promise<KesehatanResponse> {
   try {
     const session = await getSession();
     if (!session) {
-      return { success: false, message: 'Sesi tidak sah' };
+      return { success: false, message: 'Akses Ditolak: Sesi otentikasi tidak ditemukan.', data: [] };
     }
 
-    // Jika santri/wali, filter santri terkait
-    let santriFilter: { id?: string } | undefined = undefined;
-    if (session.role === 'ST' && session.santriId) {
-      santriFilter = { id: session.santriId };
-    } else if (session.role === 'WS' && session.santriId) {
-      santriFilter = { id: session.santriId };
+    const where: Prisma.CatatanKesehatanWhereInput = {};
+    if (filterStatus) {
+      where.status = filterStatus;
+    }
+
+    // Role-based authorization & scoping
+    if (session.role === 'WS' || session.role === 'ST') {
+      if (!session.santriId) {
+        return {
+          success: false,
+          message: 'Akses Ditolak: Akun belum terhubung dengan data santri.',
+          data: [],
+        };
+      }
+      where.santriId = session.santriId;
+    } else if (session.role === 'KS' || session.role === 'MK' || session.role === 'ADM') {
+      // Otoritas manajerial & medis asrama global (PR #11 Technical Baseline): Mudir (KS), Musyrif Keasramaan (MK), Admin/TU (ADM).
+      // Mudabbir & OSDA Petugas Kesehatan: Business authority = ALLOW, namun implementasi teknis ditangguhkan (deferred)
+      // ke STQ Architecture Lock karena belum ada model penugasan kanonikal.
+    } else {
+      // Role tanpa hak akses membaca data kesehatan global (MT, PH, GA, YAY, generic OSDA): FAIL-CLOSED
+      return {
+        success: false,
+        message: `Akses Ditolak: Role ${session.role} tidak memiliki otorisasi membaca data kesehatan.`,
+        data: [],
+      };
     }
 
     const list = await prisma.catatanKesehatan.findMany({
-      where: {
-        status: filterStatus || undefined,
-        santri: santriFilter,
-      },
-      include: {
+      where,
+      select: {
+        id: true,
+        santriId: true,
+        keluhan: true,
+        diagnosa: true,
+        tindakan: true,
+        status: true,
+        tanggal: true,
         santri: {
-          select: { id: true, nis: true, nama: true, kelas: true, namaWali: true, noHpWali: true },
+          select: {
+            id: true,
+            nis: true,
+            nama: true,
+            kelas: true,
+          },
         },
       },
       orderBy: { tanggal: 'desc' },
@@ -152,6 +186,6 @@ export async function getDaftarKesehatanAction(filterStatus?: StatusKesehatan): 
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, message: errorMsg, error: errorMsg };
+    return { success: false, message: errorMsg, error: errorMsg, data: [] };
   }
 }

@@ -1,7 +1,7 @@
 'use server';
 
 import prisma from '@/lib/prisma';
-import { requireRole, recordAuditLog } from '@/lib/auth';
+import { getSession, requireRole, recordAuditLog } from '@/lib/auth';
 
 export interface KalenderResponse<T = unknown> {
   success: boolean;
@@ -62,10 +62,31 @@ export async function tambahAgendaAction(formData: {
 }
 
 /**
- * Mengambil Daftar Agenda Kalender Akademik
+ * Mengambil Daftar Agenda Kalender Akademik Internal (RBAC Fail-Closed)
+ * - Sesi tidak ada -> Akses ditolak, data []
+ * - Sesuai ROLE_NAV_MAP resmi: Hanya KS, ADM, dan GA yang memiliki akses kalender internal
+ * - Role lain (WS, ST, MT, PH, MK, OSDA, YAY) -> Akses ditolak, data []
+ * Untuk agenda umum/publik bagi wali/santri, gunakan getPublicAgendaAction() (targetPeserta === 'SEMUA').
  */
 export async function getDaftarAgendaAction(): Promise<KalenderResponse> {
   try {
+    const session = await getSession();
+    if (!session) {
+      return {
+        success: false,
+        message: 'Akses Ditolak: Sesi otentikasi tidak ditemukan.',
+        data: [],
+      };
+    }
+
+    if (!['KS', 'ADM', 'GA'].includes(session.role)) {
+      return {
+        success: false,
+        message: 'Akses Ditolak: Role Anda tidak memiliki wewenang mengakses agenda internal.',
+        data: [],
+      };
+    }
+
     const list = await prisma.kalenderAkademik.findMany({
       orderBy: { tanggalMulai: 'asc' },
       take: 50,
@@ -78,7 +99,7 @@ export async function getDaftarAgendaAction(): Promise<KalenderResponse> {
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, message: errorMsg, error: errorMsg };
+    return { success: false, message: errorMsg, error: errorMsg, data: [] };
   }
 }
 

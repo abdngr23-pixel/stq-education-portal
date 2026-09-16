@@ -81,10 +81,13 @@ export interface DashboardMusyrifTahfizhProps {
   ikhtibarLoading?: boolean;
   ikhtibarError?: string | null;
   izinPendingCount?: number;
+  izinLoadError?: string | null;
   santriSakitCount?: number;
+  kesehatanLoadError?: string | null;
   onNavigate?: (tab: AppNavId) => void;
   isKabidOrManagerial?: boolean;
   halaqohWorkloads?: HalaqohWorkloadSummary[] | null;
+  loadError?: string | null;
 }
 
 export function DashboardMusyrifTahfizh({
@@ -99,10 +102,13 @@ export function DashboardMusyrifTahfizh({
   ikhtibarLoading = false,
   ikhtibarError = null,
   izinPendingCount = 0,
+  izinLoadError = null,
   santriSakitCount = 0,
+  kesehatanLoadError = null,
   onNavigate,
   isKabidOrManagerial = false,
   halaqohWorkloads = null,
+  loadError = null,
 }: DashboardMusyrifTahfizhProps) {
   const [showCompletedList, setShowCompletedList] = useState(false);
   const [showAllSantriModal, setShowAllSantriModal] = useState(false);
@@ -448,10 +454,10 @@ export function DashboardMusyrifTahfizh({
             </div>
             <div>
               <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-heading">
-                {totalBinaan}
+                {loadError ? <span className="text-sm font-semibold text-rose-600">Data Tidak Tersedia</span> : totalBinaan}
               </div>
               <span className="text-[11px] sm:text-xs text-slate-500 block mt-1 truncate">
-                Total santri terdaftar
+                {loadError ? "Gagal memuat dari server" : "Total santri terdaftar"}
               </span>
             </div>
           </div>
@@ -468,20 +474,26 @@ export function DashboardMusyrifTahfizh({
             </div>
             <div>
               <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-heading">
-                {countSudahSetor}
-                <span className="text-slate-500 text-sm font-normal">
-                  {" "}
-                  / {totalBinaan}
-                </span>
+                {loadError ? (
+                  <span className="text-sm font-semibold text-rose-600">Data Tidak Tersedia</span>
+                ) : (
+                  <>
+                    {countSudahSetor}
+                    <span className="text-slate-500 text-sm font-normal">
+                      {" "}
+                      / {totalBinaan}
+                    </span>
+                  </>
+                )}
               </div>
               <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
                 <div
                   className="bg-[#0E7C3A] h-1.5 rounded-full transition-all duration-300 motion-reduce:transition-none"
-                  style={{ width: `${percentSetor}%` }}
+                  style={{ width: `${loadError ? 0 : percentSetor}%` }}
                 />
               </div>
               <span className="text-[11px] sm:text-xs text-[#0E7C3A] font-semibold block mt-1.5 truncate">
-                {percentSetor}% santri halaqoh
+                {loadError ? "Status setoran tidak tersedia" : `${percentSetor}% santri halaqoh`}
               </span>
             </div>
           </div>
@@ -494,7 +506,9 @@ export function DashboardMusyrifTahfizh({
               </span>
               <div
                 className={`p-1.5 sm:p-2 rounded-xl shrink-0 ${
-                  countPerluTindakan > 0
+                  loadError
+                    ? "bg-slate-50 text-slate-400"
+                    : countPerluTindakan > 0
                     ? "bg-rose-50 text-rose-600"
                     : "bg-slate-50 text-slate-500"
                 }`}
@@ -505,13 +519,15 @@ export function DashboardMusyrifTahfizh({
             <div>
               <div
                 className={`text-2xl sm:text-3xl font-extrabold font-heading ${
-                  countPerluTindakan > 0 ? "text-rose-600" : "text-slate-800"
+                  loadError ? "text-slate-500" : countPerluTindakan > 0 ? "text-rose-600" : "text-slate-800"
                 }`}
               >
-                {countPerluTindakan}
+                {loadError ? <span className="text-sm font-semibold text-rose-600">Data Tidak Tersedia</span> : countPerluTindakan}
               </div>
               <span className="text-[11px] sm:text-xs text-slate-500 block mt-1 truncate">
-                {countPerluTindakan > 0
+                {loadError
+                  ? "Gagal memuat dari server"
+                  : countPerluTindakan > 0
                   ? `${countPerluTindakan} santri butuh perhatian`
                   : "Semua target aman"}
               </span>
@@ -549,7 +565,7 @@ export function DashboardMusyrifTahfizh({
                   : "0 Antrean Ikhtibar"}
               </span>
               <span className="text-[10px] text-slate-400 block mt-0.5 truncate">
-                Izin & Kesehatan: {izinPendingCount} izin • {santriSakitCount} sakit
+                Izin & Kesehatan: {izinLoadError ? "Izin (Gagal Memuat)" : `${izinPendingCount} izin`} • {kesehatanLoadError ? "Kesehatan (Data Tidak Tersedia)" : `${santriSakitCount} sakit`}
               </span>
             </div>
           </div>

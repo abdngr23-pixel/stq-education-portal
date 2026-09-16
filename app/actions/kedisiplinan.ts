@@ -2,7 +2,8 @@
 
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
-import { StatusSP, KategoriBintang, TingkatPelanggaran } from "@prisma/client";
+import { UserSession } from "@/types/auth";
+import { StatusSP, KategoriBintang, TingkatPelanggaran, Prisma } from "@prisma/client";
 import { hitungPoinPelanggaran } from "@/lib/educational-rules";
 
 export interface CatatPelanggaranData {
@@ -24,11 +25,15 @@ export async function catatPelanggaranAction(input: CatatPelanggaranData) {
     return { success: false, message: "Silakan login terlebih dahulu." };
   }
 
-  // Hak akses: Pembina (PH), Musyrif Keasramaan (MK), Musyrif Tahfizh (MT), Mudir (KS)
-  if (!["PH", "MK", "MT", "KS"].includes(session.role)) {
+  // Otoritas pencatatan pelanggaran santri (PR #11 Technical Baseline):
+  // Mudir (KS) dan Musyrif Keasramaan (MK) saja.
+  // Mudabbir business authority = ALLOW, namun implementasi teknis ditangguhkan (deferred)
+  // hingga STQ Architecture Lock karena belum memiliki representasi penugasan kanonikal.
+  // Seluruh role lain (ADM, MT, PH, OSDA, GA, YAY, WS, ST) dan unauthenticated: DITOLAK (DENY).
+  if (session.role !== "KS" && session.role !== "MK") {
     return {
       success: false,
-      message: `Role ${session.role} tidak memiliki kewenangan mencatat pelanggaran santri.`,
+      message: `Akses ditolak: Role ${session.role} tidak memiliki kewenangan mencatat pelanggaran santri. Otoritas hanya dimiliki Mudir (KS) dan Musyrif Keasramaan (MK).`,
     };
   }
 
@@ -314,7 +319,80 @@ export async function getKategoriPelanggaranListAction() {
 }
 
 /**
- * Server Action: Mengambil daftar riwayat pelanggaran santri (Terkontrol Sesi & ABAC)
+ * Resolusi Lingkup Otorisasi & Filter Data Kedisiplinan (Pelanggaran & SP)
+ * Sesuai Tata Kelola Sementara: IDENTITY + ROLE + ASSIGNMENT + DOMAIN + SCOPE = PERMISSION
+ */
+async function resolveKedisiplinanScope(
+  session: UserSession,
+  requestedSantriId?: string
+): Promise<
+  | { authorized: true; santriId?: string; santriWhere?: Prisma.SantriWhereInput }
+  | { authorized: false; message: string }
+> {
+  // 1. Wali Santri & Santri: Hanya dapat membaca data santri binaan/pribadi
+  if (session.role === "WS" || session.role === "ST") {
+    if (!session.santriId) {
+      return { authorized: false, message: "Akses Ditolak: Akun belum terhubung dengan data santri." };
+    }
+    if (requestedSantriId && requestedSantriId !== session.santriId) {
+      return { authorized: false, message: "Akses Ditolak: Anda tidak memiliki akses ke data santri lain." };
+    }
+    return { authorized: true, santriId: session.santriId };
+  }
+
+  // 2. Musyrif Tahfizh & Pembina Halaqoh: Memerlukan profil staf aktif
+  if (session.role === "MT" || session.role === "PH") {
+    if (!session.staffId) {
+      return { authorized: false, message: "Akses Ditolak: Profil staf pembina Anda belum terhubung." };
+    }
+    // Kepala Bidang Tahfidz memiliki akses manajerial menyeluruh
+    if (session.isKepalaBidangTahfidz) {
+      if (requestedSantriId) {
+        return { authorized: true, santriId: requestedSantriId };
+      }
+      return { authorized: true };
+    }
+    // Staf biasa: hanya santri dalam halaqoh yang dipimpinnya
+    if (requestedSantriId) {
+      const santri = await prisma.santri.findUnique({
+        where: { id: requestedSantriId },
+        select: { id: true, halaqoh: { select: { pembinaId: true } } },
+      });
+      if (!santri || santri.halaqoh?.pembinaId !== session.staffId) {
+        return {
+          authorized: false,
+          message: "Akses Ditolak: Santri berada di luar halaqoh binaan Anda.",
+        };
+      }
+      return { authorized: true, santriId: requestedSantriId };
+    }
+    return {
+      authorized: true,
+      santriWhere: {
+        halaqoh: {
+          pembinaId: session.staffId,
+        },
+      },
+    };
+  }
+
+  // 3. Wewenang manajerial & pengawasan (MK, KS, ADM, YAY)
+  if (["MK", "KS", "ADM", "YAY"].includes(session.role)) {
+    if (requestedSantriId) {
+      return { authorized: true, santriId: requestedSantriId };
+    }
+    return { authorized: true };
+  }
+
+  // 4. Role tidak berwenang (GA, OSDA, dll): FAIL-CLOSED
+  return {
+    authorized: false,
+    message: `Akses Ditolak: Role ${session.role} tidak memiliki otorisasi mengakses data kedisiplinan.`,
+  };
+}
+
+/**
+ * Server Action: Mengambil daftar riwayat pelanggaran santri (Terkontrol Sesi & ABAC Fail-Closed)
  */
 export async function getPelanggaranListAction(santriId?: string) {
   const session = await getCurrentSession();
@@ -322,18 +400,20 @@ export async function getPelanggaranListAction(santriId?: string) {
     return { success: false, message: "Sesi kedaluwarsa. Silakan login kembali.", data: [] };
   }
 
-  // ABAC: Wali dan Santri hanya boleh melihat catatan milik santri sendiri
-  let effectiveSantriId = santriId;
-  if (session.role === "WS" || session.role === "ST") {
-    if (!session.santriId) {
-      return { success: false, message: "Akun belum terhubung dengan data santri.", data: [] };
-    }
-    effectiveSantriId = session.santriId;
+  const scope = await resolveKedisiplinanScope(session, santriId);
+  if (!scope.authorized) {
+    return { success: false, message: scope.message, data: [] };
   }
+
+  const where: Prisma.PelanggaranSantriWhereInput = scope.santriId
+    ? { santriId: scope.santriId }
+    : scope.santriWhere
+    ? { santri: scope.santriWhere }
+    : {};
 
   try {
     const records = await prisma.pelanggaranSantri.findMany({
-      where: effectiveSantriId ? { santriId: effectiveSantriId } : undefined,
+      where,
       include: {
         santri: { select: { id: true, nama: true, nis: true, kelas: true } },
         kategori: { select: { id: true, nama: true, tingkat: true, poinDasar: true } },
@@ -370,7 +450,7 @@ export async function getPelanggaranListAction(santriId?: string) {
 }
 
 /**
- * Server Action: Mengambil daftar Surat Peringatan / SP resmi (Terkontrol Sesi & ABAC)
+ * Server Action: Mengambil daftar Surat Peringatan / SP resmi (Terkontrol Sesi & ABAC Fail-Closed)
  */
 export async function getSPListAction(santriId?: string) {
   const session = await getCurrentSession();
@@ -378,17 +458,20 @@ export async function getSPListAction(santriId?: string) {
     return { success: false, message: "Sesi kedaluwarsa. Silakan login kembali.", data: [] };
   }
 
-  let effectiveSantriId = santriId;
-  if (session.role === "WS" || session.role === "ST") {
-    if (!session.santriId) {
-      return { success: false, message: "Akun belum terhubung dengan data santri.", data: [] };
-    }
-    effectiveSantriId = session.santriId;
+  const scope = await resolveKedisiplinanScope(session, santriId);
+  if (!scope.authorized) {
+    return { success: false, message: scope.message, data: [] };
   }
+
+  const where: Prisma.SuratPeringatanWhereInput = scope.santriId
+    ? { santriId: scope.santriId }
+    : scope.santriWhere
+    ? { santri: scope.santriWhere }
+    : {};
 
   try {
     const records = await prisma.suratPeringatan.findMany({
-      where: effectiveSantriId ? { santriId: effectiveSantriId } : undefined,
+      where,
       include: {
         santri: { select: { id: true, nama: true, nis: true, kelas: true } },
       },

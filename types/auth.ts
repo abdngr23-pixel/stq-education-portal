@@ -176,12 +176,16 @@ export const PERMISSION_MATRIX: Record<ModuleName, Partial<Record<Role, AccessLe
     ST: "OWN_SELF",
   },
   kesehatan: {
-    KS: "READ",
+    KS: "CRUD",
+    // NOTE: coarse PERMISSION_MATRIX bersifat transisional / non-authoritative untuk modul kesehatan.
+    // Matriks 5-level saat ini tidak dapat merepresentasikan 'READ + CREATE tanpa UPDATE'.
+    // Otoritas teknis kanonikal (CREATE = KS/MK/ADM, UPDATE = KS/MK) ditegakkan secara otoritatif
+    // di server actions (catatKesehatanAction & updateStatusKesehatanAction).
+    // ADM diatur ke "READ" agar matriks tidak menyiratkan kewenangan CRUD tak terbatas.
+    ADM: "READ",
     MK: "CRUD",
-    PH: "READ",
     WS: "OWN_CHILD",
     ST: "OWN_SELF",
-    OSDA: "CRUD",
   },
   laporanOrtuAsuh: {
     YAY: "READ",

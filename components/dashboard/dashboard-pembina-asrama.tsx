@@ -127,16 +127,16 @@ export function DashboardPembinaAsrama({
             </p>
             <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
               <div>
-                <p className="font-semibold text-slate-800">Catat Pelanggaran Kedisiplinan</p>
-                <p className="text-[11px] text-slate-500">Pemberlakuan doubling poin sanksi x2 jika pengulangan</p>
+                <p className="font-semibold text-slate-800">Riwayat Kedisiplinan Santri</p>
+                <p className="text-[11px] text-slate-500">Pemantauan rekapitulasi poin sanksi dan status SP</p>
               </div>
               <Button
-                variant="primary"
+                variant="secondary"
                 size="sm"
                 onClick={onNavigateToDisiplin}
                 className="text-xs h-8"
               >
-                Form Disiplin
+                Lihat Disiplin
               </Button>
             </div>
           </CardContent>

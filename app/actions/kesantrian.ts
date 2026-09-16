@@ -13,12 +13,29 @@ export interface AjukanIzinData {
 }
 
 /**
- * Server Action: Ajukan Perizinan Santri (PH, OSDA, WS, ST)
+ * Server Action: Ajukan / Catat Perizinan Santri
+ * Otoritas pencatatan/pembuatan izin resmi santri HANYA dimiliki oleh:
+ * 1. Mudir (KS)
+ * 2. Musyrif Keasramaan (MK)
+ * Seluruh role lain (ADM, MT, PH, OSDA, GA, YAY, WS, ST) serta unauthenticated: DITOLAK (DENY).
  */
 export async function ajukanIzinAction(input: AjukanIzinData) {
   const session = await getCurrentSession();
   if (!session) {
     return { success: false, message: "Silakan login terlebih dahulu." };
+  }
+
+  // Otoritas pencatatan perizinan: Mudir (KS) dan Musyrif Keasramaan (MK) saja
+  if (session.role !== "KS" && session.role !== "MK") {
+    return {
+      success: false,
+      message: `Akses ditolak: Role ${session.role} tidak memiliki kewenangan mencatat perizinan santri. Otoritas hanya dimiliki Mudir (KS) dan Musyrif Keasramaan (MK).`,
+    };
+  }
+
+  // Hanya setelah lolos otorisasi, santriId diterima dan diproses
+  if (!input.santriId || typeof input.santriId !== "string" || !input.santriId.trim()) {
+    return { success: false, message: "Santri tidak valid." };
   }
 
   try {
@@ -151,27 +168,80 @@ export async function verifikasiIzinAction(params: {
 }
 
 /**
- * Server Action: Mengambil daftar perizinan santri
+ * Server Action: Mengambil daftar perizinan santri (Terkontrol Sesi & ABAC Fail-Closed)
  */
 export async function getPerizinanListAction(statusFilter?: StatusIzin) {
-  try {
-    const where: Prisma.PerizinanSantriWhereInput = {};
-    if (statusFilter) where.status = statusFilter;
+  const session = await getCurrentSession();
+  if (!session) {
+    return {
+      success: false,
+      message: "Akses Ditolak: Sesi otentikasi tidak ditemukan.",
+      data: [],
+    };
+  }
 
+  const where: Prisma.PerizinanSantriWhereInput = {};
+  if (statusFilter) where.status = statusFilter;
+
+  // ABAC: Wali Santri & Santri hanya dapat melihat perizinan santri sendiri
+  if (session.role === "WS" || session.role === "ST") {
+    if (!session.santriId) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Akun belum terhubung dengan data santri.",
+        data: [],
+      };
+    }
+    where.santriId = session.santriId;
+  } else if (["MK", "KS", "ADM"].includes(session.role)) {
+    // Wewenang manajerial operasional kesantrian & perizinan pesantren
+  } else {
+    // Fail-Closed: Role di luar MK, KS, ADM, WS, ST tidak berwenang membaca data perizinan
+    return {
+      success: false,
+      message: `Akses Ditolak: Role ${session.role} tidak memiliki otorisasi membaca data perizinan.`,
+      data: [],
+    };
+  }
+
+  try {
     const list = await prisma.perizinanSantri.findMany({
       where,
       orderBy: { createdAt: "desc" },
-      include: {
-        santri: true,
-        disetujuiMK: true,
-        disetujuiKS: true,
+      select: {
+        id: true,
+        kodeIzin: true,
+        tanggalMulai: true,
+        tanggalSelesai: true,
+        jenis: true,
+        alasan: true,
+        status: true,
+        santriId: true,
+        santri: {
+          select: {
+            id: true,
+            nama: true,
+            nis: true,
+            kelas: true,
+          },
+        },
+        disetujuiMK: {
+          select: {
+            nama: true,
+          },
+        },
+        disetujuiKS: {
+          select: {
+            nama: true,
+          },
+        },
       },
     });
 
     return { success: true, data: list };
   } catch (error) {
     console.error("Gagal mengambil data perizinan:", error);
-    return { success: false, data: [] };
+    return { success: false, data: [], message: "Gagal mengambil data perizinan santri." };
   }
 }
 

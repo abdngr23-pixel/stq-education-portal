@@ -48,6 +48,7 @@ export async function getHalaqohListAction() {
           select: {
             id: true,
             nama: true,
+            staffCode: true,
           },
         },
         _count: {
@@ -166,14 +167,26 @@ export async function createHalaqohAction(input: CreateHalaqohInput) {
   try {
     const count = await prisma.halaqoh.count();
     const halaqohCode = `HLQ-${String(count + 1).padStart(4, "0")}`;
-    let pembinaId = input.pembinaId;
-    if (!pembinaId) {
-      const defaultStaff = await prisma.staff.findFirst({ where: { roleStaff: "MT" } });
-      if (!defaultStaff) {
-        return { success: false, message: "Musyrif pembina wajib ditentukan." };
-      }
-      pembinaId = defaultStaff.id;
+    if (!input.pembinaId || typeof input.pembinaId !== "string" || !input.pembinaId.trim()) {
+      return { success: false, message: "Musyrif pembina wajib dipilih." };
     }
+
+    const staff = await prisma.staff.findUnique({
+      where: { id: input.pembinaId.trim() },
+    });
+    if (!staff) {
+      return { success: false, message: "Akses Ditolak: Staf pembina tidak ditemukan." };
+    }
+    if (staff.status !== "AKTIF") {
+      return { success: false, message: "Akses Ditolak: Staf yang dipilih tidak aktif." };
+    }
+    if (!["MT", "PH"].includes(staff.roleStaff)) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Staf yang dipilih tidak memenuhi syarat sebagai pembina halaqoh (Hanya staf aktif dengan peran MT atau PH).",
+      };
+    }
+    const pembinaId = staff.id;
 
     const newHalaqoh = await prisma.halaqoh.create({
       data: {
@@ -234,8 +247,11 @@ export async function assignPembinaHalaqohAction(halaqohId: string, pembinaId: s
       where: { id: pembinaId },
     });
 
-    if (!staff) {
-      return { success: false, message: "Staf musyrif pembina tidak ditemukan." };
+    if (!staff || staff.status !== "AKTIF" || !["MT", "PH"].includes(staff.roleStaff)) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Staf yang dipilih tidak memenuhi syarat sebagai pembina halaqoh (Hanya staf aktif dengan peran MT atau PH).",
+      };
     }
 
     const updated = await prisma.halaqoh.update({
@@ -327,3 +343,52 @@ export async function pindahkanSantriHalaqohAction(santriId: string, newHalaqohI
     return { success: false, message: "Gagal memperbarui halaqoh santri." };
   }
 }
+
+/**
+ * Server Action: Mengambil daftar staf yang dapat ditugaskan sebagai pembina halaqoh (Restricted to KS & ADM)
+ */
+export async function getAssignableStaffAction() {
+  const session = await getCurrentSession();
+  if (!session) {
+    return { success: false, message: "Sesi telah berakhir. Silakan login kembali.", data: [] };
+  }
+
+  if (!["KS", "ADM"].includes(session.role)) {
+    return {
+      success: false,
+      message: "Akses Ditolak: Hanya Kepala Sekolah / Mudir dan Admin yang berwenang mengambil daftar staf penugasan halaqoh.",
+      data: [],
+    };
+  }
+
+  try {
+    const staffList = await prisma.staff.findMany({
+      where: {
+        status: "AKTIF",
+        roleStaff: { in: ["MT", "PH"] },
+      },
+      select: {
+        id: true,
+        staffCode: true,
+        nama: true,
+        roleStaff: true,
+        status: true,
+      },
+      orderBy: { staffCode: "asc" },
+    });
+
+    return {
+      success: true,
+      data: staffList,
+      message: "Berhasil memuat daftar staf pembina.",
+    };
+  } catch (error) {
+    console.error("Gagal mengambil daftar staf pembina:", error);
+    return {
+      success: false,
+      message: "Gagal memuat daftar staf dari basis data.",
+      data: [],
+    };
+  }
+}
+

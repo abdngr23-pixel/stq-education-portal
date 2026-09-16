@@ -216,23 +216,71 @@ export async function tanggapiKotakSaranAction(formData: {
   }
 }
 
+export interface SanitizedKotakSaranDTO {
+  id: string;
+  nama: string;
+  kategori: string;
+  pesan: string;
+  tanggapan: string | null;
+  status: string;
+}
+
 /**
- * Mengambil Daftar Kotak Saran
+ * Mengambil Daftar Kotak Saran (Read ABAC Fail-Closed)
+ * - Sesi tidak ada -> Akses ditolak, data []
+ * - WS / ST -> Milik sendiri saja (pengirimId = session.userId OR santriId = session.santriId)
+ *              Jika santriId kosong -> pengirimId = session.userId (tidak pernah global!)
+ * - KS / ADM -> Managerial global
+ * - Role lain (MT, PH, MK, GA, OSDA, YAY) -> Akses ditolak, data []
  */
-export async function getDaftarKotakSaranAction(): Promise<PortalWaliResponse> {
+export async function getDaftarKotakSaranAction(): Promise<PortalWaliResponse<SanitizedKotakSaranDTO[]>> {
   try {
     const session = await getSession();
+    if (!session) {
+      return {
+        success: false,
+        message: 'Akses Ditolak: Sesi otentikasi tidak ditemukan.',
+        data: [],
+      };
+    }
 
-    let whereCondition: Record<string, unknown> | undefined = undefined;
-    if (session?.role === 'WS' && session?.santriId) {
-      whereCondition = { OR: [{ pengirimId: session.userId }, { santriId: session.santriId }] };
+    let whereCondition: Record<string, unknown>;
+
+    if (session.role === 'WS' || session.role === 'ST') {
+      if (session.santriId) {
+        whereCondition = {
+          OR: [
+            { pengirimId: session.userId },
+            { santriId: session.santriId },
+          ],
+        };
+      } else {
+        // Missing santriId MUST NEVER result in global scope!
+        whereCondition = { pengirimId: session.userId };
+      }
+    } else if (session.role === 'KS' || session.role === 'ADM') {
+      whereCondition = {};
+    } else {
+      // Role lain (MT, PH, MK, GA, OSDA, YAY, dll) fail-closed
+      return {
+        success: false,
+        message: 'Akses Ditolak: Role Anda tidak memiliki wewenang membaca kotak saran.',
+        data: [],
+      };
     }
 
     const list = await prisma.kotakSaran.findMany({
       where: whereCondition,
-      include: { santri: { select: { nama: true, nis: true, kelas: true } } },
+      select: {
+        id: true,
+        nama: true,
+        kategori: true,
+        pesan: true,
+        tanggapan: true,
+        status: true,
+      },
       orderBy: { createdAt: 'desc' },
-      take: 30,
+      take: 50,
     });
 
     return {
@@ -242,6 +290,6 @@ export async function getDaftarKotakSaranAction(): Promise<PortalWaliResponse> {
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, message: errorMsg, error: errorMsg };
+    return { success: false, message: errorMsg, error: errorMsg, data: [] };
   }
 }
