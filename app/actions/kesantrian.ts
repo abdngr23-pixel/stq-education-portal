@@ -151,20 +151,73 @@ export async function verifikasiIzinAction(params: {
 }
 
 /**
- * Server Action: Mengambil daftar perizinan santri
+ * Server Action: Mengambil daftar perizinan santri (Terkontrol Sesi & ABAC Fail-Closed)
  */
 export async function getPerizinanListAction(statusFilter?: StatusIzin) {
-  try {
-    const where: Prisma.PerizinanSantriWhereInput = {};
-    if (statusFilter) where.status = statusFilter;
+  const session = await getCurrentSession();
+  if (!session) {
+    return {
+      success: false,
+      message: "Akses Ditolak: Sesi otentikasi tidak ditemukan.",
+      data: [],
+    };
+  }
 
+  const where: Prisma.PerizinanSantriWhereInput = {};
+  if (statusFilter) where.status = statusFilter;
+
+  // ABAC: Wali Santri & Santri hanya dapat melihat perizinan santri sendiri
+  if (session.role === "WS" || session.role === "ST") {
+    if (!session.santriId) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Akun belum terhubung dengan data santri.",
+        data: [],
+      };
+    }
+    where.santriId = session.santriId;
+  } else if (["MK", "KS", "ADM"].includes(session.role)) {
+    // Wewenang manajerial operasional kesantrian & perizinan pesantren
+  } else {
+    // Fail-Closed: Role di luar MK, KS, ADM, WS, ST tidak berwenang membaca data perizinan
+    return {
+      success: false,
+      message: `Akses Ditolak: Role ${session.role} tidak memiliki otorisasi membaca data perizinan.`,
+      data: [],
+    };
+  }
+
+  try {
     const list = await prisma.perizinanSantri.findMany({
       where,
       orderBy: { createdAt: "desc" },
-      include: {
-        santri: true,
-        disetujuiMK: true,
-        disetujuiKS: true,
+      select: {
+        id: true,
+        kodeIzin: true,
+        tanggalMulai: true,
+        tanggalSelesai: true,
+        jenis: true,
+        alasan: true,
+        status: true,
+        santriId: true,
+        santri: {
+          select: {
+            id: true,
+            nama: true,
+            nis: true,
+            kelas: true,
+          },
+        },
+        disetujuiMK: {
+          select: {
+            nama: true,
+          },
+        },
+        disetujuiKS: {
+          select: {
+            nama: true,
+          },
+        },
       },
     });
 

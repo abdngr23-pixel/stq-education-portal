@@ -2,7 +2,7 @@
 
 import prisma from '@/lib/prisma';
 import { requireRole, getSession, recordAuditLog } from '@/lib/auth';
-import { StatusKesehatan } from '@prisma/client';
+import { StatusKesehatan, Prisma } from '@prisma/client';
 
 export interface KesehatanResponse<T = unknown> {
   success: boolean;
@@ -114,31 +114,58 @@ export async function updateStatusKesehatanAction(formData: {
 }
 
 /**
- * Ambil Daftar Catatan Kesehatan Santri
+ * Ambil Daftar Catatan Kesehatan Santri (Terkontrol Sesi, RBAC & ABAC Fail-Closed)
  */
 export async function getDaftarKesehatanAction(filterStatus?: StatusKesehatan): Promise<KesehatanResponse> {
   try {
     const session = await getSession();
     if (!session) {
-      return { success: false, message: 'Sesi tidak sah' };
+      return { success: false, message: 'Akses Ditolak: Sesi otentikasi tidak ditemukan.', data: [] };
     }
 
-    // Jika santri/wali, filter santri terkait
-    let santriFilter: { id?: string } | undefined = undefined;
-    if (session.role === 'ST' && session.santriId) {
-      santriFilter = { id: session.santriId };
-    } else if (session.role === 'WS' && session.santriId) {
-      santriFilter = { id: session.santriId };
+    const where: Prisma.CatatanKesehatanWhereInput = {};
+    if (filterStatus) {
+      where.status = filterStatus;
+    }
+
+    // Role-based authorization & scoping
+    if (session.role === 'WS' || session.role === 'ST') {
+      if (!session.santriId) {
+        return {
+          success: false,
+          message: 'Akses Ditolak: Akun belum terhubung dengan data santri.',
+          data: [],
+        };
+      }
+      where.santriId = session.santriId;
+    } else if (['KS', 'ADM', 'MK', 'OSDA'].includes(session.role)) {
+      // Wewenang manajerial & medis asrama / poskestren
+    } else {
+      // Role tanpa hak akses modul kesehatan (MT, PH, GA, YAY): FAIL-CLOSED
+      return {
+        success: false,
+        message: `Akses Ditolak: Role ${session.role} tidak memiliki otorisasi membaca data kesehatan.`,
+        data: [],
+      };
     }
 
     const list = await prisma.catatanKesehatan.findMany({
-      where: {
-        status: filterStatus || undefined,
-        santri: santriFilter,
-      },
-      include: {
+      where,
+      select: {
+        id: true,
+        santriId: true,
+        keluhan: true,
+        diagnosa: true,
+        tindakan: true,
+        status: true,
+        tanggal: true,
         santri: {
-          select: { id: true, nis: true, nama: true, kelas: true, namaWali: true, noHpWali: true },
+          select: {
+            id: true,
+            nis: true,
+            nama: true,
+            kelas: true,
+          },
         },
       },
       orderBy: { tanggal: 'desc' },
@@ -152,6 +179,6 @@ export async function getDaftarKesehatanAction(filterStatus?: StatusKesehatan): 
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, message: errorMsg, error: errorMsg };
+    return { success: false, message: errorMsg, error: errorMsg, data: [] };
   }
 }

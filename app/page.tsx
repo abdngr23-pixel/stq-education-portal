@@ -346,97 +346,14 @@ export default function Home() {
           }
         }
 
-        try {
-          const kesRes = await getDaftarKesehatanAction();
-          if (isMounted) {
-            if (kesRes.success && kesRes.data && Array.isArray(kesRes.data)) {
-              const activePatients = kesRes.data.filter(
-                (k: { status: string }) => k.status === "RAWAT_PONDOK" || k.status === "DIRUJUK_PUSKESMAS" || k.status === "DIRUJUK_RS"
-              );
-              setActiveKesehatanRecordsCount(activePatients.length);
-              setKesehatanLoadError(null);
-              setKesehatanLoaded(true);
-            } else {
-              setActiveKesehatanRecordsCount(0);
-              setKesehatanLoadError(kesRes.message || "Gagal memuat rekam medis kesehatan");
-              setKesehatanLoaded(false);
-            }
-          }
-        } catch (err) {
-          if (isMounted) {
-            setActiveKesehatanRecordsCount(0);
-            setKesehatanLoadError((err as Error)?.message || "Koneksi data kesehatan gagal");
-            setKesehatanLoaded(false);
-          }
-        }
-
-        const [izinResult, pelResult, spResult] = await Promise.allSettled([
-          getPerizinanListAction(),
-          getPelanggaranListAction(),
-          getSPListAction(),
-        ]);
-
-        if (isMounted) {
-          if (izinResult.status === "fulfilled") {
-            const izinRes = izinResult.value;
-            if (izinRes.success && Array.isArray(izinRes.data)) {
-              setIzinLoadError(null);
-              setIzinList(
-                (izinRes.data as Array<{
-                  id: string;
-                  kodeIzin: string;
-                  santri: { nama: string; nis: string; kelas: string };
-                  jenis: string;
-                  tanggalMulai: string | Date;
-                  tanggalSelesai: string | Date;
-                  alasan: string;
-                  status: string;
-                  disetujuiKS?: { nama: string } | null;
-                  disetujuiMK?: { nama: string } | null;
-                }>).map((i) => ({
-                  id: i.id,
-                  kodeIzin: i.kodeIzin,
-                  santriNama: i.santri?.nama || "Santri",
-                  santriNis: i.santri?.nis || "",
-                  kelas: i.santri?.kelas || "",
-                  jenis: i.jenis as IzinItem["jenis"],
-                  durasi: `${Math.max(1, Math.round((new Date(i.tanggalSelesai).getTime() - new Date(i.tanggalMulai).getTime()) / (1000 * 60 * 60 * 24)))} Hari`,
-                  alasan: i.alasan,
-                  status: i.status as IzinItem["status"],
-                  diverifikasiOleh: i.disetujuiKS?.nama || i.disetujuiMK?.nama || "-",
-                }))
-              );
-            } else {
-              setIzinLoadError((izinRes as { message?: string }).message || "Gagal memuat data perizinan");
-            }
-          } else {
-            setIzinLoadError(izinResult.reason?.message || "Koneksi data perizinan gagal");
-          }
-
-          if (pelResult.status === "fulfilled") {
-            const pelRes = pelResult.value;
-            if (pelRes.success && Array.isArray(pelRes.data)) {
-              setPelanggaranLoadError(null);
-              setPelanggaranHistory(pelRes.data as unknown as PelanggaranRecord[]);
-            } else {
-              setPelanggaranLoadError(pelRes.message || "Gagal memuat riwayat pelanggaran");
-            }
-          } else {
-            setPelanggaranLoadError(pelResult.reason?.message || "Koneksi data pelanggaran gagal");
-          }
-
-          if (spResult.status === "fulfilled") {
-            const spRes = spResult.value;
-            if (spRes.success && Array.isArray(spRes.data)) {
-              setSpLoadError(null);
-              setSpList(spRes.data as unknown as SPRecord[]);
-            } else {
-              setSpLoadError(spRes.message || "Gagal memuat daftar SP santri");
-            }
-          } else {
-            setSpLoadError(spResult.reason?.message || "Koneksi data SP santri gagal");
-          }
-        }
+        // Remediation Round 4: Do not eagerly overfetch perizinan, pelanggaran, SP, and kesehatan on init.
+        // Controlled unavailable states preserve Error != Empty without sending full datasets across domains.
+        setIzinLoadError("Data perizinan belum dimuat.");
+        setPelanggaranLoadError("Data pelanggaran belum dimuat.");
+        setSpLoadError("Data SP belum dimuat.");
+        setKesehatanLoadError("Data kesehatan belum dimuat.");
+        setKesehatanLoaded(false);
+        setActiveKesehatanRecordsCount(0);
 
         if (isMounted) {
           await fetchSantriData();
@@ -522,6 +439,100 @@ export default function Home() {
       window.history.replaceState({}, "", newUrl);
     }
   }, [activeTab, halaqohFilter, isSessionLoading]);
+
+  // Remediation Round 4: Lazy-load module datasets only when the corresponding authorized tab is opened
+  useEffect(() => {
+    if (isSessionLoading) return;
+
+    if (activeTab === "perizinan" && ["KS", "ADM", "MK", "WS", "ST"].includes(selectedRole)) {
+      getPerizinanListAction().then((res) => {
+        if (res.success && Array.isArray(res.data)) {
+          setIzinLoadError(null);
+          setIzinList(
+            (res.data as Array<{
+              id: string;
+              kodeIzin: string;
+              santri: { nama: string; nis: string; kelas: string };
+              jenis: string;
+              tanggalMulai: string | Date;
+              tanggalSelesai: string | Date;
+              alasan: string;
+              status: string;
+              disetujuiKS?: { nama: string } | null;
+              disetujuiMK?: { nama: string } | null;
+            }>).map((i) => ({
+              id: i.id,
+              kodeIzin: i.kodeIzin,
+              santriNama: i.santri?.nama || "Santri",
+              santriNis: i.santri?.nis || "",
+              kelas: i.santri?.kelas || "",
+              jenis: i.jenis as IzinItem["jenis"],
+              durasi: `${Math.max(1, Math.round((new Date(i.tanggalSelesai).getTime() - new Date(i.tanggalMulai).getTime()) / (1000 * 60 * 60 * 24)))} Hari`,
+              alasan: i.alasan,
+              status: i.status as IzinItem["status"],
+              diverifikasiOleh: i.disetujuiKS?.nama || i.disetujuiMK?.nama || "-",
+            }))
+          );
+        } else {
+          setIzinLoadError((res as { message?: string }).message || "Gagal memuat data perizinan");
+        }
+      }).catch((err) => {
+        setIzinLoadError((err as Error)?.message || "Koneksi data perizinan gagal");
+      });
+    }
+
+    if (activeTab === "kedisiplinan" && ["KS", "ADM", "MK", "MT", "PH", "YAY", "WS", "ST"].includes(selectedRole)) {
+      Promise.allSettled([
+        getPelanggaranListAction(),
+        getSPListAction(),
+      ]).then(([pelResult, spResult]) => {
+        if (pelResult.status === "fulfilled") {
+          const pelRes = pelResult.value;
+          if (pelRes.success && Array.isArray(pelRes.data)) {
+            setPelanggaranLoadError(null);
+            setPelanggaranHistory(pelRes.data as unknown as PelanggaranRecord[]);
+          } else {
+            setPelanggaranLoadError(pelRes.message || "Gagal memuat riwayat pelanggaran");
+          }
+        } else {
+          setPelanggaranLoadError((pelResult.reason as Error)?.message || "Koneksi data pelanggaran gagal");
+        }
+
+        if (spResult.status === "fulfilled") {
+          const spRes = spResult.value;
+          if (spRes.success && Array.isArray(spRes.data)) {
+            setSpLoadError(null);
+            setSpList(spRes.data as unknown as SPRecord[]);
+          } else {
+            setSpLoadError(spRes.message || "Gagal memuat daftar SP santri");
+          }
+        } else {
+          setSpLoadError((spResult.reason as Error)?.message || "Koneksi data SP santri gagal");
+        }
+      });
+    }
+
+    if (activeTab === "kesehatan" && ["KS", "ADM", "MK", "OSDA", "WS", "ST"].includes(selectedRole)) {
+      getDaftarKesehatanAction().then((res) => {
+        if (res.success && res.data && Array.isArray(res.data)) {
+          const activePatients = res.data.filter(
+            (k: { status: string }) => k.status === "RAWAT_PONDOK" || k.status === "DIRUJUK_PUSKESMAS" || k.status === "DIRUJUK_RS"
+          );
+          setActiveKesehatanRecordsCount(activePatients.length);
+          setKesehatanLoadError(null);
+          setKesehatanLoaded(true);
+        } else {
+          setActiveKesehatanRecordsCount(0);
+          setKesehatanLoadError(res.message || "Gagal memuat rekam medis kesehatan");
+          setKesehatanLoaded(false);
+        }
+      }).catch((err) => {
+        setActiveKesehatanRecordsCount(0);
+        setKesehatanLoadError((err as Error)?.message || "Koneksi data kesehatan gagal");
+        setKesehatanLoaded(false);
+      });
+    }
+  }, [activeTab, selectedRole, isSessionLoading]);
 
   // Escape key listener untuk menutup modal global
   useEffect(() => {
