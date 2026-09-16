@@ -176,12 +176,11 @@ export const PERMISSION_MATRIX: Record<ModuleName, Partial<Record<Role, AccessLe
     ST: "OWN_SELF",
   },
   kesehatan: {
-    KS: "READ",
+    KS: "CRUD",
+    ADM: "CRUD",
     MK: "CRUD",
-    PH: "READ",
     WS: "OWN_CHILD",
     ST: "OWN_SELF",
-    OSDA: "CRUD",
   },
   laporanOrtuAsuh: {
     YAY: "READ",

@@ -441,8 +441,8 @@ describe("Remediation Round 4: Perizinan, Kedisiplinan & Kesehatan ABAC Fail-Clo
       assert.deepEqual(resWS.data, []);
     });
 
-    it("3. getDaftarKesehatanAction unauthorized role (MT, PH, GA, YAY) -> denied", async () => {
-      const unauthorizedKesehatanRoles: Array<"MT" | "PH" | "GA" | "YAY"> = ["MT", "PH", "GA", "YAY"];
+    it("3. getDaftarKesehatanAction unauthorized role (MT, PH, GA, YAY, OSDA) -> denied", async () => {
+      const unauthorizedKesehatanRoles: Array<"MT" | "PH" | "GA" | "YAY" | "OSDA"> = ["MT", "PH", "GA", "YAY", "OSDA"];
       for (const role of unauthorizedKesehatanRoles) {
         setTestSession({ userId: `usr-${role.toLowerCase()}`, username: `user.${role.toLowerCase()}`, name: `User ${role}`, role });
         const res = await getDaftarKesehatanAction();
@@ -451,8 +451,8 @@ describe("Remediation Round 4: Perizinan, Kedisiplinan & Kesehatan ABAC Fail-Clo
       }
     });
 
-    it("4. getDaftarKesehatanAction authorized role (OSDA, MK, KS, ADM) -> success", async () => {
-      setTestSession({ userId: USER_OSDA, username: "r4.poskestren.osda", name: "OSDA", role: "OSDA" });
+    it("4. getDaftarKesehatanAction authorized role (MK, KS, ADM) -> success", async () => {
+      setTestSession({ userId: USER_MK, username: "r4.mk", name: "MK", role: "MK" });
       const res = await getDaftarKesehatanAction();
       assert.equal(res.success, true);
       assert.ok(Array.isArray(res.data));
@@ -460,7 +460,7 @@ describe("Remediation Round 4: Perizinan, Kedisiplinan & Kesehatan ABAC Fail-Clo
     });
 
     it("5. getDaftarKesehatanAction does not leak guardian phone/PII", async () => {
-      setTestSession({ userId: USER_OSDA, username: "r4.poskestren.osda", name: "OSDA", role: "OSDA" });
+      setTestSession({ userId: USER_MK, username: "r4.mk", name: "MK", role: "MK" });
       const res = await getDaftarKesehatanAction();
       assert.equal(res.success, true);
       for (const item of (res.data as Array<{ santri?: Record<string, unknown> }>)) {

@@ -113,6 +113,13 @@ export function KesehatanModule({
   // Handler Catat Kesehatan Baru
   const handleCatatKesehatan = () => {
     setFeedback(null);
+    if (!["MK", "KS", "ADM"].includes(userRole)) {
+      setFeedback({
+        type: "error",
+        message: "Akses ditolak: Anda tidak memiliki kewenangan mencatat rekam medis kesehatan.",
+      });
+      return;
+    }
     const target = santriList.find((s) => s.nis === selectedSantriNis);
     if (!target) {
       setFeedback({ type: "error", message: "Pilih santri terlebih dahulu." });
@@ -195,7 +202,7 @@ export function KesehatanModule({
           </p>
         </div>
 
-        {["MK", "OSDA", "KS", "ADM"].includes(userRole) && (
+        {["MK", "KS", "ADM"].includes(userRole) && (
           <Button
             variant="primary"
             onClick={() => setShowAddDialog(true)}
@@ -308,7 +315,7 @@ export function KesehatanModule({
       </Card>
 
       {/* DIALOG TAMBAH KELUHAN MEDIS */}
-      {showAddDialog && (
+      {showAddDialog && ["MK", "KS", "ADM"].includes(userRole) && (
         <div
           role="dialog"
           aria-modal="true"

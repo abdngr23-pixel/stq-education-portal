@@ -23,7 +23,7 @@ export async function catatKesehatanAction(formData: {
   status?: StatusKesehatan;
 }): Promise<KesehatanResponse> {
   try {
-    const session = await requireRole(['OSDA', 'MK', 'PH', 'KS', 'ADM']);
+    const session = await requireRole(['KS', 'MK', 'ADM']);
 
     const santri = await prisma.santri.findUnique({
       where: { id: formData.santriId },
@@ -138,10 +138,12 @@ export async function getDaftarKesehatanAction(filterStatus?: StatusKesehatan): 
         };
       }
       where.santriId = session.santriId;
-    } else if (['KS', 'ADM', 'MK', 'OSDA'].includes(session.role)) {
-      // Wewenang manajerial & medis asrama / poskestren
+    } else if (session.role === 'KS' || session.role === 'MK' || session.role === 'ADM') {
+      // Otoritas manajerial & medis asrama global (PR #11 Technical Baseline): Mudir (KS), Musyrif Keasramaan (MK), Admin/TU (ADM).
+      // Mudabbir & OSDA Petugas Kesehatan: Business authority = ALLOW, namun implementasi teknis ditangguhkan (deferred)
+      // ke STQ Architecture Lock karena belum ada model penugasan kanonikal.
     } else {
-      // Role tanpa hak akses modul kesehatan (MT, PH, GA, YAY): FAIL-CLOSED
+      // Role tanpa hak akses membaca data kesehatan global (MT, PH, GA, YAY, generic OSDA): FAIL-CLOSED
       return {
         success: false,
         message: `Akses Ditolak: Role ${session.role} tidak memiliki otorisasi membaca data kesehatan.`,
