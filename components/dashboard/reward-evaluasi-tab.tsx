@@ -32,6 +32,7 @@ import {
 interface RewardEvaluasiTabProps {
   userRole: Role;
   currentUserName: string;
+  isKepalaBidangTahfidz?: boolean;
 }
 
 interface KebijakanData {
@@ -80,8 +81,13 @@ interface PreviewSantri {
   overrideBy?: string;
 }
 
-export function RewardEvaluasiTab({ userRole }: RewardEvaluasiTabProps) {
+export function RewardEvaluasiTab({
+  userRole,
+  isKepalaBidangTahfidz,
+}: RewardEvaluasiTabProps) {
   const isMudir = userRole === "KS";
+  const isKabid = Boolean(isKepalaBidangTahfidz);
+  const canIssueReward = isMudir || isKabid;
   const canManage = isMudir || userRole === "ADM";
 
   const [isPending, startTransition] = useTransition();
@@ -545,9 +551,14 @@ export function RewardEvaluasiTab({ userRole }: RewardEvaluasiTabProps) {
                 Penerbitan Reward Ujian Tasmi&apos; & Sima&apos;an
               </CardTitle>
             </div>
-            <CardDescription className="text-xs text-slate-500 mt-1">
-              Daftar kelulusan ujian hafalan yang berhak mendapatkan Bintang Kehormatan dan Hak Libur Tambahan.
-            </CardDescription>
+            <div className="flex items-center gap-2 mt-1">
+              <CardDescription className="text-xs text-slate-500">
+                Daftar kelulusan ujian hafalan yang berhak mendapatkan Bintang Kehormatan dan Hak Libur Tambahan.
+              </CardDescription>
+              <Badge variant="neutral" className="text-[10px] text-slate-500 font-medium">
+                Penerbitan reward: Mudir / Kabid Tahfizh
+              </Badge>
+            </div>
           </div>
           <Button
             size="sm"
@@ -655,15 +666,21 @@ export function RewardEvaluasiTab({ userRole }: RewardEvaluasiTabProps) {
                         </td>
                         <td className="p-2.5 text-right">
                           {!item.isRewarded && isLulus && (
-                            <Button
-                              size="sm"
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] h-7 px-2.5 flex items-center gap-1 ml-auto"
-                              onClick={() => handleProsesReward(item.id, item.santriNama)}
-                              disabled={isPending}
-                            >
-                              <Award className="w-3 h-3" />
-                              Terbitkan Reward
-                            </Button>
+                            canIssueReward ? (
+                              <Button
+                                size="sm"
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] h-7 px-2.5 flex items-center gap-1 ml-auto"
+                                onClick={() => handleProsesReward(item.id, item.santriNama)}
+                                disabled={isPending}
+                              >
+                                <Award className="w-3 h-3" />
+                                Terbitkan Reward
+                              </Button>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 font-medium italic">
+                                Penerbitan reward: Mudir / Kabid Tahfizh
+                              </span>
+                            )
                           )}
                         </td>
                       </tr>

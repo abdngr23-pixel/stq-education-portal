@@ -180,7 +180,7 @@ export async function createSetoranAction(input: CreateSetoranInput) {
         },
       });
 
-      if (!isBinaan && !session.isKepalaBidangTahfidz) {
+      if (!isBinaan) {
         return {
           success: false,
           message: "Akses Ditolak: Anda hanya berwenang mencatat setoran santri di dalam halaqoh binaan Anda.",

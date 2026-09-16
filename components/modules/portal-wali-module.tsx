@@ -4,12 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Role } from "@/types/auth";
 import { getRingkasanAnakAction } from "@/app/actions/portal-wali";
+import { cn } from "@/lib/utils";
 import {
   Printer,
   MessageCircle,
   Send,
   UserX,
 } from "lucide-react";
+
+import { getStatusKesehatanSemantics } from "@/lib/kesehatan-status";
+export { getStatusKesehatanSemantics };
 
 export interface SetoranItemWali {
   id: string;
@@ -213,15 +217,25 @@ export function PortalWaliModule({
                 </span>
               </div>
 
-              <div className="p-4 rounded-2xl bg-purple-50/70 border border-purple-100">
-                <span className="text-xs text-purple-800 font-semibold">Status Kesehatan</span>
-                <p className="text-xl font-extrabold text-purple-700 mt-1">
-                  {santriData.kesehatanList && santriData.kesehatanList.length > 0
-                    ? santriData.kesehatanList[0].status.replace(/_/g, " ")
-                    : "Sehat"}
-                </p>
-                <span className="text-[11px] text-purple-600 font-medium">Poskestren Terpantau</span>
-              </div>
+              {(() => {
+                const healthInfo = getStatusKesehatanSemantics(santriData.kesehatanList, loadError);
+                return (
+                  <div className="p-4 rounded-2xl bg-purple-50/70 border border-purple-100">
+                    <span className="text-xs text-purple-800 font-semibold">Status Kesehatan</span>
+                    <p
+                      className={cn(
+                        "text-purple-700 mt-1",
+                        healthInfo.isTextSmall ? "text-xs font-bold leading-tight" : "text-xl font-extrabold"
+                      )}
+                    >
+                      {healthInfo.label}
+                    </p>
+                    <span className="text-[11px] text-purple-600 font-medium">
+                      {healthInfo.subLabel}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
           </CardContent>
         </Card>

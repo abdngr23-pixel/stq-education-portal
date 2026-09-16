@@ -123,32 +123,51 @@ export async function resolveVerifiedSessionPayload(
     };
   }
 
-  // 2. Validasi ke PostgreSQL via Prisma (Timeout 2 detik)
+  // 2. Validasi ke PostgreSQL via Prisma (Optimized select query & 8s timeout with cleanup)
   let user = null;
+  let timeoutId: NodeJS.Timeout | undefined;
   try {
     const dbPromise = prisma.user.findUnique({
       where: { id: payload.sub },
-      include: {
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        status: true,
+        staffId: true,
+        santriId: true,
+        isPetugasPresensiPutri: true,
         staff: {
-          include: {
-            halaqohDipimpin: { select: { nama: true } },
+          select: {
+            nama: true,
+            staffCode: true,
+            isKepalaBidangTahfidz: true,
+            halaqohDipimpin: {
+              select: { nama: true },
+              take: 1,
+            },
           },
         },
         santri: {
-          include: {
-            halaqoh: { select: { nama: true } },
+          select: {
+            nama: true,
+            halaqoh: {
+              select: { nama: true },
+            },
           },
         },
       },
     });
-    const timeoutPromise = new Promise<null>((_, reject) =>
-      setTimeout(() => reject(new Error("DB_TIMEOUT")), 2000)
-    );
+    const timeoutPromise = new Promise<null>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error("DB_TIMEOUT")), 8000);
+    });
     user = await Promise.race([dbPromise, timeoutPromise]);
   } catch (dbErr) {
     console.warn("Verifikasi database sesi pengguna gagal atau timeout:", dbErr);
     // FAIL-CLOSED: Jika DB offline, timeout, atau Prisma error, batalkan session
     return null;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 
   // 3. User wajib ditemukan di database (User yang dihapus langsung ditolak)
@@ -203,7 +222,30 @@ export async function getCurrentSession(): Promise<UserSession | null> {
   }
   try {
     const cookieStore = await cookies();
-    const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+    let token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+
+    if (!token) {
+      try {
+        const { headers } = await import("next/headers");
+        const headerStore = await headers();
+        const authHeader = headerStore.get("authorization");
+        if (authHeader && authHeader.startsWith("Bearer ")) {
+          token = authHeader.substring(7).trim();
+        } else {
+          const cookieHeader = headerStore.get("cookie");
+          if (cookieHeader) {
+            const cookiesList = cookieHeader.split(";").map((c) => c.trim());
+            const sessionCookie = cookiesList.find((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`));
+            if (sessionCookie) {
+              token = sessionCookie.substring(SESSION_COOKIE_NAME.length + 1).trim();
+            }
+          }
+        }
+      } catch {
+        // Abaikan fallback header jika tidak didukung di konteks saat ini
+      }
+    }
+
     if (!token) return null;
 
     const payload = await verifySessionToken(token);

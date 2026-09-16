@@ -135,9 +135,14 @@ export async function prosesRewardTasmiSimaanAction(tasmiSimaanId: string) {
     return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
   }
 
-  // Wewenang: Musyrif Tahfizh (MT), Mudir (KS), Admin (ADM)
-  if (!["MT", "KS", "ADM"].includes(session.role)) {
-    return { success: false, message: "Anda tidak berwenang memproses reward kelulusan hafalan." };
+  // Otoritas Penerbitan Reward: Hanya Mudir (KS) dan Kabid Tahfizh (isKepalaBidangTahfidz)
+  // Ordinary Musyrif Tahfizh, ADM, MK, PH, OSDA, dsb ditolak tegas (fail-closed)
+  const isAuthorizedIssuer = session.role === "KS" || Boolean(session.isKepalaBidangTahfidz);
+  if (!isAuthorizedIssuer) {
+    return {
+      success: false,
+      message: "Akses Ditolak: Anda tidak berwenang. Penerbitan reward Tasmi'/Sima'an hanya berwenang dilakukan oleh Mudir atau Kabid Tahfizh.",
+    };
   }
 
   try {
@@ -148,21 +153,6 @@ export async function prosesRewardTasmiSimaanAction(tasmiSimaanId: string) {
 
     if (!tasmi) {
       return { success: false, message: "Data Tasmi'/Sima'an tidak ditemukan." };
-    }
-
-    // ABAC: MT biasa hanya berwenang memproses reward santri halaqoh binaannya
-    if (session.role === "MT") {
-      if (!session.staffId) {
-        return { success: false, message: "Profil staf pembina Anda belum terhubung." };
-      }
-      if (!session.isKepalaBidangTahfidz) {
-        if (!tasmi.santri.halaqoh || tasmi.santri.halaqoh.pembinaId !== session.staffId) {
-          return {
-            success: false,
-            message: "Akses Ditolak: Anda hanya berwenang memproses reward Tasmi'/Sima'an santri di dalam halaqoh binaan Anda.",
-          };
-        }
-      }
     }
 
     // Ambil kebijakan aktif

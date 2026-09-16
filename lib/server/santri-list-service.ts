@@ -341,7 +341,13 @@ export async function getSantriListForSession(
         halaqoh: s.halaqoh?.nama || "Halaqoh",
         pembina: s.halaqoh?.pembina?.nama || "-",
         namaWali: s.namaWali || undefined,
-        noHpWali: s.noHpWali || undefined,
+        noHpWali:
+          session.role === "KS" ||
+          session.role === "ADM" ||
+          Boolean(session.staffId && s.halaqoh && s.halaqoh.pembinaId === session.staffId) ||
+          (session.role === "WS" && session.santriId === s.id)
+            ? s.noHpWali || undefined
+            : undefined,
         modalHalamanAwal: modalAwal,
         modalHafalanAwalHalaman: modalAwal,
         tanggalBaselineTahfizh: s.tanggalBaselineTahfizh ? s.tanggalBaselineTahfizh.toISOString() : null,
