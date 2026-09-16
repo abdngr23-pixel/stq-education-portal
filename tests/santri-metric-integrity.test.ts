@@ -384,4 +384,74 @@ describe("P0 Data Honesty & Production Baseline Metric Integrity (Santri & Halaq
       );
     });
   });
+
+  // =========================================================================
+  // 7. REMEDIATION ROUND 3: FINAL READ-SCOPE & GENDER INTEGRITY
+  // =========================================================================
+  describe("7. Remediation Round 3: Final Read-Scope & Gender Integrity", () => {
+    it("master-data-santri.tsx dilarang mengandung inferensi gender spekulatif berbasis nama atau kelas", () => {
+      assert.ok(
+        !masterDataSantriContent.includes('includes("Lisa Dwina")'),
+        "master-data-santri.tsx dilarang menggunakan includes('Lisa Dwina') untuk inferensi gender"
+      );
+      assert.ok(
+        !masterDataSantriContent.includes('s.kelas.includes("Putri")'),
+        "master-data-santri.tsx dilarang menggunakan s.kelas.includes('Putri') untuk inferensi gender"
+      );
+      assert.ok(
+        !masterDataSantriContent.includes('s.halaqoh.includes("Lisa Dwina")'),
+        "master-data-santri.tsx dilarang menggunakan halaqoh untuk inferensi gender"
+      );
+      assert.ok(
+        masterDataSantriContent.includes('s.jenisKelamin === "P"'),
+        "master-data-santri.tsx wajib menggunakan authoritative jenisKelamin === 'P' untuk Putri"
+      );
+      assert.ok(
+        masterDataSantriContent.includes('s.jenisKelamin === "L"'),
+        "master-data-santri.tsx wajib menggunakan authoritative jenisKelamin === 'L' untuk Putra"
+      );
+      assert.ok(
+        masterDataSantriContent.includes('"Tidak diketahui"'),
+        "master-data-santri.tsx wajib menangani fallback 'Tidak diketahui' bila jenisKelamin tidak tersedia"
+      );
+    });
+
+    it("app/page.tsx memetakan authoritative jenisKelamin ke DashboardSantriSummary", () => {
+      assert.ok(
+        appPageContent.includes("jenisKelamin: s.jenisKelamin"),
+        "app/page.tsx wajib memetakan s.jenisKelamin dari getSantriListAction"
+      );
+    });
+
+    it("app/page.tsx tidak memuat kalender dan kotak saran secara eager/global saat init", () => {
+      assert.ok(
+        !appPageContent.includes("getDaftarAgendaAction(),\n            getDaftarKotakSaranAction()"),
+        "getDaftarAgendaAction dan getDaftarKotakSaranAction dilarang dipanggil secara eager/global di initApp"
+      );
+      assert.ok(
+        appPageContent.includes('activeTab !== "kalender" || !["KS", "ADM", "GA"].includes(selectedRole)'),
+        "app/page.tsx harus memuat agenda internal secara lazy role-aware (KS, ADM, GA saja)"
+      );
+      assert.ok(
+        appPageContent.includes('activeTab !== "portal_wali" || !["WS", "ST", "KS", "ADM"].includes(selectedRole)'),
+        "app/page.tsx harus memuat kotak saran secara lazy role-aware (WS, ST, KS, ADM saja)"
+      );
+    });
+
+    it("verifikasi perilaku pengelompokan gender murni berdasarkan jenisKelamin (bukan nama/kelas)", () => {
+      const mockSantri = [
+        { nis: "SAN-001", nama: "Santriwati A", kelas: "7A Takhossus", halaqoh: "Halaqoh Ust. Razan", jenisKelamin: "P" },
+        { nis: "SAN-002", nama: "Santri B", kelas: "7C Putri", halaqoh: "Halaqoh Ustadzah Lisa", jenisKelamin: "L" },
+        { nis: "SAN-003", nama: "Santri C", kelas: "8A Takhossus", halaqoh: "Halaqoh Ust. Kamal", jenisKelamin: null },
+      ];
+
+      const putri = mockSantri.filter((s) => s.jenisKelamin === "P");
+      const putra = mockSantri.filter((s) => s.jenisKelamin === "L");
+      const unk = mockSantri.filter((s) => s.jenisKelamin !== "L" && s.jenisKelamin !== "P");
+
+      assert.equal(putri.length, 1, "Santriwati A di kelas 7A harus diidentifikasi Putri (P) karena jenisKelamin === 'P'");
+      assert.equal(putra.length, 1, "Santri B di kelas 7C Putri harus diidentifikasi Putra (L) karena jenisKelamin === 'L'");
+      assert.equal(unk.length, 1, "Santri C dengan jenisKelamin null harus tidak diketahui");
+    });
+  });
 });

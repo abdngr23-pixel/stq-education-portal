@@ -202,6 +202,7 @@ export default function Home() {
             nis: s.nis,
             nama: s.nama,
             kelas: s.kelas,
+            jenisKelamin: s.jenisKelamin,
             halaqoh: s.halaqoh || s.halaqohNama || "Belum Ditentukan",
             capaianJuz: s.capaianJuz ?? 0,
             targetJuz: s.targetJuz ?? null,
@@ -367,75 +368,6 @@ export default function Home() {
             setKesehatanLoadError((err as Error)?.message || "Koneksi data kesehatan gagal");
             setKesehatanLoaded(false);
           }
-        }
-
-        try {
-          const [agdRes, srnRes] = await Promise.allSettled([
-            getDaftarAgendaAction(),
-            getDaftarKotakSaranAction(),
-          ]);
-
-          if (isMounted) {
-            if (agdRes.status === "fulfilled") {
-              const agd = agdRes.value;
-              if (agd.success && Array.isArray(agd.data)) {
-                setAgendaLoadError(null);
-                setAgendaList(
-                  agd.data.map((a: {
-                    id: string;
-                    judul: string;
-                    tanggalMulai: string | Date;
-                    kategori: string;
-                    lokasi?: string | null;
-                  }) => ({
-                    id: a.id,
-                    judul: a.judul,
-                    tanggal: new Date(a.tanggalMulai).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }),
-                    kategori: a.kategori as AgendaItem["kategori"],
-                    lokasi: a.lokasi || "-",
-                  }))
-                );
-              } else {
-                setAgendaList([]);
-                setAgendaLoadError(agd.message || "Gagal memuat agenda kalender");
-              }
-            } else {
-              setAgendaList([]);
-              setAgendaLoadError(agdRes.reason?.message || "Koneksi agenda kalender gagal");
-            }
-
-            if (srnRes.status === "fulfilled") {
-              const srn = srnRes.value;
-              if (srn.success && Array.isArray(srn.data)) {
-                setSaranLoadError(null);
-                setKotakSaranList(
-                  srn.data.map((s: {
-                    id: string;
-                    kategori: string;
-                    pesan: string;
-                    tanggapan?: string | null;
-                    status: string;
-                    santri?: { nama: string } | null;
-                  }) => ({
-                    id: s.id,
-                    nama: s.santri?.nama || "Wali Santri",
-                    kategori: s.kategori,
-                    pesan: s.pesan,
-                    tanggapan: s.tanggapan || null,
-                    status: s.status,
-                  }))
-                );
-              } else {
-                setKotakSaranList([]);
-                setSaranLoadError(srn.message || "Gagal memuat kotak saran");
-              }
-            } else {
-              setKotakSaranList([]);
-              setSaranLoadError(srnRes.reason?.message || "Koneksi kotak saran gagal");
-            }
-          }
-        } catch {
-          // Handled in allSettled
         }
 
         const [izinResult, pelResult, spResult] = await Promise.allSettled([
@@ -785,6 +717,90 @@ export default function Home() {
         if (isMounted) {
           setUsersList([]);
           setUsersLoadError(e?.message || "Koneksi data pengguna gagal");
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeTab, selectedRole]);
+
+  // Lazy fetch untuk Kalender (hanya ketika tab kalender aktif dan role diizinkan: KS, ADM, GA)
+  useEffect(() => {
+    if (activeTab !== "kalender" || !["KS", "ADM", "GA"].includes(selectedRole)) return;
+    let isMounted = true;
+    getDaftarAgendaAction()
+      .then((res) => {
+        if (!isMounted) return;
+        if (res.success && Array.isArray(res.data)) {
+          setAgendaLoadError(null);
+          setAgendaList(
+            res.data.map((a: {
+              id: string;
+              judul: string;
+              tanggalMulai: string | Date;
+              kategori: string;
+              lokasi?: string | null;
+            }) => ({
+              id: a.id,
+              judul: a.judul,
+              tanggal: new Date(a.tanggalMulai).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }),
+              kategori: a.kategori as AgendaItem["kategori"],
+              lokasi: a.lokasi || "-",
+            }))
+          );
+        } else {
+          setAgendaList([]);
+          setAgendaLoadError(res.message || "Gagal memuat agenda kalender");
+        }
+      })
+      .catch((e) => {
+        if (isMounted) {
+          setAgendaList([]);
+          setAgendaLoadError(e?.message || "Koneksi agenda kalender gagal");
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeTab, selectedRole]);
+
+  // Lazy fetch untuk Kotak Saran (hanya ketika tab portal_wali aktif dan role diizinkan: WS, ST, KS, ADM)
+  useEffect(() => {
+    if (activeTab !== "portal_wali" || !["WS", "ST", "KS", "ADM"].includes(selectedRole)) return;
+    let isMounted = true;
+    getDaftarKotakSaranAction()
+      .then((res) => {
+        if (!isMounted) return;
+        if (res.success && Array.isArray(res.data)) {
+          setSaranLoadError(null);
+          setKotakSaranList(
+            res.data.map((s: {
+              id: string;
+              nama: string;
+              kategori: string;
+              pesan: string;
+              tanggapan?: string | null;
+              status: string;
+            }) => ({
+              id: s.id,
+              nama: s.nama || "Wali Santri",
+              kategori: s.kategori,
+              pesan: s.pesan,
+              tanggapan: s.tanggapan || null,
+              status: s.status,
+            }))
+          );
+        } else {
+          setKotakSaranList([]);
+          setSaranLoadError(res.message || "Gagal memuat kotak saran");
+        }
+      })
+      .catch((e) => {
+        if (isMounted) {
+          setKotakSaranList([]);
+          setSaranLoadError(e?.message || "Koneksi kotak saran gagal");
         }
       });
 
