@@ -100,11 +100,22 @@ export function TahfizhModule({
   // Menggunakan Primary Key database riil (CUID)
   // Nilai awal kosong / null-safe (P0 Lanjutan)
   // -------------------------------------------------------------
+  // Filter santri khusus untuk formulir input setoran (ABAC Enclosure: MT/PH hanya boleh input santri binaannya)
+  const setoranSantriList = useMemo(() => {
+    if ((userRole === "MT" || userRole === "PH") && currentHalaqohName) {
+      const filtered = santriList.filter(
+        (s) => s.halaqoh && s.halaqoh.trim().toLowerCase() === currentHalaqohName.trim().toLowerCase()
+      );
+      return filtered.length > 0 ? filtered : santriList;
+    }
+    return santriList;
+  }, [santriList, userRole, currentHalaqohName]);
+
   const [selectedSantriId, setSelectedSantriId] = useState<string>(initialSelectedSantriId || "");
   const effectiveSantriId =
-    selectedSantriId && santriList.some((s) => s.id === selectedSantriId)
+    selectedSantriId && setoranSantriList.some((s) => s.id === selectedSantriId)
       ? selectedSantriId
-      : santriList[0]?.id || "";
+      : setoranSantriList[0]?.id || "";
 
   const [inputJenis, setInputJenis] = useState<"SABAQ" | "SABQI" | "MANZIL" | "MUFAR">("SABAQ");
   const [juz, setJuz] = useState("");
@@ -1055,10 +1066,10 @@ export function TahfizhModule({
                     onChange={(e) => handleSelectSantri(e.target.value)}
                     className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-[#0E7C3A]/20 transition-colors"
                   >
-                    {santriList.length === 0 ? (
+                    {setoranSantriList.length === 0 ? (
                       <option value="">Memuat data santri dari basis data...</option>
                     ) : (
-                      santriList.map((s) => (
+                      setoranSantriList.map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.nama} — Kelas {s.kelas} — {s.nis}
                         </option>
@@ -2286,7 +2297,11 @@ export function TahfizhModule({
 
       {/* 4. Tab Reward & Evaluasi Bulanan */}
       {activeSubTab === "reward_evaluasi" && (
-        <RewardEvaluasiTab userRole={userRole} currentUserName={currentUserName} />
+        <RewardEvaluasiTab
+          userRole={userRole}
+          currentUserName={currentUserName}
+          isKepalaBidangTahfidz={isKepalaBidangTahfidz}
+        />
       )}
 
       {/* Peringatan Urutan Hafalan (Sequence Jump Warning Dialog - Poin 6) */}

@@ -1156,6 +1156,7 @@ export default function Home() {
           userRole={selectedRole}
           userName={currentUserName}
           currentHalaqohName={currentHalaqohName}
+          isKepalaBidangTahfidz={isKepalaBidangTahfidz}
           onLogout={handleLogout}
         />
 

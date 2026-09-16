@@ -2,7 +2,7 @@
 
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
-import { KategoriCapaian } from "@prisma/client";
+import { KategoriCapaian, Prisma } from "@prisma/client";
 import { getTodayWITADateString, parseWITADate } from "@/lib/wita-date";
 
 export interface InputMutabaahHarianItem {
@@ -145,12 +145,41 @@ export async function getRekapMutabaahBulananAction(params: {
     const startDate = new Date(tahunKalender, params.bulan - 1, 1);
     const endDate = new Date(tahunKalender, params.bulan, 0, 23, 59, 59, 999);
 
+    const whereSantri: Prisma.SantriWhereInput = {
+      id: effectiveSantriId ? effectiveSantriId : undefined,
+      status: "AKTIF",
+    };
+
+    if ((session.role === "MT" || session.role === "PH") && !session.isKepalaBidangTahfidz) {
+      if (!session.staffId) {
+        return { success: false, message: "Akses Ditolak: Profil staf pembina belum terhubung.", data: [] };
+      }
+      const myHalaqoh = await prisma.halaqoh.findMany({
+        where: { pembinaId: session.staffId },
+        select: { id: true },
+      });
+      const myHalaqohIds = myHalaqoh.map((h) => h.id);
+      if (myHalaqohIds.length === 0) {
+        return { success: true, data: [] };
+      }
+      if (params.halaqohId && params.halaqohId !== "ALL") {
+        if (!myHalaqohIds.includes(params.halaqohId)) {
+          return {
+            success: false,
+            message: "Akses Ditolak: Anda hanya berwenang melihat rekap halaqoh binaan Anda.",
+            data: [],
+          };
+        }
+        whereSantri.halaqohId = params.halaqohId;
+      } else {
+        whereSantri.halaqohId = { in: myHalaqohIds };
+      }
+    } else if (params.halaqohId && params.halaqohId !== "ALL") {
+      whereSantri.halaqohId = params.halaqohId;
+    }
+
     const santriList = await prisma.santri.findMany({
-      where: {
-        id: effectiveSantriId ? effectiveSantriId : undefined,
-        halaqohId: params.halaqohId && params.halaqohId !== "ALL" ? params.halaqohId : undefined,
-        status: "AKTIF",
-      },
+      where: whereSantri,
       select: {
         id: true,
         nama: true,

@@ -290,23 +290,22 @@ describe("P0 ABAC Fail-Closed: Reward & Sanksi Evaluasi Tasmi / Simaan", () => {
       assert.ok(res.message.includes("tidak berwenang"));
     });
 
-    it("3. Menolak MT tanpa profil staf (fail closed)", async () => {
-      setTestSession(sessionMTNoStaff);
+    it("3. Menolak MT biasa memproses reward (hanya Mudir & Kabid Tahfizh)", async () => {
+      setTestSession(sessionMT1);
       const res = await prosesRewardTasmiSimaanAction(tasmiSantri1Id);
       assert.strictEqual(res.success, false);
-      assert.ok(res.message.includes("Profil staf pembina Anda belum terhubung"));
+      assert.ok(res.message.includes("Mudir atau Kabid Tahfizh"));
     });
 
-    it("4. Menolak MT memproses reward santri di luar halaqoh binaannya", async () => {
-      // MT1 mencoba memproses Santri 2 (milik Halaqoh MT2)
-      setTestSession(sessionMT1);
-      const resCross = await prosesRewardTasmiSimaanAction(tasmiSantri2Id);
-      assert.strictEqual(resCross.success, false);
-      assert.ok(resCross.message.includes("Akses Ditolak: Anda hanya berwenang memproses reward Tasmi'/Sima'an santri di dalam halaqoh binaan Anda."));
+    it("4. Menolak ADM memproses reward (bukan issuer yang berwenang)", async () => {
+      setTestSession(sessionADM);
+      const res = await prosesRewardTasmiSimaanAction(tasmiSantri1Id);
+      assert.strictEqual(res.success, false);
+      assert.ok(res.message.includes("Mudir atau Kabid Tahfizh"));
     });
 
-    it("5. Mengizinkan MT memproses reward santri halaqoh binaannya sendiri", async () => {
-      setTestSession(sessionMT1);
+    it("5. Mengizinkan Mudir (KS) memproses reward santri", async () => {
+      setTestSession(sessionKS);
       const resValid = await prosesRewardTasmiSimaanAction(tasmiSantri1Id);
       assert.strictEqual(resValid.success, true);
       assert.ok(resValid.message.includes("berhasil diterbitkan"));
@@ -320,7 +319,7 @@ describe("P0 ABAC Fail-Closed: Reward & Sanksi Evaluasi Tasmi / Simaan", () => {
     });
 
     it("6. Idempotensi: Memproses ulang reward yang sama tidak menduplikasi data", async () => {
-      setTestSession(sessionMT1);
+      setTestSession(sessionKS);
       const resRetry = await prosesRewardTasmiSimaanAction(tasmiSantri1Id);
       assert.strictEqual(resRetry.success, true);
       assert.ok(resRetry.message.includes("sudah pernah diterbitkan"));

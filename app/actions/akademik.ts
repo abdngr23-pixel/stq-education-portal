@@ -112,9 +112,29 @@ export async function getRaporGabunganAction(santriId: string, semester: number 
     return { success: false, message: "Silakan login terlebih dahulu." };
   }
 
-  // Validasi Kepemilikan Data ABAC
+  // Validasi Kepemilikan Data ABAC (Fail-closed)
   if (session.role === "ST" && session.santriId !== santriId) {
-    return { success: false, message: "Anda hanya berhak melihat rapor Anda sendiri." };
+    return { success: false, message: "Akses Ditolak: Anda hanya berhak melihat rapor Anda sendiri." };
+  }
+  if (session.role === "WS" && session.santriId !== santriId) {
+    return { success: false, message: "Akses Ditolak: Anda hanya berhak melihat rapor ananda Anda sendiri." };
+  }
+  if ((session.role === "MT" || session.role === "PH") && !session.isKepalaBidangTahfidz) {
+    if (!session.staffId) {
+      return { success: false, message: "Akses Ditolak: Profil staf pembina Anda belum terhubung. Hubungi Admin." };
+    }
+    const isBinaan = await prisma.halaqoh.findFirst({
+      where: {
+        pembinaId: session.staffId,
+        santriList: { some: { id: santriId } },
+      },
+    });
+    if (!isBinaan) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Anda hanya berwenang melihat rapor santri di dalam halaqoh binaan Anda.",
+      };
+    }
   }
 
   try {

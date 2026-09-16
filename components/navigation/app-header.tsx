@@ -13,6 +13,7 @@ export interface AppHeaderProps {
   userRole: Role;
   userName: string;
   currentHalaqohName?: string | null;
+  isKepalaBidangTahfidz?: boolean;
   onLogout: () => void;
   onOpenMobileMenu?: () => void;
 }
@@ -22,14 +23,22 @@ export function AppHeader({
   userRole,
   userName,
   currentHalaqohName,
+  isKepalaBidangTahfidz,
   onLogout,
   onOpenMobileMenu,
 }: AppHeaderProps) {
   const currentItem = ALL_NAV_ITEMS[activeTab] || ALL_NAV_ITEMS.beranda;
-  const roleInfo = ROLE_LABELS[userRole] || {
+  const baseRoleInfo = ROLE_LABELS[userRole] || {
     title: "Pengguna",
     badgeVariant: "neutral",
   };
+  const roleInfo =
+    userRole === "MT" && isKepalaBidangTahfidz
+      ? {
+          title: "Kabid Tahfizh",
+          badgeVariant: "green" as const,
+        }
+      : baseRoleInfo;
 
   // Tanggal hari ini dalam format Bahasa Indonesia yang rapi
   const todayFormatted = React.useMemo(() => {

@@ -881,11 +881,11 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (43 Skena
     assert.equal(resMT1.success, false);
     assert.match(resMT1.message ?? "", /Akses Ditolak/i);
 
-    // MT tanpa staffId -> fail closed
+    // MT tanpa staffId / MT biasa -> fail closed (bukan issuer yang berwenang)
     setTestSession(sessionMTNoStaff);
     const resNoStaff = await prosesRewardTasmiSimaanAction(tasmiZaid.id);
     assert.equal(resNoStaff.success, false);
-    assert.match(resNoStaff.message ?? "", /profil staf/i);
+    assert.match(resNoStaff.message ?? "", /tidak berwenang|profil staf/i);
 
     // Kabid -> boleh lintas halaqoh
     setTestSession(sessionKabid);
