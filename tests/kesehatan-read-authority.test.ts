@@ -18,8 +18,12 @@ import path from "node:path";
 import { PrismaClient, JenisKelamin, StatusKesehatan, Role } from "@prisma/client";
 import { startTestDatabase, stopTestDatabase } from "./test-db-manager";
 import { setTestSession } from "../lib/auth";
-import { UserSession } from "../types/auth";
-import { getDaftarKesehatanAction } from "../app/actions/kesehatan";
+import { UserSession, PERMISSION_MATRIX } from "../types/auth";
+import {
+  getDaftarKesehatanAction,
+  catatKesehatanAction,
+  updateStatusKesehatanAction,
+} from "../app/actions/kesehatan";
 
 describe("PR #11 Final Health Read Authority Alignment: Global Health Data Access Lock", () => {
   let prisma: PrismaClient;
@@ -78,6 +82,25 @@ describe("PR #11 Final Health Read Authority Alignment: Global Health Data Acces
           status: StatusKesehatan.DIRUJUK_PUSKESMAS,
           dicatatOleh: "Petugas Poskestren",
         },
+      ],
+    });
+
+    // 3. User records for test sessions
+    await prisma.user.createMany({
+      data: [
+        { id: "usr-kes-ks", username: "mudir.stq", role: "KS", passwordHash: "dummy" },
+        { id: "usr-kes-mk", username: "musyrif.keasramaan", role: "MK", passwordHash: "dummy" },
+        { id: "usr-kes-adm", username: "admin.tu", role: "ADM", passwordHash: "dummy" },
+        { id: "usr-kes-ws1", username: "wali.ahmad", role: "WS", santriId: SANTRI_1, passwordHash: "dummy" },
+        { id: "usr-kes-st2", username: "santri.budi", role: "ST", santriId: SANTRI_2, passwordHash: "dummy" },
+        { id: "usr-kes-osda", username: "pengurus.osda", role: "OSDA", passwordHash: "dummy" },
+        { id: "usr-kes-ks-create", username: "mudir.create", role: "KS", passwordHash: "dummy" },
+        { id: "usr-kes-mk-create", username: "mk.create", role: "MK", passwordHash: "dummy" },
+        { id: "usr-kes-adm-create", username: "adm.create", role: "ADM", passwordHash: "dummy" },
+        { id: "usr-kes-ks-upd", username: "mudir.upd", role: "KS", passwordHash: "dummy" },
+        { id: "usr-kes-mk-upd", username: "mk.upd", role: "MK", passwordHash: "dummy" },
+        { id: "usr-kes-adm-upd", username: "adm.upd", role: "ADM", passwordHash: "dummy" },
+        { id: "usr-kes-osda-upd", username: "osda.upd", role: "OSDA", passwordHash: "dummy" },
       ],
     });
   });
@@ -295,6 +318,179 @@ describe("PR #11 Final Health Read Authority Alignment: Global Health Data Acces
       actionContent.includes("username.includes") || actionContent.includes("username ==="),
       false,
       "app/actions/kesehatan.ts dilarang menggunakan username heuristic"
+    );
+  });
+
+  it("13. Health Create Authority: KS, MK, ADM create PASS", async () => {
+    // 13.1. KS create PASS
+    setTestSession({
+      userId: "usr-kes-ks-create",
+      username: "mudir.create",
+      name: "Mudir Pesantren",
+      role: "KS",
+    });
+    const resKS = await catatKesehatanAction({
+      santriId: SANTRI_1,
+      keluhan: "Batuk pilek KS",
+      diagnosa: "ISPA",
+      tindakan: "Sirup obat batuk",
+      status: StatusKesehatan.RAWAT_PONDOK,
+    });
+    assert.strictEqual(resKS.success, true, "KS create harus PASS");
+
+    // 13.2. MK create PASS
+    setTestSession({
+      userId: "usr-kes-mk-create",
+      username: "mk.create",
+      name: "Musyrif Keasramaan",
+      role: "MK",
+    });
+    const resMK = await catatKesehatanAction({
+      santriId: SANTRI_1,
+      keluhan: "Sakit kepala MK",
+      diagnosa: "Cephalgia",
+      tindakan: "Paracetamol",
+      status: StatusKesehatan.RAWAT_PONDOK,
+    });
+    assert.strictEqual(resMK.success, true, "MK create harus PASS");
+
+    // 13.3. ADM create PASS
+    setTestSession({
+      userId: "usr-kes-adm-create",
+      username: "adm.create",
+      name: "Admin Tata Usaha",
+      role: "ADM",
+    });
+    const resADM = await catatKesehatanAction({
+      santriId: SANTRI_2,
+      keluhan: "Alergi gatal ADM",
+      diagnosa: "Urtikaria",
+      tindakan: "Antihistamin",
+      status: StatusKesehatan.RAWAT_PONDOK,
+    });
+    assert.strictEqual(resADM.success, true, "ADM create harus PASS");
+  });
+
+  it("14. Health Update Status Authority: KS update PASS, MK update PASS, ADM update DENY, generic OSDA update DENY", async () => {
+    // 14.1. KS update PASS
+    setTestSession({
+      userId: "usr-kes-ks-upd",
+      username: "mudir.upd",
+      name: "Mudir Pesantren",
+      role: "KS",
+    });
+    const resKS = await updateStatusKesehatanAction({
+      id: KES_1,
+      status: StatusKesehatan.RAWAT_PONDOK,
+      tindakanTambahan: "Observasi lanjutan oleh Mudir",
+    });
+    assert.strictEqual(resKS.success, true, "KS update harus PASS");
+
+    // 14.2. MK update PASS
+    setTestSession({
+      userId: "usr-kes-mk-upd",
+      username: "mk.upd",
+      name: "Musyrif Keasramaan",
+      role: "MK",
+    });
+    const resMK = await updateStatusKesehatanAction({
+      id: KES_1,
+      status: StatusKesehatan.SEMBUH,
+      tindakanTambahan: "Sembuh total diverifikasi MK",
+    });
+    assert.strictEqual(resMK.success, true, "MK update harus PASS");
+
+    // 14.3. ADM update DENY
+    setTestSession({
+      userId: "usr-kes-adm-upd",
+      username: "adm.upd",
+      name: "Admin Tata Usaha",
+      role: "ADM",
+    });
+    const resADM = await updateStatusKesehatanAction({
+      id: KES_1,
+      status: StatusKesehatan.DIRUJUK_PUSKESMAS,
+      tindakanTambahan: "Upaya update dari ADM",
+    });
+    assert.strictEqual(resADM.success, false, "ADM update harus DENY");
+    assert.match(resADM.message, /FORBIDDEN|tidak memiliki akses|akses ditolak|tidak memiliki wewenang|otorisasi/i);
+
+    // 14.4. generic OSDA update DENY
+    setTestSession({
+      userId: "usr-kes-osda-upd",
+      username: "osda.upd",
+      name: "Pengurus OSDA",
+      role: "OSDA",
+    });
+    const resOSDA = await updateStatusKesehatanAction({
+      id: KES_1,
+      status: StatusKesehatan.SEMBUH,
+      tindakanTambahan: "Upaya update dari generic OSDA",
+    });
+    assert.strictEqual(resOSDA.success, false, "generic OSDA update harus DENY");
+    assert.match(resOSDA.message, /FORBIDDEN|tidak memiliki akses|akses ditolak|tidak memiliki wewenang|otorisasi/i);
+  });
+
+  it("15. UI / Component Guards: generic OSDA update UI absent, ADM update UI absent, KS/MK update UI present", () => {
+    const componentPath = path.resolve(__dirname, "../components/modules/kesehatan-module.tsx");
+    const componentContent = fs.readFileSync(componentPath, "utf-8");
+
+    // 15.1. Update Status UI is guarded strictly by ["MK", "KS"].includes(userRole)
+    assert.strictEqual(
+      componentContent.includes('["MK", "KS"].includes(userRole)'),
+      true,
+      "Update status UI harus dijaga strictly dengan ['MK', 'KS'].includes(userRole)"
+    );
+
+    // 15.2. Generic OSDA and ADM are not in the Update Status UI guard
+    assert.strictEqual(
+      componentContent.includes('["MK", "OSDA", "KS"].includes(userRole)'),
+      false,
+      "Generic OSDA dilarang ada di guard update status UI"
+    );
+
+    // 15.3. Generic OSDA detail controls absent
+    assert.strictEqual(
+      componentContent.includes('selectedDetail && userRole !== "OSDA"'),
+      true,
+      "Generic OSDA tidak boleh menerima detail dialog / controls"
+    );
+    assert.strictEqual(
+      componentContent.includes('if (userRole === "OSDA") return;'),
+      true,
+      "Generic OSDA row click harus no-op"
+    );
+
+    // 15.4. handleUpdateStatus client-side guard
+    assert.strictEqual(
+      componentContent.includes('if (!["MK", "KS"].includes(userRole))'),
+      true,
+      "handleUpdateStatus harus memiliki guard client-side untuk KS dan MK saja"
+    );
+  });
+
+  it("16. Legacy Coarse PERMISSION_MATRIX Guard: ADM does not falsely claim unrestricted CRUD", () => {
+    // Coarse matrix cannot represent READ + CREATE without UPDATE without inventing a new level.
+    // Therefore ADM must NOT be "CRUD", and server actions remain authoritative.
+    assert.notStrictEqual(
+      PERMISSION_MATRIX.kesehatan.ADM,
+      "CRUD",
+      "PERMISSION_MATRIX.kesehatan.ADM dilarang bernilai CRUD"
+    );
+    assert.strictEqual(
+      PERMISSION_MATRIX.kesehatan.ADM,
+      "READ",
+      "PERMISSION_MATRIX.kesehatan.ADM harus bernilai READ (transisional/non-authoritative)"
+    );
+    assert.strictEqual(
+      PERMISSION_MATRIX.kesehatan.KS,
+      "CRUD",
+      "PERMISSION_MATRIX.kesehatan.KS harus bernilai CRUD"
+    );
+    assert.strictEqual(
+      PERMISSION_MATRIX.kesehatan.MK,
+      "CRUD",
+      "PERMISSION_MATRIX.kesehatan.MK harus bernilai CRUD"
     );
   });
 });

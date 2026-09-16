@@ -13,7 +13,9 @@ export interface KesehatanResponse<T = unknown> {
 
 /**
  * Catat Kejadian / Keluhan Sakit Santri (Poskestren)
- * Akses: OSDA, MK (Musyrif Keasramaan), PH (Pembina Asrama), KS
+ * Akses PR #11 Baseline: KS (Mudir), MK (Musyrif Keasramaan), ADM (Admin/TU)
+ * Catatan Bisnis: Mudabbir & OSDA Petugas Kesehatan berhak secara bisnis (ALLOW),
+ * namun implementasi teknis ditangguhkan (deferred) ke STQ Architecture Lock / Keasramaan V2 assignment model.
  */
 export async function catatKesehatanAction(formData: {
   santriId: string;
@@ -65,7 +67,10 @@ export async function catatKesehatanAction(formData: {
 
 /**
  * Update Status Kesehatan & Rujukan Medis
- * Akses: MK (Musyrif Keasramaan), KS (Mudir)
+ * Akses PR #11 Baseline: KS (Mudir), MK (Musyrif Keasramaan)
+ * ADM dilarang (DENY update status medis); generic OSDA dilarang (DENY).
+ * Catatan Bisnis: Mudabbir & OSDA Petugas Kesehatan berhak secara bisnis (ALLOW),
+ * namun implementasi teknis ditangguhkan (deferred) ke STQ Architecture Lock / Keasramaan V2 assignment model.
  */
 export async function updateStatusKesehatanAction(formData: {
   id: string;

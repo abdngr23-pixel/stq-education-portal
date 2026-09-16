@@ -166,6 +166,13 @@ export function KesehatanModule({
   // Handler Update Status Kesehatan
   const handleUpdateStatus = () => {
     if (!selectedDetail) return;
+    if (!["MK", "KS"].includes(userRole)) {
+      setFeedback({
+        type: "error",
+        message: "Akses ditolak: Anda tidak memiliki kewenangan memperbarui status kesehatan.",
+      });
+      return;
+    }
     startTransition(async () => {
       const res = await updateStatusKesehatanAction({
         id: selectedDetail.id,
@@ -263,10 +270,13 @@ export function KesehatanModule({
                 <div
                   key={item.id}
                   onClick={() => {
+                    if (userRole === "OSDA") return;
                     setSelectedDetail(item);
                     setUpdateStatus(item.status);
                   }}
-                  className="p-4 sm:p-5 hover:bg-slate-50/80 transition-colors cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  className={`p-4 sm:p-5 hover:bg-slate-50/80 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                    userRole === "OSDA" ? "" : "cursor-pointer"
+                  }`}
                 >
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
@@ -433,7 +443,7 @@ export function KesehatanModule({
       )}
 
       {/* DIALOG DETAIL & UPDATE STATUS KESEHATAN */}
-      {selectedDetail && (
+      {selectedDetail && userRole !== "OSDA" && (
         <div
           role="dialog"
           aria-modal="true"
@@ -463,7 +473,7 @@ export function KesehatanModule({
                 <p><strong>Tanggal Masuk UKS:</strong> {selectedDetail.tanggal}</p>
               </div>
 
-              {["MK", "OSDA", "KS"].includes(userRole) && (
+              {["MK", "KS"].includes(userRole) && (
                 <div className="space-y-2 pt-2 border-t border-slate-100">
                   <label className="text-xs font-bold text-slate-700 block">
                     Perbarui Status Kesehatan:
