@@ -25,11 +25,15 @@ export async function catatPelanggaranAction(input: CatatPelanggaranData) {
     return { success: false, message: "Silakan login terlebih dahulu." };
   }
 
-  // Hak akses: Pembina (PH), Musyrif Keasramaan (MK), Musyrif Tahfizh (MT), Mudir (KS)
-  if (!["PH", "MK", "MT", "KS"].includes(session.role)) {
+  // Otoritas pencatatan pelanggaran santri (PR #11 Technical Baseline):
+  // Mudir (KS) dan Musyrif Keasramaan (MK) saja.
+  // Mudabbir business authority = ALLOW, namun implementasi teknis ditangguhkan (deferred)
+  // hingga STQ Architecture Lock karena belum memiliki representasi penugasan kanonikal.
+  // Seluruh role lain (ADM, MT, PH, OSDA, GA, YAY, WS, ST) dan unauthenticated: DITOLAK (DENY).
+  if (session.role !== "KS" && session.role !== "MK") {
     return {
       success: false,
-      message: `Role ${session.role} tidak memiliki kewenangan mencatat pelanggaran santri.`,
+      message: `Akses ditolak: Role ${session.role} tidak memiliki kewenangan mencatat pelanggaran santri. Otoritas hanya dimiliki Mudir (KS) dan Musyrif Keasramaan (MK).`,
     };
   }
 

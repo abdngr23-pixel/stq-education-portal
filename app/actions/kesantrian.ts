@@ -13,12 +13,29 @@ export interface AjukanIzinData {
 }
 
 /**
- * Server Action: Ajukan Perizinan Santri (PH, OSDA, WS, ST)
+ * Server Action: Ajukan / Catat Perizinan Santri
+ * Otoritas pencatatan/pembuatan izin resmi santri HANYA dimiliki oleh:
+ * 1. Mudir (KS)
+ * 2. Musyrif Keasramaan (MK)
+ * Seluruh role lain (ADM, MT, PH, OSDA, GA, YAY, WS, ST) serta unauthenticated: DITOLAK (DENY).
  */
 export async function ajukanIzinAction(input: AjukanIzinData) {
   const session = await getCurrentSession();
   if (!session) {
     return { success: false, message: "Silakan login terlebih dahulu." };
+  }
+
+  // Otoritas pencatatan perizinan: Mudir (KS) dan Musyrif Keasramaan (MK) saja
+  if (session.role !== "KS" && session.role !== "MK") {
+    return {
+      success: false,
+      message: `Akses ditolak: Role ${session.role} tidak memiliki kewenangan mencatat perizinan santri. Otoritas hanya dimiliki Mudir (KS) dan Musyrif Keasramaan (MK).`,
+    };
+  }
+
+  // Hanya setelah lolos otorisasi, santriId diterima dan diproses
+  if (!input.santriId || typeof input.santriId !== "string" || !input.santriId.trim()) {
+    return { success: false, message: "Santri tidak valid." };
   }
 
   try {

@@ -147,6 +147,13 @@ export function PerizinanModule({
   // Handler Submit Pengajuan Izin
   const handleAjukanIzin = () => {
     setFeedback(null);
+    if (userRole !== "KS" && userRole !== "MK") {
+      setFeedback({
+        type: "error",
+        message: "Akses ditolak: Anda tidak memiliki kewenangan mencatat perizinan santri.",
+      });
+      return;
+    }
     const targetSantri = santriList.find((s) => s.nis === selectedSantriNis);
     if (!targetSantri) {
       setFeedback({ type: "error", message: "Silakan pilih santri terlebih dahulu." });
@@ -288,14 +295,16 @@ export function PerizinanModule({
           </p>
         </div>
 
-        <Button
-          variant="primary"
-          onClick={() => setShowAddDialog(true)}
-          className="bg-[#0E7C3A] hover:bg-[#0B642E] text-white font-bold text-xs sm:text-sm gap-2 min-h-[44px] shadow-xs shrink-0"
-        >
-          <PlusCircle className="h-4 w-4" />
-          + Ajukan Izin Baru
-        </Button>
+        {(userRole === "KS" || userRole === "MK") && (
+          <Button
+            variant="primary"
+            onClick={() => setShowAddDialog(true)}
+            className="bg-[#0E7C3A] hover:bg-[#0B642E] text-white font-bold text-xs sm:text-sm gap-2 min-h-[44px] shadow-xs shrink-0"
+          >
+            <PlusCircle className="h-4 w-4" />
+            + Ajukan Izin Baru
+          </Button>
+        )}
       </div>
 
       {/* Feedback Alert */}

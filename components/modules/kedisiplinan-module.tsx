@@ -222,6 +222,13 @@ export function KedisiplinanModule({
   // Handler Submit Pelanggaran
   const handleCatatPelanggaran = () => {
     setFeedback(null);
+    if (userRole !== "KS" && userRole !== "MK") {
+      setFeedback({
+        type: "error",
+        message: "Akses ditolak: Anda tidak memiliki kewenangan mencatat pelanggaran santri.",
+      });
+      return;
+    }
     const target = santriList.find((s) => s.id === effectiveSantriId);
     if (!target) {
       setFeedback({ type: "error", message: "Silakan pilih santri terlebih dahulu." });
@@ -354,7 +361,7 @@ export function KedisiplinanModule({
           </p>
         </div>
 
-        {["MK", "PH", "OSDA", "KS"].includes(userRole) && (
+        {(userRole === "KS" || userRole === "MK") && (
           <Button
             variant="primary"
             onClick={() => setShowAddDialog(true)}
@@ -555,7 +562,7 @@ export function KedisiplinanModule({
       </Card>
 
       {/* DIALOG FORM CATAT PELANGGARAN BARU */}
-      {showAddDialog && (
+      {showAddDialog && (userRole === "KS" || userRole === "MK") && (
         <div
           role="dialog"
           aria-modal="true"
