@@ -6,6 +6,11 @@ import {
   calculateLatestSabaqPosition,
 } from "./tahfizh-page-allocation";
 import { getStartOfWeekWITA } from "./laporan-bulanan";
+import {
+  deriveOverallNilai,
+  MistakeCounts,
+  mistakeCountsSchema,
+} from "./tahfizh-quality";
 
 export interface CreateSetoranCoreInput {
   santriId: string;
@@ -15,7 +20,11 @@ export interface CreateSetoranCoreInput {
   halamanSelesai: number;
   jumlahHalaman: number;
   jumlahJuzMufar?: number | null;
-  nilai: NilaiSetoran;
+  nilaiTajwid: NilaiSetoran;
+  nilaiFashahah: NilaiSetoran;
+  nilaiKelancaran: NilaiSetoran;
+  rincianKesalahan: MistakeCounts | Record<string, unknown>;
+  nilai?: NilaiSetoran;
   catatan?: string | null;
   clientRequestId?: string | null;
   alasanLompatanHalaman?: string | null;
@@ -29,11 +38,125 @@ export interface SaveSetoranContext {
   musyrifStaffId: string;
 }
 
+export interface ExecuteSetoranSession {
+  userId: string;
+  username: string;
+  role: string;
+  staffId?: string | null;
+  isKepalaBidangTahfidz?: boolean;
+}
+
 export class CapacityValidationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "CapacityValidationError";
   }
+}
+
+export type CanonicalSetoranResult = {
+  success: boolean;
+  message: string;
+  data?: unknown;
+  idempotent?: boolean;
+};
+
+/**
+ * Eksekutor kanonikal tunggal untuk Setoran Tahfizh (digunakan bersama oleh Server Action & API Route)
+ */
+export async function executeCanonicalCreateSetoran(
+  prismaClient: PrismaClient,
+  params: {
+    input: CreateSetoranCoreInput;
+    session: ExecuteSetoranSession;
+  }
+): Promise<CanonicalSetoranResult> {
+  const { input, session } = params;
+
+  // 1. Role validation: Hanya MT, PH, KS, dan ADM yang boleh input
+  if (!["MT", "PH", "KS", "ADM"].includes(session.role)) {
+    return { success: false, message: `Role ${session.role} tidak memiliki izin input setoran.` };
+  }
+
+  // 2. Validasi Jenis Setoran
+  const VALID_JENIS: JenisSetoran[] = ["SABAQ", "SABQI", "MANZIL", "MUFAR"];
+  if (!input.jenis || !VALID_JENIS.includes(input.jenis)) {
+    return {
+      success: false,
+      message: "Jenis setoran tidak valid. Harus salah satu dari: SABAQ, SABQI, MANZIL, atau MUFAR.",
+    };
+  }
+
+  // 3. Verifikasi Keberadaan Santri di Database
+  const santri = await prismaClient.santri.findUnique({
+    where: { id: input.santriId },
+    select: {
+      id: true,
+      nama: true,
+      nis: true,
+      halaqohId: true,
+      modalHafalanAwalHalaman: true,
+      tanggalBaselineTahfizh: true,
+    },
+  });
+
+  if (!santri) {
+    return { success: false, message: "Data santri tidak ditemukan di pangkalan data." };
+  }
+
+  // 4. Data Ownership ABAC: MT/PH hanya boleh input santri binaannya (fail-closed)
+  if (session.role === "MT" || session.role === "PH") {
+    if (!session.staffId) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Profil staf pembina Anda belum terhubung. Hubungi Administrator.",
+      };
+    }
+
+    const isBinaan = await prismaClient.halaqoh.findFirst({
+      where: {
+        pembinaId: session.staffId,
+        santriList: { some: { id: input.santriId } },
+      },
+    });
+
+    if (!isBinaan && !session.isKepalaBidangTahfidz) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Anda hanya berwenang mencatat setoran santri di dalam halaqoh binaan Anda.",
+      };
+    }
+  }
+
+  // 5. Staf Penilai / Pencatat: Fail-closed (Tanpa fallback staf acak)
+  let musyrifStaffId = session.staffId;
+  if (!musyrifStaffId) {
+    const userWithStaff = await prismaClient.user.findUnique({
+      where: { id: session.userId },
+      select: { staffId: true },
+    });
+    musyrifStaffId = userWithStaff?.staffId || null;
+  }
+
+  if (!musyrifStaffId) {
+    return {
+      success: false,
+      message: "Akses Ditolak: Akun Anda tidak memiliki relasi profil staf resmi untuk mencatat setoran.",
+    };
+  }
+
+  const musyrifStaff = await prismaClient.staff.findUnique({ where: { id: musyrifStaffId } });
+  if (!musyrifStaff) {
+    return { success: false, message: "Data staf pengampu/pencatat tidak ditemukan di sistem." };
+  }
+
+  return await saveSetoranTahfizhCore(prismaClient, {
+    input,
+    context: {
+      userId: session.userId,
+      username: session.username,
+      musyrifStaffId: musyrifStaff.id,
+    },
+  });
 }
 
 /**
@@ -85,6 +208,39 @@ export async function saveSetoranTahfizhCore(
     }
     validatedJumlahJuzMufar = rawJuzMufar;
   }
+
+  // 1c. Validasi Dimensi Kualitas (Tajwid, Fashahah, Kelancaran & Rincian Kesalahan)
+  // CONTRACT LOCK: legacy overall `nilai` MUST NEVER infer Tajwid/Fashahah/Kelancaran.
+  // Seluruh 3 dimensi kualitas dan rincian kesalahan 8 kunci kanonikal wajib disertakan lengkap.
+  const validPredicates = Object.values(NilaiSetoran);
+
+  if (!input.nilaiTajwid || !validPredicates.includes(input.nilaiTajwid)) {
+    return { success: false, message: "Nilai Tajwid wajib diisi dengan predikat resmi." };
+  }
+  if (!input.nilaiFashahah || !validPredicates.includes(input.nilaiFashahah)) {
+    return { success: false, message: "Nilai Fashahah wajib diisi dengan predikat resmi." };
+  }
+  if (!input.nilaiKelancaran || !validPredicates.includes(input.nilaiKelancaran)) {
+    return { success: false, message: "Nilai Kelancaran wajib diisi dengan predikat resmi." };
+  }
+
+  if (!input.rincianKesalahan) {
+    return { success: false, message: "Rincian kesalahan kanonikal (8 kunci) wajib disertakan lengkap." };
+  }
+
+  const parseRes = mistakeCountsSchema.safeParse(input.rincianKesalahan);
+  if (!parseRes.success) {
+    const errorMsg = parseRes.error.issues.map((e) => e.message).join(", ");
+    return { success: false, message: `Rincian kesalahan tidak valid: ${errorMsg}` };
+  }
+  const validatedRincianKesalahan: MistakeCounts = parseRes.data;
+
+  // Canonical server derivation: overall nilai = lowest of the 3 dimensions
+  const derivedOverallNilai = deriveOverallNilai({
+    tajwid: input.nilaiTajwid,
+    fashahah: input.nilaiFashahah,
+    kelancaran: input.nilaiKelancaran,
+  });
 
   // Hubungan volume dan rentang halaman secara konsisten
   if (input.jenis === "SABAQ") {
@@ -300,7 +456,11 @@ export async function saveSetoranTahfizhCore(
               halamanSelesai: halSelesai,
               jumlahHalaman: jmlHalaman,
               jumlahJuzMufar: input.jenis === "MUFAR" ? validatedJumlahJuzMufar : null,
-              nilai: input.nilai,
+              nilaiTajwid: input.nilaiTajwid,
+              nilaiFashahah: input.nilaiFashahah,
+              nilaiKelancaran: input.nilaiKelancaran,
+              nilai: derivedOverallNilai,
+              rincianKesalahan: validatedRincianKesalahan,
               catatan: input.catatan?.trim() || null,
               clientRequestId: input.clientRequestId?.trim() || null,
               status: "AKTIF",
@@ -328,7 +488,11 @@ export async function saveSetoranTahfizhCore(
                 halaman: `${halMulai}-${halSelesai}`,
                 jumlahHalaman: jmlHalaman,
                 ...(input.jenis === "MUFAR" ? { jumlahJuzMufar: created.jumlahJuzMufar } : {}),
-                nilai: input.nilai,
+                nilai: derivedOverallNilai,
+                nilaiTajwid: input.nilaiTajwid,
+                nilaiFashahah: input.nilaiFashahah,
+                nilaiKelancaran: input.nilaiKelancaran,
+                rincianKesalahan: validatedRincianKesalahan,
                 clientRequestId: input.clientRequestId || null,
                 alasanLompatanHalaman: input.alasanLompatanHalaman || null,
                 alasanManualSabaqi: input.alasanManualSabaqi || null,

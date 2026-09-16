@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  VALID_NILAI_SETORAN_VALUES,
+  mistakeCountsSchema,
+  DEFAULT_MISTAKE_COUNTS,
+} from '@/lib/tahfizh-quality';
 
 /**
  * 1. Skema Validasi Autentikasi & Login
@@ -78,13 +83,63 @@ export const setoranSchema = z.object({
   jumlahHalaman: z.coerce
     .number()
     .min(0.5, { message: 'Jumlah halaman minimal 0.5' }),
-  nilai: z.enum(['MUMTAZ', 'JAYYID_JIDDAN', 'JAYYID', 'MAQBUL', 'DHOIF', 'RASIB'], {
-    message: 'Nilai setoran tidak valid',
+  jumlahJuzMufar: z.coerce
+    .number()
+    .min(0.5, { message: 'Jumlah juz mufar minimal 0.5' })
+    .optional()
+    .nullable(),
+  clientRequestId: z.string().max(100).optional().nullable(),
+  alasanLompatanHalaman: z.string().max(500).optional().nullable(),
+  isManualSabaqi: z.boolean().optional(),
+  alasanManualSabaqi: z.string().max(500).optional().nullable(),
+  nilaiTajwid: z.enum(VALID_NILAI_SETORAN_VALUES, {
+    message: 'Nilai Tajwid wajib dipilih',
   }),
+  nilaiFashahah: z.enum(VALID_NILAI_SETORAN_VALUES, {
+    message: 'Nilai Fashahah wajib dipilih',
+  }),
+  nilaiKelancaran: z.enum(VALID_NILAI_SETORAN_VALUES, {
+    message: 'Nilai Kelancaran wajib dipilih',
+  }),
+  rincianKesalahan: mistakeCountsSchema,
+  nilai: z.enum(VALID_NILAI_SETORAN_VALUES, {
+    message: 'Nilai setoran tidak valid',
+  }).optional(),
   catatan: z.string().max(500, { message: 'Catatan maksimal 500 karakter' }).optional().nullable(),
 });
 
 export type SetoranInput = z.infer<typeof setoranSchema>;
+
+/**
+ * 3b. Skema Validasi Evaluasi Rubu' Tahfizh
+ */
+export const evaluasiRubuSchema = z.object({
+  santriId: z.string().min(1, { message: 'Santri wajib dipilih' }),
+  juz: z.coerce
+    .number()
+    .int({ message: 'Juz harus berupa bilangan bulat' })
+    .min(1, { message: 'Juz minimal 1' })
+    .max(30, { message: 'Juz maksimal 30' }),
+  rubuKe: z.coerce
+    .number()
+    .int({ message: 'Rubu ke- harus berupa bilangan bulat' })
+    .min(1, { message: 'Rubu ke- minimal 1' })
+    .max(4, { message: 'Rubu ke- maksimal 4' }),
+  nilaiTajwid: z.enum(VALID_NILAI_SETORAN_VALUES, {
+    message: 'Nilai Tajwid wajib dipilih',
+  }),
+  nilaiFashahah: z.enum(VALID_NILAI_SETORAN_VALUES, {
+    message: 'Nilai Fashahah wajib dipilih',
+  }),
+  nilaiKelancaran: z.enum(VALID_NILAI_SETORAN_VALUES, {
+    message: 'Nilai Kelancaran wajib dipilih',
+  }),
+  rincianKesalahan: mistakeCountsSchema.optional().default(DEFAULT_MISTAKE_COUNTS),
+  catatan: z.string().max(500, { message: 'Catatan maksimal 500 karakter' }).optional().nullable(),
+  tanggal: z.union([z.date(), z.string()]).optional().nullable(),
+});
+
+export type EvaluasiRubuInput = z.input<typeof evaluasiRubuSchema>;
 
 /**
  * 4. Skema Validasi Nilai Mapel Akademik

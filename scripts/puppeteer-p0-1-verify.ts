@@ -576,6 +576,12 @@ export async function runIsolatedE2EVerification() {
       fail(`Rentang multi-halaman salah. Diharapkan 422–423, didapat ${halMulaiMulti}–${halSelesaiMulti}`);
     }
 
+    // Pilih kualitas dimensi (Tajwid, Fashahah, Kelancaran)
+    await page.select('[data-testid="select-nilai-tajwid"]', "MUMTAZ");
+    await page.select('[data-testid="select-nilai-fashahah"]', "MUMTAZ");
+    await page.select('[data-testid="select-nilai-kelancaran"]', "MUMTAZ");
+    await new Promise((r) => setTimeout(r, 200));
+
     // Klik tombol Simpan Setoran Santri yang sesungguhnya
     const saveBtn = await page.waitForSelector('[data-testid="btn-simpan-setoran"]');
     if (!saveBtn) fail("Tombol Simpan Setoran Santri tidak ditemukan");
@@ -636,6 +642,11 @@ export async function runIsolatedE2EVerification() {
     await btnPlusHalf.click();
     await new Promise((r) => setTimeout(r, 300));
 
+    await page.select('[data-testid="select-nilai-tajwid"]', "MUMTAZ");
+    await page.select('[data-testid="select-nilai-fashahah"]', "MUMTAZ");
+    await page.select('[data-testid="select-nilai-kelancaran"]', "MUMTAZ");
+    await new Promise((r) => setTimeout(r, 200));
+
     const saveBtnHalf1 = await page.waitForSelector('[data-testid="btn-simpan-setoran"]');
     await saveBtnHalf1?.click();
     await page.waitForSelector('[data-testid="setoran-success"]', { timeout: 10000 });
@@ -659,6 +670,11 @@ export async function runIsolatedE2EVerification() {
     const btnPlusHalf2 = await page.waitForSelector('[data-testid="btn-quick-add-0.5"]');
     await btnPlusHalf2?.click();
     await new Promise((r) => setTimeout(r, 300));
+
+    await page.select('[data-testid="select-nilai-tajwid"]', "MUMTAZ");
+    await page.select('[data-testid="select-nilai-fashahah"]', "MUMTAZ");
+    await page.select('[data-testid="select-nilai-kelancaran"]', "MUMTAZ");
+    await new Promise((r) => setTimeout(r, 200));
 
     const saveBtnHalf2 = await page.waitForSelector('[data-testid="btn-simpan-setoran"]');
     await saveBtnHalf2?.click();
@@ -692,6 +708,11 @@ export async function runIsolatedE2EVerification() {
     const curJml = await page.$eval('[data-testid="input-jumlah-halaman"]', (el) => (el as HTMLInputElement).value);
     const curSelesai = await page.$eval('[data-testid="input-halaman-selesai"]', (el) => (el as HTMLInputElement).value);
     console.log(`   Form disiapkan untuk uji kapasitas: Mulai ${curMulai}, Jml ${curJml}, Selesai ${curSelesai}`);
+
+    await page.select('[data-testid="select-nilai-tajwid"]', "MUMTAZ");
+    await page.select('[data-testid="select-nilai-fashahah"]', "MUMTAZ");
+    await page.select('[data-testid="select-nilai-kelancaran"]', "MUMTAZ");
+    await new Promise((r) => setTimeout(r, 200));
 
     const saveBtnHalf3 = await page.waitForSelector('[data-testid="btn-simpan-setoran"]');
     await saveBtnHalf3?.click();
