@@ -57,18 +57,18 @@
    - `DARURAT`: Emergency medical situation requiring urgent intervention.
    *Legacy status values (`SEMBUH`, `RAWAT_PONDOK`, `DIRUJUK_PUSKESMAS`, `PULANG`) are documented strictly as transitional compatibility bridges.*
 3. **INV-HLT-03 (Granular Health Operations)**:
-   The architecture strictly distinguishes:
-   - `Health Read Detail`: Reading individual patient clinical notes (Mudir, MK, ADM, assigned Petugas Kesehatan; Wali for own child, Santri for self).
-   - `Health Aggregate Visibility`: Reading statistical counts and triage summaries.
-   - `Health Create`: Filing an intake complaint (Mudir, MK, ADM, assigned Petugas Kesehatan).
-   - `Health Status Update`: Updating clinical status (`DIPANTAU` $\to$ `PULIH` / `DIRUJUK` / `DARURAT`), restricted to Mudir, MK, and assigned Petugas Kesehatan (ADM strictly denied).
-   - `Health Referral`: Issuing official external hospital referral letters.
+   The architecture strictly distinguishes 5 granular capabilities:
+   - `health.case.read_aggregate`: Reading statistical counts and triage summaries (Mudir, MK, Poskestren, Pembina Asrama, Wali for own child).
+   - `health.case.read_detail`: Reading individual patient clinical notes (Mudir, MK, Poskestren, Pembina Asrama for assigned kamar).
+   - `health.case.create`: Filing an intake complaint (Mudir, MK, Poskestren, Pembina Asrama).
+   - `health.case.update_status`: Updating clinical status (`DIPANTAU` $\to$ `PULIH` / `DIRUJUK` / `DARURAT`), restricted to Mudir, MK, and Poskestren (Admin TU and generic OSDA strictly denied).
+   - `health.case.referral`: Issuing official external hospital referral letters (Mudir, Poskestren).
 4. **INV-HLT-04 (Individual & Guardian Health Read Authority - Multi-Child)**:
    - Wali Santri (`WS`) may read health records strictly for their enrolled child or children (`Scope: OWN_CHILD`), relationally resolved across all verified children.
    - Santri (`ST`) may read health records strictly for themselves (`Scope: SELF`).
    - Other roles (MT, PH, GA, YAY, generic OSDA) are denied health read access fail-closed.
 5. **INV-HLT-05 (Generic OSDA Denied Health Access)**:
-   A user holding the generic role `OSDA` has ZERO health access unless an explicit active assignment links them to `Unit: DIVISI_KESEHATAN` with capability `health.case.create`.
+   A user holding the generic role `OSDA` has ZERO health access unless an explicit active assignment links them to `Unit: DIVISI_KESEHATAN` with capability `health.case.create` or `health.case.read_aggregate`.
 
 ---
 

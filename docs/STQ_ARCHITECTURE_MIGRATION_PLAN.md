@@ -78,6 +78,13 @@ enum AccountType {
   PERSONAL
   UNIT
 }
+
+enum GenderComplex {
+  PUTRA
+  PUTRI
+  CAMPUR
+  TIDAK_TERIKAT
+}
 ```
 
 *By using native database enums, PostgreSQL strictly rejects invalid pseudo-scopes (such as concatenated domain names or arbitrary strings) at the relational engine layer.*
@@ -99,7 +106,7 @@ enum AccountType {
     parentId      String?               @map("parent_id")
     parent        OrgUnit?              @relation("OrgUnitHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
     children      OrgUnit[]             @relation("OrgUnitHierarchy")
-    genderComplex String                @default("CAMPUR") @map("gender_complex")
+    genderComplex GenderComplex         @default(CAMPUR) @map("gender_complex")
     isActive      Boolean               @default(true) @map("is_active")
     assignments   Assignment[]
     scopedIn      AssignmentScopeUnit[]
@@ -184,6 +191,36 @@ enum AccountType {
 
     @@unique([assignmentId, unitId])
     @@map("assignment_scope_units")
+  }
+
+  model CanonicalAuditLog {
+    id                       String    @id @default(cuid())
+    technicalAccountId       String    @map("technical_account_id")
+    technicalAccountUsername String    @map("technical_account_username")
+    humanExecutorId          String?   @map("human_executor_id")
+    humanExecutorName        String?   @map("human_executor_name")
+    action                   String
+    entity                   String
+    entityId                 String?   @map("entity_id")
+    capabilityCode           String    @map("capability_code")
+    assignmentId             String?   @map("assignment_id")
+    positionCode             String    @map("position_code")
+    scopeType                ScopeType @map("scope_type")
+    unitId                   String    @map("unit_id")
+    beforeState              Json?     @map("before_state")
+    afterState               Json?     @map("after_state")
+    resourceContext          Json?     @map("resource_context")
+    reason                   String?
+    clientRequestId          String?   @map("client_request_id")
+    ipAddress                String?   @map("ip_address")
+    userAgent                String?   @map("user_agent")
+    createdAt                DateTime  @default(now()) @map("created_at")
+
+    @@index([technicalAccountId])
+    @@index([humanExecutorId])
+    @@index([action])
+    @@index([createdAt])
+    @@map("canonical_audit_logs")
   }
   ```
 - **Risk Level**: **LOW / CONTROLLED**.

@@ -163,7 +163,7 @@ An assignment is valid if and only if:
 Expired assignments cease conferring authority immediately upon passing `validUntil`.
 
 ### Rule 3: Capability Precedence Over Scope & No Pseudo-Scopes
-- **Capability is evaluated before scope**: Holding `GLOBAL` scope on one capability (e.g. `health.case.read + GLOBAL`) confers zero authority over unrelated capabilities (e.g. `tahfizh.reward.issue`). `GLOBAL` denotes institutional scope for the granted capability only.
+- **Capability is evaluated before scope**: Holding `GLOBAL` scope on one capability (e.g. `health.case.read_aggregate + GLOBAL`) confers zero authority over unrelated capabilities (e.g. `tahfizh.reward.issue`). `GLOBAL` denotes institutional scope for the granted capability only.
 - **No Pseudo-Scopes**: The architecture strictly forbids arbitrary concatenated string pseudo-scopes (such as appending domain or halaqoh names to scope types).
   - To express domain-wide supervision for Kabid Tahfizh:
     `scopeType = "DOMAIN"`, evaluated in unit `Unit: TAHFIZH` (domain: `TAHFIZH`).
@@ -194,4 +194,4 @@ Expired assignments cease conferring authority immediately upon passing `validUn
 | `User.isPetugasPresensiPutri: Boolean` | Column proliferation; creates arbitrary user-level exceptions. | Position: `PETUGAS_PRESENSI` assigned to User in Unit: `ASRAMA_PUTRI`. |
 | `role === 'MT' ? ALL : BINAAN` | Conflates ordinary musyrif with supervisory management. | Ordinary MT holds `Position: MUSYRIF_TAHFIZH` (`Scope: HALAQOH`); Kabid holds `Position: KABID_TAHFIZH` (`Scope: DOMAIN`). |
 | `Non-relational string arrays` | Free-form strings without FK integrity; risk of orphaned IDs. | Relational `AssignmentScopeUnit` table with strict foreign key constraints. |
-| `PERMISSION_MATRIX[module][role]` (Coarse CRUD) | Cannot express "can create health record but cannot update clinical status". | Granular capabilities: `health.case.create` vs `health.status.update`. |
+| `PERMISSION_MATRIX[module][role]` (Coarse CRUD) | Cannot express "can create health record but cannot update clinical status". | Granular capabilities: `health.case.create` vs `health.case.update_status`. |

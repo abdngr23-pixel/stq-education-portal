@@ -89,7 +89,7 @@ Currently, navigation menus are derived from `ROLE_NAV_MAP: Record<Role, AppNavI
      if (session.isKepalaBidangTahfidz || hasCapabilitySync(session, "tahfizh.recap.read")) {
        baseTabs.add("tahfizh");
      }
-     if (hasCapabilitySync(session, "health.case.read")) {
+     if (hasCapabilitySync(session, "health.case.read_aggregate") || hasCapabilitySync(session, "health.case.read_detail")) {
        baseTabs.add("kesehatan");
      }
      if (hasCapabilitySync(session, "keasramaan.permission.create")) {

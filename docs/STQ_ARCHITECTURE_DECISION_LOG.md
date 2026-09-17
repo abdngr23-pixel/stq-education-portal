@@ -110,3 +110,19 @@
   Schema changes must be additive (Phase A, classified as LOW / CONTROLLED operational risk). Legacy paths are bridged via Compatibility Adapters (Phase B), verified via shadow execution (Phase C), switched on writes with a feature-flag rollback path (Phase D), and only cleaned up after full operational stability (Phase E).
 - **Consequences**:
   - Positive: Controlled risk, verified data parity before authoritative switch, and instant zero-deployment feature-flag fallback.
+
+---
+
+## ADR-009: Canonical Hierarchy of Authority & Health Granularity Standard
+
+- **Status**: **ACCEPTED**
+- **Date**: 2026-09-17
+- **Context**:
+  Multiple documentation artifacts and type definitions must maintain absolute consistency without specification drift. Furthermore, health capabilities previously conflated aggregate dashboard visibility with detailed clinical record access, and status updates used non-standard naming.
+- **Decision**:
+  1. Establish a 3-level Hierarchy of Authority: Level 1 (TypeScript contracts in `types/architecture-lock.ts`) is the executable source of truth; Level 2 (Master specification in `docs/STQ_ARCHITECTURE_LOCK.md`) is authoritative for system boundaries; Level 3 (Domain docs) provides specialized deep-dives.
+  2. Health capabilities are standardized to 5 granular capabilities strictly following `<domain>.<entity>.<action>`: `health.case.read_aggregate`, `health.case.read_detail`, `health.case.create`, `health.case.update_status`, and `health.case.referral`.
+  3. Candidate Prisma models must mirror runtime contracts with 100% parity, utilizing native database enums rather than bare strings.
+- **Consequences**:
+  - Positive: Guarantees zero divergence across all documents, schemas, and contract tests. Protects sensitive medical records while enabling aggregate operational dashboards.
+

@@ -43,7 +43,7 @@ graph TD
 
 > [!IMPORTANT]
 > **Capability Precedence Rule**:
-> Capability evaluation strictly precedes scope evaluation. A subject holding `GLOBAL` scope on `health.case.read` gains institutional read access to health records, but zero authority over `tahfizh.reward.issue` or `keasramaan.permission.approve`.
+> Capability evaluation strictly precedes scope evaluation. A subject holding `GLOBAL` scope on `health.case.read_aggregate` gains institutional aggregate read access to health records, but zero authority over `tahfizh.reward.issue` or `keasramaan.permission.approve`.
 
 ---
 

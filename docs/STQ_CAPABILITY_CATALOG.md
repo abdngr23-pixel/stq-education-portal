@@ -33,9 +33,11 @@ The following capabilities represent verified, independently audited production 
 | `tahfizh.recap.read` | Membaca rekapitulasi capaian hafalan | `MUDIR`, `KABID_TAHFIZH`, `ADMIN` (Global); `MUSYRIF_TAHFIZH` (Own) | `GLOBAL` / `DOMAIN` / `HALAQOH` | Ordinary MT restricted to own halaqoh recap |
 | `tahfizh.reward.issue` | Menerbitkan reward resmi Tasmi'/Sima'an | `MUDIR`, `KABID_TAHFIZH` | `DOMAIN` / `GLOBAL` | Ordinary MT, ADM, MK strictly denied |
 | `tahfizh.policy.manage` | Mengubah ambang nilai, bintang, dan kebijakan reward | `MUDIR` (`KS`) | `GLOBAL` | Kabid Tahfizh and ordinary MT strictly denied |
-| `health.case.read` | Membaca rekapitulasi keluhan sakit santri Poskestren | Global: `MUDIR`, `KEPALA_KEASRAMAAN`, `ADMIN`, `PETUGAS_KESEHATAN`. Scoped: `WALI_SANTRI` (own child), `SANTRI` (self) | `GLOBAL` / `OWN_CHILD` / `SELF` | Generic OSDA denied; honest data states |
-| `health.case.create` | Menginput keluhan sakit santri di Poskestren | `MUDIR`, `KEPALA_KEASRAMAAN`, `ADMIN`, `PETUGAS_KESEHATAN` | `GLOBAL` / `UNIT` | Generic OSDA denied |
-| `health.status.update` | Memperbarui status penanganan medis santri | `MUDIR`, `KEPALA_KEASRAMAAN`, `PETUGAS_KESEHATAN` | `GLOBAL` / `UNIT` | Admin TU strictly denied (`DENY`); Generic OSDA denied |
+| `health.case.read_aggregate` | Membaca ringkasan agregat dan tren keluhan sakit Poskestren | Global: `MUDIR`, `KEPALA_KEASRAMAAN`, `PETUGAS_KESEHATAN`. Scoped: `PEMBINA_ASRAMA` (assigned kamar), `WALI_SANTRI` (own child) | `GLOBAL` / `UNIT` / `OWN_CHILD` | Non-clinical overview; honest data states |
+| `health.case.read_detail` | Membaca rekam medis klinis detail, keluhan, dan diagnosa santri | Restricted: `MUDIR`, `KEPALA_KEASRAMAAN`, `PETUGAS_KESEHATAN`, `PEMBINA_ASRAMA` (assigned kamar) | `GLOBAL` / `UNIT` | Generic OSDA, Guru Akademik strictly denied |
+| `health.case.create` | Menginput kejadian/keluhan awal sakit santri di Poskestren | `MUDIR`, `KEPALA_KEASRAMAAN`, `PETUGAS_KESEHATAN`, `PEMBINA_ASRAMA` | `GLOBAL` / `UNIT` | Generic OSDA denied |
+| `health.case.update_status` | Memperbarui status medis (`DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`) | `MUDIR`, `KEPALA_KEASRAMAAN`, `PETUGAS_KESEHATAN` | `GLOBAL` / `UNIT` | Admin TU strictly denied (`DENY`); Generic OSDA denied |
+| `health.case.referral` | Menerbitkan surat rujukan klinis ke Puskesmas / Rumah Sakit | `MUDIR`, `PETUGAS_KESEHATAN` | `GLOBAL` / `UNIT` | Admin TU and generic OSDA strictly denied |
 
 ### Canonical Keasramaan V2 Health Status Model
 In Keasramaan V2, health statuses are canonically defined as:
@@ -74,7 +76,6 @@ The following capability definitions are architecturally standardized, but the s
 | `keasramaan.star.award` | Mencatat penganugerahan bintang kebaikan | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
 | `keasramaan.kamar.inspect` | Inspeksi kebersihan dan kerapihan kamar | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
 | `keasramaan.usroh.supervise` | Pengawasan tugas harian usroh kebersihan | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
-| `health.referral.create` | Menerbitkan surat rujukan resmi Puskesmas/RS | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
 
 ### 3.3. Akademik & Kurikulum (`academic.*`)
 | Capability Code | Description | Authorized Positions | Status |

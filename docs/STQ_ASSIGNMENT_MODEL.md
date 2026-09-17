@@ -95,7 +95,7 @@ model PositionCapability {
   position       Position   @relation(fields: [positionId], references: [id], onDelete: Restrict)
   capabilityCode String     @map("capability_code")
   capability     Capability @relation(fields: [capabilityCode], references: [code], onDelete: Restrict)
-  scopeType      String     @default("UNIT") @map("scope_type") // GLOBAL, DOMAIN, UNIT, HALAQOH, KAMAR
+  scopeType      ScopeType  @default(UNIT) @map("scope_type")
 
   @@unique([positionId, capabilityCode])
   @@map("position_capabilities")
@@ -125,8 +125,8 @@ model Assignment {
   position    Position              @relation(fields: [positionId], references: [id], onDelete: Restrict)
   unitId      String                @map("unit_id")
   unit        OrgUnit               @relation(fields: [unitId], references: [id], onDelete: Restrict)
-  scopeType   String                @default("UNIT") @map("scope_type")
-  status      String                @default("ACTIVE") // DRAFT, ACTIVE, SUSPENDED, EXPIRED, REVOKED
+  scopeType   ScopeType             @default(UNIT) @map("scope_type")
+  status      AssignmentStatus      @default(ACTIVE)
   validFrom   DateTime              @default(now()) @map("valid_from")
   validUntil  DateTime?             @map("valid_until")
   notes       String?

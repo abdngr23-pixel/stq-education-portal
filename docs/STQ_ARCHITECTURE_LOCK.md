@@ -30,6 +30,25 @@ IDENTITY  +  ORGANIZATIONAL UNIT  +  POSITION  +  ASSIGNMENT  +  CAPABILITY  +  
                          UI DERIVATION & AUDIT LOGGING
 ```
 
+### 1.1. Hierarchy of Authority & Precedence Rules
+
+To prevent specification drift across code contracts, database models, and documentation, the STQ Architecture Lock defines a strict 3-level Hierarchy of Authority:
+
+1. **Level 1 — Executable Contract Source of Truth**:
+   - Primary File: [`types/architecture-lock.ts`](file:///d:/stq-education-portal-antigravity/stq-education-portal/types/architecture-lock.ts)
+   - Scope: Machine-checked TypeScript interfaces, enums, unions, type aliases, and engine method signatures.
+   - Authority: In any conflict between prose and Level 1 type definitions, **Level 1 is authoritative**.
+
+2. **Level 2 — Master Architecture & Boundary Specification**:
+   - Primary File: [`docs/STQ_ARCHITECTURE_LOCK.md`](file:///d:/stq-education-portal-antigravity/stq-education-portal/docs/STQ_ARCHITECTURE_LOCK.md) (This document)
+   - Scope: Overarching architectural principles, non-negotiable invariants, security boundaries, institutional tree topology, and business rule classification.
+   - Authority: Defines the canonical policy boundary; all subordinate documents must conform strictly to Level 2.
+
+3. **Level 3 — Specialized Domain Deep-Dives**:
+   - Subordinate Files: [`STQ_AUTHORIZATION_MODEL.md`](file:///d:/stq-education-portal-antigravity/stq-education-portal/docs/STQ_AUTHORIZATION_MODEL.md), [`STQ_ASSIGNMENT_MODEL.md`](file:///d:/stq-education-portal-antigravity/stq-education-portal/docs/STQ_ASSIGNMENT_MODEL.md), [`STQ_CAPABILITY_CATALOG.md`](file:///d:/stq-education-portal-antigravity/stq-education-portal/docs/STQ_CAPABILITY_CATALOG.md), [`STQ_SCOPE_MODEL.md`](file:///d:/stq-education-portal-antigravity/stq-education-portal/docs/STQ_SCOPE_MODEL.md), [`STQ_COMPATIBILITY_MAP.md`](file:///d:/stq-education-portal-antigravity/stq-education-portal/docs/STQ_COMPATIBILITY_MAP.md), [`STQ_ARCHITECTURE_MIGRATION_PLAN.md`](file:///d:/stq-education-portal-antigravity/stq-education-portal/docs/STQ_ARCHITECTURE_MIGRATION_PLAN.md), [`STQ_ARCHITECTURE_INVARIANTS.md`](file:///d:/stq-education-portal-antigravity/stq-education-portal/docs/STQ_ARCHITECTURE_INVARIANTS.md), [`STQ_ARCHITECTURE_DECISION_LOG.md`](file:///d:/stq-education-portal-antigravity/stq-education-portal/docs/STQ_ARCHITECTURE_DECISION_LOG.md).
+   - Scope: Topic-specific implementation guidance, candidate database migration schemas, compatibility mapping tables, and ADRs.
+   - Authority: Subordinate to Level 1 and Level 2; must maintain 100% terminological parity.
+
 ---
 
 ## 2. Non-Negotiable Core Principles
@@ -45,7 +64,7 @@ IDENTITY  +  ORGANIZATIONAL UNIT  +  POSITION  +  ASSIGNMENT  +  CAPABILITY  +  
    - UI hiding or disabling buttons is an ergonomics layer only.
    - All mutations and queries are enforced fail-closed at the Server Action / API layer.
 4. **Capability is Evaluated Before Scope**:
-   - Holding a `GLOBAL` scope on a specific capability (e.g. `health.case.read + GLOBAL`) confers zero authority over unrelated capabilities (e.g. `tahfizh.reward.issue`). `GLOBAL` denotes institutional scope for the granted capability only.
+   - Holding a `GLOBAL` scope on a specific capability (e.g. `health.case.read_aggregate + GLOBAL`) confers zero authority over unrelated capabilities (e.g. `tahfizh.reward.issue`). `GLOBAL` denotes institutional scope for the granted capability only.
 5. **Principle of Least Privilege (PoLP) & Domain Enclosure**:
    - Institutional READ authority (e.g., Kabid Tahfizh supervision) does NOT automatically grant cross-unit WRITE authority (e.g., Setoran creation).
    - Setoran creation remains enclosed to the musyrif's own halaqoh binaan.
@@ -168,8 +187,11 @@ STQ Darul Ulum Cendekia (Type: INSTITUTION)
 | **Tahfizh** | Tasmi'/Sima'an Reward | Authorized strictly to Mudir (`KS`) and Kabid Tahfizh (`Position: KABID_TAHFIZH`). Ordinary MT, ADM, MK, PH strictly denied. | `hasCapability(session, 'tahfizh.reward.issue')` |
 | **Tahfizh** | Reward Policy Edit | Authorized solely to Mudir (`KS`). Kabid and ordinary MT denied. | `hasCapability(session, 'tahfizh.policy.manage')` |
 | **Tahfizh** | Supervision Recap | Authorized to Mudir, Kabid Tahfizh, and Admin. Ordinary MT sees only own halaqoh. | `resolveScopes(session, 'tahfizh.recap.read')` |
-| **Kesehatan** | Medical Record Read | Global: Mudir, Musyrif Keasramaan, ADM, and assigned OSDA Petugas Kesehatan. Scoped: Wali (own child relationally), Santri (self). Generic OSDA denied. | `authorize(session, 'health.case.read', context)` |
-| **Kesehatan** | Status Update | Authorized to Mudir, Musyrif Keasramaan, and assigned OSDA Petugas Kesehatan. Admin TU strictly denied (`DENY`). | `authorize(session, 'health.status.update', context)` |
+| **Kesehatan** | Aggregate Health Read | Dashboard counts & health overview. Global: Mudir, Musyrif Keasramaan, Poskestren. Scoped: Pembina Asrama (assigned kamar), Wali (own child relationally). | `authorize(session, 'health.case.read_aggregate', context)` |
+| **Kesehatan** | Clinical Detail Read | Full medical record & diagnosis details. Restricted to Mudir, Musyrif Keasramaan, Poskestren, and Pembina Asrama (assigned kamar). Teachers and generic OSDA denied. | `authorize(session, 'health.case.read_detail', context)` |
+| **Kesehatan** | Intake Case Create | Initial complaint & symptom recording. Authorized to Mudir, Musyrif Keasramaan, Poskestren, Pembina Asrama. Generic OSDA denied. | `authorize(session, 'health.case.create', context)` |
+| **Kesehatan** | Status Update | Updating clinical status (`DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`). Authorized to Mudir, Musyrif Keasramaan, and Poskestren. Admin TU strictly denied (`DENY`); generic OSDA denied. | `authorize(session, 'health.case.update_status', context)` |
+| **Kesehatan** | External Referral | Issuing official clinical referral to Puskesmas / Hospital. Authorized to Mudir and Poskestren. Admin TU and generic OSDA denied. | `authorize(session, 'health.case.referral', context)` |
 | **Kesehatan** | Data Honesty | Zero synthetic "Sehat" fallbacks. Error = "Gagal memuat", Empty = "Belum ada data", Healthy = "Sehat". | Canonical health semantics |
 | **Kesehatan** | V2 Medical Statuses | Canonical V2 statuses: `DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`. Old terms (`RAWAT_PONDOK`, `PULANG`, etc.) retained only as legacy read bridges. | V2 Health Status Model |
 | **Keasramaan**| Mudabbir Identity | Mudabbir ≠ PH, Mudabbir ≠ MT, Mudabbir ≠ generic OSDA. Authority derives strictly from Kamar assignment. | Independent Position `MUDABBIR` |

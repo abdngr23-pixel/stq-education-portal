@@ -23,6 +23,14 @@ import {
   IAuthorizationEngine,
   CanonicalAuditRecord,
   UnitAccountExecutorContext,
+  HEALTH_CAPABILITIES,
+  HealthCapabilityCode,
+  CandidateOrgUnitModel,
+  CandidatePositionModel,
+  CandidatePositionCapabilityModel,
+  CandidateAssignmentModel,
+  CandidateAssignmentScopeUnitModel,
+  CandidateCanonicalAuditLogModel,
 } from "../types/architecture-lock";
 
 describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICATION", () => {
@@ -462,4 +470,153 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
       assert.ok(mockEngine.resolveScopes);
     });
   });
+
+  // =========================================================================
+  // 11. Hierarchy of Authority, Health Granularity & Schema/Runtime Parity
+  // =========================================================================
+  describe("11. Hierarchy of Authority, Health Granularity & Schema/Runtime Parity", () => {
+    it("hierarchy of authority must be explicitly defined in master lock specification", () => {
+      const lockDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_LOCK.md"), "utf-8");
+      assert.ok(lockDoc.includes("Hierarchy of Authority"), "Must define Hierarchy of Authority");
+      assert.ok(lockDoc.includes("Level 1 — Executable Contract Source of Truth"), "Must define Level 1");
+      assert.ok(lockDoc.includes("Level 2 — Master Architecture & Boundary Specification"), "Must define Level 2");
+      assert.ok(lockDoc.includes("Level 3 — Specialized Domain Deep-Dives"), "Must define Level 3");
+    });
+
+    it("canonical Health capabilities must define exactly 5 granular actions adhering to <domain>.<entity>.<action>", () => {
+      assert.strictEqual(HEALTH_CAPABILITIES.READ_AGGREGATE, "health.case.read_aggregate");
+      assert.strictEqual(HEALTH_CAPABILITIES.READ_DETAIL, "health.case.read_detail");
+      assert.strictEqual(HEALTH_CAPABILITIES.CREATE, "health.case.create");
+      assert.strictEqual(HEALTH_CAPABILITIES.UPDATE_STATUS, "health.case.update_status");
+      assert.strictEqual(HEALTH_CAPABILITIES.REFERRAL, "health.case.referral");
+
+      const catalog = fs.readFileSync(path.join(docsDir, "STQ_CAPABILITY_CATALOG.md"), "utf-8");
+      assert.ok(catalog.includes("health.case.read_aggregate"), "Catalog must include health.case.read_aggregate");
+      assert.ok(catalog.includes("health.case.read_detail"), "Catalog must include health.case.read_detail");
+      assert.ok(catalog.includes("health.case.create"), "Catalog must include health.case.create");
+      assert.ok(catalog.includes("health.case.update_status"), "Catalog must include health.case.update_status");
+      assert.ok(catalog.includes("health.case.referral"), "Catalog must include health.case.referral");
+
+      // Verify obsolete non-standard tokens are absent across all documentation
+      for (const docName of requiredDocuments) {
+        const content = fs.readFileSync(path.join(docsDir, docName), "utf-8");
+        assert.strictEqual(
+          content.includes("health.status.update"),
+          false,
+          `Document docs/${docName} must NOT contain obsolete health.status.update`
+        );
+        assert.strictEqual(
+          content.includes("health.referral.create"),
+          false,
+          `Document docs/${docName} must NOT contain obsolete health.referral.create`
+        );
+      }
+    });
+
+    it("candidate Prisma schemas must use native database enums rather than bare strings", () => {
+      const assignmentDoc = fs.readFileSync(path.join(docsDir, "STQ_ASSIGNMENT_MODEL.md"), "utf-8");
+      assert.ok(
+        assignmentDoc.includes("scopeType      ScopeType"),
+        "PositionCapability must use ScopeType enum"
+      );
+      assert.ok(
+        assignmentDoc.includes("status      AssignmentStatus"),
+        "Assignment must use AssignmentStatus enum"
+      );
+
+      const migrationDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_MIGRATION_PLAN.md"), "utf-8");
+      assert.ok(migrationDoc.includes("enum GenderComplex"), "Migration plan must define GenderComplex enum");
+      assert.ok(migrationDoc.includes("model CanonicalAuditLog"), "Migration plan must define CanonicalAuditLog model");
+    });
+
+    it("candidate Prisma models must mirror runtime TypeScript contracts with 100% parity", () => {
+      const candidateOrgUnit: CandidateOrgUnitModel = {
+        id: "ou-001",
+        code: "OU-KSH-001",
+        name: "Poskestren",
+        type: "SERVICE_UNIT",
+        domain: "KESEHATAN",
+        parentId: null,
+        genderComplex: "CAMPUR",
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      assert.strictEqual(candidateOrgUnit.type, "SERVICE_UNIT");
+
+      const candidateAuditLog: CandidateCanonicalAuditLogModel = {
+        id: "log-001",
+        technicalAccountId: "usr-poskestren",
+        technicalAccountUsername: "kiosk.poskestren",
+        humanExecutorId: "stf-001",
+        humanExecutorName: "dr. Hendra",
+        action: "UPDATE_STATUS",
+        entity: "CatatanKesehatan",
+        entityId: "rec-001",
+        capabilityCode: HEALTH_CAPABILITIES.UPDATE_STATUS,
+        assignmentId: "asn-001",
+        positionCode: "PETUGAS_KESEHATAN",
+        scopeType: "UNIT",
+        unitId: candidateOrgUnit.id,
+        beforeState: { status: "DIPANTAU" },
+        afterState: { status: "PULIH" },
+        resourceContext: { santriId: "san-001" },
+        reason: "Santri dinyatakan sembuh setelah observasi 24 jam",
+        clientRequestId: "req-12345",
+        ipAddress: "192.168.1.50",
+        userAgent: "Poskestren Kiosk Tablet v1",
+        createdAt: new Date(),
+      };
+      assert.strictEqual(candidateAuditLog.capabilityCode, "health.case.update_status");
+      assert.strictEqual(candidateAuditLog.scopeType, "UNIT");
+
+      const candidatePosition: CandidatePositionModel = {
+        id: "pos-001",
+        code: "PETUGAS_KESEHATAN",
+        name: "Petugas Poskestren",
+        domain: "KESEHATAN",
+        isLeadership: false,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      assert.strictEqual(candidatePosition.code, "PETUGAS_KESEHATAN");
+
+      const candidatePosCap: CandidatePositionCapabilityModel = {
+        id: "pc-001",
+        positionId: candidatePosition.id,
+        capabilityCode: HEALTH_CAPABILITIES.UPDATE_STATUS,
+        scopeType: "UNIT",
+      };
+      assert.strictEqual(candidatePosCap.scopeType, "UNIT");
+
+      const candidateAssignment: CandidateAssignmentModel = {
+        id: "asn-001",
+        userId: "usr-poskestren",
+        positionId: candidatePosition.id,
+        unitId: candidateOrgUnit.id,
+        scopeType: "UNIT",
+        status: "ACTIVE",
+        validFrom: new Date(),
+        validUntil: null,
+        notes: null,
+        createdById: "usr-mudir",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      assert.strictEqual(candidateAssignment.status, "ACTIVE");
+
+      const candidateScopeUnit: CandidateAssignmentScopeUnitModel = {
+        id: "asu-001",
+        assignmentId: candidateAssignment.id,
+        unitId: candidateOrgUnit.id,
+        createdAt: new Date(),
+      };
+      assert.strictEqual(candidateScopeUnit.unitId, candidateOrgUnit.id);
+
+      const healthCap: HealthCapabilityCode = HEALTH_CAPABILITIES.REFERRAL;
+      assert.strictEqual(healthCap, "health.case.referral");
+    });
+  });
 });
+

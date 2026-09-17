@@ -1,10 +1,16 @@
 /**
  * STQ ARCHITECTURE LOCK — CANONICAL TYPE DEFINITIONS
- * Phase 1 Remediation: Normalized Identity, OrgUnit, Position, Assignment, Capability, and Scope
+ * Phase 1 Final Normalization: Normalized Identity, OrgUnit, Position, Assignment, Capability, Scope, and Health
  *
  * Repository: abdngr23-pixel/stq-education-portal
  * Document Reference: docs/STQ_ARCHITECTURE_LOCK.md
  * Status: PROPOSED — PENDING BUSINESS OWNER / CHATGPT REVIEW
+ *
+ * HIERARCHY OF AUTHORITY & PRECEDENCE RULES:
+ * Level 1: types/architecture-lock.ts (Executable Type & Contract Source of Truth)
+ * Level 2: docs/STQ_ARCHITECTURE_LOCK.md (Master Architecture & Boundary Specification)
+ * Level 3: docs/STQ_*.md (Specialized Domain Specifications)
+ * Any discrepancy across documents must be reconciled to Level 1 and Level 2.
  */
 
 import { UserSession } from "./auth";
@@ -57,6 +63,7 @@ export interface OrgUnit {
   type: OrgUnitType;
   domain: STQDomain;
   parentUnitId?: string | null;
+  parentId?: string | null; // Canonical Prisma schema alias (@map("parent_id"))
   genderComplex: GenderComplex;
   isActive: boolean;
   metadata?: Record<string, unknown> | null;
@@ -300,3 +307,100 @@ export interface CanonicalAuditRecord {
  */
 export type HealthStatusV2 = "DIPANTAU" | "PULIH" | "DIRUJUK" | "DARURAT";
 export type HealthStatusLegacy = "SEMBUH" | "RAWAT_PONDOK" | "DIRUJUK_PUSKESMAS" | "PULANG";
+
+/**
+ * Canonical Health Domain Granular Capabilities
+ * Formally adhering to <domain>.<entity>.<action> nomenclature.
+ */
+export const HEALTH_CAPABILITIES = {
+  READ_AGGREGATE: "health.case.read_aggregate",
+  READ_DETAIL: "health.case.read_detail",
+  CREATE: "health.case.create",
+  UPDATE_STATUS: "health.case.update_status",
+  REFERRAL: "health.case.referral",
+} as const;
+
+export type HealthCapabilityCode =
+  (typeof HEALTH_CAPABILITIES)[keyof typeof HEALTH_CAPABILITIES];
+
+/**
+ * Candidate Prisma Schema Relational Parity Representation
+ * Exact 1:1 structural representation for future Phase A additive schema.
+ */
+export interface CandidateOrgUnitModel {
+  id: string;
+  code: string;
+  name: string;
+  type: OrgUnitType;
+  domain: STQDomain;
+  parentId: string | null;
+  genderComplex: GenderComplex;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CandidatePositionModel {
+  id: string;
+  code: string;
+  name: string;
+  domain: STQDomain;
+  isLeadership: boolean;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CandidatePositionCapabilityModel {
+  id: string;
+  positionId: string;
+  capabilityCode: string;
+  scopeType: ScopeType;
+}
+
+export interface CandidateAssignmentModel {
+  id: string;
+  userId: string;
+  positionId: string;
+  unitId: string;
+  scopeType: ScopeType;
+  status: AssignmentStatus;
+  validFrom: Date;
+  validUntil: Date | null;
+  notes: string | null;
+  createdById: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CandidateAssignmentScopeUnitModel {
+  id: string;
+  assignmentId: string;
+  unitId: string;
+  createdAt: Date;
+}
+
+export interface CandidateCanonicalAuditLogModel {
+  id: string;
+  technicalAccountId: string;
+  technicalAccountUsername: string;
+  humanExecutorId: string | null;
+  humanExecutorName: string | null;
+  action: string;
+  entity: string;
+  entityId: string | null;
+  capabilityCode: string;
+  assignmentId: string | null;
+  positionCode: string;
+  scopeType: ScopeType;
+  unitId: string;
+  beforeState: Record<string, unknown> | null;
+  afterState: Record<string, unknown> | null;
+  resourceContext: Record<string, unknown> | null;
+  reason: string | null;
+  clientRequestId: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: Date;
+}
+
