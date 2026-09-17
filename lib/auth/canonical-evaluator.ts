@@ -772,22 +772,33 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
             });
 
             if (activePlacement && activePlacement.kamar) {
-              const kamarGender = activePlacement.kamar.genderComplex as GenderComplex;
-              const isGenderCompatible =
-                !unitGenderComplex ||
-                !kamarGender ||
-                kamarGender === "CAMPUR" ||
-                kamarGender === "TIDAK_TERIKAT" ||
-                unitGenderComplex === kamarGender;
+              const kamar = activePlacement.kamar;
+              const isAuthoritativeKamar =
+                kamar.type === "KAMAR" &&
+                kamar.domain === "KEASRAMAAN" &&
+                kamar.isActive === true;
 
-              if (isGenderCompatible) {
-                kamarId = activePlacement.kamar.id;
-                orgUnitIds.push(activePlacement.kamar.id);
-                if (!targetSantri.halaqohId && activePlacement.kamar.domain) {
-                  orgDomain = activePlacement.kamar.domain as OrgDomain;
+              if (isAuthoritativeKamar) {
+                const kamarGender = kamar.genderComplex as GenderComplex;
+                const isGenderCompatible =
+                  !unitGenderComplex ||
+                  !kamarGender ||
+                  kamarGender === "CAMPUR" ||
+                  kamarGender === "TIDAK_TERIKAT" ||
+                  unitGenderComplex === kamarGender;
+
+                if (isGenderCompatible) {
+                  kamarId = kamar.id;
+                  orgUnitIds.push(kamar.id);
+                  if (!targetSantri.halaqohId && kamar.domain) {
+                    orgDomain = kamar.domain as OrgDomain;
+                  }
+                } else {
+                  // Room placement violates gender boundary -> fail closed
+                  kamarId = undefined;
                 }
               } else {
-                // Room placement violates gender boundary -> fail closed
+                // Room placement target is not an active KEASRAMAAN KAMAR OrgUnit -> fail closed
                 kamarId = undefined;
               }
             } else {
@@ -820,7 +831,7 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
 
         if (requested.kamarId) {
           const kamarUnit = await prisma.orgUnit.findFirst({
-            where: { id: requested.kamarId, type: "KAMAR" },
+            where: { id: requested.kamarId, type: "KAMAR", domain: "KEASRAMAAN", isActive: true },
           });
           if (kamarUnit) {
             kamarId = kamarUnit.id;

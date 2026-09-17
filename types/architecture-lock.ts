@@ -66,7 +66,7 @@ export type OrgUnitType =
   | "HALAQOH"         // Qur'an Halaqoh (authoritative records backfilled from Halaqoh table)
   | "KAMAR"           // Asrama Rooms (authoritative dormitory structure)
   | "SERVICE_UNIT"    // TKS Units (Dapur, Masjid, Air Minum, Air Sumur, dll.)
-  | "USROH"           // Cleaning groups under OSDA Kebersihan
+  | "USROH"           // Cleaning taskforces under OSDA (cleanliness functionally supervised by Divisi Kebersihan)
   | "ACADEMIC_CLASS"; // Classes (7A, 7B, 8A, dll.)
 
 /**
@@ -487,5 +487,34 @@ export interface CandidateCanonicalAuditLogModel {
   userAgent: string | null;
   createdAt: Date;
 }
+
+/**
+ * Canonical Keasramaan Structure Definitions & Contracts
+ * Derived strictly from locked architecture specifications (STQ_ARCHITECTURE_LOCK.md & STQ_MILESTONE3_1_KEASRAMAAN_STRUCTURE.md)
+ */
+export const KEASRAMAAN_STRUCTURE = {
+  OSDA_CORE_POSITIONS: [
+    "KETUA_OSDA",
+    "SEKRETARIS_OSDA",
+    "BENDAHARA_OSDA",
+    "MULTIMEDIA_OSDA",
+  ] as const,
+  OSDA_DIVISIONS: [
+    "KEAMANAN_KEDISIPLINAN",
+    "PENDIDIKAN_IBADAH",
+    "KEBERSIHAN_KERAPIHAN",
+    "KESEHATAN",
+    "SARANA_PRASARANA",
+  ] as const,
+  TKS_EXPANSION: "Tugas Khusus Santri" as const,
+  TKS_UNITS: [
+    "Dapur dan Gizi",
+    "Masjid",
+    "Kantor Pendidikan",
+    "Kantor Yayasan",
+    "Air Minum",
+    "Air Sumur",
+  ] as const,
+} as const;
 
 

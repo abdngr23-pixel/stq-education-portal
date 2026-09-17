@@ -39,33 +39,37 @@ The canonical institutional hierarchy governing Keasramaan V2 is locked:
                │     Musyrif Keasramaan      │
                │   (Kepala Keasramaan)       │
                └───────┬─────────────┬───────┘
-                       │             │
-        ┌──────────────▼──────┐      │
-        │   Pembina Divisi    │      │
-        │ (Direct supervision)│      │
-        └──────────────┬──────┘      │
-                       │             │
-        ┌──────────────▼──────┐      ▼
-        │      Mudabbir       │   ┌────────────────────────┐
-        │  (Pembina Kamar)    │   │  OSDA & TKS Structure  │
-        └──────────────┬──────┘   └───────────┬────────────┘
-                       │                      │
-        ┌──────────────▼──────┐   ┌───────────▼────────────┐
-        │        Kamar        │   │ Operational Divisions, │
-        │  (Dormitory Rooms)  │   │ Usroh & Service Units  │
-        └──────────────┬──────┘   └───────────┬────────────┘
-                       │                      │
-                       ▼                      ▼
-                ┌───────────────────────────────────┐
-                │          Santri / Usroh           │
-                └───────────────────────────────────┘
+                       │             │ (Parallel supervisory assignment)
+                       │      ┌──────▼──────────────┐
+                       │      │   Pembina Divisi    │ (NOT superior to Mudabbir,
+                       │      │(Asatidz supervision)│  NOT part of OSDA)
+                       │      └─────────────────────┘
+                       │
+        ┌──────────────▼──────────────┐
+        │          Mudabbir           │
+        │      (Pembina Kamar)        │
+        └──────────────┬──────────────┘
+                       │
+        ┌──────────────▼──────────────┐
+        │         OSDA / TKS          │
+        │     (Dormitory Bodies)      │
+        └──────────────┬──────────────┘
+                       │
+        ┌──────────────▼──────────────┐
+        │        Usroh / Santri       │
+        │   (Student Taskforces)      │
+        └─────────────────────────────┘
 ```
 
 ### Key Architectural Invariants
-1. **Structural Equivalence**: `"Kepala Keasramaan"` and `"Musyrif Keasramaan"` designate the exact same structural authority. No duplicate or parallel leadership position exists below Kepala Keasramaan.
-2. **Mudabbir Distinct from Musyrif**: Mudabbir functions as `Pembina Kamar` and is strictly distinct from `Musyrif Keasramaan`.
-3. **Multi-Room Responsibility**: One Mudabbir may be assigned to more than one Kamar through relational multi-unit scoping (`AssignmentScopeUnit`).
-4. **Audit & Takeover Invariant**: Musyrif Keasramaan holds domain-level authority (`ScopeType: DOMAIN`) to audit or intervene when a Mudabbir is negligent or on leave, while retaining the original Mudabbir PIC attribution in forensic audit logs.
+1. **Canonical Hierarchy Order**:
+   `Mudir` → `Musyrif Keasramaan` → `Mudabbir` → `OSDA / TKS` → `Usroh / Santri`.
+2. **Structural Equivalence**: `"Kepala Keasramaan"` and `"Musyrif Keasramaan"` designate the exact same structural authority. No duplicate or parallel leadership position exists below Kepala Keasramaan.
+3. **Mudabbir Distinct from Musyrif**: Mudabbir functions as `Pembina Kamar` and is strictly distinct from `Musyrif Keasramaan`.
+4. **Pembina Divisi Placement**: Directly under `Musyrif Keasramaan` as a parallel supervisory assignment; **NOT** superior to `Mudabbir`, and **NOT** a member of `OSDA`.
+5. **Usroh Under OSDA**: Usroh is positioned structurally under **OSDA** (`type: USROH`), **NOT** structurally under Divisi Kebersihan. Divisi Kebersihan & Kerapihan supervises cleanliness performed by Usroh as a functional responsibility.
+6. **Multi-Room Responsibility**: One Mudabbir may be assigned to more than one Kamar through relational multi-unit scoping (`AssignmentScopeUnit`).
+7. **Audit & Takeover Invariant**: Musyrif Keasramaan holds domain-level authority (`ScopeType: DOMAIN`) to audit or intervene when a Mudabbir is negligent or on leave, while retaining the original Mudabbir PIC attribution in forensic audit logs.
 
 ---
 
@@ -83,20 +87,22 @@ OSDA is structured under `OrgDomain: KEASRAMAAN` and `OrgUnitType: ORGANIZATION`
 Exactly five functional divisions:
 1. **Divisi Keamanan & Kedisiplinan**: Discipline enforcement, punctuality, and movement oversight.
 2. **Divisi Pendidikan & Ibadah**: Daily prayers, congregational attendance, and study hours.
-3. **Divisi Kebersihan & Kerapihan**: Cleanliness monitoring and direct supervision of **Usroh**.
+3. **Divisi Kebersihan & Kerapihan**: Cleanliness monitoring and functional supervision of cleanliness performed by Usroh.
 4. **Divisi Kesehatan**: Basic healthcare assistance, Poskestren UKS desk operator.
 5. **Divisi Sarana & Prasarana (Sarpras)**: Physical inventory, dorm maintenance, and equipment checks.
 
 ### 3.3. Usroh (`OrgUnitType: USROH`)
-- Positioned structurally under **Divisi Kebersihan & Kerapihan**.
+- Positioned structurally under **OSDA** (`type: USROH`).
+- **NOT** structurally under Divisi Kebersihan & Kerapihan.
 - Composed of small student taskforces executing daily operational cleaning and maintenance rotations.
-- Cleanliness is supervised by Divisi Kebersihan; Ketua and Sekretaris OSDA participate in general institutional supervision.
+- Divisi Kebersihan & Kerapihan supervises cleanliness performed by Usroh; Ketua and Sekretaris OSDA participate in general institutional supervision.
 
 ---
 
 ## 4. Pembina Divisi Placement
 
-- **Direct Subordination**: Pembina Divisi reports directly to **Musyrif Keasramaan**.
+- **Direct Subordination**: Pembina Divisi reports directly to **Musyrif Keasramaan** as a parallel supervisory assignment.
+- **Not Superior to Mudabbir**: Pembina Divisi does not hold authority over Mudabbir in the room management hierarchy.
 - **Non-Membership Invariant**: Pembina Divisi is **NOT** a member of OSDA. OSDA is composed of students; Pembina Divisi is staff/asatidz supervision.
 - **Multi-Division Scoping**: A single Pembina Divisi may supervise one or multiple divisions (bound relationally via `AssignmentScopeUnit`).
 - **Multi-Pembina Allowed**: One division may have more than one Pembina assigned.
@@ -106,7 +112,7 @@ Exactly five functional divisions:
 
 ## 5. TKS Definition & Exact Six Units
 
-- **Exact Definition**: **TUGAS KHUSUS SANTRI** (Strictly forbidden: "Tenaga Kebersihan & Servis").
+- **Exact Definition**: **TUGAS KHUSUS SANTRI** (santri special duty operational service units).
 - **No Central Ketua**: There is **NO** central `Ketua TKS`. Each unit operates independently under assigned coordinators or operators.
 - **Exact Six Units**:
   1. **Unit Dapur dan Gizi** (`OrgUnitType: SERVICE_UNIT`): Cooking, nutrition, food distribution. Allows `KETUA_UNIT` and `ANGGOTA_UNIT`.

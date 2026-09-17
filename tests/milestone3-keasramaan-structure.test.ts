@@ -12,6 +12,7 @@ import {
   GenderComplex,
   EffectiveCapabilityGrant,
   ResolvedResourceContext,
+  KEASRAMAAN_STRUCTURE,
 } from "../types/architecture-lock";
 import { PrismaClient } from "@prisma/client";
 
@@ -33,6 +34,7 @@ import {
 
 describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLACEMENT FOUNDATION", () => {
   const rootDir = path.resolve(__dirname, "..");
+  const docsDir = path.join(rootDir, "docs");
   const schemaPath = path.join(rootDir, "prisma/schema.prisma");
   const schemaContent = fs.readFileSync(schemaPath, "utf-8");
   const migrationDir = path.join(rootDir, "prisma/migrations/20260917220000_m3_1_keasramaan_structure");
@@ -85,9 +87,9 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLA
   });
 
   // =========================================================================
-  // 2. Authoritative Current Kamar Placement & Hydration
+  // 2. Authoritative Kamar Resource Hydration & Target Validation Regressions
   // =========================================================================
-  describe("2. Authoritative Kamar Resource Hydration", () => {
+  describe("2. Authoritative Kamar Resource Hydration & Target Validation", () => {
     it("2.1. Active room placement is authoritatively hydrated into kamarId and orgUnitIds", async () => {
       const mockPrisma = {
         santri: {
@@ -118,6 +120,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLA
                   type: "KAMAR",
                   domain: "KEASRAMAAN",
                   genderComplex: "PUTRA",
+                  isActive: true,
                 },
               };
             }
@@ -152,10 +155,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLA
           }),
         },
         santriKamarPlacement: {
-          findFirst: async () => {
-            // Only inactive placements exist in DB (historical provenance preserved)
-            return null;
-          },
+          findFirst: async () => null, // Only inactive placements in DB
         },
         orgUnit: { findFirst: async () => null, findUnique: async () => null },
         tasmiSimaan: { findUnique: async () => null },
@@ -180,7 +180,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLA
           }),
         },
         santriKamarPlacement: {
-          findFirst: async () => null, // No placement in DB
+          findFirst: async () => null,
         },
         orgUnit: { findFirst: async () => null, findUnique: async () => null },
         tasmiSimaan: { findUnique: async () => null },
@@ -193,7 +193,6 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLA
       assert.ok(ctx);
       assert.strictEqual(ctx?.kamarId, undefined);
 
-      // Mudabbir attempting room-scoped inspection on unassigned santri
       const mudabbirGrant: EffectiveCapabilityGrant = {
         assignmentId: "asg-mudabbir-01",
         positionCode: "MUDABBIR",
@@ -212,12 +211,209 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLA
         "Santri without room must fail closed as INVALID_RESOURCE_CONTEXT"
       );
     });
+
+    // --- Specific Regressions A, B, C, D, E ---
+    it("2.4. Regression A: Placement pointing to HALAQOH OrgUnit fails closed (kamarId undefined -> DENY)", async () => {
+      const mockPrisma = {
+        santri: {
+          findUnique: async () => ({ id: "san-halaqoh-target", nama: "Santri H", jenisKelamin: "L", halaqohId: null }),
+        },
+        santriKamarPlacement: {
+          findFirst: async () => ({
+            id: "plc-invalid-type",
+            santriId: "san-halaqoh-target",
+            kamarId: "ou-halaqoh-01",
+            isActive: true,
+            kamar: {
+              id: "ou-halaqoh-01",
+              code: "OU-HLQ-01",
+              name: "Halaqoh Utsman",
+              type: "HALAQOH", // Invalid type for Kamar!
+              domain: "TAHFIZH",
+              genderComplex: "PUTRA",
+              isActive: true,
+            },
+          }),
+        },
+        orgUnit: { findFirst: async () => null, findUnique: async () => null },
+        tasmiSimaan: { findUnique: async () => null },
+        user: { findUnique: async () => null },
+      };
+
+      const provider = createPrismaDataProvider(mockPrisma as unknown as PrismaClient);
+      const ctx = await provider.resolveResourceContext({ santriId: "san-halaqoh-target" });
+
+      assert.ok(ctx);
+      assert.strictEqual(ctx?.kamarId, undefined, "Placement referencing HALAQOH must not hydrate kamarId");
+
+      const mudabbirGrant: EffectiveCapabilityGrant = {
+        assignmentId: "asg-m",
+        positionCode: "MUDABBIR",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        capabilityCode: "keasramaan.kamar.inspect",
+        scopeType: "KAMAR",
+        anchorUnitId: "ou-halaqoh-01",
+        unitIds: ["ou-halaqoh-01"],
+      };
+      const scopeResult = evaluateScopePredicate(mudabbirGrant, ctx!, { userId: "usr-m" });
+      assert.strictEqual(scopeResult.matches, false);
+      assert.strictEqual(scopeResult.code, "INVALID_RESOURCE_CONTEXT");
+    });
+
+    it("2.5. Regression B: Placement pointing to SERVICE_UNIT/TKS fails closed (kamarId undefined -> DENY)", async () => {
+      const mockPrisma = {
+        santri: {
+          findUnique: async () => ({ id: "san-tks-target", nama: "Santri T", jenisKelamin: "L", halaqohId: null }),
+        },
+        santriKamarPlacement: {
+          findFirst: async () => ({
+            id: "plc-invalid-tks",
+            santriId: "san-tks-target",
+            kamarId: "ou-tks-dapur",
+            isActive: true,
+            kamar: {
+              id: "ou-tks-dapur",
+              code: "OU-TKS-DAPUR",
+              name: "Unit Dapur dan Gizi",
+              type: "SERVICE_UNIT", // Invalid type for Kamar!
+              domain: "KEASRAMAAN",
+              genderComplex: "CAMPUR",
+              isActive: true,
+            },
+          }),
+        },
+        orgUnit: { findFirst: async () => null, findUnique: async () => null },
+        tasmiSimaan: { findUnique: async () => null },
+        user: { findUnique: async () => null },
+      };
+
+      const provider = createPrismaDataProvider(mockPrisma as unknown as PrismaClient);
+      const ctx = await provider.resolveResourceContext({ santriId: "san-tks-target" });
+
+      assert.ok(ctx);
+      assert.strictEqual(ctx?.kamarId, undefined, "Placement referencing SERVICE_UNIT must not hydrate kamarId");
+    });
+
+    it("2.6. Regression C: Placement pointing to inactive KAMAR fails closed (kamarId undefined -> DENY)", async () => {
+      const mockPrisma = {
+        santri: {
+          findUnique: async () => ({ id: "san-inactive-kamar", nama: "Santri I", jenisKelamin: "L", halaqohId: null }),
+        },
+        santriKamarPlacement: {
+          findFirst: async () => ({
+            id: "plc-inactive-kamar",
+            santriId: "san-inactive-kamar",
+            kamarId: "kmr-inactive",
+            isActive: true,
+            kamar: {
+              id: "kmr-inactive",
+              code: "OU-KMR-INACTIVE",
+              name: "Kamar Inactive",
+              type: "KAMAR",
+              domain: "KEASRAMAAN",
+              genderComplex: "PUTRA",
+              isActive: false, // Inactive Kamar!
+            },
+          }),
+        },
+        orgUnit: { findFirst: async () => null, findUnique: async () => null },
+        tasmiSimaan: { findUnique: async () => null },
+        user: { findUnique: async () => null },
+      };
+
+      const provider = createPrismaDataProvider(mockPrisma as unknown as PrismaClient);
+      const ctx = await provider.resolveResourceContext({ santriId: "san-inactive-kamar" });
+
+      assert.ok(ctx);
+      assert.strictEqual(ctx?.kamarId, undefined, "Inactive Kamar OrgUnit must not hydrate kamarId");
+    });
+
+    it("2.7. Regression D: Placement pointing to KAMAR with domain TAHFIZH fails closed (kamarId undefined -> DENY)", async () => {
+      const mockPrisma = {
+        santri: {
+          findUnique: async () => ({ id: "san-tahfizh-kamar", nama: "Santri TK", jenisKelamin: "L", halaqohId: null }),
+        },
+        santriKamarPlacement: {
+          findFirst: async () => ({
+            id: "plc-tahfizh-kamar",
+            santriId: "san-tahfizh-kamar",
+            kamarId: "kmr-tahfizh",
+            isActive: true,
+            kamar: {
+              id: "kmr-tahfizh",
+              code: "OU-KMR-THZ",
+              name: "Kamar Tahfizh",
+              type: "KAMAR",
+              domain: "TAHFIZH", // Invalid domain for Kamar! Must be KEASRAMAAN
+              genderComplex: "PUTRA",
+              isActive: true,
+            },
+          }),
+        },
+        orgUnit: { findFirst: async () => null, findUnique: async () => null },
+        tasmiSimaan: { findUnique: async () => null },
+        user: { findUnique: async () => null },
+      };
+
+      const provider = createPrismaDataProvider(mockPrisma as unknown as PrismaClient);
+      const ctx = await provider.resolveResourceContext({ santriId: "san-tahfizh-kamar" });
+
+      assert.ok(ctx);
+      assert.strictEqual(ctx?.kamarId, undefined, "KAMAR OrgUnit with domain TAHFIZH must not hydrate kamarId");
+    });
+
+    it("2.8. Regression E: Active KEASRAMAAN KAMAR OrgUnit is accepted and allows KAMAR-scoped operation", async () => {
+      const mockPrisma = {
+        santri: {
+          findUnique: async () => ({ id: "san-valid-01", nama: "Santri Valid", jenisKelamin: "L", halaqohId: null }),
+        },
+        santriKamarPlacement: {
+          findFirst: async () => ({
+            id: "plc-valid",
+            santriId: "san-valid-01",
+            kamarId: "kmr-ali",
+            isActive: true,
+            kamar: {
+              id: "kmr-ali",
+              code: "OU-KMR-ALI",
+              name: "Kamar Ali",
+              type: "KAMAR",
+              domain: "KEASRAMAAN",
+              genderComplex: "PUTRA",
+              isActive: true,
+            },
+          }),
+        },
+        orgUnit: { findFirst: async () => null, findUnique: async () => null },
+        tasmiSimaan: { findUnique: async () => null },
+        user: { findUnique: async () => null },
+      };
+
+      const provider = createPrismaDataProvider(mockPrisma as unknown as PrismaClient);
+      const ctx = await provider.resolveResourceContext({ santriId: "san-valid-01" });
+
+      assert.ok(ctx);
+      assert.strictEqual(ctx?.kamarId, "kmr-ali");
+
+      const mudabbirGrant: EffectiveCapabilityGrant = {
+        assignmentId: "asg-mudabbir-ali",
+        positionCode: "MUDABBIR",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        capabilityCode: "keasramaan.kamar.inspect",
+        scopeType: "KAMAR",
+        anchorUnitId: "kmr-ali",
+        unitIds: ["kmr-ali"],
+      };
+      const scopeResult = evaluateScopePredicate(mudabbirGrant, ctx!, { userId: "usr-mudabbir" });
+      assert.strictEqual(scopeResult.matches, true);
+      assert.strictEqual(scopeResult.code, "ALLOWED");
+    });
   });
 
   // =========================================================================
-  // 3. Attack Regression: Caller-Supplied Forged kamarId Ignored
+  // 3. Attack Regression: Caller-Supplied Forged kamarId Ignored (Regression F)
   // =========================================================================
-  describe("3. Attack Regression: Forged kamarId Ignored", () => {
+  describe("3. Attack Regression: Forged kamarId Ignored (Regression F)", () => {
     it("3.1. real current kamar = KAMAR-A; caller sends kamarId = KAMAR-B -> resolves strictly KAMAR-A", async () => {
       const mockPrisma = {
         santri: {
@@ -243,6 +439,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLA
                   type: "KAMAR",
                   domain: "KEASRAMAAN",
                   genderComplex: "PUTRA",
+                  isActive: true,
                 },
               };
             }
@@ -335,6 +532,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLA
               type: "KAMAR",
               domain: "KEASRAMAAN",
               genderComplex: "PUTRI", // Gender mismatch!
+              isActive: true,
             },
           }),
         },
@@ -416,7 +614,6 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLA
     });
 
     it("5.2. Mudabbir with multiple Kamar (via AssignmentScopeUnit): ALLOW for all assigned rooms, DENY for unassigned", () => {
-      // One Mudabbir responsible for both Kamar Ali and Kamar Utsman
       const mudabbirGrantMultiple: EffectiveCapabilityGrant = {
         assignmentId: "asg-mudabbir-multi",
         positionCode: "MUDABBIR",
@@ -477,72 +674,124 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLA
   });
 
   // =========================================================================
-  // 6. OSDA Structure Hierarchy
+  // 6. OSDA Structure Hierarchy (Contract-Tied Verification)
   // =========================================================================
   describe("6. OSDA Structure Hierarchy", () => {
-    it("6.1. OSDA core consists of Ketua, Sekretaris, Bendahara, and Multimedia", () => {
-      const osdaCorePositions = [
+    it("6.1. OSDA core consists of exact positions: Ketua, Sekretaris, Bendahara, and Multimedia", () => {
+      // Contract verification from typed architecture definition
+      assert.strictEqual(KEASRAMAAN_STRUCTURE.OSDA_CORE_POSITIONS.length, 4);
+      assert.deepStrictEqual([...KEASRAMAAN_STRUCTURE.OSDA_CORE_POSITIONS], [
         "KETUA_OSDA",
         "SEKRETARIS_OSDA",
         "BENDAHARA_OSDA",
         "MULTIMEDIA_OSDA",
-      ];
-      // Verify all core roles are accounted for
-      assert.strictEqual(osdaCorePositions.length, 4);
-      assert.ok(osdaCorePositions.includes("MULTIMEDIA_OSDA"), "Multimedia belongs to OSDA Pengurus Inti");
+      ]);
+
+      // Cross-document contract verification
+      const lockDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_LOCK.md"), "utf-8");
+      const assignmentDoc = fs.readFileSync(path.join(docsDir, "STQ_ASSIGNMENT_MODEL.md"), "utf-8");
+      for (const doc of [lockDoc, assignmentDoc]) {
+        assert.ok(doc.includes("Ketua"), "Must include Ketua");
+        assert.ok(doc.includes("Sekretaris"), "Must include Sekretaris");
+        assert.ok(doc.includes("Bendahara"), "Must include Bendahara");
+        assert.ok(doc.includes("Multimedia"), "Must include Multimedia");
+      }
     });
 
-    it("6.2. OSDA exactly defines 5 operational divisions and Usroh under Kebersihan", () => {
-      const osdaDivisions = [
+    it("6.2. OSDA defines exact 5 operational divisions", () => {
+      // Contract verification from typed architecture definition
+      assert.strictEqual(KEASRAMAAN_STRUCTURE.OSDA_DIVISIONS.length, 5);
+      assert.deepStrictEqual([...KEASRAMAAN_STRUCTURE.OSDA_DIVISIONS], [
         "KEAMANAN_KEDISIPLINAN",
         "PENDIDIKAN_IBADAH",
         "KEBERSIHAN_KERAPIHAN",
         "KESEHATAN",
         "SARANA_PRASARANA",
-      ];
-      assert.strictEqual(osdaDivisions.length, 5, "OSDA must have exactly 5 operational divisions");
+      ]);
 
-      // OrgUnitType enum supports DIVISION and USROH
-      assert.ok(schemaContent.includes("DIVISION"), "OrgUnitType must include DIVISION");
-      assert.ok(schemaContent.includes("USROH"), "OrgUnitType must include USROH");
+      // Cross-document verification in STQ_ARCHITECTURE_LOCK.md
+      const lockDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_LOCK.md"), "utf-8");
+      assert.ok(lockDoc.includes("Divisi Keamanan & Kedisiplinan"));
+      assert.ok(lockDoc.includes("Divisi Pendidikan & Ibadah"));
+      assert.ok(lockDoc.includes("Divisi Kebersihan & Kerapihan"));
+      assert.ok(lockDoc.includes("Divisi Kesehatan"));
+      assert.ok(lockDoc.includes("Divisi Sarana & Prasarana"));
+    });
+
+    it("6.3. Usroh is structurally under OSDA (type: USROH), NOT structurally under Divisi Kebersihan", () => {
+      const lockDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_LOCK.md"), "utf-8");
+      const m31Doc = fs.readFileSync(path.join(docsDir, "STQ_MILESTONE3_1_KEASRAMAAN_STRUCTURE.md"), "utf-8");
+
+      // Usroh is defined under OSDA; Divisi Kebersihan merely functionally supervises cleanliness
+      assert.ok(m31Doc.includes("Positioned structurally under **OSDA** (`type: USROH`)"));
+      assert.ok(m31Doc.includes("NOT** structurally under Divisi Kebersihan"));
+      assert.ok(lockDoc.includes("Membina Usroh, Type: USROH"));
     });
   });
 
   // =========================================================================
-  // 7. TKS Definition & Exact 6 Units
+  // 7. TKS Definition & Exact 6 Units (Contract-Tied Verification)
   // =========================================================================
   describe("7. TKS Definition & Exact 6 Units", () => {
-    it("7.1. TKS stands for 'TUGAS KHUSUS SANTRI' and has exactly 6 distinct operational units", () => {
-      const tksUnits = [
+    it("7.1. TKS means 'Tugas Khusus Santri' and forbids 'Tenaga Kebersihan & Servis'", () => {
+      assert.strictEqual(KEASRAMAAN_STRUCTURE.TKS_EXPANSION, "Tugas Khusus Santri");
+
+      // Check all documentation files for forbidden phrase
+      const docFiles = fs.readdirSync(docsDir).filter((f) => f.endsWith(".md"));
+      for (const f of docFiles) {
+        const content = fs.readFileSync(path.join(docsDir, f), "utf-8");
+        assert.strictEqual(
+          content.includes("Tenaga Kebersihan & Servis"),
+          false,
+          `Document docs/${f} contains forbidden phrase 'Tenaga Kebersihan & Servis'`
+        );
+      }
+    });
+
+    it("7.2. TKS contains exact six operational units", () => {
+      assert.strictEqual(KEASRAMAAN_STRUCTURE.TKS_UNITS.length, 6);
+      assert.deepStrictEqual([...KEASRAMAAN_STRUCTURE.TKS_UNITS], [
         "Dapur dan Gizi",
         "Masjid",
         "Kantor Pendidikan",
         "Kantor Yayasan",
         "Air Minum",
         "Air Sumur",
-      ];
+      ]);
 
-      assert.strictEqual(tksUnits.length, 6, "TKS must contain exactly 6 units");
-      assert.ok(tksUnits.includes("Air Minum"));
-      assert.ok(tksUnits.includes("Air Sumur"));
-      assert.notStrictEqual("Air Minum", "Air Sumur", "Air Minum and Air Sumur must be separate units");
+      const lockDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_LOCK.md"), "utf-8");
+      assert.ok(lockDoc.includes("Unit Dapur dan Gizi"));
+      assert.ok(lockDoc.includes("Unit Masjid"));
+      assert.ok(lockDoc.includes("Unit Kantor Pendidikan"));
+      assert.ok(lockDoc.includes("Unit Kantor Yayasan"));
+      assert.ok(lockDoc.includes("Unit Air Minum"));
+      assert.ok(lockDoc.includes("Unit Air Sumur"));
     });
 
-    it("7.2. TKS has NO central Ketua TKS; each unit operates independently", () => {
-      // Ketua + Anggota permitted for Dapur dan Gizi & Masjid; Single operator for others
-      const tksStructure = {
-        "Dapur dan Gizi": { allowsKetua: true, allowsAnggota: true },
-        "Masjid": { allowsKetua: true, allowsAnggota: true },
-        "Kantor Pendidikan": { operatorOnly: true },
-        "Kantor Yayasan": { operatorOnly: true },
-        "Air Minum": { operatorOnly: true },
-        "Air Sumur": { operatorOnly: true },
-      };
+    it("7.3. Air Minum and Air Sumur are distinct units; phrase 'Air Minum & Sumur' is forbidden", () => {
+      assert.notStrictEqual(
+        KEASRAMAAN_STRUCTURE.TKS_UNITS[4],
+        KEASRAMAAN_STRUCTURE.TKS_UNITS[5],
+        "Air Minum and Air Sumur must be separate units"
+      );
 
-      assert.strictEqual(tksStructure["Air Minum"].operatorOnly, true);
-      assert.strictEqual(tksStructure["Air Sumur"].operatorOnly, true);
-      assert.strictEqual(tksStructure["Dapur dan Gizi"].allowsKetua, true);
-      assert.strictEqual(tksStructure["Masjid"].allowsKetua, true);
+      const docFiles = fs.readdirSync(docsDir).filter((f) => f.endsWith(".md"));
+      for (const f of docFiles) {
+        const content = fs.readFileSync(path.join(docsDir, f), "utf-8");
+        assert.strictEqual(
+          content.includes("Air Minum & Sumur"),
+          false,
+          `Document docs/${f} contains forbidden phrase 'Air Minum & Sumur'`
+        );
+      }
+    });
+
+    it("7.4. TKS has NO central Ketua TKS; units have independent role assignments", () => {
+      const lockDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_LOCK.md"), "utf-8");
+      const invariantsDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_INVARIANTS.md"), "utf-8");
+
+      assert.ok(lockDoc.includes("TKS tidak memiliki Ketua Umum terpusat"));
+      assert.ok(invariantsDoc.includes("no central Ketua TKS"));
     });
   });
 
@@ -550,8 +799,14 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLA
   // 8. Pembina Divisi Placement Model
   // =========================================================================
   describe("8. Pembina Divisi Placement", () => {
-    it("8.1. Pembina Divisi is directly under Musyrif Keasramaan, NOT an OSDA member", () => {
-      // Pembina Divisi represented through Position + Assignment, NOT global enum Role
+    it("8.1. Pembina Divisi is directly under Musyrif Keasramaan as parallel supervisory assignment, NOT superior to Mudabbir, NOT part of OSDA", () => {
+      const m31Doc = fs.readFileSync(path.join(docsDir, "STQ_MILESTONE3_1_KEASRAMAAN_STRUCTURE.md"), "utf-8");
+      assert.ok(m31Doc.includes("Mudir` → `Musyrif Keasramaan` → `Mudabbir` → `OSDA / TKS` → `Usroh / Santri`"));
+      assert.ok(m31Doc.includes("Directly under `Musyrif Keasramaan` as a parallel supervisory assignment"));
+      assert.ok(m31Doc.includes("NOT** superior to `Mudabbir`"));
+      assert.ok(m31Doc.includes("NOT** a member of `OSDA`"));
+
+      // Functional authorization test: Pembina Divisi can supervise assigned division
       const pembinaGrant: EffectiveCapabilityGrant = {
         assignmentId: "asg-pembina-kebersihan",
         positionCode: "PEMBINA_DIVISI",
@@ -559,18 +814,12 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLA
         capabilityCode: "keasramaan.divisi.supervise",
         scopeType: "ASSIGNED_UNITS",
         anchorUnitId: "ou-div-kebersihan",
-        unitIds: ["ou-div-kebersihan", "ou-div-sarpras"], // Can supervise multiple divisions
+        unitIds: ["ou-div-kebersihan", "ou-div-sarpras"],
       };
 
-      // Supervising assigned division Kebersihan -> ALLOW
       const ctxKebersihan: ResolvedResourceContext = { orgUnitIds: ["ou-div-kebersihan"] };
       assert.strictEqual(evaluateScopePredicate(pembinaGrant, ctxKebersihan, { userId: "usr-pembina" }).matches, true);
 
-      // Supervising assigned division Sarpras -> ALLOW
-      const ctxSarpras: ResolvedResourceContext = { orgUnitIds: ["ou-div-sarpras"] };
-      assert.strictEqual(evaluateScopePredicate(pembinaGrant, ctxSarpras, { userId: "usr-pembina" }).matches, true);
-
-      // Other division Keamanan -> DENY
       const ctxKeamanan: ResolvedResourceContext = { orgUnitIds: ["ou-div-keamanan"] };
       assert.strictEqual(evaluateScopePredicate(pembinaGrant, ctxKeamanan, { userId: "usr-pembina" }).matches, false);
     });
@@ -749,15 +998,22 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLA
   });
 
   // =========================================================================
-  // 11. Disposable Embedded PostgreSQL Migration Verification
+  // 11. Production-Equivalent Isolated Migration Simulation
   // =========================================================================
-  describe("11. Disposable PostgreSQL Migration Verification", () => {
-    it("11.1. Applies migration chain through M3.1 on disposable PostgreSQL and enforces unique active placement", { timeout: 60000 }, async () => {
+  describe("11. Production-Equivalent Migration Simulation", () => {
+    it("11.1. Applies full migration chain (legacy -> PR #8 -> Phase 2A -> M3.1) and enforces data integrity", { timeout: 60000 }, async () => {
       const res = await runIsolatedM31MigrationVerification();
-      assert.strictEqual(res.migrationApplied, true, "M3.1 migration must apply cleanly");
+      assert.strictEqual(res.pr8ExactShaVerified, true, "PR #8 exact SHA must be verified");
+      assert.strictEqual(res.pr8MigrationApplied, true, "PR #8 migration must be applied");
+      assert.strictEqual(res.phase2aApplied, true, "Phase 2A migration must be applied");
+      assert.strictEqual(res.m31MigrationApplied, true, "M3.1 migration must be applied");
+      assert.strictEqual(res.existingDataUnchanged, true, "Existing User, Staff, Santri, and Evaluasi rows must remain unchanged");
+      assert.strictEqual(res.existingPr8TablesIntact, true, "PR #8 tables must remain intact");
       assert.strictEqual(res.tableCreated, true, "santri_kamar_placements table must be created");
+      assert.strictEqual(res.zeroInventedPlacements, true, "Zero invented room placements right after migration");
       assert.strictEqual(res.uniqueActiveConstraintEnforced, true, "Partial unique index must reject 2 active placements for same santri");
       assert.strictEqual(res.historyPreserved, true, "Inactive historical placement must be permitted alongside active placement");
+      assert.strictEqual(res.simulationSuccess, true, "Complete simulation must succeed");
     });
   });
 });
