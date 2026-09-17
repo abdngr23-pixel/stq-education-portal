@@ -1,6 +1,6 @@
 # STQ ARCHITECTURE LOCK — MILESTONE 2: COMPATIBILITY & CANONICAL AUTHORIZATION ENGINE
 
-**Status**: `ARCHITECTURE_LOCKED`  
+**Status**: `PROPOSED / READY_FOR_INDEPENDENT_REVIEW`  
 **Approved Baseline Date**: `2026-09-17`  
 **Milestone**: `MILESTONE 2 — COMPATIBILITY + AUTHORIZATION ENGINE`  
 **Repository**: `abdngr23-pixel/stq-education-portal`  
@@ -75,8 +75,8 @@ The compatibility layer bridges the legacy metadata roles (`KS`, `ADM`, `MK`, `M
 | `PH` | `PEMBINA_HALAQOH` | `TAHFIZH` | `PERSONAL` | No |
 | `GA` | `GURU_AKADEMIK` | `AKADEMIK` | `PERSONAL` | No |
 | `OSDA` | `ANGGOTA_OSDA` | `KEASRAMAAN` | `UNIT` | No |
-| `WS` | `WALI_SANTRI` | `MANAJEMEN` | `PERSONAL` | No |
-| `ST` | `SANTRI` | `AKADEMIK` | `PERSONAL` | No |
+| `WS` | `WALI_SANTRI` | `INSTITUTIONAL` | `PERSONAL` | No |
+| `ST` | `SANTRI` | `INSTITUTIONAL` | `PERSONAL` | No |
 | `YAY` | `PENGURUS_YAYASAN` | `INSTITUTIONAL` | `PERSONAL` | Yes |
 
 ### 4.2. Operational Flag Resolution
@@ -179,7 +179,7 @@ const { runtimeAllowed, parityRecord, canonicalDecision } = await evaluateShadow
 5. `ERROR`: Database or evaluation exception. **Legacy authority is preserved or fails closed**.
 
 ### Privacy Guarantee:
-Parity telemetry logs **NEVER** expose student or guardian PII (passwords, phone numbers, NIK, or health diagnoses are excluded).
+Parity telemetry records store minimal pseudonymous debugging identifiers (`identityId`, hashed/pseudonymized identity token). Raw student or guardian PII (passwords, phone numbers, NIK, home addresses, or sensitive health diagnoses/clinical complaints) are strictly excluded.
 
 ---
 

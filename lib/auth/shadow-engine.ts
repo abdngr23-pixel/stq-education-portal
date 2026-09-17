@@ -21,12 +21,24 @@ import {
   RequestedResourceContext,
   ResolvedResourceContext,
   ScopeType,
+  UnitAccountExecutorContext,
 } from "@/types/architecture-lock";
 import {
   authorizeCanonical,
   CanonicalAuthorizationDecision,
   ICanonicalDataProvider,
 } from "./canonical-evaluator";
+import crypto from "crypto";
+
+/**
+ * Creates a minimal pseudonymous subject identifier from userId and username for debugging.
+ * Strictly prevents leaking sensitive personal usernames or names in telemetry sinks.
+ */
+function pseudonymizeIdentity(userId: string, username: string): string {
+  if (!username || username === "anonymous") return "anonymous";
+  const hash = crypto.createHash("sha256").update(`${userId}:${username}`).digest("hex").slice(0, 8);
+  return `usr-pseudo-${hash}`;
+}
 
 /**
  * Parity Status Classification
@@ -40,6 +52,8 @@ export type ParityStatus =
 
 /**
  * Structured Parity Log Record for telemetry and audit
+ * Zero Sensitive Business Payload / Zero Clinical / Zero Guardian PII:
+ * Passwords, phone numbers, NIK, addresses, and clinical medical diagnoses are strictly excluded.
  */
 export interface ParityRecord {
   id: string;
@@ -55,7 +69,7 @@ export interface ParityRecord {
   assignmentId?: string;
   positionCode?: string;
   resourceType?: string;
-  resourceId?: string; // Anonymized / non-sensitive identifier
+  resourceId?: string; // Pseudonymous / opaque resource identifier
   details?: string;
 }
 
@@ -104,6 +118,8 @@ export interface ShadowEvaluationParams {
   resolvedContext?: ResolvedResourceContext;
   resourceType?: string;
   resourceId?: string;
+  isMutation?: boolean;
+  executorContext?: UnitAccountExecutorContext;
   dataProvider?: ICanonicalDataProvider;
   now?: Date;
   paritySink?: IParitySink;
@@ -141,6 +157,8 @@ export async function evaluateShadowAuthorization(
       capability: params.capabilityCode,
       resourceContext: params.resourceContext,
       resolvedContext: params.resolvedContext,
+      executorContext: params.executorContext,
+      isMutation: params.isMutation,
       dataProvider: params.dataProvider,
       now,
     });
@@ -170,12 +188,15 @@ export async function evaluateShadowAuthorization(
     parityStatus = "MISMATCH_CANONICAL_ALLOW";
   }
 
-  // 4. Create and persist Parity Record (Zero PII)
+  // 4. Create and persist Parity Record (Zero Sensitive PII)
   const parityRecord: ParityRecord = {
     id: `par-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
     timestamp: now,
     identityId: params.session?.userId || "anonymous",
-    identityUsername: params.session?.username || "anonymous",
+    identityUsername: pseudonymizeIdentity(
+      params.session?.userId || "anonymous",
+      params.session?.username || "anonymous"
+    ),
     capabilityCode: params.capabilityCode,
     legacyDecision: legacyAllowed,
     canonicalDecision: canonicalAllowed,
@@ -201,4 +222,62 @@ export async function evaluateShadowAuthorization(
     parityRecord,
     canonicalDecision: canonicalRes,
   };
+}
+
+/**
+ * Server-side feature flag for enabling shadow canonical evaluation.
+ * STRICT DEFAULT: OFF (false) in production.
+ */
+export function isCanonicalShadowEnabled(): boolean {
+  return process.env.CANONICAL_AUTH_SHADOW_ENABLED === "true";
+}
+
+export interface ShadowAuthorizeIfEnabledParams {
+  session: UserSession | null;
+  capabilityCode: string;
+  legacyCheck: () => boolean | Promise<boolean>;
+  resourceContext?: RequestedResourceContext;
+  resolvedContext?: ResolvedResourceContext;
+  resourceType?: string;
+  resourceId?: string;
+  isMutation?: boolean;
+  executorContext?: UnitAccountExecutorContext;
+  dataProviderFactory?: () => ICanonicalDataProvider;
+}
+
+/**
+ * Safe-by-default execution bridge for server actions.
+ * When CANONICAL_AUTH_SHADOW_ENABLED is false (default in production):
+ * - ZERO canonical database queries or provider evaluations
+ * - Exact existing legacy behavior
+ *
+ * When CANONICAL_AUTH_SHADOW_ENABLED is true (isolated test / staging):
+ * - Dual-evaluates and logs parity telemetry
+ * - Legacy authorization outcome strictly remains authoritative
+ */
+export async function shadowAuthorizeIfEnabled(
+  params: ShadowAuthorizeIfEnabledParams
+): Promise<boolean> {
+  // If feature flag is OFF, legacy check executes directly with ZERO canonical DB access
+  if (!isCanonicalShadowEnabled()) {
+    return await params.legacyCheck();
+  }
+
+  // When enabled in isolated staging/test, dual-evaluate via shadow engine
+  const dataProvider = params.dataProviderFactory ? params.dataProviderFactory() : undefined;
+  const result = await evaluateShadowAuthorization({
+    session: params.session,
+    capabilityCode: params.capabilityCode,
+    legacyCheck: params.legacyCheck,
+    resourceContext: params.resourceContext,
+    resolvedContext: params.resolvedContext,
+    resourceType: params.resourceType,
+    resourceId: params.resourceId,
+    isMutation: params.isMutation,
+    executorContext: params.executorContext,
+    dataProvider,
+  });
+
+  // Legacy result is 100% authoritative at runtime
+  return result.runtimeAllowed;
 }

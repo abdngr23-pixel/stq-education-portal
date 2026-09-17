@@ -124,22 +124,40 @@ export function evaluateScopePredicate(
 
   // 2. DOMAIN Scope: All units within the strategic domain (e.g. TAHFIZH, KEASRAMAAN)
   if (scopeType === "DOMAIN") {
-    // If resource specifies domain, it must match
-    if (context.orgDomain) {
-      const grantDomain = (grant as unknown as { orgDomain?: string }).orgDomain;
-      if (grantDomain && grantDomain !== context.orgDomain) {
-        return {
-          matches: false,
-          code: "SCOPE_MISMATCH",
-          reason: `Target domain (${context.orgDomain}) does not match grant domain (${grantDomain}).`,
-          evaluatedScope: "DOMAIN",
-        };
-      }
+    if (!context.orgDomain) {
+      return {
+        matches: false,
+        code: "INVALID_RESOURCE_CONTEXT",
+        reason: "DOMAIN scope evaluation requires target resource orgDomain.",
+        evaluatedScope: "DOMAIN",
+      };
     }
+
+    const grantDomain =
+      (grant as unknown as { orgDomain?: string; domain?: string }).orgDomain ||
+      (grant as unknown as { orgDomain?: string; domain?: string }).domain;
+    if (!grantDomain) {
+      return {
+        matches: false,
+        code: "SYSTEM_FAIL_CLOSED",
+        reason: "DOMAIN scope grant is missing orgDomain.",
+        evaluatedScope: "DOMAIN",
+      };
+    }
+
+    if (grantDomain !== context.orgDomain) {
+      return {
+        matches: false,
+        code: "SCOPE_MISMATCH",
+        reason: `Target domain (${context.orgDomain}) does not match grant domain (${grantDomain}).`,
+        evaluatedScope: "DOMAIN",
+      };
+    }
+
     return {
       matches: true,
       code: "ALLOWED",
-      reason: "DOMAIN scope matches target domain resource.",
+      reason: `Target domain (${context.orgDomain}) matches grant domain.`,
       evaluatedScope: "DOMAIN",
       evaluatedAnchorUnitId: anchorUnitId,
     };

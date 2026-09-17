@@ -3,6 +3,8 @@
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
 import { StatusHakLibur, JenisTransaksiBintang, StatusSanksiKunjungan, Prisma } from "@prisma/client";
+import { shadowAuthorizeIfEnabled } from "@/lib/auth/shadow-engine";
+import { createPrismaDataProvider } from "@/lib/auth/canonical-evaluator";
 
 /**
  * Mengambil konfigurasi kebijakan reward & sanksi aktif
@@ -138,7 +140,20 @@ export async function prosesRewardTasmiSimaanAction(tasmiSimaanId: string) {
   // Otoritas Penerbitan Reward: Hanya Mudir (KS) dan Kabid Tahfizh (isKepalaBidangTahfidz)
   // Ordinary Musyrif Tahfizh, ADM, MK, PH, OSDA, dsb ditolak tegas (fail-closed)
   const isAuthorizedIssuer = session.role === "KS" || Boolean(session.isKepalaBidangTahfidz);
-  if (!isAuthorizedIssuer) {
+
+  // Representative Milestone 2 shadow evaluation (Safe-by-default: OFF in production)
+  const isAllowed = await shadowAuthorizeIfEnabled({
+    session,
+    capabilityCode: "tahfizh.reward.issue",
+    legacyCheck: () => isAuthorizedIssuer,
+    resourceContext: { resourceId: tasmiSimaanId },
+    resourceType: "TasmiSimaan",
+    resourceId: tasmiSimaanId,
+    isMutation: true,
+    dataProviderFactory: () => createPrismaDataProvider(prisma),
+  });
+
+  if (!isAllowed) {
     return {
       success: false,
       message: "Akses Ditolak: Anda tidak berwenang. Penerbitan reward Tasmi'/Sima'an hanya berwenang dilakukan oleh Mudir atau Kabid Tahfizh.",

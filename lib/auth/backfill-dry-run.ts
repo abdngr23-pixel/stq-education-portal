@@ -20,7 +20,6 @@ import {
   OrgUnitType,
   OrgDomain,
   GenderComplex,
-  AssignmentStatus,
   BusinessRuleState,
   ScopeType,
 } from "@/types/architecture-lock";
@@ -65,7 +64,9 @@ export interface ProposedAssignment {
   userId: string;
   positionCode: string;
   unitCode: string;
-  status: AssignmentStatus;
+  status: "DRAFT"; // STRICT SAFETY: All proposed assignments strictly default to DRAFT (zero runtime authority)
+  activationCandidate: boolean; // Explicitly distinguishes review eligibility from actual authoritative status
+  reviewCategory: "PENDING_MANUAL_ACTIVATION" | "INACTIVE_USER_ARCHIVED" | "UNRECOGNIZED_ROLE_HOLD";
   validFrom: Date;
   validUntil: Date | null;
   confidence: "HIGH" | "MEDIUM" | "NEEDS_REVIEW";
@@ -88,8 +89,9 @@ export interface BackfillPlanResult {
   proposedPositionCapabilities: ProposedPositionCapability[];
   statistics: {
     totalAssignments: number;
-    activeCount: number;
+    activeCount: number; // Strictly 0 in Milestone 2 dry-run
     draftCount: number;
+    activationCandidatesCount: number;
     needsReviewCount: number;
   };
 }
@@ -477,8 +479,7 @@ export function planBackfillAssignments(
 
   const proposedAssignments: ProposedAssignment[] = [];
 
-  let activeCount = 0;
-  let draftCount = 0;
+  let activationCandidatesCount = 0;
   let needsReviewCount = 0;
 
   for (const user of users) {
@@ -492,24 +493,23 @@ export function planBackfillAssignments(
         positionCode: "UNKNOWN",
         unitCode: "STQ_ROOT",
         status: "DRAFT",
+        activationCandidate: false,
+        reviewCategory: "UNRECOGNIZED_ROLE_HOLD",
         validFrom: baseDate,
         validUntil: null,
         confidence: "NEEDS_REVIEW",
         notes: `Unrecognized legacy role: ${String(user.role)}. Kept as DRAFT.`,
       });
-      draftCount++;
       needsReviewCount++;
       continue;
     }
 
-    // Inactive user in legacy system -> DRAFT assignment (zero authority)
+    // Safety Invariant: In Milestone 2 dry-run, ALL proposed assignments strictly default to DRAFT.
+    // Active legacy status marks the user as an activationCandidate for deliberate manual review,
+    // NEVER as an automatically active runtime authority.
     const isUserActive = user.status === "AKTIF";
-    const status: AssignmentStatus = isUserActive ? "ACTIVE" : "DRAFT";
-
-    if (status === "ACTIVE") {
-      activeCount++;
-    } else {
-      draftCount++;
+    if (isUserActive) {
+      activationCandidatesCount++;
     }
 
     // Anchor unit mapping based on domain
@@ -529,7 +529,9 @@ export function planBackfillAssignments(
       userId: user.id,
       positionCode: roleMapping.defaultPositionCode,
       unitCode,
-      status,
+      status: "DRAFT",
+      activationCandidate: isUserActive,
+      reviewCategory: isUserActive ? "PENDING_MANUAL_ACTIVATION" : "INACTIVE_USER_ARCHIVED",
       validFrom: baseDate,
       validUntil: null,
       confidence: isUserActive ? "HIGH" : "MEDIUM",
@@ -543,14 +545,15 @@ export function planBackfillAssignments(
         userId: user.id,
         positionCode: CANONICAL_POSITION_CODES.KABID_TAHFIZH,
         unitCode: "DOMAIN_TAHFIZH",
-        status: isUserActive ? "ACTIVE" : "DRAFT",
+        status: "DRAFT",
+        activationCandidate: isUserActive,
+        reviewCategory: isUserActive ? "PENDING_MANUAL_ACTIVATION" : "INACTIVE_USER_ARCHIVED",
         validFrom: baseDate,
         validUntil: null,
         confidence: "HIGH",
         notes: "Derived from Staff.isKepalaBidangTahfidz = true",
       });
-      if (isUserActive) activeCount++;
-      else draftCount++;
+      if (isUserActive) activationCandidatesCount++;
     }
 
     // Handle Operational Flag: isPetugasPresensiPutri
@@ -560,14 +563,15 @@ export function planBackfillAssignments(
         userId: user.id,
         positionCode: CANONICAL_POSITION_CODES.PETUGAS_PRESENSI,
         unitCode: "ASRAMA_PUTRI",
-        status: isUserActive ? "ACTIVE" : "DRAFT",
+        status: "DRAFT",
+        activationCandidate: isUserActive,
+        reviewCategory: isUserActive ? "PENDING_MANUAL_ACTIVATION" : "INACTIVE_USER_ARCHIVED",
         validFrom: baseDate,
         validUntil: null,
         confidence: "HIGH",
         notes: "Derived from User.isPetugasPresensiPutri = true",
       });
-      if (isUserActive) activeCount++;
-      else draftCount++;
+      if (isUserActive) activationCandidatesCount++;
     }
   }
 
@@ -580,8 +584,9 @@ export function planBackfillAssignments(
     proposedPositionCapabilities,
     statistics: {
       totalAssignments: proposedAssignments.length,
-      activeCount,
-      draftCount,
+      activeCount: 0, // Zero automatic active authority in dry-run
+      draftCount: proposedAssignments.length,
+      activationCandidatesCount,
       needsReviewCount,
     },
   };

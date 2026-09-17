@@ -59,12 +59,15 @@ export interface CanonicalAuthorizationDecision {
 export interface CanonicalIdentity {
   userId: string;
   username: string;
-  status: "AKTIF" | "NONAKTIF" | string;
+  status: "AKTIF" | "NONAKTIF" | "SUSPENDED" | string;
   accountType: AccountType;
   staffId?: string | null;
+  staffStatus?: string | null;
   santriId?: string | null;
+  santriStatus?: string | null;
   name?: string;
   genderComplex?: GenderComplex;
+  placementUnitId?: string | null;
 }
 
 /**
@@ -103,7 +106,7 @@ export interface ICanonicalDataProvider {
   getActiveAssignments(userId: string, now: Date): Promise<CanonicalAssignmentWithDetails[]>;
   getUnitAccountPlacement(userId: string): Promise<{ unitId: string } | null>;
   verifyHumanExecutor(executorId: string): Promise<{ id: string; name: string; isActive: boolean } | null>;
-  resolveResourceContext(requested: RequestedResourceContext): Promise<ResolvedResourceContext | null>;
+  resolveResourceContext(requested: RequestedResourceContext, subjectUserId?: string): Promise<ResolvedResourceContext | null>;
 }
 
 /**
@@ -121,6 +124,36 @@ export interface AuthorizeCanonicalParams {
 }
 
 /**
+ * Positions that strictly require an active linked Staff profile
+ */
+const STAFF_PROFILE_REQUIRED_POSITIONS = new Set([
+  "MUDIR",
+  "KABID_TAHFIZH",
+  "MUSYRIF_TAHFIZH",
+  "PEMBINA_HALAQOH",
+  "KEPALA_KEASRAMAAN",
+  "PEMBINA_ASRAMA",
+  "GURU_AKADEMIK",
+  "STAF_ADMIN_TU",
+  "PETUGAS_PRESENSI",
+  "PETUGAS_KESEHATAN",
+  "MT",
+  "KS",
+  "MK",
+  "ADM",
+  "PH",
+  "GA",
+]);
+
+/**
+ * Positions that strictly require an active linked Santri profile
+ */
+const SANTRI_PROFILE_REQUIRED_POSITIONS = new Set([
+  "SANTRI",
+  "ST",
+]);
+
+/**
  * Main Authoritative Evaluator
  */
 export async function authorizeCanonical(
@@ -128,7 +161,7 @@ export async function authorizeCanonical(
 ): Promise<CanonicalAuthorizationDecision> {
   const now = params.now || new Date();
 
-  // 1. Validate Identity
+  // 1. Validate Identity Presence
   if (!params.identity || !params.identity.userId) {
     return {
       decision: "DENY",
@@ -138,29 +171,61 @@ export async function authorizeCanonical(
     };
   }
 
-  const identity: CanonicalIdentity =
-    "accountType" in params.identity
-      ? (params.identity as CanonicalIdentity)
-      : {
-          userId: params.identity.userId,
-          username: params.identity.username,
-          status: "AKTIF",
-          accountType: params.identity.role === "OSDA" ? "UNIT" : "PERSONAL",
-          staffId: params.identity.staffId,
-          santriId: params.identity.santriId,
-          name: params.identity.name,
-        };
+  // 1.1. Authoritative Identity Hydration via DataProvider (Blocker 1)
+  let identity: CanonicalIdentity;
 
+  if (params.dataProvider) {
+    try {
+      const dbIdentity = await params.dataProvider.getIdentity(params.identity.userId);
+      if (!dbIdentity) {
+        return {
+          decision: "DENY",
+          code: "IDENTITY_NOT_LINKED",
+          reasonCode: "IDENTITY_NOT_LINKED",
+          reason: `No authoritative database identity found for user ${params.identity.userId}.`,
+        };
+      }
+      identity = dbIdentity;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        decision: "ERROR",
+        code: "SYSTEM_FAIL_CLOSED",
+        reasonCode: "DATABASE_UNAVAILABLE",
+        reason: `Database error querying authoritative identity: ${msg}`,
+      };
+    }
+  } else {
+    // When no dataProvider is supplied (e.g. pure offline unit testing with pre-built mock identity)
+    identity =
+      "accountType" in params.identity
+        ? (params.identity as CanonicalIdentity)
+        : {
+            userId: params.identity.userId,
+            username: params.identity.username,
+            status:
+              "status" in params.identity && typeof params.identity.status === "string"
+                ? params.identity.status
+                : "AKTIF",
+            accountType: params.identity.role === "OSDA" ? "UNIT" : "PERSONAL",
+            staffId: params.identity.staffId,
+            santriId: params.identity.santriId,
+            name: params.identity.name,
+          };
+  }
+
+  // 1.2. Verify Database User Status is Strictly AKTIF (do not trust stale session status)
   if (identity.status !== "AKTIF") {
     return {
       decision: "DENY",
       code: "IDENTITY_INACTIVE",
       reasonCode: "IDENTITY_INACTIVE",
-      reason: `User account is suspended or inactive (status: ${identity.status}).`,
+      reason: `User account is inactive or suspended in database (status: ${identity.status}).`,
     };
   }
 
-  // 2. Unit Account Placements and Executor Attribution (AccountType.UNIT)
+  // 2. Unit Account Placements and Invariants (AccountType.UNIT - Blocker 4)
+  let placementUnitId: string | null = null;
   if (identity.accountType === "UNIT") {
     if (params.dataProvider) {
       try {
@@ -173,6 +238,7 @@ export async function authorizeCanonical(
             reason: "Unit account has no active UnitAccountPlacement binding.",
           };
         }
+        placementUnitId = placement.unitId;
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         return {
@@ -180,6 +246,28 @@ export async function authorizeCanonical(
           code: "SYSTEM_FAIL_CLOSED",
           reasonCode: "DATABASE_UNAVAILABLE",
           reason: `Database error querying unit account placement: ${msg}`,
+        };
+      }
+    } else {
+      placementUnitId = identity.placementUnitId || null;
+      if (!placementUnitId) {
+        return {
+          decision: "DENY",
+          code: "SYSTEM_FAIL_CLOSED",
+          reasonCode: "UNIT_ACCOUNT_NO_PLACEMENT",
+          reason: "Unit account has no active UnitAccountPlacement binding.",
+        };
+      }
+    }
+
+    // Invariant: executorContext.unitId must also match placementUnitId when supplied
+    if (params.executorContext && params.executorContext.unitId) {
+      if (params.executorContext.unitId !== placementUnitId) {
+        return {
+          decision: "DENY",
+          code: "SYSTEM_FAIL_CLOSED",
+          reasonCode: "UNIT_PLACEMENT_MISMATCH",
+          reason: `Executor context unitId (${params.executorContext.unitId}) does not match placement unitId (${placementUnitId}).`,
         };
       }
     }
@@ -259,18 +347,32 @@ export async function authorizeCanonical(
     };
   }
 
+  // Blocker 4: For AccountType.UNIT, every candidate assignment used for authority must have assignment.unitId === placementUnitId
+  // Mismatch must fail closed for both READ and MUTATION.
+  if (identity.accountType === "UNIT" && placementUnitId) {
+    const matchingUnitAssignments = activeAssignments.filter((a) => a.unitId === placementUnitId);
+    if (matchingUnitAssignments.length === 0) {
+      return {
+        decision: "DENY",
+        code: "SYSTEM_FAIL_CLOSED",
+        reasonCode: "UNIT_PLACEMENT_MISMATCH",
+        reason: `Every candidate assignment for a UNIT account must match placementUnitId (${placementUnitId}). Found unitId: ${activeAssignments[0]?.unitId}.`,
+      };
+    }
+  }
+
   // 4. Resolve Candidate Effective Grants Matching Requested Capability
   const candidateGrants: Array<{
     assignment: CanonicalAssignmentWithDetails;
     grant: EffectiveCapabilityGrant;
   }> = [];
 
+  let profileRejection: { code: AuthorizationResultCode; reasonCode: string; reason: string } | null = null;
+
   for (const a of activeAssignments) {
-    // Check Unit Account Anchor Alignment: Assignment anchor unit must match placement unit
-    if (identity.accountType === "UNIT" && params.executorContext) {
-      if (params.executorContext.unitId && a.unitId !== params.executorContext.unitId) {
-        continue; // Mismatch with assigned placement
-      }
+    // UNIT placement invariant: assignment must match placementUnitId
+    if (identity.accountType === "UNIT" && placementUnitId && a.unitId !== placementUnitId) {
+      continue;
     }
 
     for (const pc of a.positionCapabilities) {
@@ -286,6 +388,45 @@ export async function authorizeCanonical(
           continue;
         }
 
+        // Now that capability grant is verified in production, enforce linked profile requirements (Blocker 1 requirement 5)
+        if (STAFF_PROFILE_REQUIRED_POSITIONS.has(a.positionCode)) {
+          if (!identity.staffId) {
+            profileRejection = {
+              code: "IDENTITY_NOT_LINKED",
+              reasonCode: "IDENTITY_NOT_LINKED",
+              reason: `Position ${a.positionCode} requires a linked Staff profile in database.`,
+            };
+            continue;
+          }
+          if (identity.staffStatus && identity.staffStatus !== "AKTIF") {
+            profileRejection = {
+              code: "IDENTITY_INACTIVE",
+              reasonCode: "IDENTITY_INACTIVE",
+              reason: `Linked Staff profile is inactive (status: ${identity.staffStatus}).`,
+            };
+            continue;
+          }
+        }
+
+        if (SANTRI_PROFILE_REQUIRED_POSITIONS.has(a.positionCode)) {
+          if (!identity.santriId) {
+            profileRejection = {
+              code: "IDENTITY_NOT_LINKED",
+              reasonCode: "IDENTITY_NOT_LINKED",
+              reason: `Position ${a.positionCode} requires a linked Santri profile in database.`,
+            };
+            continue;
+          }
+          if (identity.santriStatus && identity.santriStatus !== "AKTIF") {
+            profileRejection = {
+              code: "IDENTITY_INACTIVE",
+              reasonCode: "IDENTITY_INACTIVE",
+              reason: `Linked Santri profile is inactive (status: ${identity.santriStatus}).`,
+            };
+            continue;
+          }
+        }
+
         candidateGrants.push({
           assignment: a,
           grant: {
@@ -297,7 +438,7 @@ export async function authorizeCanonical(
             unitIds: a.scopeUnits.map((su) => su.unitId),
             businessRuleState: pc.businessRuleState,
             ...(a.unitGenderComplex ? { genderComplex: a.unitGenderComplex } : {}),
-            ...(a.domain ? { orgDomain: a.domain } : {}),
+            ...(a.domain ? { orgDomain: a.domain as OrgDomain } : {}),
           } as EffectiveCapabilityGrant,
         });
       }
@@ -305,6 +446,14 @@ export async function authorizeCanonical(
   }
 
   if (candidateGrants.length === 0) {
+    if (profileRejection) {
+      return {
+        decision: "DENY",
+        code: profileRejection.code,
+        reasonCode: profileRejection.reasonCode,
+        reason: profileRejection.reason,
+      };
+    }
     return {
       decision: "DENY",
       code: "CAPABILITY_NOT_GRANTED",
@@ -313,11 +462,14 @@ export async function authorizeCanonical(
     };
   }
 
-  // 5. Hydrate Authoritative Resource Context
+  // 5. Hydrate Authoritative Resource Context (Blocker 2)
   let resolvedContext: ResolvedResourceContext | undefined = params.resolvedContext;
   if (!resolvedContext && params.resourceContext && params.dataProvider) {
     try {
-      const res = await params.dataProvider.resolveResourceContext(params.resourceContext);
+      const res = await params.dataProvider.resolveResourceContext(
+        params.resourceContext,
+        identity.userId
+      );
       if (res) {
         resolvedContext = res;
       }
@@ -381,7 +533,7 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
     async getIdentity(userId: string): Promise<CanonicalIdentity | null> {
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        include: { staff: true, santri: true },
+        include: { staff: true, santri: true, unitPlacement: true },
       });
       if (!user) return null;
       return {
@@ -390,8 +542,11 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
         status: user.status,
         accountType: user.accountType,
         staffId: user.staffId,
+        staffStatus: user.staff?.status,
         santriId: user.santriId,
+        santriStatus: user.santri?.status,
         name: user.staff?.nama || user.santri?.nama || user.username,
+        placementUnitId: user.unitPlacement?.unitId || null,
       };
     },
 
@@ -467,28 +622,78 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
       };
     },
 
-    async resolveResourceContext(requested: RequestedResourceContext): Promise<ResolvedResourceContext | null> {
+    async resolveResourceContext(requested: RequestedResourceContext, subjectUserId?: string): Promise<ResolvedResourceContext | null> {
       let unitGenderComplex: GenderComplex | undefined;
       let orgDomain: OrgDomain | undefined;
       const orgUnitIds: string[] = [];
+
+      let halaqohId = requested.halaqohId;
+      const kamarId = requested.kamarId;
+
+      if (requested.santriId) {
+        const targetSantri = await prisma.santri.findUnique({
+          where: { id: requested.santriId },
+          include: { halaqoh: true },
+        });
+
+        if (targetSantri) {
+          // Authoritatively overwrite halaqohId with actual DB record (ignore untrusted caller-supplied halaqohId)
+          halaqohId = targetSantri.halaqohId || undefined;
+          if (targetSantri.halaqohId) {
+            orgUnitIds.push(targetSantri.halaqohId);
+          }
+
+          if (targetSantri.jenisKelamin === "L") {
+            unitGenderComplex = "PUTRA";
+          } else if (targetSantri.jenisKelamin === "P") {
+            unitGenderComplex = "PUTRI";
+          }
+
+          orgDomain = "TAHFIZH";
+        }
+      }
 
       if (requested.unitId) {
         orgUnitIds.push(requested.unitId);
         const unit = await prisma.orgUnit.findUnique({ where: { id: requested.unitId } });
         if (unit) {
-          unitGenderComplex = unit.genderComplex as GenderComplex;
-          orgDomain = unit.domain as OrgDomain;
+          if (!unitGenderComplex) unitGenderComplex = unit.genderComplex as GenderComplex;
+          if (!orgDomain) orgDomain = unit.domain as OrgDomain;
+        }
+      }
+
+      // OWN_CHILD Server-Side Relation Resolution:
+      let guardianLinkedSantriIds: string[] | undefined;
+      if (subjectUserId) {
+        const user = await prisma.user.findUnique({
+          where: { id: subjectUserId },
+          select: { id: true, phone: true, santriId: true },
+        });
+        if (user) {
+          const linkedIds: string[] = [];
+          if (user.phone) {
+            const children = await prisma.santri.findMany({
+              where: { noHpWali: user.phone },
+              select: { id: true },
+            });
+            linkedIds.push(...children.map((c) => c.id));
+          }
+          if (user.santriId && !linkedIds.includes(user.santriId)) {
+            linkedIds.push(user.santriId);
+          }
+          guardianLinkedSantriIds = linkedIds;
         }
       }
 
       return {
         santriId: requested.santriId,
-        halaqohId: requested.halaqohId,
-        kamarId: requested.kamarId,
+        halaqohId,
+        kamarId,
         orgUnitIds,
         genderComplex: unitGenderComplex,
         orgDomain,
         targetUserId: requested.targetUserId,
+        guardianLinkedSantriIds,
       };
     },
   };

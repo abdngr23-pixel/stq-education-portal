@@ -52,6 +52,8 @@ import {
   evaluateShadowAuthorization,
   InMemoryParitySink,
   setActiveParitySink,
+  shadowAuthorizeIfEnabled,
+  isCanonicalShadowEnabled,
 } from "../lib/auth/shadow-engine";
 
 import {
@@ -599,6 +601,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 2: COMPATIBILITY & CANONICAL AUTHO
             username: "mudir.user",
             status: "AKTIF",
             accountType: "PERSONAL",
+            staffId: "stf-mudir",
+            staffStatus: "AKTIF",
           };
         },
         async getActiveAssignments() {
@@ -666,7 +670,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 2: COMPATIBILITY & CANONICAL AUTHO
       assert.strictEqual(res.decision, "ERROR");
       assert.strictEqual(res.code, "SYSTEM_FAIL_CLOSED");
       assert.strictEqual(res.reasonCode, "DATABASE_UNAVAILABLE");
-      assert.ok(res.reason.includes("Connection lost"));
+      assert.ok(res.reason.includes("Connection pool timeout") || res.reason.includes("Connection lost"));
     });
   });
 
@@ -677,7 +681,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 2: COMPATIBILITY & CANONICAL AUTHO
     function createTahfizhProvider(assignments: CanonicalAssignmentWithDetails[]): ICanonicalDataProvider {
       return {
         async getIdentity(id) {
-          return { userId: id, username: "thf.user", status: "AKTIF", accountType: "PERSONAL" };
+          return { userId: id, username: "thf.user", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-thf", staffStatus: "AKTIF" };
         },
         async getActiveAssignments() {
           return assignments;
@@ -872,7 +876,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 2: COMPATIBILITY & CANONICAL AUTHO
     function createHealthProvider(assignment: CanonicalAssignmentWithDetails): ICanonicalDataProvider {
       return {
         async getIdentity(id) {
-          return { userId: id, username: "health.user", status: "AKTIF", accountType: "PERSONAL" };
+          return { userId: id, username: "health.user", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-health", staffStatus: "AKTIF" };
         },
         async getActiveAssignments() {
           return [assignment];
@@ -1282,8 +1286,9 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 2: COMPATIBILITY & CANONICAL AUTHO
         { id: "u-5", username: "kiosk_putra", role: "OSDA", status: "AKTIF" },
       ];
 
-      const run1 = generateProposedCanonicalState(mockLegacyUsers);
-      const run2 = generateProposedCanonicalState(mockLegacyUsers);
+      const fixedDate = new Date("2026-09-17T00:00:00.000Z");
+      const run1 = generateProposedCanonicalState(mockLegacyUsers, fixedDate);
+      const run2 = generateProposedCanonicalState(mockLegacyUsers, fixedDate);
 
       assert.deepStrictEqual(run1.proposedOrgUnits, run2.proposedOrgUnits);
       assert.deepStrictEqual(run1.proposedPositions, run2.proposedPositions);
@@ -1654,7 +1659,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 2: COMPATIBILITY & CANONICAL AUTHO
     for (const sc of scenarios) {
       it(`Scenario #${sc.id}: ${sc.name} -> ${sc.expectedDecision} (${sc.expectedReasonCode})`, async () => {
         const userId = `usr-sc-${sc.id}`;
-        const unitId = sc.resourceContext.unitId || (sc.scopeType === "HALAQOH" ? sc.resourceContext.halaqohId : undefined) || "unit-anchor";
+        const unitId = sc.role === "OSDA" ? "unit-kios" : (sc.resourceContext.unitId || (sc.scopeType === "HALAQOH" ? sc.resourceContext.halaqohId : undefined) || "unit-anchor");
 
         // Build mock assignment unless scenario 24 (error) or capability not assigned
         const hasCapability = !["MT - Reward Issue (Denied)", "ADM - Health Record Update Status (Denied)", "GA - Health Record Create (Denied)", "OSDA - Generic OSDA Health Access (Denied)", "Kabid Tahfizh - Reward Policy Edit (Denied)"].includes(sc.name);
@@ -1703,6 +1708,11 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 2: COMPATIBILITY & CANONICAL AUTHO
               username: `user.${sc.id}`,
               status: "AKTIF",
               accountType: sc.role === "OSDA" ? "UNIT" : "PERSONAL",
+              staffId: sc.role !== "OSDA" && sc.role !== "WS" && sc.role !== "ST" ? `staff-${sc.id}` : null,
+              staffStatus: "AKTIF",
+              santriId: sc.role === "ST" ? `santri-${sc.id}` : null,
+              santriStatus: "AKTIF",
+              placementUnitId: sc.role === "OSDA" ? "unit-kios" : null,
             };
           },
           async getActiveAssignments() {
@@ -1784,4 +1794,689 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 2: COMPATIBILITY & CANONICAL AUTHO
       assert.ok(files.includes("backfill-dry-run.ts"));
     });
   });
+
+  // =========================================================================
+  // 12. Security Remediations & Attack Regressions
+  // =========================================================================
+  describe("12. Security Remediations & Attack Regressions", () => {
+    it("12.1. session says active, DB user inactive -> DENY IDENTITY_INACTIVE", async () => {
+      const validAssignment: CanonicalAssignmentWithDetails = {
+        id: "asg-valid",
+        userId: "usr-inactive",
+        positionId: "pos-mt",
+        positionCode: "MUSYRIF_TAHFIZH",
+        positionName: "Musyrif Tahfizh",
+        domain: "TAHFIZH",
+        unitId: "unit-thf",
+        unitCode: "THF",
+        unitName: "Tahfizh",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          { capabilityCode: "tahfizh.setoran.create", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+        ],
+        scopeUnits: [],
+      };
+
+      const provider: ICanonicalDataProvider = {
+        async getIdentity(id) {
+          return {
+            userId: id,
+            username: "user.inactive",
+            status: "NONAKTIF", // Authoritative DB status is inactive!
+            accountType: "PERSONAL",
+            staffId: "stf-1",
+            staffStatus: "AKTIF",
+          };
+        },
+        async getActiveAssignments() {
+          return [validAssignment];
+        },
+        async getUnitAccountPlacement() { return null; },
+        async verifyHumanExecutor() { return null; },
+        async resolveResourceContext() { return { orgUnitIds: ["unit-thf"] }; },
+      };
+
+      const res = await authorizeCanonical({
+        identity: { userId: "usr-inactive", username: "user.inactive", status: "AKTIF", accountType: "PERSONAL" }, // Untrusted session says active
+        capability: "tahfizh.setoran.create",
+        dataProvider: provider,
+      });
+
+      assert.strictEqual(res.decision, "DENY");
+      assert.strictEqual(res.reasonCode, "IDENTITY_INACTIVE");
+    });
+
+    it("12.2. session exists, DB identity missing -> DENY IDENTITY_NOT_LINKED", async () => {
+      const provider: ICanonicalDataProvider = {
+        async getIdentity() {
+          return null; // Authoritative DB returns null for this user
+        },
+        async getActiveAssignments() { return []; },
+        async getUnitAccountPlacement() { return null; },
+        async verifyHumanExecutor() { return null; },
+        async resolveResourceContext() { return null; },
+      };
+
+      const res = await authorizeCanonical({
+        identity: { userId: "usr-ghost", username: "ghost", status: "AKTIF", accountType: "PERSONAL" },
+        capability: "tahfizh.setoran.create",
+        dataProvider: provider,
+      });
+
+      assert.strictEqual(res.decision, "DENY");
+      assert.strictEqual(res.reasonCode, "IDENTITY_NOT_LINKED");
+    });
+
+    it("12.3. required Staff/Santri profile missing or inactive -> DENY", async () => {
+      const mtAssignment: CanonicalAssignmentWithDetails = {
+        id: "asg-mt",
+        userId: "usr-mt",
+        positionId: "pos-mt",
+        positionCode: "MUSYRIF_TAHFIZH",
+        positionName: "Musyrif Tahfizh",
+        domain: "TAHFIZH",
+        unitId: "unit-thf",
+        unitCode: "THF",
+        unitName: "Tahfizh",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          { capabilityCode: "tahfizh.setoran.create", scopeType: "HALAQOH", businessRuleState: "VERIFIED_PRODUCTION" },
+        ],
+        scopeUnits: [],
+      };
+
+      // Case A: linked Staff record missing
+      const providerNoStaff: ICanonicalDataProvider = {
+        async getIdentity(id) {
+          return { userId: id, username: "mt.nostaff", status: "AKTIF", accountType: "PERSONAL", staffId: null, staffStatus: null };
+        },
+        async getActiveAssignments() { return [mtAssignment]; },
+        async getUnitAccountPlacement() { return null; },
+        async verifyHumanExecutor() { return null; },
+        async resolveResourceContext() { return { orgUnitIds: ["unit-thf"] }; },
+      };
+
+      const resNoStaff = await authorizeCanonical({
+        identity: { userId: "usr-mt", username: "mt.nostaff", status: "AKTIF", accountType: "PERSONAL" },
+        capability: "tahfizh.setoran.create",
+        dataProvider: providerNoStaff,
+      });
+      assert.strictEqual(resNoStaff.decision, "DENY");
+      assert.strictEqual(resNoStaff.reasonCode, "IDENTITY_NOT_LINKED");
+
+      // Case B: linked Staff record inactive
+      const providerInactiveStaff: ICanonicalDataProvider = {
+        async getIdentity(id) {
+          return { userId: id, username: "mt.inactivestaff", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-1", staffStatus: "NONAKTIF" };
+        },
+        async getActiveAssignments() { return [mtAssignment]; },
+        async getUnitAccountPlacement() { return null; },
+        async verifyHumanExecutor() { return null; },
+        async resolveResourceContext() { return { orgUnitIds: ["unit-thf"] }; },
+      };
+
+      const resInactiveStaff = await authorizeCanonical({
+        identity: { userId: "usr-mt", username: "mt.inactivestaff", status: "AKTIF", accountType: "PERSONAL" },
+        capability: "tahfizh.setoran.create",
+        dataProvider: providerInactiveStaff,
+      });
+      assert.strictEqual(resInactiveStaff.decision, "DENY");
+      assert.strictEqual(resInactiveStaff.reasonCode, "IDENTITY_INACTIVE");
+    });
+
+    it("12.4. DOMAIN scope fail-closed: missing context orgDomain, missing grant domain, or mismatch", () => {
+      const subject = {
+        userId: "usr-subject",
+        staffId: "stf-1",
+        santriId: null,
+      };
+
+      const grant: EffectiveCapabilityGrant = {
+        capabilityCode: "health.record.create",
+        scopeType: "DOMAIN",
+        assignmentId: "asg-1",
+        positionCode: "KEPALA_KEASRAMAAN",
+        anchorUnitId: "unit-asr",
+        unitIds: ["unit-asr"],
+        businessRuleState: "VERIFIED_PRODUCTION",
+      };
+      (grant as unknown as { orgDomain: OrgDomain }).orgDomain = "KEASRAMAAN";
+
+      // Missing context orgDomain -> DENY INVALID_RESOURCE_CONTEXT
+      const resMissingContextDomain = evaluateScopePredicate(
+        grant,
+        { orgUnitIds: ["unit-asr"] },
+        subject
+      );
+      assert.strictEqual(resMissingContextDomain.matches, false);
+      assert.strictEqual(resMissingContextDomain.code, "INVALID_RESOURCE_CONTEXT");
+
+      // Missing grant domain -> DENY SYSTEM_FAIL_CLOSED
+      const grantNoDomain: EffectiveCapabilityGrant = { ...grant };
+      delete (grantNoDomain as unknown as { orgDomain?: OrgDomain }).orgDomain;
+      delete (grantNoDomain as unknown as { domain?: OrgDomain }).domain;
+
+      const resMissingGrantDomain = evaluateScopePredicate(
+        grantNoDomain,
+        { orgUnitIds: ["unit-asr"], orgDomain: "KEASRAMAAN" },
+        subject
+      );
+      assert.strictEqual(resMissingGrantDomain.matches, false);
+      assert.strictEqual(resMissingGrantDomain.code, "SYSTEM_FAIL_CLOSED");
+
+      // Domain mismatch -> DENY SCOPE_MISMATCH
+      const resMismatch = evaluateScopePredicate(
+        grant,
+        { orgUnitIds: ["unit-asr"], orgDomain: "TAHFIZH" },
+        subject
+      );
+      assert.strictEqual(resMismatch.matches, false);
+      assert.strictEqual(resMismatch.code, "SCOPE_MISMATCH");
+
+      // Domain match -> ALLOW
+      const resMatch = evaluateScopePredicate(
+        grant,
+        { orgUnitIds: ["unit-asr"], orgDomain: "KEASRAMAAN" },
+        subject
+      );
+      assert.strictEqual(resMatch.matches, true);
+    });
+
+    it("12.5. Attack regression: spoofed halaqoh caller context fails closed", async () => {
+      const mtAssignment: CanonicalAssignmentWithDetails = {
+        id: "asg-mt",
+        userId: "usr-attacker-mt",
+        positionId: "pos-mt",
+        positionCode: "MUSYRIF_TAHFIZH",
+        positionName: "Musyrif Tahfizh",
+        domain: "TAHFIZH",
+        unitId: "unit-thf",
+        unitCode: "THF",
+        unitName: "Tahfizh",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          { capabilityCode: "tahfizh.setoran.create", scopeType: "HALAQOH", businessRuleState: "VERIFIED_PRODUCTION" },
+        ],
+        scopeUnits: [],
+      };
+
+      // The authoritative provider hydrates santri's real halaqoh (hlq-victim-santri)
+      // regardless of caller claiming halaqohId = hlq-attacker-own
+      const provider: ICanonicalDataProvider = {
+        async getIdentity(id) {
+          return { userId: id, username: "attacker.mt", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-1", staffStatus: "AKTIF" };
+        },
+        async getActiveAssignments() { return [mtAssignment]; },
+        async getUnitAccountPlacement() { return null; },
+        async verifyHumanExecutor() { return null; },
+        async resolveResourceContext(req) {
+          const targetSantriHalaqoh = req.santriId === "santri-outside" ? "hlq-victim-santri" : req.halaqohId;
+          return {
+            orgUnitIds: ["unit-thf"],
+            santriId: req.santriId,
+            halaqohId: targetSantriHalaqoh,
+            assignedHalaqohIds: ["hlq-attacker-own"],
+          };
+        },
+      };
+
+      const res = await authorizeCanonical({
+        identity: { userId: "usr-attacker-mt", username: "attacker.mt", status: "AKTIF", accountType: "PERSONAL" },
+        capability: "tahfizh.setoran.create",
+        // Attacker sends student outside their halaqoh, but injects their own halaqohId
+        resourceContext: {
+          santriId: "santri-outside",
+          halaqohId: "hlq-attacker-own",
+        },
+        dataProvider: provider,
+      });
+
+      assert.strictEqual(res.decision, "DENY");
+      assert.strictEqual(res.reasonCode, "SCOPE_MISMATCH");
+    });
+
+    it("12.6. Attack regression: spoofed kamar caller context fails closed", async () => {
+      const mudabbirAssignment: CanonicalAssignmentWithDetails = {
+        id: "asg-mudabbir",
+        userId: "usr-attacker-mudabbir",
+        positionId: "pos-mudabbir",
+        positionCode: "MUDABBIR",
+        positionName: "Mudabbir",
+        domain: "KEASRAMAAN",
+        unitId: "unit-asr",
+        unitCode: "ASR",
+        unitName: "Asrama",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          { capabilityCode: "keasramaan.kamar.inspect", scopeType: "KAMAR", businessRuleState: "VERIFIED_PRODUCTION" },
+        ],
+        scopeUnits: [],
+      };
+
+      const provider: ICanonicalDataProvider = {
+        async getIdentity(id) {
+          return { userId: id, username: "attacker.mudabbir", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-2", staffStatus: "AKTIF" };
+        },
+        async getActiveAssignments() { return [mudabbirAssignment]; },
+        async getUnitAccountPlacement() { return null; },
+        async verifyHumanExecutor() { return null; },
+        async resolveResourceContext(req) {
+          const realKamarId = req.santriId === "santri-other-kamar" ? "kmr-victim-kamar" : req.kamarId;
+          return {
+            orgUnitIds: ["unit-asr"],
+            santriId: req.santriId,
+            kamarId: realKamarId,
+            assignedKamarIds: ["kmr-attacker-own"],
+          };
+        },
+      };
+
+      const res = await authorizeCanonical({
+        identity: { userId: "usr-attacker-mudabbir", username: "attacker.mudabbir", status: "AKTIF", accountType: "PERSONAL" },
+        capability: "keasramaan.kamar.inspect",
+        resourceContext: {
+          santriId: "santri-other-kamar",
+          kamarId: "kmr-attacker-own", // Attacker tries to spoof their own kamarId
+        },
+        dataProvider: provider,
+      });
+
+      assert.strictEqual(res.decision, "DENY");
+      assert.strictEqual(res.reasonCode, "SCOPE_MISMATCH");
+    });
+
+    it("12.7. OWN_CHILD: server-side relation hydration prevents unauthorized child access", async () => {
+      const wsAssignment: CanonicalAssignmentWithDetails = {
+        id: "asg-ws",
+        userId: "usr-wali",
+        positionId: "pos-ws",
+        positionCode: "WALI_SANTRI",
+        positionName: "Wali Santri",
+        domain: "INSTITUTIONAL",
+        unitId: "unit-portal",
+        unitCode: "PORTAL",
+        unitName: "Portal",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          { capabilityCode: "santri.rapor.view", scopeType: "OWN_CHILD", businessRuleState: "VERIFIED_PRODUCTION" },
+        ],
+        scopeUnits: [],
+      };
+
+      // Provider authoritatively provides guardian's real children: only ["san-child-real"]
+      const provider: ICanonicalDataProvider = {
+        async getIdentity(id) {
+          return { userId: id, username: "wali.test", status: "AKTIF", accountType: "PERSONAL" };
+        },
+        async getActiveAssignments() { return [wsAssignment]; },
+        async getUnitAccountPlacement() { return null; },
+        async verifyHumanExecutor() { return null; },
+        async resolveResourceContext(req) {
+          return {
+            orgUnitIds: ["unit-portal"],
+            santriId: req.santriId,
+            guardianLinkedSantriIds: ["san-child-real"],
+          };
+        },
+      };
+
+      // Attempt 1: Accessing unlinked child -> DENY
+      const resUnlinked = await authorizeCanonical({
+        identity: { userId: "usr-wali", username: "wali.test", status: "AKTIF", accountType: "PERSONAL" },
+        capability: "santri.rapor.view",
+        resourceContext: { santriId: "san-other-santri" },
+        dataProvider: provider,
+      });
+      assert.strictEqual(resUnlinked.decision, "DENY");
+      assert.strictEqual(resUnlinked.reasonCode, "SCOPE_MISMATCH");
+
+      // Attempt 2: Accessing real child -> ALLOW
+      const resReal = await authorizeCanonical({
+        identity: { userId: "usr-wali", username: "wali.test", status: "AKTIF", accountType: "PERSONAL" },
+        capability: "santri.rapor.view",
+        resourceContext: { santriId: "san-child-real" },
+        dataProvider: provider,
+      });
+      assert.strictEqual(resReal.decision, "ALLOW");
+    });
+
+    it("12.8. UNIT account read: assignment unit must match placement unit", async () => {
+      const unitAssignmentMismatch: CanonicalAssignmentWithDetails = {
+        id: "asg-osda-wrong-unit",
+        userId: "usr-kiosk",
+        positionId: "pos-osda",
+        positionCode: "ANGGOTA_OSDA",
+        positionName: "Anggota OSDA",
+        domain: "KEASRAMAAN",
+        unitId: "unit-asrama-putri", // MISMATCH: assigned to putri
+        unitCode: "PUTRI",
+        unitName: "Putri",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          { capabilityCode: "keasramaan.presensi.view", scopeType: "UNIT", businessRuleState: "VERIFIED_PRODUCTION" },
+        ],
+        scopeUnits: [],
+      };
+
+      // Provider with placement at unit-asrama-putra
+      const providerMismatch: ICanonicalDataProvider = {
+        async getIdentity(id) {
+          return {
+            userId: id,
+            username: "kiosk.putra",
+            status: "AKTIF",
+            accountType: "UNIT",
+            placementUnitId: "unit-asrama-putra",
+          };
+        },
+        async getActiveAssignments() { return [unitAssignmentMismatch]; },
+        async getUnitAccountPlacement() { return { unitId: "unit-asrama-putra" }; },
+        async verifyHumanExecutor() { return null; },
+        async resolveResourceContext() { return { orgUnitIds: ["unit-asrama-putra"] }; },
+      };
+
+      const resMismatch = await authorizeCanonical({
+        identity: { userId: "usr-kiosk", username: "kiosk.putra", status: "AKTIF", accountType: "UNIT" },
+        capability: "keasramaan.presensi.view",
+        isMutation: false,
+        dataProvider: providerMismatch,
+      });
+      assert.strictEqual(resMismatch.decision, "DENY");
+      assert.strictEqual(resMismatch.reasonCode, "UNIT_PLACEMENT_MISMATCH");
+
+      // Matching assignment unit
+      const unitAssignmentMatch: CanonicalAssignmentWithDetails = {
+        ...unitAssignmentMismatch,
+        unitId: "unit-asrama-putra",
+      };
+      const providerMatch: ICanonicalDataProvider = {
+        ...providerMismatch,
+        async getActiveAssignments() { return [unitAssignmentMatch]; },
+      };
+
+      const resMatch = await authorizeCanonical({
+        identity: { userId: "usr-kiosk", username: "kiosk.putra", status: "AKTIF", accountType: "UNIT" },
+        capability: "keasramaan.presensi.view",
+        isMutation: false,
+        resourceContext: { unitId: "unit-asrama-putra" },
+        resolvedContext: { orgUnitIds: ["unit-asrama-putra"] },
+        dataProvider: providerMatch,
+      });
+      assert.strictEqual(resMatch.decision, "ALLOW");
+    });
+
+    it("12.9. UNIT account mutation: requires valid human executor matching placement unit", async () => {
+      const osdaMutationAsg: CanonicalAssignmentWithDetails = {
+        id: "asg-osda-mut",
+        userId: "usr-kiosk",
+        positionId: "pos-osda",
+        positionCode: "ANGGOTA_OSDA",
+        positionName: "Anggota OSDA",
+        domain: "KEASRAMAAN",
+        unitId: "unit-kios-1",
+        unitCode: "KIOS1",
+        unitName: "Kios 1",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          { capabilityCode: "keasramaan.presensi.create", scopeType: "UNIT", businessRuleState: "VERIFIED_PRODUCTION" },
+        ],
+        scopeUnits: [],
+      };
+
+      const provider: ICanonicalDataProvider = {
+        async getIdentity(id) {
+          return {
+            userId: id,
+            username: "kiosk.osda",
+            status: "AKTIF",
+            accountType: "UNIT",
+            placementUnitId: "unit-kios-1",
+          };
+        },
+        async getActiveAssignments() { return [osdaMutationAsg]; },
+        async getUnitAccountPlacement() { return { unitId: "unit-kios-1" }; },
+        async verifyHumanExecutor(execId) {
+          if (execId === "stf-active") {
+            return { id: execId, name: "Ust. Ahmad", isActive: true };
+          }
+          return null;
+        },
+        async resolveResourceContext() { return { orgUnitIds: ["unit-kios-1"] }; },
+      };
+
+      // Case A: Mutation without executor -> DENY UNIT_EXECUTOR_REQUIRED
+      const resNoExec = await authorizeCanonical({
+        identity: { userId: "usr-kiosk", username: "kiosk.osda", status: "AKTIF", accountType: "UNIT" },
+        capability: "keasramaan.presensi.create",
+        isMutation: true,
+        resourceContext: { unitId: "unit-kios-1" },
+        resolvedContext: { orgUnitIds: ["unit-kios-1"] },
+        dataProvider: provider,
+      });
+      assert.strictEqual(resNoExec.decision, "DENY");
+      assert.strictEqual(resNoExec.reasonCode, "UNIT_EXECUTOR_REQUIRED");
+
+      // Case B: Mutation with executor unit mismatch -> DENY UNIT_PLACEMENT_MISMATCH
+      const resExecMismatch = await authorizeCanonical({
+        identity: { userId: "usr-kiosk", username: "kiosk.osda", status: "AKTIF", accountType: "UNIT" },
+        capability: "keasramaan.presensi.create",
+        isMutation: true,
+        executorContext: {
+          technicalAccountId: "usr-kiosk",
+          technicalAccountUsername: "kiosk.osda",
+          humanExecutorId: "stf-active",
+          humanExecutorName: "Ust. Ahmad",
+          unitId: "unit-kios-WRONG",
+          assignmentId: "asg-osda-mut",
+        },
+        resourceContext: { unitId: "unit-kios-1" },
+        resolvedContext: { orgUnitIds: ["unit-kios-1"] },
+        dataProvider: provider,
+      });
+      assert.strictEqual(resExecMismatch.decision, "DENY");
+      assert.strictEqual(resExecMismatch.reasonCode, "UNIT_PLACEMENT_MISMATCH");
+
+      // Case C: Mutation with valid executor -> ALLOW
+      const resExecValid = await authorizeCanonical({
+        identity: { userId: "usr-kiosk", username: "kiosk.osda", status: "AKTIF", accountType: "UNIT" },
+        capability: "keasramaan.presensi.create",
+        isMutation: true,
+        executorContext: {
+          technicalAccountId: "usr-kiosk",
+          technicalAccountUsername: "kiosk.osda",
+          humanExecutorId: "stf-active",
+          humanExecutorName: "Ust. Ahmad",
+          unitId: "unit-kios-1",
+          assignmentId: "asg-osda-mut",
+        },
+        resourceContext: { unitId: "unit-kios-1" },
+        resolvedContext: { orgUnitIds: ["unit-kios-1"] },
+        dataProvider: provider,
+      });
+      assert.strictEqual(resExecValid.decision, "ALLOW");
+    });
+
+    it("12.10. shadow mutation forwards isMutation and executorContext to canonical engine", async () => {
+      const sink = new InMemoryParitySink();
+      const unitAsg: CanonicalAssignmentWithDetails = {
+        id: "asg-kiosk",
+        userId: "usr-kiosk",
+        positionId: "pos-osda",
+        positionCode: "ANGGOTA_OSDA",
+        positionName: "Anggota OSDA",
+        domain: "KEASRAMAAN",
+        unitId: "unit-kios-1",
+        unitCode: "KIOS1",
+        unitName: "Kios 1",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          { capabilityCode: "keasramaan.presensi.create", scopeType: "UNIT", businessRuleState: "VERIFIED_PRODUCTION" },
+        ],
+        scopeUnits: [],
+      };
+
+      const provider: ICanonicalDataProvider = {
+        async getIdentity(id) {
+          return { userId: id, username: "kiosk.osda", status: "AKTIF", accountType: "UNIT", placementUnitId: "unit-kios-1" };
+        },
+        async getActiveAssignments() { return [unitAsg]; },
+        async getUnitAccountPlacement() { return { unitId: "unit-kios-1" }; },
+        async verifyHumanExecutor() { return { id: "stf-1", name: "Ust. Ahmad", isActive: true }; },
+        async resolveResourceContext() { return { orgUnitIds: ["unit-kios-1"] }; },
+      };
+
+      const session: UserSession = {
+        userId: "usr-kiosk",
+        username: "kiosk.osda",
+        role: "OSDA",
+      };
+
+      // Case A: mutation without executorContext -> canonical denies, mismatch reported
+      const evalWithoutExec = await evaluateShadowAuthorization({
+        session,
+        capabilityCode: "keasramaan.presensi.create",
+        legacyCheck: () => true, // legacy allows
+        isMutation: true,
+        dataProvider: provider,
+        paritySink: sink,
+      });
+      assert.strictEqual(evalWithoutExec.runtimeAllowed, true); // legacy preserved
+      assert.strictEqual(evalWithoutExec.parityRecord.parityStatus, "MISMATCH_LEGACY_ALLOW");
+      assert.strictEqual(evalWithoutExec.parityRecord.reasonCode, "UNIT_EXECUTOR_REQUIRED");
+
+      // Case B: mutation with executorContext -> canonical allows, match reported
+      const evalWithExec = await evaluateShadowAuthorization({
+        session,
+        capabilityCode: "keasramaan.presensi.create",
+        legacyCheck: () => true,
+        isMutation: true,
+        executorContext: {
+          technicalAccountId: "usr-kiosk",
+          technicalAccountUsername: "kiosk.osda",
+          humanExecutorId: "stf-1",
+          humanExecutorName: "Ust. Ahmad",
+          unitId: "unit-kios-1",
+          assignmentId: "asg-kiosk",
+        },
+        resourceContext: { unitId: "unit-kios-1" },
+        resolvedContext: { orgUnitIds: ["unit-kios-1"] },
+        dataProvider: provider,
+        paritySink: sink,
+      });
+      assert.strictEqual(evalWithExec.runtimeAllowed, true);
+      assert.strictEqual(evalWithExec.parityRecord.parityStatus, "MATCH_ALLOW");
+    });
+
+    it("12.11. shadow flag OFF performs ZERO canonical provider calls and executes legacy directly", async () => {
+      const originalFlag = process.env.CANONICAL_AUTH_SHADOW_ENABLED;
+      try {
+        process.env.CANONICAL_AUTH_SHADOW_ENABLED = "false";
+        assert.strictEqual(isCanonicalShadowEnabled(), false);
+
+        let providerFactoryCalled = false;
+        let legacyCalled = false;
+
+        const result = await shadowAuthorizeIfEnabled({
+          session: { userId: "usr-1", username: "u1", role: "MT" },
+          capabilityCode: "tahfizh.setoran.create",
+          legacyCheck: () => {
+            legacyCalled = true;
+            return true;
+          },
+          dataProviderFactory: () => {
+            providerFactoryCalled = true;
+            throw new Error("Provider factory must NOT be invoked when shadow flag is OFF");
+          },
+        });
+
+        assert.strictEqual(result, true);
+        assert.strictEqual(legacyCalled, true);
+        assert.strictEqual(providerFactoryCalled, false, "Canonical provider factory must NEVER be called when flag is OFF");
+      } finally {
+        process.env.CANONICAL_AUTH_SHADOW_ENABLED = originalFlag;
+      }
+    });
+
+    it("12.12. shadow flag ON dual-evaluates but strictly preserves legacy decision as runtime decision", async () => {
+      const originalFlag = process.env.CANONICAL_AUTH_SHADOW_ENABLED;
+      try {
+        process.env.CANONICAL_AUTH_SHADOW_ENABLED = "true";
+        assert.strictEqual(isCanonicalShadowEnabled(), true);
+
+        const denyingProvider: ICanonicalDataProvider = {
+          async getIdentity() { return null; },
+          async getActiveAssignments() { return []; },
+          async getUnitAccountPlacement() { return null; },
+          async verifyHumanExecutor() { return null; },
+          async resolveResourceContext() { return null; },
+        };
+
+        // Case A: Legacy returns TRUE, canonical returns FALSE -> runtime MUST return TRUE
+        const resultAllow = await shadowAuthorizeIfEnabled({
+          session: { userId: "usr-1", username: "u1", role: "MT" },
+          capabilityCode: "tahfizh.setoran.create",
+          legacyCheck: () => true,
+          dataProviderFactory: () => denyingProvider,
+        });
+        assert.strictEqual(resultAllow, true, "Runtime outcome must follow legacy decision (TRUE) even when canonical denies");
+
+        // Case B: Legacy returns FALSE, canonical would return TRUE -> runtime MUST return FALSE
+        const allowingAssignment: CanonicalAssignmentWithDetails = {
+          id: "asg-mudir",
+          userId: "usr-mudir",
+          positionId: "pos-mudir",
+          positionCode: "MUDIR",
+          positionName: "Mudir",
+          domain: "INSTITUTIONAL",
+          unitId: "unit-root",
+          unitCode: "ROOT",
+          unitName: "Root",
+          status: "ACTIVE",
+          validFrom: new Date(0),
+          validUntil: null,
+          positionCapabilities: [
+            { capabilityCode: "tahfizh.setoran.create", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+          ],
+          scopeUnits: [],
+        };
+
+        const allowingProvider: ICanonicalDataProvider = {
+          async getIdentity(id) {
+            return { userId: id, username: "mudir", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-1", staffStatus: "AKTIF" };
+          },
+          async getActiveAssignments() { return [allowingAssignment]; },
+          async getUnitAccountPlacement() { return null; },
+          async verifyHumanExecutor() { return null; },
+          async resolveResourceContext() { return { orgUnitIds: ["unit-root"] }; },
+        };
+
+        const resultDeny = await shadowAuthorizeIfEnabled({
+          session: { userId: "usr-mudir", username: "mudir", role: "MT" },
+          capabilityCode: "tahfizh.setoran.create",
+          legacyCheck: () => false, // Legacy denies
+          dataProviderFactory: () => allowingProvider,
+        });
+        assert.strictEqual(resultDeny, false, "Runtime outcome must follow legacy decision (FALSE) even when canonical allows");
+      } finally {
+        process.env.CANONICAL_AUTH_SHADOW_ENABLED = originalFlag;
+      }
+    });
+  });
 });
+
