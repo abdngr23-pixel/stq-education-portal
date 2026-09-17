@@ -39,9 +39,26 @@ The table below provides 1:1 traceability for each UAT feedback item, preserving
 | **7. Halaqoh: no MASBUK** | `MASBUK` is removed as a selectable option for NEW halaqoh attendance entries. Historical `MASBUK` records are strictly preserved (no deletion or rewriting). | `HALAQOH_ATTENDANCE_NEW_ENTRY_OPTIONS` (`HADIR`, `SAKIT`, `IZIN`, `ALFA`) | `HALAQOH` | **IMPLEMENTED_IN_PR** | `tests/milestone3-2-uat-business-rules.test.ts` (Section 7) |
 | **8. Tahajjud: SHOLAT / ALFA** | Tahajjud attendance offers exactly two selectable choices for new entry: `SHOLAT` and `ALFA`. Historical records preserved safely. | `TAHAJJUD_ATTENDANCE_NEW_ENTRY_OPTIONS` (`SHOLAT`, `ALFA`) | `KEASRAMAAN` | **IMPLEMENTED_IN_PR** | `tests/milestone3-2-uat-business-rules.test.ts` (Section 8) |
 | **10. Santriwati OSDA-like account** | Technical operational account for santriwati unit operations (`AccountType.UNIT`) placed in OSDA PUTRI (`genderComplex: "PUTRI"`). Invariants: 1 active placement, mutations require verified human executor, zero PUTRA data access. | `OSDA_PUTRI_UNIT_CONTRACT` | `OU-OSDA-PUTRI` | **APPROVED_TARGET_PENDING_TECHNICAL** | `tests/milestone3-2-uat-business-rules.test.ts` (Section 9) |
-| **11. Reward issuer** | Authorized issuers: Mudir (`GLOBAL`, `VERIFIED_PRODUCTION`), Kabid Tahfizh (`DOMAIN`, `VERIFIED_PRODUCTION`), and special operational assignment (`PETUGAS_OPERASIONAL_TAHFIZH`, `APPROVED_TARGET_PENDING_TECHNICAL`). Ordinary MT, PH, ADM strictly denied. Scoped strictly to assigned units. | `tahfizh.reward.issue` | `ASSIGNED_UNITS` (Operational issuer) | **APPROVED_TARGET_PENDING_TECHNICAL** | `tests/milestone3-2-uat-business-rules.test.ts` (Section 10) |
+| **11. Reward issuer** | Business Owner confirmed: special operational reward issuer authority is limited to assigned units/groups only (`ASSIGNED_UNITS`). Lisa-equivalent operational staff (`PETUGAS_OPERASIONAL_TAHFIZH`) may issue Tasmi'/Sima'an rewards ONLY for santri belonging to her authoritative assigned units/halaqoh (NOT `GLOBAL`, NOT `DOMAIN`). Outside assigned units: `DENY SCOPE_MISMATCH`. Existing verified managerial authority preserved: Mudir (`GLOBAL`, `VERIFIED_PRODUCTION`), Kabid Tahfizh (`DOMAIN`, `VERIFIED_PRODUCTION`). Ordinary MT, PH, ADM strictly denied. `GLOBAL` recap read never widens reward issuance scope. | `tahfizh.reward.issue` | `ASSIGNED_UNITS` (Operational issuer) | **APPROVED_TARGET_PENDING_TECHNICAL** | `tests/milestone3-2-uat-business-rules.test.ts` (Section 10) |
 | **12. Broad Lisa scoped operational access** | Operational staff requiring cross-functional access across Pendidikan, Keasramaan, and OSDA are modeled via multiple generic functional assignments with active Staff linkage, strictly scoped to assigned student/group units. | Multiple granular capabilities | `ASSIGNED_UNITS` / `UNIT` / `HALAQOH` | **APPROVED_TARGET_PENDING_TECHNICAL** | `tests/milestone3-2-uat-business-rules.test.ts` (Section 1) |
 | **13. Backdated Tahfizh date picker** | End-to-end date picker on Tahfizh setoran form: default today WITA, past dates allowed, future dates denied. Stored in `tanggal`, immutable `createdAt` preserved. Applies to SABAQ, SABQI, MANZIL, MUFAR. Server action, persistence, and API parity maintained. | `tanggalSetoran` / `occurredAt` | `HALAQOH` | **IMPLEMENTED_IN_PR / PENDING_PRODUCTION_VERIFICATION** | `tests/milestone3-2-uat-business-rules.test.ts` (Section 11) |
+
+---
+
+### 2.1. UAT Item #11 Clarification — Operational Reward Issuance Scope
+Business Owner confirmed: special operational reward issuer authority is limited to assigned units/groups only.
+- **Position**: `PETUGAS_OPERASIONAL_TAHFIZH` (generic operational position linked to active Staff profile; zero username, name, or email matching).
+- **Capability**: `tahfizh.reward.issue`
+- **Permitted Scope**: `ASSIGNED_UNITS` (strictly restricted to assigned halaqoh/units; NOT `GLOBAL`, NOT `DOMAIN`, NOT all-santri reward authority).
+- **Target Boundary**:
+  - Santri in assigned unit $\implies$ `ALLOW` (`ALLOWED`)
+  - Santri outside assigned unit $\implies$ `DENY` (`SCOPE_MISMATCH`)
+- **Isolation Invariant**: Lisa's authorities remain strictly orthogonal:
+  - Tahfizh recap READ: `tahfizh.recap.read` (scope: `GLOBAL`)
+  - Reward issuance: `tahfizh.reward.issue` (scope: `ASSIGNED_UNITS`)
+  - Setoran WRITE: `tahfizh.setoran.create` (scope: `HALAQOH`)
+  - *Invariant*: `GLOBAL` recap READ must NEVER cause `GLOBAL` reward WRITE.
+- **Managerial Authority**: Preserves existing verified rules: Mudir (`GLOBAL`, `VERIFIED_PRODUCTION`) and Kabid Tahfizh (`DOMAIN`, `VERIFIED_PRODUCTION`). Ordinary MT, PH, and ADM strictly denied.
 
 ---
 

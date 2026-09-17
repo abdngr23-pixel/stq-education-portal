@@ -899,7 +899,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
       assert.strictEqual(res.code, "CAPABILITY_NOT_GRANTED");
     });
 
-    it("10.2. Special operational issuer grant in isolated target contract evaluation matches assigned units only", () => {
+    it("10.2. Business Owner confirmed: special operational reward issuer authority is limited to assigned units/groups only", () => {
+      // Business Owner confirmed: special operational reward issuer authority is limited to assigned units/groups only.
       const targetGrant: EffectiveCapabilityGrant = {
         assignmentId: "asg-op-reward-issuer",
         positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
@@ -918,10 +919,10 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
         orgDomain: "TAHFIZH",
       };
       const allowRes = evaluateScopePredicate(targetGrant, inUnitContext, { userId: "usr-op" });
-      assert.strictEqual(allowRes.matches, true);
+      assert.strictEqual(allowRes.matches, true, "Assigned target santri must match scope");
       assert.strictEqual(allowRes.code, "ALLOWED");
 
-      // Unassigned unit resource -> Denied
+      // Unassigned unit resource -> Denied (SCOPE_MISMATCH)
       const outUnitContext: ResolvedResourceContext = {
         resourceId: "tasmi-99",
         santriId: "san-other-99",
@@ -929,8 +930,48 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
         orgDomain: "TAHFIZH",
       };
       const denyRes = evaluateScopePredicate(targetGrant, outUnitContext, { userId: "usr-op" });
-      assert.strictEqual(denyRes.matches, false);
+      assert.strictEqual(denyRes.matches, false, "Outside assigned target must be denied");
       assert.strictEqual(denyRes.code, "SCOPE_MISMATCH");
+    });
+
+    it("10.3. GLOBAL tahfizh.recap.read does NOT widen tahfizh.reward.issue scope", () => {
+      // Operational staff has GLOBAL recap read and ASSIGNED_UNITS reward issue
+      const recapGrant: EffectiveCapabilityGrant = {
+        assignmentId: "asg-lisa-recap",
+        positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+        capabilityCode: TAHFIZH_M32_CAPABILITIES.RECAP_READ,
+        scopeType: "GLOBAL",
+        anchorUnitId: "inst-root",
+        unitIds: [],
+        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+      };
+
+      const rewardGrant: EffectiveCapabilityGrant = {
+        assignmentId: "asg-lisa-reward",
+        positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+        capabilityCode: TAHFIZH_M32_CAPABILITIES.REWARD_ISSUE,
+        scopeType: "ASSIGNED_UNITS",
+        anchorUnitId: "hlq-assigned-01",
+        unitIds: ["hlq-assigned-01"],
+        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+      };
+
+      // Santri in outside halaqoh/unit
+      const outsideContext: ResolvedResourceContext = {
+        resourceId: "tasmi-outside",
+        santriId: "san-outside-01",
+        orgUnitIds: ["hlq-outside-99"],
+        orgDomain: "TAHFIZH",
+      };
+
+      // Recap read matches globally across all units
+      const recapEval = evaluateScopePredicate(recapGrant, outsideContext, { userId: "usr-lisa" });
+      assert.strictEqual(recapEval.matches, true, "GLOBAL recap read allows institutional scope");
+
+      // But reward issuance on the same outside santri/resource strictly fails closed with SCOPE_MISMATCH
+      const rewardEval = evaluateScopePredicate(rewardGrant, outsideContext, { userId: "usr-lisa" });
+      assert.strictEqual(rewardEval.matches, false, "GLOBAL recap read must NEVER widen ASSIGNED_UNITS reward issue");
+      assert.strictEqual(rewardEval.code, "SCOPE_MISMATCH");
     });
   });
 
