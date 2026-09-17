@@ -1,14 +1,45 @@
 import EmbeddedPostgres from "embedded-postgres";
-import pg from "pg";
-const { Client: PgClient } = pg;
-
-interface SimplePgClient {
-  connect(): Promise<void>;
-  query(sql: string): Promise<{ rows: Record<string, unknown>[] }>;
-  end(): Promise<void>;
-  on(event: string, listener: (...args: unknown[]) => void): void;
-}
 import { PrismaClient } from "@prisma/client";
+
+async function executeSqlStatementsOnClient(prismaClient: PrismaClient, sqlString: string): Promise<void> {
+  // Strip single-line comments (-- ...)
+  const clean = sqlString.replace(/--.*$/gm, "");
+  const statements: string[] = [];
+  let current = "";
+  let inDollarQuote = false;
+
+  for (let i = 0; i < clean.length; i++) {
+    const char = clean[i];
+    const nextChar = clean[i + 1];
+
+    if (char === "$" && nextChar === "$") {
+      inDollarQuote = !inDollarQuote;
+      current += "$$";
+      i++;
+      continue;
+    }
+
+    if (char === ";" && !inDollarQuote) {
+      const trimmed = current.trim();
+      if (trimmed.length > 0) {
+        statements.push(trimmed);
+      }
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  const trimmed = current.trim();
+  if (trimmed.length > 0) {
+    statements.push(trimmed);
+  }
+
+  for (const stmt of statements) {
+    await prismaClient.$executeRawUnsafe(stmt);
+  }
+}
 import { execSync, spawnSync, ChildProcess } from "child_process";
 import fs from "fs";
 import os from "os";
@@ -1610,7 +1641,6 @@ export async function runIsolatedExistingDataUpgradeVerification(): Promise<Exis
 
   let mainPid: number | null = null;
   let descendantPids: Set<number> = new Set();
-  let pgClient: SimplePgClient | null = null;
   let client: PrismaClient | null = null;
 
   try {
@@ -1652,10 +1682,6 @@ export async function runIsolatedExistingDataUpgradeVerification(): Promise<Exis
       datasources: { db: { url: testUrl } },
     });
 
-    pgClient = new PgClient({ connectionString: testUrl });
-    pgClient.on("error", () => {}); // Mencegah uncaught ECONNRESET saat proses postgres berhenti
-    await pgClient.connect();
-
     // 2. Terapkan migrasi 1..5 rantai main
     const mainMigrations = [
       "20260910083000_setoran_tahfizh_page_based",
@@ -1668,7 +1694,7 @@ export async function runIsolatedExistingDataUpgradeVerification(): Promise<Exis
     for (const m of mainMigrations) {
       const sqlPath = path.join(projectRoot, "prisma/migrations", m, "migration.sql");
       const sql = fs.readFileSync(sqlPath, "utf-8");
-      await pgClient.query(sql);
+      await executeSqlStatementsOnClient(client, sql);
     }
 
     // Pastikan kolom account_type BELUM ada di users sebelum Phase 2A
@@ -1731,7 +1757,7 @@ export async function runIsolatedExistingDataUpgradeVerification(): Promise<Exis
     // 5. Terapkan HANYA migrasi Phase 2A
     const phase2aSqlPath = path.join(projectRoot, "prisma/migrations/20260917000000_stq_architecture_lock_phase2a/migration.sql");
     const phase2aSql = fs.readFileSync(phase2aSqlPath, "utf-8");
-    await pgClient.query(phase2aSql);
+    await executeSqlStatementsOnClient(client, phase2aSql);
 
     // 6. Evaluasi pasca-migrasi
     const postUsersRaw: Array<{
@@ -1827,9 +1853,6 @@ export async function runIsolatedExistingDataUpgradeVerification(): Promise<Exis
       zeroAutoCreatedAuthority,
     };
   } finally {
-    if (pgClient) {
-      try { await pgClient.end(); } catch {}
-    }
     if (client) {
       try { await client.$disconnect(); } catch {}
     }
@@ -1902,7 +1925,7 @@ export async function runIsolatedProductionEquivalentSimulation(): Promise<Produ
 
   let mainPid: number | null = null;
   let descendantPids: Set<number> = new Set();
-  let pgClient: SimplePgClient | null = null;
+  let client: PrismaClient | null = null;
 
   try {
     await pgInstance.initialise();
@@ -1939,9 +1962,9 @@ export async function runIsolatedProductionEquivalentSimulation(): Promise<Produ
       cwd: projectRoot,
     });
 
-    pgClient = new PgClient({ connectionString: testUrl });
-    pgClient.on("error", () => {});
-    await pgClient.connect();
+    client = new PrismaClient({
+      datasources: { db: { url: testUrl } },
+    });
 
     // 2. Terapkan migrasi 1..5 rantai main
     const mainMigrations = [
@@ -1955,7 +1978,7 @@ export async function runIsolatedProductionEquivalentSimulation(): Promise<Produ
     for (const m of mainMigrations) {
       const sqlPath = path.join(projectRoot, "prisma/migrations", m, "migration.sql");
       const sql = fs.readFileSync(sqlPath, "utf-8");
-      await pgClient.query(sql);
+      await executeSqlStatementsOnClient(client, sql);
     }
 
     // 3. Ambil SQL migrasi PR #8 langsung dari commit SHA 9068cae5587b7219c394c5c25bf0de07a15b0726 (in-memory)
@@ -1966,20 +1989,20 @@ export async function runIsolatedProductionEquivalentSimulation(): Promise<Produ
     const pr8MigrationBytes = pr8Sql.length;
 
     // 4. Terapkan SQL migrasi PR #8
-    await pgClient.query(pr8Sql);
+    await executeSqlStatementsOnClient(client, pr8Sql);
 
     // 5. Terapkan SQL migrasi Phase 2A di atas PR #8
     const phase2aSqlPath = path.join(projectRoot, "prisma/migrations/20260917000000_stq_architecture_lock_phase2a/migration.sql");
     const phase2aSql = fs.readFileSync(phase2aSqlPath, "utf-8");
-    await pgClient.query(phase2aSql);
+    await executeSqlStatementsOnClient(client, phase2aSql);
 
     // 6. Verifikasi bahwa tabel evaluasi_rubu_tahfizh (dari PR #8) dan tabel org_units (dari Phase 2A) sama-sama ada
-    const res = await pgClient.query(`
+    const res: Array<{ table_name: string }> = await client.$queryRawUnsafe(`
       SELECT table_name FROM information_schema.tables
       WHERE table_schema = 'public' AND table_name IN ('evaluasi_rubu_tahfizh', 'org_units', 'assignments');
     `);
 
-    const tables = res.rows.map((r) => String(r.table_name));
+    const tables = res.map((r) => r.table_name);
     const simulationSuccess =
       tables.includes("evaluasi_rubu_tahfizh") &&
       tables.includes("org_units") &&
@@ -1994,8 +2017,8 @@ export async function runIsolatedProductionEquivalentSimulation(): Promise<Produ
       simulationSuccess,
     };
   } finally {
-    if (pgClient) {
-      try { await pgClient.end(); } catch {}
+    if (client) {
+      try { await client.$disconnect(); } catch {}
     }
     const pgCtl = getPgCtlPath();
     if (pgCtl && fs.existsSync(tempDir)) {
