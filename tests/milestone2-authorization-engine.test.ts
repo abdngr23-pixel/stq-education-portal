@@ -2477,6 +2477,262 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 2: COMPATIBILITY & CANONICAL AUTHO
         process.env.CANONICAL_AUTH_SHADOW_ENABLED = originalFlag;
       }
     });
+
+    it("12.13. Kamar Trust Boundary: caller cannot supply or spoof kamarId for target santri", async () => {
+      const mudabbirAssignment: CanonicalAssignmentWithDetails = {
+        id: "asg-mudabbir-room",
+        userId: "usr-mudabbir",
+        positionId: "pos-mudabbir",
+        positionCode: "MUDABBIR",
+        positionName: "Mudabbir",
+        domain: "KEASRAMAAN",
+        unitId: "unit-asr",
+        unitCode: "ASR",
+        unitName: "Asrama",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          { capabilityCode: "keasramaan.kamar.inspect", scopeType: "KAMAR", businessRuleState: "VERIFIED_PRODUCTION" },
+        ],
+        scopeUnits: [],
+      };
+
+      // Provider rejects caller-supplied kamarId when target santri has no kamar in DB
+      const provider: ICanonicalDataProvider = {
+        async getIdentity(id) {
+          return { userId: id, username: "mudabbir", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-1", staffStatus: "AKTIF" };
+        },
+        async getActiveAssignments() { return [mudabbirAssignment]; },
+        async getUnitAccountPlacement() { return null; },
+        async verifyHumanExecutor() { return null; },
+        async resolveResourceContext(req) {
+          // Santri is in DB but has no authoritative kamar assigned
+          // The provider MUST NOT trust req.kamarId!
+          return {
+            orgUnitIds: ["unit-asr"],
+            santriId: req.santriId,
+            kamarId: undefined, // Authoritative: santri has no kamar
+            assignedKamarIds: ["kmr-attacker-kamar"],
+          };
+        },
+      };
+
+      // Attacker passes santriId and tries to supply their own kamarId to gain access
+      const res = await authorizeCanonical({
+        identity: { userId: "usr-mudabbir", username: "mudabbir", status: "AKTIF", accountType: "PERSONAL" },
+        capability: "keasramaan.kamar.inspect",
+        resourceContext: {
+          santriId: "san-victim",
+          kamarId: "kmr-attacker-kamar", // Spoofed caller kamarId
+        },
+        dataProvider: provider,
+      });
+
+      // Must fail closed because target student has no authoritative kamar
+      assert.strictEqual(res.decision, "DENY");
+      assert.strictEqual(res.reasonCode, "INVALID_RESOURCE_CONTEXT");
+    });
+
+    it("12.14. Unit Mixed Placement Invariant: fails closed when unit account has active assignments across different units", async () => {
+      const mixedAssignments: CanonicalAssignmentWithDetails[] = [
+        {
+          id: "asg-kiosk-unit-1",
+          userId: "usr-kiosk-mixed",
+          positionId: "pos-osda",
+          positionCode: "ANGGOTA_OSDA",
+          positionName: "Anggota OSDA",
+          domain: "KEASRAMAAN",
+          unitId: "unit-kios-1", // Matches placement
+          unitCode: "KIOS1",
+          unitName: "Kios 1",
+          status: "ACTIVE",
+          validFrom: new Date(0),
+          validUntil: null,
+          positionCapabilities: [
+            { capabilityCode: "keasramaan.presensi.view", scopeType: "UNIT", businessRuleState: "VERIFIED_PRODUCTION" },
+          ],
+          scopeUnits: [],
+        },
+        {
+          id: "asg-kiosk-unit-2",
+          userId: "usr-kiosk-mixed",
+          positionId: "pos-osda",
+          positionCode: "ANGGOTA_OSDA",
+          positionName: "Anggota OSDA",
+          domain: "KEASRAMAAN",
+          unitId: "unit-kios-ILLEGAL-SECOND-UNIT", // VIOLATES single placement invariant!
+          unitCode: "KIOS2",
+          unitName: "Kios 2",
+          status: "ACTIVE",
+          validFrom: new Date(0),
+          validUntil: null,
+          positionCapabilities: [
+            { capabilityCode: "keasramaan.presensi.view", scopeType: "UNIT", businessRuleState: "VERIFIED_PRODUCTION" },
+          ],
+          scopeUnits: [],
+        },
+      ];
+
+      const provider: ICanonicalDataProvider = {
+        async getIdentity(id) {
+          return { userId: id, username: "kiosk.mixed", status: "AKTIF", accountType: "UNIT", placementUnitId: "unit-kios-1" };
+        },
+        async getActiveAssignments() { return mixedAssignments; },
+        async getUnitAccountPlacement() { return { unitId: "unit-kios-1" }; },
+        async verifyHumanExecutor() { return null; },
+        async resolveResourceContext() { return { orgUnitIds: ["unit-kios-1"] }; },
+      };
+
+      const res = await authorizeCanonical({
+        identity: { userId: "usr-kiosk-mixed", username: "kiosk.mixed", status: "AKTIF", accountType: "UNIT" },
+        capability: "keasramaan.presensi.view",
+        resourceContext: { unitId: "unit-kios-1" },
+        dataProvider: provider,
+      });
+
+      // Must fail closed with UNIT_PLACEMENT_MISMATCH due to mixed placement
+      assert.strictEqual(res.decision, "DENY");
+      assert.strictEqual(res.reasonCode, "UNIT_PLACEMENT_MISMATCH");
+    });
+
+    it("12.15. Unit Human Executor Verification: rejects self-execution and technical account ID mismatch", async () => {
+      const validUnitAsg: CanonicalAssignmentWithDetails = {
+        id: "asg-kiosk-1",
+        userId: "usr-kiosk-exec",
+        positionId: "pos-osda",
+        positionCode: "ANGGOTA_OSDA",
+        positionName: "Anggota OSDA",
+        domain: "KEASRAMAAN",
+        unitId: "unit-kios-1",
+        unitCode: "KIOS1",
+        unitName: "Kios 1",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          { capabilityCode: "keasramaan.presensi.create", scopeType: "UNIT", businessRuleState: "VERIFIED_PRODUCTION" },
+        ],
+        scopeUnits: [],
+      };
+
+      const provider: ICanonicalDataProvider = {
+        async getIdentity(id) {
+          return { userId: id, username: "kiosk.exec", status: "AKTIF", accountType: "UNIT", placementUnitId: "unit-kios-1" };
+        },
+        async getActiveAssignments() { return [validUnitAsg]; },
+        async getUnitAccountPlacement() { return { unitId: "unit-kios-1" }; },
+        async verifyHumanExecutor(execId) {
+          if (execId === "usr-kiosk-exec") {
+            // UNIT account trying to act as executor is rejected
+            return { id: execId, name: "kiosk", isActive: false };
+          }
+          if (execId === "stf-valid") {
+            return { id: execId, name: "Ust. Valid", isActive: true };
+          }
+          return null;
+        },
+        async resolveResourceContext() { return { orgUnitIds: ["unit-kios-1"] }; },
+      };
+
+      // Case A: Technical account tries to act as its own human executor -> DENY
+      const resSelf = await authorizeCanonical({
+        identity: { userId: "usr-kiosk-exec", username: "kiosk.exec", status: "AKTIF", accountType: "UNIT" },
+        capability: "keasramaan.presensi.create",
+        isMutation: true,
+        executorContext: {
+          technicalAccountId: "usr-kiosk-exec",
+          technicalAccountUsername: "kiosk.exec",
+          humanExecutorId: "usr-kiosk-exec", // Self-execution!
+          humanExecutorName: "Kiosk Self",
+          unitId: "unit-kios-1",
+          assignmentId: "asg-kiosk-1",
+        },
+        dataProvider: provider,
+      });
+      assert.strictEqual(resSelf.decision, "DENY");
+      assert.strictEqual(resSelf.reasonCode, "UNIT_EXECUTOR_INVALID");
+
+      // Case B: Forged technicalAccountId mismatch -> DENY
+      const resMismatch = await authorizeCanonical({
+        identity: { userId: "usr-kiosk-exec", username: "kiosk.exec", status: "AKTIF", accountType: "UNIT" },
+        capability: "keasramaan.presensi.create",
+        isMutation: true,
+        executorContext: {
+          technicalAccountId: "usr-kiosk-OTHER", // Forged!
+          technicalAccountUsername: "kiosk.other",
+          humanExecutorId: "stf-valid",
+          humanExecutorName: "Ust. Valid",
+          unitId: "unit-kios-1",
+          assignmentId: "asg-kiosk-1",
+        },
+        dataProvider: provider,
+      });
+      assert.strictEqual(resMismatch.decision, "DENY");
+      assert.strictEqual(resMismatch.reasonCode, "UNIT_EXECUTOR_INVALID");
+    });
+
+    it("12.16. Kabid Reward Real Parity Context: shadow evaluation achieves MATCH_ALLOW with complete domain context", async () => {
+      const sink = new InMemoryParitySink();
+      const kabidAsg: CanonicalAssignmentWithDetails = {
+        id: "asg-kabid-real",
+        userId: "usr-kabid",
+        positionId: "pos-kabid",
+        positionCode: "KABID_TAHFIZH",
+        positionName: "Kabid Tahfizh",
+        domain: "TAHFIZH",
+        unitId: "unit-tahfizh",
+        unitCode: "THF",
+        unitName: "Tahfizh",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          { capabilityCode: "tahfizh.reward.issue", scopeType: "DOMAIN", businessRuleState: "VERIFIED_PRODUCTION" },
+        ],
+        scopeUnits: [],
+      };
+
+      const provider: ICanonicalDataProvider = {
+        async getIdentity(id) {
+          return { userId: id, username: "kabid.tahfizh", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-kabid", staffStatus: "AKTIF" };
+        },
+        async getActiveAssignments() { return [kabidAsg]; },
+        async getUnitAccountPlacement() { return null; },
+        async verifyHumanExecutor() { return null; },
+        async resolveResourceContext() {
+          return {
+            orgUnitIds: ["unit-tahfizh"],
+            orgDomain: "TAHFIZH", // Complete domain context
+            santriId: "san-101",
+          };
+        },
+      };
+
+      const session: UserSession = {
+        userId: "usr-kabid",
+        username: "kabid.tahfizh",
+        role: "MT",
+        isKepalaBidangTahfidz: true,
+      };
+
+      const evalResult = await evaluateShadowAuthorization({
+        session,
+        capabilityCode: "tahfizh.reward.issue",
+        legacyCheck: () => Boolean(session.isKepalaBidangTahfidz),
+        resourceContext: { resourceId: "tasmi-101", santriId: "san-101" },
+        resolvedContext: { orgUnitIds: ["unit-tahfizh"], orgDomain: "TAHFIZH", santriId: "san-101" },
+        resourceType: "TasmiSimaan",
+        resourceId: "tasmi-101",
+        isMutation: true,
+        dataProvider: provider,
+        paritySink: sink,
+      });
+
+      assert.strictEqual(evalResult.runtimeAllowed, true);
+      assert.strictEqual(evalResult.parityRecord.parityStatus, "MATCH_ALLOW");
+      assert.strictEqual(evalResult.parityRecord.reasonCode, "ALLOWED");
+    });
   });
 });
 

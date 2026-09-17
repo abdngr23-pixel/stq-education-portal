@@ -261,8 +261,9 @@ export async function authorizeCanonical(
     }
 
     // Invariant: executorContext.unitId must also match placementUnitId when supplied
-    if (params.executorContext && params.executorContext.unitId) {
-      if (params.executorContext.unitId !== placementUnitId) {
+    if (params.executorContext) {
+      // 1. Executor context unitId must match placementUnitId
+      if (params.executorContext.unitId && params.executorContext.unitId !== placementUnitId) {
         return {
           decision: "DENY",
           code: "SYSTEM_FAIL_CLOSED",
@@ -270,11 +271,34 @@ export async function authorizeCanonical(
           reason: `Executor context unitId (${params.executorContext.unitId}) does not match placement unitId (${placementUnitId}).`,
         };
       }
+
+      // 2. Technical account ID consistency: if provided, must match authenticated unit account
+      if (
+        params.executorContext.technicalAccountId &&
+        params.executorContext.technicalAccountId !== identity.userId
+      ) {
+        return {
+          decision: "DENY",
+          code: "SYSTEM_FAIL_CLOSED",
+          reasonCode: "UNIT_EXECUTOR_INVALID",
+          reason: "Executor context technicalAccountId does not match authenticated unit account.",
+        };
+      }
+
+      // 3. Human executor cannot be the unit account itself (technical account cannot self-execute)
+      if (params.executorContext.humanExecutorId === identity.userId) {
+        return {
+          decision: "DENY",
+          code: "SYSTEM_FAIL_CLOSED",
+          reasonCode: "UNIT_EXECUTOR_INVALID",
+          reason: "Unit account cannot act as its own human executor.",
+        };
+      }
     }
 
     // Mutations on UNIT accounts strictly require verified human executor
     if (params.isMutation) {
-      if (!params.executorContext || !params.executorContext.humanExecutorId) {
+      if (!params.executorContext || !params.executorContext.humanExecutorId || params.executorContext.humanExecutorId.trim() === "") {
         return {
           decision: "DENY",
           code: "SYSTEM_FAIL_CLOSED",
@@ -347,16 +371,17 @@ export async function authorizeCanonical(
     };
   }
 
-  // Blocker 4: For AccountType.UNIT, every candidate assignment used for authority must have assignment.unitId === placementUnitId
-  // Mismatch must fail closed for both READ and MUTATION.
+  // Blocker 4 & Invariant: For AccountType.UNIT, every candidate assignment MUST match placementUnitId.
+  // Mixed placements (assignments spanning multiple different units) strictly fail closed.
   if (identity.accountType === "UNIT" && placementUnitId) {
-    const matchingUnitAssignments = activeAssignments.filter((a) => a.unitId === placementUnitId);
-    if (matchingUnitAssignments.length === 0) {
+    const hasMismatchedAssignment = activeAssignments.some((a) => a.unitId !== placementUnitId);
+    if (hasMismatchedAssignment) {
+      const mismatched = activeAssignments.find((a) => a.unitId !== placementUnitId);
       return {
         decision: "DENY",
         code: "SYSTEM_FAIL_CLOSED",
         reasonCode: "UNIT_PLACEMENT_MISMATCH",
-        reason: `Every candidate assignment for a UNIT account must match placementUnitId (${placementUnitId}). Found unitId: ${activeAssignments[0]?.unitId}.`,
+        reason: `Every candidate assignment for a UNIT account must match placementUnitId (${placementUnitId}). Found mismatched assignment with unitId: ${mismatched?.unitId}.`,
       };
     }
   }
@@ -610,16 +635,58 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
     },
 
     async verifyHumanExecutor(executorId: string): Promise<{ id: string; name: string; isActive: boolean } | null> {
-      const user = await prisma.user.findUnique({
-        where: { id: executorId },
+      // Find human executor: support lookup by User.id or User.staffId
+      const user = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { id: executorId },
+            { staffId: executorId },
+          ],
+        },
         include: { staff: true },
       });
-      if (!user) return null;
-      return {
-        id: user.id,
-        name: user.staff?.nama || user.username,
-        isActive: user.status === "AKTIF",
-      };
+
+      if (user) {
+        // Invariant: A UNIT technical account can NEVER act as a human executor
+        if (user.accountType === "UNIT") {
+          return {
+            id: user.id,
+            name: user.username,
+            isActive: false,
+          };
+        }
+
+        const isUserActive = user.status === "AKTIF";
+        const isStaffActive = user.staff ? user.staff.status === "AKTIF" : true;
+
+        return {
+          id: user.id,
+          name: user.staff?.nama || user.username,
+          isActive: isUserActive && isStaffActive,
+        };
+      }
+
+      // Check direct Staff table if executorId is a Staff ID without direct User relation
+      const staff = await prisma.staff.findUnique({
+        where: { id: executorId },
+        include: { user: true },
+      });
+
+      if (staff) {
+        if (staff.user && staff.user.accountType === "UNIT") {
+          return { id: staff.id, name: staff.nama, isActive: false };
+        }
+        const isStaffActive = staff.status === "AKTIF";
+        const isUserActive = staff.user ? staff.user.status === "AKTIF" : true;
+
+        return {
+          id: staff.id,
+          name: staff.nama,
+          isActive: isStaffActive && isUserActive,
+        };
+      }
+
+      return null;
     },
 
     async resolveResourceContext(requested: RequestedResourceContext, subjectUserId?: string): Promise<ResolvedResourceContext | null> {
@@ -627,9 +694,10 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
       let orgDomain: OrgDomain | undefined;
       const orgUnitIds: string[] = [];
 
-      let halaqohId = requested.halaqohId;
-      const kamarId = requested.kamarId;
+      let halaqohId: string | undefined = undefined;
+      let kamarId: string | undefined = undefined;
 
+      // 1. Target Santri Hydration (Authoritative trust boundary)
       if (requested.santriId) {
         const targetSantri = await prisma.santri.findUnique({
           where: { id: requested.santriId },
@@ -650,6 +718,61 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
           }
 
           orgDomain = "TAHFIZH";
+
+          // Authoritative kamar: query if santri has an assigned kamar in DB.
+          // Never trust caller-supplied requested.kamarId for target santri!
+          const santriWithKamar = targetSantri as unknown as { kamarId?: string | null };
+          kamarId = santriWithKamar.kamarId || undefined;
+          if (kamarId) {
+            orgUnitIds.push(kamarId);
+          }
+        } else {
+          // Target santri was requested but does not exist in DB -> fail closed
+          return null;
+        }
+      } else {
+        // If santriId is NOT provided (e.g. standalone room/unit inspection):
+        // Only accept halaqohId/kamarId if authoritatively verified against OrgUnit table
+        if (requested.halaqohId) {
+          const halaqohUnit = await prisma.orgUnit.findFirst({
+            where: { id: requested.halaqohId, type: "HALAQOH" },
+          });
+          if (halaqohUnit) {
+            halaqohId = halaqohUnit.id;
+            orgUnitIds.push(halaqohUnit.id);
+            if (!unitGenderComplex) unitGenderComplex = halaqohUnit.genderComplex as GenderComplex;
+            if (!orgDomain) orgDomain = halaqohUnit.domain as OrgDomain;
+          }
+        }
+
+        if (requested.kamarId) {
+          const kamarUnit = await prisma.orgUnit.findFirst({
+            where: { id: requested.kamarId, type: "KAMAR" },
+          });
+          if (kamarUnit) {
+            kamarId = kamarUnit.id;
+            orgUnitIds.push(kamarUnit.id);
+            if (!unitGenderComplex) unitGenderComplex = kamarUnit.genderComplex as GenderComplex;
+            if (!orgDomain) orgDomain = kamarUnit.domain as OrgDomain;
+          }
+        }
+      }
+
+      // 2. Resource-level domain hydration (e.g. TasmiSimaan -> TAHFIZH domain)
+      if (requested.resourceId && !orgDomain) {
+        const tasmi = await prisma.tasmiSimaan.findUnique({
+          where: { id: requested.resourceId },
+          select: { id: true, santriId: true, santri: { select: { halaqohId: true, jenisKelamin: true } } },
+        });
+        if (tasmi) {
+          orgDomain = "TAHFIZH";
+          if (!halaqohId && tasmi.santri?.halaqohId) {
+            halaqohId = tasmi.santri.halaqohId;
+            orgUnitIds.push(tasmi.santri.halaqohId);
+          }
+          if (!unitGenderComplex && tasmi.santri?.jenisKelamin) {
+            unitGenderComplex = tasmi.santri.jenisKelamin === "L" ? "PUTRA" : "PUTRI";
+          }
         }
       }
 
@@ -662,7 +785,7 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
         }
       }
 
-      // OWN_CHILD Server-Side Relation Resolution:
+      // 3. OWN_CHILD Server-Side Relation Resolution:
       let guardianLinkedSantriIds: string[] | undefined;
       if (subjectUserId) {
         const user = await prisma.user.findUnique({
