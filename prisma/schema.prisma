@@ -216,6 +216,79 @@ enum JenisUjiHafalan {
 }
 
 
+// ====================================================
+// CANONICAL ARCHITECTURE LOCK ENUMS (PHASE 2A)
+// ====================================================
+
+enum OrgUnitType {
+  INSTITUTION
+  DOMAIN
+  ORGANIZATION
+  DIVISION
+  HALAQOH
+  KAMAR
+  SERVICE_UNIT
+  USROH
+  ACADEMIC_CLASS
+}
+
+enum OrgDomain {
+  INSTITUTIONAL
+  TAHFIZH
+  KEASRAMAAN
+  AKADEMIK
+  MANAJEMEN
+}
+
+enum CapabilityNamespace {
+  TAHFIZH
+  KEASRAMAAN
+  HEALTH
+  ACADEMIC
+  LOGISTICS
+  FINANCE
+  LETTERS
+  SPONSOR
+  SYSTEM
+}
+
+enum BusinessRuleState {
+  VERIFIED_PRODUCTION
+  APPROVED_TARGET_PENDING_TECHNICAL
+  PROPOSED_TBD
+}
+
+enum ScopeType {
+  GLOBAL
+  DOMAIN
+  UNIT
+  ASSIGNED_UNITS
+  HALAQOH
+  KAMAR
+  OWN_CHILD
+  SELF
+}
+
+enum AssignmentStatus {
+  DRAFT
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  REVOKED
+}
+
+enum AccountType {
+  PERSONAL
+  UNIT
+}
+
+enum GenderComplex {
+  PUTRA
+  PUTRI
+  CAMPUR
+  TIDAK_TERIKAT
+}
+
 // ----------------------------------------------------
 // ENTITAS AUTH & USER MANAGEMENT
 // ----------------------------------------------------
@@ -229,6 +302,9 @@ model User {
   role         Role
   status       UserStatus  @default(AKTIF)
   
+  // Canonical Architecture Lock: Additive AccountType
+  accountType  AccountType @default(PERSONAL) @map("account_type")
+
   // Relasi ke master data spesifik
   staffId      String?     @unique @map("staff_id")
   staff        Staff?      @relation(fields: [staffId], references: [id])
@@ -240,6 +316,10 @@ model User {
 
   sessions     Session[]
   auditLogs    AuditLog[]
+
+  // Canonical Architecture Lock: Additive Relations
+  assignments   Assignment[]
+  unitPlacement UnitAccountPlacement?
 
   createdAt    DateTime    @default(now()) @map("created_at")
   updatedAt    DateTime    @updatedAt @map("updated_at")
@@ -1015,5 +1095,153 @@ model CatatanMutabaahHarian {
   @@unique([santriId, kategori, tanggal])
   @@index([santriId, tanggal])
   @@map("catatan_mutabaah_harian")
+}
+
+// ====================================================
+// CANONICAL ARCHITECTURE LOCK CORE MODELS (PHASE 2A)
+// ====================================================
+
+model OrgUnit {
+  id             String                 @id @default(cuid())
+  code           String                 @unique // e.g. "OU-TAF-001"
+  name           String
+  type           OrgUnitType
+  domain         OrgDomain
+  parentId       String?                @map("parent_id")
+  parent         OrgUnit?               @relation("OrgUnitHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children       OrgUnit[]              @relation("OrgUnitHierarchy")
+  genderComplex  GenderComplex          @map("gender_complex")
+  isActive       Boolean                @default(true) @map("is_active")
+  metadata       Json?                  @map("metadata")
+  assignments    Assignment[]
+  scopedIn       AssignmentScopeUnit[]
+  unitPlacements UnitAccountPlacement[]
+  createdAt      DateTime               @default(now()) @map("created_at")
+  updatedAt      DateTime               @updatedAt @map("updated_at")
+
+  @@index([domain, type])
+  @@index([parentId])
+  @@map("org_units")
+}
+
+model Position {
+  id                      String               @id @default(cuid())
+  code                    String               @unique // e.g. "KABID_TAHFIZH", "MUSYRIF_HALAQOH"
+  name                    String
+  domain                  OrgDomain
+  allowedUnitTypes        OrgUnitType[]        @default([]) @map("allowed_unit_types")
+  isLeadership            Boolean              @default(false) @map("is_leadership")
+  requiresPersonalAccount Boolean              @default(true) @map("requires_personal_account")
+  isActive                Boolean              @default(true) @map("is_active")
+  description             String?
+  capabilities            PositionCapability[]
+  assignments             Assignment[]
+  createdAt               DateTime             @default(now()) @map("created_at")
+  updatedAt               DateTime             @updatedAt @map("updated_at")
+
+  @@map("positions")
+}
+
+model UnitAccountPlacement {
+  id        String   @id @default(cuid())
+  userId    String   @unique @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  unitId    String   @map("unit_id")
+  unit      OrgUnit  @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([unitId])
+  @@map("unit_account_placements")
+}
+
+model Capability {
+  code        String               @id // e.g. "tahfizh.reward.issue"
+  namespace   CapabilityNamespace
+  name        String
+  description String
+  isDangerous Boolean              @default(false) @map("is_dangerous")
+  positions   PositionCapability[]
+  createdAt   DateTime             @default(now()) @map("created_at")
+
+  @@map("capabilities")
+}
+
+model PositionCapability {
+  id                String            @id @default(cuid())
+  positionId        String            @map("position_id")
+  position          Position          @relation(fields: [positionId], references: [id], onDelete: Restrict)
+  capabilityCode    String            @map("capability_code")
+  capability        Capability        @relation(fields: [capabilityCode], references: [code], onDelete: Restrict)
+  scopeType         ScopeType         @map("scope_type")
+  businessRuleState BusinessRuleState @default(PROPOSED_TBD) @map("business_rule_state")
+
+  @@unique([positionId, capabilityCode])
+  @@map("position_capabilities")
+}
+
+model Assignment {
+  id          String                @id @default(cuid())
+  userId      String                @map("user_id")
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  positionId  String                @map("position_id")
+  position    Position              @relation(fields: [positionId], references: [id], onDelete: Restrict)
+  unitId      String                @map("unit_id")
+  unit        OrgUnit               @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  status      AssignmentStatus      @default(DRAFT)
+  validFrom   DateTime              @default(now()) @map("valid_from")
+  validUntil  DateTime?             @map("valid_until")
+  notes       String?
+  createdById String                @map("created_by_id")
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+  scopedUnits AssignmentScopeUnit[]
+
+  @@index([userId, status])
+  @@index([unitId, status])
+  @@index([positionId, status])
+  @@map("assignments")
+}
+
+model AssignmentScopeUnit {
+  id           String     @id @default(cuid())
+  assignmentId String     @map("assignment_id")
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  unitId       String     @map("unit_id")
+  unit         OrgUnit    @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  @@unique([assignmentId, unitId])
+  @@map("assignment_scope_units")
+}
+
+model CanonicalAuditLog {
+  id                       String    @id @default(cuid())
+  technicalAccountId       String    @map("technical_account_id")
+  technicalAccountUsername String    @map("technical_account_username")
+  humanExecutorId          String?   @map("human_executor_id")
+  humanExecutorName        String?   @map("human_executor_name")
+  action                   String
+  entity                   String
+  entityId                 String?   @map("entity_id")
+  capabilityCode           String    @map("capability_code")
+  assignmentId             String?   @map("assignment_id")
+  positionCode             String    @map("position_code")
+  scopeType                ScopeType @map("scope_type")
+  unitId                   String    @map("unit_id")
+  beforeState              Json?     @map("before_state")
+  afterState               Json?     @map("after_state")
+  resourceContext          Json?     @map("resource_context")
+  reason                   String?
+  clientRequestId          String?   @map("client_request_id")
+  ipAddress                String?   @map("ip_address")
+  userAgent                String?   @map("user_agent")
+  createdAt                DateTime  @default(now()) @map("created_at")
+
+  @@index([technicalAccountId])
+  @@index([humanExecutorId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("canonical_audit_logs")
 }
 
