@@ -8,6 +8,10 @@ import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
 import {
+  runIsolatedExistingDataUpgradeVerification,
+  runIsolatedProductionEquivalentSimulation,
+} from "./test-db-manager";
+import {
   OrgDomain,
   CapabilityNamespace,
   BusinessRuleState,
@@ -1654,6 +1658,34 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
           `Action ${file} must NOT query prisma.positionCapability yet (Phase 2A is schema only)`
         );
       }
+    });
+
+    it("18.13. existing legacy rows upgrade to Phase 2A with account_type=PERSONAL and zero auto-created authority", { timeout: 60000 }, async () => {
+      const res = await runIsolatedExistingDataUpgradeVerification();
+      assert.strictEqual(res.baselineApplied, true, "Baseline schema must be applied");
+      assert.strictEqual(res.legacyUsersCreatedCount, 5, "5 representative legacy users must be inserted");
+      assert.strictEqual(res.phase2aMigrationApplied, true, "Phase 2A migration must be applied");
+      assert.strictEqual(res.allLegacyUsersIntact, true, "All legacy users must retain unchanged IDs, credentials, and business fields");
+      assert.strictEqual(res.allLegacyUsersAccountTypePersonal, true, "Every legacy user must receive account_type = PERSONAL");
+      assert.strictEqual(res.zeroAutoCreatedAuthority, true, "All new canonical tables must be empty with zero auto-created authority");
+      assert.strictEqual(res.autoCreatedAuthorityCounts.assignments, 0);
+      assert.strictEqual(res.autoCreatedAuthorityCounts.positionCapabilities, 0);
+      assert.strictEqual(res.autoCreatedAuthorityCounts.orgUnits, 0);
+      assert.strictEqual(res.autoCreatedAuthorityCounts.positions, 0);
+      assert.strictEqual(res.autoCreatedAuthorityCounts.unitAccountPlacements, 0);
+      assert.strictEqual(res.autoCreatedAuthorityCounts.assignmentScopeUnits, 0);
+      assert.strictEqual(res.autoCreatedAuthorityCounts.canonicalAuditLogs, 0);
+      assert.strictEqual(res.autoCreatedAuthorityCounts.capabilities, 0);
+    });
+
+    it("18.14. production-equivalent isolated simulation: main chain + PR #8 + Phase 2A applies without schema conflict", { timeout: 60000 }, async () => {
+      const res = await runIsolatedProductionEquivalentSimulation();
+      assert.strictEqual(res.baselineApplied, true, "Baseline must be applied");
+      assert.strictEqual(res.pr8MigrationFetched, true, "PR #8 migration must be fetched in-memory via git show");
+      assert.ok(res.pr8MigrationBytes > 1000, "PR #8 migration bytes must be substantial");
+      assert.strictEqual(res.pr8MigrationApplied, true, "PR #8 migration must apply cleanly");
+      assert.strictEqual(res.phase2aMigrationApplied, true, "Phase 2A migration must apply cleanly on top of PR #8");
+      assert.strictEqual(res.simulationSuccess, true, "Both PR #8 artifacts and Phase 2A artifacts must co-exist without conflict");
     });
   });
 });

@@ -136,15 +136,117 @@ An additive column and relations were introduced onto the existing `User` model 
    - Tested on fresh isolated temporary PostgreSQL cluster via `runIsolatedMigrationChainVerification()`.
    - Result: All 6 migrations applied successfully from pre-Prisma baseline, 0 failed, database schema up to date.
 4. **Contract Verification**:
-   - 64/64 tests passed across 19 suites in `tests/architecture-lock-contracts.test.ts`, including 12 dedicated structural tests in Suite 18.
+   - 66/66 tests passed across 19 suites in `tests/architecture-lock-contracts.test.ts`, including 14 dedicated structural and isolated execution tests in Suite 18.
 5. **Full Repository Tests**:
-   - All 766 tests in 197 suites passing cleanly.
+   - All 780 tests in 198 suites passing cleanly (100% pass, 0 failures).
 6. **Next.js Production Build**:
    - Turbopack compilation succeeded with zero TypeScript and zero ESLint errors.
 
 ---
 
-## 5. Security & Invariant Confirmations
+## 5. Existing-Data Upgrade Validation
+
+To prove that the additive migration does not perturb pre-existing production/main data, an isolated upgrade validation (`runIsolatedExistingDataUpgradeVerification()`) was executed against a disposable PostgreSQL instance:
+
+### 5.1. Validation Flow
+1. **Isolated Schema Creation**: Empty temporary PostgreSQL instance initialized with pre-Phase 2A baseline schema (`tests/fixtures/baseline_schema.prisma`).
+2. **Main Chain Applied**: Migrations 1 through 5 from `main` applied sequentially:
+   - `20260910083000_setoran_tahfizh_page_based`
+   - `20260910090000_core_operational_final`
+   - `20260910103000_p0_tahfizh_persistence`
+   - `20260914100000_target_santri_float`
+   - `20260914170000_add_jumlah_juz_mufar`
+3. **Pre-Existing Legacy Rows Inserted**:
+   - Master data: 1 Staff (`Ustadz Ahmad Mudir`, `role_staff: KS`) and 1 Santri (`Abdullah Santri`, `SAN-UPG-001`).
+   - 5 Legacy Users across diverse operational roles inserted using the legacy schema *before* `account_type` column exists:
+     * `usr-adm-1` (`admin_legacy`, `role: ADM`)
+     * `usr-ks-1` (`mudir_legacy`, `role: KS`, linked to staff)
+     * `usr-mk-1` (`musyrif_legacy`, `role: MK`)
+     * `usr-st-1` (`santri_legacy`, `role: ST`, linked to santri)
+     * `usr-ws-1` (`wali_legacy`, `role: WS`)
+4. **Pre-Migration Fingerprinting**:
+   - Verified that `account_type` column did not exist in PostgreSQL catalog `information_schema.columns`.
+   - Fingerprinted all legacy user attributes: `id`, `username`, `email`, `phone`, `password_hash`, `role`, `status`, `staff_id`, `santri_id`.
+5. **Phase 2A Additive Migration Applied**:
+   - Applied `20260917000000_stq_architecture_lock_phase2a/migration.sql`.
+6. **Post-Migration Assertions Verified**:
+   - **Legacy Rows Preserved**: Exactly 5 legacy users remain; all IDs, usernames, password hashes, roles, statuses, and relations are 100% identical before and after migration.
+   - **Account Type Assigned**: Every pre-existing user received `account_type = PERSONAL` via column default.
+   - **Zero Auto-Created Authority**:
+     * `assignments`: 0 rows
+     * `position_capabilities`: 0 rows
+     * `org_units`: 0 rows
+     * `positions`: 0 rows
+     * `unit_account_placements`: 0 rows
+     * `assignment_scope_units`: 0 rows
+     * `canonical_audit_logs`: 0 rows
+     * `capabilities`: 0 rows
+   - Zero `ACTIVE` authority and zero `VERIFIED_PRODUCTION` grants created.
+
+---
+
+## 6. Production Migration-History Precondition
+
+Current `main` migration chain does **NOT** contain the immutable PR #8 migration:
+`20260915100000_add_tahfizh_quality_engine`
+
+While PR #8 records that migration as having been applied to the production database previously, the canonical `main` branch only tracks migrations 1 through 5, and Phase 2A introduces migration 6 (`20260917000000_stq_architecture_lock_phase2a`).
+
+### Explicit Deployment Preconditions:
+1. **Phase 2A has NOT been applied to production**: `production migrations = 0`, `production seeds = 0`, `production writes = 0`.
+2. **Mandatory Read-Only Reconciliation**: Before any future `prisma migrate deploy` to production, migration-history reconciliation must be independently checked.
+3. **Catalog Inspection**: Production `_prisma_migrations` table and repository migration directories must be compared **READ-ONLY**.
+4. **Zero Blind Re-Execution**: An already-applied migration must **NEVER** be re-run blindly against production.
+5. **PR #8 Absolute Immutability**: Branch `review/tahfizh-quality-evaluation` (`9068cae5587b7219c394c5c25bf0de07a15b0726`) must remain completely untouched.
+6. **No Reconciliation in Phase 2A**: No migration history reconciliation is performed in Phase 2A; this phase provides pure additive schema definition only.
+7. **Separate Explicit Approval Required**: A separate explicit written approval is strictly required before any future production migration execution.
+
+---
+
+## 7. Production-Equivalent Isolated Simulation
+
+To simulate the exact production condition where the PR #8 migration was previously executed, an isolated test simulation (`runIsolatedProductionEquivalentSimulation()`) was conducted:
+
+- **Simulation Flow**:
+  1. Temporary isolated PostgreSQL instance initialized with baseline schema.
+  2. Main migrations 1 through 5 applied.
+  3. PR #8 migration SQL (`20260915100000_add_tahfizh_quality_engine`) fetched **in-memory** via `git show 9068cae5587b7219c394c5c25bf0de07a15b0726:prisma/migrations/20260915100000_add_tahfizh_quality_engine/migration.sql` (2,334 bytes) and applied cleanly.
+  4. Phase 2A migration (`20260917000000_stq_architecture_lock_phase2a`) applied directly on top of the PR #8 schema.
+- **Verification Result**:
+  * Both PR #8 tables (`evaluasi_rubu_tahfizh`) and Phase 2A tables (`org_units`, `positions`, `assignments`, etc.) co-exist cleanly with zero SQL errors or schema conflicts.
+- **Safety Boundary**: PR #8 files were **NEVER** committed, cherry-picked, or merged into PR #15.
+- **Simulation Status**: **RUN AND PASSED** (Automated in `tests/architecture-lock-contracts.test.ts` test 18.14).
+
+---
+
+## 8. Rollback & Recreate Strategy
+
+In accordance with Phase 2A operational safety governance:
+
+### 8.1. For Local & Test Environments
+- Disposable database or test schema may be safely dropped:
+  ```bash
+  # Drop and recreate isolated test database
+  dropdb stq_test && createdb stq_test
+  # Re-apply complete migration chain
+  npx prisma migrate deploy
+  # Re-run quality gates
+  npm test
+  ```
+
+### 8.2. For Production Environments
+- **Zero Production Rollback in Phase 2A**: Because Phase 2A production migration count = 0, no rollback is executed or required.
+- **No Casual Destructive Rollback**: Destructive rollback scripts (e.g. dropping tables or removing columns) must never be prepared or executed casually.
+- **Future Production Deployment Prerequisites**:
+  * Mandatory full database snapshot/backup immediately prior to deployment.
+  * Explicit read-only verification of `_prisma_migrations` against target migration directory.
+  * Verified forward-recovery plan in lieu of blind rollback.
+  * Explicit authorization and sign-off before running `prisma migrate deploy`.
+- **Down-Migration Policy**: No production down-migration script is generated in Phase 2A to prevent accidental truncation of additive structures.
+
+---
+
+## 9. Security & Invariant Confirmations
 
 | Security Requirement | Status | Verification Mechanism |
 | :--- | :--- | :--- |
@@ -161,7 +263,7 @@ An additive column and relations were introduced onto the existing `User` model 
 
 ---
 
-## 6. Next Steps (Subsequent Phases)
+## 10. Next Steps (Subsequent Phases)
 
 1. **Phase B (Compatibility Backfill)**:
    - Construct deterministic backfill scripts to generate `OrgUnit` hierarchy, standard `Position` records, verified `PositionCapability` grants (`businessRuleState = VERIFIED_PRODUCTION`), and active `Assignment` records (`status = ACTIVE`) reproducing current production authority.
@@ -171,3 +273,4 @@ An additive column and relations were introduced onto the existing `User` model 
    - Switch server actions to authoritative canonical engine evaluation.
 4. **Phase E (Legacy Retirement)**:
    - Safely deprecate and retire legacy flags and tables.
+
