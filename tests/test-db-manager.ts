@@ -2127,4 +2127,185 @@ export async function runIsolatedProductionEquivalentSimulation(): Promise<Produ
   }
 }
 
+export interface M31MigrationVerificationResult {
+  migrationApplied: boolean;
+  tableCreated: boolean;
+  uniqueActiveConstraintEnforced: boolean;
+  historyPreserved: boolean;
+}
+
+export async function runIsolatedM31MigrationVerification(): Promise<M31MigrationVerificationResult> {
+  const port = await findFreePort(5670 + Math.floor(Math.random() * 300));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `stq-m31-${Date.now()}-${port}-`));
+  const testUrl = `postgresql://postgres:postgrespassword@127.0.0.1:${port}/stq_m31_test?schema=public`;
+
+  verifyTestEnvironment(testUrl);
+
+  const pgInstance = new EmbeddedPostgres({
+    databaseDir: tempDir,
+    port,
+    user: "postgres",
+    password: "postgrespassword",
+    persistent: false,
+  });
+
+  let mainPid: number | null = null;
+  let descendantPids: Set<number> = new Set();
+  let client: PrismaClient | null = null;
+
+  try {
+    await pgInstance.initialise();
+    await pgInstance.start();
+
+    for (let i = 0; i < 30; i++) {
+      if (await isPortInUse(port)) break;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+
+    const detected = detectTestInstancePids(port, tempDir);
+    mainPid = detected.mainPid;
+    descendantPids = new Set(detected.descendantPids);
+
+    try {
+      await pgInstance.createDatabase("stq_m31_test");
+    } catch {}
+
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      DATABASE_URL: testUrl,
+      TEST_DATABASE_URL: testUrl,
+      NODE_ENV: "test",
+      IS_TEST_RUN: "true",
+      ALLOW_ISOLATED_TEST_DB: "true",
+    };
+
+    const projectRoot = path.resolve(__dirname, "..");
+
+    // 1. Inisialisasi skema baseline warisan
+    execSync(`npx prisma db push --schema=tests/fixtures/baseline_schema.prisma --skip-generate --accept-data-loss`, {
+      env,
+      encoding: "utf-8",
+      cwd: projectRoot,
+    });
+
+    client = new PrismaClient({
+      datasources: { db: { url: testUrl } },
+    });
+
+    // 2. Terapkan migrasi 1..5 rantai main
+    const mainMigrations = [
+      "20260910083000_setoran_tahfizh_page_based",
+      "20260910090000_core_operational_final",
+      "20260910103000_p0_tahfizh_persistence",
+      "20260914100000_target_santri_float",
+      "20260914170000_add_jumlah_juz_mufar",
+    ];
+
+    for (const m of mainMigrations) {
+      const sqlPath = path.join(projectRoot, "prisma/migrations", m, "migration.sql");
+      const sql = fs.readFileSync(sqlPath, "utf-8");
+      await executeSqlStatementsOnClient(client, sql);
+    }
+
+    // 3. Terapkan migrasi Phase 2A
+    const phase2aSqlPath = path.join(projectRoot, "prisma/migrations/20260917000000_stq_architecture_lock_phase2a/migration.sql");
+    const phase2aSql = fs.readFileSync(phase2aSqlPath, "utf-8");
+    await executeSqlStatementsOnClient(client, phase2aSql);
+
+    // 4. Terapkan migrasi M3.1
+    const m31SqlPath = path.join(projectRoot, "prisma/migrations/20260917220000_m3_1_keasramaan_structure/migration.sql");
+    const m31Sql = fs.readFileSync(m31SqlPath, "utf-8");
+    await executeSqlStatementsOnClient(client, m31Sql);
+
+    // 5. Verifikasi bahwa tabel santri_kamar_placements ada
+    const tablesRes: Array<{ table_name: string }> = await client.$queryRawUnsafe(`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'santri_kamar_placements';
+    `);
+    const tableCreated = tablesRes.length === 1;
+
+    // 6. Uji kendala data: masukkan santri uji dan kamar uji
+    await client.$executeRawUnsafe(`
+      INSERT INTO "santri" ("id", "nis", "nama", "kelas", "jenis_kelamin", "status", "created_at", "updated_at")
+      VALUES ('san-test-m31', 'NIS-M31-001', 'Santri M31 Test', '7A', 'L', 'AKTIF', NOW(), NOW());
+    `);
+    await client.$executeRawUnsafe(`
+      INSERT INTO "org_units" ("id", "code", "name", "type", "domain", "gender_complex", "is_active", "created_at", "updated_at")
+      VALUES ('kmr-test-m31', 'OU-KMR-M31', 'Kamar Ali M31', 'KAMAR', 'KEASRAMAAN', 'PUTRA', true, NOW(), NOW());
+    `);
+    await client.$executeRawUnsafe(`
+      INSERT INTO "org_units" ("id", "code", "name", "type", "domain", "gender_complex", "is_active", "created_at", "updated_at")
+      VALUES ('kmr-test-m31-2', 'OU-KMR-M31-2', 'Kamar Utsman M31', 'KAMAR', 'KEASRAMAAN', 'PUTRA', true, NOW(), NOW());
+    `);
+
+    // Masukkan 1 active placement
+    await client.$executeRawUnsafe(`
+      INSERT INTO "santri_kamar_placements" ("id", "santri_id", "kamar_id", "is_active", "start_date", "created_at", "updated_at")
+      VALUES ('plc-01', 'san-test-m31', 'kmr-test-m31', true, NOW(), NOW(), NOW());
+    `);
+
+    // Coba masukkan active placement kedua untuk santri yang sama -> harus gagal karena unique constraint
+    let uniqueActiveConstraintEnforced = false;
+    try {
+      await client.$executeRawUnsafe(`
+        INSERT INTO "santri_kamar_placements" ("id", "santri_id", "kamar_id", "is_active", "start_date", "created_at", "updated_at")
+        VALUES ('plc-02', 'san-test-m31', 'kmr-test-m31-2', true, NOW(), NOW(), NOW());
+      `);
+    } catch {
+      uniqueActiveConstraintEnforced = true;
+    }
+
+    // Masukkan inactive historical placement untuk santri yang sama -> harus berhasil
+    let historyPreserved = false;
+    try {
+      await client.$executeRawUnsafe(`
+        INSERT INTO "santri_kamar_placements" ("id", "santri_id", "kamar_id", "is_active", "start_date", "end_date", "created_at", "updated_at")
+        VALUES ('plc-03', 'san-test-m31', 'kmr-test-m31-2', false, NOW() - INTERVAL '30 days', NOW(), NOW(), NOW());
+      `);
+      historyPreserved = true;
+    } catch {}
+
+    return {
+      migrationApplied: true,
+      tableCreated,
+      uniqueActiveConstraintEnforced,
+      historyPreserved,
+    };
+  } finally {
+    if (client) {
+      try { await client.$disconnect(); } catch {}
+    }
+    const pgCtl = getPgCtlPath();
+    if (pgCtl && fs.existsSync(tempDir)) {
+      try {
+        spawnSync(pgCtl, ["stop", "-D", tempDir, "-m", "fast", "-w", "-t", "5"], {
+          encoding: "utf-8",
+          timeout: 6000,
+          stdio: "ignore",
+        });
+      } catch {}
+    }
+
+    try { await pgInstance.stop(); } catch {}
+
+    const pidsToKill = new Set<number>();
+    if (mainPid) pidsToKill.add(mainPid);
+    for (const p of descendantPids) pidsToKill.add(p);
+
+    for (const p of pidsToKill) {
+      if (verifyPostgresProcessOwnership(p, tempDir, mainPid)) {
+        try {
+          if (process.platform === "win32") {
+            spawnSync("taskkill", ["/PID", p.toString(), "/T", "/F"], { stdio: "ignore" });
+          } else {
+            process.kill(p, "SIGKILL");
+          }
+        } catch {}
+      }
+    }
+
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
 

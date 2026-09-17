@@ -758,12 +758,45 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
 
           orgDomain = "TAHFIZH";
 
-          // Note on KAMAR Scope in Milestone 2:
-          // The current Santri schema has no authoritative kamarId relation.
-          // Until Milestone 3 adds real room placement:
-          // Santri-targeted KAMAR context strictly remains undefined.
-          // KAMAR scope evaluations targeting a santri fail closed as INVALID_RESOURCE_CONTEXT.
-          kamarId = undefined;
+          // Milestone 3.1: Authoritative Kamar Placement Hydration
+          // Invariant: Caller-supplied requested.kamarId is strictly ignored and MUST NEVER override actual placement.
+          if (prisma.santriKamarPlacement) {
+            const activePlacement = await prisma.santriKamarPlacement.findFirst({
+              where: {
+                santriId: targetSantri.id,
+                isActive: true,
+              },
+              include: {
+                kamar: true,
+              },
+            });
+
+            if (activePlacement && activePlacement.kamar) {
+              const kamarGender = activePlacement.kamar.genderComplex as GenderComplex;
+              const isGenderCompatible =
+                !unitGenderComplex ||
+                !kamarGender ||
+                kamarGender === "CAMPUR" ||
+                kamarGender === "TIDAK_TERIKAT" ||
+                unitGenderComplex === kamarGender;
+
+              if (isGenderCompatible) {
+                kamarId = activePlacement.kamar.id;
+                orgUnitIds.push(activePlacement.kamar.id);
+                if (!targetSantri.halaqohId && activePlacement.kamar.domain) {
+                  orgDomain = activePlacement.kamar.domain as OrgDomain;
+                }
+              } else {
+                // Room placement violates gender boundary -> fail closed
+                kamarId = undefined;
+              }
+            } else {
+              // Santri has no active Kamar placement -> fail closed for KAMAR-scoped operations
+              kamarId = undefined;
+            }
+          } else {
+            kamarId = undefined;
+          }
         } else {
           // Target santri was requested but does not exist in DB -> fail closed
           return null;
