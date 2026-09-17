@@ -10,11 +10,11 @@
 The STQ organizational architecture decouples **Identity** (who a person is) from **Functional Authority** (what an account is authorized to do). It consists of three foundational models:
 
 1. **Organizational Unit (`OrgUnit`)**:
-   A structural department, division, halaqoh, kamar, service unit, or academic class in the pesantren.
+   A structural department, division, halaqoh, kamar, service unit, or academic class in the pesantren. Domain is strictly `OrgDomain` (`INSTITUTIONAL`, `TAHFIZH`, `KEASRAMAAN`, `AKADEMIK`, `MANAJEMEN`).
 2. **Position (`Position`)**:
-   A defined functional role or title within an organizational unit (e.g., Mudir, Kabid, Musyrif, Mudabbir, Ketua, Anggota).
+   A defined functional template within an organizational unit (e.g., Mudir, Kabid, Musyrif, Mudabbir, Ketua, Anggota).
 3. **Assignment (`Assignment`)**:
-   The active, time-bounded linkage binding an authenticated **User Identity** to a **Position** inside an **Organizational Unit** with an explicit **Scope**.
+   The active, time-bounded linkage binding an authenticated **User Identity** to a **Position** inside an **Organizational Unit**. The assignment contains an anchor `unitId` and lifecycle timestamps, but **NO** `scopeType`. `PositionCapability.scopeType` is the single source of truth for scope.
 
 ---
 
@@ -24,51 +24,50 @@ The STQ organizational architecture decouples **Identity** (who a person is) fro
 graph TD
     ROOT[STQ DUC Pesantren<br/>Type: INSTITUTION]
     
-    ROOT --> D_DIR[Direktorat / Pimpinan<br/>Type: DOMAIN]
-    ROOT --> D_TAF[Bidang Ketahfidzhan<br/>Type: DOMAIN]
-    ROOT --> D_KSR[Bidang Keasramaan<br/>Type: DOMAIN]
-    ROOT --> D_AKD[Bidang Akademik<br/>Type: DOMAIN]
-    ROOT --> D_ADM[Tata Usaha & Manajemen<br/>Type: DOMAIN]
+    ROOT --> D_DIR[Direktorat / Pimpinan<br/>Domain: INSTITUTIONAL]
+    ROOT --> D_TAF[Bidang Ketahfidzhan<br/>Domain: TAHFIZH]
+    ROOT --> D_KSR[Bidang Keasramaan<br/>Domain: KEASRAMAAN]
+    ROOT --> D_AKD[Bidang Akademik<br/>Domain: AKADEMIK]
+    ROOT --> D_ADM[Tata Usaha & Manajemen<br/>Domain: MANAJEMEN]
 
-    D_TAF --> HLQ1[Halaqoh Ust. Razan<br/>Type: HALAQOH]
-    D_TAF --> HLQ2[Halaqoh Ust. Zaid<br/>Type: HALAQOH]
-    D_TAF --> HLQ3[Halaqoh Ustadzah Lisa<br/>Type: HALAQOH]
+    D_TAF --> HLQ1["Halaqoh Qur'an Banin (Illustrative)<br/>Type: HALAQOH"]
+    D_TAF --> HLQ2["Halaqoh Qur'an Banat (Illustrative)<br/>Type: HALAQOH"]
 
-    D_KSR --> KMR_A[Kamar Abu Bakar<br/>Type: KAMAR]
-    D_KSR --> KMR_B[Kamar Umar<br/>Type: KAMAR]
-    D_KSR --> OSDA[Organisasi Santri - OSDA<br/>Type: ORGANIZATION]
-    D_KSR --> TKS[Tenaga Kebersihan & Servis - TKS<br/>Type: ORGANIZATION]
+    D_KSR --> KMR_A["Kamar Asrama Banin (Illustrative)<br/>Type: KAMAR"]
+    D_KSR --> KMR_B["Kamar Asrama Banat (Illustrative)<br/>Type: KAMAR"]
+    D_KSR --> OSDA["Organisasi Santri Darul Ulum Cendekia - OSDA<br/>Type: ORGANIZATION"]
+    D_KSR --> TKS["Tugas Khusus Santri - TKS<br/>Type: ORGANIZATION"]
 
-    OSDA --> OS_SEK[Pimpinan Harian OSDA<br/>Type: DIVISION]
-    OSDA --> OS_KMN[Divisi Keamanan & Kedisiplinan<br/>Type: DIVISION]
-    OSDA --> OS_IBD[Divisi Pendidikan & Ibadah<br/>Type: DIVISION]
-    OSDA --> OS_KBR[Divisi Kebersihan & Kerapihan<br/>Type: DIVISION]
-    OSDA --> OS_KSH[Divisi Kesehatan - Poskestren<br/>Type: DIVISION]
-    OSDA --> OS_SPR[Divisi Sarpras<br/>Type: DIVISION]
-    OSDA --> OS_MED[Divisi Multimedia<br/>Type: DIVISION]
+    OSDA --> OS_PI["Pengurus Inti OSDA<br/>(Ketua, Sekretaris, Bendahara, Multimedia)"]
+    OSDA --> OS_KMN["Divisi Keamanan & Kedisiplinan<br/>Type: DIVISION"]
+    OSDA --> OS_IBD["Divisi Pendidikan & Ibadah<br/>Type: DIVISION"]
+    OSDA --> OS_KBR["Divisi Kebersihan & Kerapihan<br/>Type: DIVISION"]
+    OSDA --> OS_KSH["Divisi Kesehatan - Poskestren<br/>Type: DIVISION"]
+    OSDA --> OS_SPR["Divisi Sarpras<br/>Type: DIVISION"]
 
-    OS_KBR --> USR1[Usroh Kebersihan 1<br/>Type: USROH]
-    OS_KBR --> USR2[Usroh Kebersihan 2<br/>Type: USROH]
+    OS_KBR --> USR1["Usroh Kebersihan 1<br/>Type: USROH"]
+    OS_KBR --> USR2["Usroh Kebersihan 2<br/>Type: USROH"]
 
-    TKS --> TKS_DPR[Unit Dapur & Gizi<br/>Type: SERVICE_UNIT]
-    TKS --> TKS_MSJ[Unit Masjid<br/>Type: SERVICE_UNIT]
-    TKS --> TKS_KPD[Unit Kantor Pendidikan<br/>Type: SERVICE_UNIT]
-    TKS --> TKS_KYA[Unit Kantor Yayasan<br/>Type: SERVICE_UNIT]
-    TKS --> TKS_AIR[Unit Air Minum & Sumur<br/>Type: SERVICE_UNIT]
+    TKS --> TKS_DPR["Unit Dapur dan Gizi<br/>(Ketua & Anggota)"]
+    TKS --> TKS_MSJ["Unit Masjid<br/>(Ketua & Anggota)"]
+    TKS --> TKS_KPD["Unit Kantor Pendidikan<br/>(Operator)"]
+    TKS --> TKS_KYA["Unit Kantor Yayasan<br/>(Operator)"]
+    TKS --> TKS_AIR["Unit Air Minum<br/>(Operator)"]
+    TKS --> TKS_SMR["Unit Air Sumur<br/>(Operator)"]
 
-    D_AKD --> CLS_7A[Kelas 7A<br/>Type: ACADEMIC_CLASS]
-    D_AKD --> CLS_7B[Kelas 7B<br/>Type: ACADEMIC_CLASS]
+    D_AKD --> CLS_7A["Kelas 7A<br/>Type: ACADEMIC_CLASS"]
+    D_AKD --> CLS_7B["Kelas 7B<br/>Type: ACADEMIC_CLASS"]
 ```
 
 ### Canonical Unit Types Definition
 The system recognizes exactly ONE normalized `OrgUnitType` vocabulary:
 - `INSTITUTION`: Root pesantren entity (STQ Darul Ulum Cendekia).
 - `DOMAIN`: Strategic organizational domain (Tahfizh, Keasramaan, Akademik, Manajemen).
-- `ORGANIZATION`: Structured overarching bodies (OSDA, TKS).
-- `DIVISION`: Functional wings within an organization (Keamanan, Ibadah, Poskestren, dll.).
-- `HALAQOH`: Qur'anic study circle grouping students under an assigned musyrif.
-- `KAMAR`: Dormitory room grouping students under an assigned Mudabbir.
-- `SERVICE_UNIT`: Operational service desk under TKS (Dapur, Masjid, Air). Dedicated to institutional technical service units.
+- `ORGANIZATION`: Structured overarching bodies (OSDA, TKS under Keasramaan).
+- `DIVISION`: Functional wings within an organization (Pengurus Inti, Keamanan, Ibadah, Poskestren, dll.).
+- `HALAQOH`: Qur'anic study circle grouping students under an assigned musyrif (authoritatively backfilled from database).
+- `KAMAR`: Dormitory room grouping students under an assigned Mudabbir (authoritatively backfilled from structure).
+- `SERVICE_UNIT`: Operational service unit under TKS (Dapur dan Gizi, Masjid, Kantor Pendidikan, Kantor Yayasan, Air Minum, Air Sumur).
 - `USROH`: Small student taskforce (e.g. daily cleaning rotation under OSDA Kebersihan).
 - `ACADEMIC_CLASS`: Academic instructional classroom (Kelas 7A, 7B, 8A, 8B).
 
@@ -76,7 +75,7 @@ The system recognizes exactly ONE normalized `OrgUnitType` vocabulary:
 
 ## 3. Position & Capability-Scope Mapping
 
-A **Position** defines an institutional responsibility and capability template. Rather than assuming uniform scope across all capabilities, scope is modeled per capability on `PositionCapability`:
+A **Position** defines an institutional responsibility and capability template. Rather than assuming uniform scope across all capabilities or storing scope on assignments, **`PositionCapability.scopeType` is the single source of truth for scope containment**:
 
 $$\text{PositionCapability} = (\text{positionId}, \text{capabilityCode}, \text{scopeType})$$
 
@@ -111,10 +110,10 @@ An `Assignment` belongs to a `User` as the technical authentication principal (`
 - **Personal Staff Assignment**: `Assignment.userId` connects to `User`, whose `user.staffId` resolves the verified `Staff` educator profile.
 - **Santri Assignment**: `Assignment.userId` connects to `User`, whose `user.santriId` resolves the enrolled student record.
 - **Unit Account Assignment**: `Assignment.userId` connects to a dedicated kiosk `User` (`AccountType: UNIT`), assigned to exactly one operational unit.
-- **Wali Authority**: Derived relationally from the guardian's verified children (`guardianLinkedSantriIds`).
+- **Wali Authority**: Derived relationally server-side in `ResolvedResourceContext` from the guardian's verified children records. Caller-supplied `RequestedResourceContext` is strictly untrusted and cannot specify or influence allowed child IDs.
 
-### 4.2. Relational Multi-Unit Scope Binding (`AssignmentScopeUnit`)
-To eliminate non-relational string arrays without FK integrity, multi-unit responsibilities (e.g. a Mudabbir supervising multiple kamar) are modeled relationally:
+### 4.2. Assignment Model (Zero Scope Stored on Assignment)
+Notice that `Assignment` contains **NO** `scopeType` column. The position's capabilities determine the scope:
 
 ```prisma
 model Assignment {
@@ -125,7 +124,6 @@ model Assignment {
   position    Position              @relation(fields: [positionId], references: [id], onDelete: Restrict)
   unitId      String                @map("unit_id")
   unit        OrgUnit               @relation(fields: [unitId], references: [id], onDelete: Restrict)
-  scopeType   ScopeType             @default(UNIT) @map("scope_type")
   status      AssignmentStatus      @default(ACTIVE)
   validFrom   DateTime              @default(now()) @map("valid_from")
   validUntil  DateTime?             @map("valid_until")
@@ -158,18 +156,36 @@ model AssignmentScopeUnit {
 
 ## 5. Account Modalities: Personal vs. Unit Accounts
 
-### 5.1. Personal Accounts (`AccountType: PERSONAL`)
+### 5.1. Database Persistence Strategy (Additive Column on User)
+`AccountType` does not exist only in TypeScript; it is persistently stored on the `User` model:
+
+```prisma
+enum AccountType {
+  PERSONAL
+  UNIT
+}
+
+// Additive non-destructive change to existing User table in Phase A:
+model User {
+  // ... existing fields (id, username, password, role, etc.)
+  accountType AccountType @default(PERSONAL) @map("account_type")
+  // ... relations
+}
+```
+Phase A is **additive and non-destructive**. It introduces the `accountType` column with a safe default (`PERSONAL`) to prevent breaking existing users or schemas.
+
+### 5.2. Personal Accounts (`AccountType: PERSONAL`)
 - Used by: Asatidz, Mudabbir, Staf TU, Santri, Wali Santri.
 - Authentication: Individual credentials with personal session JWT.
 - Accountability: The `userId` in `AuditLog` directly identifies the human actor.
 
-### 5.2. Unit Accounts (`AccountType: UNIT`)
-- Used by: Poskestren UKS desk, OSDA division tablets, TKS Dapur workstation.
+### 5.3. Unit Accounts (`AccountType: UNIT`)
+- Used by: Poskestren UKS desk, OSDA division tablets, TKS workstations.
 - Placement: A unit account belongs to **exactly one** operational unit.
 - Non-Repudiation Rule:
   - Free-text display name alone does **NOT** provide non-repudiation.
   - Submitting any mutating transaction requires explicit identification of the **Human Executor** (`humanExecutorId`), verified against active `Staff` or `Santri` records in the database.
-  - The resulting audit record permanently captures both:
+  - The resulting audit record permanently captures both technical account and human executor:
     ```json
     {
       "technicalAccountId": "usr-kiosk-poskestren",

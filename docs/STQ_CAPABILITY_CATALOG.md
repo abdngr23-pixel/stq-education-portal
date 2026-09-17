@@ -7,63 +7,74 @@
 
 ## 1. Capability Naming Convention & Architectural Boundary
 
+## 1. Capability Naming Convention & Architectural Boundary
+
 All capabilities in the STQ Portal adhere to a strict 3-tier dot-notated nomenclature:
 
-$$\text{Code} = \langle\text{domain}\rangle.\langle\text{entity}\rangle.\langle\text{action}\rangle$$
+$$\text{Code} = \langle\text{namespace}\rangle.\langle\text{entity}\rangle.\langle\text{action}\rangle$$
 
 Where:
-- **`domain`**: The organizational domain (`tahfizh`, `keasramaan`, `health`, `academic`, `logistics`, `finance`, `letters`, `sponsor`, `system`).
-- **`entity`**: The noun representing the target resource (`setoran`, `recap`, `reward`, `policy`, `permission`, `discipline`, `case`, `score`, `stock`, `user`, `assignment`).
-- **`action`**: The verb describing the operation (`read`, `create`, `update`, `cancel`, `approve`, `issue`, `inspect`, `mutate`, `manage`).
+- **`namespace`**: The functional capability namespace (`CapabilityNamespace`):
+  - `"TAHFIZH"`
+  - `"KEASRAMAAN"`
+  - `"HEALTH"`
+  - `"ACADEMIC"`
+  - `"LOGISTICS"`
+  - `"FINANCE"`
+  - `"LETTERS"`
+  - `"SPONSOR"`
+  - `"SYSTEM"`
+- **`entity`**: The target resource noun (`setoran`, `recap`, `reward`, `policy`, `permission`, `discipline`, `case`, `score`, `stock`, `user`, `assignment`).
+- **`action`**: The operation verb (`read`, `create`, `update`, `cancel`, `approve`, `issue`, `inspect`, `mutate`, `manage`, `referral`).
 
 > [!IMPORTANT]
-> **Strict Business Rule Boundary**:
-> Architecture Phase 1 establishes the canonical authorization mechanism, schema, and API contracts. It does NOT invent or lock institutional policies that have not been decided by the Business Owner. Capabilities are categorized into **VERIFIED / LOCKED** (active production baseline) and **PROPOSED / TBD** (mechanism designed, assignment pending Business Owner approval).
+> **The Three Canonical Business Rule States**:
+> Every capability entry in this catalog is strictly classified into one of three states:
+> 1. **`VERIFIED_PRODUCTION`**: Observed and verified in active production (PR #10 to PR #13 baseline).
+> 2. **`APPROVED_TARGET_PENDING_TECHNICAL`**: Formally approved target policy by institutional leadership, pending technical schema/UI implementation.
+> 3. **`PROPOSED_TBD`**: Architectural design recommendation; assignment matrix is not yet approved by the Business Owner.
 
 ---
 
-## 2. Verified & Locked Capabilities (Production Baseline)
+## 2. Capability Catalog & Business Rule State Registry
 
-The following capabilities represent verified, independently audited production behaviors (PR #10 through PR #13) that are formally locked into the baseline:
-
-| Capability Code | Description | Verified Authorized Positions | Verified Scope | Invariant Reference |
+### 2.1. Ketahfidzhan (`tahfizh.*`)
+| Capability Code | Description | Authorized Positions & Scope | Business Rule State | Boundary Invariant |
 | :--- | :--- | :--- | :--- | :--- |
-| `tahfizh.student.read` | Membaca daftar dan profil capaian hafalan santri | `MUDIR`, `KABID_TAHFIZH`, `MUSYRIF_TAHFIZH` | Kabid: `DOMAIN`; Musyrif: `HALAQOH` | Strict halaqoh enclosure for ordinary MT |
-| `tahfizh.setoran.create` | Mencatat setoran hafalan baru (Sabaq/Sabqi/Manzil/Mufar) | `MUSYRIF_TAHFIZH` (in assigned halaqoh) | Strictly `HALAQOH` (Own halaqoh only) | Kabid Tahfizh writes setoran strictly for own halaqoh |
-| `tahfizh.recap.read` | Membaca rekapitulasi capaian hafalan | `MUDIR`, `KABID_TAHFIZH`, `ADMIN` (Global); `MUSYRIF_TAHFIZH` (Own) | `GLOBAL` / `DOMAIN` / `HALAQOH` | Ordinary MT restricted to own halaqoh recap |
-| `tahfizh.reward.issue` | Menerbitkan reward resmi Tasmi'/Sima'an | `MUDIR`, `KABID_TAHFIZH` | `DOMAIN` / `GLOBAL` | Ordinary MT, ADM, MK strictly denied |
-| `tahfizh.policy.manage` | Mengubah ambang nilai, bintang, dan kebijakan reward | `MUDIR` (`KS`) | `GLOBAL` | Kabid Tahfizh and ordinary MT strictly denied |
-| `health.case.read_aggregate` | Membaca ringkasan agregat dan tren keluhan sakit Poskestren | Global: `MUDIR`, `KEPALA_KEASRAMAAN`, `PETUGAS_KESEHATAN`. Scoped: `PEMBINA_ASRAMA` (assigned kamar), `WALI_SANTRI` (own child) | `GLOBAL` / `UNIT` / `OWN_CHILD` | Non-clinical overview; honest data states |
-| `health.case.read_detail` | Membaca rekam medis klinis detail, keluhan, dan diagnosa santri | Restricted: `MUDIR`, `KEPALA_KEASRAMAAN`, `PETUGAS_KESEHATAN`, `PEMBINA_ASRAMA` (assigned kamar) | `GLOBAL` / `UNIT` | Generic OSDA, Guru Akademik strictly denied |
-| `health.case.create` | Menginput kejadian/keluhan awal sakit santri di Poskestren | `MUDIR`, `KEPALA_KEASRAMAAN`, `PETUGAS_KESEHATAN`, `PEMBINA_ASRAMA` | `GLOBAL` / `UNIT` | Generic OSDA denied |
-| `health.case.update_status` | Memperbarui status medis (`DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`) | `MUDIR`, `KEPALA_KEASRAMAAN`, `PETUGAS_KESEHATAN` | `GLOBAL` / `UNIT` | Admin TU strictly denied (`DENY`); Generic OSDA denied |
-| `health.case.referral` | Menerbitkan surat rujukan klinis ke Puskesmas / Rumah Sakit | `MUDIR`, `PETUGAS_KESEHATAN` | `GLOBAL` / `UNIT` | Admin TU and generic OSDA strictly denied |
-
-### Canonical Keasramaan V2 Health Status Model
-In Keasramaan V2, health statuses are canonically defined as:
-- `DIPANTAU`: Santri dalam pemantauan medis Poskestren / istirahat kamar.
-- `PULIH`: Santri telah dinyatakan sehat dan kembali beraktivitas normal.
-- `DIRUJUK`: Pasien dirujuk ke fasilitas kesehatan luar (Puskesmas / Rumah Sakit).
-- `DARURAT`: Kondisi gawat darurat medis yang memerlukan tindakan segera.
-
-*Legacy status values (`SEMBUH`, `RAWAT_PONDOK`, `DIRUJUK_PUSKESMAS`, `PULANG`) are retained strictly as read-compatibility bridges and are mapped to V2 canonical statuses.*
+| `tahfizh.student.read` | Membaca daftar dan profil capaian hafalan santri | `MUDIR` (`GLOBAL`), `KABID_TAHFIZH` (`DOMAIN`), `MUSYRIF_TAHFIZH` (`HALAQOH`) | **VERIFIED_PRODUCTION** | Strict halaqoh enclosure for ordinary MT |
+| `tahfizh.setoran.create` | Mencatat setoran hafalan baru (Sabaq/Sabqi/Manzil/Mufar) | `MUSYRIF_TAHFIZH` (`HALAQOH`) | **VERIFIED_PRODUCTION** | Kabid writes setoran strictly for own halaqoh |
+| `tahfizh.recap.read` | Membaca rekapitulasi capaian hafalan | `MUDIR` (`GLOBAL`), `KABID_TAHFIZH` (`DOMAIN`), `ADMIN` (`GLOBAL`); `MUSYRIF_TAHFIZH` (`HALAQOH`) | **VERIFIED_PRODUCTION** | Ordinary MT restricted to own halaqoh recap |
+| `tahfizh.reward.issue` | Menerbitkan reward resmi Tasmi'/Sima'an | `MUDIR` (`GLOBAL`), `KABID_TAHFIZH` (`DOMAIN`) | **VERIFIED_PRODUCTION** | Ordinary MT, ADM, MK strictly denied |
+| `tahfizh.policy.manage` | Mengubah ambang nilai, bintang, dan kebijakan reward | `MUDIR` (`KS`) (`GLOBAL`) | **VERIFIED_PRODUCTION** | Kabid Tahfizh and ordinary MT strictly denied |
+| `tahfizh.setoran.cancel` | Membatalkan setoran tahfizh (dengan alasan & audit) | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Cancellation audit requirement |
+| `tahfizh.target.manage` | Menetapkan target bulanan/pekanan santri | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Target setting workflow |
+| `tahfizh.ikhtibar.evaluate_s1` | Menilai ujian kenaikan juz Tahap 1 | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Stage 1 exam evaluation |
+| `tahfizh.ikhtibar.evaluate_s2` | Menilai munaqasyah akhir Tahap 2 | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Stage 2 exam evaluation |
+| `tahfizh.finalization.run` | Finalisasi rekapitulasi bulanan dan sanksi | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Monthly finalization |
 
 ---
 
-## 3. Proposed Capabilities (TBD — Pending Business Owner Approval)
+### 2.2. Kesehatan (`health.*`) — Current Verified Production vs. Target V2 Approved
+The 5 granular health capabilities are explicitly demarcated between current verified production and target V2 approved states:
 
-The following capability definitions are architecturally standardized, but the specific matrix of who receives them is **TBD — REQUIRES BUSINESS OWNER APPROVAL**:
+| Capability Code | Description | Current Verified Production | Target V2 Approved (Pending Technical) | Receiver / Sign-off Matrix |
+| :--- | :--- | :--- | :--- | :--- |
+| `health.case.read_aggregate` | Membaca ringkasan agregat dan tren keluhan sakit Poskestren | **VERIFIED_PRODUCTION**<br/>`MUDIR`, `KEPALA_KEASRAMAAN` (`MK`), `ADMIN` (`ADM`). | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>`PETUGAS_KESEHATAN` (`GLOBAL`), `PEMBINA_ASRAMA` (`KAMAR`), `WALI_SANTRI` (`OWN_CHILD`). | Approved |
+| `health.case.read_detail` | Membaca rekam medis klinis detail, keluhan, dan diagnosa santri | **VERIFIED_PRODUCTION**<br/>`MUDIR`, `KEPALA_KEASRAMAAN` (`MK`). Admin denied. | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>`PETUGAS_KESEHATAN` (`GLOBAL`), `PEMBINA_ASRAMA` (`KAMAR` assigned). | Approved |
+| `health.case.create` | Menginput kejadian/keluhan awal sakit santri di Poskestren | **VERIFIED_PRODUCTION**<br/>`MUDIR`, `KEPALA_KEASRAMAAN` (`MK`). | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>`PETUGAS_KESEHATAN`, `PEMBINA_ASRAMA` (`KAMAR`). | Approved |
+| `health.case.update_status` | Memperbarui status medis (`DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`) | **VERIFIED_PRODUCTION**<br/>`MUDIR`, `KEPALA_KEASRAMAAN` (`MK`). Admin TU strictly denied (`DENY`). | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>`PETUGAS_KESEHATAN`. Pembina Kamar restricted to internal updates. | Approved |
+| `health.case.referral` | Menerbitkan surat rujukan klinis ke Puskesmas / RS | **VERIFIED_PRODUCTION**<br/>`MUDIR`, `KEPALA_KEASRAMAAN` (`MK`). | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>`PETUGAS_KESEHATAN` recommends referral. | **PROPOSED_TBD**<br/>Final referral sign-off receiver matrix is TBD pending Business Owner decision. |
 
-### 3.1. Ketahfidzhan Lanjutan (`tahfizh.*`)
-| Capability Code | Description | Authorized Positions | Status |
-| :--- | :--- | :--- | :--- |
-| `tahfizh.setoran.cancel` | Membatalkan setoran tahfizh (dengan alasan & audit) | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
-| `tahfizh.target.manage` | Menetapkan target bulanan/pekanan santri | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
-| `tahfizh.ikhtibar.evaluate_s1` | Menilai ujian kenaikan juz Tahap 1 | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
-| `tahfizh.ikhtibar.evaluate_s2` | Menilai munaqasyah akhir Tahap 2 | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
-| `tahfizh.finalization.run` | Finalisasi rekapitulasi bulanan dan sanksi | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
+#### Canonical Keasramaan V2 Health Statuses & Legacy Read Bridge
+Canonical V2 statuses: `DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`.
+- `SEMBUH` $\implies$ Maps to `PULIH` (Deterministic)
+- `RAWAT_PONDOK` $\implies$ Maps to `DIPANTAU` (Deterministic)
+- `DIRUJUK_PUSKESMAS` $\implies$ Maps to `DIRUJUK` (Deterministic)
+- `PULANG` $\implies$ **AMBIGUOUS_PENDING_REVIEW** (Do NOT backfill; requires human business review).
 
-### 3.2. Keasramaan & Kesantrian (`keasramaan.*`)
+---
+
+### 2.3. Keasramaan & Kesantrian (`keasramaan.*`)
 | Capability Code | Description | Authorized Positions | Status |
 | :--- | :--- | :--- | :--- |
 | `keasramaan.permission.create` | Mengajukan permohonan izin santri | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |

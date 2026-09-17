@@ -14,20 +14,32 @@ The STQ Portal operates a mission-critical production service for 57 santri, the
 
 ---
 
-## 2. Legacy Role to Coarse Identity Category Mapping
+## 2. Legacy Role Separation vs. AccountType, Position, and Capabilities
 
-| Legacy `Role` | Coarse Category | Default Baseline Position | Canonical Unit | Primary Capabilities |
+> [!IMPORTANT]
+> **Role ≠ AccountType**:
+> The existing `Role` enum (`KS`, `MT`, `MK`, `ADM`, `PH`, `OSDA`, `WS`, `ST`, etc.) remains **legacy compatibility metadata** during migration. It is NEVER modified into `STAFF`, `SANTRI`, `WALI`, or `UNIT_ACCOUNT`.
+> - **Legacy Role**: Coarse legacy compatibility metadata.
+> - **AccountType**: Credential modality (`PERSONAL` | `UNIT`), stored additively on `User.accountType`.
+> - **Position**: Organizational functional template (`MUDIR`, `KABID_TAHFIZH`, `MUSYRIF_TAHFIZH`, etc.).
+> - **Capability + Scope**: Canonical future authorization mechanism.
+>
+> `UNIT_ACCOUNT` is **NOT** a `Role` enum value; it is an `AccountType`.
+
+### Legacy Role Mapping Baseline
+
+| Legacy `Role` | AccountType | Default Baseline Position | Canonical Unit Domain | Primary Capabilities |
 | :--- | :--- | :--- | :--- | :--- |
-| `KS` | `STAFF` | `MUDIR` | `INSTITUTION` | Full managerial approval, reward policy, budget signoff. |
-| `ADM` | `STAFF` | `STAF_ADMIN_TU` | `TATA_USAHA` | User administration, official letters, logistics management, system audit. |
-| `MK` | `STAFF` | `KEPALA_KEASRAMAAN` | `BIDANG_KEASRAMAAN` | Dormitory discipline, global health oversight, tier 1 perizinan approval. |
-| `MT` | `STAFF` | `MUSYRIF_TAHFIZH` | `HALAQOH` (Assigned) | Daily setoran creation, halaqoh progress monitoring, mutaba'ah. |
-| `PH` | `STAFF` | `PEMBINA_HALAQOH` | `HALAQOH` (Assigned) | Halaqoh mentoring, prayer attendance, halaqoh discipline. |
-| `GA` | `STAFF` | `GURU_AKADEMIK` | `BIDANG_AKADEMIK` | Grade entry for assigned subjects, academic curriculum. |
-| `OSDA` | `UNIT_ACCOUNT` | `ANGGOTA_OSDA` | `OSDA` | Unit operations (division-specific capabilities assigned per account). |
-| `WS` | `WALI` | `WALI_SANTRI` | `INDIVIDUAL` | Own child tahfizh, academic, health, and permission monitoring. |
-| `ST` | `SANTRI` | `SANTRI` | `INDIVIDUAL` | Personal hafalan target, personal discipline star tracking. |
-| `YAY` | `STAKEHOLDER` | `PENGURUS_YAYASAN` | `YAYASAN` | Executive reports, financial & compliance audit reading. |
+| `KS` | `PERSONAL` | `MUDIR` | `INSTITUTIONAL` | Full managerial approval, reward policy, budget signoff. |
+| `ADM` | `PERSONAL` | `STAF_ADMIN_TU` | `MANAJEMEN` | User administration, official letters, logistics management, system audit. |
+| `MK` | `PERSONAL` | `KEPALA_KEASRAMAAN` | `KEASRAMAAN` | Dormitory discipline, global health oversight, tier 1 perizinan approval. |
+| `MT` | `PERSONAL` | `MUSYRIF_TAHFIZH` | `TAHFIZH` | Daily setoran creation, halaqoh progress monitoring, mutaba'ah. |
+| `PH` | `PERSONAL` | `PEMBINA_HALAQOH` | `TAHFIZH` | Halaqoh mentoring, prayer attendance, halaqoh discipline. |
+| `GA` | `PERSONAL` | `GURU_AKADEMIK` | `AKADEMIK` | Grade entry for assigned subjects, academic curriculum. |
+| `OSDA` | `UNIT` | `ANGGOTA_OSDA` | `KEASRAMAAN` | Unit operations (division-specific capabilities assigned per account). |
+| `WS` | `PERSONAL` | `WALI_SANTRI` | `INSTITUTIONAL` | Own child tahfizh, academic, health, and permission monitoring. |
+| `ST` | `PERSONAL` | `SANTRI` | `INSTITUTIONAL` | Personal hafalan target, personal discipline star tracking. |
+| `YAY` | `PERSONAL` | `PENGURUS_YAYASAN` | `INSTITUTIONAL` | Executive reports, financial & compliance audit reading. |
 
 ---
 
@@ -39,10 +51,10 @@ The STQ Portal operates a mission-critical production service for 57 santri, the
   - `User` record for Ust. Razan Mufli receives an explicit `Assignment`:
     - `positionCode`: `"KABID_TAHFIZH"`
     - `unitId`: `"unit-bidang-tahfizh"`
-    - `scopeType`: `"DOMAIN"`
     - `status`: `"ACTIVE"`
     - `validFrom`: Active academic year start date
     - `validUntil`: null (ongoing)
+  - The position `KABID_TAHFIZH` links to `PositionCapability` records defining scopes (`tahfizh.recap.read` at `DOMAIN`, `tahfizh.reward.issue` at `DOMAIN`). (Notice: `Assignment` contains **NO** `scopeType`).
 - **Compatibility Adapter**:
   - `authEngine.hasCapability(session, 'tahfizh.reward.issue')` returns `true` if `session.isKepalaBidangTahfidz === true` OR if an active assignment exists.
 - **Retirement Target**: Phase E (after dual-read shadow verification in Phase C and authoritative write switch in Phase D).
@@ -53,7 +65,6 @@ The STQ Portal operates a mission-critical production service for 57 santri, the
   - Designated female student user receives an `Assignment`:
     - `positionCode`: `"PETUGAS_PRESENSI"`
     - `unitId`: `"unit-asrama-putri"`
-    - `scopeType`: `"UNIT"`
     - `status`: `"ACTIVE"`
     - `validFrom`: Active semester start date
     - `validUntil`: Active semester end date
@@ -102,3 +113,17 @@ Currently, navigation menus are derived from `ROLE_NAV_MAP: Record<Role, AppNavI
 2. **Zero Breaking Changes**:
    - `AppSidebar`, `TopNavbar`, and `MobileBottomNav` consume `getEffectiveAllowedNavTabs()`.
    - Existing users see their familiar UI tabs; users with newly assigned capabilities (e.g. Mudabbir gaining perizinan or OSDA Kesehatan gaining kesehatan) automatically see the relevant tab enabled without hardcoded role expansion.
+
+---
+
+## 6. Legacy Health Status Bridge
+
+Phase 1 candidate models define canonical V2 statuses (`DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`). Legacy database records bridge as follows:
+
+| Legacy Health Status | Canonical V2 Status | Determinism Status | Migration Rule |
+| :--- | :--- | :--- | :--- |
+| `SEMBUH` | `PULIH` | **DETERMINISTIC** | Direct 1:1 translation. |
+| `RAWAT_PONDOK` | `DIPANTAU` | **DETERMINISTIC** | Direct 1:1 translation. |
+| `DIRUJUK_PUSKESMAS` | `DIRUJUK` | **DETERMINISTIC** | Direct 1:1 translation. |
+| `PULANG` | *None* | **AMBIGUOUS_PENDING_REVIEW** | **DO NOT BACKFILL**. "PULANG" does not cleanly map to "PULIH" because it frequently indicates active convalescence at home or excused leave due to sickness. Requires manual business owner review. |
+

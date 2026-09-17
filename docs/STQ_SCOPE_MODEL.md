@@ -42,30 +42,58 @@ graph TD
 | `SELF` | $\text{Resource}.\text{santriId} == \text{Session}.\text{santriId}$ | Santri (`ST`) accessing own records. |
 
 > [!IMPORTANT]
+> **Single Source of Truth for Scope**:
+> Scope is explicitly configured per capability on `PositionCapability.scopeType`. The `Assignment` record stores anchor `unitId` and lifecycle state, but **NO** `scopeType`. When `scopeType` is `ASSIGNED_UNITS`, `AssignmentScopeUnit` supplies the relational multi-unit bindings.
+
+> [!IMPORTANT]
 > **Capability Precedence Rule**:
 > Capability evaluation strictly precedes scope evaluation. A subject holding `GLOBAL` scope on `health.case.read_aggregate` gains institutional aggregate read access to health records, but zero authority over `tahfizh.reward.issue` or `keasramaan.permission.approve`.
 
 ---
 
-## 2. Resource Context Binding & Anti-Tampering
+## 2. Resource Context Trust Boundaries & Server-Side Resolution
 
-When a Server Action receives a mutation or query parameter (e.g. `santriId: "san-123"`), the system **never trusts caller input**. The Authorization Engine extracts the underlying structural relations directly from the database and binds them to the context:
+The architecture enforces a strict trust boundary separating caller-submitted parameters from server-resolved authoritative boundaries:
+
+1. **`RequestedResourceContext` (Untrusted Caller Parameters)**:
+   - Callers supply target resource identifiers only: `santriId`, `targetUserId`, `resourceId`.
+   - Callers can **NEVER** supply or influence permitted child IDs or authorized boundaries.
+2. **`ResolvedResourceContext` (Server-Hydrated Authoritative Attributes)**:
+   - The engine queries authoritative database tables to hydrate:
+     - `santriId`
+     - `halaqohId` (authoritative current halaqoh)
+     - `kamarId` (authoritative current room)
+     - `orgUnitIds` (all enclosing organizational units)
+     - `guardianLinkedSantriIds` (server-side join with `Guardian` relation for `OWN_CHILD` resolution)
+     - `genderComplex` (`PUTRA` | `PUTRI` | `CAMPUR`)
+     - `orgDomain` (`INSTITUTIONAL` | `TAHFIZH` | `KEASRAMAAN` | `AKADEMIK` | `MANAJEMEN`)
 
 ```typescript
-// Example: Validating Setoran Creation Scope Fail-Closed
-async function evaluateSetoranScope(session: UserSession, targetSantriId: string): Promise<boolean> {
-  // 1. Resolve target student's structural boundaries from authoritative DB
+// Example: Validating Setoran Creation Scope Fail-Closed with Multi-Grant Evaluation
+async function evaluateSetoranScope(session: UserSession, requestedContext: RequestedResourceContext): Promise<boolean> {
+  if (!requestedContext.santriId) return false;
+
+  // 1. Hydrate authoritative structural boundaries from database
   const santri = await prisma.santri.findUnique({
-    where: { id: targetSantriId },
+    where: { id: requestedContext.santriId },
     select: { id: true, halaqohId: true },
   });
   if (!santri || !santri.halaqohId) return false; // Fail-closed
 
-  // 2. Resolve caller's effective halaqoh assignments
-  const { unitIds } = await authEngine.resolveScopes(session, "tahfizh.setoran.create");
+  // 2. Resolve caller's effective capability grants
+  const grants = await authEngine.resolveScopes(session, "tahfizh.setoran.create");
 
-  // 3. Strict set membership validation
-  return unitIds.includes(santri.halaqohId);
+  // 3. Multi-grant evaluation: ALLOW if at least one grant matches
+  return grants.some(grant => {
+    if (grant.scopeType === "GLOBAL" || grant.scopeType === "DOMAIN") return true;
+    if (grant.scopeType === "HALAQOH" || grant.scopeType === "UNIT") {
+      return grant.anchorUnitId === santri.halaqohId;
+    }
+    if (grant.scopeType === "ASSIGNED_UNITS") {
+      return grant.unitIds.includes(santri.halaqohId);
+    }
+    return false;
+  });
 }
 ```
 
@@ -78,8 +106,8 @@ If a client alters `santriId` to point to a student outside their permitted unit
 Pesantren Darul Ulum Cendekia enforces strict physical and administrative segregation between the Male Complex (Putra) and Female Complex (Putri):
 
 1. **Structural Separation**:
-   - `Halaqoh Ustadzah Lisa Dwina Fitri` is categorized under `OrgUnitType: HALAQOH` with `genderComplex = 'PUTRI'`.
-   - `Asrama Putri` is an `OrgUnit` encompassing female dorm rooms.
+   - Female halaqoh (e.g. illustrative: `Halaqoh Putri A`) are categorized under `OrgUnitType: HALAQOH` with `genderComplex = 'PUTRI'`.
+   - Female dorm rooms (e.g. illustrative: `Kamar Asrama Putri 1`) are categorized under `OrgUnitType: KAMAR` with `genderComplex = 'PUTRI'`.
 2. **Specialized Rejection (`GENDER_COMPLEX_DENIED`)**:
    - Standard `SCOPE_MISMATCH` indicates a generic organizational mismatch within the same campus partition (e.g. Musyrif A editing Musyrif B's halaqoh).
    - `GENDER_COMPLEX_DENIED` explicitly signals a violation of the physical/sharia gender segregation boundary (e.g. an ikhwan personnel attempting to access akhwat dormitory or halaqoh records without an approved cross-complex operational assignment).

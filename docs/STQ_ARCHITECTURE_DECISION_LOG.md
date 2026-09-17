@@ -5,18 +5,23 @@
 
 ---
 
-## ADR-001: Global Role Is a Coarse Identity Category, Not an Organizational Position
+## ADR-001: Legacy Role Compatibility vs. AccountType, Positions, and Capabilities
 
 - **Status**: **ACCEPTED**
 - **Date**: 2026-09-17
 - **Context**:
-  The portal previously attempted to map every responsibility (e.g. Pembina Halaqoh, Guru Akademik, Musyrif Keasramaan) into the PostgreSQL `enum Role`. When new positions like Mudabbir and OSDA Petugas Kesehatan emerged, adding them to `enum Role` would cause database migrations, schema rigidities, and an unmanageable matrix explosion.
+  The portal previously attempted to map every responsibility into the PostgreSQL `enum Role`. When new positions like Mudabbir and OSDA Petugas Kesehatan emerged, adding them to `enum Role` would cause database migrations, schema rigidities, and an unmanageable matrix explosion.
 - **Decision**:
-  The global `Role` enum is frozen as a coarse technical identity category (`STAFF`, `SANTRI`, `WALI`, `UNIT_ACCOUNT`). All functional duties, leadership titles, and specializations are modeled as `Positions` linked via `Assignments`.
+  The existing `Role` enum (`KS`, `MT`, `MK`, `ADM`, `PH`, `OSDA`, `WS`, `ST`, etc.) remains **legacy compatibility metadata** during migration. It is NEVER modified into `STAFF`, `SANTRI`, `WALI`, or `UNIT_ACCOUNT`.
+  Architectural concepts are strictly separated:
+  - **Legacy Role**: Coarse legacy compatibility metadata.
+  - **AccountType**: Credential modality (`PERSONAL` | `UNIT`), stored additively on `User.accountType`.
+  - **Position**: Organizational responsibility template (`MUDIR`, `KABID_TAHFIZH`, `MUSYRIF_TAHFIZH`, etc.).
+  - **Capability + Scope**: Canonical future authorization mechanism.
+  `UNIT_ACCOUNT` is **NOT** a `Role` enum value; it is an `AccountType`.
 - **Consequences**:
-  - Positive: Zero schema migrations when institutional positions change or new divisions are established.
-  - Positive: Natural support for staff holding multiple positions.
-  - Negative: Requires looking up active assignments in addition to the base session role.
+  - Positive: Zero schema migrations or breaking changes to existing `Role` enum in active production.
+  - Positive: Clear separation between technical credential modality (`AccountType`) and functional authority (`Position` + `Capability`).
 
 ---
 
@@ -125,4 +130,24 @@
   3. Candidate Prisma models must mirror runtime contracts with 100% parity, utilizing native database enums rather than bare strings.
 - **Consequences**:
   - Positive: Guarantees zero divergence across all documents, schemas, and contract tests. Protects sensitive medical records while enabling aggregate operational dashboards.
+
+---
+
+## ADR-010: Normalization of Institutional Domains, Multi-Grant Resolution, and Context Trust Boundaries
+
+- **Status**: **ACCEPTED**
+- **Date**: 2026-09-17
+- **Context**:
+  Previous iterations conflated organizational domain hierarchy with capability namespaces, duplicated scope ownership across both `PositionCapability` and `Assignment`, and permitted untrusted caller resource contexts.
+- **Decision**:
+  1. **Domain vs Namespace Split**: Split `OrgDomain` (`INSTITUTIONAL`, `TAHFIZH`, `KEASRAMAAN`, `AKADEMIK`, `MANAJEMEN`) from `CapabilityNamespace` (`TAHFIZH`, `KEASRAMAAN`, `HEALTH`, `ACADEMIC`, `LOGISTICS`, `FINANCE`, `LETTERS`, `SPONSOR`, `SYSTEM`). Health (Poskestren) and TKS are structurally under `KEASRAMAAN`.
+  2. **Single Source of Scope Truth**: `PositionCapability.scopeType` is the sole source of truth for scope; `Assignment` contains NO `scopeType`.
+  3. **Multi-Grant Authorization**: `resolveScopes` returns `EffectiveCapabilityGrant[]`. `authorize()` evaluates all grants and permits access if at least one grant matches.
+  4. **Trust Boundary Separation**: Callers supply `RequestedResourceContext` (untrusted IDs only, no child IDs). The server hydrates `ResolvedResourceContext` from database relations (`OWN_CHILD` derived server-side).
+  5. **Three Business Rule States**: Explicitly tag rules with `VERIFIED_PRODUCTION`, `APPROVED_TARGET_PENDING_TECHNICAL`, or `PROPOSED_TBD`.
+  6. **TKS & OSDA Canonical Structures**: TKS is "Tugas Khusus Santri" with 6 canonical units (separate Air Minum and Air Sumur; no central Ketua TKS). Pengurus Inti OSDA includes Multimedia and Bendahara.
+  7. **Legacy Health Bridge**: Deterministic mappings for `SEMBUH`, `RAWAT_PONDOK`, `DIRUJUK_PUSKESMAS`; `PULANG` is strictly `AMBIGUOUS_PENDING_REVIEW` (no destructive backfill).
+- **Consequences**:
+  - Positive: Complete structural and semantic clarity. Mathematical multi-grant evaluation prevents privilege drops when users hold multiple assignments.
+
 

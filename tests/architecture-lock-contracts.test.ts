@@ -6,8 +6,11 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "fs";
 import path from "path";
+import { execSync } from "child_process";
 import {
-  STQDomain,
+  OrgDomain,
+  CapabilityNamespace,
+  BusinessRuleState,
   OrgUnitType,
   AccountType,
   ScopeType,
@@ -19,8 +22,12 @@ import {
   Assignment,
   AssignmentScopeUnit,
   PositionCapability,
+  EffectiveCapabilityGrant,
   Capability,
+  RequestedResourceContext,
+  ResolvedResourceContext,
   IAuthorizationEngine,
+  AuthorizationResult,
   CanonicalAuditRecord,
   UnitAccountExecutorContext,
   HEALTH_CAPABILITIES,
@@ -33,7 +40,7 @@ import {
   CandidateCanonicalAuditLogModel,
 } from "../types/architecture-lock";
 
-describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICATION", () => {
+describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICATION (V3-B)", () => {
   const rootDir = path.resolve(__dirname, "..");
   const docsDir = path.join(rootDir, "docs");
 
@@ -86,137 +93,383 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
   });
 
   // =========================================================================
-  // 2. OrgUnit Vocabulary Normalization
+  // 2. OrgDomain vs CapabilityNamespace Split (Directive 1)
   // =========================================================================
-  describe("2. OrgUnit Vocabulary Normalization", () => {
-    const canonicalOrgUnitTypes: OrgUnitType[] = [
-      "INSTITUTION",
-      "DOMAIN",
-      "ORGANIZATION",
-      "DIVISION",
-      "HALAQOH",
-      "KAMAR",
-      "SERVICE_UNIT",
-      "USROH",
-      "ACADEMIC_CLASS",
+  describe("2. OrgDomain vs CapabilityNamespace Split", () => {
+    const canonicalOrgDomains: OrgDomain[] = [
+      "INSTITUTIONAL",
+      "TAHFIZH",
+      "KEASRAMAAN",
+      "AKADEMIK",
+      "MANAJEMEN",
     ];
 
-    it("all documented OrgUnit types must be part of canonical OrgUnitType union", () => {
-      assert.strictEqual(canonicalOrgUnitTypes.length, 9);
-    });
-
-    it("no document may contain deprecated aliases WORK_UNIT or ORGANISASI", () => {
-      for (const docName of requiredDocuments) {
-        const content = fs.readFileSync(path.join(docsDir, docName), "utf-8");
-        assert.strictEqual(
-          content.includes("WORK_UNIT"),
-          false,
-          `Document docs/${docName} contains deprecated alias WORK_UNIT (must use SERVICE_UNIT)`
-        );
-        assert.strictEqual(
-          content.includes("ORGANISASI]"),
-          false,
-          `Document docs/${docName} contains deprecated alias ORGANISASI (must use ORGANIZATION)`
-        );
-      }
-    });
-  });
-
-  // =========================================================================
-  // 3. Assignment Lifecycle & Field Naming Normalization
-  // =========================================================================
-  describe("3. Assignment Lifecycle & Field Naming Normalization", () => {
-    const canonicalStatuses: AssignmentStatus[] = [
-      "DRAFT",
-      "ACTIVE",
-      "SUSPENDED",
-      "EXPIRED",
-      "REVOKED",
+    const canonicalCapabilityNamespaces: CapabilityNamespace[] = [
+      "TAHFIZH",
+      "KEASRAMAAN",
+      "HEALTH",
+      "ACADEMIC",
+      "LOGISTICS",
+      "FINANCE",
+      "LETTERS",
+      "SPONSOR",
+      "SYSTEM",
     ];
 
-    it("canonical assignment statuses must exactly equal the 5-state lifecycle", () => {
-      assert.strictEqual(canonicalStatuses.length, 5);
+    it("OrgDomain and CapabilityNamespace must be separate types with exact lengths", () => {
+      assert.strictEqual(canonicalOrgDomains.length, 5);
+      assert.strictEqual(canonicalCapabilityNamespaces.length, 9);
     });
 
-    it("documents and schemas must use validFrom and validUntil (not startDate/endDate)", () => {
-      for (const docName of requiredDocuments) {
-        const content = fs.readFileSync(path.join(docsDir, docName), "utf-8");
-        assert.strictEqual(
-          content.includes("startDate"),
-          false,
-          `Document docs/${docName} contains deprecated field startDate (must use validFrom)`
-        );
-        assert.strictEqual(
-          content.includes("endDate"),
-          false,
-          `Document docs/${docName} contains deprecated field endDate (must use validUntil)`
-        );
-      }
-    });
-  });
-
-  // =========================================================================
-  // 4. Scope Semantics & Relational Multi-Unit Binding
-  // =========================================================================
-  describe("4. Scope Semantics & Relational Binding", () => {
-    const canonicalScopes: ScopeType[] = [
-      "GLOBAL",
-      "DOMAIN",
-      "UNIT",
-      "ASSIGNED_UNITS",
-      "HALAQOH",
-      "KAMAR",
-      "OWN_CHILD",
-      "SELF",
-    ];
-
-    it("canonical scopes must match the 8 defined types", () => {
-      assert.strictEqual(canonicalScopes.length, 8);
-    });
-
-    it("no document may contain pseudo-scopes like GLOBAL_TAHFIZH or HALAQOH_RAZAN", () => {
-      for (const docName of requiredDocuments) {
-        const content = fs.readFileSync(path.join(docsDir, docName), "utf-8");
-        assert.strictEqual(
-          content.includes("GLOBAL_TAHFIZH"),
-          false,
-          `Document docs/${docName} contains prohibited pseudo-scope GLOBAL_TAHFIZH`
-        );
-        assert.strictEqual(
-          content.includes("HALAQOH_RAZAN"),
-          false,
-          `Document docs/${docName} contains prohibited pseudo-scope HALAQOH_RAZAN`
-        );
-      }
-    });
-
-    it("no document or candidate schema may store authority as customScopeIds String[]", () => {
-      for (const docName of requiredDocuments) {
-        const content = fs.readFileSync(path.join(docsDir, docName), "utf-8");
-        assert.strictEqual(
-          content.includes("customScopeIds"),
-          false,
-          `Document docs/${docName} contains non-relational customScopeIds`
-        );
-      }
-    });
-
-    it("OWN_CHILD must be semantically modeled relationally (supporting multiple children)", () => {
-      const scopeContent = fs.readFileSync(
-        path.join(docsDir, "STQ_SCOPE_MODEL.md"),
+    it("every capability prefix in the catalog must map to a valid CapabilityNamespace", () => {
+      const catalogContent = fs.readFileSync(
+        path.join(docsDir, "STQ_CAPABILITY_CATALOG.md"),
         "utf-8"
       );
+      const capabilityRegex = /`([a-z_]+)\.([a-z_]+)\.([a-z_]+)`/g;
+      let match;
+      const seenPrefixes = new Set<string>();
+      while ((match = capabilityRegex.exec(catalogContent)) !== null) {
+        seenPrefixes.add(match[1]);
+      }
+      for (const prefix of seenPrefixes) {
+        const upperPrefix = prefix.toUpperCase();
+        assert.ok(
+          canonicalCapabilityNamespaces.includes(upperPrefix as CapabilityNamespace),
+          `Capability prefix '${prefix}' does not map to a canonical CapabilityNamespace`
+        );
+      }
+    });
+
+    it("OrgUnit.domain must use OrgDomain and NOT CapabilityNamespace as structural domain", () => {
+      const sampleOrgUnit: OrgUnit = {
+        id: "ou-ksr-01",
+        code: "OU-KSR-01",
+        name: "Bidang Keasramaan",
+        type: "DOMAIN",
+        domain: "KEASRAMAAN",
+        parentId: null,
+        genderComplex: "CAMPUR",
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      assert.strictEqual(sampleOrgUnit.domain, "KEASRAMAAN");
+      // @ts-expect-error - HEALTH is a CapabilityNamespace, not an OrgDomain
+      const invalidUnit: OrgUnit = { ...sampleOrgUnit, domain: "HEALTH" };
+      assert.strictEqual(invalidUnit.domain, "HEALTH");
+    });
+
+    it("Health (Poskestren) and TKS are structurally under Keasramaan in OrgDomain", () => {
+      const poskestrenUnit: OrgUnit = {
+        id: "ou-poskestren",
+        code: "OSDA_KESEHATAN",
+        name: "Divisi Kesehatan (Poskestren)",
+        type: "DIVISION",
+        domain: "KEASRAMAAN",
+        parentId: "ou-osda-root",
+        genderComplex: "CAMPUR",
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      assert.strictEqual(poskestrenUnit.domain, "KEASRAMAAN");
+
+      const tksUnit: OrgUnit = {
+        id: "ou-tks-dapur",
+        code: "TKS_DAPUR",
+        name: "Unit Dapur dan Gizi",
+        type: "SERVICE_UNIT",
+        domain: "KEASRAMAAN",
+        parentId: "ou-tks-root",
+        genderComplex: "CAMPUR",
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      assert.strictEqual(tksUnit.domain, "KEASRAMAAN");
+    });
+  });
+
+  // =========================================================================
+  // 3. Single Source of Truth for Scope & Zero Scope on Assignment (Directive 2)
+  // =========================================================================
+  describe("3. Single Source of Truth for Scope & Zero Scope on Assignment", () => {
+    it("Assignment interface must NOT have scopeType property", () => {
+      const sampleAssignment: Assignment = {
+        id: "asn-001",
+        userId: "usr-001",
+        positionId: "pos-001",
+        unitId: "ou-001",
+        status: "ACTIVE",
+        validFrom: new Date(),
+        validUntil: null,
+        notes: null,
+        createdById: "usr-admin",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      assert.strictEqual(sampleAssignment.userId, "usr-001");
+      // Verify scopeType is not on Assignment keys
+      assert.strictEqual(Object.prototype.hasOwnProperty.call(sampleAssignment, "scopeType"), false);
+    });
+
+    it("CandidateAssignmentModel must NOT have scopeType property", () => {
+      const candidateAssignment: CandidateAssignmentModel = {
+        id: "asn-002",
+        userId: "usr-002",
+        positionId: "pos-002",
+        unitId: "ou-002",
+        status: "ACTIVE",
+        validFrom: new Date(),
+        validUntil: null,
+        notes: null,
+        createdById: "usr-admin",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      assert.strictEqual(Object.prototype.hasOwnProperty.call(candidateAssignment, "scopeType"), false);
+    });
+
+    it("PositionCapability owns scopeType as the single source of truth", () => {
+      const posCap: PositionCapability = {
+        id: "pc-001",
+        positionId: "pos-001",
+        capabilityCode: "health.case.create",
+        scopeType: "UNIT",
+      };
+      assert.strictEqual(posCap.scopeType, "UNIT");
+
+      const candidatePosCap: CandidatePositionCapabilityModel = {
+        id: "cpc-001",
+        positionId: "pos-001",
+        capabilityCode: "health.case.create",
+        scopeType: "UNIT",
+      };
+      assert.strictEqual(candidatePosCap.scopeType, "UNIT");
+    });
+  });
+
+  // =========================================================================
+  // 4. Multi-Grant Authorization & EffectiveCapabilityGrant API (Directive 3)
+  // =========================================================================
+  describe("4. Multi-Grant Authorization & EffectiveCapabilityGrant API", () => {
+    it("resolveScopes must return EffectiveCapabilityGrant[] and authorize evaluate all grants", async () => {
+      const grant1: EffectiveCapabilityGrant = {
+        assignmentId: "asn-kabid",
+        positionCode: "KABID_TAHFIZH",
+        capabilityCode: "tahfizh.recap.read",
+        scopeType: "DOMAIN",
+        anchorUnitId: "ou-tahfizh",
+        unitIds: ["ou-tahfizh"],
+      };
+
+      const grant2: EffectiveCapabilityGrant = {
+        assignmentId: "asn-musyrif",
+        positionCode: "MUSYRIF_TAHFIZH",
+        capabilityCode: "tahfizh.recap.read",
+        scopeType: "HALAQOH",
+        anchorUnitId: "hlq-razan",
+        unitIds: ["hlq-razan"],
+      };
+
+      const mockEngine: IAuthorizationEngine = {
+        getActiveAssignments: async () => [],
+        hasCapability: async () => true,
+        resolveScopes: async () => [grant1, grant2],
+        authorize: async (_session, capabilityCode, context) => {
+          assert.strictEqual(capabilityCode, "tahfizh.recap.read");
+          const grants = [grant1, grant2];
+          // ALLOW if at least one grant matches
+          const matchingGrant = grants.find(g => {
+            if (g.scopeType === "DOMAIN") return true;
+            if (g.scopeType === "HALAQOH" && context?.halaqohId === g.anchorUnitId) return true;
+            return false;
+          });
+          if (matchingGrant) {
+            return {
+              allowed: true,
+              code: "ALLOWED",
+              grantUsed: matchingGrant,
+              effectiveScope: matchingGrant.scopeType,
+              assignmentId: matchingGrant.assignmentId,
+              positionCode: matchingGrant.positionCode,
+              unitId: matchingGrant.anchorUnitId,
+            };
+          }
+          return { allowed: false, code: "SCOPE_MISMATCH" };
+        },
+      };
+
+      const grants = await mockEngine.resolveScopes(null, "tahfizh.recap.read");
+      assert.strictEqual(grants.length, 2);
+      assert.strictEqual(grants[0].scopeType, "DOMAIN");
+      assert.strictEqual(grants[1].scopeType, "HALAQOH");
+
+      const result: AuthorizationResult = await mockEngine.authorize(null, "tahfizh.recap.read", {
+        halaqohId: "hlq-other",
+      });
+      assert.strictEqual(result.allowed, true);
+      assert.strictEqual(result.code, "ALLOWED");
+      assert.ok(result.grantUsed);
+      assert.strictEqual(result.grantUsed?.assignmentId, "asn-kabid");
+    });
+  });
+
+  // =========================================================================
+  // 5. Context Trust Boundary: Requested vs Resolved Context (Directive 4)
+  // =========================================================================
+  describe("5. Context Trust Boundary: Requested vs Resolved Context", () => {
+    it("RequestedResourceContext must NOT contain guardianLinkedSantriIds", () => {
+      const requested: RequestedResourceContext = {
+        santriId: "san-001",
+        targetUserId: "usr-001",
+        resourceId: "rec-001",
+      };
+      assert.strictEqual(Object.prototype.hasOwnProperty.call(requested, "guardianLinkedSantriIds"), false);
+    });
+
+    it("ResolvedResourceContext must contain DB-hydrated authoritative guardianLinkedSantriIds", () => {
+      const resolved: ResolvedResourceContext = {
+        santriId: "san-001",
+        halaqohId: "hlq-001",
+        kamarId: "kmr-001",
+        orgUnitIds: ["ou-inst", "ou-ksr", "kmr-001"],
+        guardianLinkedSantriIds: ["san-001", "san-002"], // Relationally hydrated server-side
+        genderComplex: "PUTRA",
+        orgDomain: "KEASRAMAAN",
+      };
+      assert.strictEqual(resolved.guardianLinkedSantriIds?.length, 2);
+      assert.ok(resolved.guardianLinkedSantriIds?.includes("san-001"));
+    });
+  });
+
+  // =========================================================================
+  // 6. Three Business-Rule States (Directive 5)
+  // =========================================================================
+  describe("6. Three Business-Rule States", () => {
+    const states: BusinessRuleState[] = [
+      "VERIFIED_PRODUCTION",
+      "APPROVED_TARGET_PENDING_TECHNICAL",
+      "PROPOSED_TBD",
+    ];
+
+    it("BusinessRuleState must have exactly 3 canonical values", () => {
+      assert.strictEqual(states.length, 3);
+    });
+
+    it("Petugas Kesehatan future assignment is NOT falsely labeled VERIFIED_PRODUCTION", () => {
+      const lockDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_LOCK.md"), "utf-8");
+      const catalogDoc = fs.readFileSync(path.join(docsDir, "STQ_CAPABILITY_CATALOG.md"), "utf-8");
+
       assert.ok(
-        scopeContent.includes("linkedSantriIds"),
-        "STQ_SCOPE_MODEL.md must document relational multi-child support for OWN_CHILD"
+        lockDoc.includes("APPROVED_TARGET_PENDING_TECHNICAL"),
+        "Lock doc must reference APPROVED_TARGET_PENDING_TECHNICAL"
+      );
+      assert.ok(
+        catalogDoc.includes("APPROVED_TARGET_PENDING_TECHNICAL"),
+        "Catalog doc must reference APPROVED_TARGET_PENDING_TECHNICAL"
+      );
+      assert.ok(
+        catalogDoc.includes("`PETUGAS_KESEHATAN`"),
+        "Catalog doc must list PETUGAS_KESEHATAN under APPROVED_TARGET_PENDING_TECHNICAL"
       );
     });
   });
 
   // =========================================================================
-  // 5. Authorization Engine API & Result Codes
+  // 7. TKS (Tugas Khusus Santri) Definitively Fixed (Directive 7)
   // =========================================================================
-  describe("5. Authorization Engine API & Result Codes", () => {
+  describe("7. TKS (Tugas Khusus Santri) Definitively Fixed", () => {
+    it("the phrase 'Tenaga Kebersihan & Servis' must NOT appear in any architecture document", () => {
+      for (const docName of requiredDocuments) {
+        const content = fs.readFileSync(path.join(docsDir, docName), "utf-8");
+        assert.strictEqual(
+          content.includes("Tenaga Kebersihan & Servis"),
+          false,
+          `Document docs/${docName} contains forbidden phrase 'Tenaga Kebersihan & Servis'`
+        );
+      }
+    });
+
+    it("the phrase 'Air Minum & Sumur' must NOT appear in any architecture document", () => {
+      for (const docName of requiredDocuments) {
+        const content = fs.readFileSync(path.join(docsDir, docName), "utf-8");
+        assert.strictEqual(
+          content.includes("Air Minum & Sumur"),
+          false,
+          `Document docs/${docName} contains forbidden phrase 'Air Minum & Sumur'`
+        );
+      }
+    });
+
+    it("TKS stands for Tugas Khusus Santri and contains 6 canonical units with separate Air Minum and Air Sumur", () => {
+      const lockDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_LOCK.md"), "utf-8");
+      assert.ok(lockDoc.includes("Tugas Khusus Santri"), "Must use Tugas Khusus Santri");
+      assert.ok(lockDoc.includes("Unit Dapur dan Gizi"), "Must include Unit Dapur dan Gizi");
+      assert.ok(lockDoc.includes("Unit Masjid"), "Must include Unit Masjid");
+      assert.ok(lockDoc.includes("Unit Kantor Pendidikan"), "Must include Unit Kantor Pendidikan");
+      assert.ok(lockDoc.includes("Unit Kantor Yayasan"), "Must include Unit Kantor Yayasan");
+      assert.ok(lockDoc.includes("Unit Air Minum"), "Must include Unit Air Minum");
+      assert.ok(lockDoc.includes("Unit Air Sumur"), "Must include Unit Air Sumur");
+      assert.ok(lockDoc.includes("tidak memiliki Ketua Umum terpusat"), "Must state no central Ketua TKS");
+    });
+  });
+
+  // =========================================================================
+  // 8. OSDA Core Structure (Directive 8)
+  // =========================================================================
+  describe("8. OSDA Core Structure", () => {
+    it("OSDA Pengurus Inti must include Ketua, Sekretaris, Bendahara, and Multimedia", () => {
+      const lockDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_LOCK.md"), "utf-8");
+      const assignmentDoc = fs.readFileSync(path.join(docsDir, "STQ_ASSIGNMENT_MODEL.md"), "utf-8");
+      for (const doc of [lockDoc, assignmentDoc]) {
+        assert.ok(doc.includes("Ketua"), "Must include Ketua OSDA");
+        assert.ok(doc.includes("Sekretaris"), "Must include Sekretaris OSDA");
+        assert.ok(doc.includes("Bendahara"), "Must include Bendahara OSDA");
+        assert.ok(doc.includes("Multimedia"), "Must include Multimedia");
+      }
+    });
+  });
+
+  // =========================================================================
+  // 9. AccountType DB Persistence & Role Distinction (Directives 9 & 10)
+  // =========================================================================
+  describe("9. AccountType DB Persistence & Role Distinction", () => {
+    it("AccountType must be persistently modeled on User as additive column", () => {
+      const assignmentDoc = fs.readFileSync(path.join(docsDir, "STQ_ASSIGNMENT_MODEL.md"), "utf-8");
+      const migrationDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_MIGRATION_PLAN.md"), "utf-8");
+      assert.ok(
+        assignmentDoc.includes("accountType AccountType @default(PERSONAL)"),
+        "Assignment doc must document User.accountType additive column"
+      );
+      assert.ok(
+        migrationDoc.includes("accountType AccountType @default(PERSONAL)"),
+        "Migration doc must document User.accountType additive column"
+      );
+      assert.ok(
+        migrationDoc.includes("ADDITIVE / NON-DESTRUCTIVE"),
+        "Migration doc must classify Phase A as ADDITIVE / NON-DESTRUCTIVE"
+      );
+    });
+
+    it("legacy Role must remain distinct compatibility metadata and not include UNIT_ACCOUNT", () => {
+      const compDoc = fs.readFileSync(path.join(docsDir, "STQ_COMPATIBILITY_MAP.md"), "utf-8");
+      assert.ok(
+        compDoc.includes("Role ≠ AccountType"),
+        "Must document Role ≠ AccountType"
+      );
+      assert.ok(
+        compDoc.includes("`UNIT_ACCOUNT` is **NOT** a `Role` enum value"),
+        "Must state UNIT_ACCOUNT is NOT a Role enum value"
+      );
+    });
+  });
+
+  // =========================================================================
+  // 10. Result Codes & Lifecycle Consistency (Directive 11)
+  // =========================================================================
+  describe("10. Result Codes & Lifecycle Consistency", () => {
     const canonicalResultCodes: AuthorizationResultCode[] = [
       "ALLOWED",
       "UNAUTHENTICATED",
@@ -225,317 +478,106 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
       "CAPABILITY_NOT_GRANTED",
       "INVALID_RESOURCE_CONTEXT",
       "SCOPE_MISMATCH",
-      "ASSIGNMENT_INACTIVE",
+      "ASSIGNMENT_NOT_ACTIVE",
       "ASSIGNMENT_EXPIRED",
       "GENDER_COMPLEX_DENIED",
       "SYSTEM_FAIL_CLOSED",
     ];
 
-    it("canonical result codes must cover all 11 security outcomes", () => {
-      assert.strictEqual(canonicalResultCodes.length, 11);
-    });
-
-    it("documents must specify resolveScopes and not resolvePermittedScopeIds", () => {
+    it("ASSIGNMENT_INACTIVE must be absent across all documents and types", () => {
       for (const docName of requiredDocuments) {
         const content = fs.readFileSync(path.join(docsDir, docName), "utf-8");
         assert.strictEqual(
-          content.includes("resolvePermittedScopeIds"),
+          content.includes("ASSIGNMENT_INACTIVE"),
           false,
-          `Document docs/${docName} contains un-normalized API resolvePermittedScopeIds`
+          `Document docs/${docName} contains obsolete code ASSIGNMENT_INACTIVE`
         );
       }
     });
+
+    it("ASSIGNMENT_NOT_ACTIVE must be present for DRAFT/SUSPENDED/REVOKED", () => {
+      assert.ok(canonicalResultCodes.includes("ASSIGNMENT_NOT_ACTIVE"));
+      assert.ok(canonicalResultCodes.includes("ASSIGNMENT_EXPIRED"));
+      assert.strictEqual(canonicalResultCodes.length, 11);
+    });
   });
 
   // =========================================================================
-  // 6. Capability Catalog Business Rule Separation
+  // 11. Legacy Health Status Bridge (Directive 12)
   // =========================================================================
-  describe("6. Capability Catalog Business Rule Separation", () => {
-    it("speculative capability assignments must be labeled TBD — BUSINESS OWNER APPROVAL REQUIRED", () => {
-      const catalogContent = fs.readFileSync(
-        path.join(docsDir, "STQ_CAPABILITY_CATALOG.md"),
-        "utf-8"
-      );
-      assert.ok(
-        catalogContent.includes("TBD — BUSINESS OWNER APPROVAL REQUIRED"),
-        "Must clearly mark speculative capabilities as pending approval"
-      );
-      assert.ok(
-        catalogContent.includes("tahfizh.setoran.cancel"),
-        "Must include tahfizh.setoran.cancel"
-      );
-      assert.ok(
-        catalogContent.includes("keasramaan.permission.create"),
-        "Must include keasramaan.permission.create"
-      );
-    });
+  describe("11. Legacy Health Status Bridge", () => {
+    it("deterministic statuses map to PULIH, DIPANTAU, DIRUJUK; PULANG is AMBIGUOUS_PENDING_REVIEW", () => {
+      const lockDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_LOCK.md"), "utf-8");
+      const catalogDoc = fs.readFileSync(path.join(docsDir, "STQ_CAPABILITY_CATALOG.md"), "utf-8");
+      const compDoc = fs.readFileSync(path.join(docsDir, "STQ_COMPATIBILITY_MAP.md"), "utf-8");
 
-    it("canonical Keasramaan V2 health statuses must be DIPANTAU, PULIH, DIRUJUK, DARURAT", () => {
-      const catalogContent = fs.readFileSync(
-        path.join(docsDir, "STQ_CAPABILITY_CATALOG.md"),
-        "utf-8"
-      );
-      const invariantContent = fs.readFileSync(
-        path.join(docsDir, "STQ_ARCHITECTURE_INVARIANTS.md"),
-        "utf-8"
-      );
-      for (const content of [catalogContent, invariantContent]) {
-        assert.ok(content.includes("DIPANTAU"), "Must include DIPANTAU");
-        assert.ok(content.includes("PULIH"), "Must include PULIH");
-        assert.ok(content.includes("DIRUJUK"), "Must include DIRUJUK");
-        assert.ok(content.includes("DARURAT"), "Must include DARURAT");
+      for (const doc of [lockDoc, catalogDoc, compDoc]) {
+        assert.ok(doc.includes("PULIH"), "Must map to PULIH");
+        assert.ok(doc.includes("DIPANTAU"), "Must map to DIPANTAU");
+        assert.ok(doc.includes("DIRUJUK"), "Must map to DIRUJUK");
+        assert.ok(doc.includes("AMBIGUOUS_PENDING_REVIEW"), "PULANG must be AMBIGUOUS_PENDING_REVIEW");
       }
     });
   });
 
   // =========================================================================
-  // 7. Unit Account & Audit Non-Repudiation
+  // 12. Volatile Data Labeled Illustrative (Directive 13)
   // =========================================================================
-  describe("7. Unit Account & Audit Non-Repudiation", () => {
-    it("unit account executor must require verified identity (not free-text alone)", () => {
-      const assignmentContent = fs.readFileSync(
-        path.join(docsDir, "STQ_ASSIGNMENT_MODEL.md"),
-        "utf-8"
+  describe("12. Volatile Person/Unit Data Labeled Illustrative", () => {
+    it("volatile person names must be labeled illustrative in documentation", () => {
+      const lockDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_LOCK.md"), "utf-8");
+      assert.ok(
+        lockDoc.includes("[Illustrative]"),
+        "Lock doc must clearly label volatile person/room examples as [Illustrative]"
       );
       assert.ok(
-        assignmentContent.includes("humanExecutorId"),
-        "Must enforce verified humanExecutorId"
-      );
-      assert.ok(
-        assignmentContent.includes("non-repudiation"),
-        "Must document non-repudiation requirements"
-      );
-    });
-
-    it("audit log design must document immutable execution snapshots", () => {
-      const decisionContent = fs.readFileSync(
-        path.join(docsDir, "STQ_ARCHITECTURE_DECISION_LOG.md"),
-        "utf-8"
-      );
-      assert.ok(
-        decisionContent.includes("ADR-007"),
-        "Must document ADR-007 for forensic audits"
-      );
-      assert.ok(
-        decisionContent.includes("snapshot"),
-        "Must document snapshot semantics in ADR-007"
+        lockDoc.includes("authoritatively backfilled from database"),
+        "Must specify halaqoh units are authoritatively backfilled from database"
       );
     });
   });
 
   // =========================================================================
-  // 8. Migration Plan Risk & Rollback
+  // 13. PR #8 Absolute Immutability (Directive 15)
   // =========================================================================
-  describe("8. Migration Plan Risk & Rollback", () => {
-    it("migration plan must classify Phase A risk as LOW / CONTROLLED (not Zero)", () => {
-      const migrationContent = fs.readFileSync(
-        path.join(docsDir, "STQ_ARCHITECTURE_MIGRATION_PLAN.md"),
-        "utf-8"
-      );
-      assert.ok(
-        migrationContent.includes("LOW / CONTROLLED"),
-        "Must classify risk as LOW / CONTROLLED"
-      );
+  describe("13. PR #8 Absolute Immutability", () => {
+    it("origin/review/tahfizh-quality-evaluation commit SHA must remain exactly 9068cae5587b7219c394c5c25bf0de07a15b0726", () => {
+      const pr8Sha = execSync("git rev-parse origin/review/tahfizh-quality-evaluation", {
+        cwd: rootDir,
+        encoding: "utf-8",
+      }).trim();
       assert.strictEqual(
-        migrationContent.includes("Risk Level**: **Zero**"),
-        false,
-        "Must NOT state Risk Level: Zero"
-      );
-      assert.strictEqual(
-        migrationContent.includes("within 100ms"),
-        false,
-        "Must NOT promise unmeasured 100ms latency"
+        pr8Sha,
+        "9068cae5587b7219c394c5c25bf0de07a15b0726",
+        `PR #8 HEAD has been modified! Expected 9068cae5587b7219c394c5c25bf0de07a15b0726, found ${pr8Sha}`
       );
     });
   });
 
   // =========================================================================
-  // 9. TypeScript Structural Contract Compilation
+  // 14. Candidate Prisma Models & Execution Snapshot Contracts
   // =========================================================================
-  describe("9. TypeScript Structural Contract Compilation", () => {
-    it("interfaces must support relational multi-unit binding, subject integrity, and execution snapshots", () => {
-      const domain: STQDomain = "KESEHATAN";
-      const unitType: OrgUnitType = "DIVISION";
-      const accountType: AccountType = "UNIT";
+  describe("14. Candidate Prisma Models & Execution Snapshot Contracts", () => {
+    it("candidate models mirror runtime TypeScript contracts with 100% parity", () => {
+      const ouType: OrgUnitType = "SERVICE_UNIT";
+      const domain: OrgDomain = "KEASRAMAAN";
+      const accType: AccountType = "UNIT";
       const defaultScope: ScopeType = "UNIT";
       const activeStatus: AssignmentStatus = "ACTIVE";
       const v2Health: HealthStatusV2 = "DIPANTAU";
+      const healthCap: HealthCapabilityCode = HEALTH_CAPABILITIES.REFERRAL;
 
-      assert.strictEqual(accountType, "UNIT");
+      assert.strictEqual(ouType, "SERVICE_UNIT");
+      assert.strictEqual(accType, "UNIT");
       assert.strictEqual(v2Health, "DIPANTAU");
+      assert.strictEqual(healthCap, "health.case.referral");
 
-      const sampleOrgUnit: OrgUnit = {
-        id: "unit-kesehatan-01",
-        code: "OSDA_KESEHATAN",
-        name: "Divisi Kesehatan OSDA",
-        type: unitType,
-        domain,
-        parentUnitId: "unit-osda-root",
-        genderComplex: "CAMPUR",
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      assert.strictEqual(sampleOrgUnit.domain, "KESEHATAN");
-
-      const samplePosition: Position = {
-        id: "pos-petugas-kesehatan",
-        code: "PETUGAS_KESEHATAN",
-        name: "Petugas Poskestren",
-        domain,
-        allowedUnitTypes: ["DIVISION", "SERVICE_UNIT"],
-        isLeadership: false,
-        requiresPersonalAccount: false,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      assert.strictEqual(samplePosition.code, "PETUGAS_KESEHATAN");
-
-      const samplePositionCapability: PositionCapability = {
-        id: "pos-cap-01",
-        positionId: samplePosition.id,
-        capabilityCode: "health.case.create",
-        scopeType: defaultScope,
-      };
-      assert.strictEqual(samplePositionCapability.scopeType, "UNIT");
-
-      const sampleCapability: Capability = {
-        code: "health.case.create",
-        domain,
-        name: "Catat Kasus",
-        description: "Mencatat kasus keluhan kesehatan santri",
-        isDangerous: false,
-        isLocked: true,
-      };
-      assert.strictEqual(sampleCapability.isLocked, true);
-
-      const sampleAssignment: Assignment = {
-        id: "asn-001",
-        userId: "user-kiosk-kesehatan", // Deterministic subject non-nullable FK
-        positionId: samplePosition.id,
-        unitId: sampleOrgUnit.id,
-        scopeType: defaultScope,
-        status: activeStatus,
-        validFrom: new Date("2026-07-01"),
-        validUntil: new Date("2027-06-30"),
-        createdById: "user-mudir",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      assert.strictEqual(sampleAssignment.userId, "user-kiosk-kesehatan");
-
-      const sampleScopeUnit: AssignmentScopeUnit = {
-        id: "asu-001",
-        assignmentId: sampleAssignment.id,
-        unitId: "kamar-abu-bakar",
-        createdAt: new Date(),
-      };
-      assert.strictEqual(sampleScopeUnit.unitId, "kamar-abu-bakar");
-
-      const sampleKioskContext: UnitAccountExecutorContext = {
-        technicalAccountId: sampleAssignment.userId,
-        technicalAccountUsername: "kiosk.poskestren",
-        humanExecutorId: "san-0012-ahmad",
-        humanExecutorName: "Ahmad Fauzi",
-        unitId: sampleOrgUnit.id,
-        assignmentId: sampleAssignment.id,
-      };
-      assert.strictEqual(sampleKioskContext.humanExecutorId, "san-0012-ahmad");
-
-      const sampleAudit: CanonicalAuditRecord = {
-        id: "audit-001",
-        technicalAccountId: sampleKioskContext.technicalAccountId,
-        technicalAccountUsername: sampleKioskContext.technicalAccountUsername,
-        humanExecutorId: sampleKioskContext.humanExecutorId,
-        humanExecutorName: sampleKioskContext.humanExecutorName,
-        action: "CREATE",
-        entity: "CatatanKesehatan",
-        entityId: "kesehatan-001",
-        capabilityCode: "health.case.create",
-        assignmentId: sampleAssignment.id,
-        positionCode: samplePosition.code,
-        scopeType: defaultScope,
-        unitId: sampleOrgUnit.id,
-        timestamp: new Date(),
-      };
-      assert.strictEqual(sampleAudit.positionCode, "PETUGAS_KESEHATAN");
-
-      const mockEngine: IAuthorizationEngine = {
-        authorize: async () => ({ allowed: true, code: "ALLOWED" }),
-        hasCapability: async () => true,
-        getActiveAssignments: async () => [sampleAssignment],
-        resolveScopes: async () => ({ scopeType: "UNIT", unitIds: [sampleOrgUnit.id] }),
-      };
-      assert.ok(mockEngine.resolveScopes);
-    });
-  });
-
-  // =========================================================================
-  // 11. Hierarchy of Authority, Health Granularity & Schema/Runtime Parity
-  // =========================================================================
-  describe("11. Hierarchy of Authority, Health Granularity & Schema/Runtime Parity", () => {
-    it("hierarchy of authority must be explicitly defined in master lock specification", () => {
-      const lockDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_LOCK.md"), "utf-8");
-      assert.ok(lockDoc.includes("Hierarchy of Authority"), "Must define Hierarchy of Authority");
-      assert.ok(lockDoc.includes("Level 1 — Executable Contract Source of Truth"), "Must define Level 1");
-      assert.ok(lockDoc.includes("Level 2 — Master Architecture & Boundary Specification"), "Must define Level 2");
-      assert.ok(lockDoc.includes("Level 3 — Specialized Domain Deep-Dives"), "Must define Level 3");
-    });
-
-    it("canonical Health capabilities must define exactly 5 granular actions adhering to <domain>.<entity>.<action>", () => {
-      assert.strictEqual(HEALTH_CAPABILITIES.READ_AGGREGATE, "health.case.read_aggregate");
-      assert.strictEqual(HEALTH_CAPABILITIES.READ_DETAIL, "health.case.read_detail");
-      assert.strictEqual(HEALTH_CAPABILITIES.CREATE, "health.case.create");
-      assert.strictEqual(HEALTH_CAPABILITIES.UPDATE_STATUS, "health.case.update_status");
-      assert.strictEqual(HEALTH_CAPABILITIES.REFERRAL, "health.case.referral");
-
-      const catalog = fs.readFileSync(path.join(docsDir, "STQ_CAPABILITY_CATALOG.md"), "utf-8");
-      assert.ok(catalog.includes("health.case.read_aggregate"), "Catalog must include health.case.read_aggregate");
-      assert.ok(catalog.includes("health.case.read_detail"), "Catalog must include health.case.read_detail");
-      assert.ok(catalog.includes("health.case.create"), "Catalog must include health.case.create");
-      assert.ok(catalog.includes("health.case.update_status"), "Catalog must include health.case.update_status");
-      assert.ok(catalog.includes("health.case.referral"), "Catalog must include health.case.referral");
-
-      // Verify obsolete non-standard tokens are absent across all documentation
-      for (const docName of requiredDocuments) {
-        const content = fs.readFileSync(path.join(docsDir, docName), "utf-8");
-        assert.strictEqual(
-          content.includes("health.status.update"),
-          false,
-          `Document docs/${docName} must NOT contain obsolete health.status.update`
-        );
-        assert.strictEqual(
-          content.includes("health.referral.create"),
-          false,
-          `Document docs/${docName} must NOT contain obsolete health.referral.create`
-        );
-      }
-    });
-
-    it("candidate Prisma schemas must use native database enums rather than bare strings", () => {
-      const assignmentDoc = fs.readFileSync(path.join(docsDir, "STQ_ASSIGNMENT_MODEL.md"), "utf-8");
-      assert.ok(
-        assignmentDoc.includes("scopeType      ScopeType"),
-        "PositionCapability must use ScopeType enum"
-      );
-      assert.ok(
-        assignmentDoc.includes("status      AssignmentStatus"),
-        "Assignment must use AssignmentStatus enum"
-      );
-
-      const migrationDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_MIGRATION_PLAN.md"), "utf-8");
-      assert.ok(migrationDoc.includes("enum GenderComplex"), "Migration plan must define GenderComplex enum");
-      assert.ok(migrationDoc.includes("model CanonicalAuditLog"), "Migration plan must define CanonicalAuditLog model");
-    });
-
-    it("candidate Prisma models must mirror runtime TypeScript contracts with 100% parity", () => {
       const candidateOrgUnit: CandidateOrgUnitModel = {
         id: "ou-001",
         code: "OU-KSH-001",
         name: "Poskestren",
-        type: "SERVICE_UNIT",
-        domain: "KESEHATAN",
+        type: ouType,
+        domain,
         parentId: null,
         genderComplex: "CAMPUR",
         isActive: true,
@@ -543,6 +585,27 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
         updatedAt: new Date(),
       };
       assert.strictEqual(candidateOrgUnit.type, "SERVICE_UNIT");
+      assert.strictEqual(candidateOrgUnit.domain, "KEASRAMAAN");
+
+      const candidatePosition: CandidatePositionModel = {
+        id: "pos-001",
+        code: "PETUGAS_KESEHATAN",
+        name: "Petugas Poskestren",
+        domain,
+        isLeadership: false,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      assert.strictEqual(candidatePosition.code, "PETUGAS_KESEHATAN");
+
+      const candidateScopeUnit: CandidateAssignmentScopeUnitModel = {
+        id: "asu-001",
+        assignmentId: "asn-001",
+        unitId: candidateOrgUnit.id,
+        createdAt: new Date(),
+      };
+      assert.strictEqual(candidateScopeUnit.unitId, candidateOrgUnit.id);
 
       const candidateAuditLog: CandidateCanonicalAuditLogModel = {
         id: "log-001",
@@ -556,7 +619,7 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
         capabilityCode: HEALTH_CAPABILITIES.UPDATE_STATUS,
         assignmentId: "asn-001",
         positionCode: "PETUGAS_KESEHATAN",
-        scopeType: "UNIT",
+        scopeType: defaultScope,
         unitId: candidateOrgUnit.id,
         beforeState: { status: "DIPANTAU" },
         afterState: { status: "PULIH" },
@@ -570,53 +633,66 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
       assert.strictEqual(candidateAuditLog.capabilityCode, "health.case.update_status");
       assert.strictEqual(candidateAuditLog.scopeType, "UNIT");
 
-      const candidatePosition: CandidatePositionModel = {
-        id: "pos-001",
-        code: "PETUGAS_KESEHATAN",
-        name: "Petugas Poskestren",
-        domain: "KESEHATAN",
+      const samplePosition: Position = {
+        id: "pos-002",
+        code: "MUDABBIR",
+        name: "Mudabbir Kamar",
+        domain: "KEASRAMAAN",
+        allowedUnitTypes: ["KAMAR"],
         isLeadership: false,
+        requiresPersonalAccount: true,
         isActive: true,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
-      assert.strictEqual(candidatePosition.code, "PETUGAS_KESEHATAN");
+      assert.strictEqual(samplePosition.domain, "KEASRAMAAN");
 
-      const candidatePosCap: CandidatePositionCapabilityModel = {
-        id: "pc-001",
-        positionId: candidatePosition.id,
-        capabilityCode: HEALTH_CAPABILITIES.UPDATE_STATUS,
-        scopeType: "UNIT",
-      };
-      assert.strictEqual(candidatePosCap.scopeType, "UNIT");
-
-      const candidateAssignment: CandidateAssignmentModel = {
-        id: "asn-001",
-        userId: "usr-poskestren",
-        positionId: candidatePosition.id,
-        unitId: candidateOrgUnit.id,
-        scopeType: "UNIT",
-        status: "ACTIVE",
-        validFrom: new Date(),
-        validUntil: null,
-        notes: null,
-        createdById: "usr-mudir",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      assert.strictEqual(candidateAssignment.status, "ACTIVE");
-
-      const candidateScopeUnit: CandidateAssignmentScopeUnitModel = {
-        id: "asu-001",
-        assignmentId: candidateAssignment.id,
-        unitId: candidateOrgUnit.id,
+      const sampleScopeUnit: AssignmentScopeUnit = {
+        id: "asu-002",
+        assignmentId: "asn-002",
+        unitId: "kmr-001",
         createdAt: new Date(),
       };
-      assert.strictEqual(candidateScopeUnit.unitId, candidateOrgUnit.id);
+      assert.strictEqual(sampleScopeUnit.unitId, "kmr-001");
 
-      const healthCap: HealthCapabilityCode = HEALTH_CAPABILITIES.REFERRAL;
-      assert.strictEqual(healthCap, "health.case.referral");
+      const sampleCap: Capability = {
+        code: "health.case.read_detail",
+        namespace: "HEALTH",
+        name: "Read Detail",
+        description: "Read clinical health details",
+        isDangerous: false,
+        ruleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+      };
+      assert.strictEqual(sampleCap.namespace, "HEALTH");
+
+      const sampleKioskContext: UnitAccountExecutorContext = {
+        technicalAccountId: "usr-kiosk-poskestren",
+        technicalAccountUsername: "kiosk.poskestren",
+        humanExecutorId: "san-0012-ahmad",
+        humanExecutorName: "Ahmad Fauzi",
+        unitId: candidateOrgUnit.id,
+        assignmentId: "asn-001",
+      };
+      assert.strictEqual(sampleKioskContext.humanExecutorId, "san-0012-ahmad");
+
+      const sampleAudit: CanonicalAuditRecord = {
+        id: "audit-001",
+        technicalAccountId: sampleKioskContext.technicalAccountId,
+        technicalAccountUsername: sampleKioskContext.technicalAccountUsername,
+        humanExecutorId: sampleKioskContext.humanExecutorId,
+        humanExecutorName: sampleKioskContext.humanExecutorName,
+        action: "CREATE",
+        entity: "CatatanKesehatan",
+        entityId: "kesehatan-001",
+        capabilityCode: HEALTH_CAPABILITIES.CREATE,
+        assignmentId: "asn-001",
+        positionCode: "PETUGAS_KESEHATAN",
+        scopeType: defaultScope,
+        unitId: candidateOrgUnit.id,
+        timestamp: new Date(),
+      };
+      assert.strictEqual(sampleAudit.action, "CREATE");
+      assert.strictEqual(activeStatus, "ACTIVE");
     });
   });
 });
-

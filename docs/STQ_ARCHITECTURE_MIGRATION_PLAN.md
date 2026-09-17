@@ -44,15 +44,37 @@ enum OrgUnitType {
   ACADEMIC_CLASS
 }
 
-enum STQDomain {
+```prisma
+enum OrgUnitType {
+  INSTITUTION
+  DOMAIN
+  ORGANIZATION
+  DIVISION
+  HALAQOH
+  KAMAR
+  SERVICE_UNIT
+  USROH
+  ACADEMIC_CLASS
+}
+
+enum OrgDomain {
   INSTITUTIONAL
   TAHFIZH
   KEASRAMAAN
-  KESEHATAN
   AKADEMIK
   MANAJEMEN
-  LOGISTIK
-  SISTEM
+}
+
+enum CapabilityNamespace {
+  TAHFIZH
+  KEASRAMAAN
+  HEALTH
+  ACADEMIC
+  LOGISTICS
+  FINANCE
+  LETTERS
+  SPONSOR
+  SYSTEM
 }
 
 enum ScopeType {
@@ -93,16 +115,25 @@ enum GenderComplex {
 
 ## 4. Phase Details & Candidate Schema
 
-### Phase A: Additive Database Schema
-- **Objective**: Create new relational structures without altering any existing columns or tables.
+### Phase A: Additive Database Schema & Additive User Column
+- **Objective**: Create new relational structures and add the `accountType` column to `User` without destructive alterations.
+- **Additive Scope**: Phase A is **ADDITIVE / NON-DESTRUCTIVE**. It introduces new tables and includes an additive column on an existing table (`User.accountType AccountType @default(PERSONAL)`). It does NOT perform breaking schema modifications.
 - **Candidate Prisma Schema**:
   ```prisma
+  // Additive column on existing User table:
+  model User {
+    // ... existing columns (id, username, password, role, etc.)
+    accountType AccountType @default(PERSONAL) @map("account_type")
+    assignments Assignment[]
+    // ... existing relations
+  }
+
   model OrgUnit {
     id            String                @id @default(cuid())
     code          String                @unique // e.g. "OU-TAF-001"
     name          String
     type          OrgUnitType
-    domain        STQDomain
+    domain        OrgDomain
     parentId      String?               @map("parent_id")
     parent        OrgUnit?              @relation("OrgUnitHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
     children      OrgUnit[]             @relation("OrgUnitHierarchy")
@@ -122,7 +153,7 @@ enum GenderComplex {
     id           String               @id @default(cuid())
     code         String               @unique // e.g. "KABID_TAHFIZH", "MUDABBIR"
     name         String
-    domain       STQDomain
+    domain       OrgDomain
     isLeadership Boolean              @default(false) @map("is_leadership")
     isActive     Boolean              @default(true) @map("is_active")
     capabilities PositionCapability[]
@@ -135,7 +166,7 @@ enum GenderComplex {
 
   model Capability {
     code        String               @id // e.g. "tahfizh.reward.issue"
-    domain      STQDomain
+    namespace   CapabilityNamespace
     name        String
     description String
     isDangerous Boolean              @default(false) @map("is_dangerous")
@@ -165,7 +196,6 @@ enum GenderComplex {
     position    Position              @relation(fields: [positionId], references: [id], onDelete: Restrict)
     unitId      String                @map("unit_id")
     unit        OrgUnit               @relation(fields: [unitId], references: [id], onDelete: Restrict)
-    scopeType   ScopeType             @default(UNIT) @map("scope_type")
     status      AssignmentStatus      @default(ACTIVE)
     validFrom   DateTime              @default(now()) @map("valid_from")
     validUntil  DateTime?             @map("valid_until")
@@ -234,12 +264,13 @@ enum GenderComplex {
 - **Objective**: Deterministically populate units, positions, and baseline assignments from existing production data without interrupting live traffic.
 - **Backfill Script Logic**:
   1. Create root `OrgUnit: STQ DUC` and domains (`Tahfizh`, `Keasramaan`, `Akademik`, `Manajemen`).
-  2. For each `Halaqoh`, create an `OrgUnit (type: HALAQOH)`.
-  3. Create standard `Position` records with their capability templates.
-  4. Create `Assignment` for Mudir (`Position: MUDIR`, `Scope: GLOBAL`).
-  5. Create `Assignment` for Ust. Razan Mufli (`Position: KABID_TAHFIZH`, `Scope: DOMAIN` + `Position: MUSYRIF_TAHFIZH`, `Unit: Halaqoh Razan`).
-  6. Create `Assignment` for Ustadzah Lisa Dwina Fitri (`Position: MUSYRIF_TAHFIZH`, `Unit: Halaqoh Lisa`).
-  7. Deploy `CompatibilityAdapter` providing fallback bridges.
+  2. For each authoritative `Halaqoh` in database, create an `OrgUnit (type: HALAQOH)`.
+  3. For each room in authoritative dormitory structure, create an `OrgUnit (type: KAMAR)`.
+  4. Create standard `Position` records with their capability templates and scopes.
+  5. Create `Assignment` for Mudir (`Position: MUDIR`).
+  6. [Illustrative Example] Create `Assignment` for staff holding Kabid Tahfizh (`Position: KABID_TAHFIZH`) and Musyrif (`Position: MUSYRIF_TAHFIZH`, assigned halaqoh).
+  7. [Illustrative Example] Create `Assignment` for female Musyrif Tahfizh in assigned halaqoh.
+  8. Deploy `CompatibilityAdapter` providing fallback bridges.
 - **Rollback Strategy**: If backfill script encounters validation errors, the transaction is rolled back; table truncation has zero impact on legacy tables.
 
 ---

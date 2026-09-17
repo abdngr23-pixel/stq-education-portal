@@ -51,7 +51,7 @@ sequenceDiagram
 ```typescript
 /**
  * Canonical Authorization Engine Interface & Types
- * Normalized exactly across all layers.
+ * Normalized exactly across all layers supporting multi-grant evaluation.
  */
 
 export type ScopeType =
@@ -64,16 +64,44 @@ export type ScopeType =
   | "OWN_CHILD"
   | "SELF";
 
-export interface ResourceContext {
+/**
+ * Caller-supplied resource parameters (Strictly untrusted target identifiers)
+ * Callers can NEVER supply or influence permitted child IDs or authorized boundaries.
+ */
+export interface RequestedResourceContext {
   santriId?: string;
+  targetUserId?: string;
+  resourceId?: string;
   halaqohId?: string;
   kamarId?: string;
   unitId?: string;
-  domainId?: string;
-  targetUserId?: string;
-  gender?: "PUTRA" | "PUTRI";
-  guardianLinkedSantriIds?: string[]; // Supports 1 guardian -> multiple enrolled children
   [key: string]: unknown;
+}
+
+/**
+ * Server-hydrated authoritative resource attributes evaluated by the authorization engine
+ */
+export interface ResolvedResourceContext {
+  santriId?: string;
+  halaqohId?: string;
+  kamarId?: string;
+  orgUnitIds: string[];
+  guardianLinkedSantriIds?: string[]; // Authoritatively hydrated server-side from Guardian table
+  genderComplex?: GenderComplex;
+  orgDomain?: OrgDomain;
+  [key: string]: unknown;
+}
+
+/**
+ * Resolved capability grant derived from an active assignment and its position capabilities
+ */
+export interface EffectiveCapabilityGrant {
+  assignmentId: string;
+  positionCode: string;
+  capabilityCode: string;
+  scopeType: ScopeType;
+  anchorUnitId: string;
+  unitIds: string[];
 }
 
 export type AuthorizationResultCode =
@@ -84,7 +112,7 @@ export type AuthorizationResultCode =
   | "CAPABILITY_NOT_GRANTED"
   | "INVALID_RESOURCE_CONTEXT"
   | "SCOPE_MISMATCH"
-  | "ASSIGNMENT_INACTIVE"
+  | "ASSIGNMENT_NOT_ACTIVE"
   | "ASSIGNMENT_EXPIRED"
   | "GENDER_COMPLEX_DENIED"
   | "SYSTEM_FAIL_CLOSED";
@@ -93,6 +121,7 @@ export interface AuthorizationResult {
   allowed: boolean;
   code: AuthorizationResultCode;
   reason?: string;
+  grantUsed?: EffectiveCapabilityGrant; // Identifies the specific grant that authorized the request
   effectiveScope?: ScopeType;
   assignmentId?: string;
   positionCode?: string;
@@ -101,12 +130,13 @@ export interface AuthorizationResult {
 
 export interface IAuthorizationEngine {
   /**
-   * Full server-side authorization check (Capability + Scope vs Resource Context).
+   * Full server-side authorization check (Capability + Scope vs Authoritative Context).
+   * Evaluates all effective grants; returns ALLOW if at least one grant matches.
    */
   authorize(
     session: UserSession | null,
     capabilityCode: string,
-    context?: ResourceContext
+    context?: RequestedResourceContext
   ): Promise<AuthorizationResult>;
 
   /**
@@ -125,12 +155,12 @@ export interface IAuthorizationEngine {
   ): Promise<Assignment[]>;
 
   /**
-   * Resolves permitted scope type and concrete unit IDs for a capability.
+   * Resolves all effective capability grants for a session and capability.
    */
   resolveScopes(
     session: UserSession | null,
     capabilityCode: string
-  ): Promise<{ scopeType: ScopeType; unitIds: string[] }>;
+  ): Promise<EffectiveCapabilityGrant[]>;
 
   /**
    * Helper filter to construct Prisma WHERE clause filters from effective scope.
@@ -169,14 +199,14 @@ Expired assignments cease conferring authority immediately upon passing `validUn
     `scopeType = "DOMAIN"`, evaluated in unit `Unit: TAHFIZH` (domain: `TAHFIZH`).
   - To express own halaqoh setoran writing for Musyrif Tahfizh:
     `scopeType = "HALAQOH"`, evaluated against `Halaqoh.id === santri.halaqohId`.
-  - When Ust. Razan holds both:
+  - For example, when a staff member holds both `KABID_TAHFIZH` and `MUSYRIF_TAHFIZH` (illustrative example: Ust. Razan):
     - For `tahfizh.recap.read`: Evaluates against `PositionCapability` having `scopeType: "DOMAIN"` $\implies$ ALLOW (institutional halaqoh recap).
-    - For `tahfizh.setoran.create`: Evaluates against `PositionCapability` having `scopeType: "HALAQOH"` $\implies$ Bounded strictly to his assigned halaqoh.
+    - For `tahfizh.setoran.create`: Evaluates against `PositionCapability` having `scopeType: "HALAQOH"` $\implies$ Bounded strictly to assigned halaqoh.
 
-### Rule 4: Relational Multi-Child Guardian Evaluation (`OWN_CHILD`)
-- `OWN_CHILD` is evaluated relationally:
-  $$\text{Resource}.\text{santriId} \in \text{Guardian}.\text{linkedSantriIds}$$
-- The engine does NOT assume a 1-to-1 guardian-to-child relationship. A guardian with multiple enrolled children (e.g. sibling santri) can access records for any of their relationally linked children without authorization redesign.
+### Rule 4: Server-Side Relational Multi-Child Guardian Evaluation (`OWN_CHILD`)
+- `OWN_CHILD` is evaluated relationally server-side:
+  $$\text{Resource}.\text{santriId} \in \text{ResolvedResourceContext}.\text{guardianLinkedSantriIds}$$
+- The engine does NOT accept caller-supplied child IDs. The server hydrates `guardianLinkedSantriIds` from authoritative `Guardian` database records. Callers can never supply or influence permitted child IDs. A guardian with multiple enrolled children can access records for any of their relationally linked children.
 
 ### Rule 5: Gender Complex Boundary Separation (`GENDER_COMPLEX_DENIED`)
 - `SCOPE_MISMATCH` indicates a standard organizational unit boundary failure (e.g. Musyrif A attempting to edit Musyrif B's halaqoh).

@@ -23,7 +23,7 @@
 ## 2. Tahfizh Domain Invariants
 
 1. **INV-TAF-01 (Kabid Institutional Supervision Scope)**:
-   Ust. Razan Mufli, S.Pd holds the position of **Kabid Tahfizh**. He is legitimately authorized to read institutional Tahfizh metrics, view halaqoh recaps, and monitor academic progress across all halaqoh.
+   Kabid Tahfizh (held via verified `Position: KABID_TAHFIZH`, e.g. illustrative: Ust. Razan Mufli) is legitimately authorized to read institutional Tahfizh metrics, view halaqoh recaps, and monitor academic progress across all halaqoh (`Scope: DOMAIN`).
 2. **INV-TAF-02 (Setoran WRITE Enclosure)**:
    Managerial READ access does NOT imply global WRITE access. Every Musyrif—including Kabid Tahfizh—is strictly restricted to creating setoran for students in their own assigned halaqoh (own halaqoh Setoran WRITE only). Any cross-halaqoh setoran write is rejected server-side.
 3. **INV-TAF-03 (Tasmi'/Sima'an Reward Issuance)**:
@@ -34,9 +34,9 @@
 4. **INV-TAF-04 (Reward & Sanksi Policy Management)**:
    Editing baseline reward thresholds, star multipliers, leave days, and sanction criteria is strictly restricted to the **Mudir (`KS`)**. Neither Kabid Tahfizh nor ordinary MT may edit policy parameters.
 5. **INV-TAF-05 (Ordinary Musyrif Tahfizh Scoping)**:
-   Ordinary Musyrif Tahfizh (e.g. Ustadzah Lisa Dwina Fitri) have access strictly confined to their assigned halaqoh binaan (e.g. 10 santriwati for Halaqoh Lisa). They must not see global recaps, student details outside their halaqoh, or administrative controls.
+   Ordinary Musyrif Tahfizh (e.g. illustrative: Ustadzah Lisa) have access strictly confined to their assigned halaqoh binaan. They must not see global recaps, student details outside their halaqoh, or administrative controls.
 6. **INV-TAF-06 (Legacy / Unlinked Account Protection)**:
-   Unlinked or legacy MT accounts (such as `razan.mt`) that lack active halaqoh assignments must fail closed with zero binaan, disabled setoran creation, and zero administrative access.
+   Unlinked or legacy MT accounts (such as legacy `razan.mt`) that lack active halaqoh assignments must fail closed with zero binaan, disabled setoran creation, and zero administrative access.
 
 ---
 
@@ -49,22 +49,19 @@
    - Empty record set $\implies$ `"Belum ada data kesehatan"`.
    - Fetch error / server error $\implies$ `"Gagal memuat data kesehatan"`.
    - Access denied $\implies$ `"Akses data kesehatan tidak tersedia"`.
-2. **INV-HLT-02 (Canonical Keasramaan V2 Health Statuses)**:
+2. **INV-HLT-02 (Canonical Keasramaan V2 Health Statuses & Bridge)**:
    The canonical V2 health statuses are:
    - `DIPANTAU`: In-pondok monitoring / room rest.
    - `PULIH`: Fully recovered and resumed activities.
    - `DIRUJUK`: Referred to external medical clinic / hospital.
    - `DARURAT`: Emergency medical situation requiring urgent intervention.
-   *Legacy status values (`SEMBUH`, `RAWAT_PONDOK`, `DIRUJUK_PUSKESMAS`, `PULANG`) are documented strictly as transitional compatibility bridges.*
-3. **INV-HLT-03 (Granular Health Operations)**:
-   The architecture strictly distinguishes 5 granular capabilities:
-   - `health.case.read_aggregate`: Reading statistical counts and triage summaries (Mudir, MK, Poskestren, Pembina Asrama, Wali for own child).
-   - `health.case.read_detail`: Reading individual patient clinical notes (Mudir, MK, Poskestren, Pembina Asrama for assigned kamar).
-   - `health.case.create`: Filing an intake complaint (Mudir, MK, Poskestren, Pembina Asrama).
-   - `health.case.update_status`: Updating clinical status (`DIPANTAU` $\to$ `PULIH` / `DIRUJUK` / `DARURAT`), restricted to Mudir, MK, and Poskestren (Admin TU and generic OSDA strictly denied).
-   - `health.case.referral`: Issuing official external hospital referral letters (Mudir, Poskestren).
+   *Deterministic Bridges*: `SEMBUH` $\to$ `PULIH`, `RAWAT_PONDOK` $\to$ `DIPANTAU`, `DIRUJUK_PUSKESMAS` $\to$ `DIRUJUK`.
+   *Ambiguous Status*: `PULANG` is strictly **AMBIGUOUS_PENDING_REVIEW** (do not backfill; requires manual business owner review).
+3. **INV-HLT-03 (Separation of Current Production vs Target V2)**:
+   - **Current Verified Production**: Mudir (`KS`) and Musyrif Keasramaan (`MK`) operate health mutations. Admin TU has aggregate read only. Poskestren unit account is not active in verified production.
+   - **Target V2 Approved (Pending Technical)**: Dedicated Petugas Kesehatan (`AccountType: UNIT`), Pembina Kamar (`Scope: KAMAR`), and Wali Santri (`Scope: OWN_CHILD` resolved server-side).
 4. **INV-HLT-04 (Individual & Guardian Health Read Authority - Multi-Child)**:
-   - Wali Santri (`WS`) may read health records strictly for their enrolled child or children (`Scope: OWN_CHILD`), relationally resolved across all verified children.
+   - Wali Santri (`WS`) may read health records strictly for their enrolled child or children (`Scope: OWN_CHILD`), relationally resolved server-side across all verified children in `ResolvedResourceContext`.
    - Santri (`ST`) may read health records strictly for themselves (`Scope: SELF`).
    - Other roles (MT, PH, GA, YAY, generic OSDA) are denied health read access fail-closed.
 5. **INV-HLT-05 (Generic OSDA Denied Health Access)**:
@@ -85,10 +82,23 @@
    Mudabbir authority derives strictly from active assignment to Kamar units, not role aliasing.
 3. **INV-KSR-03 (Mudabbir Multi-Kamar Supervision)**:
    A Mudabbir is an assigned position within Keasramaan. One Mudabbir may hold assignments to multiple Kamar units simultaneously via `AssignmentScopeUnit`. His operational authority dynamically encompasses all assigned rooms.
-4. **INV-KSR-04 (Pembina Divisi Reporting Line)**:
-   The Pembina Divisi for OSDA wings reports directly to the Musyrif Keasramaan, not to the student Ketua OSDA. A division may have multiple Pembina Divisi.
-5. **INV-KSR-05 (TKS Autonomy & Structure)**:
-   Tenaga Kebersihan & Servis (TKS) operates separately from OSDA. There is no central "Ketua TKS". Unit Dapur and Unit Masjid operate with a designated Ketua + Anggota; other units operate via assigned individual operators.
+4. **INV-KSR-04 (OSDA Core Structure)**:
+   Pengurus Inti OSDA consists of:
+   - Ketua OSDA
+   - Sekretaris OSDA
+   - Bendahara OSDA
+   - Bagian Multimedia
+   Multimedia is structurally part of Pengurus Inti, not solely an ordinary operational division. Division supervision capabilities remain strictly separated from clinical health details.
+5. **INV-KSR-05 (TKS Structure & Independence)**:
+   Tugas Khusus Santri (TKS) operates under Keasramaan independently from OSDA. There is **no central Ketua TKS**.
+   The 6 canonical TKS service units are exactly:
+   - `Unit Dapur dan Gizi` (supports `KETUA_UNIT` and `ANGGOTA_UNIT`)
+   - `Unit Masjid` (supports `KETUA_UNIT` and `ANGGOTA_UNIT`)
+   - `Unit Kantor Pendidikan` (operator)
+   - `Unit Kantor Yayasan` (operator)
+   - `Unit Air Minum` (operator)
+   - `Unit Air Sumur` (operator)
+   *Air Minum and Air Sumur MUST remain separate units. Conflating them into a single combined unit is strictly prohibited.*
 6. **INV-KSR-06 (Unit Account Attribution & Verified Human Executor)**:
    Operational kiosk and unit accounts (OSDA, TKS, Poskestren) must require input of the authenticated, verified human executor (`humanExecutorId` verified against active records). Free-text display name alone does NOT provide non-repudiation. Both technical account and verified human executor must be permanently recorded in `AuditLog`.
 
