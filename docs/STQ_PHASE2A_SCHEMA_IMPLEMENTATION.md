@@ -208,14 +208,25 @@ While PR #8 records that migration as having been applied to the production data
 To simulate the exact production condition where the PR #8 migration was previously executed, an isolated test simulation (`runIsolatedProductionEquivalentSimulation()`) was conducted:
 
 - **Simulation Flow**:
-  1. Temporary isolated PostgreSQL instance initialized with baseline schema.
-  2. Main migrations 1 through 5 applied.
-  3. PR #8 migration SQL (`20260915100000_add_tahfizh_quality_engine`) fetched **in-memory** via `git show 9068cae5587b7219c394c5c25bf0de07a15b0726:prisma/migrations/20260915100000_add_tahfizh_quality_engine/migration.sql` (2,334 bytes) and applied cleanly.
-  4. Phase 2A migration (`20260917000000_stq_architecture_lock_phase2a`) applied directly on top of the PR #8 schema.
-- **Verification Result**:
+  1. Temporary isolated PostgreSQL instance initialized with baseline schema (`tests/fixtures/baseline_schema.prisma`).
+  2. Main migrations 1 through 5 applied in sequence.
+  3. **Fail-Closed Verification of PR #8 Exact SHA**: Commit SHA `9068cae5587b7219c394c5c25bf0de07a15b0726` verified directly from git object store (with shallow clone fetch fallback).
+  4. PR #8 migration SQL (`20260915100000_add_tahfizh_quality_engine`) fetched **in-memory** via `git show 9068cae5587b7219c394c5c25bf0de07a15b0726:prisma/migrations/20260915100000_add_tahfizh_quality_engine/migration.sql` (2,334 bytes) and applied cleanly.
+  5. Phase 2A migration (`20260917000000_stq_architecture_lock_phase2a`) applied directly on top of the PR #8 schema.
+- **Fail-Closed Contract & Verification**:
+  * Unconditional assertion of:
+    - `baselineApplied === true`
+    - `pr8MigrationFetched === true`
+    - `pr8ExactShaVerified === true`
+    - `pr8MigrationBytes > 1000` (actual: 2,334 bytes)
+    - `pr8MigrationApplied === true`
+    - `phase2aMigrationApplied === true`
+    - `hasPr8Table === true` (`evaluasi_rubu_tahfizh` exists)
+    - `hasCanonicalTables === true` (`org_units`, `assignments` exist)
+    - `simulationSuccess === true` (no conditional skipping or fallback)
   * Both PR #8 tables (`evaluasi_rubu_tahfizh`) and Phase 2A tables (`org_units`, `positions`, `assignments`, etc.) co-exist cleanly with zero SQL errors or schema conflicts.
 - **Safety Boundary**: PR #8 files were **NEVER** committed, cherry-picked, or merged into PR #15.
-- **Simulation Status**: **RUN AND PASSED** (Automated in `tests/architecture-lock-contracts.test.ts` test 18.14).
+- **Simulation Status**: **RUN AND PASSED** (Automated unconditionally in `tests/architecture-lock-contracts.test.ts` test 18.14).
 
 ---
 

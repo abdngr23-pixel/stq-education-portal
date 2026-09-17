@@ -1892,9 +1892,12 @@ export async function runIsolatedExistingDataUpgradeVerification(): Promise<Exis
 export interface ProductionEquivalentSimulationResult {
   baselineApplied: boolean;
   pr8MigrationFetched: boolean;
+  pr8ExactShaVerified: boolean;
   pr8MigrationBytes: number;
   pr8MigrationApplied: boolean;
   phase2aMigrationApplied: boolean;
+  hasPr8Table: boolean;
+  hasCanonicalTables: boolean;
   simulationSuccess: boolean;
 }
 
@@ -1982,25 +1985,70 @@ export async function runIsolatedProductionEquivalentSimulation(): Promise<Produ
     }
 
     // 3. Ambil SQL migrasi PR #8 langsung dari commit SHA 9068cae5587b7219c394c5c25bf0de07a15b0726 (in-memory)
-    let pr8Sql: string | null = null;
-    try {
-      try {
-        execSync("git cat-file -e 9068cae5587b7219c394c5c25bf0de07a15b0726", { cwd: projectRoot, stdio: "ignore" });
-      } catch {
-        execSync("git fetch origin review/tahfizh-quality-evaluation --depth=1", { cwd: projectRoot, stdio: "ignore" });
-      }
-      pr8Sql = execSync(
-        "git show 9068cae5587b7219c394c5c25bf0de07a15b0726:prisma/migrations/20260915100000_add_tahfizh_quality_engine/migration.sql",
-        { encoding: "utf-8", cwd: projectRoot }
-      );
-    } catch {
-      pr8Sql = null;
-    }
-
-    const pr8MigrationBytes = pr8Sql ? pr8Sql.length : 0;
+    const PR8_EXACT_SHA = "9068cae5587b7219c394c5c25bf0de07a15b0726";
+    let pr8MigrationFetched = false;
+    let pr8ExactShaVerified = false;
+    let pr8Sql = "";
+    let pr8MigrationBytes = 0;
     let pr8MigrationApplied = false;
 
-    if (pr8Sql) {
+    try {
+      // Cek apakah commit PR #8 sudah ada di git store lokal
+      let commitExists = false;
+      try {
+        execSync(`git cat-file -e ${PR8_EXACT_SHA}`, { cwd: projectRoot, stdio: "ignore" });
+        commitExists = true;
+      } catch {
+        commitExists = false;
+      }
+
+      // Jika belum ada (misal shallow clone di CI), fetch branch review/tahfizh-quality-evaluation
+      if (!commitExists) {
+        try {
+          execSync("git fetch origin review/tahfizh-quality-evaluation --depth=1", { cwd: projectRoot, stdio: "ignore" });
+        } catch {
+          // Fallback: coba fetch ref commit langsung jika didukung remote
+          try {
+            execSync(`git fetch origin ${PR8_EXACT_SHA} --depth=1`, { cwd: projectRoot, stdio: "ignore" });
+          } catch {}
+        }
+      }
+
+      // Verifikasi SHA commit secara ketat (fail-closed)
+      let resolvedSha = "";
+      try {
+        resolvedSha = execSync(`git rev-parse --verify ${PR8_EXACT_SHA}`, { cwd: projectRoot, encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }).trim();
+      } catch {
+        try {
+          resolvedSha = execSync("git rev-parse FETCH_HEAD", { cwd: projectRoot, encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }).trim();
+        } catch {}
+      }
+
+      if (resolvedSha.toLowerCase() === PR8_EXACT_SHA.toLowerCase()) {
+        pr8ExactShaVerified = true;
+      } else {
+        console.error(`[runIsolatedProductionEquivalentSimulation] FAIL-CLOSED: Resolved SHA '${resolvedSha}' != expected PR #8 SHA '${PR8_EXACT_SHA}'`);
+      }
+
+      // Ambil SQL migrasi PR #8 hanya jika SHA cocok
+      if (pr8ExactShaVerified) {
+        pr8Sql = execSync(
+          `git show ${PR8_EXACT_SHA}:prisma/migrations/20260915100000_add_tahfizh_quality_engine/migration.sql`,
+          { encoding: "utf-8", cwd: projectRoot }
+        );
+        pr8MigrationBytes = pr8Sql.length;
+        if (pr8MigrationBytes > 1000) {
+          pr8MigrationFetched = true;
+        } else {
+          console.error(`[runIsolatedProductionEquivalentSimulation] FAIL-CLOSED: PR #8 migration size too small: ${pr8MigrationBytes}`);
+        }
+      }
+    } catch (fetchErr: unknown) {
+      const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+      console.error("[runIsolatedProductionEquivalentSimulation] FAIL-CLOSED: Error retrieving PR #8 migration:", msg);
+    }
+
+    if (pr8MigrationFetched && pr8ExactShaVerified && pr8Sql) {
       // 4. Terapkan SQL migrasi PR #8
       await executeSqlStatementsOnClient(client, pr8Sql);
       pr8MigrationApplied = true;
@@ -2010,25 +2058,36 @@ export async function runIsolatedProductionEquivalentSimulation(): Promise<Produ
     const phase2aSqlPath = path.join(projectRoot, "prisma/migrations/20260917000000_stq_architecture_lock_phase2a/migration.sql");
     const phase2aSql = fs.readFileSync(phase2aSqlPath, "utf-8");
     await executeSqlStatementsOnClient(client, phase2aSql);
+    const phase2aMigrationApplied = true;
 
-    // 6. Verifikasi bahwa tabel evaluasi_rubu_tahfizh (dari PR #8 jika applied) dan tabel org_units (dari Phase 2A) ada
+    // 6. Verifikasi bahwa tabel evaluasi_rubu_tahfizh (dari PR #8) dan tabel org_units, assignments (dari Phase 2A) ada
     const res: Array<{ table_name: string }> = await client.$queryRawUnsafe(`
       SELECT table_name FROM information_schema.tables
       WHERE table_schema = 'public' AND table_name IN ('evaluasi_rubu_tahfizh', 'org_units', 'assignments');
     `);
 
     const tables = res.map((r) => r.table_name);
+    const hasPr8Table = tables.includes("evaluasi_rubu_tahfizh");
+    const hasCanonicalTables = tables.includes("org_units") && tables.includes("assignments");
+
     const simulationSuccess =
-      (!pr8MigrationApplied || tables.includes("evaluasi_rubu_tahfizh")) &&
-      tables.includes("org_units") &&
-      tables.includes("assignments");
+      pr8MigrationFetched &&
+      pr8ExactShaVerified &&
+      pr8MigrationBytes > 1000 &&
+      pr8MigrationApplied &&
+      phase2aMigrationApplied &&
+      hasPr8Table &&
+      hasCanonicalTables;
 
     return {
       baselineApplied: true,
-      pr8MigrationFetched: pr8Sql !== null,
+      pr8MigrationFetched,
+      pr8ExactShaVerified,
       pr8MigrationBytes,
       pr8MigrationApplied,
-      phase2aMigrationApplied: true,
+      phase2aMigrationApplied,
+      hasPr8Table,
+      hasCanonicalTables,
       simulationSuccess,
     };
   } finally {

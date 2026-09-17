@@ -1681,12 +1681,14 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
     it("18.14. production-equivalent isolated simulation: main chain + PR #8 + Phase 2A applies without schema conflict", { timeout: 60000 }, async () => {
       const res = await runIsolatedProductionEquivalentSimulation();
       assert.strictEqual(res.baselineApplied, true, "Baseline must be applied");
-      assert.strictEqual(res.simulationSuccess, true, "Simulation status must be successful");
-      if (res.pr8MigrationFetched) {
-        assert.ok(res.pr8MigrationBytes > 1000, "PR #8 migration bytes must be substantial");
-        assert.strictEqual(res.pr8MigrationApplied, true, "PR #8 migration must apply cleanly");
-        assert.strictEqual(res.phase2aMigrationApplied, true, "Phase 2A migration must apply cleanly on top of PR #8");
-      }
+      assert.strictEqual(res.pr8MigrationFetched, true, "PR #8 migration must be fetched");
+      assert.strictEqual(res.pr8ExactShaVerified, true, "PR #8 exact SHA (9068cae5587b7219c394c5c25bf0de07a15b0726) must be verified");
+      assert.ok(res.pr8MigrationBytes > 1000, "PR #8 migration bytes must be substantial (> 1000 bytes)");
+      assert.strictEqual(res.pr8MigrationApplied, true, "PR #8 migration must apply cleanly");
+      assert.strictEqual(res.phase2aMigrationApplied, true, "Phase 2A migration must apply cleanly on top of PR #8");
+      assert.strictEqual(res.hasPr8Table, true, "PR #8 table evaluasi_rubu_tahfizh must exist");
+      assert.strictEqual(res.hasCanonicalTables, true, "Phase 2A canonical tables (org_units, assignments) must exist");
+      assert.strictEqual(res.simulationSuccess, true, "Simulation status must be unconditionally successful");
     });
   });
 });
