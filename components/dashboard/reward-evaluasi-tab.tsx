@@ -379,7 +379,7 @@ export function RewardEvaluasiTab({
             ) : (
               <Badge variant="neutral" className="text-slate-500 flex items-center gap-1 bg-slate-50">
                 <Lock className="w-3 h-3" />
-                Read-Only (Hanya Mudir)
+                Kebijakan hanya dapat diedit oleh Mudir
               </Badge>
             )}
           </div>
