@@ -13,6 +13,8 @@ import {
   EffectiveCapabilityGrant,
   ResolvedResourceContext,
   KEASRAMAAN_STRUCTURE,
+  TKS_STRUCTURE_CONTRACT,
+  OSDA_STRUCTURE_CONTRACT,
 } from "../types/architecture-lock";
 import { PrismaClient } from "@prisma/client";
 
@@ -503,6 +505,222 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLA
         "When target has no placement, caller-supplied kamarId must be strictly discarded"
       );
     });
+
+    it("3.3. Attack Regression A: Target santri in Kamar B + caller supplies unitId = A + grant ASSIGNED_UNITS[A] -> DENY", async () => {
+      const mockPrisma = {
+        santri: {
+          findUnique: async () => ({
+            id: "san-in-kamar-b",
+            nama: "Santri Kamar B",
+            jenisKelamin: "L",
+            halaqohId: null,
+          }),
+        },
+        santriKamarPlacement: {
+          findFirst: async (args: { where: { santriId: string; isActive: boolean } }) => {
+            if (args.where.santriId === "san-in-kamar-b" && args.where.isActive === true) {
+              return {
+                id: "plc-b",
+                santriId: "san-in-kamar-b",
+                kamarId: "kmr-b",
+                isActive: true,
+                kamar: {
+                  id: "kmr-b",
+                  code: "OU-KMR-B",
+                  name: "Kamar B",
+                  type: "KAMAR",
+                  domain: "KEASRAMAAN",
+                  genderComplex: "PUTRA",
+                  isActive: true,
+                },
+              };
+            }
+            return null;
+          },
+        },
+        orgUnit: {
+          findUnique: async ({ where }: { where: { id: string } }) => {
+            if (where.id === "unit-a") {
+              return { id: "unit-a", type: "SERVICE_UNIT", domain: "KEASRAMAAN", isActive: true };
+            }
+            return null;
+          },
+          findFirst: async () => null,
+        },
+        tasmiSimaan: { findUnique: async () => null },
+        user: { findUnique: async () => null },
+      };
+
+      const provider = createPrismaDataProvider(mockPrisma as unknown as PrismaClient);
+
+      // Caller targets santri in Kamar B, but supplies caller-supplied unitId = unit-a
+      const ctx = await provider.resolveResourceContext({
+        santriId: "san-in-kamar-b",
+        unitId: "unit-a",
+      });
+
+      // Unit A is NOT an authoritative enclosing unit of san-in-kamar-b -> FAIL CLOSED (null)
+      assert.strictEqual(ctx, null, "Target santri with mismatched caller unitId must fail closed as null");
+
+      // Evaluate with grant scoped to ASSIGNED_UNITS [unit-a] -> DENY
+      const grantAssignedUnitsA: CanonicalAssignmentWithDetails = {
+        id: "asg-attacker",
+        userId: "usr-attacker",
+        positionId: "pos-attacker",
+        positionCode: "ANGGOTA_TKS",
+        positionName: "Attacker",
+        domain: "KEASRAMAAN",
+        unitId: "unit-a",
+        unitCode: "UNIT-A",
+        unitName: "Unit A",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          { capabilityCode: "keasramaan.kamar.inspect", scopeType: "ASSIGNED_UNITS", businessRuleState: "VERIFIED_PRODUCTION" },
+        ],
+        scopeUnits: [{ unitId: "unit-a" }],
+      };
+
+      const authProvider: ICanonicalDataProvider = {
+        ...provider,
+        async getIdentity(id) {
+          return { userId: id, username: "attacker", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-att", staffStatus: "AKTIF" };
+        },
+        async getActiveAssignments() { return [grantAssignedUnitsA]; },
+        async getUnitAccountPlacement() { return null; },
+        async verifyHumanExecutor() { return null; },
+      };
+
+      const res = await authorizeCanonical({
+        identity: { userId: "usr-attacker", username: "attacker", status: "AKTIF", accountType: "PERSONAL" },
+        capability: "keasramaan.kamar.inspect",
+        resourceContext: { santriId: "san-in-kamar-b", unitId: "unit-a" },
+        dataProvider: authProvider,
+      });
+
+      assert.strictEqual(res.decision, "DENY");
+      assert.strictEqual(res.code, "INVALID_RESOURCE_CONTEXT");
+    });
+
+    it("3.4. Attack Regression B: santriId = child-B + resourceId = Tasmi belonging to child-A -> INVALID_RESOURCE_CONTEXT (null)", async () => {
+      const mockPrisma = {
+        santri: {
+          findUnique: async ({ where }: { where: { id: string } }) => {
+            if (where.id === "child-A") {
+              return { id: "child-A", nama: "Child A", jenisKelamin: "L", halaqohId: "hlq-1" };
+            }
+            if (where.id === "child-B") {
+              return { id: "child-B", nama: "Child B", jenisKelamin: "L", halaqohId: "hlq-2" };
+            }
+            return null;
+          },
+        },
+        santriKamarPlacement: { findFirst: async () => null },
+        orgUnit: { findUnique: async () => null, findFirst: async () => null },
+        tasmiSimaan: {
+          findUnique: async ({ where }: { where: { id: string } }) => {
+            if (where.id === "tasmi-child-a") {
+              return { id: "tasmi-child-a", santriId: "child-A", santri: { halaqohId: "hlq-1", jenisKelamin: "L" } };
+            }
+            return null;
+          },
+        },
+        user: { findUnique: async () => null },
+      };
+
+      const provider = createPrismaDataProvider(mockPrisma as unknown as PrismaClient);
+
+      // Caller supplies conflicting identifiers: santriId child-B with resourceId tasmi of child-A
+      const ctx = await provider.resolveResourceContext({
+        santriId: "child-B",
+        resourceId: "tasmi-child-a",
+      });
+
+      assert.strictEqual(ctx, null, "Conflicting santriId and resourceId must fail closed as null");
+    });
+
+    it("3.5. Attack Regression C: Valid standalone unit target works only after authoritative OrgUnit validation (exists and isActive = true)", async () => {
+      const mockPrisma = {
+        santri: { findUnique: async () => null },
+        santriKamarPlacement: { findFirst: async () => null },
+        orgUnit: {
+          findUnique: async ({ where }: { where: { id: string } }) => {
+            if (where.id === "unit-active") {
+              return { id: "unit-active", type: "SERVICE_UNIT", domain: "KEASRAMAAN", genderComplex: "PUTRA", isActive: true };
+            }
+            if (where.id === "unit-inactive") {
+              return { id: "unit-inactive", type: "SERVICE_UNIT", domain: "KEASRAMAAN", genderComplex: "PUTRA", isActive: false };
+            }
+            return null;
+          },
+          findFirst: async () => null,
+        },
+        tasmiSimaan: { findUnique: async () => null },
+        user: { findUnique: async () => null },
+      };
+
+      const provider = createPrismaDataProvider(mockPrisma as unknown as PrismaClient);
+
+      // Active unit -> resolves successfully
+      const activeCtx = await provider.resolveResourceContext({ unitId: "unit-active" });
+      assert.ok(activeCtx);
+      assert.deepStrictEqual(activeCtx?.orgUnitIds, ["unit-active"]);
+      assert.strictEqual(activeCtx?.orgDomain, "KEASRAMAAN");
+
+      // Inactive unit -> fails closed (null)
+      const inactiveCtx = await provider.resolveResourceContext({ unitId: "unit-inactive" });
+      assert.strictEqual(inactiveCtx, null, "Inactive standalone OrgUnit must fail closed as null");
+
+      // Nonexistent unit -> fails closed (null)
+      const missingCtx = await provider.resolveResourceContext({ unitId: "unit-missing" });
+      assert.strictEqual(missingCtx, null, "Nonexistent standalone OrgUnit must fail closed as null");
+    });
+
+    it("3.6. Attack Regression D: Existing shadow paths (setoran, health, reward) remain regression-safe", async () => {
+      const mockPrisma = {
+        santri: {
+          findUnique: async ({ where }: { where: { id: string } }) => {
+            if (where.id === "san-shadow-1") {
+              return { id: "san-shadow-1", nama: "Shadow Santri", jenisKelamin: "L", halaqohId: "hlq-10" };
+            }
+            return null;
+          },
+        },
+        santriKamarPlacement: { findFirst: async () => null },
+        orgUnit: { findUnique: async () => null, findFirst: async () => null },
+        tasmiSimaan: {
+          findUnique: async ({ where }: { where: { id: string } }) => {
+            if (where.id === "tasmi-shadow-1") {
+              return { id: "tasmi-shadow-1", santriId: "san-shadow-1", santri: { halaqohId: "hlq-10", jenisKelamin: "L" } };
+            }
+            return null;
+          },
+        },
+        user: { findUnique: async () => null },
+      };
+
+      const provider = createPrismaDataProvider(mockPrisma as unknown as PrismaClient);
+
+      // Path 1: setoran { santriId }
+      const setoranCtx = await provider.resolveResourceContext({ santriId: "san-shadow-1" });
+      assert.ok(setoranCtx);
+      assert.strictEqual(setoranCtx?.santriId, "san-shadow-1");
+      assert.strictEqual(setoranCtx?.halaqohId, "hlq-10");
+      assert.strictEqual(setoranCtx?.orgDomain, "TAHFIZH");
+
+      // Path 2: health { santriId }
+      const healthCtx = await provider.resolveResourceContext({ santriId: "san-shadow-1" });
+      assert.ok(healthCtx);
+      assert.strictEqual(healthCtx?.santriId, "san-shadow-1");
+
+      // Path 3: reward { resourceId }
+      const rewardCtx = await provider.resolveResourceContext({ resourceId: "tasmi-shadow-1" });
+      assert.ok(rewardCtx);
+      assert.strictEqual(rewardCtx?.santriId, "san-shadow-1");
+      assert.strictEqual(rewardCtx?.halaqohId, "hlq-10");
+      assert.strictEqual(rewardCtx?.orgDomain, "TAHFIZH");
+    });
   });
 
   // =========================================================================
@@ -613,33 +831,168 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLA
       assert.strictEqual(evalUtsman.code, "SCOPE_MISMATCH");
     });
 
-    it("5.2. Mudabbir with multiple Kamar (via AssignmentScopeUnit): ALLOW for all assigned rooms, DENY for unassigned", () => {
-      const mudabbirGrantMultiple: EffectiveCapabilityGrant = {
-        assignmentId: "asg-mudabbir-multi",
+    it("5.2. Locked Scope Taxonomy: KAMAR anchor A + unitIds [B] + target B => DENY (no scope widening)", () => {
+      const grant: EffectiveCapabilityGrant = {
+        assignmentId: "asg-mudabbir-single-locked",
         positionCode: "MUDABBIR",
         businessRuleState: "VERIFIED_PRODUCTION",
         capabilityCode: "keasramaan.kamar.inspect",
         scopeType: "KAMAR",
         anchorUnitId: "kmr-ali",
-        unitIds: ["kmr-ali", "kmr-utsman"], // Scoped relationally via AssignmentScopeUnit
+        unitIds: ["kmr-utsman"], // Must NOT widen KAMAR scope
       };
 
-      // Santri in Kamar Ali -> ALLOW
-      const ctxAli: ResolvedResourceContext = { santriId: "san-1", kamarId: "kmr-ali", orgUnitIds: ["kmr-ali"] };
-      assert.strictEqual(evaluateScopePredicate(mudabbirGrantMultiple, ctxAli, { userId: "usr-mudabbir" }).matches, true);
-
-      // Santri in Kamar Utsman -> ALLOW
+      // Target B (kmr-utsman) with anchor A (kmr-ali) -> DENY
       const ctxUtsman: ResolvedResourceContext = { santriId: "san-2", kamarId: "kmr-utsman", orgUnitIds: ["kmr-utsman"] };
-      assert.strictEqual(evaluateScopePredicate(mudabbirGrantMultiple, ctxUtsman, { userId: "usr-mudabbir" }).matches, true);
+      const evalUtsman = evaluateScopePredicate(grant, ctxUtsman, { userId: "usr-mudabbir" });
+      assert.strictEqual(evalUtsman.matches, false);
+      assert.strictEqual(evalUtsman.code, "SCOPE_MISMATCH");
 
-      // Santri in Kamar Umar (unassigned) -> DENY (SCOPE_MISMATCH)
-      const ctxUmar: ResolvedResourceContext = { santriId: "san-3", kamarId: "kmr-umar", orgUnitIds: ["kmr-umar"] };
-      const evalUmar = evaluateScopePredicate(mudabbirGrantMultiple, ctxUmar, { userId: "usr-mudabbir" });
-      assert.strictEqual(evalUmar.matches, false);
-      assert.strictEqual(evalUmar.code, "SCOPE_MISMATCH");
+      // Target A (kmr-ali) with anchor A (kmr-ali) -> ALLOW
+      const ctxAli: ResolvedResourceContext = { santriId: "san-1", kamarId: "kmr-ali", orgUnitIds: ["kmr-ali"] };
+      const evalAli = evaluateScopePredicate(grant, ctxAli, { userId: "usr-mudabbir" });
+      assert.strictEqual(evalAli.matches, true);
+      assert.strictEqual(evalAli.code, "ALLOWED");
     });
 
-    it("5.3. Mudabbir is distinct from Musyrif Keasramaan: Musyrif Keasramaan has DOMAIN scope over KEASRAMAAN", () => {
+    it("5.3. Locked Scope Taxonomy: HALAQOH anchor A + unitIds [B] + target B => DENY (no scope widening)", () => {
+      const grant: EffectiveCapabilityGrant = {
+        assignmentId: "asg-mt-single-locked",
+        positionCode: "MUSYRIF_TAHFIZH",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        capabilityCode: "tahfizh.setoran.create",
+        scopeType: "HALAQOH",
+        anchorUnitId: "hlq-abu-bakr",
+        unitIds: ["hlq-umar"], // Must NOT widen HALAQOH scope
+      };
+
+      // Target B (hlq-umar) with anchor A (hlq-abu-bakr) -> DENY
+      const ctxUmar: ResolvedResourceContext = { santriId: "san-3", halaqohId: "hlq-umar", orgUnitIds: ["hlq-umar"] };
+      const evalUmar = evaluateScopePredicate(grant, ctxUmar, { userId: "usr-mt" });
+      assert.strictEqual(evalUmar.matches, false);
+      assert.strictEqual(evalUmar.code, "SCOPE_MISMATCH");
+
+      // Target A (hlq-abu-bakr) with anchor A (hlq-abu-bakr) -> ALLOW
+      const ctxAbuBakr: ResolvedResourceContext = { santriId: "san-1", halaqohId: "hlq-abu-bakr", orgUnitIds: ["hlq-abu-bakr"] };
+      const evalAbuBakr = evaluateScopePredicate(grant, ctxAbuBakr, { userId: "usr-mt" });
+      assert.strictEqual(evalAbuBakr.matches, true);
+      assert.strictEqual(evalAbuBakr.code, "ALLOWED");
+    });
+
+    it("5.4. Multi-Room Option B: ASSIGNED_UNITS [A, B] + target B => ALLOW", () => {
+      const grantAssignedUnits: EffectiveCapabilityGrant = {
+        assignmentId: "asg-mudabbir-assigned-units",
+        positionCode: "MUDABBIR",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        capabilityCode: "keasramaan.kamar.inspect",
+        scopeType: "ASSIGNED_UNITS",
+        anchorUnitId: "kmr-ali",
+        unitIds: ["kmr-ali", "kmr-utsman"],
+      };
+
+      const ctxUtsman: ResolvedResourceContext = { santriId: "san-2", kamarId: "kmr-utsman", orgUnitIds: ["kmr-utsman"] };
+      const evalUtsman = evaluateScopePredicate(grantAssignedUnits, ctxUtsman, { userId: "usr-mudabbir" });
+      assert.strictEqual(evalUtsman.matches, true);
+      assert.strictEqual(evalUtsman.code, "ALLOWED");
+
+      const ctxUnassigned: ResolvedResourceContext = { santriId: "san-3", kamarId: "kmr-umar", orgUnitIds: ["kmr-umar"] };
+      const evalUnassigned = evaluateScopePredicate(grantAssignedUnits, ctxUnassigned, { userId: "usr-mudabbir" });
+      assert.strictEqual(evalUnassigned.matches, false);
+      assert.strictEqual(evalUnassigned.code, "SCOPE_MISMATCH");
+    });
+
+    it("5.5. Multi-Room Option A: Multiple active KAMAR assignments collectively authorize their respective rooms via multi-grant evaluation", async () => {
+      const asgKamarA: CanonicalAssignmentWithDetails = {
+        id: "asg-mudabbir-kamar-a",
+        userId: "usr-mudabbir-multi",
+        positionId: "pos-mudabbir",
+        positionCode: "MUDABBIR",
+        positionName: "Mudabbir Kamar A",
+        domain: "KEASRAMAAN",
+        unitId: "kmr-ali",
+        unitCode: "OU-KMR-ALI",
+        unitName: "Kamar Ali",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          { capabilityCode: "keasramaan.kamar.inspect", scopeType: "KAMAR", businessRuleState: "VERIFIED_PRODUCTION" },
+        ],
+        scopeUnits: [],
+      };
+
+      const asgKamarB: CanonicalAssignmentWithDetails = {
+        id: "asg-mudabbir-kamar-b",
+        userId: "usr-mudabbir-multi",
+        positionId: "pos-mudabbir",
+        positionCode: "MUDABBIR",
+        positionName: "Mudabbir Kamar B",
+        domain: "KEASRAMAAN",
+        unitId: "kmr-utsman",
+        unitCode: "OU-KMR-UTSMAN",
+        unitName: "Kamar Utsman",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          { capabilityCode: "keasramaan.kamar.inspect", scopeType: "KAMAR", businessRuleState: "VERIFIED_PRODUCTION" },
+        ],
+        scopeUnits: [],
+      };
+
+      const provider: ICanonicalDataProvider = {
+        async getIdentity(id) {
+          return { userId: id, username: "mudabbir.multi", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-mudabbir", staffStatus: "AKTIF" };
+        },
+        async getActiveAssignments() {
+          return [asgKamarA, asgKamarB];
+        },
+        async getUnitAccountPlacement() { return null; },
+        async verifyHumanExecutor() { return null; },
+        async resolveResourceContext(req) {
+          if (req.santriId === "san-in-ali") {
+            return { santriId: "san-in-ali", kamarId: "kmr-ali", orgUnitIds: ["kmr-ali"] };
+          }
+          if (req.santriId === "san-in-utsman") {
+            return { santriId: "san-in-utsman", kamarId: "kmr-utsman", orgUnitIds: ["kmr-utsman"] };
+          }
+          if (req.santriId === "san-in-umar") {
+            return { santriId: "san-in-umar", kamarId: "kmr-umar", orgUnitIds: ["kmr-umar"] };
+          }
+          return null;
+        },
+      };
+
+      // Santri in Kamar Ali -> authorized by asgKamarA
+      const resAli = await authorizeCanonical({
+        identity: { userId: "usr-mudabbir-multi", username: "mudabbir.multi", status: "AKTIF", accountType: "PERSONAL" },
+        capability: "keasramaan.kamar.inspect",
+        resourceContext: { santriId: "san-in-ali" },
+        dataProvider: provider,
+      });
+      assert.strictEqual(resAli.decision, "ALLOW");
+
+      // Santri in Kamar Utsman -> authorized by asgKamarB
+      const resUtsman = await authorizeCanonical({
+        identity: { userId: "usr-mudabbir-multi", username: "mudabbir.multi", status: "AKTIF", accountType: "PERSONAL" },
+        capability: "keasramaan.kamar.inspect",
+        resourceContext: { santriId: "san-in-utsman" },
+        dataProvider: provider,
+      });
+      assert.strictEqual(resUtsman.decision, "ALLOW");
+
+      // Santri in unassigned Kamar Umar -> DENY
+      const resUmar = await authorizeCanonical({
+        identity: { userId: "usr-mudabbir-multi", username: "mudabbir.multi", status: "AKTIF", accountType: "PERSONAL" },
+        capability: "keasramaan.kamar.inspect",
+        resourceContext: { santriId: "san-in-umar" },
+        dataProvider: provider,
+      });
+      assert.strictEqual(resUmar.decision, "DENY");
+      assert.strictEqual(resUmar.reasonCode, "SCOPE_MISMATCH");
+    });
+
+    it("5.6. Mudabbir is distinct from Musyrif Keasramaan: Musyrif Keasramaan has DOMAIN scope over KEASRAMAAN", () => {
       const musyrifKeasramaanGrant: EffectiveCapabilityGrant = {
         assignmentId: "asg-mk-domain",
         positionCode: "KEPALA_KEASRAMAAN",
@@ -792,6 +1145,26 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLA
 
       assert.ok(lockDoc.includes("TKS tidak memiliki Ketua Umum terpusat"));
       assert.ok(invariantsDoc.includes("no central Ketua TKS"));
+    });
+
+    it("7.5. Typed structural contract: TKS node is ORGANIZATION under KEASRAMAAN and parent to 6 SERVICE_UNITs", () => {
+      assert.strictEqual(TKS_STRUCTURE_CONTRACT.NODE.type, "ORGANIZATION");
+      assert.strictEqual(TKS_STRUCTURE_CONTRACT.NODE.domain, "KEASRAMAAN");
+      assert.strictEqual(TKS_STRUCTURE_CONTRACT.NODE.hasCentralKetua, false);
+      assert.strictEqual(TKS_STRUCTURE_CONTRACT.SERVICE_UNITS.length, 6);
+      for (const unit of TKS_STRUCTURE_CONTRACT.SERVICE_UNITS) {
+        assert.strictEqual(unit.type, "SERVICE_UNIT");
+        assert.strictEqual(unit.domain, "KEASRAMAAN");
+        assert.strictEqual(unit.parentUnitCode, TKS_STRUCTURE_CONTRACT.NODE.code);
+      }
+      assert.strictEqual(OSDA_STRUCTURE_CONTRACT.NODE.type, "ORGANIZATION");
+      assert.strictEqual(OSDA_STRUCTURE_CONTRACT.NODE.domain, "KEASRAMAAN");
+
+      // Verify docs also document this hierarchy
+      const m31Doc = fs.readFileSync(path.join(docsDir, "STQ_MILESTONE3_1_KEASRAMAAN_STRUCTURE.md"), "utf-8");
+      assert.ok(m31Doc.includes("TKS (ORGANIZATION)"));
+      assert.ok(m31Doc.includes("Dapur dan Gizi (SERVICE_UNIT)"));
+      assert.ok(m31Doc.includes("parent: TKS"));
     });
   });
 

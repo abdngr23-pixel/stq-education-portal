@@ -507,6 +507,13 @@ export const KEASRAMAAN_STRUCTURE = {
     "SARANA_PRASARANA",
   ] as const,
   TKS_EXPANSION: "Tugas Khusus Santri" as const,
+  TKS_NODE: {
+    type: "ORGANIZATION" as const,
+    domain: "KEASRAMAAN" as const,
+    code: "OU-TKS-ROOT" as const,
+    name: "Tugas Khusus Santri" as const,
+    hasCentralKetua: false as const,
+  },
   TKS_UNITS: [
     "Dapur dan Gizi",
     "Masjid",
@@ -515,6 +522,45 @@ export const KEASRAMAAN_STRUCTURE = {
     "Air Minum",
     "Air Sumur",
   ] as const,
+  TKS_SERVICE_UNITS: [
+    { code: "OU-TKS-DAPUR", name: "Dapur dan Gizi", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-MASJID", name: "Masjid", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-PENDIDIKAN", name: "Kantor Pendidikan", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-YAYASAN", name: "Kantor Yayasan", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-AIR-MINUM", name: "Air Minum", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-AIR-SUMUR", name: "Air Sumur", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+  ] as const,
 } as const;
+
+/**
+ * Minimal Typed Structural Contracts for Keasramaan Sub-Organizations
+ */
+export const TKS_STRUCTURE_CONTRACT = {
+  NODE: {
+    type: "ORGANIZATION" as const,
+    domain: "KEASRAMAAN" as const,
+    code: "OU-TKS-ROOT" as const,
+    name: "Tugas Khusus Santri" as const,
+    hasCentralKetua: false as const,
+  },
+  SERVICE_UNITS: [
+    { code: "OU-TKS-DAPUR", name: "Dapur dan Gizi", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-MASJID", name: "Masjid", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-PENDIDIKAN", name: "Kantor Pendidikan", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-YAYASAN", name: "Kantor Yayasan", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-AIR-MINUM", name: "Air Minum", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-AIR-SUMUR", name: "Air Sumur", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+  ] as const,
+} as const;
+
+export const OSDA_STRUCTURE_CONTRACT = {
+  NODE: {
+    type: "ORGANIZATION" as const,
+    domain: "KEASRAMAAN" as const,
+    code: "OU-OSDA-ROOT" as const,
+    name: "Organisasi Santri Darul Ulum Cendekia" as const,
+  },
+} as const;
+
 
 

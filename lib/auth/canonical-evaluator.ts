@@ -736,88 +736,114 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
       let kamarId: string | undefined = undefined;
       let targetSantriId: string | undefined = requested.santriId;
 
-      // 1. Target Santri Hydration (Authoritative trust boundary)
-      if (requested.santriId) {
+      // 1. Cross-Identifier Consistency & Resource-level Validation
+      // If requested.resourceId is supplied, authoritatively resolve its owning santri
+      if (requested.resourceId) {
+        const tasmi = await prisma.tasmiSimaan.findUnique({
+          where: { id: requested.resourceId },
+          select: { id: true, santriId: true, santri: { select: { halaqohId: true, jenisKelamin: true } } },
+        });
+        if (!tasmi) {
+          // Explicit resourceId not found in database -> fail closed
+          return null;
+        }
+
+        // Consistency check: If both santriId and resourceId are supplied, they must match!
+        // Do NOT union attributes from unrelated resource identifiers.
+        if (requested.santriId && tasmi.santriId !== requested.santriId) {
+          return null;
+        }
+
+        orgDomain = "TAHFIZH";
+        if (!targetSantriId) {
+          targetSantriId = tasmi.santriId;
+        }
+      }
+
+      // 2. Target Santri Hydration (Authoritative containment trust boundary)
+      if (targetSantriId) {
         const targetSantri = await prisma.santri.findUnique({
-          where: { id: requested.santriId },
+          where: { id: targetSantriId },
           include: { halaqoh: true },
         });
 
-        if (targetSantri) {
-          // Authoritatively overwrite halaqohId with actual DB record (ignore untrusted caller-supplied halaqohId)
-          halaqohId = targetSantri.halaqohId || undefined;
-          if (targetSantri.halaqohId) {
-            orgUnitIds.push(targetSantri.halaqohId);
-          }
+        if (!targetSantri) {
+          // Target santri was requested/resolved but does not exist in DB -> fail closed
+          return null;
+        }
 
-          if (targetSantri.jenisKelamin === "L") {
-            unitGenderComplex = "PUTRA";
-          } else if (targetSantri.jenisKelamin === "P") {
-            unitGenderComplex = "PUTRI";
-          }
+        // Authoritative halaqoh containment strictly from database
+        halaqohId = targetSantri.halaqohId || undefined;
+        if (targetSantri.halaqohId) {
+          orgUnitIds.push(targetSantri.halaqohId);
+        }
 
+        if (targetSantri.jenisKelamin === "L") {
+          unitGenderComplex = "PUTRA";
+        } else if (targetSantri.jenisKelamin === "P") {
+          unitGenderComplex = "PUTRI";
+        }
+
+        if (!orgDomain) {
           orgDomain = "TAHFIZH";
+        }
 
-          // Milestone 3.1: Authoritative Kamar Placement Hydration
-          // Invariant: Caller-supplied requested.kamarId is strictly ignored and MUST NEVER override actual placement.
-          if (prisma.santriKamarPlacement) {
-            const activePlacement = await prisma.santriKamarPlacement.findFirst({
-              where: {
-                santriId: targetSantri.id,
-                isActive: true,
-              },
-              include: {
-                kamar: true,
-              },
-            });
+        // Authoritative Kamar Placement Hydration
+        // Invariant: Caller-supplied requested.kamarId is strictly ignored and MUST NEVER override actual placement.
+        if (prisma.santriKamarPlacement) {
+          const activePlacement = await prisma.santriKamarPlacement.findFirst({
+            where: {
+              santriId: targetSantri.id,
+              isActive: true,
+            },
+            include: {
+              kamar: true,
+            },
+          });
 
-            if (activePlacement && activePlacement.kamar) {
-              const kamar = activePlacement.kamar;
-              const isAuthoritativeKamar =
-                kamar.type === "KAMAR" &&
-                kamar.domain === "KEASRAMAAN" &&
-                kamar.isActive === true;
+          if (activePlacement && activePlacement.kamar) {
+            const kamar = activePlacement.kamar;
+            const isAuthoritativeKamar =
+              kamar.type === "KAMAR" &&
+              kamar.domain === "KEASRAMAAN" &&
+              kamar.isActive === true;
 
-              if (isAuthoritativeKamar) {
-                const kamarGender = kamar.genderComplex as GenderComplex;
-                const isGenderCompatible =
-                  !unitGenderComplex ||
-                  !kamarGender ||
-                  kamarGender === "CAMPUR" ||
-                  kamarGender === "TIDAK_TERIKAT" ||
-                  unitGenderComplex === kamarGender;
+            if (isAuthoritativeKamar) {
+              const kamarGender = kamar.genderComplex as GenderComplex;
+              const isGenderCompatible =
+                !unitGenderComplex ||
+                !kamarGender ||
+                kamarGender === "CAMPUR" ||
+                kamarGender === "TIDAK_TERIKAT" ||
+                unitGenderComplex === kamarGender;
 
-                if (isGenderCompatible) {
-                  kamarId = kamar.id;
-                  orgUnitIds.push(kamar.id);
-                  if (!targetSantri.halaqohId && kamar.domain) {
-                    orgDomain = kamar.domain as OrgDomain;
-                  }
-                } else {
-                  // Room placement violates gender boundary -> fail closed
-                  kamarId = undefined;
+              if (isGenderCompatible) {
+                kamarId = kamar.id;
+                orgUnitIds.push(kamar.id);
+                if (!targetSantri.halaqohId && kamar.domain) {
+                  orgDomain = kamar.domain as OrgDomain;
                 }
               } else {
-                // Room placement target is not an active KEASRAMAAN KAMAR OrgUnit -> fail closed
+                // Room placement violates gender boundary -> fail closed
                 kamarId = undefined;
               }
             } else {
-              // Santri has no active Kamar placement -> fail closed for KAMAR-scoped operations
+              // Room placement target is not an active KEASRAMAAN KAMAR OrgUnit -> fail closed
               kamarId = undefined;
             }
           } else {
+            // Santri has no active Kamar placement -> fail closed for KAMAR-scoped operations
             kamarId = undefined;
           }
         } else {
-          // Target santri was requested but does not exist in DB -> fail closed
-          return null;
+          kamarId = undefined;
         }
       } else {
         // If santriId is NOT provided (e.g. standalone room/unit inspection):
         // Only accept halaqohId/kamarId if authoritatively verified against OrgUnit table
         if (requested.halaqohId) {
           const halaqohUnit = await prisma.orgUnit.findFirst({
-            where: { id: requested.halaqohId, type: "HALAQOH" },
+            where: { id: requested.halaqohId, type: "HALAQOH", isActive: true },
           });
           if (halaqohUnit) {
             halaqohId = halaqohUnit.id;
@@ -845,38 +871,44 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
         }
       }
 
-      // 2. Resource-level domain hydration (e.g. TasmiSimaan -> TAHFIZH domain)
-      if (requested.resourceId) {
-        const tasmi = await prisma.tasmiSimaan.findUnique({
-          where: { id: requested.resourceId },
-          select: { id: true, santriId: true, santri: { select: { halaqohId: true, jenisKelamin: true } } },
-        });
-        if (tasmi) {
-          orgDomain = "TAHFIZH";
-          if (!targetSantriId) {
-            targetSantriId = tasmi.santriId;
-          }
-          if (!halaqohId && tasmi.santri?.halaqohId) {
-            halaqohId = tasmi.santri.halaqohId;
-            orgUnitIds.push(tasmi.santri.halaqohId);
-          }
-          if (!unitGenderComplex && tasmi.santri?.jenisKelamin) {
-            unitGenderComplex = tasmi.santri.jenisKelamin === "L" ? "PUTRA" : "PUTRI";
-          }
-        } else {
-          // If requested.resourceId was explicitly specified and not found in DB -> fail closed!
-          return null;
-        }
-      }
-
+      // 3. Authoritative OrgUnit Trust-Boundary Validation
+      // Caller-supplied unitId may NEVER create an authorization boundary merely because the row exists.
       if (requested.unitId) {
         const unit = await prisma.orgUnit.findUnique({ where: { id: requested.unitId } });
-        if (unit) {
-          orgUnitIds.push(unit.id);
+        if (!unit || unit.isActive !== true) {
+          // Unit does not exist or is inactive -> fail closed
+          return null;
+        }
+
+        if (targetSantriId) {
+          // When a target santri is present:
+          // Prove server-side that unitId is an authoritative enclosing unit of that exact target.
+          // Enclosing units of a santri are strictly their halaqohId and/or kamarId.
+          const isEnclosingUnit =
+            (halaqohId !== undefined && requested.unitId === halaqohId) ||
+            (kamarId !== undefined && requested.unitId === kamarId);
+
+          if (!isEnclosingUnit) {
+            // Caller-supplied unitId does not authoritatively contain the target santri -> fail closed!
+            return null;
+          }
+
+          if (!orgUnitIds.includes(unit.id)) {
+            orgUnitIds.push(unit.id);
+          }
+        } else {
+          // Standalone unit lookup (or alongside standalone kamarId/halaqohId):
+          // resourceId / kamarId / halaqohId + unitId must not create a synthetic combined context
+          // unless server-side containment is explicitly verified.
+          if ((kamarId && requested.unitId !== kamarId) || (halaqohId && requested.unitId !== halaqohId)) {
+            return null;
+          }
+
+          if (!orgUnitIds.includes(unit.id)) {
+            orgUnitIds.push(unit.id);
+          }
           if (!unitGenderComplex) unitGenderComplex = unit.genderComplex as GenderComplex;
           if (!orgDomain) orgDomain = unit.domain as OrgDomain;
-        } else {
-          return null;
         }
       }
 

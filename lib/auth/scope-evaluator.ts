@@ -229,8 +229,16 @@ export function evaluateScopePredicate(
     };
   }
 
-  // 5. HALAQOH Scope: Ordinary Musyrif Tahfizh bound strictly to assigned halaqoh
+  // 5. HALAQOH Scope: Ordinary Musyrif Tahfizh bound strictly to single assigned halaqoh
   if (scopeType === "HALAQOH") {
+    if (!anchorUnitId) {
+      return {
+        matches: false,
+        code: "SCOPE_MISMATCH",
+        reason: "HALAQOH scope grant has no anchorUnitId.",
+        evaluatedScope: "HALAQOH",
+      };
+    }
     if (!context.halaqohId) {
       return {
         matches: false,
@@ -239,17 +247,8 @@ export function evaluateScopePredicate(
         evaluatedScope: "HALAQOH",
       };
     }
-    const rawHalaqoh = context["assignedHalaqohIds"];
-    const assignedIds = Array.isArray(rawHalaqoh)
-      ? (rawHalaqoh.filter((x): x is string => typeof x === "string"))
-      : [];
-    const permittedHalaqoh = new Set<string>([
-      ...(anchorUnitId ? [anchorUnitId] : []),
-      ...(unitIds || []),
-      ...assignedIds,
-    ]);
 
-    if (permittedHalaqoh.has(context.halaqohId)) {
+    if (context.halaqohId === anchorUnitId) {
       return {
         matches: true,
         code: "ALLOWED",
@@ -267,8 +266,16 @@ export function evaluateScopePredicate(
     };
   }
 
-  // 6. KAMAR Scope: Mudabbir bound strictly to assigned dormitory room
+  // 6. KAMAR Scope: Mudabbir bound strictly to single assigned dormitory room
   if (scopeType === "KAMAR") {
+    if (!anchorUnitId) {
+      return {
+        matches: false,
+        code: "SCOPE_MISMATCH",
+        reason: "KAMAR scope grant has no anchorUnitId.",
+        evaluatedScope: "KAMAR",
+      };
+    }
     if (!context.kamarId) {
       return {
         matches: false,
@@ -277,17 +284,8 @@ export function evaluateScopePredicate(
         evaluatedScope: "KAMAR",
       };
     }
-    const rawKamar = context["assignedKamarIds"];
-    const assignedKamar = Array.isArray(rawKamar)
-      ? (rawKamar.filter((x): x is string => typeof x === "string"))
-      : [];
-    const permittedKamar = new Set<string>([
-      ...(anchorUnitId ? [anchorUnitId] : []),
-      ...(unitIds || []),
-      ...assignedKamar,
-    ]);
 
-    if (permittedKamar.has(context.kamarId)) {
+    if (context.kamarId === anchorUnitId) {
       return {
         matches: true,
         code: "ALLOWED",

@@ -68,7 +68,10 @@ The canonical institutional hierarchy governing Keasramaan V2 is locked:
 3. **Mudabbir Distinct from Musyrif**: Mudabbir functions as `Pembina Kamar` and is strictly distinct from `Musyrif Keasramaan`.
 4. **Pembina Divisi Placement**: Directly under `Musyrif Keasramaan` as a parallel supervisory assignment; **NOT** superior to `Mudabbir`, and **NOT** a member of `OSDA`.
 5. **Usroh Under OSDA**: Usroh is positioned structurally under **OSDA** (`type: USROH`), **NOT** structurally under Divisi Kebersihan. Divisi Kebersihan & Kerapihan supervises cleanliness performed by Usroh as a functional responsibility.
-6. **Multi-Room Responsibility**: One Mudabbir may be assigned to more than one Kamar through relational multi-unit scoping (`AssignmentScopeUnit`).
+6. **Mudabbir Room Scope & Multi-Room Representation**: ScopeType `KAMAR` enforces strict single-room containment (one Kamar anchor per grant). Multi-room Mudabbir representation must use one of the canonical architecture patterns:
+   - **OPTION A**: Multiple active Assignments, each `KAMAR` anchored to one room (evaluated via canonical multi-grant union).
+   - **OPTION B**: An explicit `ASSIGNED_UNITS` PositionCapability whose permitted rooms come relationally from `AssignmentScopeUnit`.
+   `KAMAR` scope is never widened with relational multi-unit arrays.
 7. **Audit & Takeover Invariant**: Musyrif Keasramaan holds domain-level authority (`ScopeType: DOMAIN`) to audit or intervene when a Mudabbir is negligent or on leave, while retaining the original Mudabbir PIC attribution in forensic audit logs.
 
 ---
@@ -110,18 +113,31 @@ Exactly five functional divisions:
 
 ---
 
-## 5. TKS Definition & Exact Six Units
+## 5. TKS Definition & Structure (Tugas Khusus Santri)
 
 - **Exact Definition**: **TUGAS KHUSUS SANTRI** (santri special duty operational service units).
+- **Organization Node**: TKS is structured as an `OrgUnit` of type `OrgUnitType: ORGANIZATION` under `domain: KEASRAMAAN` (`code: "OU-TKS-ROOT"`).
+- **Parent-Child Hierarchy**: The exact six operational units are direct children of the TKS organization node (`parentUnitCode: "OU-TKS-ROOT"`, `type: SERVICE_UNIT`, `domain: KEASRAMAAN`). They are **NOT** direct children of Root Keasramaan:
+  ```
+  TKS (ORGANIZATION)
+  ├─ Dapur dan Gizi (SERVICE_UNIT)
+  ├─ Masjid (SERVICE_UNIT)
+  ├─ Kantor Pendidikan (SERVICE_UNIT)
+  ├─ Kantor Yayasan (SERVICE_UNIT)
+  ├─ Air Minum (SERVICE_UNIT)
+  └─ Air Sumur (SERVICE_UNIT)
+  ```
 - **No Central Ketua**: There is **NO** central `Ketua TKS`. Each unit operates independently under assigned coordinators or operators.
-- **Exact Six Units**:
-  1. **Unit Dapur dan Gizi** (`OrgUnitType: SERVICE_UNIT`): Cooking, nutrition, food distribution. Allows `KETUA_UNIT` and `ANGGOTA_UNIT`.
-  2. **Unit Masjid** (`OrgUnitType: SERVICE_UNIT`): Mosque maintenance, sound system, adhan coordination. Allows `KETUA_UNIT` and `ANGGOTA_UNIT`.
-  3. **Unit Kantor Pendidikan** (`OrgUnitType: SERVICE_UNIT`): Educational administration assistance. Single active operator.
-  4. **Unit Kantor Yayasan** (`OrgUnitType: SERVICE_UNIT`): Foundation administration assistance. Single active operator.
-  5. **Unit Air Minum** (`OrgUnitType: SERVICE_UNIT`): Drinking water supply, refilling, and water filter maintenance. Single active operator.
-  6. **Unit Air Sumur** (`OrgUnitType: SERVICE_UNIT`): Well water pump, filtration, and reservoir management. Single active operator.
+- **Exact Six Service Units**:
+  1. **Unit Dapur dan Gizi** (`OrgUnitType: SERVICE_UNIT`, parent: TKS): Cooking, nutrition, food distribution. Allows `KETUA_UNIT` and `ANGGOTA_UNIT`.
+  2. **Unit Masjid** (`OrgUnitType: SERVICE_UNIT`, parent: TKS): Mosque maintenance, sound system, adhan coordination. Allows `KETUA_UNIT` and `ANGGOTA_UNIT`.
+  3. **Unit Kantor Pendidikan** (`OrgUnitType: SERVICE_UNIT`, parent: TKS): Educational administration assistance. Single active operator.
+  4. **Unit Kantor Yayasan** (`OrgUnitType: SERVICE_UNIT`, parent: TKS): Foundation administration assistance. Single active operator.
+  5. **Unit Air Minum** (`OrgUnitType: SERVICE_UNIT`, parent: TKS): Drinking water supply, refilling, and water filter maintenance. Single active operator.
+  6. **Unit Air Sumur** (`OrgUnitType: SERVICE_UNIT`, parent: TKS): Well water pump, filtration, and reservoir management. Single active operator.
 - **Separation Invariant**: `Unit Air Minum` and `Unit Air Sumur` are strictly distinct operational service units and must never be combined.
+- **OSDA Coexistence**: OSDA remains its own separate `OrgUnitType: ORGANIZATION` node.
+- **No Production Seed**: These OrgUnits are formally specified in architecture contracts and MUST NOT be seeded into production during M3.1.
 
 ---
 
@@ -200,11 +216,18 @@ Caller-supplied `kamarId` is accepted ONLY when `santriId` is omitted (standalon
 
 ---
 
-## 9. Mudabbir Room Scope Containment
+## 9. Mudabbir Room Scope Containment & Locked Taxonomy
 
-Mudabbir authority is evaluated via `ScopeType: KAMAR`:
-- **Single Room**: Mudabbir assigned to `KAMAR-1` is allowed to access `KAMAR-1` (`ALLOWED`) and strictly denied on any other room (`SCOPE_MISMATCH`).
-- **Multiple Rooms**: Mudabbir assigned to `KAMAR-1` with scoped units `[KAMAR-1, KAMAR-2]` via `AssignmentScopeUnit` is allowed on both `KAMAR-1` and `KAMAR-2`, and denied on `KAMAR-3` (`SCOPE_MISMATCH`).
+Mudabbir authority follows the locked scope taxonomy:
+- **Locked Single-Anchor Semantics**:
+  - `ScopeType: KAMAR` matches authoritative `context.kamarId` against the grant's single `anchorUnitId` only (`context.kamarId === anchorUnitId`).
+  - `ScopeType: HALAQOH` matches authoritative `context.halaqohId` against the grant's single `anchorUnitId` only (`context.halaqohId === anchorUnitId`).
+  - `ScopeType: KAMAR` and `HALAQOH` are **NEVER** widened using `unitIds`, `assignedKamarIds`, or `assignedHalaqohIds`.
+- **Single Room Mudabbir**: Mudabbir assigned to `KAMAR-1` with `ScopeType: KAMAR` is allowed on `KAMAR-1` (`ALLOWED`) and strictly denied on any other room (`SCOPE_MISMATCH`).
+- **Multi-Room Mudabbir Representation**:
+  - **Option A (Canonical Multi-Grant Evaluation)**: Multiple active `Assignment` records for the Mudabbir, each with `ScopeType: KAMAR` anchored to its respective single room (`anchorUnitId: KAMAR-1`, `anchorUnitId: KAMAR-2`). Standard multi-grant evaluation authorizes actions across their respective rooms.
+  - **Option B (Relational Multi-Unit Scope)**: An explicit `ScopeType: ASSIGNED_UNITS` PositionCapability whose permitted rooms are hydrated relationally from `AssignmentScopeUnit`.
+  - `ScopeType: KAMAR` must **NOT** be combined with `AssignmentScopeUnit` widening.
 - **Gender Boundary**: Mudabbir assigned to male rooms attempting to access female room contexts is denied with `GENDER_COMPLEX_DENIED`.
 
 ---
@@ -234,7 +257,24 @@ In strict compliance with the Architecture Lock:
 
 ---
 
-## 12. Unresolved Rules & Deferred Items
+## 12. Multi-Domain Santri Participation & Deferred Domain Resolution Boundary
+
+### 12.1. Multi-Domain Santri Participation
+A Santri inherently participates across multiple functional domains simultaneously:
+- **Tahfizh Domain**: Quran memorization, halaqoh assignment, and setoran progress.
+- **Keasramaan Domain**: Dormitory residency, Kamar placement, usroh tasks, discipline, and health tracking.
+- **Akademik Domain**: Formal schooling and classroom education.
+
+Therefore, `santriId` alone **DOES NOT** determine a single monolithic domain for both Tahfizh and Keasramaan.
+
+### 12.2. Deferred Boundary for M3.1 and M3.2 Prerequisite
+- **M3.1 Room Scoping**: In M3.1, room-level authorization relies strictly and authoritatively on `kamarId` hydrated from `SantriKamarPlacement` matching `ScopeType: KAMAR` single anchor.
+- **Do Not Rely on Santri Domain for DOMAIN Scope**: Systems must **NOT** rely on a `santriId`-derived `orgDomain` for future Keasramaan `DOMAIN` scope authorization.
+- **M3.2 Prerequisite**: Capability/resource-aware domain resolution (where the requested operation/capability and resource context jointly resolve functional domain authority) is a required prerequisite for Milestone 3.2 before real Keasramaan `DOMAIN` workflows (e.g. Musyrif Keasramaan institutional checklists) are activated.
+
+---
+
+## 13. Unresolved Rules & Deferred Items
 
 The following items are intentionally **NOT** part of Checkpoint M3.1 and belong strictly to subsequent milestones:
 1. **Keasramaan Checklists**: Morning, afternoon, and evening dormitory checklist workflows (deferred to M3.2).
