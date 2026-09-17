@@ -3,6 +3,8 @@
 import prisma from '@/lib/prisma';
 import { requireRole, getSession, recordAuditLog } from '@/lib/auth';
 import { StatusKesehatan, Prisma } from '@prisma/client';
+import { shadowAuthorizeIfEnabled } from '@/lib/auth/shadow-engine';
+import { createPrismaDataProvider } from '@/lib/auth/canonical-evaluator';
 
 export interface KesehatanResponse<T = unknown> {
   success: boolean;
@@ -26,6 +28,18 @@ export async function catatKesehatanAction(formData: {
 }): Promise<KesehatanResponse> {
   try {
     const session = await requireRole(['KS', 'MK', 'ADM']);
+
+    // Representative Milestone 2 shadow evaluation (Safe-by-default: OFF in production)
+    await shadowAuthorizeIfEnabled({
+      session,
+      capabilityCode: 'health.case.create',
+      legacyCheck: () => ['KS', 'MK', 'ADM'].includes(session.role),
+      resourceContext: { santriId: formData.santriId },
+      resourceType: 'CatatanKesehatan',
+      resourceId: formData.santriId,
+      isMutation: true,
+      dataProviderFactory: () => createPrismaDataProvider(prisma),
+    });
 
     const santri = await prisma.santri.findUnique({
       where: { id: formData.santriId },
@@ -88,6 +102,18 @@ export async function updateStatusKesehatanAction(formData: {
     if (!existing) {
       return { success: false, message: 'Catatan kesehatan tidak ditemukan.' };
     }
+
+    // Representative Milestone 2 shadow evaluation (Safe-by-default: OFF in production)
+    await shadowAuthorizeIfEnabled({
+      session,
+      capabilityCode: 'health.case.update_status',
+      legacyCheck: () => ['MK', 'KS'].includes(session.role),
+      resourceContext: { santriId: existing.santriId },
+      resourceType: 'CatatanKesehatan',
+      resourceId: formData.id,
+      isMutation: true,
+      dataProviderFactory: () => createPrismaDataProvider(prisma),
+    });
 
     const updated = await prisma.catatanKesehatan.update({
       where: { id: formData.id },

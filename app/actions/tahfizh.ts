@@ -14,6 +14,8 @@ import {
   getTahfizhOperationalMonitoring,
   GetTahfizhMonitoringParams,
 } from "@/lib/server/tahfizh-monitoring-service";
+import { shadowAuthorizeIfEnabled } from "@/lib/auth/shadow-engine";
+import { createPrismaDataProvider } from "@/lib/auth/canonical-evaluator";
 
 export interface CreateSetoranInput {
   santriId: string;
@@ -41,7 +43,19 @@ export async function createSetoranAction(input: CreateSetoranInput) {
   }
 
   // 1. Role validation: Hanya MT, PH, KS, dan ADM yang boleh input
-  if (!["MT", "PH", "KS", "ADM"].includes(session.role)) {
+  // Representative Milestone 2 shadow evaluation (Safe-by-default: OFF in production)
+  const isAllowed = await shadowAuthorizeIfEnabled({
+    session,
+    capabilityCode: "tahfizh.setoran.create",
+    legacyCheck: () => ["MT", "PH", "KS", "ADM"].includes(session.role),
+    resourceContext: { santriId: input.santriId },
+    resourceType: "Santri",
+    resourceId: input.santriId,
+    isMutation: true,
+    dataProviderFactory: () => createPrismaDataProvider(prisma),
+  });
+
+  if (!isAllowed) {
     return { success: false, message: `Role ${session.role} tidak memiliki izin input setoran.` };
   }
 

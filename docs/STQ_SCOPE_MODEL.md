@@ -63,7 +63,7 @@ The architecture enforces a strict trust boundary separating caller-submitted pa
    - The engine queries authoritative database tables to hydrate:
      - `santriId`
      - `halaqohId` (authoritative current halaqoh)
-     - `kamarId` (authoritative current room)
+     - `kamarId` (authoritative room; Santri schema currently lacks authoritative room relation, so Santri-targeted kamarId is undefined until Milestone 3 adds room placement)
      - `orgUnitIds` (all enclosing organizational units)
      - `guardianLinkedSantriIds` (server-side join with `Guardian` relation for `OWN_CHILD` resolution)
      - `genderComplex` (`PUTRA` | `PUTRI` | `CAMPUR`)
