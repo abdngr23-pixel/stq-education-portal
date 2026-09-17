@@ -1140,7 +1140,6 @@ export function DashboardMusyrifTahfizh({
                 </div>
               ) : (
                 filteredModalSantri.map((santri) => {
-                  const posHalaman = santri.posisiTerakhirHalaman || 1;
                   return (
                     <div
                       key={santri.id || santri.nis}
@@ -1151,13 +1150,9 @@ export function DashboardMusyrifTahfizh({
                           <span className="font-semibold text-sm text-slate-900 truncate">
                             {santri.nama}
                           </span>
-                          <span className="text-xs text-slate-500 font-mono">
-                            ({santri.nis})
-                          </span>
                         </div>
                         <p className="text-xs text-slate-500 truncate mt-0.5">
-                          Kelas {santri.kelas} • Capaian: {santri.capaianJuz} Juz (Hlm{" "}
-                          {posHalaman}) • Terakhir: {santri.setoranTerakhir}
+                          Kelas {santri.kelas}
                         </p>
                       </div>
 

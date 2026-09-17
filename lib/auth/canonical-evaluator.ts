@@ -106,7 +106,7 @@ export interface ICanonicalDataProvider {
   getActiveAssignments(userId: string, now: Date): Promise<CanonicalAssignmentWithDetails[]>;
   getUnitAccountPlacement(userId: string): Promise<{ unitId: string } | null>;
   verifyHumanExecutor(executorId: string): Promise<{ id: string; name: string; isActive: boolean } | null>;
-  resolveResourceContext(requested: RequestedResourceContext, subjectUserId?: string): Promise<ResolvedResourceContext | null>;
+  resolveResourceContext(requested: RequestedResourceContext, subjectUserId?: string, capability?: string): Promise<ResolvedResourceContext | null>;
 }
 
 /**
@@ -137,6 +137,8 @@ const STAFF_PROFILE_REQUIRED_POSITIONS = new Set([
   "STAF_ADMIN_TU",
   "PETUGAS_PRESENSI",
   "PETUGAS_KESEHATAN",
+  "PETUGAS_OPERASIONAL_TAHFIZH",
+  "PETUGAS_OPERASIONAL_KEASRAMAAN",
   "MT",
   "KS",
   "MK",
@@ -403,7 +405,8 @@ export async function authorizeCanonical(
     for (const pc of a.positionCapabilities) {
       if (pc.capabilityCode === params.capability) {
         // Enforce Activation Triple:
-        // Must be VERIFIED_PRODUCTION (never PROPOSED_TBD or unverified)
+        // Must be strictly VERIFIED_PRODUCTION (never PROPOSED_TBD or APPROVED_TARGET_PENDING_TECHNICAL)
+        // APPROVED_TARGET_PENDING_TECHNICAL confers zero runtime authority before formal cutover
         if (pc.businessRuleState !== "VERIFIED_PRODUCTION") {
           continue;
         }
@@ -493,7 +496,8 @@ export async function authorizeCanonical(
     try {
       const res = await params.dataProvider.resolveResourceContext(
         params.resourceContext,
-        identity.userId
+        identity.userId,
+        params.capability
       );
       if (res === null) {
         // Resource lookup null must fail closed immediately, even for GLOBAL grants
@@ -727,7 +731,7 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
       return null;
     },
 
-    async resolveResourceContext(requested: RequestedResourceContext, subjectUserId?: string): Promise<ResolvedResourceContext | null> {
+    async resolveResourceContext(requested: RequestedResourceContext, subjectUserId?: string, capability?: string): Promise<ResolvedResourceContext | null> {
       let unitGenderComplex: GenderComplex | undefined;
       let orgDomain: OrgDomain | undefined;
       const orgUnitIds: string[] = [];
@@ -784,8 +788,21 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
           unitGenderComplex = "PUTRI";
         }
 
+        // Capability-aware domain resolution: Derive strategic domain strictly from target capability namespace
+        // Fails closed if namespace is unknown or capability is not supplied (zero guessing)
         if (!orgDomain) {
-          orgDomain = "TAHFIZH";
+          if (capability) {
+            const capLower = capability.toLowerCase();
+            if (capLower.startsWith("tahfizh.")) {
+              orgDomain = "TAHFIZH";
+            } else if (capLower.startsWith("keasramaan.") || capLower.startsWith("health.")) {
+              orgDomain = "KEASRAMAAN";
+            } else if (capLower.startsWith("academic.")) {
+              orgDomain = "AKADEMIK";
+            }
+            // Unknown capability namespace: DO NOT GUESS -> orgDomain remains undefined
+          }
+          // No capability supplied: DO NOT GUESS -> orgDomain remains undefined
         }
 
         // Authoritative Kamar Placement Hydration

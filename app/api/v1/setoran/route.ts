@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { apiGuard, recordAuditLog } from '@/lib/auth';
 import { setoranSchema, validateData } from '@/lib/validations';
 import { JenisSetoran, NilaiSetoran } from '@prisma/client';
+import { getTodayWITADateString, parseWITADate } from '@/lib/wita-date';
 
 /**
  * GET /api/v1/setoran
@@ -97,7 +98,39 @@ export async function POST(req: Request) {
       );
     }
 
-    const { santriId, jenis, juz, halamanMulai, halamanSelesai, jumlahHalaman, nilai, catatan } = validation.data;
+    const { santriId, jenis, juz, halamanMulai, halamanSelesai, jumlahHalaman, nilai, catatan, tanggalSetoran, occurredAt } = validation.data;
+
+    let effectiveOccurredAt: Date = new Date();
+    const todayWita = getTodayWITADateString();
+
+    if (tanggalSetoran) {
+      if (tanggalSetoran > todayWita) {
+        return NextResponse.json(
+          { success: false, error: { code: 'VALIDATION_ERROR', message: 'Tanggal setoran tidak boleh di masa depan.' } },
+          { status: 400 }
+        );
+      }
+      effectiveOccurredAt = parseWITADate(tanggalSetoran);
+    } else if (occurredAt) {
+      if (typeof occurredAt === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(occurredAt)) {
+        if (occurredAt > todayWita) {
+          return NextResponse.json(
+            { success: false, error: { code: 'VALIDATION_ERROR', message: 'Tanggal setoran tidak boleh di masa depan.' } },
+            { status: 400 }
+          );
+        }
+        effectiveOccurredAt = parseWITADate(occurredAt);
+      } else {
+        const parsed = occurredAt instanceof Date ? occurredAt : new Date(occurredAt);
+        if (isNaN(parsed.getTime()) || parsed.getTime() > Date.now()) {
+          return NextResponse.json(
+            { success: false, error: { code: 'VALIDATION_ERROR', message: 'Tanggal setoran tidak boleh di masa depan.' } },
+            { status: 400 }
+          );
+        }
+        effectiveOccurredAt = parsed;
+      }
+    }
 
     const santri = await prisma.santri.findUnique({ where: { id: santriId } });
     if (!santri) {
@@ -156,6 +189,7 @@ export async function POST(req: Request) {
         setoranCode,
         santriId,
         musyrifId: musyrifStaff.id,
+        tanggal: effectiveOccurredAt,
         jenis: jenis as JenisSetoran,
         juz: parseInt(String(juz)),
         halamanMulai: parseInt(String(halamanMulai)),

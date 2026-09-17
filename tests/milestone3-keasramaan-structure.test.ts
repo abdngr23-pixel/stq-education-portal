@@ -703,16 +703,25 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLA
       const provider = createPrismaDataProvider(mockPrisma as unknown as PrismaClient);
 
       // Path 1: setoran { santriId }
-      const setoranCtx = await provider.resolveResourceContext({ santriId: "san-shadow-1" });
+      const setoranCtx = await provider.resolveResourceContext(
+        { santriId: "san-shadow-1" },
+        undefined,
+        "tahfizh.setoran.create"
+      );
       assert.ok(setoranCtx);
       assert.strictEqual(setoranCtx?.santriId, "san-shadow-1");
       assert.strictEqual(setoranCtx?.halaqohId, "hlq-10");
       assert.strictEqual(setoranCtx?.orgDomain, "TAHFIZH");
 
       // Path 2: health { santriId }
-      const healthCtx = await provider.resolveResourceContext({ santriId: "san-shadow-1" });
+      const healthCtx = await provider.resolveResourceContext(
+        { santriId: "san-shadow-1" },
+        undefined,
+        "health.case.read"
+      );
       assert.ok(healthCtx);
       assert.strictEqual(healthCtx?.santriId, "san-shadow-1");
+      assert.strictEqual(healthCtx?.orgDomain, "KEASRAMAAN");
 
       // Path 3: reward { resourceId }
       const rewardCtx = await provider.resolveResourceContext({ resourceId: "tasmi-shadow-1" });

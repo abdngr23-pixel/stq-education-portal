@@ -48,11 +48,11 @@ Where:
 | :--- | :--- | :--- | :--- | :--- |
 | `tahfizh.student.read` | Membaca daftar dan profil capaian hafalan santri | `MUDIR` (`GLOBAL`), `KABID_TAHFIZH` (`DOMAIN`), `MUSYRIF_TAHFIZH` (`HALAQOH`) | **VERIFIED_PRODUCTION** | Strict halaqoh enclosure for ordinary MT |
 | `tahfizh.setoran.create` | Mencatat setoran hafalan baru (Sabaq/Sabqi/Manzil/Mufar) | `MUSYRIF_TAHFIZH` (`HALAQOH`) | **VERIFIED_PRODUCTION** | Kabid writes setoran strictly for own halaqoh |
-| `tahfizh.recap.read` | Membaca rekapitulasi capaian hafalan | `MUDIR` (`GLOBAL`), `KABID_TAHFIZH` (`DOMAIN`), `ADMIN` (`GLOBAL`); `MUSYRIF_TAHFIZH` (`HALAQOH`) | **VERIFIED_PRODUCTION** | Ordinary MT restricted to own halaqoh recap |
-| `tahfizh.reward.issue` | Menerbitkan reward resmi Tasmi'/Sima'an | `MUDIR` (`GLOBAL`), `KABID_TAHFIZH` (`DOMAIN`) | **VERIFIED_PRODUCTION** | Ordinary MT, ADM, MK strictly denied |
+| `tahfizh.recap.read` | Membaca rekapitulasi capaian hafalan | `MUDIR` (`GLOBAL`), `KABID_TAHFIZH` (`DOMAIN`), `ADMIN` (`GLOBAL`); `MUSYRIF_TAHFIZH` (`HALAQOH`, **VERIFIED_PRODUCTION**); `PETUGAS_OPERASIONAL_TAHFIZH` (`GLOBAL`, **APPROVED_TARGET_PENDING_TECHNICAL**) | Mixed (Production + Target) | Operational recap read breadth (GLOBAL) does NOT widen setoran write authority (HALAQOH) |
+| `tahfizh.reward.issue` | Menerbitkan reward resmi Tasmi'/Sima'an | `MUDIR` (`GLOBAL`, **VERIFIED_PRODUCTION**), `KABID_TAHFIZH` (`DOMAIN`, **VERIFIED_PRODUCTION**); `PETUGAS_OPERASIONAL_TAHFIZH` (`ASSIGNED_UNITS`, **APPROVED_TARGET_PENDING_TECHNICAL**) | Mixed (Production + Target) | Business Owner confirmed: special operational reward issuer authority is limited to assigned units/groups only (`ASSIGNED_UNITS`, not GLOBAL/DOMAIN); ordinary MT, PH, ADM strictly denied; GLOBAL recap read does NOT widen reward issuance scope |
 | `tahfizh.policy.manage` | Mengubah ambang nilai, bintang, dan kebijakan reward | `MUDIR` (`KS`) (`GLOBAL`) | **VERIFIED_PRODUCTION** | Kabid Tahfizh and ordinary MT strictly denied |
+| `tahfizh.target.manage` | Menetapkan target bulanan/pekanan santri | `MUSYRIF_TAHFIZH` (`HALAQOH`), `PEMBINA_HALAQOH` (`HALAQOH`) | **APPROVED_TARGET_PENDING_TECHNICAL** | Approved UAT target policy; scoped strictly to assigned binaan; zero inferred Mudir/Kabid grants |
 | `tahfizh.setoran.cancel` | Membatalkan setoran tahfizh (dengan alasan & audit) | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Cancellation audit requirement |
-| `tahfizh.target.manage` | Menetapkan target bulanan/pekanan santri | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Target setting workflow |
 | `tahfizh.ikhtibar.evaluate_s1` | Menilai ujian kenaikan juz Tahap 1 | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Stage 1 exam evaluation |
 | `tahfizh.ikhtibar.evaluate_s2` | Menilai munaqasyah akhir Tahap 2 | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Stage 2 exam evaluation |
 | `tahfizh.finalization.run` | Finalisasi rekapitulasi bulanan dan sanksi | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Monthly finalization |
@@ -80,18 +80,20 @@ Canonical V2 statuses: `DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`.
 ---
 
 ### 2.3. Keasramaan & Kesantrian (`keasramaan.*`)
-| Capability Code | Description | Authorized Positions | Status |
-| :--- | :--- | :--- | :--- |
-| `keasramaan.permission.create` | Mengajukan permohonan izin santri | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
-| `keasramaan.permission.approve_mk` | Persetujuan izin pondok operasional (Tier 1) | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
-| `keasramaan.permission.approve_ks` | Pengesahan izin pulang / luar kota (Tier 2) | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
-| `keasramaan.presensi.record` | Mencatat presensi sholat & kegiatan asrama | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
-| `keasramaan.discipline.create` | Mencatat poin pelanggaran tata tertib | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
-| `keasramaan.sp.issue` | Menerbitkan Surat Peringatan (SP 1, 2, 3) | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
-| `keasramaan.sp.whitewash` | Pemutihan poin pelanggaran santri | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
-| `keasramaan.star.award` | Mencatat penganugerahan bintang kebaikan | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
-| `keasramaan.kamar.inspect` | Inspeksi kebersihan dan kerapihan kamar | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
-| `keasramaan.usroh.supervise` | Pengawasan tugas harian usroh kebersihan | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
+| Capability Code | Description | Authorized Positions & Scope | Business Rule State | Boundary Invariant |
+| :--- | :--- | :--- | :--- | :--- |
+| `keasramaan.permission.read` | Membaca daftar izin santri | `MUDIR` (`GLOBAL`), `KEPALA_KEASRAMAAN` (`DOMAIN`), `PETUGAS_OPERASIONAL_KEASRAMAAN` (`ASSIGNED_UNITS`), `PEMBINA_ASRAMA` (`KAMAR`) | **APPROVED_TARGET_PENDING_TECHNICAL** | Scoped to assigned units/kamar |
+| `keasramaan.permission.create` | Mengajukan permohonan izin santri | `PETUGAS_OPERASIONAL_KEASRAMAAN` (`ASSIGNED_UNITS`), `PEMBINA_ASRAMA` (`KAMAR`) | **APPROVED_TARGET_PENDING_TECHNICAL** | Mutation strictly scoped |
+| `keasramaan.permission.update` | Memperbarui catatan permohonan izin | `PETUGAS_OPERASIONAL_KEASRAMAAN` (`ASSIGNED_UNITS`), `PEMBINA_ASRAMA` (`KAMAR`) | **PROPOSED_TBD** | Does not confer approval authority |
+| `keasramaan.permission.approve_mk` | Persetujuan izin santri tingkat Musyrif Keasramaan | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Unresolved approval tier |
+| `keasramaan.permission.approve_ks` | Persetujuan izin santri tingkat Kepala Sekolah / Mudir | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Unresolved approval tier |
+| `keasramaan.presensi.record` | Mencatat presensi sholat & kegiatan asrama | `PEMBINA_ASRAMA` (`KAMAR`), `OSDA` (`UNIT`) | **PROPOSED_TBD** | Presensi scoping rules |
+| `keasramaan.discipline.create` | Mencatat poin pelanggaran tata tertib | `PETUGAS_KEDISIPLINAN` (`GLOBAL`), `PEMBINA_ASRAMA` (`KAMAR`) | **PROPOSED_TBD** | Discipline recording |
+| `keasramaan.sp.issue` | Menerbitkan Surat Peringatan (SP 1, 2, 3) | `KEPALA_KEASRAMAAN` (`DOMAIN`), `MUDIR` (`GLOBAL`) | **PROPOSED_TBD** | Formal sanction authority |
+| `keasramaan.sp.whitewash` | Pemutihan poin pelanggaran santri | `MUDIR` (`GLOBAL`) | **PROPOSED_TBD** | Mudir executive privilege |
+| `keasramaan.star.award` | Mencatat penganugerahan bintang kebaikan | `KEPALA_KEASRAMAAN` (`DOMAIN`), `MUDIR` (`GLOBAL`) | **PROPOSED_TBD** | Positive reinforcement |
+| `keasramaan.kamar.inspect` | Inspeksi kebersihan dan kerapihan kamar | `PEMBINA_ASRAMA` (`KAMAR`), `OSDA` (`UNIT`) | **PROPOSED_TBD** | Physical room inspection |
+| `keasramaan.usroh.supervise` | Pengawasan tugas harian usroh kebersihan | `PEMBINA_ASRAMA` (`KAMAR`), `OSDA` (`UNIT`) | **PROPOSED_TBD** | Taskforce supervision |
 
 ### 3.3. Akademik & Kurikulum (`academic.*`)
 | Capability Code | Description | Authorized Positions | Status |

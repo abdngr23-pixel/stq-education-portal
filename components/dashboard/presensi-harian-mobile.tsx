@@ -128,6 +128,7 @@ export function PresensiHarianMobile({
   const isPuasaSesi = selectedSesi.toLowerCase().includes("puasa");
   const isTahajjudSesi = selectedSesi.toLowerCase().includes("tahajjud");
   const isDhuhaSesi = selectedSesi.toLowerCase().includes("dhuha");
+  const isHalaqohSesi = selectedSesi.toLowerCase().includes("halaqoh");
   const isSunnahWorship = isPuasaSesi || isTahajjudSesi || isDhuhaSesi;
 
   // Konfigurasi Label Status Dinamis berdasarkan Sesi Ibadah
@@ -147,7 +148,24 @@ export function PresensiHarianMobile({
       }
     }
 
-    if (isTahajjudSesi || isDhuhaSesi) {
+    if (isTahajjudSesi) {
+      switch (st) {
+        case "HADIR":
+          return { label: "Melaksanakan Shalat Tahajjud", short: "Sholat", badgeColor: "bg-emerald-100 text-[#0E7C3A] border-emerald-200", btnActive: "bg-[#0E7C3A] text-white border-[#0E7C3A]" };
+        case "ALFA":
+          return { label: "Tidak Shalat Tahajjud", short: "Alfa", badgeColor: "bg-rose-100 text-rose-800 border-rose-300", btnActive: "bg-rose-600 text-white border-rose-600" };
+        case "MASBUK":
+          return { label: "Masbuk (Data Historis)", short: "Masbuk", badgeColor: "bg-amber-100 text-amber-800 border-amber-300", btnActive: "bg-amber-500 text-white border-amber-500" };
+        case "SAKIT":
+          return { label: "Sakit (Istirahat UKS)", short: "Sakit", badgeColor: "bg-sky-100 text-sky-800 border-sky-300", btnActive: "bg-sky-600 text-white border-sky-600" };
+        case "IZIN":
+          return { label: "Izin Pulang / Uzur", short: "Izin", badgeColor: "bg-purple-100 text-purple-800 border-purple-300", btnActive: "bg-purple-600 text-white border-purple-600" };
+        case "BELUM_DICATAT":
+          return { label: "Belum Dicatat", short: "Belum", badgeColor: "bg-slate-100 text-slate-600 border-slate-300", btnActive: "bg-slate-500 text-white border-slate-500" };
+      }
+    }
+
+    if (isDhuhaSesi) {
       switch (st) {
         case "HADIR":
           return { label: "Melaksanakan Shalat", short: "Shalat", badgeColor: "bg-emerald-100 text-[#0E7C3A] border-emerald-200", btnActive: "bg-[#0E7C3A] text-white border-[#0E7C3A]" };
@@ -202,7 +220,14 @@ export function PresensiHarianMobile({
   // Toggle status berurutan (Mobile fast tap)
   const handleToggleStatus = (santriId: string) => {
     const currentStatus = attendanceMap[santriId]?.status || "BELUM_DICATAT";
-    const statusCycle: StatusType[] = ["BELUM_DICATAT", "HADIR", "MASBUK", "SAKIT", "IZIN", "ALFA"];
+    let statusCycle: StatusType[];
+    if (isTahajjudSesi) {
+      statusCycle = ["BELUM_DICATAT", "HADIR", "ALFA"];
+    } else if (isHalaqohSesi) {
+      statusCycle = ["BELUM_DICATAT", "HADIR", "SAKIT", "IZIN", "ALFA"];
+    } else {
+      statusCycle = ["BELUM_DICATAT", "HADIR", "MASBUK", "SAKIT", "IZIN", "ALFA"];
+    }
     const nextIndex = (statusCycle.indexOf(currentStatus) + 1) % statusCycle.length;
     const nextStatus = statusCycle[nextIndex];
 
@@ -771,7 +796,12 @@ export function PresensiHarianMobile({
                   className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  {(["HADIR", "MASBUK", "SAKIT", "IZIN", "ALFA"] as const).map((st) => {
+                  {(isTahajjudSesi
+                    ? (["HADIR", "ALFA"] as const)
+                    : isHalaqohSesi
+                    ? (["HADIR", "SAKIT", "IZIN", "ALFA"] as const)
+                    : (["HADIR", "MASBUK", "SAKIT", "IZIN", "ALFA"] as const)
+                  ).map((st) => {
                     const isCurrent = status === st;
                     const cfg = getStatusConfig(st);
                     return (
@@ -787,7 +817,7 @@ export function PresensiHarianMobile({
                             : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
                         }`}
                       >
-                        {cfg.short}
+                        {isTahajjudSesi && st === "HADIR" ? "Sholat" : cfg.short}
                       </button>
                     );
                   })}
