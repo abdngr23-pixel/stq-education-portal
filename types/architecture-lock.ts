@@ -87,8 +87,7 @@ export interface OrgUnit {
   name: string;
   type: OrgUnitType;
   domain: OrgDomain;
-  parentUnitId?: string | null;
-  parentId?: string | null; // Canonical Prisma schema alias (@map("parent_id"))
+  parentId: string | null; // Canonical parent unit identifier
   genderComplex: GenderComplex;
   isActive: boolean;
   metadata?: Record<string, unknown> | null;
@@ -115,6 +114,18 @@ export interface Position {
 }
 
 /**
+ * Unit Account Placement Binding
+ * Business invariant: AccountType.UNIT belongs to exactly ONE operational placement unit.
+ */
+export interface UnitAccountPlacement {
+  id: string;
+  userId: string;
+  unitId: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
  * Canonical Scope Types for fine-grained authorization containment
  * Capability is evaluated BEFORE scope.
  * GLOBAL does NOT mean unrestricted access; it means institutional scope for the granted capability.
@@ -130,14 +141,13 @@ export type ScopeType =
   | "SELF";           // Personal record of the authenticated subject (Santri/Staff)
 
 /**
- * Canonical Assignment Lifecycle Status
- * Exactly ONE normalized lifecycle across all documents, schemas, and runtime contracts.
+ * Lifecycle states of an Assignment
  */
 export type AssignmentStatus =
-  | "DRAFT"      // Not authoritative / pending activation
-  | "ACTIVE"     // Currently grants authority (only ACTIVE within validFrom-validUntil grants capability)
-  | "SUSPENDED"  // Temporarily grants zero authority
-  | "EXPIRED"    // Naturally lapsed past validUntil
+  | "DRAFT"      // Proposed assignment, not yet authoritative
+  | "ACTIVE"     // Currently active and granting authority within valid window
+  | "SUSPENDED"  // Temporarily suspended (e.g. leave, investigation)
+  | "EXPIRED"    // Naturally reached validUntil timestamp
   | "REVOKED";   // Explicitly terminated administratively
 
 /**
@@ -171,14 +181,15 @@ export interface AssignmentScopeUnit {
 }
 
 /**
- * Relational Position-Capability Mapping with fine-grained Scope modeling
- * Single source of truth for scopeType per capability.
+ * Relational Position-Capability Mapping with fine-grained Scope and Grant Lifecycle State
+ * Single source of truth for scopeType per capability and lifecycle state of the grant.
  */
 export interface PositionCapability {
   id: string;
   positionId: string;
   capabilityCode: string;
   scopeType: ScopeType;
+  businessRuleState: BusinessRuleState;
 }
 
 /**
@@ -191,11 +202,13 @@ export interface EffectiveCapabilityGrant {
   scopeType: ScopeType;
   anchorUnitId: string;
   unitIds: string[];
+  businessRuleState: BusinessRuleState;
 }
 
 /**
- * Fine-grained Capability definition
+ * Fine-grained Capability definition (Pure semantic action definition)
  * Format: <namespace>.<entity>.<action>
+ * Note: BusinessRuleState belongs to the grant mapping (PositionCapability), not to the capability definition.
  */
 export interface Capability {
   code: string;
@@ -203,12 +216,11 @@ export interface Capability {
   name: string;
   description: string;
   isDangerous: boolean;
-  ruleState: BusinessRuleState;
 }
 
 /**
  * Caller-supplied resource parameters (Strictly untrusted target identifiers)
- * Callers can NEVER supply or influence permitted child IDs or authorized boundaries.
+ * Callers can NEVER supply or influence permitted child IDs, authorization relations, or arbitrary keys.
  */
 export interface RequestedResourceContext {
   santriId?: string;
@@ -217,7 +229,6 @@ export interface RequestedResourceContext {
   halaqohId?: string;
   kamarId?: string;
   unitId?: string;
-  [key: string]: unknown;
 }
 
 /**
@@ -387,6 +398,7 @@ export interface CandidateOrgUnitModel {
   parentId: string | null;
   genderComplex: GenderComplex;
   isActive: boolean;
+  metadata?: Record<string, unknown> | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -396,8 +408,11 @@ export interface CandidatePositionModel {
   code: string;
   name: string;
   domain: OrgDomain;
+  allowedUnitTypes: OrgUnitType[];
   isLeadership: boolean;
+  requiresPersonalAccount: boolean;
   isActive: boolean;
+  description: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -407,6 +422,24 @@ export interface CandidatePositionCapabilityModel {
   positionId: string;
   capabilityCode: string;
   scopeType: ScopeType;
+  businessRuleState: BusinessRuleState;
+}
+
+export interface CandidateUnitAccountPlacementModel {
+  id: string;
+  userId: string;
+  unitId: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CandidateCapabilityModel {
+  code: string;
+  namespace: CapabilityNamespace;
+  name: string;
+  description: string;
+  isDangerous: boolean;
+  createdAt: Date;
 }
 
 export interface CandidateAssignmentModel {

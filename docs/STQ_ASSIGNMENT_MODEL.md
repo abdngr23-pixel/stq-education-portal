@@ -77,24 +77,25 @@ The system recognizes exactly ONE normalized `OrgUnitType` vocabulary:
 
 A **Position** defines an institutional responsibility and capability template. Rather than assuming uniform scope across all capabilities or storing scope on assignments, **`PositionCapability.scopeType` is the single source of truth for scope containment**:
 
-$$\text{PositionCapability} = (\text{positionId}, \text{capabilityCode}, \text{scopeType})$$
+$$\text{PositionCapability} = (\text{positionId}, \text{capabilityCode}, \text{scopeType}, \text{businessRuleState})$$
 
 This models real-world positions without duplicating records or inventing ad-hoc logic:
 - `Position: KABID_TAHFIZH`:
-  - `tahfizh.recap.read` $\implies$ Scope: `DOMAIN`
-  - `tahfizh.reward.issue` $\implies$ Scope: `DOMAIN`
+  - `tahfizh.recap.read` $\implies$ Scope: `DOMAIN`, State: `VERIFIED_PRODUCTION`
+  - `tahfizh.reward.issue` $\implies$ Scope: `DOMAIN`, State: `VERIFIED_PRODUCTION`
 - `Position: MUSYRIF_TAHFIZH`:
-  - `tahfizh.setoran.create` $\implies$ Scope: `HALAQOH`
-  - `tahfizh.recap.read` $\implies$ Scope: `HALAQOH`
+  - `tahfizh.setoran.create` $\implies$ Scope: `HALAQOH`, State: `VERIFIED_PRODUCTION`
+  - `tahfizh.recap.read` $\implies$ Scope: `HALAQOH`, State: `VERIFIED_PRODUCTION`
 
 ```prisma
 model PositionCapability {
-  id             String     @id @default(cuid())
-  positionId     String     @map("position_id")
-  position       Position   @relation(fields: [positionId], references: [id], onDelete: Restrict)
-  capabilityCode String     @map("capability_code")
-  capability     Capability @relation(fields: [capabilityCode], references: [code], onDelete: Restrict)
-  scopeType      ScopeType  @default(UNIT) @map("scope_type")
+  id                String            @id @default(cuid())
+  positionId        String            @map("position_id")
+  position          Position          @relation(fields: [positionId], references: [id], onDelete: Restrict)
+  capabilityCode    String            @map("capability_code")
+  capability        Capability        @relation(fields: [capabilityCode], references: [code], onDelete: Restrict)
+  scopeType         ScopeType         @default(UNIT) @map("scope_type")
+  businessRuleState BusinessRuleState @default(VERIFIED_PRODUCTION) @map("business_rule_state")
 
   @@unique([positionId, capabilityCode])
   @@map("position_capabilities")
@@ -169,20 +170,39 @@ enum AccountType {
 model User {
   // ... existing fields (id, username, password, role, etc.)
   accountType AccountType @default(PERSONAL) @map("account_type")
+  unitPlacement UnitAccountPlacement?
+  assignments   Assignment[]
   // ... relations
 }
+
+model UnitAccountPlacement {
+  id        String   @id @default(cuid())
+  userId    String   @unique @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  unitId    String   @map("unit_id")
+  unit      OrgUnit  @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([unitId])
+  @@map("unit_account_placements")
+}
 ```
-Phase A is **additive and non-destructive**. It introduces the `accountType` column with a safe default (`PERSONAL`) to prevent breaking existing users or schemas.
+Phase A is **additive and non-destructive**. It introduces the `accountType` column with a safe default (`PERSONAL`) and the `UnitAccountPlacement` model to prevent breaking existing users or schemas.
 
 ### 5.2. Personal Accounts (`AccountType: PERSONAL`)
 - Used by: Asatidz, Mudabbir, Staf TU, Santri, Wali Santri.
 - Authentication: Individual credentials with personal session JWT.
 - Accountability: The `userId` in `AuditLog` directly identifies the human actor.
+- Placement: Personal accounts require **NO** `UnitAccountPlacement`.
 
-### 5.3. Unit Accounts (`AccountType: UNIT`)
+### 5.3. Unit Accounts (`AccountType: UNIT`) & Single Placement Invariant
 - Used by: Poskestren UKS desk, OSDA division tablets, TKS workstations.
-- Placement: A unit account belongs to **exactly one** operational unit.
-- Non-Repudiation Rule:
+- **Strict Placement Model**: An account of type `AccountType.UNIT` belongs to **EXACTLY ONE** operational placement (`UnitAccountPlacement` with `userId` unique constraint).
+- **Multi-Position Scope Rule**: A UNIT account may hold multiple operational capabilities/positions only when they all resolve to the exact same placement unit.
+- **Fail-Closed Engine Enforcement**: The authorization engine strictly fails closed (`SYSTEM_FAIL_CLOSED` or `SCOPE_MISMATCH`) if any assignment anchor unit contradicts the user's canonical `UnitAccountPlacement`.
+- **No Username Heuristics**: Placement is derived strictly from relational database bindings; username string naming conventions (e.g. `kiosk.poskestren`) must NEVER be used to infer placement.
+- **Non-Repudiation Rule**:
   - Free-text display name alone does **NOT** provide non-repudiation.
   - Submitting any mutating transaction requires explicit identification of the **Human Executor** (`humanExecutorId`), verified against active `Staff` or `Santri` records in the database.
   - The resulting audit record permanently captures both technical account and human executor:

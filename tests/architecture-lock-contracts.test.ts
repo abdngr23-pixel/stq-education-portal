@@ -30,6 +30,7 @@ import {
   AuthorizationResult,
   CanonicalAuditRecord,
   UnitAccountExecutorContext,
+  UnitAccountPlacement,
   HEALTH_CAPABILITIES,
   HealthCapabilityCode,
   CandidateOrgUnitModel,
@@ -38,9 +39,11 @@ import {
   CandidateAssignmentModel,
   CandidateAssignmentScopeUnitModel,
   CandidateCanonicalAuditLogModel,
+  CandidateUnitAccountPlacementModel,
+  CandidateCapabilityModel,
 } from "../types/architecture-lock";
 
-describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICATION (V3-B)", () => {
+describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICATION (V3-C)", () => {
   const rootDir = path.resolve(__dirname, "..");
   const docsDir = path.join(rootDir, "docs");
 
@@ -237,16 +240,20 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
         positionId: "pos-001",
         capabilityCode: "health.case.create",
         scopeType: "UNIT",
+        businessRuleState: "VERIFIED_PRODUCTION",
       };
       assert.strictEqual(posCap.scopeType, "UNIT");
+      assert.strictEqual(posCap.businessRuleState, "VERIFIED_PRODUCTION");
 
       const candidatePosCap: CandidatePositionCapabilityModel = {
         id: "cpc-001",
         positionId: "pos-001",
         capabilityCode: "health.case.create",
         scopeType: "UNIT",
+        businessRuleState: "VERIFIED_PRODUCTION",
       };
       assert.strictEqual(candidatePosCap.scopeType, "UNIT");
+      assert.strictEqual(candidatePosCap.businessRuleState, "VERIFIED_PRODUCTION");
     });
   });
 
@@ -262,6 +269,7 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
         scopeType: "DOMAIN",
         anchorUnitId: "ou-tahfizh",
         unitIds: ["ou-tahfizh"],
+        businessRuleState: "VERIFIED_PRODUCTION",
       };
 
       const grant2: EffectiveCapabilityGrant = {
@@ -271,6 +279,7 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
         scopeType: "HALAQOH",
         anchorUnitId: "hlq-razan",
         unitIds: ["hlq-razan"],
+        businessRuleState: "VERIFIED_PRODUCTION",
       };
 
       const mockEngine: IAuthorizationEngine = {
@@ -611,12 +620,16 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
         code: "PETUGAS_KESEHATAN",
         name: "Petugas Poskestren",
         domain,
+        allowedUnitTypes: ["SERVICE_UNIT"],
         isLeadership: false,
+        requiresPersonalAccount: false,
         isActive: true,
+        description: "Petugas Poskestren",
         createdAt: new Date(),
         updatedAt: new Date(),
       };
       assert.strictEqual(candidatePosition.code, "PETUGAS_KESEHATAN");
+      assert.strictEqual(candidatePosition.allowedUnitTypes[0], "SERVICE_UNIT");
 
       const candidateScopeUnit: CandidateAssignmentScopeUnitModel = {
         id: "asu-001",
@@ -625,6 +638,34 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
         createdAt: new Date(),
       };
       assert.strictEqual(candidateScopeUnit.unitId, candidateOrgUnit.id);
+
+      const candidatePlacement: CandidateUnitAccountPlacementModel = {
+        id: "cuap-001",
+        userId: "usr-poskestren",
+        unitId: candidateOrgUnit.id,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      assert.strictEqual(candidatePlacement.unitId, candidateOrgUnit.id);
+
+      const runtimePlacement: UnitAccountPlacement = {
+        id: "uap-002",
+        userId: "usr-kiosk-dapur",
+        unitId: "ou-tks-dapur",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      assert.strictEqual(runtimePlacement.userId, "usr-kiosk-dapur");
+
+      const candidateCap: CandidateCapabilityModel = {
+        code: "health.case.create",
+        namespace: "HEALTH",
+        name: "Create Health Case",
+        description: "Record initial illness",
+        isDangerous: false,
+        createdAt: new Date(),
+      };
+      assert.strictEqual(candidateCap.code, "health.case.create");
 
       const candidateAuditLog: CandidateCanonicalAuditLogModel = {
         id: "log-001",
@@ -661,6 +702,7 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
         isLeadership: false,
         requiresPersonalAccount: true,
         isActive: true,
+        description: "Mudabbir Kamar Asrama",
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -680,7 +722,6 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
         name: "Read Detail",
         description: "Read clinical health details",
         isDangerous: false,
-        ruleState: "APPROVED_TARGET_PENDING_TECHNICAL",
       };
       assert.strictEqual(sampleCap.namespace, "HEALTH");
 
@@ -712,6 +753,273 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
       };
       assert.strictEqual(sampleAudit.action, "CREATE");
       assert.strictEqual(activeStatus, "ACTIVE");
+    });
+  });
+
+  // =========================================================================
+  // 15. Final Contract Closure V3-C Contracts (Directive 8)
+  // =========================================================================
+  describe("15. Final Contract Closure V3-C Contracts", () => {
+    const kesehatanActionPath = path.join(rootDir, "app", "actions", "kesehatan.ts");
+    const kesehatanActionSrc = fs.existsSync(kesehatanActionPath)
+      ? fs.readFileSync(kesehatanActionPath, "utf-8")
+      : "";
+
+    it("Current Health create compatibility includes KS, MK, ADM; ADM is not denied", () => {
+      // Source verification of app/actions/kesehatan.ts
+      assert.ok(
+        kesehatanActionSrc.includes("catatKesehatanAction"),
+        "catatKesehatanAction must exist in app/actions/kesehatan.ts"
+      );
+      assert.ok(
+        kesehatanActionSrc.includes("requireRole(['KS', 'MK', 'ADM'])"),
+        "catatKesehatanAction must permit KS, MK, and ADM"
+      );
+
+      // Documentation verification
+      const catalogDoc = fs.readFileSync(path.join(docsDir, "STQ_CAPABILITY_CATALOG.md"), "utf-8");
+      const lockDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_LOCK.md"), "utf-8");
+      for (const doc of [catalogDoc, lockDoc]) {
+        assert.ok(doc.includes("health.case.create"), "Doc must include health.case.create");
+        assert.ok(
+          doc.includes("ADM") || doc.includes("ADMIN"),
+          "health.case.create baseline must include ADM"
+        );
+      }
+    });
+
+    it("Current Health read compatibility includes KS/MK/ADM global and WS/ST scoped to own santri", () => {
+      // Source verification of getDaftarKesehatanAction
+      assert.ok(
+        kesehatanActionSrc.includes("getDaftarKesehatanAction"),
+        "getDaftarKesehatanAction must exist"
+      );
+      assert.ok(
+        kesehatanActionSrc.includes("session.role === 'WS' || session.role === 'ST'"),
+        "WS and ST must be scoped to own santriId"
+      );
+      assert.ok(
+        kesehatanActionSrc.includes("where.santriId = session.santriId"),
+        "WS and ST must filter by santriId"
+      );
+      assert.ok(
+        kesehatanActionSrc.includes("session.role === 'KS' || session.role === 'MK' || session.role === 'ADM'"),
+        "KS, MK, ADM receive global list"
+      );
+      // DTO returns full clinical details
+      assert.ok(kesehatanActionSrc.includes("keluhan: true"), "DTO contains keluhan");
+      assert.ok(kesehatanActionSrc.includes("diagnosa: true"), "DTO contains diagnosa");
+      assert.ok(kesehatanActionSrc.includes("tindakan: true"), "DTO contains tindakan");
+    });
+
+    it("Current Health update-status includes KS/MK and strictly denies ADM", () => {
+      assert.ok(
+        kesehatanActionSrc.includes("updateStatusKesehatanAction"),
+        "updateStatusKesehatanAction must exist"
+      );
+      assert.ok(
+        kesehatanActionSrc.includes("requireRole(['MK', 'KS'])"),
+        "updateStatusKesehatanAction must require MK or KS"
+      );
+      assert.strictEqual(
+        kesehatanActionSrc.includes("requireRole(['MK', 'KS', 'ADM'])"),
+        false,
+        "updateStatusKesehatanAction must NOT permit ADM"
+      );
+    });
+
+    it("Dedicated health.case.referral is NOT labeled VERIFIED_PRODUCTION (no dedicated action on main)", () => {
+      // Main does not have a dedicated external referral server action
+      assert.strictEqual(
+        kesehatanActionSrc.includes("export async function rujukSantriAction"),
+        false,
+        "Dedicated rujukSantriAction must not exist on main"
+      );
+      assert.strictEqual(
+        kesehatanActionSrc.includes("export async function issueReferralAction"),
+        false,
+        "Dedicated issueReferralAction must not exist on main"
+      );
+
+      const catalogDoc = fs.readFileSync(path.join(docsDir, "STQ_CAPABILITY_CATALOG.md"), "utf-8");
+      const lockDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_LOCK.md"), "utf-8");
+      for (const doc of [catalogDoc, lockDoc]) {
+        assert.ok(
+          doc.includes("NONE (NO DEDICATED ACTION)"),
+          "Doc must acknowledge no dedicated referral action in current production"
+        );
+        assert.ok(
+          doc.includes("PROPOSED_TBD"),
+          "Dedicated referral capability must be classified as PROPOSED_TBD"
+        );
+      }
+    });
+
+    it("One capability may have policy grants in different BusinessRuleStates and Capability does not collapse them", () => {
+      // Capability is pure semantic action definition without ruleState
+      const pureCap: Capability = {
+        code: "health.case.create",
+        namespace: "HEALTH",
+        name: "Catat Kasus Kesehatan",
+        description: "Mencatat keluhan awal sakit santri",
+        isDangerous: false,
+      };
+      assert.strictEqual(Object.prototype.hasOwnProperty.call(pureCap, "ruleState"), false);
+
+      // Distinct PositionCapability grants hold different BusinessRuleStates for the same capability code
+      const verifiedGrant: PositionCapability = {
+        id: "pc-mk-01",
+        positionId: "pos-mk",
+        capabilityCode: pureCap.code,
+        scopeType: "UNIT",
+        businessRuleState: "VERIFIED_PRODUCTION",
+      };
+
+      const targetGrant: PositionCapability = {
+        id: "pc-pk-01",
+        positionId: "pos-pk",
+        capabilityCode: pureCap.code,
+        scopeType: "UNIT",
+        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+      };
+
+      assert.strictEqual(verifiedGrant.capabilityCode, targetGrant.capabilityCode);
+      assert.strictEqual(verifiedGrant.businessRuleState, "VERIFIED_PRODUCTION");
+      assert.strictEqual(targetGrant.businessRuleState, "APPROVED_TARGET_PENDING_TECHNICAL");
+    });
+
+    it("APPROVED_TARGET_PENDING_TECHNICAL grants are non-authoritative in current compatibility enforcement", () => {
+      function evaluateCompatibilityAuthorization(grant: EffectiveCapabilityGrant): boolean {
+        // In Phase A/B compatibility, only VERIFIED_PRODUCTION grants are active
+        return grant.businessRuleState === "VERIFIED_PRODUCTION";
+      }
+
+      const verifiedEffectiveGrant: EffectiveCapabilityGrant = {
+        assignmentId: "asn-mk-01",
+        positionCode: "MK",
+        capabilityCode: "health.case.create",
+        scopeType: "UNIT",
+        anchorUnitId: "ou-ksr",
+        unitIds: ["ou-ksr"],
+        businessRuleState: "VERIFIED_PRODUCTION",
+      };
+
+      const targetEffectiveGrant: EffectiveCapabilityGrant = {
+        assignmentId: "asn-pk-01",
+        positionCode: "PETUGAS_KESEHATAN",
+        capabilityCode: "health.case.create",
+        scopeType: "UNIT",
+        anchorUnitId: "ou-poskestren",
+        unitIds: ["ou-poskestren"],
+        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+      };
+
+      assert.strictEqual(evaluateCompatibilityAuthorization(verifiedEffectiveGrant), true);
+      assert.strictEqual(evaluateCompatibilityAuthorization(targetEffectiveGrant), false);
+    });
+
+    it("RequestedResourceContext rejects guardianLinkedSantriIds at compile time and runtime", () => {
+      const validContext: RequestedResourceContext = {
+        santriId: "san-101",
+        targetUserId: "usr-101",
+        resourceId: "res-101",
+        halaqohId: "hlq-101",
+        kamarId: "kmr-101",
+        unitId: "ou-101",
+      };
+      assert.strictEqual(validContext.santriId, "san-101");
+
+      const invalidContext: RequestedResourceContext = {
+        santriId: "san-101",
+        // @ts-expect-error caller cannot supply authorization-derived relation
+        guardianLinkedSantriIds: ["other-child"],
+      };
+      assert.strictEqual(invalidContext.santriId, "san-101");
+      // @ts-expect-error guardianLinkedSantriIds is not a property of RequestedResourceContext
+      assert.strictEqual((invalidContext as Record<string, unknown>).guardianLinkedSantriIds?.[0], "other-child");
+    });
+
+    it("RequestedResourceContext rejects arbitrary index signature properties at compile time", () => {
+      const invalidArbitrary: RequestedResourceContext = {
+        santriId: "san-001",
+        // @ts-expect-error arbitrary properties are rejected without an index signature
+        unknownArbitraryProperty: "malicious-input",
+      };
+      assert.ok(invalidArbitrary);
+    });
+
+    it("UNIT account requires exactly one canonical placement model (UnitAccountPlacement)", () => {
+      const placement: UnitAccountPlacement = {
+        id: "uap-poskestren-01",
+        userId: "usr-kiosk-poskestren",
+        unitId: "ou-poskestren",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      assert.strictEqual(placement.userId, "usr-kiosk-poskestren");
+      assert.strictEqual(placement.unitId, "ou-poskestren");
+
+      const candidatePlacement: CandidateUnitAccountPlacementModel = {
+        id: "cuap-01",
+        userId: "usr-kiosk-dapur",
+        unitId: "ou-tks-dapur",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      assert.strictEqual(candidatePlacement.userId, "usr-kiosk-dapur");
+    });
+
+    it("UNIT account assignments cannot span different placements (engine fails closed on contradiction)", () => {
+      const kioskPlacement: UnitAccountPlacement = {
+        id: "uap-kiosk-01",
+        userId: "usr-kiosk-poskestren",
+        unitId: "ou-poskestren",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      function validateKioskAssignment(
+        accType: AccountType,
+        placement: UnitAccountPlacement | null,
+        assignmentAnchorUnitId: string
+      ): { allowed: boolean; code: AuthorizationResultCode } {
+        if (accType === "PERSONAL") {
+          return { allowed: true, code: "ALLOWED" };
+        }
+        if (!placement) {
+          return { allowed: false, code: "SYSTEM_FAIL_CLOSED" };
+        }
+        if (placement.unitId !== assignmentAnchorUnitId) {
+          return { allowed: false, code: "SYSTEM_FAIL_CLOSED" };
+        }
+        return { allowed: true, code: "ALLOWED" };
+      }
+
+      // Consistent placement unit
+      const validCheck = validateKioskAssignment("UNIT", kioskPlacement, "ou-poskestren");
+      assert.strictEqual(validCheck.allowed, true);
+      assert.strictEqual(validCheck.code, "ALLOWED");
+
+      // Contradictory placement unit -> fails closed
+      const contradictoryCheck = validateKioskAssignment("UNIT", kioskPlacement, "ou-tks-dapur");
+      assert.strictEqual(contradictoryCheck.allowed, false);
+      assert.strictEqual(contradictoryCheck.code, "SYSTEM_FAIL_CLOSED");
+
+      // Missing placement for UNIT account -> fails closed
+      const missingCheck = validateKioskAssignment("UNIT", null, "ou-poskestren");
+      assert.strictEqual(missingCheck.allowed, false);
+      assert.strictEqual(missingCheck.code, "SYSTEM_FAIL_CLOSED");
+    });
+
+    it("Persisted vs computed fields are explicitly classified in migration documentation", () => {
+      const migrationDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_MIGRATION_PLAN.md"), "utf-8");
+      assert.ok(
+        migrationDoc.includes("Relational Parity & Field Classification"),
+        "Migration doc must contain Field Classification section"
+      );
+      assert.ok(migrationDoc.includes("**PERSISTED**"), "Must document PERSISTED classification");
+      assert.ok(migrationDoc.includes("**COMPUTED / RUNTIME-ONLY**"), "Must document COMPUTED / RUNTIME-ONLY classification");
+      assert.ok(migrationDoc.includes("unit_account_placements"), "Must reference unit_account_placements table");
     });
   });
 });

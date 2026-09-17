@@ -66,7 +66,8 @@ export type ScopeType =
 
 /**
  * Caller-supplied resource parameters (Strictly untrusted target identifiers)
- * Callers can NEVER supply or influence permitted child IDs or authorized boundaries.
+ * Callers can NEVER supply or influence permitted child IDs, authorization relations, or arbitrary keys.
+ * No arbitrary index signature allowed.
  */
 export interface RequestedResourceContext {
   santriId?: string;
@@ -75,7 +76,6 @@ export interface RequestedResourceContext {
   halaqohId?: string;
   kamarId?: string;
   unitId?: string;
-  [key: string]: unknown;
 }
 
 /**
@@ -102,6 +102,7 @@ export interface EffectiveCapabilityGrant {
   scopeType: ScopeType;
   anchorUnitId: string;
   unitIds: string[];
+  businessRuleState: BusinessRuleState;
 }
 
 export type AuthorizationResultCode =
@@ -211,6 +212,19 @@ Expired assignments cease conferring authority immediately upon passing `validUn
 ### Rule 5: Gender Complex Boundary Separation (`GENDER_COMPLEX_DENIED`)
 - `SCOPE_MISMATCH` indicates a standard organizational unit boundary failure (e.g. Musyrif A attempting to edit Musyrif B's halaqoh).
 - `GENDER_COMPLEX_DENIED` is a specialized, audited rejection that triggers when an actor attempts cross-gender boundary access (e.g. ikhwan personnel attempting to access akhwat dormitory or halaqoh records) without an explicit, approved cross-complex operational assignment.
+
+### Rule 6: Unit Account One-Placement Invariant & Fail-Closed Anchor Check
+- Accounts of type `AccountType.UNIT` represent operational kiosks or stations.
+- Each `AccountType.UNIT` user must have exactly one relational `UnitAccountPlacement` record.
+- When evaluating assignments for a UNIT account, the engine enforces:
+  $$\text{Assignment}.\text{unitId} \equiv \text{UnitAccountPlacement}.\text{unitId}$$
+- If an assignment anchor unit contradicts the account's canonical `UnitAccountPlacement`, the engine **strictly fails closed** with `SYSTEM_FAIL_CLOSED` or `SCOPE_MISMATCH`. UNIT assignments cannot span different placements.
+
+### Rule 7: Policy Grant Lifecycle State Enforcement
+- The engine only enforces grants whose `businessRuleState` is authorized for the active phase:
+  - In Phase A/B compatibility: Only **`VERIFIED_PRODUCTION`** grants are active.
+  - Grants in **`APPROVED_TARGET_PENDING_TECHNICAL`** are non-authoritative during compatibility enforcement and will only activate upon Phase D formal cutover.
+  - Grants in **`PROPOSED_TBD`** are never evaluated and confer zero authority.
 
 ---
 

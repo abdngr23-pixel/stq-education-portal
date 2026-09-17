@@ -58,14 +58,27 @@
    *Deterministic Bridges*: `SEMBUH` $\to$ `PULIH`, `RAWAT_PONDOK` $\to$ `DIPANTAU`, `DIRUJUK_PUSKESMAS` $\to$ `DIRUJUK`.
    *Ambiguous Status*: `PULANG` is strictly **AMBIGUOUS_PENDING_REVIEW** (do not backfill; requires manual business owner review).
 3. **INV-HLT-03 (Separation of Current Production vs Target V2)**:
-   - **Current Verified Production**: Mudir (`KS`) and Musyrif Keasramaan (`MK`) operate health mutations. Admin TU has aggregate read only. Poskestren unit account is not active in verified production.
-   - **Target V2 Approved (Pending Technical)**: Dedicated Petugas Kesehatan (`AccountType: UNIT`), Pembina Kamar (`Scope: KAMAR`), and Wali Santri (`Scope: OWN_CHILD` resolved server-side).
+   - **Current Verified Production Baseline**:
+     - `catatKesehatanAction`: `KS`, `MK`, `ADM` (`health.case.create` verified for KS, MK, ADM; ADM is NOT denied in create).
+     - `getDaftarKesehatanAction`: `KS`, `MK`, `ADM` (global list compatibility read including complaints, diagnosis, actions, status, date, santri); `WS` and `ST` (scoped to `session.santriId`). ADM access is NOT merely aggregate-only in verified production.
+     - `updateStatusKesehatanAction`: `MK`, `KS` (`health.case.update_status` verified for MK, KS; ADM denied).
+     - Dedicated Referral: Main has **NO** dedicated server action representing `health.case.referral`. Updating status to `DIRUJUK_PUSKESMAS` is not a dedicated referral capability. Classified as **`PROPOSED_TBD`**.
+   - **Target V2 Approved (Pending Technical)**: Dedicated Petugas Poskestren (`AccountType: UNIT`), room-scoped Pembina Kamar (`Scope: KAMAR`), and Wali Santri (`Scope: OWN_CHILD` resolved server-side). Granular clinical detail is separated from aggregate reporting and restricted from generic OSDA/ADM.
+   - Compatibility baseline preserves current behavior until a separately approved target-switch phase (Phase D).
+
 4. **INV-HLT-04 (Individual & Guardian Health Read Authority - Multi-Child)**:
    - Wali Santri (`WS`) may read health records strictly for their enrolled child or children (`Scope: OWN_CHILD`), relationally resolved server-side across all verified children in `ResolvedResourceContext`.
    - Santri (`ST`) may read health records strictly for themselves (`Scope: SELF`).
    - Other roles (MT, PH, GA, YAY, generic OSDA) are denied health read access fail-closed.
+
 5. **INV-HLT-05 (Generic OSDA Denied Health Access)**:
    A user holding the generic role `OSDA` has ZERO health access unless an explicit active assignment links them to `Unit: DIVISI_KESEHATAN` with capability `health.case.create` or `health.case.read_aggregate`.
+
+6. **INV-AUTH-04 (Grant-Level Business Rule Lifecycle)**:
+   `BusinessRuleState` belongs strictly to the policy/grant mapping (`PositionCapability`), NOT to the semantic capability definition (`Capability`). A single capability record may have grants in different lifecycle states (e.g. `health.case.create` has MK/ADM as `VERIFIED_PRODUCTION` and `Petugas Kesehatan` as `APPROVED_TARGET_PENDING_TECHNICAL`). In Phase A/B compatibility, only `VERIFIED_PRODUCTION` grants are authoritative. `APPROVED_TARGET_PENDING_TECHNICAL` grants require Phase D cutover; `PROPOSED_TBD` grants never enter active authorization.
+
+7. **INV-AUTH-05 (Unit Account Canonical Placement Invariant)**:
+   Accounts of type `AccountType.UNIT` must have **EXACTLY ONE** operational placement in `UnitAccountPlacement` (`userId` unique constraint). A UNIT account may hold multiple positions only when they all resolve to that same placement unit. The authorization engine strictly fails closed (`SYSTEM_FAIL_CLOSED` or `SCOPE_MISMATCH`) if any assignment anchor unit contradicts the account's `UnitAccountPlacement`. Username string heuristics must NEVER be used to infer placement.
 
 ---
 

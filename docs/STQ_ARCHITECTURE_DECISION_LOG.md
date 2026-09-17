@@ -150,4 +150,23 @@
 - **Consequences**:
   - Positive: Complete structural and semantic clarity. Mathematical multi-grant evaluation prevents privilege drops when users hold multiple assignments.
 
+---
+
+## ADR-011: Grant-Level Business Rule Lifecycle, Health Baseline Rectification, and Unit Account Canonical Placement Binding
+
+- **Status**: **ACCEPTED**
+- **Date**: 2026-09-17
+- **Context**:
+  1. `Capability.ruleState` improperly collapsed lifecycle states onto semantic capability definitions, making it impossible to represent cases where one capability (e.g. `health.case.create`) is active in current production for Mudir/MK/ADM (`VERIFIED_PRODUCTION`) but pending future rollout for Petugas Poskestren (`APPROVED_TARGET_PENDING_TECHNICAL`).
+  2. Independent review of `app/actions/kesehatan.ts` on `main: 4c73317ba8d32924d1e86da2a7f2ef29f6aa0986` confirmed real server behavior: `catatKesehatanAction` permits KS, MK, ADM; `getDaftarKesehatanAction` returns full health DTO to KS, MK, ADM globally; `updateStatusKesehatanAction` permits MK, KS and denies ADM; and main has NO dedicated server action for external referral issuance.
+  3. `RequestedResourceContext` retained `[key: string]: unknown`, leaving the compile-time caller trust boundary open-ended.
+  4. The model lacked an explicit relational binding guaranteeing that `AccountType.UNIT` accounts are bound to exactly one operational unit.
+- **Decision**:
+  1. **Grant-Level Business Rule Lifecycle**: Move `businessRuleState` to `PositionCapability` (grant policy mapping). The semantic `Capability` model remains pure (`code`, `namespace`, `name`, `description`, `isDangerous`).
+  2. **Health Baseline Rectification**: Document verified production behavior truthfully (`catatKesehatanAction` allows KS/MK/ADM; `getDaftarKesehatanAction` allows KS/MK/ADM global detail read; `updateStatusKesehatanAction` allows MK/KS and denies ADM; dedicated referral is `PROPOSED_TBD`). Target V2 restrictions are strictly quarantined to future approved phases.
+  3. **Caller Context Type Hardening**: Remove index signature from `RequestedResourceContext`. It contains ONLY explicitly approved caller-supplied target IDs (`santriId`, `targetUserId`, `resourceId`, `halaqohId`, `kamarId`, `unitId`).
+  4. **Unit Account Canonical Placement Invariant**: Introduce `UnitAccountPlacement` model (`userId` unique). The authorization engine fails closed (`SYSTEM_FAIL_CLOSED` or `SCOPE_MISMATCH`) if any assignment anchor contradicts the account's placement.
+- **Consequences**:
+  - Positive: Complete decoupling of capability semantics from grant lifecycle; 100% truthful health baseline preservation; strict compile-time rejection of untrusted parameters; guaranteed single-unit kiosk placement integrity.
+
 

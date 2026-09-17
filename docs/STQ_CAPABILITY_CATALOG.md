@@ -7,8 +7,6 @@
 
 ## 1. Capability Naming Convention & Architectural Boundary
 
-## 1. Capability Naming Convention & Architectural Boundary
-
 All capabilities in the STQ Portal adhere to a strict 3-tier dot-notated nomenclature:
 
 $$\text{Code} = \langle\text{namespace}\rangle.\langle\text{entity}\rangle.\langle\text{action}\rangle$$
@@ -24,15 +22,19 @@ Where:
   - `"LETTERS"`
   - `"SPONSOR"`
   - `"SYSTEM"`
-- **`entity`**: The target resource noun (`setoran`, `recap`, `reward`, `policy`, `permission`, `discipline`, `case`, `score`, `stock`, `user`, `assignment`).
+- **`entity`**: The target resource noun (`student`, `setoran`, `recap`, `reward`, `policy`, `permission`, `discipline`, `case`, `score`, `stock`, `user`, `assignment`).
 - **`action`**: The operation verb (`read`, `create`, `update`, `cancel`, `approve`, `issue`, `inspect`, `mutate`, `manage`, `referral`).
 
 > [!IMPORTANT]
-> **The Three Canonical Business Rule States**:
-> Every capability entry in this catalog is strictly classified into one of three states:
-> 1. **`VERIFIED_PRODUCTION`**: Observed and verified in active production (PR #10 to PR #13 baseline).
-> 2. **`APPROVED_TARGET_PENDING_TECHNICAL`**: Formally approved target policy by institutional leadership, pending technical schema/UI implementation.
-> 3. **`PROPOSED_TBD`**: Architectural design recommendation; assignment matrix is not yet approved by the Business Owner.
+> **Semantic Definition vs. Grant Lifecycle State**:
+> A `Capability` record is a **pure semantic action definition** (`code`, `namespace`, `name`, `description`, `isDangerous`).
+> Lifecycle state (**`BusinessRuleState`**) belongs to the **policy grant mapping (`PositionCapability`)**, NOT to the semantic capability.
+> This allows a single capability (such as `health.case.create`) to simultaneously possess active compatibility grants (`VERIFIED_PRODUCTION` for `MK` and `ADM`) and future approved target grants (`APPROVED_TARGET_PENDING_TECHNICAL` for `PETUGAS_KESEHATAN`).
+> 
+> The three canonical states:
+> 1. **`VERIFIED_PRODUCTION`**: Observed and verified in active production runtime (PR #10 to PR #13 baseline).
+> 2. **`APPROVED_TARGET_PENDING_TECHNICAL`**: Formally approved target policy by institutional leadership, pending technical schema/UI implementation (non-authoritative in Phase A/B).
+> 3. **`PROPOSED_TBD`**: Architectural design recommendation; receiver/sign-off matrix pending Business Owner approval (never enters active authorization).
 
 ---
 
@@ -57,13 +59,13 @@ Where:
 ### 2.2. Kesehatan (`health.*`) — Current Verified Production vs. Target V2 Approved
 The 5 granular health capabilities are explicitly demarcated between current verified production and target V2 approved states:
 
-| Capability Code | Description | Current Verified Production | Target V2 Approved (Pending Technical) | Receiver / Sign-off Matrix |
+| Capability Code | Description | Current Verified Production Baseline | Target V2 Approved (Pending Technical) | Policy Grant State |
 | :--- | :--- | :--- | :--- | :--- |
-| `health.case.read_aggregate` | Membaca ringkasan agregat dan tren keluhan sakit Poskestren | **VERIFIED_PRODUCTION**<br/>`MUDIR`, `KEPALA_KEASRAMAAN` (`MK`), `ADMIN` (`ADM`). | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>`PETUGAS_KESEHATAN` (`GLOBAL`), `PEMBINA_ASRAMA` (`KAMAR`), `WALI_SANTRI` (`OWN_CHILD`). | Approved |
-| `health.case.read_detail` | Membaca rekam medis klinis detail, keluhan, dan diagnosa santri | **VERIFIED_PRODUCTION**<br/>`MUDIR`, `KEPALA_KEASRAMAAN` (`MK`). Admin denied. | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>`PETUGAS_KESEHATAN` (`GLOBAL`), `PEMBINA_ASRAMA` (`KAMAR` assigned). | Approved |
-| `health.case.create` | Menginput kejadian/keluhan awal sakit santri di Poskestren | **VERIFIED_PRODUCTION**<br/>`MUDIR`, `KEPALA_KEASRAMAAN` (`MK`). | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>`PETUGAS_KESEHATAN`, `PEMBINA_ASRAMA` (`KAMAR`). | Approved |
-| `health.case.update_status` | Memperbarui status medis (`DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`) | **VERIFIED_PRODUCTION**<br/>`MUDIR`, `KEPALA_KEASRAMAAN` (`MK`). Admin TU strictly denied (`DENY`). | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>`PETUGAS_KESEHATAN`. Pembina Kamar restricted to internal updates. | Approved |
-| `health.case.referral` | Menerbitkan surat rujukan klinis ke Puskesmas / RS | **VERIFIED_PRODUCTION**<br/>`MUDIR`, `KEPALA_KEASRAMAAN` (`MK`). | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>`PETUGAS_KESEHATAN` recommends referral. | **PROPOSED_TBD**<br/>Final referral sign-off receiver matrix is TBD pending Business Owner decision. |
+| `health.case.read_aggregate` | Membaca ringkasan agregat dan tren keluhan sakit Poskestren | **VERIFIED_PRODUCTION**<br/>`MUDIR`, `KEPALA_KEASRAMAAN` (`MK`), `ADMIN` (`ADM`) global read compatibility.<br/>`WALI_SANTRI` (`WS`) dan `SANTRI` (`ST`) scoped to `session.santriId`. | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>`PETUGAS_KESEHATAN` (`GLOBAL`), `PEMBINA_ASRAMA` (`KAMAR`), `WALI_SANTRI` (`OWN_CHILD`). | KS/MK/ADM: `VERIFIED_PRODUCTION`<br/>Target: `APPROVED_TARGET_PENDING_TECHNICAL` |
+| `health.case.read_detail` | Membaca rekam medis klinis detail, keluhan, dan diagnosa santri | **VERIFIED_PRODUCTION**<br/>`MUDIR`, `KEPALA_KEASRAMAAN` (`MK`), `ADMIN` (`ADM`) global read compatibility (returns full DTO: keluhan, diagnosa, tindakan, status, identitas santri).<br/>`WALI_SANTRI` (`WS`) dan `SANTRI` (`ST`) scoped to `session.santriId`. | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>`PETUGAS_KESEHATAN` (`GLOBAL`), `PEMBINA_ASRAMA` (`KAMAR` assigned). No generic OSDA access. | KS/MK/ADM: `VERIFIED_PRODUCTION`<br/>Target: `APPROVED_TARGET_PENDING_TECHNICAL` |
+| `health.case.create` | Menginput kejadian/keluhan awal sakit santri di Poskestren | **VERIFIED_PRODUCTION**<br/>`catatKesehatanAction` permits `MUDIR` (`KS`), `KEPALA_KEASRAMAAN` (`MK`), `ADMIN` (`ADM`). (ADM is NOT denied). | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>`PETUGAS_KESEHATAN`, `PEMBINA_ASRAMA` (`KAMAR`). | KS/MK/ADM: `VERIFIED_PRODUCTION`<br/>Target: `APPROVED_TARGET_PENDING_TECHNICAL` |
+| `health.case.update_status` | Memperbarui status medis (`DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`) | **VERIFIED_PRODUCTION**<br/>`updateStatusKesehatanAction` permits `MUDIR` (`KS`), `KEPALA_KEASRAMAAN` (`MK`). Admin TU strictly denied (`DENY`). | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>`PETUGAS_KESEHATAN`. Pembina Kamar restricted to internal updates. | KS/MK: `VERIFIED_PRODUCTION`<br/>Target: `APPROVED_TARGET_PENDING_TECHNICAL` |
+| `health.case.referral` | Menerbitkan surat rujukan klinis ke Puskesmas / RS | **NONE (NO DEDICATED ACTION)**<br/>Main has NO dedicated action for external referral issuance. Updating status to `DIRUJUK_PUSKESMAS` via `updateStatusKesehatanAction` is not a dedicated referral capability. | `PETUGAS_KESEHATAN` recommends referral. | **PROPOSED_TBD**<br/>Final external referral sign-off receiver matrix is TBD pending Business Owner decision. |
 
 #### Canonical Keasramaan V2 Health Statuses & Legacy Read Bridge
 Canonical V2 statuses: `DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`.

@@ -207,40 +207,58 @@ STQ Darul Ulum Cendekia (Type: INSTITUTION)
 
 ## 5. Summary of Business Boundaries & Invariants
 
-### 5.1. The Three Canonical Business Rule States
-All capabilities, authorization rules, and assignment mappings are strictly classified into one of three canonical business-rule states:
+### 5.1. The Three Canonical Business Rule States at the Grant/Policy Level
+All authorization rules and capability grants are strictly classified into one of three canonical business-rule states. Crucially, **`BusinessRuleState` belongs to the policy/grant mapping (`PositionCapability`), NOT to the semantic capability definition (`Capability`)**.
+
+A single semantic `Capability` (e.g. `health.case.create`) defines only what the action is (`code`, `namespace`, `name`, `description`, `isDangerous`). It cannot have a single ruleState because different position grants for that same capability exist in different lifecycle phases:
+- `health.case.create` granted to `Musyrif Keasramaan` (`MK`) / `Admin` (`ADM`) = **`VERIFIED_PRODUCTION`**
+- `health.case.create` granted to `Petugas Kesehatan` = **`APPROVED_TARGET_PENDING_TECHNICAL`**
+
+The three canonical states governing policy grants:
 
 1. **`VERIFIED_PRODUCTION`**:
-   - Rules and capabilities that have been observed, validated, and proven in active production runtime (PR #10 to PR #13 baseline).
-   - Only behaviors verified in the actual production database and runtime are marked with this state.
-   - Future role assignments (such as an assigned OSDA Petugas Kesehatan account) are **NOT** labeled `VERIFIED_PRODUCTION`.
+   - Rules, capabilities, and grants that have been observed, validated, and proven in active production runtime (PR #10 to PR #13 baseline).
+   - Only behaviors verified in the actual production database and runtime server actions are marked with this state.
+   - These mappings may be backfilled for compatibility during Phase B.
 
 2. **`APPROVED_TARGET_PENDING_TECHNICAL`**:
-   - Institutional business policies that have been formally approved by the Mudir / Business Owner, but whose technical implementation is pending Phase 2+ migrations and UI builds.
+   - Institutional business policies and target position grants formally approved by the Mudir / Business Owner, but whose technical implementation is pending Phase 2+ migrations, operational assignment activation, and UI builds.
    - Examples: Assigned OSDA Petugas Kesehatan operational duties, Mudabbir / Pembina Kamar room-scoped health responsibilities, and server-side relational `OWN_CHILD` guardian resolution.
+   - **MUST NOT** become authoritative merely because they exist in documentation. They enter active enforcement strictly in Phase D (Authoritative Switch).
 
 3. **`PROPOSED_TBD`**:
-   - Architectural and workflow recommendations proposed by the engineering team that have **NOT** yet been formally decided or approved by the Business Owner.
-   - These entries do **NOT** constitute binding institutional policy. Any receiver or approval matrix marked `PROPOSED_TBD` requires explicit future sign-off.
+   - Architectural, workflow, or escalation recommendations proposed by the engineering team that have **NOT** yet been formally decided or approved by the Business Owner.
+   - **MUST NEVER** enter active authorization. Any receiver or approval matrix marked `PROPOSED_TBD` requires explicit future sign-off.
 
 ---
 
-### 5.2. Health Capability Model: Current Verified Production vs. Target Approved vs. Proposed TBD
+### 5.2. Health Capability Model: Current Verified Production vs. Target V2
 
-| Capability Code | Description | Current Verified Production | Target V2 Approved (Pending Technical) | Proposed TBD |
+The current production source of truth is `app/actions/kesehatan.ts` (at `main: 4c73317ba8d32924d1e86da2a7f2ef29f6aa0986`). Production rights are **NOT** tightened in Phase A/B; current compatibility baseline is preserved until a separately approved target-switch phase.
+
+| Capability Code | Description | Current Verified Production Baseline | Target V2 (Approved Future Architecture) | Business Rule State (Grant Level) |
 | :--- | :--- | :--- | :--- | :--- |
-| `health.case.read_aggregate` | General health summaries & case counts | **VERIFIED_PRODUCTION**<br/>Mudir (`KS`), Musyrif Keasramaan (`MK`), Admin (`ADM`) broad access. | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>Petugas Kesehatan (`GLOBAL`), Pembina Kamar (`KAMAR`), Wali (`OWN_CHILD`). | — |
-| `health.case.read_detail` | Detailed clinical diagnosis, symptoms, medications | **VERIFIED_PRODUCTION**<br/>Mudir (`KS`), Musyrif Keasramaan (`MK`). Admin denied. | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>Petugas Poskestren (`GLOBAL`), Pembina Kamar (`KAMAR` assigned). | — |
-| `health.case.create` | Intake recording of illness / complaints | **VERIFIED_PRODUCTION**<br/>Mudir (`KS`), Musyrif Keasramaan (`MK`). | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>Petugas Poskestren, Pembina Kamar (`KAMAR`). | — |
-| `health.case.update_status` | Transitioning clinical status (`DIPANTAU`, `PULIH`, `DIRUJUK`) | **VERIFIED_PRODUCTION**<br/>Mudir (`KS`), Musyrif Keasramaan (`MK`). Admin strictly denied. | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>Petugas Poskestren. Pembina Kamar restricted to internal updates. | — |
-| `health.case.referral` | External clinical escalation (Puskesmas / RS) | **VERIFIED_PRODUCTION**<br/>Mudir (`KS`), Musyrif Keasramaan (`MK`). | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>Poskestren recommends referral to Mudir/MK. | **PROPOSED_TBD**<br/>Final referral sign-off receiver matrix & emergency bypass workflow pending approval. |
+| `health.case.read_aggregate` | General health summaries & case counts | **VERIFIED_PRODUCTION**<br/>Mudir (`KS`), Musyrif Keasramaan (`MK`), Admin (`ADM`) global list compatibility read.<br/>Wali (`WS`) and Santri (`ST`) restricted to `session.santriId`. | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>Granular aggregate read separated from clinical detail:<br/>Petugas Kesehatan (`GLOBAL`), Pembina Kamar (`KAMAR`), Wali (`OWN_CHILD`). | KS/MK/ADM: `VERIFIED_PRODUCTION`<br/>Target roles: `APPROVED_TARGET_PENDING_TECHNICAL` |
+| `health.case.read_detail` | Detailed clinical diagnosis, symptoms, medications | **VERIFIED_PRODUCTION**<br/>Mudir (`KS`), Musyrif Keasramaan (`MK`), Admin (`ADM`) global list compatibility read (returns full DTO: keluhan, diagnosa, tindakan, status, santri identity).<br/>Wali (`WS`) and Santri (`ST`) restricted to `session.santriId`. | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>Granular clinical detail read restricted to medical actors:<br/>Petugas Poskestren (`GLOBAL`), Pembina Kamar (`KAMAR` assigned). No generic OSDA access. | KS/MK/ADM: `VERIFIED_PRODUCTION`<br/>Target roles: `APPROVED_TARGET_PENDING_TECHNICAL` |
+| `health.case.create` | Intake recording of illness / complaints | **VERIFIED_PRODUCTION**<br/>`catatKesehatanAction` permits Mudir (`KS`), Musyrif Keasramaan (`MK`), Admin (`ADM`). (ADM is NOT denied in production baseline). | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>Operational health intake assigned to Petugas Poskestren and Pembina Kamar (`KAMAR`). | KS/MK/ADM: `VERIFIED_PRODUCTION`<br/>Target roles: `APPROVED_TARGET_PENDING_TECHNICAL` |
+| `health.case.update_status` | Transitioning clinical status (`DIPANTAU`, `PULIH`, `DIRUJUK`) | **VERIFIED_PRODUCTION**<br/>`updateStatusKesehatanAction` permits Mudir (`KS`) and Musyrif Keasramaan (`MK`). Admin (`ADM`) strictly denied (`DENY`). | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>Petugas Poskestren (medical authority). Pembina Kamar restricted to internal room-care updates. | KS/MK: `VERIFIED_PRODUCTION`<br/>Target roles: `APPROVED_TARGET_PENDING_TECHNICAL` |
+| `health.case.referral` | External clinical escalation (Puskesmas / RS) | **NONE (NO DEDICATED ACTION)**<br/>Main has NO dedicated server action representing referral issuance. Updating a health status into `DIRUJUK_PUSKESMAS` via `updateStatusKesehatanAction` is not a dedicated referral issuance capability. | Poskestren staff recommends external referral to Mudir/MK. | **PROPOSED_TBD**<br/>Final external referral sign-off receiver matrix & emergency bypass workflow pending Business Owner approval. |
 
 > [!IMPORTANT]
 > **Health Data Honesty Invariant**: Under no circumstances may missing, empty, or failed health records be rendered as synthetic "Sehat". Active production runtime honors: `Error = "Gagal memuat"`, `Empty = "Belum ada data"`, `Healthy = "Sehat"`.
 
 ---
 
-### 5.3. Legacy Health Status Bridge
+### 5.3. Unit Account One-Placement Invariant
+An operational kiosk or unit account (`AccountType.UNIT`) represents an operational station tied to a physical/functional unit.
+- **AccountType.PERSONAL**: No `UnitAccountPlacement` required.
+- **AccountType.UNIT**: Belongs to **EXACTLY ONE** operational placement (`UnitAccountPlacement`).
+- **Single-Placement Invariant**: A UNIT account may hold multiple operational capabilities/positions only when they all resolve to the same placement unit.
+- **Engine Fail-Closed Enforcement**: The authorization engine strictly fails closed (`SYSTEM_FAIL_CLOSED` or `SCOPE_MISMATCH`) if any assignment anchor unit contradicts the user's canonical `UnitAccountPlacement`. Username string patterns must NEVER be used to infer placement.
+
+---
+
+### 5.4. Legacy Health Status Bridge
 Phase 1 candidate models define the canonical V2 medical statuses: `DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`. To ensure zero destructive data loss during future migration, legacy status records bridge as follows:
 
 | Legacy Status | V2 Canonical Status | Mapping Classification | Migration Action |
@@ -252,7 +270,7 @@ Phase 1 candidate models define the canonical V2 medical statuses: `DIPANTAU`, `
 
 ---
 
-### 5.4. Result Codes & Assignment Lifecycle
+### 5.5. Result Codes & Assignment Lifecycle
 The canonical authorization engine utilizes precise lifecycle result codes:
 
 - **`ASSIGNMENT_NOT_ACTIVE`**: Returned when an assignment exists for the requested position, but its lifecycle state is `DRAFT`, `SUSPENDED`, or `REVOKED`.

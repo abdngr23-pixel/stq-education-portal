@@ -44,19 +44,6 @@ enum OrgUnitType {
   ACADEMIC_CLASS
 }
 
-```prisma
-enum OrgUnitType {
-  INSTITUTION
-  DOMAIN
-  ORGANIZATION
-  DIVISION
-  HALAQOH
-  KAMAR
-  SERVICE_UNIT
-  USROH
-  ACADEMIC_CLASS
-}
-
 enum OrgDomain {
   INSTITUTIONAL
   TAHFIZH
@@ -75,6 +62,12 @@ enum CapabilityNamespace {
   LETTERS
   SPONSOR
   SYSTEM
+}
+
+enum BusinessRuleState {
+  VERIFIED_PRODUCTION
+  APPROVED_TARGET_PENDING_TECHNICAL
+  PROPOSED_TBD
 }
 
 enum ScopeType {
@@ -125,24 +118,27 @@ enum GenderComplex {
     // ... existing columns (id, username, password, role, etc.)
     accountType AccountType @default(PERSONAL) @map("account_type")
     assignments Assignment[]
+    unitPlacement UnitAccountPlacement?
     // ... existing relations
   }
 
   model OrgUnit {
-    id            String                @id @default(cuid())
-    code          String                @unique // e.g. "OU-TAF-001"
-    name          String
-    type          OrgUnitType
-    domain        OrgDomain
-    parentId      String?               @map("parent_id")
-    parent        OrgUnit?              @relation("OrgUnitHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
-    children      OrgUnit[]             @relation("OrgUnitHierarchy")
-    genderComplex GenderComplex         @default(CAMPUR) @map("gender_complex")
-    isActive      Boolean               @default(true) @map("is_active")
-    assignments   Assignment[]
-    scopedIn      AssignmentScopeUnit[]
-    createdAt     DateTime              @default(now()) @map("created_at")
-    updatedAt     DateTime              @updatedAt @map("updated_at")
+    id             String                 @id @default(cuid())
+    code           String                 @unique // e.g. "OU-TAF-001"
+    name           String
+    type           OrgUnitType
+    domain         OrgDomain
+    parentId       String?                @map("parent_id")
+    parent         OrgUnit?               @relation("OrgUnitHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+    children       OrgUnit[]              @relation("OrgUnitHierarchy")
+    genderComplex  GenderComplex          @default(CAMPUR) @map("gender_complex")
+    isActive       Boolean                @default(true) @map("is_active")
+    metadata       Json?                  @map("metadata")
+    assignments    Assignment[]
+    scopedIn       AssignmentScopeUnit[]
+    unitPlacements UnitAccountPlacement[]
+    createdAt      DateTime               @default(now()) @map("created_at")
+    updatedAt      DateTime               @updatedAt @map("updated_at")
 
     @@index([domain, type])
     @@index([parentId])
@@ -150,18 +146,34 @@ enum GenderComplex {
   }
 
   model Position {
-    id           String               @id @default(cuid())
-    code         String               @unique // e.g. "KABID_TAHFIZH", "MUDABBIR"
-    name         String
-    domain       OrgDomain
-    isLeadership Boolean              @default(false) @map("is_leadership")
-    isActive     Boolean              @default(true) @map("is_active")
-    capabilities PositionCapability[]
-    assignments  Assignment[]
-    createdAt    DateTime             @default(now()) @map("created_at")
-    updatedAt    DateTime             @updatedAt @map("updated_at")
+    id                      String               @id @default(cuid())
+    code                    String               @unique // e.g. "KABID_TAHFIZH", "MUDABBIR"
+    name                    String
+    domain                  OrgDomain
+    allowedUnitTypes        OrgUnitType[]        @default([]) @map("allowed_unit_types")
+    isLeadership            Boolean              @default(false) @map("is_leadership")
+    requiresPersonalAccount Boolean              @default(true) @map("requires_personal_account")
+    isActive                Boolean              @default(true) @map("is_active")
+    description             String?
+    capabilities            PositionCapability[]
+    assignments             Assignment[]
+    createdAt               DateTime             @default(now()) @map("created_at")
+    updatedAt               DateTime             @updatedAt @map("updated_at")
 
     @@map("positions")
+  }
+
+  model UnitAccountPlacement {
+    id        String   @id @default(cuid())
+    userId    String   @unique @map("user_id")
+    user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+    unitId    String   @map("unit_id")
+    unit      OrgUnit  @relation(fields: [unitId], references: [id], onDelete: Restrict)
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
+
+    @@index([unitId])
+    @@map("unit_account_placements")
   }
 
   model Capability {
@@ -177,12 +189,13 @@ enum GenderComplex {
   }
 
   model PositionCapability {
-    id             String     @id @default(cuid())
-    positionId     String     @map("position_id")
-    position       Position   @relation(fields: [positionId], references: [id], onDelete: Restrict)
-    capabilityCode String     @map("capability_code")
-    capability     Capability @relation(fields: [capabilityCode], references: [code], onDelete: Restrict)
-    scopeType      ScopeType  @default(UNIT) @map("scope_type")
+    id                String            @id @default(cuid())
+    positionId        String            @map("position_id")
+    position          Position          @relation(fields: [positionId], references: [id], onDelete: Restrict)
+    capabilityCode    String            @map("capability_code")
+    capability        Capability        @relation(fields: [capabilityCode], references: [code], onDelete: Restrict)
+    scopeType         ScopeType         @default(UNIT) @map("scope_type")
+    businessRuleState BusinessRuleState @default(VERIFIED_PRODUCTION) @map("business_rule_state")
 
     @@unique([positionId, capabilityCode])
     @@map("position_capabilities")
@@ -253,6 +266,34 @@ enum GenderComplex {
     @@map("canonical_audit_logs")
   }
   ```
+
+#### Relational Parity & Field Classification (Persisted vs. Computed)
+
+To maintain absolute architectural transparency, every field across runtime TypeScript interfaces and relational Prisma models is strictly classified as either **PERSISTED** (physical database column) or **COMPUTED / RUNTIME-ONLY** (in-memory DTO or derived computation):
+
+| Model / Type | Field Name | Classification | Database Column / Source | Rationale |
+|:---|:---|:---|:---|:---|
+| `User` | `accountType` | **PERSISTED** | `account_type` (Enum `AccountType`) | Direct relational discriminator on User |
+| `OrgUnit` | `id`, `code`, `name`, `type`, `domain`, `parentId`, `genderComplex`, `isActive`, `createdAt`, `updatedAt` | **PERSISTED** | Columns in `org_units` table | Core organizational hierarchy |
+| `OrgUnit` | `metadata` | **PERSISTED** | `metadata` (`Json?` in `org_units`) | Flexible configuration data |
+| `OrgUnit` | `parentUnitId` | **REMOVED** | N/A | Eliminated in favor of single canonical `parentId` |
+| `Position` | `id`, `code`, `name`, `domain`, `isLeadership`, `isActive`, `createdAt`, `updatedAt` | **PERSISTED** | Columns in `positions` table | Core functional position template |
+| `Position` | `allowedUnitTypes` | **PERSISTED** | `allowed_unit_types` (`OrgUnitType[]`) | Restricts which unit types can anchor this position |
+| `Position` | `requiresPersonalAccount` | **PERSISTED** | `requires_personal_account` (`Boolean`) | Enforces PERSONAL account type for sensitive leadership roles |
+| `Position` | `description` | **PERSISTED** | `description` (`String?`) | Human-readable role description |
+| `UnitAccountPlacement` | `id`, `userId`, `unitId`, `createdAt`, `updatedAt` | **PERSISTED** | Columns in `unit_account_placements` | Strictly enforces single-placement invariant for UNIT accounts |
+| `Capability` | `code`, `namespace`, `name`, `description`, `isDangerous`, `createdAt` | **PERSISTED** | Columns in `capabilities` table | Pure semantic action definitions |
+| `Capability` | `ruleState` | **REMOVED FROM CAPABILITY** | N/A | Moved to `PositionCapability.businessRuleState` to support multi-state grants |
+| `PositionCapability` | `id`, `positionId`, `capabilityCode`, `scopeType`, `businessRuleState` | **PERSISTED** | Columns in `position_capabilities` | Mappings and policy grant lifecycle state |
+| `Assignment` | `id`, `userId`, `positionId`, `unitId`, `status`, `validFrom`, `validUntil`, `notes`, `createdById`, `createdAt`, `updatedAt` | **PERSISTED** | Columns in `assignments` | Active operational assignment bindings |
+| `Assignment` | `scopeType` | **REMOVED** | N/A | Strictly zero-scope on assignment; owned exclusively by `PositionCapability` |
+| `AssignmentScopeUnit` | `id`, `assignmentId`, `unitId`, `createdAt` | **PERSISTED** | Columns in `assignment_scope_units` | Relational M:N unit expansion for ASSIGNED_UNITS |
+| `CanonicalAuditLog` | All 20 audit attributes | **PERSISTED** | Columns in `canonical_audit_logs` | Immutable forensic snapshot |
+| `EffectiveCapabilityGrant` | All fields | **COMPUTED / RUNTIME-ONLY** | Evaluated in-memory by `IAuthorizationEngine` | Dynamic runtime aggregation of active assignments + position capabilities |
+| `RequestedResourceContext` | All fields | **COMPUTED / RUNTIME-ONLY** | Untrusted caller input DTO | Memory-only parameter object; strictly rejects authorization relations |
+| `ResolvedResourceContext` | All fields | **COMPUTED / RUNTIME-ONLY** | Server-hydrated context DTO | Memory-only evaluated context populated authoritatively by server |
+| `AuthorizationResult` | All fields | **COMPUTED / RUNTIME-ONLY** | In-memory evaluation outcome DTO | Return type of `authorize()` |
+| `UnitAccountExecutorContext`| All fields | **COMPUTED / RUNTIME-ONLY** | In-memory session execution DTO | Non-repudiation binding for kiosk operations |
 - **Risk Level**: **LOW / CONTROLLED**.
   - Operational Considerations: Even additive DDL creates brief metadata locks on PostgreSQL. Migrations will be scheduled during low-traffic maintenance windows.
   - Index creation: Handled transparently during deployment.

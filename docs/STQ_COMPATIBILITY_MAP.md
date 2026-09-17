@@ -72,6 +72,26 @@ The STQ Portal operates a mission-critical production service for 57 santri, the
   - `hasCapability(session, 'keasramaan.presensi.record')` returns `true` for `unit-asrama-putri`.
 - **Retirement Target**: Phase E.
 
+### 3.3. Current Health Server Actions Compatibility Baseline (`app/actions/kesehatan.ts`)
+The current production server baseline (commit `4c73317ba8d32924d1e86da2a7f2ef29f6aa0986`) governs live health operations without retrospective revision:
+1. **`catatKesehatanAction`**:
+   - Authorized roles: `KS`, `MK`, `ADM` (`requireRole(['KS', 'MK', 'ADM'])`).
+   - Compatibility Baseline: `health.case.create` includes `KS`, `MK`, and `ADM`. ADM is **NOT** denied in current production.
+2. **`getDaftarKesehatanAction`**:
+   - Authorized roles: `KS`, `MK`, `ADM` (global health list returned, containing keluhan, diagnosa, tindakan, status, tanggal, and santri identity).
+   - Scoped compatibility: `WS` and `ST` (strictly scoped to `session.santriId`).
+   - Compatibility Baseline: `health.case.read_aggregate` and `health.case.read_detail` compatibility grants cover `KS`, `MK`, `ADM` (global) and `WS`, `ST` (scoped). ADM has full read access in current production.
+3. **`updateStatusKesehatanAction`**:
+   - Authorized roles: `MK`, `KS` (`requireRole(['MK', 'KS'])`).
+   - Denied roles: `ADM` (strictly denied).
+   - Compatibility Baseline: `health.case.update_status` is granted to `MK` and `KS`, denied to `ADM`.
+4. **Dedicated Referral Action**:
+   - Current main does **NOT** possess a dedicated server action representing `health.case.referral`.
+   - Legacy status transitions to `DIRUJUK_PUSKESMAS` occur through `updateStatusKesehatanAction`, which is not an external referral issuance capability.
+   - Compatibility Baseline: Dedicated referral is classified as **`PROPOSED_TBD`**.
+5. **Separation from Target V2**:
+   - Target V2 restrictions (e.g. separating aggregate from clinical detail, restricting clinical detail to assigned Poskestren staff, room-scoped Pembina Kamar intake) belong to future approved phases and MUST NOT be backfilled prematurely.
+
 ---
 
 ## 4. Operational Relational Linkages Mapping
