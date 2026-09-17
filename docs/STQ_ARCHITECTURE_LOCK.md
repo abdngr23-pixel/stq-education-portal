@@ -230,12 +230,25 @@ The three canonical states governing policy grants:
    - Architectural, workflow, or escalation recommendations proposed by the engineering team that have **NOT** yet been formally decided or approved by the Business Owner.
    - **MUST NEVER** enter active authorization. Any receiver or approval matrix marked `PROPOSED_TBD` requires explicit future sign-off.
 
-#### Fail-Closed Default Principle & Backfill Rules
-- **Candidate Schema Default**: `PositionCapability.businessRuleState` strictly defaults to `@default(PROPOSED_TBD)` (never defaults to `VERIFIED_PRODUCTION`).
-- **Why Fail-Closed**: In Phase A/B, only `VERIFIED_PRODUCTION` grants are authoritative. Therefore, a developer omission while declaring or creating a `PositionCapability` must NEVER silently produce an active verified production grant.
-- **Controlled Phase B Backfill**: Existing production-compatible grants created during the controlled Phase B backfill MUST specify `businessRuleState = VERIFIED_PRODUCTION` explicitly. Target V2 approved grants must specify `APPROVED_TARGET_PENDING_TECHNICAL`. All unapproved or proposed mappings remain `PROPOSED_TBD`.
-- **Zero Automatic / Inferred Promotion**: No automatic promotion is permitted. Authority cannot be inferred from Position code, Role, username, or capability name.
-- **Authorization Invariant**: A `PositionCapability` with missing, unknown, unsupported, or non-authoritative `BusinessRuleState` MUST confer **ZERO authority**. The Authorization Engine strictly fails closed. Phase A/B enforces only `VERIFIED_PRODUCTION`. Phase D activates `APPROVED_TARGET_PENDING_TECHNICAL` only after an explicit approved cutover decision. `PROPOSED_TBD` is never authoritative.
+#### Fail-Closed Default Principle & Explicit Activation Triple
+- **Candidate Schema Fail-Closed Defaults**:
+  - `PositionCapability.businessRuleState`: Strictly defaults to `@default(PROPOSED_TBD)` (never defaults to `VERIFIED_PRODUCTION`). Developer omission while creating a PositionCapability can never produce an active verified production grant.
+  - `Assignment.status`: Strictly defaults to `@default(DRAFT)` (never defaults to `ACTIVE`). An omitted status during assignment creation confers **ZERO authority**.
+  - `PositionCapability.scopeType`: Mandatory with **NO default**. Scope is security policy; omission must not silently guess `UNIT`, `GLOBAL`, `DOMAIN`, `HALAQOH`, `KAMAR`, `OWN_CHILD`, `SELF`, or `ASSIGNED_UNITS`.
+  - `OrgUnit.genderComplex`: Mandatory with **NO default**. GenderComplex participates in boundary enforcement (`GENDER_COMPLEX_DENIED`); omission must not silently classify a sensitive unit as `CAMPUR`.
+- **Controlled Phase B Backfill**:
+  - Existing production-compatible assignments must explicitly set `status = ACTIVE`.
+  - Verified production capability grants must explicitly set `businessRuleState = VERIFIED_PRODUCTION`.
+  - All position capabilities must explicitly declare their `scopeType`.
+  - Halaqoh/Kamar units derive `genderComplex` from authoritative records; admin units explicitly declare `TIDAK_TERIKAT`.
+  - Zero automatic or inferred promotion: Authority cannot be inferred from Position code, Role, username, or capability name.
+- **The Explicit Activation Triple**:
+  For any effective authority to exist during Phase A/B, all three security dimensions must be deliberate:
+  1. **Assignment**: `status === ACTIVE`
+  2. **PositionCapability**: `businessRuleState === VERIFIED_PRODUCTION`
+  3. **PositionCapability**: `scopeType` explicitly declared
+  *Plus*: Target resource context must match the explicit scope and `genderComplex` boundary.
+  *If any required dimension is missing, unapproved, or invalid: DENY / FAIL CLOSED.*
 
 ---
 

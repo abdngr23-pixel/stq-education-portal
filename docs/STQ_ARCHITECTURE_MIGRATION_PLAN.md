@@ -131,7 +131,7 @@ enum GenderComplex {
     parentId       String?                @map("parent_id")
     parent         OrgUnit?               @relation("OrgUnitHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
     children       OrgUnit[]              @relation("OrgUnitHierarchy")
-    genderComplex  GenderComplex          @default(CAMPUR) @map("gender_complex")
+    genderComplex  GenderComplex          @map("gender_complex")
     isActive       Boolean                @default(true) @map("is_active")
     metadata       Json?                  @map("metadata")
     assignments    Assignment[]
@@ -194,7 +194,7 @@ enum GenderComplex {
     position          Position          @relation(fields: [positionId], references: [id], onDelete: Restrict)
     capabilityCode    String            @map("capability_code")
     capability        Capability        @relation(fields: [capabilityCode], references: [code], onDelete: Restrict)
-    scopeType         ScopeType         @default(UNIT) @map("scope_type")
+    scopeType         ScopeType         @map("scope_type")
     businessRuleState BusinessRuleState @default(PROPOSED_TBD) @map("business_rule_state")
 
     @@unique([positionId, capabilityCode])
@@ -209,7 +209,7 @@ enum GenderComplex {
     position    Position              @relation(fields: [positionId], references: [id], onDelete: Restrict)
     unitId      String                @map("unit_id")
     unit        OrgUnit               @relation(fields: [unitId], references: [id], onDelete: Restrict)
-    status      AssignmentStatus      @default(ACTIVE)
+    status      AssignmentStatus      @default(DRAFT)
     validFrom   DateTime              @default(now()) @map("valid_from")
     validUntil  DateTime?             @map("valid_until")
     notes       String?
@@ -274,7 +274,7 @@ To maintain absolute architectural transparency, every field across runtime Type
 | Model / Type | Field Name | Classification | Database Column / Source | Rationale |
 |:---|:---|:---|:---|:---|
 | `User` | `accountType` | **PERSISTED** | `account_type` (Enum `AccountType`) | Direct relational discriminator on User |
-| `OrgUnit` | `id`, `code`, `name`, `type`, `domain`, `parentId`, `genderComplex`, `isActive`, `createdAt`, `updatedAt` | **PERSISTED** | Columns in `org_units` table | Core organizational hierarchy |
+| `OrgUnit` | `id`, `code`, `name`, `type`, `domain`, `parentId`, `genderComplex`, `isActive`, `createdAt`, `updatedAt` | **PERSISTED** | Columns in `org_units` (`genderComplex` is mandatory, NO default; omission cannot silently become CAMPUR) | Core organizational hierarchy |
 | `OrgUnit` | `metadata` | **PERSISTED** | `metadata` (`Json?` in `org_units`) | Flexible configuration data |
 | `OrgUnit` | `parentUnitId` | **REMOVED** | N/A | Eliminated in favor of single canonical `parentId` |
 | `Position` | `id`, `code`, `name`, `domain`, `isLeadership`, `isActive`, `createdAt`, `updatedAt` | **PERSISTED** | Columns in `positions` table | Core functional position template |
@@ -284,8 +284,8 @@ To maintain absolute architectural transparency, every field across runtime Type
 | `UnitAccountPlacement` | `id`, `userId`, `unitId`, `createdAt`, `updatedAt` | **PERSISTED** | Columns in `unit_account_placements` | Strictly enforces single-placement invariant for UNIT accounts |
 | `Capability` | `code`, `namespace`, `name`, `description`, `isDangerous`, `createdAt` | **PERSISTED** | Columns in `capabilities` table | Pure semantic action definitions |
 | `Capability` | `ruleState` | **REMOVED FROM CAPABILITY** | N/A | Moved to `PositionCapability.businessRuleState` to support multi-state grants |
-| `PositionCapability` | `id`, `positionId`, `capabilityCode`, `scopeType`, `businessRuleState` | **PERSISTED** | Columns in `position_capabilities` (fail-closed default `@default(PROPOSED_TBD)`; Phase B backfill sets `VERIFIED_PRODUCTION` explicitly) | Mappings and policy grant lifecycle state |
-| `Assignment` | `id`, `userId`, `positionId`, `unitId`, `status`, `validFrom`, `validUntil`, `notes`, `createdById`, `createdAt`, `updatedAt` | **PERSISTED** | Columns in `assignments` | Active operational assignment bindings |
+| `PositionCapability` | `id`, `positionId`, `capabilityCode`, `scopeType`, `businessRuleState` | **PERSISTED** | Columns in `position_capabilities` (`scopeType` is mandatory with NO default; `businessRuleState` defaults fail-closed to `@default(PROPOSED_TBD)`) | Mappings and policy grant lifecycle state |
+| `Assignment` | `id`, `userId`, `positionId`, `unitId`, `status`, `validFrom`, `validUntil`, `notes`, `createdById`, `createdAt`, `updatedAt` | **PERSISTED** | Columns in `assignments` (`status` defaults fail-closed to `@default(DRAFT)`; Phase B backfill sets `ACTIVE` explicitly) | Active operational assignment bindings |
 | `Assignment` | `scopeType` | **REMOVED** | N/A | Strictly zero-scope on assignment; owned exclusively by `PositionCapability` |
 | `AssignmentScopeUnit` | `id`, `assignmentId`, `unitId`, `createdAt` | **PERSISTED** | Columns in `assignment_scope_units` | Relational M:N unit expansion for ASSIGNED_UNITS |
 | `CanonicalAuditLog` | All 20 audit attributes | **PERSISTED** | Columns in `canonical_audit_logs` | Immutable forensic snapshot |
@@ -312,6 +312,13 @@ To maintain absolute architectural transparency, every field across runtime Type
     `businessRuleState = PROPOSED_TBD`.
   - Zero automatic promotion: Candidate schema defaults to `@default(PROPOSED_TBD)`. Developer omission while creating a PositionCapability can never result in an authoritative grant.
   - No inferred promotion from Position name, Role, username, or capability name.
+- **The Explicit Activation Triple (Phase A/B Authorization Guarantee)**:
+  For any effective authority to exist during Phase A/B, all three security dimensions must be deliberate:
+  1. **Assignment**: `status = ACTIVE` (explicitly set for active operational staff; candidate schema defaults fail-closed to `@default(DRAFT)`).
+  2. **PositionCapability**: `businessRuleState = VERIFIED_PRODUCTION` (explicitly set; candidate schema defaults fail-closed to `@default(PROPOSED_TBD)`).
+  3. **PositionCapability**: `scopeType` explicitly declared (mandatory, NO default; never inferred from anchor unit).
+  *Plus*: Target resource context must match the explicit scope and `genderComplex` boundary.
+  *If any required dimension is missing, unapproved, or invalid: DENY / FAIL CLOSED.*
 - **Backfill Script Logic**:
   1. Create root `OrgUnit: STQ DUC` and domains (`Tahfizh`, `Keasramaan`, `Akademik`, `Manajemen`).
   2. For each authoritative `Halaqoh` in database, create an `OrgUnit (type: HALAQOH)`.

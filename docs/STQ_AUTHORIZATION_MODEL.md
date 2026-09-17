@@ -184,12 +184,13 @@ export interface IAuthorizationEngine {
 - If the requested capability is not granted by any active assignment $\implies$ `DENY (CAPABILITY_NOT_GRANTED)`.
 - If the database query to verify assignments fails or times out $\implies$ `DENY (SYSTEM_FAIL_CLOSED)`. No synthetic fallback is permitted.
 
-### Rule 2: Active Assignment Validity Window
-An assignment is valid if and only if:
-1. `Assignment.status === "ACTIVE"` (assignments in `DRAFT`, `SUSPENDED`, `EXPIRED`, or `REVOKED` grant zero authority).
-2. `Assignment.validFrom <= now()`
-3. `Assignment.validUntil === null || Assignment.validUntil >= now()`
-4. `User.status === "AKTIF"` and linked `Staff`/`Santri` is active.
+### Rule 2: Active Assignment Validity Window & Fail-Closed Status Default
+- `Assignment.status` strictly defaults to `@default(DRAFT)` (never defaults to `ACTIVE`). An assignment created with omitted status confers **ZERO authority**.
+- An assignment is valid if and only if:
+  1. `Assignment.status === "ACTIVE"` (assignments in `DRAFT`, `SUSPENDED`, `EXPIRED`, or `REVOKED` grant zero authority).
+  2. `Assignment.validFrom <= now()`
+  3. `Assignment.validUntil === null || Assignment.validUntil >= now()`
+  4. `User.status === "AKTIF"` and linked `Staff`/`Santri` is active.
 
 Expired assignments cease conferring authority immediately upon passing `validUntil`.
 
@@ -212,6 +213,7 @@ Expired assignments cease conferring authority immediately upon passing `validUn
 ### Rule 5: Gender Complex Boundary Separation (`GENDER_COMPLEX_DENIED`)
 - `SCOPE_MISMATCH` indicates a standard organizational unit boundary failure (e.g. Musyrif A attempting to edit Musyrif B's halaqoh).
 - `GENDER_COMPLEX_DENIED` is a specialized, audited rejection that triggers when an actor attempts cross-gender boundary access (e.g. ikhwan personnel attempting to access akhwat dormitory or halaqoh records) without an explicit, approved cross-complex operational assignment.
+- `OrgUnit.genderComplex` is mandatory with **NO default**. Omission can never silently classify a unit as `CAMPUR`.
 
 ### Rule 6: Unit Account One-Placement Invariant & Fail-Closed Anchor Check
 - Accounts of type `AccountType.UNIT` represent operational kiosks or stations.
@@ -228,6 +230,14 @@ Expired assignments cease conferring authority immediately upon passing `validUn
   - Phase D target cutover: **`APPROVED_TARGET_PENDING_TECHNICAL`** becomes authoritative only after an explicit approved cutover/migration decision.
   - **`PROPOSED_TBD`**: Never authoritative under any circumstance.
 - **Explicit Phase B Backfill**: Compatibility grants created during Phase B backfill MUST specify `businessRuleState = VERIFIED_PRODUCTION` explicitly. No automatic or inferred promotion from Position name, Role, or username is permitted.
+
+### Rule 8: The Explicit Activation Triple (Fail-Closed Default Closure)
+For any effective authority to exist during Phase A/B, all three security dimensions must be deliberate:
+1. **Assignment**: `status === ACTIVE` (candidate schema defaults fail-closed to `@default(DRAFT)`).
+2. **PositionCapability**: `businessRuleState === VERIFIED_PRODUCTION` (candidate schema defaults fail-closed to `@default(PROPOSED_TBD)`).
+3. **PositionCapability**: `scopeType` explicitly declared (mandatory, NO default; never inferred from anchor unit).
+*Plus*: Target resource context must match the explicit scope and `genderComplex` boundary.
+*If any required dimension is missing, unapproved, or invalid: DENY / FAIL CLOSED.*
 
 ---
 

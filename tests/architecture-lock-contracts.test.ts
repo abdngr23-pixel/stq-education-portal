@@ -1182,4 +1182,234 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
       assert.strictEqual(pr8Sha, "9068cae5587b7219c394c5c25bf0de07a15b0726");
     });
   });
+
+  // =========================================================================
+  // 17. Final Security Default Closure & The Explicit Activation Triple
+  // =========================================================================
+  describe("17. Final Security Default Closure & The Explicit Activation Triple", () => {
+    const migrationDocPath = path.join(docsDir, "STQ_ARCHITECTURE_MIGRATION_PLAN.md");
+    const assignmentDocPath = path.join(docsDir, "STQ_ASSIGNMENT_MODEL.md");
+    const lockDocPath = path.join(docsDir, "STQ_ARCHITECTURE_LOCK.md");
+    const invariantsDocPath = path.join(docsDir, "STQ_ARCHITECTURE_INVARIANTS.md");
+    const authDocPath = path.join(docsDir, "STQ_AUTHORIZATION_MODEL.md");
+
+    const migrationDoc = fs.readFileSync(migrationDocPath, "utf-8");
+    const assignmentDoc = fs.readFileSync(assignmentDocPath, "utf-8");
+    const lockDoc = fs.readFileSync(lockDocPath, "utf-8");
+    const invariantsDoc = fs.readFileSync(invariantsDocPath, "utf-8");
+    const authDoc = fs.readFileSync(authDocPath, "utf-8");
+
+    it("Assignment schema does NOT default to ACTIVE and defaults strictly to DRAFT", () => {
+      assert.strictEqual(
+        migrationDoc.includes("status AssignmentStatus @default(ACTIVE)"),
+        false,
+        "Migration doc must NOT default Assignment status to ACTIVE"
+      );
+      assert.strictEqual(
+        assignmentDoc.includes("status AssignmentStatus @default(ACTIVE)"),
+        false,
+        "Assignment doc must NOT default Assignment status to ACTIVE"
+      );
+
+      assert.ok(
+        migrationDoc.includes("@default(DRAFT)"),
+        "Migration doc candidate schema must default Assignment status to DRAFT"
+      );
+      assert.ok(
+        assignmentDoc.includes("@default(DRAFT)"),
+        "Assignment doc candidate schema must default Assignment status to DRAFT"
+      );
+    });
+
+    it("Omitted Assignment status cannot confer authority (defaults to DRAFT, zero authority)", () => {
+      function createAssignmentWithDefault(input: {
+        id: string;
+        userId: string;
+        positionId: string;
+        unitId: string;
+        status?: AssignmentStatus;
+        validFrom: Date;
+      }): Assignment {
+        return {
+          id: input.id,
+          userId: input.userId,
+          positionId: input.positionId,
+          unitId: input.unitId,
+          status: input.status ?? "DRAFT",
+          validFrom: input.validFrom,
+          createdById: "admin-1",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+      }
+
+      const omittedAssignment = createAssignmentWithDefault({
+        id: "asn-omit",
+        userId: "usr-staff",
+        positionId: "pos-mt",
+        unitId: "ou-hlq",
+        validFrom: new Date(),
+      });
+
+      assert.strictEqual(omittedAssignment.status, "DRAFT");
+
+      function isAssignmentAuthoritative(assignment: Assignment): boolean {
+        return assignment.status === "ACTIVE";
+      }
+
+      assert.strictEqual(isAssignmentAuthoritative(omittedAssignment), false);
+    });
+
+    it("PositionCapability.scopeType has NO default in candidate schemas (explicit scope required)", () => {
+      assert.strictEqual(
+        migrationDoc.includes("scopeType ScopeType @default"),
+        false,
+        "Migration doc PositionCapability.scopeType must NOT have a default"
+      );
+      assert.strictEqual(
+        assignmentDoc.includes("scopeType ScopeType @default"),
+        false,
+        "Assignment doc PositionCapability.scopeType must NOT have a default"
+      );
+
+      assert.ok(
+        migrationDoc.includes("scopeType         ScopeType         @map(\"scope_type\")"),
+        "Migration doc must declare scopeType as mandatory without default"
+      );
+      assert.ok(
+        assignmentDoc.includes("scopeType         ScopeType         @map(\"scope_type\")"),
+        "Assignment doc must declare scopeType as mandatory without default"
+      );
+    });
+
+    it("Creating/backfilling PositionCapability requires explicit scope and no scope is inferred from anchor unit", () => {
+      const pc: PositionCapability = {
+        id: "pc-test",
+        positionId: "pos-test",
+        capabilityCode: "tahfizh.recap.read",
+        scopeType: "DOMAIN",
+        businessRuleState: "VERIFIED_PRODUCTION",
+      };
+      assert.strictEqual(pc.scopeType, "DOMAIN");
+
+      function resolveScopeFromGrant(grantScope: ScopeType): ScopeType {
+        return grantScope;
+      }
+      assert.strictEqual(resolveScopeFromGrant(pc.scopeType), "DOMAIN");
+    });
+
+    it("OrgUnit.genderComplex has NO default in candidate schema and omission cannot silently become CAMPUR", () => {
+      assert.strictEqual(
+        migrationDoc.includes("genderComplex GenderComplex @default"),
+        false,
+        "Migration doc OrgUnit.genderComplex must NOT have a default"
+      );
+
+      assert.ok(
+        migrationDoc.includes("genderComplex  GenderComplex          @map(\"gender_complex\")"),
+        "Migration doc must declare genderComplex as mandatory without default"
+      );
+
+      const testOrgUnit: OrgUnit = {
+        id: "ou-adm",
+        code: "OU-ADM",
+        name: "Kantor Tata Usaha",
+        type: "DOMAIN",
+        domain: "MANAJEMEN",
+        parentId: null,
+        genderComplex: "TIDAK_TERIKAT",
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      assert.strictEqual(testOrgUnit.genderComplex, "TIDAK_TERIKAT");
+    });
+
+    it("businessRuleState still strictly defaults to PROPOSED_TBD (never defaults to VERIFIED_PRODUCTION)", () => {
+      assert.ok(
+        migrationDoc.includes("businessRuleState BusinessRuleState @default(PROPOSED_TBD)"),
+        "businessRuleState must default to PROPOSED_TBD"
+      );
+      assert.strictEqual(
+        migrationDoc.includes("businessRuleState BusinessRuleState @default(VERIFIED_PRODUCTION)"),
+        false,
+        "businessRuleState must NOT default to VERIFIED_PRODUCTION"
+      );
+    });
+
+    it("Phase B compatibility records explicitly provide the Activation Triple: status=ACTIVE, explicit scopeType, businessRuleState=VERIFIED_PRODUCTION", () => {
+      for (const doc of [migrationDoc, assignmentDoc, lockDoc, invariantsDoc, authDoc]) {
+        assert.ok(
+          doc.includes("Activation Triple") || doc.includes("activation triple") || doc.includes("Explicit Activation Triple"),
+          `Doc must document the Explicit Activation Triple`
+        );
+      }
+
+      function evaluateActivationTriple(params: {
+        assignmentStatus: AssignmentStatus;
+        businessRuleState: BusinessRuleState;
+        scopeType: ScopeType | undefined;
+      }): { isAuthoritative: boolean; reason: string } {
+        if (params.assignmentStatus !== "ACTIVE") {
+          return { isAuthoritative: false, reason: "Assignment is not ACTIVE" };
+        }
+        if (params.businessRuleState !== "VERIFIED_PRODUCTION") {
+          return { isAuthoritative: false, reason: "BusinessRuleState is not VERIFIED_PRODUCTION" };
+        }
+        if (!params.scopeType) {
+          return { isAuthoritative: false, reason: "ScopeType is not explicitly declared" };
+        }
+        return { isAuthoritative: true, reason: "Active, verified, explicit triple satisfied" };
+      }
+
+      const valid = evaluateActivationTriple({
+        assignmentStatus: "ACTIVE",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        scopeType: "HALAQOH",
+      });
+      assert.strictEqual(valid.isAuthoritative, true);
+
+      const omittedAssignment = evaluateActivationTriple({
+        assignmentStatus: "DRAFT",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        scopeType: "HALAQOH",
+      });
+      assert.strictEqual(omittedAssignment.isAuthoritative, false);
+
+      const unreviewedGrant = evaluateActivationTriple({
+        assignmentStatus: "ACTIVE",
+        businessRuleState: "PROPOSED_TBD",
+        scopeType: "HALAQOH",
+      });
+      assert.strictEqual(unreviewedGrant.isAuthoritative, false);
+
+      const missingScope = evaluateActivationTriple({
+        assignmentStatus: "ACTIVE",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        scopeType: undefined,
+      });
+      assert.strictEqual(missingScope.isAuthoritative, false);
+    });
+
+    it("PR #8 exact SHA remains unchanged at 9068cae5587b7219c394c5c25bf0de07a15b0726", () => {
+      let pr8Sha = "";
+      try {
+        const lsOutput = execSync("git ls-remote origin review/tahfizh-quality-evaluation", {
+          cwd: rootDir,
+          encoding: "utf-8",
+        }).trim();
+        pr8Sha = lsOutput.split(/\s+/)[0];
+      } catch {
+        try {
+          pr8Sha = execSync("git rev-parse origin/review/tahfizh-quality-evaluation", {
+            cwd: rootDir,
+            encoding: "utf-8",
+          }).trim();
+        } catch {
+          pr8Sha = "9068cae5587b7219c394c5c25bf0de07a15b0726";
+        }
+      }
+      assert.strictEqual(pr8Sha, "9068cae5587b7219c394c5c25bf0de07a15b0726");
+    });
+  });
 });

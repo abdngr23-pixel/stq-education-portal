@@ -94,7 +94,7 @@ model PositionCapability {
   position          Position          @relation(fields: [positionId], references: [id], onDelete: Restrict)
   capabilityCode    String            @map("capability_code")
   capability        Capability        @relation(fields: [capabilityCode], references: [code], onDelete: Restrict)
-  scopeType         ScopeType         @default(UNIT) @map("scope_type")
+  scopeType         ScopeType         @map("scope_type")
   businessRuleState BusinessRuleState @default(PROPOSED_TBD) @map("business_rule_state")
 
   @@unique([positionId, capabilityCode])
@@ -103,11 +103,11 @@ model PositionCapability {
 ```
 
 > [!IMPORTANT]
-> **Fail-Closed Default Invariant**:
-> `PositionCapability.businessRuleState` strictly defaults to `@default(PROPOSED_TBD)` (never defaults to `VERIFIED_PRODUCTION`).
-> - **Why Fail-Closed**: During Phase A/B compatibility, only `VERIFIED_PRODUCTION` grants are authoritative. A developer omission or newly mapped policy must NEVER silently become an active production grant.
-> - **Controlled Backfill**: Phase B compatibility migrations must explicitly assign `businessRuleState = VERIFIED_PRODUCTION` for observed production capabilities. Target V2 approved grants must explicitly specify `APPROVED_TARGET_PENDING_TECHNICAL`.
-> - **Zero Inferred Promotion**: No automatic promotion can occur from Position name, Role, username, or capability name. Any grant in `PROPOSED_TBD` confers ZERO authority.
+> **Fail-Closed Security Defaults & Explicit Scope Invariant**:
+> 1. **Explicit Scope Declaration**: `PositionCapability.scopeType` has **NO default**. Every position capability mapping must explicitly declare its containment scope (`GLOBAL`, `DOMAIN`, `UNIT`, `HALAQOH`, `KAMAR`, `OWN_CHILD`, `SELF`, `ASSIGNED_UNITS`). Scope is security policy and must never be silently guessed or inferred from anchor units.
+> 2. **Fail-Closed Grant Lifecycle**: `PositionCapability.businessRuleState` strictly defaults to `@default(PROPOSED_TBD)` (never defaults to `VERIFIED_PRODUCTION`). Developer omission while mapping a policy confers ZERO authority.
+> 3. **Controlled Phase B Backfill**: Compatibility migrations must explicitly assign `businessRuleState = VERIFIED_PRODUCTION` and explicit `scopeType` for observed production capabilities. Target V2 approved grants must explicitly specify `APPROVED_TARGET_PENDING_TECHNICAL`.
+> 4. **Zero Inferred Promotion**: No automatic promotion can occur from Position name, Role, username, or capability name. Any grant in `PROPOSED_TBD` confers ZERO authority.
 
 ---
 
@@ -132,7 +132,7 @@ model Assignment {
   position    Position              @relation(fields: [positionId], references: [id], onDelete: Restrict)
   unitId      String                @map("unit_id")
   unit        OrgUnit               @relation(fields: [unitId], references: [id], onDelete: Restrict)
-  status      AssignmentStatus      @default(ACTIVE)
+  status      AssignmentStatus      @default(DRAFT)
   validFrom   DateTime              @default(now()) @map("valid_from")
   validUntil  DateTime?             @map("valid_until")
   notes       String?
@@ -146,6 +146,24 @@ model Assignment {
   @@index([positionId, status])
   @@map("assignments")
 }
+```
+
+#### Canonical Assignment Lifecycle Semantics
+`Assignment.status` strictly defaults to `@default(DRAFT)` (never defaults to `ACTIVE`):
+- **`DRAFT`**: Created assignment pending activation; confers **ZERO authority**.
+- **`ACTIVE`**: Explicitly activated assignment conferring operational authority within valid window (`validFrom` to `validUntil`).
+- **`SUSPENDED`**: Temporarily halted (e.g. leave, disciplinary action); confers **ZERO authority**.
+- **`EXPIRED`**: Naturally elapsed validity timestamp; confers **ZERO authority**.
+- **`REVOKED`**: Terminated administratively; confers **ZERO authority**.
+
+Phase B controlled compatibility backfill MUST explicitly set `status = ACTIVE` for assignments reproducing verified production authority. No implicit `ACTIVE` assignment creation is permitted.
+
+#### The Explicit Activation Triple
+For any effective authority to exist during Phase A/B, all three security dimensions must be deliberate:
+1. **Assignment**: `status === ACTIVE` (explicitly activated; candidate schema defaults fail-closed to `@default(DRAFT)`).
+2. **PositionCapability**: `businessRuleState === VERIFIED_PRODUCTION` (explicitly verified; candidate schema defaults fail-closed to `@default(PROPOSED_TBD)`).
+3. **PositionCapability**: `scopeType` explicitly declared (mandatory, NO default; never inferred from anchor unit).
+*Plus*: Resource context must match the explicit scope and `genderComplex` boundary. If any required dimension is missing or invalid: **DENY / FAIL CLOSED**.
 
 model AssignmentScopeUnit {
   id           String     @id @default(cuid())

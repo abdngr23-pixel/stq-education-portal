@@ -83,6 +83,14 @@
 8. **INV-AUTH-06 (Fail-Closed PositionCapability Default & Authorization Lifecycle)**:
    A `PositionCapability` with missing, unknown, unsupported, or non-authoritative `BusinessRuleState` MUST confer **ZERO authority**. The Authorization Engine strictly fails closed. The candidate Prisma schema strictly defaults `PositionCapability.businessRuleState` to `@default(PROPOSED_TBD)` (never defaults to `VERIFIED_PRODUCTION`). Developer omission while creating a `PositionCapability` can never result in an authoritative grant. Phase B compatibility backfill requires explicit `businessRuleState = VERIFIED_PRODUCTION`. In Phase A/B compatibility, only `VERIFIED_PRODUCTION` grants are authoritative. `APPROVED_TARGET_PENDING_TECHNICAL` grants become authoritative strictly upon formal Phase D cutover approval. `PROPOSED_TBD` grants are never authoritative under any circumstance.
 
+9. **INV-AUTH-07 (Security-Bearing Defaults & The Explicit Activation Triple)**:
+   All security-bearing fields must fail closed:
+   - `Assignment.status` strictly defaults to `@default(DRAFT)` (never defaults to `ACTIVE`). An omitted assignment status confers **ZERO authority**.
+   - `PositionCapability.scopeType` is mandatory with **NO default**. Scope is security policy and must never be guessed or inferred.
+   - `OrgUnit.genderComplex` is mandatory with **NO default**. Omission can never silently classify a unit as `CAMPUR`.
+   - `PositionCapability.businessRuleState` strictly defaults to `@default(PROPOSED_TBD)` (never defaults to `VERIFIED_PRODUCTION`).
+   - The Explicit Activation Triple: An assignment confers authority iff (1) `Assignment.status === ACTIVE`, (2) `PositionCapability.businessRuleState === VERIFIED_PRODUCTION`, and (3) `PositionCapability.scopeType` is explicitly declared and encompasses the requested context. If any required dimension is missing or invalid: **DENY / FAIL CLOSED**.
+
 ---
 
 ## 4. Keasramaan & Organizational Invariants
