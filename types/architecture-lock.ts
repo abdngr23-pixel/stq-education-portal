@@ -66,7 +66,7 @@ export type OrgUnitType =
   | "HALAQOH"         // Qur'an Halaqoh (authoritative records backfilled from Halaqoh table)
   | "KAMAR"           // Asrama Rooms (authoritative dormitory structure)
   | "SERVICE_UNIT"    // TKS Units (Dapur, Masjid, Air Minum, Air Sumur, dll.)
-  | "USROH"           // Cleaning groups under OSDA Kebersihan
+  | "USROH"           // Cleaning taskforces under OSDA (cleanliness functionally supervised by Divisi Kebersihan)
   | "ACADEMIC_CLASS"; // Classes (7A, 7B, 8A, dll.)
 
 /**
@@ -487,5 +487,80 @@ export interface CandidateCanonicalAuditLogModel {
   userAgent: string | null;
   createdAt: Date;
 }
+
+/**
+ * Canonical Keasramaan Structure Definitions & Contracts
+ * Derived strictly from locked architecture specifications (STQ_ARCHITECTURE_LOCK.md & STQ_MILESTONE3_1_KEASRAMAAN_STRUCTURE.md)
+ */
+export const KEASRAMAAN_STRUCTURE = {
+  OSDA_CORE_POSITIONS: [
+    "KETUA_OSDA",
+    "SEKRETARIS_OSDA",
+    "BENDAHARA_OSDA",
+    "MULTIMEDIA_OSDA",
+  ] as const,
+  OSDA_DIVISIONS: [
+    "KEAMANAN_KEDISIPLINAN",
+    "PENDIDIKAN_IBADAH",
+    "KEBERSIHAN_KERAPIHAN",
+    "KESEHATAN",
+    "SARANA_PRASARANA",
+  ] as const,
+  TKS_EXPANSION: "Tugas Khusus Santri" as const,
+  TKS_NODE: {
+    type: "ORGANIZATION" as const,
+    domain: "KEASRAMAAN" as const,
+    code: "OU-TKS-ROOT" as const,
+    name: "Tugas Khusus Santri" as const,
+    hasCentralKetua: false as const,
+  },
+  TKS_UNITS: [
+    "Dapur dan Gizi",
+    "Masjid",
+    "Kantor Pendidikan",
+    "Kantor Yayasan",
+    "Air Minum",
+    "Air Sumur",
+  ] as const,
+  TKS_SERVICE_UNITS: [
+    { code: "OU-TKS-DAPUR", name: "Dapur dan Gizi", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-MASJID", name: "Masjid", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-PENDIDIKAN", name: "Kantor Pendidikan", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-YAYASAN", name: "Kantor Yayasan", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-AIR-MINUM", name: "Air Minum", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-AIR-SUMUR", name: "Air Sumur", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+  ] as const,
+} as const;
+
+/**
+ * Minimal Typed Structural Contracts for Keasramaan Sub-Organizations
+ */
+export const TKS_STRUCTURE_CONTRACT = {
+  NODE: {
+    type: "ORGANIZATION" as const,
+    domain: "KEASRAMAAN" as const,
+    code: "OU-TKS-ROOT" as const,
+    name: "Tugas Khusus Santri" as const,
+    hasCentralKetua: false as const,
+  },
+  SERVICE_UNITS: [
+    { code: "OU-TKS-DAPUR", name: "Dapur dan Gizi", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-MASJID", name: "Masjid", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-PENDIDIKAN", name: "Kantor Pendidikan", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-YAYASAN", name: "Kantor Yayasan", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-AIR-MINUM", name: "Air Minum", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+    { code: "OU-TKS-AIR-SUMUR", name: "Air Sumur", type: "SERVICE_UNIT" as const, domain: "KEASRAMAAN" as const, parentUnitCode: "OU-TKS-ROOT" as const },
+  ] as const,
+} as const;
+
+export const OSDA_STRUCTURE_CONTRACT = {
+  NODE: {
+    type: "ORGANIZATION" as const,
+    domain: "KEASRAMAAN" as const,
+    code: "OU-OSDA-ROOT" as const,
+    name: "Organisasi Santri Darul Ulum Cendekia" as const,
+  },
+} as const;
+
 
 

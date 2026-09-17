@@ -2127,4 +2127,333 @@ export async function runIsolatedProductionEquivalentSimulation(): Promise<Produ
   }
 }
 
+export interface M31MigrationVerificationResult {
+  pr8ExactShaVerified: boolean;
+  pr8MigrationApplied: boolean;
+  phase2aApplied: boolean;
+  m31MigrationApplied: boolean;
+  existingDataUnchanged: boolean;
+  existingPr8TablesIntact: boolean;
+  tableCreated: boolean;
+  zeroInventedPlacements: boolean;
+  uniqueActiveConstraintEnforced: boolean;
+  historyPreserved: boolean;
+  simulationSuccess: boolean;
+}
+
+export async function runIsolatedM31MigrationVerification(): Promise<M31MigrationVerificationResult> {
+  const port = await findFreePort(5670 + Math.floor(Math.random() * 300));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `stq-m31-${Date.now()}-${port}-`));
+  const testUrl = `postgresql://postgres:postgrespassword@127.0.0.1:${port}/stq_m31_test?schema=public`;
+
+  verifyTestEnvironment(testUrl);
+
+  const pgInstance = new EmbeddedPostgres({
+    databaseDir: tempDir,
+    port,
+    user: "postgres",
+    password: "postgrespassword",
+    persistent: false,
+  });
+
+  let mainPid: number | null = null;
+  let descendantPids: Set<number> = new Set();
+  let client: PrismaClient | null = null;
+
+  try {
+    await pgInstance.initialise();
+    await pgInstance.start();
+
+    for (let i = 0; i < 30; i++) {
+      if (await isPortInUse(port)) break;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+
+    const detected = detectTestInstancePids(port, tempDir);
+    mainPid = detected.mainPid;
+    descendantPids = new Set(detected.descendantPids);
+
+    try {
+      await pgInstance.createDatabase("stq_m31_test");
+    } catch {}
+
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      DATABASE_URL: testUrl,
+      TEST_DATABASE_URL: testUrl,
+      NODE_ENV: "test",
+      IS_TEST_RUN: "true",
+      ALLOW_ISOLATED_TEST_DB: "true",
+    };
+
+    const projectRoot = path.resolve(__dirname, "..");
+
+    // 1. Inisialisasi skema baseline warisan
+    execSync(`npx prisma db push --schema=tests/fixtures/baseline_schema.prisma --skip-generate --accept-data-loss`, {
+      env,
+      encoding: "utf-8",
+      cwd: projectRoot,
+    });
+
+    client = new PrismaClient({
+      datasources: { db: { url: testUrl } },
+    });
+
+    // 2. Terapkan migrasi 1..5 rantai main
+    const mainMigrations = [
+      "20260910083000_setoran_tahfizh_page_based",
+      "20260910090000_core_operational_final",
+      "20260910103000_p0_tahfizh_persistence",
+      "20260914100000_target_santri_float",
+      "20260914170000_add_jumlah_juz_mufar",
+    ];
+
+    for (const m of mainMigrations) {
+      const sqlPath = path.join(projectRoot, "prisma/migrations", m, "migration.sql");
+      const sql = fs.readFileSync(sqlPath, "utf-8");
+      await executeSqlStatementsOnClient(client, sql);
+    }
+
+    // 3. Verifikasi dan ambil migrasi PR #8 langsung dari SHA 9068cae5587b7219c394c5c25bf0de07a15b0726 (in-memory)
+    const PR8_EXACT_SHA = "9068cae5587b7219c394c5c25bf0de07a15b0726";
+    let pr8MigrationFetched = false;
+    let pr8ExactShaVerified = false;
+    let pr8Sql = "";
+    let pr8MigrationApplied = false;
+
+    try {
+      let commitExists = false;
+      try {
+        execSync(`git cat-file -e ${PR8_EXACT_SHA}`, { cwd: projectRoot, stdio: "ignore" });
+        commitExists = true;
+      } catch {
+        commitExists = false;
+      }
+
+      if (!commitExists) {
+        try {
+          execSync("git fetch origin review/tahfizh-quality-evaluation --depth=1", { cwd: projectRoot, stdio: "ignore" });
+        } catch {
+          try {
+            execSync(`git fetch origin ${PR8_EXACT_SHA} --depth=1`, { cwd: projectRoot, stdio: "ignore" });
+          } catch {}
+        }
+      }
+
+      let resolvedSha = "";
+      try {
+        resolvedSha = execSync(`git rev-parse --verify ${PR8_EXACT_SHA}`, { cwd: projectRoot, encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }).trim();
+      } catch {
+        try {
+          resolvedSha = execSync("git rev-parse FETCH_HEAD", { cwd: projectRoot, encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }).trim();
+        } catch {}
+      }
+
+      if (resolvedSha.toLowerCase() === PR8_EXACT_SHA.toLowerCase()) {
+        pr8ExactShaVerified = true;
+      } else {
+        console.error(`[runIsolatedM31MigrationVerification] FAIL-CLOSED: Resolved SHA '${resolvedSha}' != expected PR #8 SHA '${PR8_EXACT_SHA}'`);
+      }
+
+      if (pr8ExactShaVerified) {
+        pr8Sql = execSync(
+          `git show ${PR8_EXACT_SHA}:prisma/migrations/20260915100000_add_tahfizh_quality_engine/migration.sql`,
+          { encoding: "utf-8", cwd: projectRoot }
+        );
+        if (pr8Sql.length > 1000) {
+          pr8MigrationFetched = true;
+        } else {
+          console.error(`[runIsolatedM31MigrationVerification] FAIL-CLOSED: PR #8 migration size too small: ${pr8Sql.length}`);
+        }
+      }
+    } catch (fetchErr: unknown) {
+      const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+      console.error("[runIsolatedM31MigrationVerification] FAIL-CLOSED: Error retrieving PR #8 migration:", msg);
+    }
+
+    if (!pr8ExactShaVerified || !pr8MigrationFetched || !pr8Sql) {
+      throw new Error(`FAIL-CLOSED: PR #8 migration could not be verified or fetched from exact SHA ${PR8_EXACT_SHA}`);
+    }
+
+    // Terapkan SQL migrasi PR #8
+    await executeSqlStatementsOnClient(client, pr8Sql);
+    pr8MigrationApplied = true;
+
+    // 4. Terapkan migrasi Phase 2A
+    const phase2aSqlPath = path.join(projectRoot, "prisma/migrations/20260917000000_stq_architecture_lock_phase2a/migration.sql");
+    const phase2aSql = fs.readFileSync(phase2aSqlPath, "utf-8");
+    await executeSqlStatementsOnClient(client, phase2aSql);
+    const phase2aApplied = true;
+
+    // 5. Masukkan data representatif SEBELUM migrasi M3.1
+    await client.$executeRawUnsafe(`
+      INSERT INTO "staff" ("id", "staff_code", "nama", "no_hp", "role_staff", "status", "created_at", "updated_at")
+      VALUES ('stf-pre-m31', 'STF-PRE-001', 'Ustadz Pre M31', '08123456789', 'MK', 'AKTIF', NOW(), NOW());
+    `);
+    await client.$executeRawUnsafe(`
+      INSERT INTO "users" ("id", "username", "email", "password_hash", "role", "status", "staff_id", "created_at", "updated_at")
+      VALUES ('usr-pre-m31', 'usrprem31', 'usr-pre@stq.ac.id', 'dummy_hash', 'MK', 'AKTIF', 'stf-pre-m31', NOW(), NOW());
+    `);
+    await client.$executeRawUnsafe(`
+      INSERT INTO "santri" ("id", "nis", "nama", "kelas", "jenis_kelamin", "status", "created_at", "updated_at")
+      VALUES ('san-pre-m31', 'NIS-PRE-001', 'Santri Pre M31', '7A', 'L', 'AKTIF', NOW(), NOW());
+    `);
+    await client.$executeRawUnsafe(`
+      INSERT INTO "evaluasi_rubu_tahfizh" ("id", "santri_id", "musyrif_id", "tanggal", "juz", "rubu_ke", "nilai_tajwid", "nilai_fashahah", "nilai_kelancaran", "nilai", "created_at", "updated_at")
+      VALUES ('eval-pre-m31', 'san-pre-m31', 'stf-pre-m31', NOW(), 1, 1, 'MUMTAZ', 'MUMTAZ', 'MUMTAZ', 'MUMTAZ', NOW(), NOW());
+    `);
+    await client.$executeRawUnsafe(`
+      INSERT INTO "org_units" ("id", "code", "name", "type", "domain", "gender_complex", "is_active", "created_at", "updated_at")
+      VALUES ('ou-pre-kamar-1', 'OU-PRE-KMR-1', 'Kamar Ali Pre', 'KAMAR', 'KEASRAMAAN', 'PUTRA', true, NOW(), NOW());
+    `);
+    await client.$executeRawUnsafe(`
+      INSERT INTO "org_units" ("id", "code", "name", "type", "domain", "gender_complex", "is_active", "created_at", "updated_at")
+      VALUES ('ou-pre-kamar-2', 'OU-PRE-KMR-2', 'Kamar Utsman Pre', 'KAMAR', 'KEASRAMAAN', 'PUTRA', true, NOW(), NOW());
+    `);
+
+    // Rekam fingerprint data sebelum M3.1
+    const preUser = await client.$queryRawUnsafe<Array<{ id: string; email: string; role: string; status: string }>>(
+      `SELECT "id", "email", "role"::text, "status"::text FROM "users" WHERE "id" = 'usr-pre-m31';`
+    );
+    const preStaff = await client.$queryRawUnsafe<Array<{ id: string; nama: string; status: string }>>(
+      `SELECT "id", "nama", "status"::text FROM "staff" WHERE "id" = 'stf-pre-m31';`
+    );
+    const preSantri = await client.$queryRawUnsafe<Array<{ id: string; nis: string; status: string }>>(
+      `SELECT "id", "nis", "status"::text FROM "santri" WHERE "id" = 'san-pre-m31';`
+    );
+    const preEval = await client.$queryRawUnsafe<Array<{ id: string; santri_id: string; musyrif_id: string }>>(
+      `SELECT "id", "santri_id", "musyrif_id" FROM "evaluasi_rubu_tahfizh" WHERE "id" = 'eval-pre-m31';`
+    );
+
+    // 6. Terapkan migrasi M3.1
+    const m31SqlPath = path.join(projectRoot, "prisma/migrations/20260917220000_m3_1_keasramaan_structure/migration.sql");
+    const m31Sql = fs.readFileSync(m31SqlPath, "utf-8");
+    await executeSqlStatementsOnClient(client, m31Sql);
+    const m31MigrationApplied = true;
+
+    // 7. Verifikasi data representatif SETELAH migrasi M3.1 (harus tidak berubah)
+    const postUser = await client.$queryRawUnsafe<Array<{ id: string; email: string; role: string; status: string }>>(
+      `SELECT "id", "email", "role"::text, "status"::text FROM "users" WHERE "id" = 'usr-pre-m31';`
+    );
+    const postStaff = await client.$queryRawUnsafe<Array<{ id: string; nama: string; status: string }>>(
+      `SELECT "id", "nama", "status"::text FROM "staff" WHERE "id" = 'stf-pre-m31';`
+    );
+    const postSantri = await client.$queryRawUnsafe<Array<{ id: string; nis: string; status: string }>>(
+      `SELECT "id", "nis", "status"::text FROM "santri" WHERE "id" = 'san-pre-m31';`
+    );
+    const postEval = await client.$queryRawUnsafe<Array<{ id: string; santri_id: string; musyrif_id: string }>>(
+      `SELECT "id", "santri_id", "musyrif_id" FROM "evaluasi_rubu_tahfizh" WHERE "id" = 'eval-pre-m31';`
+    );
+
+    const existingDataUnchanged =
+      JSON.stringify(preUser) === JSON.stringify(postUser) &&
+      JSON.stringify(preStaff) === JSON.stringify(postStaff) &&
+      JSON.stringify(preSantri) === JSON.stringify(postSantri) &&
+      JSON.stringify(preEval) === JSON.stringify(postEval);
+
+    const existingPr8TablesIntact = postEval.length === 1;
+
+    // 8. Verifikasi tabel santri_kamar_placements dibuat
+    const tablesRes: Array<{ table_name: string }> = await client.$queryRawUnsafe(`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'santri_kamar_placements';
+    `);
+    const tableCreated = tablesRes.length === 1;
+
+    // 9. Verifikasi zero invented room placements
+    const initialPlacements: Array<{ count: string | number }> = await client.$queryRawUnsafe(`
+      SELECT COUNT(*) as count FROM "santri_kamar_placements";
+    `);
+    const zeroInventedPlacements = Number(initialPlacements[0].count) === 0;
+
+    // 10. Uji partial unique index:
+    // Masukkan 1 active placement
+    await client.$executeRawUnsafe(`
+      INSERT INTO "santri_kamar_placements" ("id", "santri_id", "kamar_id", "is_active", "start_date", "created_at", "updated_at")
+      VALUES ('plc-01', 'san-pre-m31', 'ou-pre-kamar-1', true, NOW(), NOW(), NOW());
+    `);
+
+    // Coba masukkan active placement kedua untuk santri yang sama -> harus gagal (partial unique index)
+    let uniqueActiveConstraintEnforced = false;
+    try {
+      await client.$executeRawUnsafe(`
+        INSERT INTO "santri_kamar_placements" ("id", "santri_id", "kamar_id", "is_active", "start_date", "created_at", "updated_at")
+        VALUES ('plc-02', 'san-pre-m31', 'ou-pre-kamar-2', true, NOW(), NOW(), NOW());
+      `);
+    } catch {
+      uniqueActiveConstraintEnforced = true;
+    }
+
+    // Masukkan inactive historical placement untuk santri yang sama -> harus berhasil
+    let historyPreserved = false;
+    try {
+      await client.$executeRawUnsafe(`
+        INSERT INTO "santri_kamar_placements" ("id", "santri_id", "kamar_id", "is_active", "start_date", "end_date", "created_at", "updated_at")
+        VALUES ('plc-03', 'san-pre-m31', 'ou-pre-kamar-2', false, NOW() - INTERVAL '30 days', NOW(), NOW(), NOW());
+      `);
+      historyPreserved = true;
+    } catch {}
+
+    const simulationSuccess =
+      pr8ExactShaVerified &&
+      pr8MigrationApplied &&
+      phase2aApplied &&
+      m31MigrationApplied &&
+      existingDataUnchanged &&
+      existingPr8TablesIntact &&
+      tableCreated &&
+      zeroInventedPlacements &&
+      uniqueActiveConstraintEnforced &&
+      historyPreserved;
+
+    return {
+      pr8ExactShaVerified,
+      pr8MigrationApplied,
+      phase2aApplied,
+      m31MigrationApplied,
+      existingDataUnchanged,
+      existingPr8TablesIntact,
+      tableCreated,
+      zeroInventedPlacements,
+      uniqueActiveConstraintEnforced,
+      historyPreserved,
+      simulationSuccess,
+    };
+  } finally {
+    if (client) {
+      try { await client.$disconnect(); } catch {}
+    }
+    const pgCtl = getPgCtlPath();
+    if (pgCtl && fs.existsSync(tempDir)) {
+      try {
+        spawnSync(pgCtl, ["stop", "-D", tempDir, "-m", "fast", "-w", "-t", "5"], {
+          encoding: "utf-8",
+          timeout: 6000,
+          stdio: "ignore",
+        });
+      } catch {}
+    }
+
+    try { await pgInstance.stop(); } catch {}
+
+    const pidsToKill = new Set<number>();
+    if (mainPid) pidsToKill.add(mainPid);
+    for (const p of descendantPids) pidsToKill.add(p);
+
+    for (const p of pidsToKill) {
+      if (verifyPostgresProcessOwnership(p, tempDir, mainPid)) {
+        try {
+          if (process.platform === "win32") {
+            spawnSync("taskkill", ["/PID", p.toString(), "/T", "/F"], { stdio: "ignore" });
+          } else {
+            process.kill(p, "SIGKILL");
+          }
+        } catch {}
+      }
+    }
+
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
 

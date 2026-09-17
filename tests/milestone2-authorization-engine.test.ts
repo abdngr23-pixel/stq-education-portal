@@ -248,56 +248,52 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 2: COMPATIBILITY & CANONICAL AUTHO
       );
     });
 
-    it("2.5. HALAQOH Scope: matches halaqohId in assigned halaqohs", () => {
+    it("2.5. HALAQOH Scope: matches halaqohId strictly against anchorUnitId", () => {
       const grant: EffectiveCapabilityGrant = {
         assignmentId: "asg-5",
         positionCode: "MUSYRIF_TAHFIZH",
         capabilityCode: "tahfizh.setoran.create",
         scopeType: "HALAQOH",
-        anchorUnitId: "unit-tahfizh",
-        unitIds: ["unit-tahfizh"],
+        anchorUnitId: "hlq-abu-bakr",
+        unitIds: ["hlq-abu-bakr"],
         businessRuleState: "VERIFIED_PRODUCTION",
       };
 
       const matchCtx: ResolvedResourceContext = {
-        orgUnitIds: ["unit-tahfizh"],
+        orgUnitIds: ["hlq-abu-bakr"],
         halaqohId: "hlq-abu-bakr",
-        assignedHalaqohIds: ["hlq-abu-bakr", "hlq-umar"],
       };
       assert.strictEqual(evaluateScopePredicate(grant, matchCtx, subject).matches, true);
 
       const mismatchCtx: ResolvedResourceContext = {
-        orgUnitIds: ["unit-tahfizh"],
+        orgUnitIds: ["hlq-utsman"],
         halaqohId: "hlq-utsman",
-        assignedHalaqohIds: ["hlq-abu-bakr"],
       };
       const res = evaluateScopePredicate(grant, mismatchCtx, subject);
       assert.strictEqual(res.matches, false);
       assert.strictEqual(res.code, "SCOPE_MISMATCH");
     });
 
-    it("2.6. KAMAR Scope: matches kamarId in assigned kamars", () => {
+    it("2.6. KAMAR Scope: matches kamarId strictly against anchorUnitId", () => {
       const grant: EffectiveCapabilityGrant = {
         assignmentId: "asg-6",
         positionCode: "MUDABBIR",
         capabilityCode: "keasramaan.kamar.inspect",
         scopeType: "KAMAR",
-        anchorUnitId: "unit-asrama",
-        unitIds: ["unit-asrama"],
+        anchorUnitId: "kmr-ali-1",
+        unitIds: ["kmr-ali-1"],
         businessRuleState: "VERIFIED_PRODUCTION",
       };
 
       const matchCtx: ResolvedResourceContext = {
-        orgUnitIds: ["unit-asrama"],
+        orgUnitIds: ["kmr-ali-1"],
         kamarId: "kmr-ali-1",
-        assignedKamarIds: ["kmr-ali-1"],
       };
       assert.strictEqual(evaluateScopePredicate(grant, matchCtx, subject).matches, true);
 
       const mismatchCtx: ResolvedResourceContext = {
-        orgUnitIds: ["unit-asrama"],
+        orgUnitIds: ["kmr-ali-2"],
         kamarId: "kmr-ali-2",
-        assignedKamarIds: ["kmr-ali-1"],
       };
       assert.strictEqual(evaluateScopePredicate(grant, mismatchCtx, subject).matches, false);
     });
@@ -1662,7 +1658,16 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 2: COMPATIBILITY & CANONICAL AUTHO
     for (const sc of scenarios) {
       it(`Scenario #${sc.id}: ${sc.name} -> ${sc.expectedDecision} (${sc.expectedReasonCode})`, async () => {
         const userId = `usr-sc-${sc.id}`;
-        const unitId = sc.role === "OSDA" ? "unit-kios" : (sc.resourceContext.unitId || (sc.scopeType === "HALAQOH" ? sc.resourceContext.halaqohId : undefined) || "unit-anchor");
+        const assignedHalaqoh = (sc.resolvedContext as Record<string, unknown> | undefined)?.["assignedHalaqohIds"] as string[] | undefined;
+        const assignedKamar = (sc.resolvedContext as Record<string, unknown> | undefined)?.["assignedKamarIds"] as string[] | undefined;
+        const unitId =
+          sc.scopeType === "HALAQOH"
+            ? (assignedHalaqoh?.[0] || sc.resourceContext.halaqohId || "hlq-1")
+            : sc.scopeType === "KAMAR"
+            ? (assignedKamar?.[0] || sc.resourceContext.kamarId || "kmr-1")
+            : sc.role === "OSDA"
+            ? "unit-kios"
+            : (sc.resourceContext.unitId || "unit-anchor");
 
         // Build mock assignment unless scenario 24 (error) or capability not assigned
         const hasCapability = !["MT - Reward Issue (Denied)", "ADM - Health Record Update Status (Denied)", "GA - Health Record Create (Denied)", "OSDA - Generic OSDA Health Access (Denied)", "Kabid Tahfizh - Reward Policy Edit (Denied)"].includes(sc.name);

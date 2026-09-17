@@ -433,6 +433,7 @@ model Santri {
   hakLiburList          HakLiburSantri[]
   transaksiBintangList  TransaksiBintang[]
   finalisasiBulananList FinalisasiBulananSantri[]
+  kamarPlacements       SantriKamarPlacement[]
 
   createdAt     DateTime         @default(now()) @map("created_at")
   updatedAt     DateTime         @updatedAt @map("updated_at")
@@ -1115,7 +1116,8 @@ model OrgUnit {
   metadata       Json?                  @map("metadata")
   assignments    Assignment[]
   scopedIn       AssignmentScopeUnit[]
-  unitPlacements UnitAccountPlacement[]
+  unitPlacements        UnitAccountPlacement[]
+  santriKamarPlacements SantriKamarPlacement[]
   createdAt      DateTime               @default(now()) @map("created_at")
   updatedAt      DateTime               @updatedAt @map("updated_at")
 
@@ -1243,5 +1245,24 @@ model CanonicalAuditLog {
   @@index([action])
   @@index([createdAt])
   @@map("canonical_audit_logs")
+}
+
+model SantriKamarPlacement {
+  id          String    @id @default(cuid())
+  santriId    String    @map("santri_id")
+  santri      Santri    @relation(fields: [santriId], references: [id], onDelete: Restrict)
+  kamarId     String    @map("kamar_id")
+  kamar       OrgUnit   @relation(fields: [kamarId], references: [id], onDelete: Restrict)
+  isActive    Boolean   @default(true) @map("is_active")
+  startDate   DateTime  @default(now()) @map("start_date")
+  endDate     DateTime? @map("end_date")
+  notes       String?
+  createdById String?   @map("created_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([santriId, isActive])
+  @@index([kamarId, isActive])
+  @@map("santri_kamar_placements")
 }
 
