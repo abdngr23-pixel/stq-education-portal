@@ -76,7 +76,7 @@ Canonical V2 statuses are EXACTLY: `DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`.
 - `SEMBUH` $\implies$ Maps to `PULIH` (Deterministic)
 - `DIRUJUK_PUSKESMAS` $\implies$ Maps to `DIRUJUK` (Deterministic)
 - `DIRUJUK_RS` $\implies$ Maps to `DIRUJUK` (Deterministic)
-- `PULANG` $\implies$ `REVIEW_REQUIRED` (Ambiguous historical status; requires human review, never silently mapped).
+- `PULANG` $\implies$ `REVIEW_REQUIRED` / **AMBIGUOUS_PENDING_REVIEW** (Ambiguous historical status; requires human review, never silently mapped).
 - *Unsupported/unknown strings* $\implies$ `UNKNOWN` (Safe fallback; zero speculative data fabrication).
 
 #### Health V2 Boundary Invariants:
