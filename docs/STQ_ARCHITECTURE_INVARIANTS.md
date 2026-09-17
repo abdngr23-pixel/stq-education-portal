@@ -80,6 +80,9 @@
 7. **INV-AUTH-05 (Unit Account Canonical Placement Invariant)**:
    Accounts of type `AccountType.UNIT` must have **EXACTLY ONE** operational placement in `UnitAccountPlacement` (`userId` unique constraint). A UNIT account may hold multiple positions only when they all resolve to that same placement unit. The authorization engine strictly fails closed (`SYSTEM_FAIL_CLOSED` or `SCOPE_MISMATCH`) if any assignment anchor unit contradicts the account's `UnitAccountPlacement`. Username string heuristics must NEVER be used to infer placement.
 
+8. **INV-AUTH-06 (Fail-Closed PositionCapability Default & Authorization Lifecycle)**:
+   A `PositionCapability` with missing, unknown, unsupported, or non-authoritative `BusinessRuleState` MUST confer **ZERO authority**. The Authorization Engine strictly fails closed. The candidate Prisma schema strictly defaults `PositionCapability.businessRuleState` to `@default(PROPOSED_TBD)` (never defaults to `VERIFIED_PRODUCTION`). Developer omission while creating a `PositionCapability` can never result in an authoritative grant. Phase B compatibility backfill requires explicit `businessRuleState = VERIFIED_PRODUCTION`. In Phase A/B compatibility, only `VERIFIED_PRODUCTION` grants are authoritative. `APPROVED_TARGET_PENDING_TECHNICAL` grants become authoritative strictly upon formal Phase D cutover approval. `PROPOSED_TBD` grants are never authoritative under any circumstance.
+
 ---
 
 ## 4. Keasramaan & Organizational Invariants

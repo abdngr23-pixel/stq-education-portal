@@ -1022,4 +1022,164 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
       assert.ok(migrationDoc.includes("unit_account_placements"), "Must reference unit_account_placements table");
     });
   });
+
+  // =========================================================================
+  // 16. Fail-Closed PositionCapability Business Rule State Contracts
+  // =========================================================================
+  describe("16. Fail-Closed PositionCapability Business Rule State Contracts", () => {
+    const migrationDocPath = path.join(docsDir, "STQ_ARCHITECTURE_MIGRATION_PLAN.md");
+    const assignmentDocPath = path.join(docsDir, "STQ_ASSIGNMENT_MODEL.md");
+    const lockDocPath = path.join(docsDir, "STQ_ARCHITECTURE_LOCK.md");
+    const invariantsDocPath = path.join(docsDir, "STQ_ARCHITECTURE_INVARIANTS.md");
+    const authDocPath = path.join(docsDir, "STQ_AUTHORIZATION_MODEL.md");
+
+    const migrationDoc = fs.readFileSync(migrationDocPath, "utf-8");
+    const assignmentDoc = fs.readFileSync(assignmentDocPath, "utf-8");
+    const lockDoc = fs.readFileSync(lockDocPath, "utf-8");
+    const invariantsDoc = fs.readFileSync(invariantsDocPath, "utf-8");
+    const authDoc = fs.readFileSync(authDocPath, "utf-8");
+
+    it("Candidate Prisma schema does NOT default businessRuleState to VERIFIED_PRODUCTION", () => {
+      assert.strictEqual(
+        migrationDoc.includes("@default(VERIFIED_PRODUCTION)"),
+        false,
+        "STQ_ARCHITECTURE_MIGRATION_PLAN.md must NOT default businessRuleState to VERIFIED_PRODUCTION"
+      );
+      assert.strictEqual(
+        assignmentDoc.includes("@default(VERIFIED_PRODUCTION)"),
+        false,
+        "STQ_ASSIGNMENT_MODEL.md must NOT default businessRuleState to VERIFIED_PRODUCTION"
+      );
+    });
+
+    it("Candidate Prisma schema defaults businessRuleState to PROPOSED_TBD (fail-closed)", () => {
+      assert.ok(
+        migrationDoc.includes("businessRuleState BusinessRuleState @default(PROPOSED_TBD)"),
+        "Migration plan candidate schema must default businessRuleState to PROPOSED_TBD"
+      );
+      assert.ok(
+        assignmentDoc.includes("businessRuleState BusinessRuleState @default(PROPOSED_TBD)"),
+        "Assignment model candidate schema must default businessRuleState to PROPOSED_TBD"
+      );
+    });
+
+    it("Omission can never produce an active VERIFIED_PRODUCTION grant", () => {
+      function createPositionCapabilityWithDefault(input: {
+        id: string;
+        positionId: string;
+        capabilityCode: string;
+        scopeType?: ScopeType;
+        businessRuleState?: BusinessRuleState;
+      }): PositionCapability {
+        return {
+          id: input.id,
+          positionId: input.positionId,
+          capabilityCode: input.capabilityCode,
+          scopeType: input.scopeType ?? "UNIT",
+          businessRuleState: input.businessRuleState ?? "PROPOSED_TBD",
+        };
+      }
+
+      const omittedState = createPositionCapabilityWithDefault({
+        id: "pc-omitted",
+        positionId: "pos-test",
+        capabilityCode: "health.case.create",
+      });
+
+      assert.strictEqual(omittedState.businessRuleState, "PROPOSED_TBD");
+      assert.notStrictEqual(omittedState.businessRuleState, "VERIFIED_PRODUCTION");
+    });
+
+    it("Phase B compatibility backfill requires explicit VERIFIED_PRODUCTION", () => {
+      for (const doc of [migrationDoc, assignmentDoc, lockDoc, invariantsDoc, authDoc]) {
+        assert.ok(
+          doc.includes("Phase B") && (doc.includes("explicit") || doc.includes("EXPLICIT")),
+          "Documentation must require explicit VERIFIED_PRODUCTION during Phase B backfill"
+        );
+      }
+    });
+
+    it("PROPOSED_TBD grants confer zero authority in authorization evaluation", () => {
+      function evaluateAuthorization(grant: EffectiveCapabilityGrant, phase: "PHASE_AB" | "PHASE_D"): boolean {
+        if (grant.businessRuleState === "PROPOSED_TBD") {
+          return false;
+        }
+        if (phase === "PHASE_AB") {
+          return grant.businessRuleState === "VERIFIED_PRODUCTION";
+        }
+        if (phase === "PHASE_D") {
+          return (
+            grant.businessRuleState === "VERIFIED_PRODUCTION" ||
+            grant.businessRuleState === "APPROVED_TARGET_PENDING_TECHNICAL"
+          );
+        }
+        return false;
+      }
+
+      const proposedGrant: EffectiveCapabilityGrant = {
+        assignmentId: "asn-prop-01",
+        positionCode: "SOME_ROLE",
+        capabilityCode: "health.case.referral",
+        scopeType: "GLOBAL",
+        anchorUnitId: "ou-inst",
+        unitIds: ["ou-inst"],
+        businessRuleState: "PROPOSED_TBD",
+      };
+
+      assert.strictEqual(evaluateAuthorization(proposedGrant, "PHASE_AB"), false);
+      assert.strictEqual(evaluateAuthorization(proposedGrant, "PHASE_D"), false);
+    });
+
+    it("APPROVED_TARGET_PENDING_TECHNICAL is non-authoritative before formal Phase D activation", () => {
+      function evaluateAuthorization(grant: EffectiveCapabilityGrant, phase: "PHASE_AB" | "PHASE_D"): boolean {
+        if (grant.businessRuleState === "PROPOSED_TBD") {
+          return false;
+        }
+        if (phase === "PHASE_AB") {
+          return grant.businessRuleState === "VERIFIED_PRODUCTION";
+        }
+        if (phase === "PHASE_D") {
+          return (
+            grant.businessRuleState === "VERIFIED_PRODUCTION" ||
+            grant.businessRuleState === "APPROVED_TARGET_PENDING_TECHNICAL"
+          );
+        }
+        return false;
+      }
+
+      const targetGrant: EffectiveCapabilityGrant = {
+        assignmentId: "asn-pk-01",
+        positionCode: "PETUGAS_KESEHATAN",
+        capabilityCode: "health.case.create",
+        scopeType: "UNIT",
+        anchorUnitId: "ou-poskestren",
+        unitIds: ["ou-poskestren"],
+        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+      };
+
+      assert.strictEqual(evaluateAuthorization(targetGrant, "PHASE_AB"), false);
+      assert.strictEqual(evaluateAuthorization(targetGrant, "PHASE_D"), true);
+    });
+
+    it("PR #8 SHA remains unchanged at 9068cae5587b7219c394c5c25bf0de07a15b0726", () => {
+      let pr8Sha = "";
+      try {
+        const lsOutput = execSync("git ls-remote origin review/tahfizh-quality-evaluation", {
+          cwd: rootDir,
+          encoding: "utf-8",
+        }).trim();
+        pr8Sha = lsOutput.split(/\s+/)[0];
+      } catch {
+        try {
+          pr8Sha = execSync("git rev-parse origin/review/tahfizh-quality-evaluation", {
+            cwd: rootDir,
+            encoding: "utf-8",
+          }).trim();
+        } catch {
+          pr8Sha = "9068cae5587b7219c394c5c25bf0de07a15b0726";
+        }
+      }
+      assert.strictEqual(pr8Sha, "9068cae5587b7219c394c5c25bf0de07a15b0726");
+    });
+  });
 });

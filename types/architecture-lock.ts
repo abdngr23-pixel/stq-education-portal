@@ -1,6 +1,6 @@
 /**
  * STQ ARCHITECTURE LOCK — CANONICAL TYPE DEFINITIONS
- * Phase 1 Remediation V3-B: Normalized Identity, OrgUnit, Position, Assignment, Capability, Scope, and Health
+ * Final Contract Closure: Normalized Identity, OrgUnit, Position, Assignment, Capability, Scope, and Health
  *
  * Repository: abdngr23-pixel/stq-education-portal
  * Document Reference: docs/STQ_ARCHITECTURE_LOCK.md

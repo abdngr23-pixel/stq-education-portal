@@ -35,6 +35,8 @@ Where:
 > 1. **`VERIFIED_PRODUCTION`**: Observed and verified in active production runtime (PR #10 to PR #13 baseline).
 > 2. **`APPROVED_TARGET_PENDING_TECHNICAL`**: Formally approved target policy by institutional leadership, pending technical schema/UI implementation (non-authoritative in Phase A/B).
 > 3. **`PROPOSED_TBD`**: Architectural design recommendation; receiver/sign-off matrix pending Business Owner approval (never enters active authorization).
+>
+> **Fail-Closed Default**: Candidate schema enforces `PositionCapability.businessRuleState @default(PROPOSED_TBD)`. Developer omission can never silently create an active `VERIFIED_PRODUCTION` grant. Phase B compatibility backfill requires explicit `VERIFIED_PRODUCTION`.
 
 ---
 

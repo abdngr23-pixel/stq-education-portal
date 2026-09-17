@@ -95,12 +95,19 @@ model PositionCapability {
   capabilityCode    String            @map("capability_code")
   capability        Capability        @relation(fields: [capabilityCode], references: [code], onDelete: Restrict)
   scopeType         ScopeType         @default(UNIT) @map("scope_type")
-  businessRuleState BusinessRuleState @default(VERIFIED_PRODUCTION) @map("business_rule_state")
+  businessRuleState BusinessRuleState @default(PROPOSED_TBD) @map("business_rule_state")
 
   @@unique([positionId, capabilityCode])
   @@map("position_capabilities")
 }
 ```
+
+> [!IMPORTANT]
+> **Fail-Closed Default Invariant**:
+> `PositionCapability.businessRuleState` strictly defaults to `@default(PROPOSED_TBD)` (never defaults to `VERIFIED_PRODUCTION`).
+> - **Why Fail-Closed**: During Phase A/B compatibility, only `VERIFIED_PRODUCTION` grants are authoritative. A developer omission or newly mapped policy must NEVER silently become an active production grant.
+> - **Controlled Backfill**: Phase B compatibility migrations must explicitly assign `businessRuleState = VERIFIED_PRODUCTION` for observed production capabilities. Target V2 approved grants must explicitly specify `APPROVED_TARGET_PENDING_TECHNICAL`.
+> - **Zero Inferred Promotion**: No automatic promotion can occur from Position name, Role, username, or capability name. Any grant in `PROPOSED_TBD` confers ZERO authority.
 
 ---
 

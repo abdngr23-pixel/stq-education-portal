@@ -195,7 +195,7 @@ enum GenderComplex {
     capabilityCode    String            @map("capability_code")
     capability        Capability        @relation(fields: [capabilityCode], references: [code], onDelete: Restrict)
     scopeType         ScopeType         @default(UNIT) @map("scope_type")
-    businessRuleState BusinessRuleState @default(VERIFIED_PRODUCTION) @map("business_rule_state")
+    businessRuleState BusinessRuleState @default(PROPOSED_TBD) @map("business_rule_state")
 
     @@unique([positionId, capabilityCode])
     @@map("position_capabilities")
@@ -284,7 +284,7 @@ To maintain absolute architectural transparency, every field across runtime Type
 | `UnitAccountPlacement` | `id`, `userId`, `unitId`, `createdAt`, `updatedAt` | **PERSISTED** | Columns in `unit_account_placements` | Strictly enforces single-placement invariant for UNIT accounts |
 | `Capability` | `code`, `namespace`, `name`, `description`, `isDangerous`, `createdAt` | **PERSISTED** | Columns in `capabilities` table | Pure semantic action definitions |
 | `Capability` | `ruleState` | **REMOVED FROM CAPABILITY** | N/A | Moved to `PositionCapability.businessRuleState` to support multi-state grants |
-| `PositionCapability` | `id`, `positionId`, `capabilityCode`, `scopeType`, `businessRuleState` | **PERSISTED** | Columns in `position_capabilities` | Mappings and policy grant lifecycle state |
+| `PositionCapability` | `id`, `positionId`, `capabilityCode`, `scopeType`, `businessRuleState` | **PERSISTED** | Columns in `position_capabilities` (fail-closed default `@default(PROPOSED_TBD)`; Phase B backfill sets `VERIFIED_PRODUCTION` explicitly) | Mappings and policy grant lifecycle state |
 | `Assignment` | `id`, `userId`, `positionId`, `unitId`, `status`, `validFrom`, `validUntil`, `notes`, `createdById`, `createdAt`, `updatedAt` | **PERSISTED** | Columns in `assignments` | Active operational assignment bindings |
 | `Assignment` | `scopeType` | **REMOVED** | N/A | Strictly zero-scope on assignment; owned exclusively by `PositionCapability` |
 | `AssignmentScopeUnit` | `id`, `assignmentId`, `unitId`, `createdAt` | **PERSISTED** | Columns in `assignment_scope_units` | Relational M:N unit expansion for ASSIGNED_UNITS |
@@ -303,6 +303,15 @@ To maintain absolute architectural transparency, every field across runtime Type
 
 ### Phase B: Backfill & Compatibility Layer
 - **Objective**: Deterministically populate units, positions, and baseline assignments from existing production data without interrupting live traffic.
+- **Grant Lifecycle Backfill Rules (Fail-Closed Enforcement)**:
+  - Existing production-compatible grants created during the controlled Phase B backfill MUST specify:
+    `businessRuleState = VERIFIED_PRODUCTION` explicitly.
+  - Target V2 approved but not yet active grants MUST specify:
+    `businessRuleState = APPROVED_TARGET_PENDING_TECHNICAL`.
+  - Unapproved or newly mapped grants MUST specify:
+    `businessRuleState = PROPOSED_TBD`.
+  - Zero automatic promotion: Candidate schema defaults to `@default(PROPOSED_TBD)`. Developer omission while creating a PositionCapability can never result in an authoritative grant.
+  - No inferred promotion from Position name, Role, username, or capability name.
 - **Backfill Script Logic**:
   1. Create root `OrgUnit: STQ DUC` and domains (`Tahfizh`, `Keasramaan`, `Akademik`, `Manajemen`).
   2. For each authoritative `Halaqoh` in database, create an `OrgUnit (type: HALAQOH)`.

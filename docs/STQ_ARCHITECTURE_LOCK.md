@@ -230,6 +230,13 @@ The three canonical states governing policy grants:
    - Architectural, workflow, or escalation recommendations proposed by the engineering team that have **NOT** yet been formally decided or approved by the Business Owner.
    - **MUST NEVER** enter active authorization. Any receiver or approval matrix marked `PROPOSED_TBD` requires explicit future sign-off.
 
+#### Fail-Closed Default Principle & Backfill Rules
+- **Candidate Schema Default**: `PositionCapability.businessRuleState` strictly defaults to `@default(PROPOSED_TBD)` (never defaults to `VERIFIED_PRODUCTION`).
+- **Why Fail-Closed**: In Phase A/B, only `VERIFIED_PRODUCTION` grants are authoritative. Therefore, a developer omission while declaring or creating a `PositionCapability` must NEVER silently produce an active verified production grant.
+- **Controlled Phase B Backfill**: Existing production-compatible grants created during the controlled Phase B backfill MUST specify `businessRuleState = VERIFIED_PRODUCTION` explicitly. Target V2 approved grants must specify `APPROVED_TARGET_PENDING_TECHNICAL`. All unapproved or proposed mappings remain `PROPOSED_TBD`.
+- **Zero Automatic / Inferred Promotion**: No automatic promotion is permitted. Authority cannot be inferred from Position code, Role, username, or capability name.
+- **Authorization Invariant**: A `PositionCapability` with missing, unknown, unsupported, or non-authoritative `BusinessRuleState` MUST confer **ZERO authority**. The Authorization Engine strictly fails closed. Phase A/B enforces only `VERIFIED_PRODUCTION`. Phase D activates `APPROVED_TARGET_PENDING_TECHNICAL` only after an explicit approved cutover decision. `PROPOSED_TBD` is never authoritative.
+
 ---
 
 ### 5.2. Health Capability Model: Current Verified Production vs. Target V2

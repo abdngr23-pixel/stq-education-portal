@@ -220,11 +220,14 @@ Expired assignments cease conferring authority immediately upon passing `validUn
   $$\text{Assignment}.\text{unitId} \equiv \text{UnitAccountPlacement}.\text{unitId}$$
 - If an assignment anchor unit contradicts the account's canonical `UnitAccountPlacement`, the engine **strictly fails closed** with `SYSTEM_FAIL_CLOSED` or `SCOPE_MISMATCH`. UNIT assignments cannot span different placements.
 
-### Rule 7: Policy Grant Lifecycle State Enforcement
-- The engine only enforces grants whose `businessRuleState` is authorized for the active phase:
-  - In Phase A/B compatibility: Only **`VERIFIED_PRODUCTION`** grants are active.
-  - Grants in **`APPROVED_TARGET_PENDING_TECHNICAL`** are non-authoritative during compatibility enforcement and will only activate upon Phase D formal cutover.
-  - Grants in **`PROPOSED_TBD`** are never evaluated and confer zero authority.
+### Rule 7: Policy Grant Lifecycle State Enforcement & Fail-Closed Invariant
+- **Zero Authority on Non-Authoritative State**: A `PositionCapability` with missing, unknown, unsupported, or non-authoritative `BusinessRuleState` MUST confer **ZERO authority**. The Authorization Engine strictly fails closed.
+- **Fail-Closed Default**: Candidate Prisma schema defaults `PositionCapability.businessRuleState @default(PROPOSED_TBD)` (never defaults to `VERIFIED_PRODUCTION`). Developer omission can NEVER silently produce an active `VERIFIED_PRODUCTION` grant.
+- **Phase Enforcement**:
+  - Phase A/B compatibility: Only **`VERIFIED_PRODUCTION`** grants are active.
+  - Phase D target cutover: **`APPROVED_TARGET_PENDING_TECHNICAL`** becomes authoritative only after an explicit approved cutover/migration decision.
+  - **`PROPOSED_TBD`**: Never authoritative under any circumstance.
+- **Explicit Phase B Backfill**: Compatibility grants created during Phase B backfill MUST specify `businessRuleState = VERIFIED_PRODUCTION` explicitly. No automatic or inferred promotion from Position name, Role, or username is permitted.
 
 ---
 
