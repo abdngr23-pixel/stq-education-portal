@@ -82,6 +82,8 @@ export const setoranSchema = z.object({
     message: 'Nilai setoran tidak valid',
   }),
   catatan: z.string().max(500, { message: 'Catatan maksimal 500 karakter' }).optional().nullable(),
+  tanggalSetoran: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Format tanggal setoran harus YYYY-MM-DD' }).optional().nullable(),
+  occurredAt: z.union([z.date(), z.string()]).optional().nullable(),
 });
 
 export type SetoranInput = z.infer<typeof setoranSchema>;

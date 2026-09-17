@@ -16,6 +16,7 @@ import {
 } from "@/lib/server/tahfizh-monitoring-service";
 import { shadowAuthorizeIfEnabled } from "@/lib/auth/shadow-engine";
 import { createPrismaDataProvider } from "@/lib/auth/canonical-evaluator";
+import { getTodayWITADateString } from "@/lib/wita-date";
 
 export interface CreateSetoranInput {
   santriId: string;
@@ -31,6 +32,8 @@ export interface CreateSetoranInput {
   alasanLompatanHalaman?: string;
   isManualSabaqi?: boolean;
   alasanManualSabaqi?: string;
+  tanggalSetoran?: string; // Format YYYY-MM-DD (WITA calendar date)
+  occurredAt?: Date | string | null;
 }
 
 /**
@@ -59,7 +62,18 @@ export async function createSetoranAction(input: CreateSetoranInput) {
     return { success: false, message: `Role ${session.role} tidak memiliki izin input setoran.` };
   }
 
-  // 2. Validasi Jenis Setoran
+  // 2. Validasi Jenis Setoran & Tanggal Setoran
+  if (input.tanggalSetoran) {
+    const rawDate = input.tanggalSetoran.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+      return { success: false, message: "Format tanggal setoran tidak valid. Gunakan format YYYY-MM-DD." };
+    }
+    const todayWita = getTodayWITADateString();
+    if (rawDate > todayWita) {
+      return { success: false, message: "Tanggal setoran tidak boleh di masa depan." };
+    }
+  }
+
   const VALID_JENIS: JenisSetoran[] = ["SABAQ", "SABQI", "MANZIL", "MUFAR"];
   if (!input.jenis || !VALID_JENIS.includes(input.jenis)) {
     return {

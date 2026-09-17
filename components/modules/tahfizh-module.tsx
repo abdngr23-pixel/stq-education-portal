@@ -40,10 +40,12 @@ import {
   Info,
   Star,
   Loader2,
+  Calendar,
 } from "lucide-react";
 import {
   konversiHalamanKeJuz,
 } from "@/lib/laporan-bulanan";
+import { getTodayWITADateString } from "@/lib/wita-date";
 
 export interface TahfizhModuleProps {
   userRole: Role;
@@ -126,6 +128,7 @@ export function TahfizhModule({
   const [rincianJuzMufar, setRincianJuzMufar] = useState("");
   const [nilai, setNilai] = useState<"MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "DHOIF">("MUMTAZ");
   const [catatan, setCatatan] = useState("");
+  const [tanggalSetoran, setTanggalSetoran] = useState<string>(() => getTodayWITADateString());
   const [isManualSabaqi, setIsManualSabaqi] = useState(false);
   const [alasanManualSabaqi, setAlasanManualSabaqi] = useState("");
 
@@ -680,6 +683,7 @@ export function TahfizhModule({
           nilai,
           catatan: finalCatatan,
           clientRequestId,
+          tanggalSetoran: tanggalSetoran || undefined,
           alasanLompatanHalaman: extra?.alasanLompatanHalaman,
           isManualSabaqi: inputJenis === "SABQI" ? isManualSabaqi : undefined,
           alasanManualSabaqi: inputJenis === "SABQI" && isManualSabaqi ? alasanManualSabaqi.trim() : undefined,
@@ -1139,6 +1143,26 @@ export function TahfizhModule({
                     </div>
                   </div>
                 )}
+
+                {/* Tanggal Setoran (WITA) - UAT Rule #13 */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label htmlFor="input-tanggal-setoran" className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-[#0E7C3A]" />
+                      <span>Tanggal Setoran</span>
+                      <span className="text-[10px] text-slate-400 font-normal">(Default hari ini WITA, bisa mundur)</span>
+                    </label>
+                  </div>
+                  <input
+                    id="input-tanggal-setoran"
+                    data-testid="input-tanggal-setoran"
+                    type="date"
+                    value={tanggalSetoran}
+                    max={getTodayWITADateString()}
+                    onChange={(e) => setTanggalSetoran(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0E7C3A] focus:border-transparent transition-all"
+                  />
+                </div>
 
                 {/* Jenis Setoran (Metode Al-Pakistani) */}
                 <div>

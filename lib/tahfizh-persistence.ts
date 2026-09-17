@@ -6,6 +6,7 @@ import {
   calculateLatestSabaqPosition,
 } from "./tahfizh-page-allocation";
 import { getStartOfWeekWITA } from "./laporan-bulanan";
+import { parseWITADate, getTodayWITADateString } from "./wita-date";
 
 export interface CreateSetoranCoreInput {
   santriId: string;
@@ -22,6 +23,7 @@ export interface CreateSetoranCoreInput {
   isManualSabaqi?: boolean;
   alasanManualSabaqi?: string | null;
   occurredAt?: Date | string | null;
+  tanggalSetoran?: string | null;
 }
 
 export interface SaveSetoranContext {
@@ -51,17 +53,40 @@ export async function saveSetoranTahfizhCore(
 ) {
   const { input, context } = params;
 
-  // 1a. Validasi Tanggal Setoran (occurredAt) - UAT Rule #13
+  // 1a. Validasi Tanggal Setoran (tanggalSetoran / occurredAt) - UAT Rule #13
   let effectiveOccurredAt: Date = new Date();
-  if (input.occurredAt !== undefined && input.occurredAt !== null) {
-    const parsed = input.occurredAt instanceof Date ? input.occurredAt : new Date(input.occurredAt);
-    if (isNaN(parsed.getTime())) {
-      return { success: false, message: "Format tanggal setoran (occurredAt) tidak valid." };
+  const todayWita = getTodayWITADateString();
+
+  if (input.tanggalSetoran !== undefined && input.tanggalSetoran !== null && input.tanggalSetoran !== "") {
+    const rawDate = String(input.tanggalSetoran).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+      return { success: false, message: "Format tanggal setoran tidak valid. Gunakan format YYYY-MM-DD." };
     }
-    if (parsed.getTime() > Date.now()) {
-      return { success: false, message: "Tanggal setoran (occurredAt) tidak boleh di masa depan." };
+    if (rawDate > todayWita) {
+      return { success: false, message: "Tanggal setoran tidak boleh di masa depan." };
     }
-    effectiveOccurredAt = parsed;
+    const parsedWita = parseWITADate(rawDate);
+    if (isNaN(parsedWita.getTime())) {
+      return { success: false, message: "Format tanggal setoran tidak valid." };
+    }
+    effectiveOccurredAt = parsedWita;
+  } else if (input.occurredAt !== undefined && input.occurredAt !== null) {
+    if (typeof input.occurredAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input.occurredAt.trim())) {
+      const rawDate = input.occurredAt.trim();
+      if (rawDate > todayWita) {
+        return { success: false, message: "Tanggal setoran (occurredAt) tidak boleh di masa depan." };
+      }
+      effectiveOccurredAt = parseWITADate(rawDate);
+    } else {
+      const parsed = input.occurredAt instanceof Date ? input.occurredAt : new Date(input.occurredAt);
+      if (isNaN(parsed.getTime())) {
+        return { success: false, message: "Format tanggal setoran (occurredAt) tidak valid." };
+      }
+      if (parsed.getTime() > Date.now()) {
+        return { success: false, message: "Tanggal setoran (occurredAt) tidak boleh di masa depan." };
+      }
+      effectiveOccurredAt = parsed;
+    }
   }
 
   // 1. Validasi Nilai Halaman, Volume, & Juz

@@ -119,7 +119,6 @@ export interface AuthorizeCanonicalParams {
   resolvedContext?: ResolvedResourceContext; // Optional pre-resolved context (e.g. for pure testing)
   executorContext?: UnitAccountExecutorContext;
   isMutation?: boolean;
-  allowTargetPendingPolicy?: boolean; // When true, evaluates APPROVED_TARGET_PENDING_TECHNICAL (e.g. for target policy testing/verification)
   now?: Date;
   dataProvider?: ICanonicalDataProvider;
 }
@@ -138,6 +137,8 @@ const STAFF_PROFILE_REQUIRED_POSITIONS = new Set([
   "STAF_ADMIN_TU",
   "PETUGAS_PRESENSI",
   "PETUGAS_KESEHATAN",
+  "PETUGAS_OPERASIONAL_TAHFIZH",
+  "PETUGAS_OPERASIONAL_KEASRAMAAN",
   "MT",
   "KS",
   "MK",
@@ -404,14 +405,9 @@ export async function authorizeCanonical(
     for (const pc of a.positionCapabilities) {
       if (pc.capabilityCode === params.capability) {
         // Enforce Activation Triple:
-        // Must be VERIFIED_PRODUCTION (never PROPOSED_TBD or unverified)
-        // Or APPROVED_TARGET_PENDING_TECHNICAL when params.allowTargetPendingPolicy is explicitly true
-        const isEligibleState =
-          pc.businessRuleState === "VERIFIED_PRODUCTION" ||
-          (params.allowTargetPendingPolicy === true &&
-            pc.businessRuleState === "APPROVED_TARGET_PENDING_TECHNICAL");
-
-        if (!isEligibleState) {
+        // Must be strictly VERIFIED_PRODUCTION (never PROPOSED_TBD or APPROVED_TARGET_PENDING_TECHNICAL)
+        // APPROVED_TARGET_PENDING_TECHNICAL confers zero runtime authority before formal cutover
+        if (pc.businessRuleState !== "VERIFIED_PRODUCTION") {
           continue;
         }
 
@@ -792,7 +788,8 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
           unitGenderComplex = "PUTRI";
         }
 
-        // Capability-aware domain resolution: Derive strategic domain from target capability namespace
+        // Capability-aware domain resolution: Derive strategic domain strictly from target capability namespace
+        // Fails closed if namespace is unknown or capability is not supplied (zero guessing)
         if (!orgDomain) {
           if (capability) {
             const capLower = capability.toLowerCase();
@@ -802,12 +799,10 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
               orgDomain = "KEASRAMAAN";
             } else if (capLower.startsWith("academic.")) {
               orgDomain = "AKADEMIK";
-            } else {
-              orgDomain = "TAHFIZH";
             }
-          } else {
-            orgDomain = "TAHFIZH";
+            // Unknown capability namespace: DO NOT GUESS -> orgDomain remains undefined
           }
+          // No capability supplied: DO NOT GUESS -> orgDomain remains undefined
         }
 
         // Authoritative Kamar Placement Hydration

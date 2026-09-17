@@ -564,9 +564,9 @@ export const OSDA_STRUCTURE_CONTRACT = {
 
 /**
  * Milestone 3.2 UAT Business Rules — Granular Capabilities
+ * Note: Uses canonical tahfizh.recap.read (breadth governed by scope GLOBAL vs HALAQOH)
  */
 export const TAHFIZH_M32_CAPABILITIES = {
-  RECAP_READ_ALL: "tahfizh.recap.view_all",
   RECAP_READ: "tahfizh.recap.read",
   TARGET_MANAGE: "tahfizh.target.manage",
   REWARD_ISSUE: "tahfizh.reward.issue",
@@ -577,7 +577,8 @@ export const KEASRAMAAN_PERMISSION_CAPABILITIES = {
   READ: "keasramaan.permission.read",
   CREATE: "keasramaan.permission.create",
   UPDATE: "keasramaan.permission.update",
-  APPROVE: "keasramaan.permission.approve",
+  APPROVE_MK: "keasramaan.permission.approve_mk",
+  APPROVE_KS: "keasramaan.permission.approve_ks",
 } as const;
 
 /**
@@ -606,7 +607,8 @@ export type TahajjudAttendanceNewEntryOption =
 
 /**
  * UAT Rule #6: Kepesantrenan Attendance Contract
- * One Kepesantrenan activity/session may have distinct teacher and student attendance records.
+ * Locks structural separation between Teacher and Student attendance.
+ * Attendance status vocabulary remains explicitly TBD / M3.3 BUSINESS DECISION.
  */
 export interface KepesantrenanAttendanceRecordContract {
   activitySessionId: string;
@@ -614,7 +616,7 @@ export interface KepesantrenanAttendanceRecordContract {
   subjectOrActivity: string; // e.g. "Bahasa Arab", "Fikih", "Tafsir", "Tajwid", "Aqidah Islamiyah"
   personId: string;
   actorType: "TEACHER" | "STUDENT";
-  attendanceStatus: "HADIR" | "IZIN" | "SAKIT" | "ALFA";
+  attendanceStatus?: string; // TBD / M3.3 Business Decision
   recorderUserId: string;
   createdAt: Date;
   updatedAt: Date;
@@ -629,7 +631,7 @@ export const KEPESANTRENAN_ATTENDANCE_CONTRACT = {
     "Aqidah Islamiyah",
   ] as const,
   ACTOR_TYPES: ["TEACHER", "STUDENT"] as const,
-  STATUS_OPTIONS: ["HADIR", "IZIN", "SAKIT", "ALFA"] as const,
+  STATUS_VOCABULARY_POLICY: "TBD / M3.3 BUSINESS DECISION" as const,
 } as const;
 
 /**
