@@ -1,5 +1,45 @@
 import EmbeddedPostgres from "embedded-postgres";
 import { PrismaClient } from "@prisma/client";
+
+async function executeSqlStatementsOnClient(prismaClient: PrismaClient, sqlString: string): Promise<void> {
+  // Strip single-line comments (-- ...)
+  const clean = sqlString.replace(/--.*$/gm, "");
+  const statements: string[] = [];
+  let current = "";
+  let inDollarQuote = false;
+
+  for (let i = 0; i < clean.length; i++) {
+    const char = clean[i];
+    const nextChar = clean[i + 1];
+
+    if (char === "$" && nextChar === "$") {
+      inDollarQuote = !inDollarQuote;
+      current += "$$";
+      i++;
+      continue;
+    }
+
+    if (char === ";" && !inDollarQuote) {
+      const trimmed = current.trim();
+      if (trimmed.length > 0) {
+        statements.push(trimmed);
+      }
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  const trimmed = current.trim();
+  if (trimmed.length > 0) {
+    statements.push(trimmed);
+  }
+
+  for (const stmt of statements) {
+    await prismaClient.$executeRawUnsafe(stmt);
+  }
+}
 import { execSync, spawnSync, ChildProcess } from "child_process";
 import fs from "fs";
 import os from "os";
@@ -1527,4 +1567,564 @@ export async function runIsolatedMigrationChainVerification(): Promise<Migration
     } catch {}
   }
 }
+
+export interface ExistingDataUpgradeVerificationResult {
+  baselineApplied: boolean;
+  legacyUsersCreatedCount: number;
+  preMigrationFingerprint: Array<{
+    id: string;
+    username: string;
+    email: string | null;
+    phone: string | null;
+    passwordHash: string;
+    role: string;
+    status: string;
+    staffId: string | null;
+    santriId: string | null;
+  }>;
+  phase2aMigrationApplied: boolean;
+  postMigrationUsers: Array<{
+    id: string;
+    username: string;
+    email: string | null;
+    phone: string | null;
+    passwordHash: string;
+    role: string;
+    status: string;
+    staffId: string | null;
+    santriId: string | null;
+    accountType: string;
+  }>;
+  allLegacyUsersIntact: boolean;
+  allLegacyUsersAccountTypePersonal: boolean;
+  autoCreatedAuthorityCounts: {
+    assignments: number;
+    positionCapabilities: number;
+    orgUnits: number;
+    positions: number;
+    unitAccountPlacements: number;
+    assignmentScopeUnits: number;
+    canonicalAuditLogs: number;
+    capabilities: number;
+  };
+  zeroAutoCreatedAuthority: boolean;
+}
+
+/**
+ * Validasi peningkatan skema dari skema warisan yang sudah berisi baris data riil.
+ * Alur:
+ * 1. Database baseline + migrasi main (1..5)
+ * 2. Masukkan baris data warisan representatif (Staff, Santri, Users)
+ * 3. Rekam snapshot/fingerprint sebelum Phase 2A
+ * 4. Terapkan HANYA migrasi Phase 2A (20260917000000_stq_architecture_lock_phase2a)
+ * 5. Pastikan seluruh baris lama tidak berubah dan mendapatkan account_type = PERSONAL
+ * 6. Pastikan seluruh tabel kanonikal kosong (0 auto-created authority)
+ */
+export async function runIsolatedExistingDataUpgradeVerification(): Promise<ExistingDataUpgradeVerificationResult> {
+  process.env.IS_TEST_RUN = "true";
+  process.env.ALLOW_ISOLATED_TEST_DB = "true";
+  (process.env as Record<string, string | undefined>).NODE_ENV = "test";
+
+  const port = await findFreePort(5660 + Math.floor(Math.random() * 300));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `stq-upg-chain-${Date.now()}-${port}-`));
+  const testUrl = `postgresql://postgres:postgrespassword@127.0.0.1:${port}/stq_upgchain_test?schema=public`;
+
+  verifyTestEnvironment(testUrl);
+
+  const pgInstance = new EmbeddedPostgres({
+    port,
+    user: "postgres",
+    password: "postgrespassword",
+    persistent: false,
+    databaseDir: tempDir,
+  });
+
+  let mainPid: number | null = null;
+  let descendantPids: Set<number> = new Set();
+  let client: PrismaClient | null = null;
+
+  try {
+    await pgInstance.initialise();
+    await pgInstance.start();
+
+    for (let i = 0; i < 30; i++) {
+      if (await isPortInUse(port)) break;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+
+    const detected = detectTestInstancePids(port, tempDir);
+    mainPid = detected.mainPid;
+    descendantPids = new Set(detected.descendantPids);
+
+    try {
+      await pgInstance.createDatabase("stq_upgchain_test");
+    } catch {}
+
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      DATABASE_URL: testUrl,
+      TEST_DATABASE_URL: testUrl,
+      NODE_ENV: "test",
+      IS_TEST_RUN: "true",
+      ALLOW_ISOLATED_TEST_DB: "true",
+    };
+
+    const projectRoot = path.resolve(__dirname, "..");
+
+    // 1. Inisialisasi skema baseline warisan
+    execSync(`npx prisma db push --schema=tests/fixtures/baseline_schema.prisma --skip-generate --accept-data-loss`, {
+      env,
+      encoding: "utf-8",
+      cwd: projectRoot,
+    });
+
+    client = new PrismaClient({
+      datasources: { db: { url: testUrl } },
+    });
+
+    // 2. Terapkan migrasi 1..5 rantai main
+    const mainMigrations = [
+      "20260910083000_setoran_tahfizh_page_based",
+      "20260910090000_core_operational_final",
+      "20260910103000_p0_tahfizh_persistence",
+      "20260914100000_target_santri_float",
+      "20260914170000_add_jumlah_juz_mufar",
+    ];
+
+    for (const m of mainMigrations) {
+      const sqlPath = path.join(projectRoot, "prisma/migrations", m, "migration.sql");
+      const sql = fs.readFileSync(sqlPath, "utf-8");
+      await executeSqlStatementsOnClient(client, sql);
+    }
+
+    // Pastikan kolom account_type BELUM ada di users sebelum Phase 2A
+    const preCols: Array<{ column_name: string }> = await client.$queryRawUnsafe(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'users' AND column_name = 'account_type';
+    `);
+    if (preCols.length !== 0) {
+      throw new Error("account_type already exists before Phase 2A migration");
+    }
+
+    // 3. Masukkan data representatif warisan (Staff, Santri, Users)
+    await client.$executeRawUnsafe(`
+      INSERT INTO "staff" ("id", "staff_code", "nama", "no_hp", "role_staff", "status", "created_at", "updated_at")
+      VALUES ('staff-upg-1', 'STF-UPG-001', 'Ustadz Ahmad Mudir', '08123456789', 'KS', 'AKTIF', NOW(), NOW());
+    `);
+    await client.$executeRawUnsafe(`
+      INSERT INTO "santri" ("id", "nis", "nama", "kelas", "jenis_kelamin", "status", "created_at", "updated_at")
+      VALUES ('santri-upg-1', 'SAN-UPG-001', 'Abdullah Santri', '7A', 'L', 'AKTIF', NOW(), NOW());
+    `);
+
+    await client.$executeRawUnsafe(`
+      INSERT INTO "users" ("id", "username", "email", "phone", "password_hash", "role", "status", "staff_id", "santri_id", "created_at", "updated_at")
+      VALUES
+        ('usr-adm-1', 'admin_legacy', 'admin@stq.test', '0811111111', 'hash_adm', 'ADM', 'AKTIF', NULL, NULL, NOW(), NOW()),
+        ('usr-ks-1', 'mudir_legacy', 'mudir@stq.test', '0822222222', 'hash_ks', 'KS', 'AKTIF', 'staff-upg-1', NULL, NOW(), NOW()),
+        ('usr-mk-1', 'musyrif_legacy', 'mk@stq.test', '0833333333', 'hash_mk', 'MK', 'AKTIF', NULL, NULL, NOW(), NOW()),
+        ('usr-st-1', 'santri_legacy', 'st@stq.test', '0844444444', 'hash_st', 'ST', 'AKTIF', NULL, 'santri-upg-1', NOW(), NOW()),
+        ('usr-ws-1', 'wali_legacy', 'ws@stq.test', '0855555555', 'hash_ws', 'WS', 'AKTIF', NULL, NULL, NOW(), NOW());
+    `);
+
+    // 4. Rekam fingerprint sebelum Phase 2A
+    const preUsersRaw: Array<{
+      id: string;
+      username: string;
+      email: string | null;
+      phone: string | null;
+      password_hash: string;
+      role: string;
+      status: string;
+      staff_id: string | null;
+      santri_id: string | null;
+    }> = await client.$queryRawUnsafe(`
+      SELECT "id", "username", "email", "phone", "password_hash", "role"::text, "status"::text, "staff_id", "santri_id"
+      FROM "users" ORDER BY "id" ASC;
+    `);
+
+    const preMigrationFingerprint = preUsersRaw.map((u) => ({
+      id: u.id,
+      username: u.username,
+      email: u.email,
+      phone: u.phone,
+      passwordHash: u.password_hash,
+      role: u.role,
+      status: u.status,
+      staffId: u.staff_id,
+      santriId: u.santri_id,
+    }));
+
+    // 5. Terapkan HANYA migrasi Phase 2A
+    const phase2aSqlPath = path.join(projectRoot, "prisma/migrations/20260917000000_stq_architecture_lock_phase2a/migration.sql");
+    const phase2aSql = fs.readFileSync(phase2aSqlPath, "utf-8");
+    await executeSqlStatementsOnClient(client, phase2aSql);
+
+    // 6. Evaluasi pasca-migrasi
+    const postUsersRaw: Array<{
+      id: string;
+      username: string;
+      email: string | null;
+      phone: string | null;
+      password_hash: string;
+      role: string;
+      status: string;
+      staff_id: string | null;
+      santri_id: string | null;
+      account_type: string;
+    }> = await client.$queryRawUnsafe(`
+      SELECT "id", "username", "email", "phone", "password_hash", "role"::text, "status"::text, "staff_id", "santri_id", "account_type"::text
+      FROM "users" ORDER BY "id" ASC;
+    `);
+
+    const postMigrationUsers = postUsersRaw.map((u) => ({
+      id: u.id,
+      username: u.username,
+      email: u.email,
+      phone: u.phone,
+      passwordHash: u.password_hash,
+      role: u.role,
+      status: u.status,
+      staffId: u.staff_id,
+      santriId: u.santri_id,
+      accountType: u.account_type,
+    }));
+
+    let allLegacyUsersIntact = postMigrationUsers.length === preMigrationFingerprint.length;
+    let allLegacyUsersAccountTypePersonal = true;
+
+    for (let i = 0; i < preMigrationFingerprint.length; i++) {
+      const pre = preMigrationFingerprint[i];
+      const post = postMigrationUsers[i];
+      if (
+        !post ||
+        post.id !== pre.id ||
+        post.username !== pre.username ||
+        post.email !== pre.email ||
+        post.phone !== pre.phone ||
+        post.passwordHash !== pre.passwordHash ||
+        post.role !== pre.role ||
+        post.status !== pre.status ||
+        post.staffId !== pre.staffId ||
+        post.santriId !== pre.santriId
+      ) {
+        allLegacyUsersIntact = false;
+      }
+      if (!post || post.accountType !== "PERSONAL") {
+        allLegacyUsersAccountTypePersonal = false;
+      }
+    }
+
+    // Periksa bahwa semua tabel kanonikal baru dalam kondisi kosong (zero auto-created authority)
+    const countTable = async (tableName: string): Promise<number> => {
+      const res: Array<{ c: number }> = await client!.$queryRawUnsafe(`SELECT count(*)::int as c FROM "${tableName}";`);
+      return res[0]?.c ?? 0;
+    };
+
+    const autoCreatedAuthorityCounts = {
+      assignments: await countTable("assignments"),
+      positionCapabilities: await countTable("position_capabilities"),
+      orgUnits: await countTable("org_units"),
+      positions: await countTable("positions"),
+      unitAccountPlacements: await countTable("unit_account_placements"),
+      assignmentScopeUnits: await countTable("assignment_scope_units"),
+      canonicalAuditLogs: await countTable("canonical_audit_logs"),
+      capabilities: await countTable("capabilities"),
+    };
+
+    const zeroAutoCreatedAuthority =
+      autoCreatedAuthorityCounts.assignments === 0 &&
+      autoCreatedAuthorityCounts.positionCapabilities === 0 &&
+      autoCreatedAuthorityCounts.orgUnits === 0 &&
+      autoCreatedAuthorityCounts.positions === 0 &&
+      autoCreatedAuthorityCounts.unitAccountPlacements === 0 &&
+      autoCreatedAuthorityCounts.assignmentScopeUnits === 0 &&
+      autoCreatedAuthorityCounts.canonicalAuditLogs === 0 &&
+      autoCreatedAuthorityCounts.capabilities === 0;
+
+    return {
+      baselineApplied: true,
+      legacyUsersCreatedCount: preMigrationFingerprint.length,
+      preMigrationFingerprint,
+      phase2aMigrationApplied: true,
+      postMigrationUsers,
+      allLegacyUsersIntact,
+      allLegacyUsersAccountTypePersonal,
+      autoCreatedAuthorityCounts,
+      zeroAutoCreatedAuthority,
+    };
+  } finally {
+    if (client) {
+      try { await client.$disconnect(); } catch {}
+    }
+    const pgCtl = getPgCtlPath();
+    if (pgCtl && fs.existsSync(tempDir)) {
+      try {
+        spawnSync(pgCtl, ["stop", "-D", tempDir, "-m", "fast", "-w", "-t", "5"], {
+          encoding: "utf-8",
+          timeout: 6000,
+          stdio: "ignore",
+        });
+      } catch {}
+    }
+
+    try { await pgInstance.stop(); } catch {}
+
+    const pidsToKill = new Set<number>();
+    if (mainPid) pidsToKill.add(mainPid);
+    for (const p of descendantPids) pidsToKill.add(p);
+
+    for (const p of pidsToKill) {
+      if (verifyPostgresProcessOwnership(p, tempDir, mainPid)) {
+        try {
+          if (process.platform === "win32") {
+            spawnSync("taskkill", ["/PID", p.toString(), "/T", "/F"], { stdio: "ignore" });
+          } else {
+            process.kill(p, "SIGKILL");
+          }
+        } catch {}
+      }
+    }
+
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
+export interface ProductionEquivalentSimulationResult {
+  baselineApplied: boolean;
+  pr8MigrationFetched: boolean;
+  pr8ExactShaVerified: boolean;
+  pr8MigrationBytes: number;
+  pr8MigrationApplied: boolean;
+  phase2aMigrationApplied: boolean;
+  hasPr8Table: boolean;
+  hasCanonicalTables: boolean;
+  simulationSuccess: boolean;
+}
+
+/**
+ * Simulasi terisolasi kondisi produksi:
+ * Rantai migrasi main -> Migrasi PR #8 (9068cae5587b7219c394c5c25bf0de07a15b0726) -> Migrasi Phase 2A
+ * Memvalidasi bahwa migrasi Phase 2A tidak berbenturan dengan migrasi PR #8.
+ * CATATAN PENTING: File PR #8 TIDAK dicommit ke repositori; SQL diambil via `git show` in-memory.
+ */
+export async function runIsolatedProductionEquivalentSimulation(): Promise<ProductionEquivalentSimulationResult> {
+  process.env.IS_TEST_RUN = "true";
+  process.env.ALLOW_ISOLATED_TEST_DB = "true";
+  (process.env as Record<string, string | undefined>).NODE_ENV = "test";
+
+  const port = await findFreePort(5670 + Math.floor(Math.random() * 300));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `stq-pr8sim-${Date.now()}-${port}-`));
+  const testUrl = `postgresql://postgres:postgrespassword@127.0.0.1:${port}/stq_pr8sim_test?schema=public`;
+
+  verifyTestEnvironment(testUrl);
+
+  const pgInstance = new EmbeddedPostgres({
+    port,
+    user: "postgres",
+    password: "postgrespassword",
+    persistent: false,
+    databaseDir: tempDir,
+  });
+
+  let mainPid: number | null = null;
+  let descendantPids: Set<number> = new Set();
+  let client: PrismaClient | null = null;
+
+  try {
+    await pgInstance.initialise();
+    await pgInstance.start();
+
+    for (let i = 0; i < 30; i++) {
+      if (await isPortInUse(port)) break;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+
+    const detected = detectTestInstancePids(port, tempDir);
+    mainPid = detected.mainPid;
+    descendantPids = new Set(detected.descendantPids);
+
+    try {
+      await pgInstance.createDatabase("stq_pr8sim_test");
+    } catch {}
+
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      DATABASE_URL: testUrl,
+      TEST_DATABASE_URL: testUrl,
+      NODE_ENV: "test",
+      IS_TEST_RUN: "true",
+      ALLOW_ISOLATED_TEST_DB: "true",
+    };
+
+    const projectRoot = path.resolve(__dirname, "..");
+
+    // 1. Inisialisasi skema baseline warisan
+    execSync(`npx prisma db push --schema=tests/fixtures/baseline_schema.prisma --skip-generate --accept-data-loss`, {
+      env,
+      encoding: "utf-8",
+      cwd: projectRoot,
+    });
+
+    client = new PrismaClient({
+      datasources: { db: { url: testUrl } },
+    });
+
+    // 2. Terapkan migrasi 1..5 rantai main
+    const mainMigrations = [
+      "20260910083000_setoran_tahfizh_page_based",
+      "20260910090000_core_operational_final",
+      "20260910103000_p0_tahfizh_persistence",
+      "20260914100000_target_santri_float",
+      "20260914170000_add_jumlah_juz_mufar",
+    ];
+
+    for (const m of mainMigrations) {
+      const sqlPath = path.join(projectRoot, "prisma/migrations", m, "migration.sql");
+      const sql = fs.readFileSync(sqlPath, "utf-8");
+      await executeSqlStatementsOnClient(client, sql);
+    }
+
+    // 3. Ambil SQL migrasi PR #8 langsung dari commit SHA 9068cae5587b7219c394c5c25bf0de07a15b0726 (in-memory)
+    const PR8_EXACT_SHA = "9068cae5587b7219c394c5c25bf0de07a15b0726";
+    let pr8MigrationFetched = false;
+    let pr8ExactShaVerified = false;
+    let pr8Sql = "";
+    let pr8MigrationBytes = 0;
+    let pr8MigrationApplied = false;
+
+    try {
+      // Cek apakah commit PR #8 sudah ada di git store lokal
+      let commitExists = false;
+      try {
+        execSync(`git cat-file -e ${PR8_EXACT_SHA}`, { cwd: projectRoot, stdio: "ignore" });
+        commitExists = true;
+      } catch {
+        commitExists = false;
+      }
+
+      // Jika belum ada (misal shallow clone di CI), fetch branch review/tahfizh-quality-evaluation
+      if (!commitExists) {
+        try {
+          execSync("git fetch origin review/tahfizh-quality-evaluation --depth=1", { cwd: projectRoot, stdio: "ignore" });
+        } catch {
+          // Fallback: coba fetch ref commit langsung jika didukung remote
+          try {
+            execSync(`git fetch origin ${PR8_EXACT_SHA} --depth=1`, { cwd: projectRoot, stdio: "ignore" });
+          } catch {}
+        }
+      }
+
+      // Verifikasi SHA commit secara ketat (fail-closed)
+      let resolvedSha = "";
+      try {
+        resolvedSha = execSync(`git rev-parse --verify ${PR8_EXACT_SHA}`, { cwd: projectRoot, encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }).trim();
+      } catch {
+        try {
+          resolvedSha = execSync("git rev-parse FETCH_HEAD", { cwd: projectRoot, encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }).trim();
+        } catch {}
+      }
+
+      if (resolvedSha.toLowerCase() === PR8_EXACT_SHA.toLowerCase()) {
+        pr8ExactShaVerified = true;
+      } else {
+        console.error(`[runIsolatedProductionEquivalentSimulation] FAIL-CLOSED: Resolved SHA '${resolvedSha}' != expected PR #8 SHA '${PR8_EXACT_SHA}'`);
+      }
+
+      // Ambil SQL migrasi PR #8 hanya jika SHA cocok
+      if (pr8ExactShaVerified) {
+        pr8Sql = execSync(
+          `git show ${PR8_EXACT_SHA}:prisma/migrations/20260915100000_add_tahfizh_quality_engine/migration.sql`,
+          { encoding: "utf-8", cwd: projectRoot }
+        );
+        pr8MigrationBytes = pr8Sql.length;
+        if (pr8MigrationBytes > 1000) {
+          pr8MigrationFetched = true;
+        } else {
+          console.error(`[runIsolatedProductionEquivalentSimulation] FAIL-CLOSED: PR #8 migration size too small: ${pr8MigrationBytes}`);
+        }
+      }
+    } catch (fetchErr: unknown) {
+      const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+      console.error("[runIsolatedProductionEquivalentSimulation] FAIL-CLOSED: Error retrieving PR #8 migration:", msg);
+    }
+
+    if (pr8MigrationFetched && pr8ExactShaVerified && pr8Sql) {
+      // 4. Terapkan SQL migrasi PR #8
+      await executeSqlStatementsOnClient(client, pr8Sql);
+      pr8MigrationApplied = true;
+    }
+
+    // 5. Terapkan SQL migrasi Phase 2A di atas PR #8
+    const phase2aSqlPath = path.join(projectRoot, "prisma/migrations/20260917000000_stq_architecture_lock_phase2a/migration.sql");
+    const phase2aSql = fs.readFileSync(phase2aSqlPath, "utf-8");
+    await executeSqlStatementsOnClient(client, phase2aSql);
+    const phase2aMigrationApplied = true;
+
+    // 6. Verifikasi bahwa tabel evaluasi_rubu_tahfizh (dari PR #8) dan tabel org_units, assignments (dari Phase 2A) ada
+    const res: Array<{ table_name: string }> = await client.$queryRawUnsafe(`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name IN ('evaluasi_rubu_tahfizh', 'org_units', 'assignments');
+    `);
+
+    const tables = res.map((r) => r.table_name);
+    const hasPr8Table = tables.includes("evaluasi_rubu_tahfizh");
+    const hasCanonicalTables = tables.includes("org_units") && tables.includes("assignments");
+
+    const simulationSuccess =
+      pr8MigrationFetched &&
+      pr8ExactShaVerified &&
+      pr8MigrationBytes > 1000 &&
+      pr8MigrationApplied &&
+      phase2aMigrationApplied &&
+      hasPr8Table &&
+      hasCanonicalTables;
+
+    return {
+      baselineApplied: true,
+      pr8MigrationFetched,
+      pr8ExactShaVerified,
+      pr8MigrationBytes,
+      pr8MigrationApplied,
+      phase2aMigrationApplied,
+      hasPr8Table,
+      hasCanonicalTables,
+      simulationSuccess,
+    };
+  } finally {
+    if (client) {
+      try { await client.$disconnect(); } catch {}
+    }
+    const pgCtl = getPgCtlPath();
+    if (pgCtl && fs.existsSync(tempDir)) {
+      try {
+        spawnSync(pgCtl, ["stop", "-D", tempDir, "-m", "fast", "-w", "-t", "5"], {
+          encoding: "utf-8",
+          timeout: 6000,
+          stdio: "ignore",
+        });
+      } catch {}
+    }
+
+    try { await pgInstance.stop(); } catch {}
+
+    const pidsToKill = new Set<number>();
+    if (mainPid) pidsToKill.add(mainPid);
+    for (const p of descendantPids) pidsToKill.add(p);
+
+    for (const p of pidsToKill) {
+      if (verifyPostgresProcessOwnership(p, tempDir, mainPid)) {
+        try {
+          if (process.platform === "win32") {
+            spawnSync("taskkill", ["/PID", p.toString(), "/T", "/F"], { stdio: "ignore" });
+          } else {
+            process.kill(p, "SIGKILL");
+          }
+        } catch {}
+      }
+    }
+
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
 

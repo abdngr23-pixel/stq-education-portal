@@ -8,6 +8,10 @@ import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
 import {
+  runIsolatedExistingDataUpgradeVerification,
+  runIsolatedProductionEquivalentSimulation,
+} from "./test-db-manager";
+import {
   OrgDomain,
   CapabilityNamespace,
   BusinessRuleState,
@@ -1419,6 +1423,272 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
         }
       }
       assert.strictEqual(pr8Sha, "9068cae5587b7219c394c5c25bf0de07a15b0726");
+    });
+  });
+
+  // =========================================================================
+  // 18. Phase 2A Additive Prisma Schema & Migration Structural Contracts
+  // =========================================================================
+  describe("18. Phase 2A Additive Prisma Schema & Migration Structural Contracts", () => {
+    const schemaPath = path.join(rootDir, "prisma/schema.prisma");
+    const migrationPath = path.join(
+      rootDir,
+      "prisma/migrations/20260917000000_stq_architecture_lock_phase2a/migration.sql"
+    );
+    const schemaContent = fs.readFileSync(schemaPath, "utf-8");
+    const migrationContent = fs.readFileSync(migrationPath, "utf-8");
+
+    it("User.accountType must default fail-closed to PERSONAL and be mapped to account_type", () => {
+      assert.ok(
+        schemaContent.includes('accountType  AccountType @default(PERSONAL) @map("account_type")'),
+        "User model must include accountType defaulting to PERSONAL"
+      );
+      assert.ok(
+        migrationContent.includes('ALTER TABLE "users" ADD COLUMN "account_type" "AccountType" NOT NULL DEFAULT \'PERSONAL\';'),
+        "Migration SQL must add account_type column with default PERSONAL"
+      );
+    });
+
+    it("Assignment.status must default fail-closed to DRAFT and userId must be required", () => {
+      assert.ok(
+        schemaContent.includes("status      AssignmentStatus      @default(DRAFT)"),
+        "Assignment model must default status to DRAFT"
+      );
+      assert.ok(
+        schemaContent.includes('userId      String                @map("user_id")'),
+        "Assignment userId must be required String"
+      );
+      assert.ok(
+        migrationContent.includes('"status" "AssignmentStatus" NOT NULL DEFAULT \'DRAFT\''),
+        "Migration must enforce status NOT NULL DEFAULT DRAFT on assignments"
+      );
+      assert.ok(
+        migrationContent.includes('"user_id" TEXT NOT NULL'),
+        "Migration must enforce user_id TEXT NOT NULL on assignments"
+      );
+    });
+
+    it("PositionCapability.scopeType must be required with NO default", () => {
+      assert.ok(
+        schemaContent.includes('scopeType         ScopeType         @map("scope_type")'),
+        "PositionCapability scopeType must have NO default in schema"
+      );
+      assert.strictEqual(
+        schemaContent.includes("scopeType         ScopeType         @default"),
+        false,
+        "PositionCapability scopeType must NOT have a default in schema"
+      );
+      assert.ok(
+        migrationContent.includes('"scope_type" "ScopeType" NOT NULL,'),
+        "Migration must require scope_type NOT NULL with no default on position_capabilities"
+      );
+    });
+
+    it("PositionCapability.businessRuleState must default fail-closed to PROPOSED_TBD", () => {
+      assert.ok(
+        schemaContent.includes('businessRuleState BusinessRuleState @default(PROPOSED_TBD) @map("business_rule_state")'),
+        "PositionCapability businessRuleState must default to PROPOSED_TBD"
+      );
+      assert.ok(
+        migrationContent.includes('"business_rule_state" "BusinessRuleState" NOT NULL DEFAULT \'PROPOSED_TBD\''),
+        "Migration must set business_rule_state default to PROPOSED_TBD"
+      );
+    });
+
+    it("OrgUnit.genderComplex must be required with NO default", () => {
+      assert.ok(
+        schemaContent.includes('genderComplex  GenderComplex          @map("gender_complex")'),
+        "OrgUnit genderComplex must have NO default in schema"
+      );
+      assert.strictEqual(
+        schemaContent.includes("genderComplex  GenderComplex          @default"),
+        false,
+        "OrgUnit genderComplex must NOT have a default in schema"
+      );
+      assert.ok(
+        migrationContent.includes('"gender_complex" "GenderComplex" NOT NULL,'),
+        "Migration must require gender_complex NOT NULL with no default on org_units"
+      );
+    });
+
+    it("UnitAccountPlacement.userId must have unique constraint", () => {
+      assert.ok(
+        schemaContent.includes('userId    String   @unique @map("user_id")'),
+        "UnitAccountPlacement userId must be unique in schema"
+      );
+      assert.ok(
+        migrationContent.includes('CREATE UNIQUE INDEX "unit_account_placements_user_id_key" ON "unit_account_placements"("user_id");'),
+        "Migration must create unique index on unit_account_placements(user_id)"
+      );
+    });
+
+    it("PositionCapability must enforce unique(positionId, capabilityCode)", () => {
+      assert.ok(
+        schemaContent.includes("@@unique([positionId, capabilityCode])"),
+        "PositionCapability must have @@unique([positionId, capabilityCode])"
+      );
+      assert.ok(
+        migrationContent.includes('CREATE UNIQUE INDEX "position_capabilities_position_id_capability_code_key" ON "position_capabilities"("position_id", "capability_code");'),
+        "Migration must create unique index on position_capabilities(position_id, capability_code)"
+      );
+    });
+
+    it("AssignmentScopeUnit must enforce unique(assignmentId, unitId)", () => {
+      assert.ok(
+        schemaContent.includes("@@unique([assignmentId, unitId])"),
+        "AssignmentScopeUnit must have @@unique([assignmentId, unitId])"
+      );
+      assert.ok(
+        migrationContent.includes('CREATE UNIQUE INDEX "assignment_scope_units_assignment_id_unit_id_key" ON "assignment_scope_units"("assignment_id", "unit_id");'),
+        "Migration must create unique index on assignment_scope_units(assignment_id, unit_id)"
+      );
+    });
+
+    it("Position, OrgUnit, and User deletions must Restrict to preserve historical assignments", () => {
+      assert.ok(
+        schemaContent.includes("user        User                  @relation(fields: [userId], references: [id], onDelete: Restrict)"),
+        "Assignment.user relation must onDelete: Restrict"
+      );
+      assert.ok(
+        schemaContent.includes("position    Position              @relation(fields: [positionId], references: [id], onDelete: Restrict)"),
+        "Assignment.position relation must onDelete: Restrict"
+      );
+      assert.ok(
+        schemaContent.includes("unit        OrgUnit               @relation(fields: [unitId], references: [id], onDelete: Restrict)"),
+        "Assignment.unit relation must onDelete: Restrict"
+      );
+      assert.ok(
+        migrationContent.includes('FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT'),
+        "Migration must enforce ON DELETE RESTRICT on assignment user foreign key"
+      );
+      assert.ok(
+        migrationContent.includes('FOREIGN KEY ("position_id") REFERENCES "positions"("id") ON DELETE RESTRICT'),
+        "Migration must enforce ON DELETE RESTRICT on assignment position foreign key"
+      );
+      assert.ok(
+        migrationContent.includes('FOREIGN KEY ("unit_id") REFERENCES "org_units"("id") ON DELETE RESTRICT'),
+        "Migration must enforce ON DELETE RESTRICT on assignment unit foreign key"
+      );
+    });
+
+    it("CanonicalAuditLog must persist immutable audit snapshot fields with indexes", () => {
+      const requiredAuditFields = [
+        "technical_account_id",
+        "technical_account_username",
+        "human_executor_id",
+        "human_executor_name",
+        "action",
+        "entity",
+        "entity_id",
+        "capability_code",
+        "assignment_id",
+        "position_code",
+        "scope_type",
+        "unit_id",
+        "before_state",
+        "after_state",
+        "resource_context",
+        "reason",
+        "client_request_id",
+        "ip_address",
+        "user_agent",
+        "created_at",
+      ];
+      for (const field of requiredAuditFields) {
+        assert.ok(
+          migrationContent.includes(`"${field}"`),
+          `CanonicalAuditLog table must contain column "${field}"`
+        );
+      }
+      assert.ok(
+        migrationContent.includes('CREATE INDEX "canonical_audit_logs_technical_account_id_idx"'),
+        "Audit log must index technical_account_id"
+      );
+      assert.ok(
+        migrationContent.includes('CREATE INDEX "canonical_audit_logs_action_idx"'),
+        "Audit log must index action"
+      );
+      assert.ok(
+        migrationContent.includes('CREATE INDEX "canonical_audit_logs_created_at_idx"'),
+        "Audit log must index created_at"
+      );
+    });
+
+    it("arbitrary pseudo-scopes and invalid BusinessRuleStates are rejected by typed enums", () => {
+      const validScopeTypes = [
+        "GLOBAL",
+        "DOMAIN",
+        "UNIT",
+        "ASSIGNED_UNITS",
+        "HALAQOH",
+        "KAMAR",
+        "OWN_CHILD",
+        "SELF",
+      ];
+      const validRuleStates = [
+        "VERIFIED_PRODUCTION",
+        "APPROVED_TARGET_PENDING_TECHNICAL",
+        "PROPOSED_TBD",
+      ];
+
+      for (const s of validScopeTypes) {
+        assert.ok(migrationContent.includes(`'${s}'`), `ScopeType enum must include ${s}`);
+      }
+      for (const r of validRuleStates) {
+        assert.ok(migrationContent.includes(`'${r}'`), `BusinessRuleState enum must include ${r}`);
+      }
+      assert.strictEqual(migrationContent.includes("'TAHFIZH_HALAQOH'"), false);
+      assert.strictEqual(migrationContent.includes("'ADMIN_ALL'"), false);
+    });
+
+    it("legacy runtime authorization remains 100% untouched and authoritative", () => {
+      const actionsDir = path.join(rootDir, "app/actions");
+      const actionFiles = fs.readdirSync(actionsDir);
+      for (const file of actionFiles) {
+        if (!file.endsWith(".ts")) continue;
+        const content = fs.readFileSync(path.join(actionsDir, file), "utf-8");
+        assert.strictEqual(
+          content.includes("prisma.assignment.find"),
+          false,
+          `Action ${file} must NOT query prisma.assignment yet (Phase 2A is schema only)`
+        );
+        assert.strictEqual(
+          content.includes("prisma.positionCapability.find"),
+          false,
+          `Action ${file} must NOT query prisma.positionCapability yet (Phase 2A is schema only)`
+        );
+      }
+    });
+
+    it("18.13. existing legacy rows upgrade to Phase 2A with account_type=PERSONAL and zero auto-created authority", { timeout: 60000 }, async () => {
+      const res = await runIsolatedExistingDataUpgradeVerification();
+      assert.strictEqual(res.baselineApplied, true, "Baseline schema must be applied");
+      assert.strictEqual(res.legacyUsersCreatedCount, 5, "5 representative legacy users must be inserted");
+      assert.strictEqual(res.phase2aMigrationApplied, true, "Phase 2A migration must be applied");
+      assert.strictEqual(res.allLegacyUsersIntact, true, "All legacy users must retain unchanged IDs, credentials, and business fields");
+      assert.strictEqual(res.allLegacyUsersAccountTypePersonal, true, "Every legacy user must receive account_type = PERSONAL");
+      assert.strictEqual(res.zeroAutoCreatedAuthority, true, "All new canonical tables must be empty with zero auto-created authority");
+      assert.strictEqual(res.autoCreatedAuthorityCounts.assignments, 0);
+      assert.strictEqual(res.autoCreatedAuthorityCounts.positionCapabilities, 0);
+      assert.strictEqual(res.autoCreatedAuthorityCounts.orgUnits, 0);
+      assert.strictEqual(res.autoCreatedAuthorityCounts.positions, 0);
+      assert.strictEqual(res.autoCreatedAuthorityCounts.unitAccountPlacements, 0);
+      assert.strictEqual(res.autoCreatedAuthorityCounts.assignmentScopeUnits, 0);
+      assert.strictEqual(res.autoCreatedAuthorityCounts.canonicalAuditLogs, 0);
+      assert.strictEqual(res.autoCreatedAuthorityCounts.capabilities, 0);
+    });
+
+    it("18.14. production-equivalent isolated simulation: main chain + PR #8 + Phase 2A applies without schema conflict", { timeout: 60000 }, async () => {
+      const res = await runIsolatedProductionEquivalentSimulation();
+      assert.strictEqual(res.baselineApplied, true, "Baseline must be applied");
+      assert.strictEqual(res.pr8MigrationFetched, true, "PR #8 migration must be fetched");
+      assert.strictEqual(res.pr8ExactShaVerified, true, "PR #8 exact SHA (9068cae5587b7219c394c5c25bf0de07a15b0726) must be verified");
+      assert.ok(res.pr8MigrationBytes > 1000, "PR #8 migration bytes must be substantial (> 1000 bytes)");
+      assert.strictEqual(res.pr8MigrationApplied, true, "PR #8 migration must apply cleanly");
+      assert.strictEqual(res.phase2aMigrationApplied, true, "Phase 2A migration must apply cleanly on top of PR #8");
+      assert.strictEqual(res.hasPr8Table, true, "PR #8 table evaluasi_rubu_tahfizh must exist");
+      assert.strictEqual(res.hasCanonicalTables, true, "Phase 2A canonical tables (org_units, assignments) must exist");
+      assert.strictEqual(res.simulationSuccess, true, "Simulation status must be unconditionally successful");
     });
   });
 });
