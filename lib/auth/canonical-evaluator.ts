@@ -106,7 +106,7 @@ export interface ICanonicalDataProvider {
   getActiveAssignments(userId: string, now: Date): Promise<CanonicalAssignmentWithDetails[]>;
   getUnitAccountPlacement(userId: string): Promise<{ unitId: string } | null>;
   verifyHumanExecutor(executorId: string): Promise<{ id: string; name: string; isActive: boolean } | null>;
-  resolveResourceContext(requested: RequestedResourceContext, subjectUserId?: string): Promise<ResolvedResourceContext | null>;
+  resolveResourceContext(requested: RequestedResourceContext, subjectUserId?: string, capability?: string): Promise<ResolvedResourceContext | null>;
 }
 
 /**
@@ -119,6 +119,7 @@ export interface AuthorizeCanonicalParams {
   resolvedContext?: ResolvedResourceContext; // Optional pre-resolved context (e.g. for pure testing)
   executorContext?: UnitAccountExecutorContext;
   isMutation?: boolean;
+  allowTargetPendingPolicy?: boolean; // When true, evaluates APPROVED_TARGET_PENDING_TECHNICAL (e.g. for target policy testing/verification)
   now?: Date;
   dataProvider?: ICanonicalDataProvider;
 }
@@ -404,7 +405,13 @@ export async function authorizeCanonical(
       if (pc.capabilityCode === params.capability) {
         // Enforce Activation Triple:
         // Must be VERIFIED_PRODUCTION (never PROPOSED_TBD or unverified)
-        if (pc.businessRuleState !== "VERIFIED_PRODUCTION") {
+        // Or APPROVED_TARGET_PENDING_TECHNICAL when params.allowTargetPendingPolicy is explicitly true
+        const isEligibleState =
+          pc.businessRuleState === "VERIFIED_PRODUCTION" ||
+          (params.allowTargetPendingPolicy === true &&
+            pc.businessRuleState === "APPROVED_TARGET_PENDING_TECHNICAL");
+
+        if (!isEligibleState) {
           continue;
         }
 
@@ -493,7 +500,8 @@ export async function authorizeCanonical(
     try {
       const res = await params.dataProvider.resolveResourceContext(
         params.resourceContext,
-        identity.userId
+        identity.userId,
+        params.capability
       );
       if (res === null) {
         // Resource lookup null must fail closed immediately, even for GLOBAL grants
@@ -727,7 +735,7 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
       return null;
     },
 
-    async resolveResourceContext(requested: RequestedResourceContext, subjectUserId?: string): Promise<ResolvedResourceContext | null> {
+    async resolveResourceContext(requested: RequestedResourceContext, subjectUserId?: string, capability?: string): Promise<ResolvedResourceContext | null> {
       let unitGenderComplex: GenderComplex | undefined;
       let orgDomain: OrgDomain | undefined;
       const orgUnitIds: string[] = [];
@@ -784,8 +792,22 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
           unitGenderComplex = "PUTRI";
         }
 
+        // Capability-aware domain resolution: Derive strategic domain from target capability namespace
         if (!orgDomain) {
-          orgDomain = "TAHFIZH";
+          if (capability) {
+            const capLower = capability.toLowerCase();
+            if (capLower.startsWith("tahfizh.")) {
+              orgDomain = "TAHFIZH";
+            } else if (capLower.startsWith("keasramaan.") || capLower.startsWith("health.")) {
+              orgDomain = "KEASRAMAAN";
+            } else if (capLower.startsWith("academic.")) {
+              orgDomain = "AKADEMIK";
+            } else {
+              orgDomain = "TAHFIZH";
+            }
+          } else {
+            orgDomain = "TAHFIZH";
+          }
         }
 
         // Authoritative Kamar Placement Hydration

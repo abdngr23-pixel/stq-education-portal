@@ -21,6 +21,7 @@ export interface CreateSetoranCoreInput {
   alasanLompatanHalaman?: string | null;
   isManualSabaqi?: boolean;
   alasanManualSabaqi?: string | null;
+  occurredAt?: Date | string | null;
 }
 
 export interface SaveSetoranContext {
@@ -49,6 +50,19 @@ export async function saveSetoranTahfizhCore(
   }
 ) {
   const { input, context } = params;
+
+  // 1a. Validasi Tanggal Setoran (occurredAt) - UAT Rule #13
+  let effectiveOccurredAt: Date = new Date();
+  if (input.occurredAt !== undefined && input.occurredAt !== null) {
+    const parsed = input.occurredAt instanceof Date ? input.occurredAt : new Date(input.occurredAt);
+    if (isNaN(parsed.getTime())) {
+      return { success: false, message: "Format tanggal setoran (occurredAt) tidak valid." };
+    }
+    if (parsed.getTime() > Date.now()) {
+      return { success: false, message: "Tanggal setoran (occurredAt) tidak boleh di masa depan." };
+    }
+    effectiveOccurredAt = parsed;
+  }
 
   // 1. Validasi Nilai Halaman, Volume, & Juz
   const halMulai = Number(input.halamanMulai);
@@ -293,7 +307,7 @@ export async function saveSetoranTahfizhCore(
               setoranCode,
               santriId: input.santriId,
               musyrifId: context.musyrifStaffId,
-              tanggal: new Date(),
+              tanggal: effectiveOccurredAt,
               jenis: input.jenis,
               juz: declaredJuz,
               halamanMulai: halMulai,
@@ -333,6 +347,9 @@ export async function saveSetoranTahfizhCore(
                 alasanLompatanHalaman: input.alasanLompatanHalaman || null,
                 alasanManualSabaqi: input.alasanManualSabaqi || null,
                 catatan: input.catatan || null,
+                occurredAt: effectiveOccurredAt.toISOString(),
+                createdAt: created.createdAt.toISOString(),
+                creator: context.username,
               },
             },
           });

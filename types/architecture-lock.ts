@@ -562,5 +562,115 @@ export const OSDA_STRUCTURE_CONTRACT = {
   },
 } as const;
 
+/**
+ * Milestone 3.2 UAT Business Rules — Granular Capabilities
+ */
+export const TAHFIZH_M32_CAPABILITIES = {
+  RECAP_READ_ALL: "tahfizh.recap.view_all",
+  RECAP_READ: "tahfizh.recap.read",
+  TARGET_MANAGE: "tahfizh.target.manage",
+  REWARD_ISSUE: "tahfizh.reward.issue",
+  SETORAN_CREATE: "tahfizh.setoran.create",
+} as const;
+
+export const KEASRAMAAN_PERMISSION_CAPABILITIES = {
+  READ: "keasramaan.permission.read",
+  CREATE: "keasramaan.permission.create",
+  UPDATE: "keasramaan.permission.update",
+  APPROVE: "keasramaan.permission.approve",
+} as const;
+
+/**
+ * UAT Rule #7: Halaqoh attendance new-entry selectable options
+ * MASBUK is strictly excluded from new entries (historical records remain readable).
+ */
+export const HALAQOH_ATTENDANCE_NEW_ENTRY_OPTIONS = [
+  "HADIR",
+  "SAKIT",
+  "IZIN",
+  "ALFA",
+] as const;
+export type HalaqohAttendanceNewEntryOption =
+  (typeof HALAQOH_ATTENDANCE_NEW_ENTRY_OPTIONS)[number];
+
+/**
+ * UAT Rule #8: Tahajjud attendance new-entry selectable choices
+ * Exactly two choices: SHOLAT and ALFA.
+ */
+export const TAHAJJUD_ATTENDANCE_NEW_ENTRY_OPTIONS = [
+  "SHOLAT",
+  "ALFA",
+] as const;
+export type TahajjudAttendanceNewEntryOption =
+  (typeof TAHAJJUD_ATTENDANCE_NEW_ENTRY_OPTIONS)[number];
+
+/**
+ * UAT Rule #6: Kepesantrenan Attendance Contract
+ * One Kepesantrenan activity/session may have distinct teacher and student attendance records.
+ */
+export interface KepesantrenanAttendanceRecordContract {
+  activitySessionId: string;
+  dateTime: Date;
+  subjectOrActivity: string; // e.g. "Bahasa Arab", "Fikih", "Tafsir", "Tajwid", "Aqidah Islamiyah"
+  personId: string;
+  actorType: "TEACHER" | "STUDENT";
+  attendanceStatus: "HADIR" | "IZIN" | "SAKIT" | "ALFA";
+  recorderUserId: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export const KEPESANTRENAN_ATTENDANCE_CONTRACT = {
+  SUBJECTS: [
+    "Bahasa Arab",
+    "Fikih",
+    "Tafsir",
+    "Tajwid",
+    "Aqidah Islamiyah",
+  ] as const,
+  ACTOR_TYPES: ["TEACHER", "STUDENT"] as const,
+  STATUS_OPTIONS: ["HADIR", "IZIN", "SAKIT", "ALFA"] as const,
+} as const;
+
+/**
+ * UAT Rule #10: OSDA PUTRI Unit Account Contract
+ * Technical account for santriwati operational unit with zero PUTRA data leakage.
+ */
+export const OSDA_PUTRI_UNIT_CONTRACT = {
+  NODE: {
+    code: "OU-OSDA-PUTRI",
+    name: "Organisasi Santri Darul Ulum Cendekia Putri",
+    type: "ORGANIZATION" as const,
+    domain: "KEASRAMAAN" as const,
+    genderComplex: "PUTRI" as const,
+    parentUnitCode: "OU-OSDA-ROOT" as const,
+    accountType: "UNIT" as const,
+  },
+  INVARIANTS: {
+    genderComplex: "PUTRI" as const,
+    maxActivePlacements: 1,
+    allowMultipleDevices: true,
+    requiresVerifiedHumanExecutor: true,
+    preventPutraAccess: true,
+  },
+} as const;
+
+/**
+ * UAT Rule #3: Santri Search Result Rendering Contract
+ * Renders concise output showing only Nama and Kelas.
+ */
+export function formatSantriSearchResult(santri: { nama: string; kelas: string }): {
+  nama: string;
+  kelas: string;
+  displayText: string;
+} {
+  return {
+    nama: santri.nama,
+    kelas: santri.kelas,
+    displayText: `${santri.nama} • Kelas ${santri.kelas}`,
+  };
+}
+
+
 
 

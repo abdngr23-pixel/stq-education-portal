@@ -100,6 +100,28 @@ export async function simpanBatchPresensiAction(input: SimpanBatchPresensiInput)
     }
   }
 
+  // UAT Rule #7: Status MASBUK tidak berlaku untuk input presensi halaqoh baru
+  if (kegiatan.toLowerCase().includes("halaqoh")) {
+    const hasMasbuk = items.some((i) => i.status === "MASBUK");
+    if (hasMasbuk) {
+      return {
+        success: false,
+        message: "Status MASBUK tidak berlaku untuk input presensi halaqoh Al-Qur'an baru.",
+      };
+    }
+  }
+
+  // UAT Rule #8: Presensi Tahajjud hanya memiliki dua pilihan: SHOLAT (HADIR) atau ALFA
+  if (kegiatan.toLowerCase().includes("tahajjud")) {
+    const invalidTahajjud = items.some((i) => i.status !== "HADIR" && i.status !== "ALFA");
+    if (invalidTahajjud) {
+      return {
+        success: false,
+        message: "Presensi Tahajjud hanya menerima status SHOLAT atau ALFA.",
+      };
+    }
+  }
+
   const witaDateStr = input.tanggal || getTodayWITADateString();
   const { startOfDayUTC, endOfDayUTC } = getWITADayRange(witaDateStr);
   const tanggalDate = parseWITADate(witaDateStr);

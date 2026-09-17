@@ -395,7 +395,20 @@ export function AkademikModule({
             }`}
           >
             <GraduationCap className="h-4 w-4" />
-            Input Penilaian Akademik
+            Studi Umum
+          </button>
+          <button
+            type="button"
+            data-testid="subtab-kepesantrenan"
+            onClick={() => setSubTab("kepesantrenan")}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 min-h-[44px] shrink-0 ${
+              subTab === "kepesantrenan"
+                ? "bg-[#0E7C3A] text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+            }`}
+          >
+            <BookOpen className="h-4 w-4" />
+            Kepesantrenan
           </button>
           <button
             type="button"
@@ -409,19 +422,6 @@ export function AkademikModule({
           >
             <Printer className="h-4 w-4" />
             Pratinjau &amp; Cetak Rapor
-          </button>
-          <button
-            type="button"
-            data-testid="subtab-kepesantrenan"
-            onClick={() => setSubTab("kepesantrenan")}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 min-h-[44px] shrink-0 ${
-              subTab === "kepesantrenan"
-                ? "bg-[#0E7C3A] text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
-            }`}
-          >
-            <BookOpen className="h-4 w-4" />
-            Materi Kepesantrenan
           </button>
         </div>
       </div>
