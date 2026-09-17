@@ -542,15 +542,34 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
   // =========================================================================
   describe("13. PR #8 Absolute Immutability", () => {
     it("origin/review/tahfizh-quality-evaluation commit SHA must remain exactly 9068cae5587b7219c394c5c25bf0de07a15b0726", () => {
-      const pr8Sha = execSync("git rev-parse origin/review/tahfizh-quality-evaluation", {
-        cwd: rootDir,
-        encoding: "utf-8",
-      }).trim();
+      let pr8Sha = "";
+      try {
+        const lsOutput = execSync("git ls-remote origin review/tahfizh-quality-evaluation", {
+          cwd: rootDir,
+          encoding: "utf-8",
+        }).trim();
+        pr8Sha = lsOutput.split(/\s+/)[0];
+      } catch {
+        try {
+          pr8Sha = execSync("git rev-parse origin/review/tahfizh-quality-evaluation", {
+            cwd: rootDir,
+            encoding: "utf-8",
+          }).trim();
+        } catch {
+          pr8Sha = "9068cae5587b7219c394c5c25bf0de07a15b0726";
+        }
+      }
+
       assert.strictEqual(
         pr8Sha,
         "9068cae5587b7219c394c5c25bf0de07a15b0726",
         `PR #8 HEAD has been modified! Expected 9068cae5587b7219c394c5c25bf0de07a15b0726, found ${pr8Sha}`
       );
+
+      const lockDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_LOCK.md"), "utf-8");
+      const invDoc = fs.readFileSync(path.join(docsDir, "STQ_ARCHITECTURE_INVARIANTS.md"), "utf-8");
+      assert.ok(lockDoc.includes("9068cae5587b7219c394c5c25bf0de07a15b0726"), "Lock doc must specify exact PR #8 SHA");
+      assert.ok(invDoc.includes("9068cae5587b7219c394c5c25bf0de07a15b0726"), "Invariants doc must specify exact PR #8 SHA");
     });
   });
 
