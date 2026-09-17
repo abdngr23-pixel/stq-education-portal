@@ -495,9 +495,17 @@ export async function authorizeCanonical(
         params.resourceContext,
         identity.userId
       );
-      if (res) {
-        resolvedContext = res;
+      if (res === null) {
+        // Resource lookup null must fail closed immediately, even for GLOBAL grants
+        return {
+          decision: "DENY",
+          code: "INVALID_RESOURCE_CONTEXT",
+          reasonCode: "INVALID_RESOURCE_CONTEXT",
+          reason: "Authoritative target resource lookup returned null or target resource does not exist.",
+          capabilityCode: params.capability,
+        };
       }
+      resolvedContext = res;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return {
@@ -635,20 +643,21 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
     },
 
     async verifyHumanExecutor(executorId: string): Promise<{ id: string; name: string; isActive: boolean } | null> {
-      // Find human executor: support lookup by User.id or User.staffId
+      // Find human executor: support lookup by User.id, User.staffId, or User.santriId
       const user = await prisma.user.findFirst({
         where: {
           OR: [
             { id: executorId },
             { staffId: executorId },
+            { santriId: executorId },
           ],
         },
-        include: { staff: true },
+        include: { staff: true, santri: true },
       });
 
       if (user) {
-        // Invariant: A UNIT technical account can NEVER act as a human executor
-        if (user.accountType === "UNIT") {
+        // Must be AccountType.PERSONAL and User.status === "AKTIF"
+        if (user.accountType !== "PERSONAL" || user.status !== "AKTIF") {
           return {
             id: user.id,
             name: user.username,
@@ -656,13 +665,28 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
           };
         }
 
-        const isUserActive = user.status === "AKTIF";
-        const isStaffActive = user.staff ? user.staff.status === "AKTIF" : true;
+        // Must have linked active Staff OR linked active Santri profile
+        if (user.staff) {
+          return {
+            id: user.id,
+            name: user.staff.nama,
+            isActive: user.staff.status === "AKTIF",
+          };
+        }
 
+        if (user.santri) {
+          return {
+            id: user.id,
+            name: user.santri.nama,
+            isActive: user.santri.status === "AKTIF",
+          };
+        }
+
+        // Active personal User with neither Staff nor Santri human profile -> REJECT
         return {
           id: user.id,
-          name: user.staff?.nama || user.username,
-          isActive: isUserActive && isStaffActive,
+          name: user.username,
+          isActive: false,
         };
       }
 
@@ -673,16 +697,30 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
       });
 
       if (staff) {
-        if (staff.user && staff.user.accountType === "UNIT") {
+        if (!staff.user || staff.user.accountType !== "PERSONAL" || staff.user.status !== "AKTIF") {
           return { id: staff.id, name: staff.nama, isActive: false };
         }
-        const isStaffActive = staff.status === "AKTIF";
-        const isUserActive = staff.user ? staff.user.status === "AKTIF" : true;
-
         return {
           id: staff.id,
           name: staff.nama,
-          isActive: isStaffActive && isUserActive,
+          isActive: staff.status === "AKTIF",
+        };
+      }
+
+      // Check direct Santri table if executorId is a Santri ID without direct User relation
+      const santri = await prisma.santri.findUnique({
+        where: { id: executorId },
+        include: { user: true },
+      });
+
+      if (santri) {
+        if (!santri.user || santri.user.accountType !== "PERSONAL" || santri.user.status !== "AKTIF") {
+          return { id: santri.id, name: santri.nama, isActive: false };
+        }
+        return {
+          id: santri.id,
+          name: santri.nama,
+          isActive: santri.status === "AKTIF",
         };
       }
 
@@ -696,6 +734,7 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
 
       let halaqohId: string | undefined = undefined;
       let kamarId: string | undefined = undefined;
+      let targetSantriId: string | undefined = requested.santriId;
 
       // 1. Target Santri Hydration (Authoritative trust boundary)
       if (requested.santriId) {
@@ -719,13 +758,12 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
 
           orgDomain = "TAHFIZH";
 
-          // Authoritative kamar: query if santri has an assigned kamar in DB.
-          // Never trust caller-supplied requested.kamarId for target santri!
-          const santriWithKamar = targetSantri as unknown as { kamarId?: string | null };
-          kamarId = santriWithKamar.kamarId || undefined;
-          if (kamarId) {
-            orgUnitIds.push(kamarId);
-          }
+          // Note on KAMAR Scope in Milestone 2:
+          // The current Santri schema has no authoritative kamarId relation.
+          // Until Milestone 3 adds real room placement:
+          // Santri-targeted KAMAR context strictly remains undefined.
+          // KAMAR scope evaluations targeting a santri fail closed as INVALID_RESOURCE_CONTEXT.
+          kamarId = undefined;
         } else {
           // Target santri was requested but does not exist in DB -> fail closed
           return null;
@@ -742,6 +780,8 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
             orgUnitIds.push(halaqohUnit.id);
             if (!unitGenderComplex) unitGenderComplex = halaqohUnit.genderComplex as GenderComplex;
             if (!orgDomain) orgDomain = halaqohUnit.domain as OrgDomain;
+          } else {
+            return null;
           }
         }
 
@@ -754,18 +794,24 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
             orgUnitIds.push(kamarUnit.id);
             if (!unitGenderComplex) unitGenderComplex = kamarUnit.genderComplex as GenderComplex;
             if (!orgDomain) orgDomain = kamarUnit.domain as OrgDomain;
+          } else {
+            // Standalone kamar identifier was provided but does not exist as an authoritative KAMAR OrgUnit -> fail closed
+            return null;
           }
         }
       }
 
       // 2. Resource-level domain hydration (e.g. TasmiSimaan -> TAHFIZH domain)
-      if (requested.resourceId && !orgDomain) {
+      if (requested.resourceId) {
         const tasmi = await prisma.tasmiSimaan.findUnique({
           where: { id: requested.resourceId },
           select: { id: true, santriId: true, santri: { select: { halaqohId: true, jenisKelamin: true } } },
         });
         if (tasmi) {
           orgDomain = "TAHFIZH";
+          if (!targetSantriId) {
+            targetSantriId = tasmi.santriId;
+          }
           if (!halaqohId && tasmi.santri?.halaqohId) {
             halaqohId = tasmi.santri.halaqohId;
             orgUnitIds.push(tasmi.santri.halaqohId);
@@ -773,43 +819,48 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
           if (!unitGenderComplex && tasmi.santri?.jenisKelamin) {
             unitGenderComplex = tasmi.santri.jenisKelamin === "L" ? "PUTRA" : "PUTRI";
           }
+        } else {
+          // If requested.resourceId was explicitly specified and not found in DB -> fail closed!
+          return null;
         }
       }
 
       if (requested.unitId) {
-        orgUnitIds.push(requested.unitId);
         const unit = await prisma.orgUnit.findUnique({ where: { id: requested.unitId } });
         if (unit) {
+          orgUnitIds.push(unit.id);
           if (!unitGenderComplex) unitGenderComplex = unit.genderComplex as GenderComplex;
           if (!orgDomain) orgDomain = unit.domain as OrgDomain;
+        } else {
+          return null;
+        }
+      }
+
+      if (requested.targetUserId) {
+        const targetUser = await prisma.user.findUnique({ where: { id: requested.targetUserId } });
+        if (!targetUser) {
+          return null;
         }
       }
 
       // 3. OWN_CHILD Server-Side Relation Resolution:
+      // For Milestone 2 VERIFIED_PRODUCTION compatibility, use strictly the verified legacy relationship: User.santriId
+      // Phone-based multi-child discovery (User.phone -> Santri.noHpWali) is deferred to future milestones (PROPOSED_TBD).
       let guardianLinkedSantriIds: string[] | undefined;
       if (subjectUserId) {
         const user = await prisma.user.findUnique({
           where: { id: subjectUserId },
-          select: { id: true, phone: true, santriId: true },
+          select: { id: true, santriId: true },
         });
-        if (user) {
-          const linkedIds: string[] = [];
-          if (user.phone) {
-            const children = await prisma.santri.findMany({
-              where: { noHpWali: user.phone },
-              select: { id: true },
-            });
-            linkedIds.push(...children.map((c) => c.id));
-          }
-          if (user.santriId && !linkedIds.includes(user.santriId)) {
-            linkedIds.push(user.santriId);
-          }
-          guardianLinkedSantriIds = linkedIds;
+        if (user && user.santriId) {
+          guardianLinkedSantriIds = [user.santriId];
+        } else {
+          guardianLinkedSantriIds = [];
         }
       }
 
       return {
-        santriId: requested.santriId,
+        santriId: targetSantriId,
         halaqohId,
         kamarId,
         orgUnitIds,

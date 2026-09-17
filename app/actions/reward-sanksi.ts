@@ -141,46 +141,17 @@ export async function prosesRewardTasmiSimaanAction(tasmiSimaanId: string) {
   // Ordinary Musyrif Tahfizh, ADM, MK, PH, OSDA, dsb ditolak tegas (fail-closed)
   const isAuthorizedIssuer = session.role === "KS" || Boolean(session.isKepalaBidangTahfidz);
 
-  // Pre-fetch target TasmiSimaan record to supply authoritative context (santriId, halaqohId, orgDomain: "TAHFIZH")
-  // This ensures Kabid Tahfizh's DOMAIN-scoped grant achieves true parity matching during shadow evaluation
-  let tasmiRecord: { id: string; santriId: string; santri?: { halaqohId?: string | null; jenisKelamin?: string | null } | null } | null = null;
-  try {
-    tasmiRecord = await prisma.tasmiSimaan.findUnique({
-      where: { id: tasmiSimaanId },
-      select: {
-        id: true,
-        santriId: true,
-        santri: {
-          select: {
-            halaqohId: true,
-            jenisKelamin: true,
-          },
-        },
-      },
-    });
-  } catch {
-    // Fail-safe: continue to authorization evaluation
-  }
-
   // Representative Milestone 2 shadow evaluation (Safe-by-default: OFF in production)
+  // When CANONICAL_AUTH_SHADOW_ENABLED=false: zero additional canonical/shadow context queries.
+  // When shadow flag=true: createPrismaDataProvider.resolveResourceContext({ resourceId: tasmiSimaanId })
+  // lazily hydrates TasmiSimaan -> Santri -> halaqoh/domain without caller-constructed context.
   const isAllowed = await shadowAuthorizeIfEnabled({
     session,
     capabilityCode: "tahfizh.reward.issue",
     legacyCheck: () => isAuthorizedIssuer,
     resourceContext: {
       resourceId: tasmiSimaanId,
-      santriId: tasmiRecord?.santriId,
-      halaqohId: tasmiRecord?.santri?.halaqohId || undefined,
     },
-    resolvedContext: tasmiRecord
-      ? {
-          orgUnitIds: tasmiRecord.santri?.halaqohId ? [tasmiRecord.santri.halaqohId] : [],
-          orgDomain: "TAHFIZH",
-          santriId: tasmiRecord.santriId,
-          halaqohId: tasmiRecord.santri?.halaqohId || undefined,
-          genderComplex: tasmiRecord.santri?.jenisKelamin === "L" ? "PUTRA" : "PUTRI",
-        }
-      : undefined,
     resourceType: "TasmiSimaan",
     resourceId: tasmiSimaanId,
     isMutation: true,

@@ -118,7 +118,7 @@ The scope engine evaluates access across 8 canonical scope types against server-
 | `UNIT` | Direct anchor unit containment. Target must match assignment `unitId`. | `SCOPE_MISMATCH` |
 | `ASSIGNED_UNITS` | Relationally bound multi-unit set (via `AssignmentScopeUnit`). Target unit must be contained in permitted set. | `SCOPE_MISMATCH` |
 | `HALAQOH` | Ordinary Musyrif Tahfizh bound strictly to assigned halaqoh (`halaqohId`). | `SCOPE_MISMATCH` |
-| `KAMAR` | Mudabbir bound strictly to assigned dormitory room (`kamarId`). | `SCOPE_MISMATCH` |
+| `KAMAR` | Mudabbir bound strictly to assigned dormitory room (`kamarId`). In Milestone 2, Santri schema has no authoritative kamarId relation; Santri-targeted KAMAR context evaluates with kamarId = undefined (fail-closed as `INVALID_RESOURCE_CONTEXT`). Standalone kamar resource IDs require authoritative OrgUnit(type=KAMAR) validation. | `SCOPE_MISMATCH` / `INVALID_RESOURCE_CONTEXT` |
 | `OWN_CHILD` | Wali Santri accessing relationally linked children (`guardianLinkedSantriIds`). Access to other students is denied. | `SCOPE_MISMATCH` |
 | `SELF` | Subject strictly bound to their personal record (`userId` or `santriId`). Access to other profiles is denied. | `SCOPE_MISMATCH` |
 

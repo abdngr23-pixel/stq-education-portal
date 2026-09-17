@@ -15,7 +15,9 @@ import {
   EffectiveCapabilityGrant,
   RequestedResourceContext,
   ResolvedResourceContext,
+  UnitAccountExecutorContext,
 } from "../types/architecture-lock";
+import { PrismaClient } from "@prisma/client";
 import { Role, UserSession } from "../types/auth";
 
 import {
@@ -33,6 +35,7 @@ import {
 
 import {
   authorizeCanonical,
+  createPrismaDataProvider,
   CanonicalAssignmentWithDetails,
   ICanonicalDataProvider,
 } from "../lib/auth/canonical-evaluator";
@@ -2732,6 +2735,536 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 2: COMPATIBILITY & CANONICAL AUTHO
       assert.strictEqual(evalResult.runtimeAllowed, true);
       assert.strictEqual(evalResult.parityRecord.parityStatus, "MATCH_ALLOW");
       assert.strictEqual(evalResult.parityRecord.reasonCode, "ALLOWED");
+    });
+
+    it("12.17. Human Executor Verification: strict rejection of non-human/inactive identities across all 6 cases", async () => {
+      const kioskAssignment: CanonicalAssignmentWithDetails = {
+        id: "asg-kiosk-mut",
+        userId: "usr-kiosk-station",
+        positionId: "pos-osda",
+        positionCode: "ANGGOTA_OSDA",
+        positionName: "Anggota OSDA",
+        domain: "KEASRAMAAN",
+        unitId: "unit-station",
+        unitCode: "STN",
+        unitName: "Station",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          { capabilityCode: "keasramaan.presensi.create", scopeType: "UNIT", businessRuleState: "VERIFIED_PRODUCTION" },
+        ],
+        scopeUnits: [],
+      };
+
+      const provider: ICanonicalDataProvider = {
+        async getIdentity(id) {
+          return { userId: id, username: "kiosk.station", status: "AKTIF", accountType: "UNIT", placementUnitId: "unit-station" };
+        },
+        async getActiveAssignments() { return [kioskAssignment]; },
+        async getUnitAccountPlacement() { return { unitId: "unit-station" }; },
+        async verifyHumanExecutor(execId) {
+          switch (execId) {
+            case "exec-unit": // 1. UNIT executor -> DENY
+              return { id: execId, name: "unit.tech", isActive: false };
+            case "exec-personal-no-profile": // 2. PERSONAL User without Staff/Santri -> DENY
+              return { id: execId, name: "personal.orphan", isActive: false };
+            case "exec-inactive-staff": // 3. inactive Staff -> DENY
+              return { id: execId, name: "staff.inactive", isActive: false };
+            case "exec-inactive-santri": // 4. inactive Santri -> DENY
+              return { id: execId, name: "santri.inactive", isActive: false };
+            case "exec-active-staff": // 5. active Staff -> eligible
+              return { id: execId, name: "staff.active", isActive: true };
+            case "exec-active-santri": // 6. active Santri -> eligible
+              return { id: execId, name: "santri.active", isActive: true };
+            default:
+              return null;
+          }
+        },
+        async resolveResourceContext() { return { orgUnitIds: ["unit-station"] }; },
+      };
+
+      const makeExecutorCtx = (humanExecutorId: string): UnitAccountExecutorContext => ({
+        technicalAccountId: "usr-kiosk-station",
+        technicalAccountUsername: "kiosk.station",
+        humanExecutorId,
+        humanExecutorName: "Executor",
+        unitId: "unit-station",
+        assignmentId: "asg-kiosk-mut",
+      });
+
+      // 1. UNIT executor -> DENY
+      const resUnit = await authorizeCanonical({
+        identity: { userId: "usr-kiosk-station", username: "kiosk.station", status: "AKTIF", accountType: "UNIT" },
+        capability: "keasramaan.presensi.create",
+        resourceContext: { unitId: "unit-station" },
+        isMutation: true,
+        executorContext: makeExecutorCtx("exec-unit"),
+        dataProvider: provider,
+      });
+      assert.strictEqual(resUnit.decision, "DENY");
+      assert.strictEqual(resUnit.reasonCode, "UNIT_EXECUTOR_INVALID");
+
+      // 2. PERSONAL User without Staff/Santri -> DENY
+      const resNoProfile = await authorizeCanonical({
+        identity: { userId: "usr-kiosk-station", username: "kiosk.station", status: "AKTIF", accountType: "UNIT" },
+        capability: "keasramaan.presensi.create",
+        resourceContext: { unitId: "unit-station" },
+        isMutation: true,
+        executorContext: makeExecutorCtx("exec-personal-no-profile"),
+        dataProvider: provider,
+      });
+      assert.strictEqual(resNoProfile.decision, "DENY");
+      assert.strictEqual(resNoProfile.reasonCode, "UNIT_EXECUTOR_INVALID");
+
+      // 3. Inactive Staff -> DENY
+      const resInactiveStaff = await authorizeCanonical({
+        identity: { userId: "usr-kiosk-station", username: "kiosk.station", status: "AKTIF", accountType: "UNIT" },
+        capability: "keasramaan.presensi.create",
+        resourceContext: { unitId: "unit-station" },
+        isMutation: true,
+        executorContext: makeExecutorCtx("exec-inactive-staff"),
+        dataProvider: provider,
+      });
+      assert.strictEqual(resInactiveStaff.decision, "DENY");
+      assert.strictEqual(resInactiveStaff.reasonCode, "UNIT_EXECUTOR_INVALID");
+
+      // 4. Inactive Santri -> DENY
+      const resInactiveSantri = await authorizeCanonical({
+        identity: { userId: "usr-kiosk-station", username: "kiosk.station", status: "AKTIF", accountType: "UNIT" },
+        capability: "keasramaan.presensi.create",
+        resourceContext: { unitId: "unit-station" },
+        isMutation: true,
+        executorContext: makeExecutorCtx("exec-inactive-santri"),
+        dataProvider: provider,
+      });
+      assert.strictEqual(resInactiveSantri.decision, "DENY");
+      assert.strictEqual(resInactiveSantri.reasonCode, "UNIT_EXECUTOR_INVALID");
+
+      // 5. Active Staff -> eligible
+      const resActiveStaff = await authorizeCanonical({
+        identity: { userId: "usr-kiosk-station", username: "kiosk.station", status: "AKTIF", accountType: "UNIT" },
+        capability: "keasramaan.presensi.create",
+        resourceContext: { unitId: "unit-station" },
+        isMutation: true,
+        executorContext: makeExecutorCtx("exec-active-staff"),
+        dataProvider: provider,
+      });
+      assert.strictEqual(resActiveStaff.decision, "ALLOW");
+      assert.strictEqual(resActiveStaff.reasonCode, "ALLOWED");
+
+      // 6. Active Santri -> eligible
+      const resActiveSantri = await authorizeCanonical({
+        identity: { userId: "usr-kiosk-station", username: "kiosk.station", status: "AKTIF", accountType: "UNIT" },
+        capability: "keasramaan.presensi.create",
+        resourceContext: { unitId: "unit-station" },
+        isMutation: true,
+        executorContext: makeExecutorCtx("exec-active-santri"),
+        dataProvider: provider,
+      });
+      assert.strictEqual(resActiveSantri.decision, "ALLOW");
+      assert.strictEqual(resActiveSantri.reasonCode, "ALLOWED");
+    });
+
+    it("12.18. PrismaDataProvider verifyHumanExecutor: authoritatively validates DB user/staff/santri status", async () => {
+      const mockPrismaUsers: Record<string, unknown> = {
+        "u-unit": { id: "u-unit", username: "kiosk", accountType: "UNIT", status: "AKTIF" },
+        "u-orphan": { id: "u-orphan", username: "orphan", accountType: "PERSONAL", status: "AKTIF", staff: null, santri: null },
+        "u-inactive": { id: "u-inactive", username: "inactive", accountType: "PERSONAL", status: "NONAKTIF", staff: { nama: "Staff", status: "AKTIF" } },
+        "u-staff-inact": { id: "u-staff-inact", username: "stf-inact", accountType: "PERSONAL", status: "AKTIF", staff: { nama: "Staff Inact", status: "NONAKTIF" } },
+        "u-santri-inact": { id: "u-santri-inact", username: "san-inact", accountType: "PERSONAL", status: "AKTIF", santri: { nama: "Santri Inact", status: "NONAKTIF" } },
+        "u-staff-act": { id: "u-staff-act", username: "stf-act", accountType: "PERSONAL", status: "AKTIF", staff: { nama: "Staff Act", status: "AKTIF" } },
+        "u-santri-act": { id: "u-santri-act", username: "san-act", accountType: "PERSONAL", status: "AKTIF", santri: { nama: "Santri Act", status: "AKTIF" } },
+      };
+
+      const mockPrisma = {
+        user: {
+          findFirst: async ({ where }: { where: { OR: Array<{ id?: string; staffId?: string; santriId?: string }> } }) => {
+            const id = where.OR[0].id;
+            return (id && mockPrismaUsers[id]) || null;
+          },
+          findUnique: async () => null,
+        },
+        staff: {
+          findUnique: async ({ where }: { where: { id: string } }) => {
+            if (where.id === "stf-standalone-inactive") {
+              return { id: "stf-standalone-inactive", nama: "Staff Standalone", status: "NONAKTIF", user: { accountType: "PERSONAL", status: "AKTIF" } };
+            }
+            if (where.id === "stf-standalone-unit") {
+              return { id: "stf-standalone-unit", nama: "Staff Standalone", status: "AKTIF", user: { accountType: "UNIT", status: "AKTIF" } };
+            }
+            if (where.id === "stf-standalone-active") {
+              return { id: "stf-standalone-active", nama: "Staff Standalone", status: "AKTIF", user: { accountType: "PERSONAL", status: "AKTIF" } };
+            }
+            return null;
+          },
+        },
+        santri: {
+          findUnique: async ({ where }: { where: { id: string } }) => {
+            if (where.id === "san-standalone-inactive") {
+              return { id: "san-standalone-inactive", nama: "Santri Standalone", status: "NONAKTIF", user: { accountType: "PERSONAL", status: "AKTIF" } };
+            }
+            if (where.id === "san-standalone-unit") {
+              return { id: "san-standalone-unit", nama: "Santri Standalone", status: "AKTIF", user: { accountType: "UNIT", status: "AKTIF" } };
+            }
+            if (where.id === "san-standalone-active") {
+              return { id: "san-standalone-active", nama: "Santri Standalone", status: "AKTIF", user: { accountType: "PERSONAL", status: "AKTIF" } };
+            }
+            return null;
+          },
+        },
+      };
+
+      const provider = createPrismaDataProvider(mockPrisma as unknown as PrismaClient);
+
+      // 1. UNIT executor -> isActive: false
+      const execUnit = await provider.verifyHumanExecutor("u-unit");
+      assert.strictEqual(execUnit?.isActive, false);
+
+      // 2. PERSONAL User without Staff/Santri -> isActive: false
+      const execOrphan = await provider.verifyHumanExecutor("u-orphan");
+      assert.strictEqual(execOrphan?.isActive, false);
+
+      // Inactive user -> isActive: false
+      const execInactUser = await provider.verifyHumanExecutor("u-inactive");
+      assert.strictEqual(execInactUser?.isActive, false);
+
+      // 3. Inactive Staff -> isActive: false
+      const execStaffInact = await provider.verifyHumanExecutor("u-staff-inact");
+      assert.strictEqual(execStaffInact?.isActive, false);
+
+      // 4. Inactive Santri -> isActive: false
+      const execSantriInact = await provider.verifyHumanExecutor("u-santri-inact");
+      assert.strictEqual(execSantriInact?.isActive, false);
+
+      // 5. Active Staff -> isActive: true
+      const execStaffAct = await provider.verifyHumanExecutor("u-staff-act");
+      assert.strictEqual(execStaffAct?.isActive, true);
+
+      // 6. Active Santri -> isActive: true
+      const execSantriAct = await provider.verifyHumanExecutor("u-santri-act");
+      assert.strictEqual(execSantriAct?.isActive, true);
+
+      // Direct Staff lookup: inactive -> false, unit account -> false, active -> true
+      assert.strictEqual((await provider.verifyHumanExecutor("stf-standalone-inactive"))?.isActive, false);
+      assert.strictEqual((await provider.verifyHumanExecutor("stf-standalone-unit"))?.isActive, false);
+      assert.strictEqual((await provider.verifyHumanExecutor("stf-standalone-active"))?.isActive, true);
+
+      // Direct Santri lookup: inactive -> false, unit account -> false, active -> true
+      assert.strictEqual((await provider.verifyHumanExecutor("san-standalone-inactive"))?.isActive, false);
+      assert.strictEqual((await provider.verifyHumanExecutor("san-standalone-unit"))?.isActive, false);
+      assert.strictEqual((await provider.verifyHumanExecutor("san-standalone-active"))?.isActive, true);
+    });
+
+    it("12.19. OWN_CHILD Legacy Compatibility Parity: User.santriId strictly verified; phone sharing denied", async () => {
+      const mockPrisma = {
+        user: {
+          findUnique: async ({ where }: { where: { id: string } }) => {
+            if (where.id === "usr-wali-phone-test") {
+              return { id: "usr-wali-phone-test", santriId: "child-A" };
+            }
+            return null;
+          },
+        },
+        santri: {
+          findUnique: async ({ where }: { where: { id: string } }) => {
+            if (where.id === "child-A") return { id: "child-A", nama: "Child A", halaqohId: "hlq-1", jenisKelamin: "L" };
+            if (where.id === "child-B") return { id: "child-B", nama: "Child B", halaqohId: "hlq-1", jenisKelamin: "L" };
+            return null;
+          },
+        },
+      };
+
+      const provider = createPrismaDataProvider(mockPrisma as unknown as PrismaClient);
+
+      const ctxChildA = await provider.resolveResourceContext({ santriId: "child-A" }, "usr-wali-phone-test");
+      assert.ok(ctxChildA);
+      assert.deepStrictEqual(ctxChildA?.guardianLinkedSantriIds, ["child-A"]);
+
+      const ctxChildB = await provider.resolveResourceContext({ santriId: "child-B" }, "usr-wali-phone-test");
+      assert.ok(ctxChildB);
+      assert.deepStrictEqual(ctxChildB?.guardianLinkedSantriIds, ["child-A"]);
+
+      const wsAssignment: CanonicalAssignmentWithDetails = {
+        id: "asg-ws-parity",
+        userId: "usr-wali-phone-test",
+        positionId: "pos-ws",
+        positionCode: "WALI_SANTRI",
+        positionName: "Wali Santri",
+        domain: "INSTITUTIONAL",
+        unitId: "unit-portal",
+        unitCode: "PORTAL",
+        unitName: "Portal",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          { capabilityCode: "santri.rapor.view", scopeType: "OWN_CHILD", businessRuleState: "VERIFIED_PRODUCTION" },
+        ],
+        scopeUnits: [],
+      };
+
+      const fullProvider: ICanonicalDataProvider = {
+        ...provider,
+        async getIdentity(id) {
+          return { userId: id, username: "wali.parity", status: "AKTIF", accountType: "PERSONAL" };
+        },
+        async getActiveAssignments() { return [wsAssignment]; },
+        async getUnitAccountPlacement() { return null; },
+        async verifyHumanExecutor() { return null; },
+      };
+
+      // Child-A (linked via User.santriId) -> ALLOW
+      const resChildA = await authorizeCanonical({
+        identity: { userId: "usr-wali-phone-test", username: "wali.parity", status: "AKTIF", accountType: "PERSONAL" },
+        capability: "santri.rapor.view",
+        resourceContext: { santriId: "child-A" },
+        dataProvider: fullProvider,
+      });
+      assert.strictEqual(resChildA.decision, "ALLOW");
+
+      // Child-B (shares phone only, not linked via User.santriId) -> DENY
+      const resChildB = await authorizeCanonical({
+        identity: { userId: "usr-wali-phone-test", username: "wali.parity", status: "AKTIF", accountType: "PERSONAL" },
+        capability: "santri.rapor.view",
+        resourceContext: { santriId: "child-B" },
+        dataProvider: fullProvider,
+      });
+      assert.strictEqual(resChildB.decision, "DENY");
+      assert.strictEqual(resChildB.reasonCode, "SCOPE_MISMATCH");
+    });
+
+    it("12.20. Shadow OFF Zero Extra DB Query: provider/context query NOT invoked when shadow flag is OFF", async () => {
+      const originalFlag = process.env.CANONICAL_AUTH_SHADOW_ENABLED;
+      let factoryCalled = 0;
+      let dbQueryCalled = 0;
+
+      try {
+        process.env.CANONICAL_AUTH_SHADOW_ENABLED = "false";
+
+        const result = await shadowAuthorizeIfEnabled({
+          session: { userId: "usr-teacher", username: "teacher", role: "KS" },
+          capabilityCode: "tahfizh.reward.issue",
+          legacyCheck: () => {
+            return true;
+          },
+          resourceContext: { resourceId: "tasmi-test-query" },
+          dataProviderFactory: () => {
+            factoryCalled++;
+            return {
+              async getIdentity() { dbQueryCalled++; return null; },
+              async getActiveAssignments() { dbQueryCalled++; return []; },
+              async getUnitAccountPlacement() { dbQueryCalled++; return null; },
+              async verifyHumanExecutor() { dbQueryCalled++; return null; },
+              async resolveResourceContext() { dbQueryCalled++; return null; },
+            };
+          },
+        });
+
+        assert.strictEqual(result, true);
+        assert.strictEqual(factoryCalled, 0, "dataProviderFactory must NOT be called when CANONICAL_AUTH_SHADOW_ENABLED=false");
+        assert.strictEqual(dbQueryCalled, 0, "Zero DB queries must occur when CANONICAL_AUTH_SHADOW_ENABLED=false");
+
+        // When shadow flag is TRUE: resolveResourceContext({ resourceId }) lazily hydrates
+        process.env.CANONICAL_AUTH_SHADOW_ENABLED = "true";
+        let hydratedResourceId: string | undefined;
+
+        const resultShadow = await shadowAuthorizeIfEnabled({
+          session: { userId: "usr-teacher", username: "teacher", role: "KS" },
+          capabilityCode: "tahfizh.reward.issue",
+          legacyCheck: () => true,
+          resourceContext: { resourceId: "tasmi-lazy-101" },
+          dataProviderFactory: () => ({
+            async getIdentity(id) {
+              return { userId: id, username: "teacher", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-1", staffStatus: "AKTIF" };
+            },
+            async getActiveAssignments() {
+              return [{
+                id: "asg-ks",
+                userId: "usr-teacher",
+                positionId: "pos-ks",
+                positionCode: "MUDIR",
+                positionName: "Mudir",
+                domain: "INSTITUTIONAL",
+                unitId: "unit-inst",
+                unitCode: "INST",
+                unitName: "STQ",
+                status: "ACTIVE",
+                validFrom: new Date(0),
+                validUntil: null,
+                positionCapabilities: [
+                  { capabilityCode: "tahfizh.reward.issue", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+                ],
+                scopeUnits: [],
+              }];
+            },
+            async getUnitAccountPlacement() { return null; },
+            async verifyHumanExecutor() { return null; },
+            async resolveResourceContext(req) {
+              hydratedResourceId = req.resourceId;
+              return {
+                orgUnitIds: ["unit-tahfizh"],
+                orgDomain: "TAHFIZH",
+                santriId: "san-lazy",
+              };
+            },
+          }),
+        });
+
+        assert.strictEqual(resultShadow, true);
+        assert.strictEqual(hydratedResourceId, "tasmi-lazy-101", "resolveResourceContext must be lazily called with resourceId when shadow ON");
+      } finally {
+        process.env.CANONICAL_AUTH_SHADOW_ENABLED = originalFlag;
+      }
+    });
+
+    it("12.21. Resource Lookup Null Must Fail Closed: nonexistent santriId with GLOBAL grant & nonexistent resourceId with DOMAIN grant", async () => {
+      // 1. Mudir with GLOBAL grant on tahfizh.setoran.create
+      const mudirGlobalAsg: CanonicalAssignmentWithDetails = {
+        id: "asg-mudir-global",
+        userId: "usr-mudir-global",
+        positionId: "pos-mudir",
+        positionCode: "MUDIR",
+        positionName: "Mudir",
+        domain: "INSTITUTIONAL",
+        unitId: "unit-inst",
+        unitCode: "INST",
+        unitName: "STQ",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          { capabilityCode: "tahfizh.setoran.create", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+        ],
+        scopeUnits: [],
+      };
+
+      const provider: ICanonicalDataProvider = {
+        async getIdentity(id) {
+          return { userId: id, username: "mudir.global", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-mudir", staffStatus: "AKTIF" };
+        },
+        async getActiveAssignments() { return [mudirGlobalAsg]; },
+        async getUnitAccountPlacement() { return null; },
+        async verifyHumanExecutor() { return null; },
+        async resolveResourceContext(req) {
+          if (req.santriId === "nonexistent-santri") {
+            return null; // DB lookup failed / student does not exist
+          }
+          if (req.resourceId === "nonexistent-resource") {
+            return null; // DB lookup failed / resource does not exist
+          }
+          return { orgUnitIds: ["unit-inst"] };
+        },
+      };
+
+      // Case A: requested santriId nonexistent + GLOBAL grant -> DENY INVALID_RESOURCE_CONTEXT
+      const resGlobalNonexistent = await authorizeCanonical({
+        identity: { userId: "usr-mudir-global", username: "mudir.global", status: "AKTIF", accountType: "PERSONAL" },
+        capability: "tahfizh.setoran.create",
+        resourceContext: { santriId: "nonexistent-santri" },
+        dataProvider: provider,
+      });
+
+      assert.strictEqual(resGlobalNonexistent.decision, "DENY");
+      assert.strictEqual(resGlobalNonexistent.reasonCode, "INVALID_RESOURCE_CONTEXT");
+      assert.strictEqual(resGlobalNonexistent.code, "INVALID_RESOURCE_CONTEXT");
+
+      // 2. Kabid with DOMAIN grant on tahfizh.reward.issue
+      const kabidDomainAsg: CanonicalAssignmentWithDetails = {
+        id: "asg-kabid-domain",
+        userId: "usr-kabid-domain",
+        positionId: "pos-kabid",
+        positionCode: "KABID_TAHFIZH",
+        positionName: "Kabid Tahfizh",
+        domain: "TAHFIZH",
+        unitId: "unit-tahfizh",
+        unitCode: "THF",
+        unitName: "Tahfizh",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          { capabilityCode: "tahfizh.reward.issue", scopeType: "DOMAIN", businessRuleState: "VERIFIED_PRODUCTION" },
+        ],
+        scopeUnits: [],
+      };
+
+      const providerKabid: ICanonicalDataProvider = {
+        ...provider,
+        async getIdentity(id) {
+          return { userId: id, username: "kabid.domain", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-kabid", staffStatus: "AKTIF" };
+        },
+        async getActiveAssignments() { return [kabidDomainAsg]; },
+      };
+
+      // Case B: requested resourceId nonexistent + DOMAIN grant -> DENY INVALID_RESOURCE_CONTEXT
+      const resDomainNonexistent = await authorizeCanonical({
+        identity: { userId: "usr-kabid-domain", username: "kabid.domain", status: "AKTIF", accountType: "PERSONAL" },
+        capability: "tahfizh.reward.issue",
+        resourceContext: { resourceId: "nonexistent-resource" },
+        dataProvider: providerKabid,
+      });
+
+      assert.strictEqual(resDomainNonexistent.decision, "DENY");
+      assert.strictEqual(resDomainNonexistent.reasonCode, "INVALID_RESOURCE_CONTEXT");
+      assert.strictEqual(resDomainNonexistent.code, "INVALID_RESOURCE_CONTEXT");
+    });
+
+    it("12.22. Clean Kamar Implementation: Santri-targeted KAMAR context fails closed; standalone kamar requires authoritative OrgUnit(type=KAMAR)", async () => {
+      const mockPrisma = {
+        santri: {
+          findUnique: async ({ where }: { where: { id: string } }) => {
+            if (where.id === "san-kamar-target") {
+              return { id: "san-kamar-target", nama: "Santri Room Test", halaqohId: "hlq-1", jenisKelamin: "L" };
+            }
+            return null;
+          },
+        },
+        orgUnit: {
+          findFirst: async ({ where }: { where: { id: string; type: string } }) => {
+            if (where.id === "kmr-ali-valid" && where.type === "KAMAR") {
+              return { id: "kmr-ali-valid", type: "KAMAR", domain: "KEASRAMAAN", genderComplex: "PUTRA" };
+            }
+            return null;
+          },
+          findUnique: async () => null,
+        },
+        user: { findUnique: async () => null },
+      };
+
+      const provider = createPrismaDataProvider(mockPrisma as unknown as PrismaClient);
+
+      // Case A: Santri-targeted context strictly yields kamarId = undefined
+      const santriCtx = await provider.resolveResourceContext({ santriId: "san-kamar-target", kamarId: "kmr-caller-spoofed" });
+      assert.ok(santriCtx);
+      assert.strictEqual(santriCtx?.kamarId, undefined, "Santri-targeted kamarId must be undefined in Milestone 2");
+
+      // Scope evaluation with santriCtx on KAMAR scope fails closed as INVALID_RESOURCE_CONTEXT
+      const mudabbirGrant: EffectiveCapabilityGrant = {
+        assignmentId: "asg-mudabbir-kamar",
+        positionCode: "MUDABBIR",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        capabilityCode: "keasramaan.kamar.inspect",
+        scopeType: "KAMAR",
+        anchorUnitId: "kmr-ali-valid",
+        unitIds: ["kmr-ali-valid"],
+      };
+      const scopeEvalSantri = evaluateScopePredicate(mudabbirGrant, santriCtx!, { userId: "usr-mudabbir" });
+      assert.strictEqual(scopeEvalSantri.matches, false);
+      assert.strictEqual(scopeEvalSantri.code, "INVALID_RESOURCE_CONTEXT");
+
+      // Case B: Standalone kamar lookup for valid OrgUnit(type=KAMAR) -> resolves kamarId
+      const validKamarCtx = await provider.resolveResourceContext({ kamarId: "kmr-ali-valid" });
+      assert.ok(validKamarCtx);
+      assert.strictEqual(validKamarCtx?.kamarId, "kmr-ali-valid");
+
+      const scopeEvalValidKamar = evaluateScopePredicate(mudabbirGrant, validKamarCtx!, { userId: "usr-mudabbir" });
+      assert.strictEqual(scopeEvalValidKamar.matches, true);
+      assert.strictEqual(scopeEvalValidKamar.code, "ALLOWED");
+
+      // Case C: Standalone kamar lookup for nonexistent / non-KAMAR OrgUnit -> fails closed (null)
+      const invalidKamarCtx = await provider.resolveResourceContext({ kamarId: "kmr-nonexistent" });
+      assert.strictEqual(invalidKamarCtx, null, "Nonexistent standalone kamar must fail closed as null");
     });
   });
 });
