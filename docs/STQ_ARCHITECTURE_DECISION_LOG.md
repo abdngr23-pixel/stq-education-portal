@@ -1,7 +1,7 @@
 # STQ ARCHITECTURE DECISION LOG (ADR)
 **Authoritative Architectural Decision Records for the STQ Education Portal**  
 **Document**: `docs/STQ_ARCHITECTURE_DECISION_LOG.md`  
-**Status**: `ARCHITECTURE_LOCKED`
+**Status**: `PROPOSED — PENDING BUSINESS OWNER / CHATGPT REVIEW`
 
 ---
 
@@ -27,24 +27,24 @@
 - **Context**:
   The existing 5-level `PERMISSION_MATRIX` (`NONE`, `READ`, `CRUD`, `OWN_CHILD`, `OWN_SELF`) could not express fine-grained requirements (e.g., Admin TU can read and create health records, but cannot update medical statuses; Kabid Tahfizh can read global recaps but cannot write cross-halaqoh setorans).
 - **Decision**:
-  Adopt granular capabilities (`<domain>.<entity>.<action>`) coupled to explicit `ScopeTypes` (`GLOBAL`, `DOMAIN`, `UNIT`, `ASSIGNED_UNITS`, `HALAQOH`, `KAMAR`, `OWN_CHILD`, `SELF`).
+  Adopt granular capabilities (`<domain>.<entity>.<action>`) coupled to explicit `ScopeTypes` (`GLOBAL`, `DOMAIN`, `UNIT`, `ASSIGNED_UNITS`, `HALAQOH`, `KAMAR`, `OWN_CHILD`, `SELF`). Capability evaluation strictly precedes scope evaluation; holding `GLOBAL` scope on a capability confers zero authority over unrelated capabilities.
 - **Consequences**:
   - Positive: Unambiguous, testable, and mathematically provable authorization boundaries.
   - Positive: Complete alignment with SOP and Business Owner directives.
 
 ---
 
-## ADR-003: Positional Authority Originates Strictly from Active Assignments
+## ADR-003: Positional Authority Originates Strictly from Active Assignments & Deterministic Subject
 
 - **Status**: **ACCEPTED**
 - **Date**: 2026-09-17
 - **Context**:
-  Authority was previously derived from relational heuristics (e.g. `halaqoh.pembinaId === session.staffId`) or flags (`isKepalaBidangTahfidz`).
+  Authority was previously derived from relational heuristics or flags. Furthermore, early assignment designs allowed nullable dual ownership (`userId?`, `staffId?`), leading to ambiguous subject integrity.
 - **Decision**:
-  An individual holds authority if and only if there exists an active, non-expired `Assignment` linking their identity (`Staff` or `User`) to the relevant `Position` and `OrgUnit`.
+  An individual holds authority if and only if there exists an active, non-expired `Assignment` linking their authenticated `User` record (`userId: String` required foreign key) to the relevant `Position` and `OrgUnit`. Multi-unit assignments are modeled relationally via `AssignmentScopeUnit` instead of free-form string arrays.
 - **Consequences**:
-  - Positive: Revoking an assignment immediately removes authority without altering master staff records or code.
-  - Positive: Full historical tracking of who held which position and when.
+  - Positive: Deterministic subject integrity. Revoking an assignment immediately removes authority.
+  - Positive: Full relational FK constraints on multi-unit scope bindings.
 
 ---
 
@@ -87,26 +87,26 @@
 
 ---
 
-## ADR-007: Historical Audits Must Capture Technical Account and Human Executor
+## ADR-007: Historical Audits Must Capture Technical Account and Verified Human Executor
 
 - **Status**: **ACCEPTED**
 - **Date**: 2026-09-17
 - **Context**:
-  Shared operational devices (such as Poskestren kiosk or TKS Dapur tablet) are operated by rotating student petugas or staff on shift.
+  Shared operational devices (such as Poskestren kiosk or TKS Dapur tablet) are operated by rotating student petugas or staff on shift. Free-text name entry alone is insufficient for non-repudiation.
 - **Decision**:
-  When mutations originate from a unit/kiosk account, the audit system must capture both the `technicalUserId` (kiosk login) and the verified `executorId` (person on shift).
+  When mutations originate from a unit/kiosk account, the audit system must capture both the `technicalAccountId` (kiosk login) and the verified `humanExecutorId` (verified against active staff/santri records). Additionally, audit records capture an immutable snapshot of `positionCode`, `capabilityCode`, `unitId`, and `scopeType` at execution time so that future organizational reorganizations cannot alter historical audit meaning.
 - **Consequences**:
-  - Positive: 100% forensic non-repudiation while supporting multi-user kiosks without repeated device relogin churn.
+  - Positive: 100% forensic non-repudiation and permanent historical audit integrity.
 
 ---
 
-## ADR-008: Additive, Zero-Downtime Migration Phasing
+## ADR-008: Additive, Controlled Migration Phasing
 
 - **Status**: **ACCEPTED**
 - **Date**: 2026-09-17
 - **Context**:
   Migrating a live educational portal with active students and parents requires zero downtime and zero regressions.
 - **Decision**:
-  Schema changes must be additive (Phase A). Legacy paths are bridged via Compatibility Adapters (Phase B), verified via shadow execution (Phase C), switched on writes (Phase D), and only cleaned up after full operational stability (Phase E).
+  Schema changes must be additive (Phase A, classified as LOW / CONTROLLED operational risk). Legacy paths are bridged via Compatibility Adapters (Phase B), verified via shadow execution (Phase C), switched on writes with a feature-flag rollback path (Phase D), and only cleaned up after full operational stability (Phase E).
 - **Consequences**:
-  - Positive: Zero risk of production downtime, zero risk of data loss.
+  - Positive: Controlled risk, verified data parity before authoritative switch, and instant zero-deployment feature-flag fallback.

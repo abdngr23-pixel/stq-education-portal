@@ -1,24 +1,24 @@
 # STQ ASSIGNMENT MODEL — ORGANIZATIONAL UNITS & POSITIONS
 **Organizational Hierarchy, Multi-Assignment Architecture, and Account Models**  
 **Document**: `docs/STQ_ASSIGNMENT_MODEL.md`  
-**Status**: `ARCHITECTURE_LOCKED`
+**Status**: `PROPOSED — PENDING BUSINESS OWNER / CHATGPT REVIEW`
 
 ---
 
 ## 1. Core Organizational Concepts
 
-The STQ organizational architecture decouples **Identity** (who a person is) from **Functional Authority** (what a person is currently assigned to do). It consists of three foundational models:
+The STQ organizational architecture decouples **Identity** (who a person is) from **Functional Authority** (what an account is authorized to do). It consists of three foundational models:
 
 1. **Organizational Unit (`OrgUnit`)**:
-   A structural department, division, work unit, halaqoh, or room in the pesantren.
+   A structural department, division, halaqoh, kamar, service unit, or academic class in the pesantren.
 2. **Position (`Position`)**:
    A defined functional role or title within an organizational unit (e.g., Mudir, Kabid, Musyrif, Mudabbir, Ketua, Anggota).
 3. **Assignment (`Assignment`)**:
-   The active, time-bounded linkage binding an **Identity** (`Staff` or `User`) to a **Position** inside an **Organizational Unit** with an explicit **Scope**.
+   The active, time-bounded linkage binding an authenticated **User Identity** to a **Position** inside an **Organizational Unit** with an explicit **Scope**.
 
 ---
 
-## 2. Organizational Unit Tree & Categories
+## 2. Canonical Organizational Unit Tree & Categories
 
 ```mermaid
 graph TD
@@ -36,8 +36,8 @@ graph TD
 
     D_KSR --> KMR_A[Kamar Abu Bakar<br/>Type: KAMAR]
     D_KSR --> KMR_B[Kamar Umar<br/>Type: KAMAR]
-    D_KSR --> OSDA[Organisasi Santri - OSDA<br/>Type: ORGANISASI]
-    D_KSR --> TKS[Tenaga Kebersihan & Servis - TKS<br/>Type: ORGANISASI]
+    D_KSR --> OSDA[Organisasi Santri - OSDA<br/>Type: ORGANIZATION]
+    D_KSR --> TKS[Tenaga Kebersihan & Servis - TKS<br/>Type: ORGANIZATION]
 
     OSDA --> OS_SEK[Pimpinan Harian OSDA<br/>Type: DIVISION]
     OSDA --> OS_KMN[Divisi Keamanan & Kedisiplinan<br/>Type: DIVISION]
@@ -50,97 +50,159 @@ graph TD
     OS_KBR --> USR1[Usroh Kebersihan 1<br/>Type: USROH]
     OS_KBR --> USR2[Usroh Kebersihan 2<br/>Type: USROH]
 
-    TKS --> TKS_DPR[Unit Dapur & Gizi<br/>Type: WORK_UNIT]
-    TKS --> TKS_MSJ[Unit Masjid<br/>Type: WORK_UNIT]
-    TKS --> TKS_KPD[Unit Kantor Pendidikan<br/>Type: WORK_UNIT]
-    TKS --> TKS_KYA[Unit Kantor Yayasan<br/>Type: WORK_UNIT]
-    TKS --> TKS_AIR[Unit Air Minum & Sumur<br/>Type: WORK_UNIT]
+    TKS --> TKS_DPR[Unit Dapur & Gizi<br/>Type: SERVICE_UNIT]
+    TKS --> TKS_MSJ[Unit Masjid<br/>Type: SERVICE_UNIT]
+    TKS --> TKS_KPD[Unit Kantor Pendidikan<br/>Type: SERVICE_UNIT]
+    TKS --> TKS_KYA[Unit Kantor Yayasan<br/>Type: SERVICE_UNIT]
+    TKS --> TKS_AIR[Unit Air Minum & Sumur<br/>Type: SERVICE_UNIT]
+
+    D_AKD --> CLS_7A[Kelas 7A<br/>Type: ACADEMIC_CLASS]
+    D_AKD --> CLS_7B[Kelas 7B<br/>Type: ACADEMIC_CLASS]
 ```
 
-### Unit Types Definition
-- `INSTITUTION`: Root pesantren entity.
-- `DOMAIN`: Strategic division (Tahfizh, Keasramaan, Akademik, Manajemen).
-- `HALAQOH`: Qur'anic study circle grouping 5 to 15 students under an assigned musyrif.
+### Canonical Unit Types Definition
+The system recognizes exactly ONE normalized `OrgUnitType` vocabulary:
+- `INSTITUTION`: Root pesantren entity (STQ Darul Ulum Cendekia).
+- `DOMAIN`: Strategic organizational domain (Tahfizh, Keasramaan, Akademik, Manajemen).
+- `ORGANIZATION`: Structured overarching bodies (OSDA, TKS).
+- `DIVISION`: Functional wings within an organization (Keamanan, Ibadah, Poskestren, dll.).
+- `HALAQOH`: Qur'anic study circle grouping students under an assigned musyrif.
 - `KAMAR`: Dormitory room grouping students under an assigned Mudabbir.
-- `ORGANISASI`: Structured body (OSDA, TKS).
-- `DIVISION`: Functional wing within an organization.
-- `WORK_UNIT`: Operational service unit.
-- `USROH`: Small student taskforce (e.g. daily cleaning rotation).
+- `SERVICE_UNIT`: Operational service desk under TKS (Dapur, Masjid, Air). Dedicated to institutional technical service units.
+- `USROH`: Small student taskforce (e.g. daily cleaning rotation under OSDA Kebersihan).
+- `ACADEMIC_CLASS`: Academic instructional classroom (Kelas 7A, 7B, 8A, 8B).
 
 ---
 
-## 3. Position Definitions
+## 3. Position & Capability-Scope Mapping
 
-A **Position** defines an institutional responsibility and serves as a capability template. Positions are domain-specific and reusable across units:
+A **Position** defines an institutional responsibility and capability template. Rather than assuming uniform scope across all capabilities, scope is modeled per capability on `PositionCapability`:
 
-| Position Code | Title | Target OrgUnit Type | Default Scope | Key Capabilities |
-| :--- | :--- | :--- | :--- | :--- |
-| `MUDIR` | Kepala Sekolah / Mudir | `INSTITUTION` / `DOMAIN` | `GLOBAL` | Full executive approval, reward policy, tier 2 perizinan. |
-| `KABID_TAHFIZH` | Kepala Bidang Tahfidz | `DOMAIN` (Tahfizh) | `DOMAIN` | Institutional Tahfizh supervisory recap, Tasmi/Sima'an reward. |
-| `MUSYRIF_TAHFIZH` | Musyrif Tahfizh | `HALAQOH` | `HALAQOH` | Setoran creation, halaqoh student monitoring, mutaba'ah. |
-| `KEPALA_KEASRAMAAN` | Musyrif Keasramaan | `DOMAIN` (Keasramaan) | `DOMAIN` | Global health oversight, discipline, tier 1 perizinan approval. |
-| `MUDABBIR` | Pembina Kamar | `KAMAR` | `ASSIGNED_UNITS` | Room inspection, attendance, initial perizinan request, health referral. |
-| `PEMBINA_DIVISI` | Pembina Divisi OSDA | `DIVISION` | `UNIT` | Supervisory oversight of designated OSDA division. |
-| `KETUA_OSDA` | Ketua OSDA | `ORGANISASI` (OSDA) | `UNIT` | General OSDA operational coordination. |
-| `PETUGAS_KESEHATAN` | Petugas Poskestren | `DIVISION` (Kesehatan) | `GLOBAL` (Health) | Initial medical intake, recording health complaints. |
-| `PETUGAS_PRESENSI` | Petugas Presensi | `KAMAR` / `UNIT` | `UNIT` | Recording daily prayer and assembly attendance. |
-| `OPERATOR_TKS` | Operator Unit TKS | `WORK_UNIT` (TKS) | `UNIT` | Operational log entry (dapur, masjid, maintenance). |
+$$\text{PositionCapability} = (\text{positionId}, \text{capabilityCode}, \text{scopeType})$$
 
-> [!IMPORTANT]
-> **No Global Role Enum for Positions**: None of the positions above require an entry in the PostgreSQL `enum Role`. They exist as records in the `Position` table.
+This models real-world positions without duplicating records or inventing ad-hoc logic:
+- `Position: KABID_TAHFIZH`:
+  - `tahfizh.recap.read` $\implies$ Scope: `DOMAIN`
+  - `tahfizh.reward.issue` $\implies$ Scope: `DOMAIN`
+- `Position: MUSYRIF_TAHFIZH`:
+  - `tahfizh.setoran.create` $\implies$ Scope: `HALAQOH`
+  - `tahfizh.recap.read` $\implies$ Scope: `HALAQOH`
 
----
+```prisma
+model PositionCapability {
+  id             String     @id @default(cuid())
+  positionId     String     @map("position_id")
+  position       Position   @relation(fields: [positionId], references: [id], onDelete: Restrict)
+  capabilityCode String     @map("capability_code")
+  capability     Capability @relation(fields: [capabilityCode], references: [code], onDelete: Restrict)
+  scopeType      String     @default("UNIT") @map("scope_type") // GLOBAL, DOMAIN, UNIT, HALAQOH, KAMAR
 
-## 4. Multi-Assignment Support
-
-The canonical model explicitly supports many-to-many relationships:
-1. **One Person with Multiple Assignments**:
-   - Ust. Razan Mufli holds:
-     - `Assignment 1`: `Position: KABID_TAHFIZH` in `Unit: BIDANG_TAHFIZH` (Scope: `DOMAIN`)
-     - `Assignment 2`: `Position: MUSYRIF_TAHFIZH` in `Unit: HALAQOH_RAZAN` (Scope: `HALAQOH`)
-   - An Ustadz may serve as `GURU_AKADEMIK` in the morning and `PEMBINA_DIVISI_KEAMANAN` in the evening.
-2. **One Mudabbir Responsible for Multiple Kamar**:
-   - Mudabbir Ahmad holds assignments to both `Unit: KAMAR_ABU_BAKAR` and `Unit: KAMAR_UMAR`.
-   - His effective operational scope automatically encompasses all students residing in either room.
-3. **Multiple Pembina Divisi for One Division**:
-   - `Divisi Keamanan` can have two Asatidz assigned simultaneously as `PEMBINA_DIVISI`.
-   - Both hold supervisory capabilities over that division's records.
+  @@unique([positionId, capabilityCode])
+  @@map("position_capabilities")
+}
+```
 
 ---
 
-## 5. Account Models: Personal vs. Unit Accounts
+## 4. Assignment Subject Integrity & Relational Scope Binding
 
-To support operational reality without compromising security, the architecture differentiates two operational account modalities:
+### 4.1. Deterministic Subject Model
+An `Assignment` belongs to a `User` as the technical authentication principal (`userId: String`, non-nullable):
+- **Personal Staff Assignment**: `Assignment.userId` connects to `User`, whose `user.staffId` resolves the verified `Staff` educator profile.
+- **Santri Assignment**: `Assignment.userId` connects to `User`, whose `user.santriId` resolves the enrolled student record.
+- **Unit Account Assignment**: `Assignment.userId` connects to a dedicated kiosk `User` (`AccountType: UNIT`), assigned to exactly one operational unit.
+- **Wali Authority**: Derived relationally from the guardian's verified children (`guardianLinkedSantriIds`).
 
-### 5.1. Personal Accounts
+### 4.2. Relational Multi-Unit Scope Binding (`AssignmentScopeUnit`)
+To eliminate non-relational string arrays without FK integrity, multi-unit responsibilities (e.g. a Mudabbir supervising multiple kamar) are modeled relationally:
+
+```prisma
+model Assignment {
+  id          String                @id @default(cuid())
+  userId      String                @map("user_id")
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  positionId  String                @map("position_id")
+  position    Position              @relation(fields: [positionId], references: [id], onDelete: Restrict)
+  unitId      String                @map("unit_id")
+  unit        OrgUnit               @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  scopeType   String                @default("UNIT") @map("scope_type")
+  status      String                @default("ACTIVE") // DRAFT, ACTIVE, SUSPENDED, EXPIRED, REVOKED
+  validFrom   DateTime              @default(now()) @map("valid_from")
+  validUntil  DateTime?             @map("valid_until")
+  notes       String?
+  createdById String                @map("created_by_id")
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+  scopedUnits AssignmentScopeUnit[]
+
+  @@index([userId, status])
+  @@index([unitId, status])
+  @@index([positionId, status])
+  @@map("assignments")
+}
+
+model AssignmentScopeUnit {
+  id           String     @id @default(cuid())
+  assignmentId String     @map("assignment_id")
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  unitId       String     @map("unit_id")
+  unit         OrgUnit    @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  @@unique([assignmentId, unitId])
+  @@map("assignment_scope_units")
+}
+```
+
+---
+
+## 5. Account Modalities: Personal vs. Unit Accounts
+
+### 5.1. Personal Accounts (`AccountType: PERSONAL`)
 - Used by: Asatidz, Mudabbir, Staf TU, Santri, Wali Santri.
-- Authentication: Standard individual credentials (username/email + secure password / WebAuthn).
-- Accountability: The `userId` in `AuditLog` directly identifies the individual person.
+- Authentication: Individual credentials with personal session JWT.
+- Accountability: The `userId` in `AuditLog` directly identifies the human actor.
 
-### 5.2. Unit / Operational Desk Accounts
-- Used by: Poskestren UKS desk, OSDA division desks, TKS Dapur tablet.
-- Purpose: Prevent device login churn when multiple students or operators take turns on shift at a physical kiosk.
-- Operational Contract:
-  - Account credential represents the **Unit Account** (e.g. `kiosk.poskestren`, `kiosk.dapur`).
-  - Upon submitting a transactional mutation (e.g. Recording sick student, logging meal distribution), the UI enforces entering or selecting the **Human Executor Identity** (`executorStaffId` or `executorSantriId` + PIN/passcode).
-  - The resulting `AuditLog` immutably captures both:
+### 5.2. Unit Accounts (`AccountType: UNIT`)
+- Used by: Poskestren UKS desk, OSDA division tablets, TKS Dapur workstation.
+- Placement: A unit account belongs to **exactly one** operational unit.
+- Non-Repudiation Rule:
+  - Free-text display name alone does **NOT** provide non-repudiation.
+  - Submitting any mutating transaction requires explicit identification of the **Human Executor** (`humanExecutorId`), verified against active `Staff` or `Santri` records in the database.
+  - The resulting audit record permanently captures both:
     ```json
     {
-      "technicalUserId": "usr-kiosk-poskestren",
-      "executorId": "san-0012-ahmad",
-      "executorName": "Ahmad Fauzi (OSDA Kesehatan)",
-      "action": "CATAT_KESEHATAN",
-      "timestamp": "2026-09-17T08:55:00.000Z"
+      "technicalAccountId": "usr-kiosk-poskestren",
+      "technicalAccountUsername": "kiosk.poskestren",
+      "humanExecutorId": "san-0012-ahmad",
+      "humanExecutorName": "Ahmad Fauzi (OSDA Kesehatan)",
+      "action": "health.case.create",
+      "timestamp": "2026-09-17T09:30:00.000Z"
     }
     ```
-  - This preserves non-repudiation and forensic integrity.
 
 ---
 
-## 6. Assignment Lifecycle & Historical Integrity
+## 6. Canonical Assignment Lifecycle & Historical Integrity
 
-- Assignments are **NEVER hard-deleted**.
-- Lifecycle transitions:
-  $$\text{DRAFT} \longrightarrow \text{ACTIVE} \longrightarrow \text{EXPIRED} \mid \text{REVOKED}$$
-- Deactivating an assignment sets `status = 'INACTIVE'` and `validUntil = now()`.
-- Historical audit records reference the `assignmentId` that was valid at the exact timestamp of execution. Even if an assignment is subsequently revoked, past audit records remain immutable and mathematically verifiable.
+```mermaid
+stateDiagram-v2
+    [*] --> DRAFT: Administrative Creation
+    DRAFT --> ACTIVE: Approved & Activated (validFrom <= now)
+    ACTIVE --> SUSPENDED: Administrative Hold (zero authority)
+    SUSPENDED --> ACTIVE: Reinstated
+    ACTIVE --> EXPIRED: Naturally lapsed (now > validUntil)
+    ACTIVE --> REVOKED: Explicitly Terminated
+    SUSPENDED --> REVOKED: Terminated from Hold
+```
+
+- **Semantics**:
+  - `DRAFT`: Proposed assignment, not yet authoritative.
+  - `ACTIVE`: Currently authoritative. **Only ACTIVE assignments within `validFrom <= now <= validUntil` grant capabilities.**
+  - `SUSPENDED`: Temporarily grants zero authority (e.g. during formal inquiry or temporary absence).
+  - `EXPIRED`: Naturally lapsed upon reaching `validUntil`.
+  - `REVOKED`: Explicitly terminated administratively before natural expiry.
+- **Historical Integrity**:
+  - Assignments are **NEVER hard-deleted**.
+  - Foreign key delete behavior uses `RESTRICT` on `Position` and `OrgUnit`.
+  - Audits snapshot the exact `positionCode`, `capabilityCode`, `unitId`, and `scopeType` at the moment of execution. Subsequent assignment deactivations have zero effect on past audit validity.

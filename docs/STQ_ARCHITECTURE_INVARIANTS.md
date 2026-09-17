@@ -1,7 +1,7 @@
 # STQ ARCHITECTURE INVARIANTS — CANONICAL SAFETY CONTRACTS
 **Non-Negotiable System Invariants, Security Boundaries, and Domain Guarantees**  
 **Document**: `docs/STQ_ARCHITECTURE_INVARIANTS.md`  
-**Status**: `ARCHITECTURE_LOCKED`
+**Status**: `PROPOSED — PENDING BUSINESS OWNER / CHATGPT REVIEW`
 
 ---
 
@@ -16,7 +16,7 @@
 4. **INV-SEC-04 (No Person-Name / Username Heuristics)**:
    Authorization must never inspect `session.username`, `session.name`, or staff display names to infer authority. Authority derives strictly from active, verified `Assignments`.
 5. **INV-SEC-05 (Audit Immutability & Attribution)**:
-   Every mutating action must produce an immutable `AuditLog` entry. Transactions performed via shared kiosk/unit accounts MUST attribute both the `technicalUserId` and the verified `executorId`.
+   Every mutating action must produce an immutable `AuditLog` entry. Transactions performed via shared kiosk/unit accounts MUST attribute both the `technicalAccountId` and the verified `humanExecutorId`.
 
 ---
 
@@ -45,26 +45,28 @@
 1. **INV-HLT-01 (Health Data Honesty & False "Sehat" Elimination)**:
    A failed data fetch, network error, or missing record must NEVER be displayed as `"Sehat"`.
    - Verified healthy $\implies$ `"Sehat"`.
-   - Active medical case $\implies$ Formatted condition (e.g. `"RAWAT PONDOK"`).
+   - Active medical case $\implies$ Formatted condition (e.g. `"DIPANTAU"`).
    - Empty record set $\implies$ `"Belum ada data kesehatan"`.
    - Fetch error / server error $\implies$ `"Gagal memuat data kesehatan"`.
    - Access denied $\implies$ `"Akses data kesehatan tidak tersedia"`.
-2. **INV-HLT-02 (Global Health Read Authority)**:
-   Global read access to Poskestren medical records is authorized strictly to:
-   - Mudir (`KS`)
-   - Musyrif Keasramaan (`MK`)
-   - Admin TU (`ADM`)
-   - Assigned OSDA Petugas Kesehatan (via explicit assignment to `Unit: DIVISI_KESEHATAN`).
-3. **INV-HLT-03 (Individual & Guardian Health Read Authority)**:
-   - Wali Santri (`WS`) may read health records strictly for their enrolled child (`Scope: OWN_CHILD`).
+2. **INV-HLT-02 (Canonical Keasramaan V2 Health Statuses)**:
+   The canonical V2 health statuses are:
+   - `DIPANTAU`: In-pondok monitoring / room rest.
+   - `PULIH`: Fully recovered and resumed activities.
+   - `DIRUJUK`: Referred to external medical clinic / hospital.
+   - `DARURAT`: Emergency medical situation requiring urgent intervention.
+   *Legacy status values (`SEMBUH`, `RAWAT_PONDOK`, `DIRUJUK_PUSKESMAS`, `PULANG`) are documented strictly as transitional compatibility bridges.*
+3. **INV-HLT-03 (Granular Health Operations)**:
+   The architecture strictly distinguishes:
+   - `Health Read Detail`: Reading individual patient clinical notes (Mudir, MK, ADM, assigned Petugas Kesehatan; Wali for own child, Santri for self).
+   - `Health Aggregate Visibility`: Reading statistical counts and triage summaries.
+   - `Health Create`: Filing an intake complaint (Mudir, MK, ADM, assigned Petugas Kesehatan).
+   - `Health Status Update`: Updating clinical status (`DIPANTAU` $\to$ `PULIH` / `DIRUJUK` / `DARURAT`), restricted to Mudir, MK, and assigned Petugas Kesehatan (ADM strictly denied).
+   - `Health Referral`: Issuing official external hospital referral letters.
+4. **INV-HLT-04 (Individual & Guardian Health Read Authority - Multi-Child)**:
+   - Wali Santri (`WS`) may read health records strictly for their enrolled child or children (`Scope: OWN_CHILD`), relationally resolved across all verified children.
    - Santri (`ST`) may read health records strictly for themselves (`Scope: SELF`).
    - Other roles (MT, PH, GA, YAY, generic OSDA) are denied health read access fail-closed.
-4. **INV-HLT-04 (Health Status Update Authority)**:
-   Updating a patient's medical status (e.g., changing from Rawat Pondok to Dirujuk Puskesmas) requires clinical oversight and is restricted to:
-   - Mudir (`KS`)
-   - Musyrif Keasramaan (`MK`)
-   - Assigned OSDA Petugas Kesehatan.
-   Admin TU (`ADM`) is strictly denied status updates (`DENY`).
 5. **INV-HLT-05 (Generic OSDA Denied Health Access)**:
    A user holding the generic role `OSDA` has ZERO health access unless an explicit active assignment links them to `Unit: DIVISI_KESEHATAN` with capability `health.case.create`.
 
@@ -82,13 +84,13 @@
    - Mudabbir ≠ generic OSDA.
    Mudabbir authority derives strictly from active assignment to Kamar units, not role aliasing.
 3. **INV-KSR-03 (Mudabbir Multi-Kamar Supervision)**:
-   A Mudabbir is an assigned position within Keasramaan. One Mudabbir may hold assignments to multiple Kamar units simultaneously. His operational authority dynamically encompasses all assigned rooms.
+   A Mudabbir is an assigned position within Keasramaan. One Mudabbir may hold assignments to multiple Kamar units simultaneously via `AssignmentScopeUnit`. His operational authority dynamically encompasses all assigned rooms.
 4. **INV-KSR-04 (Pembina Divisi Reporting Line)**:
    The Pembina Divisi for OSDA wings reports directly to the Musyrif Keasramaan, not to the student Ketua OSDA. A division may have multiple Pembina Divisi.
 5. **INV-KSR-05 (TKS Autonomy & Structure)**:
    Tenaga Kebersihan & Servis (TKS) operates separately from OSDA. There is no central "Ketua TKS". Unit Dapur and Unit Masjid operate with a designated Ketua + Anggota; other units operate via assigned individual operators.
-6. **INV-KSR-06 (Unit Account Attribution & Human Executor)**:
-   Operational kiosk and unit accounts (OSDA, TKS, Poskestren) must require input of the authenticated human executor (`executorId` / `executorName`). Both technical account and human executor must be permanently recorded in `AuditLog`.
+6. **INV-KSR-06 (Unit Account Attribution & Verified Human Executor)**:
+   Operational kiosk and unit accounts (OSDA, TKS, Poskestren) must require input of the authenticated, verified human executor (`humanExecutorId` verified against active records). Free-text display name alone does NOT provide non-repudiation. Both technical account and verified human executor must be permanently recorded in `AuditLog`.
 
 ---
 
