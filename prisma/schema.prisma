@@ -187,6 +187,13 @@ enum StatusKesehatan {
   SEMBUH
 }
 
+enum HealthStatusV2 {
+  DIPANTAU
+  PULIH
+  DIRUJUK
+  DARURAT
+}
+
 enum KategoriLogistik {
   SEMBAKO
   OBAT_P3K
@@ -421,6 +428,7 @@ model Santri {
   // Relasi Fase 6
   ikhtibarList       IkhtibarTahfizh[]
   kesehatanList      CatatanKesehatan[]
+  healthCasesV2      HealthCaseV2[]
 
   // Relasi Fase 7
   saranList          KotakSaran[]
@@ -826,6 +834,27 @@ model CatatanKesehatan {
   @@index([santriId, status])
   @@index([santriId, tanggal])
   @@map("catatan_kesehatan")
+}
+
+model HealthCaseV2 {
+  id                String         @id @default(cuid())
+  santriId          String         @map("santri_id")
+  santri            Santri         @relation(fields: [santriId], references: [id])
+  occurredAt        DateTime       @map("occurred_at")
+  keluhan           String
+  tindakanAwal      String         @map("tindakan_awal")
+  diagnosa          String?
+  catatan           String?
+  attachmentUrl     String?        @map("attachment_url")
+  statusV2          HealthStatusV2 @map("status_v2")
+  recordedByUserId  String         @map("recorded_by_user_id")
+  recordedByStaffId String?        @map("recorded_by_staff_id")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  @@index([santriId, statusV2])
+  @@index([santriId, occurredAt])
+  @@map("health_cases_v2")
 }
 
 model StokLogistik {

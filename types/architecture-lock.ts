@@ -365,11 +365,16 @@ export interface CanonicalAuditRecord {
   timestamp: Date;
 }
 
-/**
- * Keasramaan V2 Health Status Alignment
- */
-export type HealthStatusV2 = "DIPANTAU" | "PULIH" | "DIRUJUK" | "DARURAT";
+export const CANONICAL_HEALTH_STATUSES_V2 = [
+  "DIPANTAU",
+  "PULIH",
+  "DIRUJUK",
+  "DARURAT",
+] as const;
+
+export type HealthStatusV2 = (typeof CANONICAL_HEALTH_STATUSES_V2)[number];
 export type HealthStatusLegacy = "SEMBUH" | "RAWAT_PONDOK" | "DIRUJUK_PUSKESMAS" | "PULANG";
+export type HealthStatusBridgeResult = HealthStatusV2 | "UNKNOWN" | "REVIEW_REQUIRED";
 
 /**
  * Canonical Health Domain Granular Capabilities
