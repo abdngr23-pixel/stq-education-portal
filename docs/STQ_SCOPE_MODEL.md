@@ -1,7 +1,8 @@
 # STQ SCOPE MODEL — SPECIFICATION & CONTEXT BINDING
 **Resource Scoping, Context Validation, and Boundary Isolation Rules**  
 **Document**: `docs/STQ_SCOPE_MODEL.md`  
-**Status**: `PROPOSED — PENDING BUSINESS OWNER / CHATGPT REVIEW`
+**Status**: `ARCHITECTURE_LOCKED`  
+**Approved Baseline Date**: `2026-09-17`
 
 ---
 

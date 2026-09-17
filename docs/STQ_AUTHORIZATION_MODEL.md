@@ -1,7 +1,8 @@
 # STQ AUTHORIZATION MODEL — SPECIFICATION & ENGINE CONTRACT
 **Deterministic, Server-Side, Capability-and-Scope Based Authorization Architecture**  
 **Document**: `docs/STQ_AUTHORIZATION_MODEL.md`  
-**Status**: `PROPOSED — PENDING BUSINESS OWNER / CHATGPT REVIEW`
+**Status**: `ARCHITECTURE_LOCKED`  
+**Approved Baseline Date**: `2026-09-17`
 
 ---
 

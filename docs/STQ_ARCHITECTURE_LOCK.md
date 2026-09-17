@@ -3,7 +3,8 @@
 **Repository**: `abdngr23-pixel/stq-education-portal`  
 **Baseline Commit**: `4c73317ba8d32924d1e86da2a7f2ef29f6aa0986`  
 **Working Branch**: `architecture/stq-lock-phase1`  
-**Status**: `PROPOSED — PENDING BUSINESS OWNER / CHATGPT REVIEW`  
+**Status**: `ARCHITECTURE_LOCKED`  
+**Approved Baseline Date**: `2026-09-17`  
 **PR #8 Integrity**: Untouched (`HEAD 9068cae5587b7219c394c5c25bf0de07a15b0726`)
 
 ---

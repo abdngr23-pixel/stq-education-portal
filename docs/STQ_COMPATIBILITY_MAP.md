@@ -1,7 +1,8 @@
 # STQ COMPATIBILITY MAP — LEGACY TO CANONICAL ARCHITECTURE
 **Transitional Bridge, Legacy Field Mapping, and Retirement Roadmap**  
 **Document**: `docs/STQ_COMPATIBILITY_MAP.md`  
-**Status**: `PROPOSED — PENDING BUSINESS OWNER / CHATGPT REVIEW`
+**Status**: `ARCHITECTURE_LOCKED`  
+**Approved Baseline Date**: `2026-09-17`
 
 ---
 

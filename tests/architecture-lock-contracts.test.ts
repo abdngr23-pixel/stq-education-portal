@@ -79,19 +79,28 @@ describe("STQ ARCHITECTURE LOCK — PHASE 1 SPECIFICATION AND CONTRACT VERIFICAT
       }
     });
 
-    it("all 9 architecture documents must bear PROPOSED status pending review (not ARCHITECTURE_LOCKED)", () => {
+    it("all 9 architecture documents and types must bear ARCHITECTURE_LOCKED status and approved baseline date", () => {
       for (const docName of requiredDocuments) {
         const content = fs.readFileSync(path.join(docsDir, docName), "utf-8");
         assert.ok(
-          content.includes("PROPOSED — PENDING BUSINESS OWNER / CHATGPT REVIEW"),
-          `Document docs/${docName} must state PROPOSED status`
-        );
-        assert.strictEqual(
           content.includes("Status**: `ARCHITECTURE_LOCKED`"),
-          false,
-          `Document docs/${docName} must NOT be labeled ARCHITECTURE_LOCKED until approved`
+          `Document docs/${docName} must state ARCHITECTURE_LOCKED status`
+        );
+        assert.ok(
+          content.includes("Approved Baseline Date**: `2026-09-17`"),
+          `Document docs/${docName} must state Approved Baseline Date: 2026-09-17`
         );
       }
+      const typesPath = path.join(__dirname, "../types/architecture-lock.ts");
+      const typesContent = fs.readFileSync(typesPath, "utf-8");
+      assert.ok(
+        typesContent.includes("Status: ARCHITECTURE_LOCKED"),
+        "types/architecture-lock.ts must state ARCHITECTURE_LOCKED status"
+      );
+      assert.ok(
+        typesContent.includes("Approved Baseline Date: 2026-09-17"),
+        "types/architecture-lock.ts must state Approved Baseline Date: 2026-09-17"
+      );
     });
   });
 

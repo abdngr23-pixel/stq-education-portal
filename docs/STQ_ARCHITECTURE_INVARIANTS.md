@@ -1,7 +1,8 @@
 # STQ ARCHITECTURE INVARIANTS — CANONICAL SAFETY CONTRACTS
 **Non-Negotiable System Invariants, Security Boundaries, and Domain Guarantees**  
 **Document**: `docs/STQ_ARCHITECTURE_INVARIANTS.md`  
-**Status**: `PROPOSED — PENDING BUSINESS OWNER / CHATGPT REVIEW`
+**Status**: `ARCHITECTURE_LOCKED`  
+**Approved Baseline Date**: `2026-09-17`
 
 ---
 

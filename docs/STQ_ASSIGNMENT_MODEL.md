@@ -1,7 +1,8 @@
 # STQ ASSIGNMENT MODEL — ORGANIZATIONAL UNITS & POSITIONS
 **Organizational Hierarchy, Multi-Assignment Architecture, and Account Models**  
 **Document**: `docs/STQ_ASSIGNMENT_MODEL.md`  
-**Status**: `PROPOSED — PENDING BUSINESS OWNER / CHATGPT REVIEW`
+**Status**: `ARCHITECTURE_LOCKED`  
+**Approved Baseline Date**: `2026-09-17`
 
 ---
 

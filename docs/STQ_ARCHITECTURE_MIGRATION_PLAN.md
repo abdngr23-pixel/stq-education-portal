@@ -1,7 +1,8 @@
 # STQ ARCHITECTURE MIGRATION PLAN — 5-PHASE ZERO-DOWNTIME ROADMAP
 **Additive Database Evolution, Shadow Verification, and Legacy Retirement**  
 **Document**: `docs/STQ_ARCHITECTURE_MIGRATION_PLAN.md`  
-**Status**: `PROPOSED — PENDING BUSINESS OWNER / CHATGPT REVIEW`
+**Status**: `ARCHITECTURE_LOCKED`  
+**Approved Baseline Date**: `2026-09-17`
 
 ---
 

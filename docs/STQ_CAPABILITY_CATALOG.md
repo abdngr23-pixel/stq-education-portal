@@ -1,7 +1,8 @@
 # STQ CAPABILITY CATALOG — SPECIFICATION & REGISTRY
 **Granular, Domain-Scoped Capability Taxonomy for the STQ Education Portal**  
 **Document**: `docs/STQ_CAPABILITY_CATALOG.md`  
-**Status**: `PROPOSED — PENDING BUSINESS OWNER / CHATGPT REVIEW`
+**Status**: `ARCHITECTURE_LOCKED`  
+**Approved Baseline Date**: `2026-09-17`
 
 ---
 

@@ -4,7 +4,8 @@
  *
  * Repository: abdngr23-pixel/stq-education-portal
  * Document Reference: docs/STQ_ARCHITECTURE_LOCK.md
- * Status: PROPOSED — PENDING BUSINESS OWNER / CHATGPT REVIEW
+ * Status: ARCHITECTURE_LOCKED
+ * Approved Baseline Date: 2026-09-17
  *
  * HIERARCHY OF AUTHORITY & PRECEDENCE RULES:
  * 1. Technical Contract Authority: types/architecture-lock.ts defines the canonical compile-time
