@@ -124,7 +124,7 @@ export class PendidikanV2Service {
       const tables = (await (this.db as any).$queryRawUnsafe(`
         SELECT table_name 
         FROM information_schema.tables 
-        WHERE table_schema = 'public' 
+        WHERE table_schema IN ('public', CURRENT_SCHEMA) 
           AND table_name IN ('education_cohorts', 'teaching_assignments', 'education_sessions', 'education_session_participants', 'education_session_attendances');
       `)) as Array<{ table_name: string }>;
 
@@ -179,6 +179,34 @@ export class PendidikanV2Service {
       throw new Error(schemaStatus.reason || "PENDIDIKAN_V2_SCHEMA_NOT_READY: Tabel schema Pendidikan V2 belum tersedia di database");
     }
 
+    // 1. Fail closed on missing or unauthenticated actor
+    if (!context?.actorUserId || typeof context.actorUserId !== "string" || !context.actorUserId.trim()) {
+      throw new Error("AUTHENTICATION_REQUIRED: Identitas pengguna autentikasi wajib disertakan untuk membaca sesi pembelajaran");
+    }
+
+    // 2. Hydrate active canonical identity
+    const actorIdentity = await this.dataProvider.getIdentity(context.actorUserId);
+    if (!actorIdentity || actorIdentity.status !== "AKTIF") {
+      throw new Error("AUTHENTICATION_REQUIRED: Pengguna tidak terdaftar atau tidak aktif");
+    }
+
+    // 3. Authorize read access via canonical capability 'academic.schedule.read'
+    const globalReadAuth = await authorizeCanonical({
+      identity: actorIdentity,
+      capability: "academic.schedule.read",
+      resourceContext: undefined,
+      dataProvider: this.dataProvider,
+      isMutation: false,
+    });
+
+    if (globalReadAuth.decision !== "ALLOW") {
+      throw new Error(
+        `PERMISSION_DENIED: Pengguna tidak berwenang membaca jadwal sesi pembelajaran (${globalReadAuth.reason || globalReadAuth.reasonCode})`
+      );
+    }
+
+    const isUatEnabled = process.env.PENDIDIKAN_V2_UAT_ENABLED === "true";
+
     const where: any = {};
     if (filter?.educationTrack) {
       where.educationTrack = filter.educationTrack;
@@ -209,50 +237,49 @@ export class PendidikanV2Service {
       },
     });
 
-    const isUatEnabled = process.env.PENDIDIKAN_V2_UAT_ENABLED === "true";
+    // 4. Session list authorization: Evaluate resource-level schedule-read authority
+    const authorizedSessions: any[] = [];
+    for (const s of sessions) {
+      const sessionReadAuth = await authorizeCanonical({
+        identity: actorIdentity,
+        capability: "academic.schedule.read",
+        resourceContext: {
+          educationSessionId: s.id,
+        },
+        dataProvider: this.dataProvider,
+        isMutation: false,
+      });
 
-    // Resolve actor for server-side mutationAvailable calculation
-    let actorStaffId: string | null = null;
-    let hasStartGrant = false;
-
-    if (context?.actorUserId && isUatEnabled) {
-      try {
-        const actorIdentity = await this.dataProvider.getIdentity(context.actorUserId);
-        if (actorIdentity && actorIdentity.status === "AKTIF" && actorIdentity.staffId) {
-          actorStaffId = actorIdentity.staffId;
-          const authRes = await authorizeCanonical({
-            identity: actorIdentity,
-            capability: "academic.session.start",
-            resourceContext: {},
-            dataProvider: this.dataProvider,
-            isMutation: false,
-          });
-          hasStartGrant = authRes?.decision === "ALLOW";
-        }
-      } catch {
-        // fail closed on resolution error
+      if (sessionReadAuth.decision === "ALLOW") {
+        authorizedSessions.push(s);
       }
     }
 
-    return sessions.map((s: any): EducationSessionReadDTO => {
+    if (sessions.length > 0 && authorizedSessions.length === 0) {
+      throw new Error("PERMISSION_DENIED: Akses ke seluruh baris sesi pembelajaran ditolak oleh kebijakan otorisasi");
+    }
+
+    // 5. Build authoritative DTOs with per-session authorization evaluations
+    const dtos: EducationSessionReadDTO[] = [];
+
+    for (const s of authorizedSessions) {
       const scheduledDateStr = s.scheduledDate instanceof Date
         ? getWitaDateString(s.scheduledDate)
         : String(s.scheduledDate || "");
       const startedAtStr = s.startedAt instanceof Date
         ? s.startedAt.toISOString()
-        : s.startedAt ? String(s.startedAt) : null;
+        : (s.startedAt ? String(s.startedAt) : null);
 
-      // Authoritative subject resolution
-      const subjectName = s.subject?.nama || (typeof s.subject === "string" ? s.subject : null) || null;
-      const subjectCode = s.subject?.kodeMapel || null;
-      const subjectDisplay = subjectName || s.subjectId || "Pendidikan";
+      const subjectDisplay = s.subject?.nama || s.subjectId;
+      const subjectName = s.subject?.nama || s.subjectId;
+      const subjectCode = s.subject?.kodeMapel || s.subject?.kode || null;
 
       // Authoritative scheduled staff resolution
       const scheduledStaffId = s.scheduledStaffId || s.scheduledTeacherAssignment?.staffId || null;
       const scheduledTeacherDisplay = s.scheduledStaff?.nama || s.scheduledTeacherAssignment?.staff?.nama || null;
       const actualTeacherDisplay = s.actualTeacherStaff?.nama || null;
 
-      // Server-derived mutationAvailable strictly reflecting authenticated caller
+      // A. Per-session mutationAvailable calculation
       let mutationAvailable = false;
       let mutationDeniedReason: string | null = null;
 
@@ -260,18 +287,89 @@ export class PendidikanV2Service {
         mutationDeniedReason = "UAT_NOT_ENABLED";
       } else if (s.status !== "SCHEDULED") {
         mutationDeniedReason = "SESSION_NOT_SCHEDULED";
-      } else if (context?.actorUserId) {
-        if (!actorStaffId) {
-          mutationDeniedReason = "STAFF_NOT_LINKED";
-        } else if (scheduledStaffId && actorStaffId !== scheduledStaffId) {
-          mutationDeniedReason = "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED";
-        } else if (!hasStartGrant) {
+      } else if (!actorIdentity.staffId) {
+        mutationDeniedReason = "STAFF_NOT_LINKED";
+      } else if (!scheduledStaffId) {
+        mutationDeniedReason = "SCHEDULED_TEACHER_NOT_RESOLVED";
+      } else if (actorIdentity.staffId !== scheduledStaffId) {
+        mutationDeniedReason = "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED";
+      } else {
+        const startDecision = await authorizeCanonical({
+          identity: actorIdentity,
+          capability: "academic.session.start",
+          resourceContext: {
+            educationSessionId: s.id,
+          },
+          dataProvider: this.dataProvider,
+          isMutation: true,
+        });
+
+        if (startDecision.decision !== "ALLOW") {
           mutationDeniedReason = "CANONICAL_AUTH_DENIED";
         } else {
           mutationAvailable = true;
+          mutationDeniedReason = null;
         }
+      }
+
+      // B. Per-session materialAvailable calculation
+      let materialAvailable = false;
+      let materialDeniedReason: string | null = null;
+
+      if (!isUatEnabled) {
+        materialDeniedReason = "UAT_NOT_ENABLED";
+      } else if (s.status !== "STARTED") {
+        materialDeniedReason = "SESSION_NOT_STARTED";
+      } else if (!s.actualTeacherUserId || s.actualTeacherUserId !== context.actorUserId) {
+        materialDeniedReason = "ACTOR_NOT_ACTUAL_TEACHER";
       } else {
-        mutationAvailable = true;
+        const matDecision = await authorizeCanonical({
+          identity: actorIdentity,
+          capability: "academic.material.record",
+          resourceContext: {
+            educationSessionId: s.id,
+          },
+          dataProvider: this.dataProvider,
+          isMutation: true,
+        });
+
+        if (matDecision.decision !== "ALLOW") {
+          materialDeniedReason = "CANONICAL_AUTH_DENIED";
+        } else {
+          materialAvailable = true;
+          materialDeniedReason = null;
+        }
+      }
+
+      // C. Per-session attendanceAvailable calculation
+      let attendanceAvailable = false;
+      let attendanceDeniedReason: string | null = null;
+
+      if (!isUatEnabled) {
+        attendanceDeniedReason = "UAT_NOT_ENABLED";
+      } else if (s.educationTrack !== "KEPESANTRENAN") {
+        attendanceDeniedReason = "STUDI_UMUM_ATTENDANCE_POLICY_DEFERRED";
+      } else if (s.status !== "STARTED") {
+        attendanceDeniedReason = "SESSION_NOT_STARTED";
+      } else if (!s.actualTeacherUserId || s.actualTeacherUserId !== context.actorUserId) {
+        attendanceDeniedReason = "ACTOR_NOT_ACTUAL_TEACHER";
+      } else {
+        const attDecision = await authorizeCanonical({
+          identity: actorIdentity,
+          capability: "academic.attendance.record",
+          resourceContext: {
+            educationSessionId: s.id,
+          },
+          dataProvider: this.dataProvider,
+          isMutation: true,
+        });
+
+        if (attDecision.decision !== "ALLOW") {
+          attendanceDeniedReason = "CANONICAL_AUTH_DENIED";
+        } else {
+          attendanceAvailable = true;
+          attendanceDeniedReason = null;
+        }
       }
 
       // PBL metadata derivation for Studi Umum
@@ -291,7 +389,7 @@ export class PendidikanV2Service {
           })()
         : null;
 
-      return {
+      dtos.push({
         sessionId: s.id,
         educationTrack: s.educationTrack,
         subject: subjectDisplay,
@@ -324,11 +422,16 @@ export class PendidikanV2Service {
         status: s.status,
         startedAt: startedAtStr,
         materi: s.materi || null,
-        attendanceAvailable: isUatEnabled && s.educationTrack === "KEPESANTRENAN" && s.status === "STARTED",
+        attendanceAvailable,
+        attendanceDeniedReason,
+        materialAvailable,
+        materialDeniedReason,
         mutationAvailable,
         mutationDeniedReason,
-      };
-    });
+      });
+    }
+
+    return dtos;
   }
 
   /**

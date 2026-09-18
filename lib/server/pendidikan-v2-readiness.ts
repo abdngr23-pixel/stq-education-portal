@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Production Readiness Diagnostic Framework
  * Milestone 3.3C1 — STQ Education Portal
@@ -28,28 +29,28 @@ export interface ProductionReadinessReport {
 export interface ReadinessDbClient {
   $queryRawUnsafe?: <T = unknown>(query: string, ...values: unknown[]) => Promise<T>;
   user?: {
-    findMany: (args?: unknown) => Promise<Array<{ id: string; username: string; status: string; role: string; staffId: string | null }>>;
+    findMany: (args?: any) => Promise<Array<{ id: string; username: string; status: string; role: string; staffId: string | null }>>;
   };
   staff?: {
-    findMany: (args?: unknown) => Promise<Array<{ id: string; status: string }>>;
+    findMany: (args?: any) => Promise<Array<{ id: string; status: string }>>;
   };
   orgUnit?: {
-    findMany: (args?: unknown) => Promise<Array<{ id: string; code: string }>>;
+    findMany: (args?: any) => Promise<Array<{ id: string; code: string }>>;
   };
   position?: {
-    findMany: (args?: unknown) => Promise<Array<{ id: string; code: string }>>;
+    findMany: (args?: any) => Promise<Array<{ id: string; code: string }>>;
   };
   capability?: {
-    findMany: (args?: unknown) => Promise<Array<{ id: string; code: string }>>;
+    findMany: (args?: any) => Promise<Array<{ code: string; [key: string]: any }>>;
   };
   santri?: {
-    findMany: (args?: unknown) => Promise<Array<{ id: string; nis: string; nama: string; cohortId: string | null }>>;
+    findMany: (args?: any) => Promise<Array<{ id: string; nis: string; nama: string; cohortId: string | null }>>;
   };
   educationCohort?: {
-    findMany: (args?: unknown) => Promise<Array<{ id: string; code: string; isActive: boolean }>>;
+    findMany: (args?: any) => Promise<Array<{ id: string; code: string; isActive: boolean }>>;
   };
   teachingAssignment?: {
-    findMany: (args?: unknown) => Promise<Array<{
+    findMany: (args?: any) => Promise<Array<{
       id: string;
       mapelId: string;
       staffId: string;
@@ -61,6 +62,14 @@ export interface ReadinessDbClient {
       validUntil: Date | null;
     }>>;
   };
+  assignment?: {
+    findMany: (args?: any) => Promise<Array<{
+      id: string;
+      status: string;
+      validUntil: Date | null;
+    }>>;
+  };
+  [key: string]: any;
 }
 
 export const CANONICAL_READINESS_GATE_NAMES = [
@@ -92,7 +101,7 @@ export async function checkPendidikanV2ProductionReadiness(
     if (typeof db.$queryRawUnsafe === "function") {
       const tables = await db.$queryRawUnsafe<Array<{ table_name: string }>>(`
         SELECT table_name FROM information_schema.tables 
-        WHERE table_schema = 'public' 
+        WHERE table_schema IN ('public', CURRENT_SCHEMA) 
           AND table_name IN ('health_cases_v2', 'health_case_v2_events');
       `);
       const set = new Set(tables.map((t) => t.table_name));
@@ -127,7 +136,7 @@ export async function checkPendidikanV2ProductionReadiness(
     if (typeof db.$queryRawUnsafe === "function") {
       const eduTables = await db.$queryRawUnsafe<Array<{ table_name: string }>>(`
         SELECT table_name FROM information_schema.tables 
-        WHERE table_schema = 'public' 
+        WHERE table_schema IN ('public', CURRENT_SCHEMA) 
           AND table_name IN ('education_cohorts', 'teaching_assignments', 'education_sessions', 'education_session_participants', 'education_session_attendances');
       `);
       const set = new Set(eduTables.map((t) => t.table_name));
@@ -163,7 +172,7 @@ export async function checkPendidikanV2ProductionReadiness(
     if (typeof db.$queryRawUnsafe === "function") {
       const auditTable = await db.$queryRawUnsafe<Array<{ table_name: string }>>(`
         SELECT table_name FROM information_schema.tables 
-        WHERE table_schema = 'public' AND table_name = 'canonical_audit_logs';
+        WHERE table_schema IN ('public', CURRENT_SCHEMA) AND table_name = 'canonical_audit_logs';
       `);
       if (auditTable.length > 0) {
         gates.push({ gate: "CANONICAL_AUDIT_READY", status: "READY", details: "canonical_audit_logs table exists" });
@@ -182,7 +191,7 @@ export async function checkPendidikanV2ProductionReadiness(
     if (db.user) {
       const operationalUsers = await db.user.findMany({
         where: {
-          role: { in: ["GA", "KS", "MT", "PH", "PENGASUHAN"] },
+          role: { in: ["GA", "KS", "MT", "PH", "MK"] },
         },
       });
 
@@ -202,9 +211,9 @@ export async function checkPendidikanV2ProductionReadiness(
 
       const blockedAccounts: string[] = [];
       for (const u of operationalUsers) {
-        const userActive = u.status === "AKTIF" || u.status === "ACTIVE" || !u.status;
+        const userActive = u.status === "AKTIF" || u.status === "ACTIVE";
         const hasLinkedStaff = !!u.staffId;
-        const staffIsActive = u.staffId ? (activeStaffIds.size === 0 || activeStaffIds.has(u.staffId)) : false;
+        const staffIsActive = u.staffId ? activeStaffIds.has(u.staffId) : false;
 
         if (!userActive || !hasLinkedStaff || !staffIsActive) {
           unlinkedStaffAccounts.push(u.username);
@@ -219,6 +228,13 @@ export async function checkPendidikanV2ProductionReadiness(
           details: `Operational accounts lacking active linked Staff: ${blockedAccounts.join(", ")}`,
           remediationAdvice: "BLOCKED_IDENTITY_LINKAGE: Cannot authorize via username or display name; requires active User linked to active Staff relation in M3.3C2",
         });
+      } else if (activeStaffIds.size === 0) {
+        gates.push({
+          gate: "STAFF_LINKAGE_READY",
+          status: "BLOCKED",
+          details: "Zero active staff members found in database",
+          remediationAdvice: "BLOCKED_IDENTITY_LINKAGE: No active Staff records found in database",
+        });
       } else {
         gates.push({ gate: "STAFF_LINKAGE_READY", status: "READY", details: "All operational accounts have active linked Staff" });
       }
@@ -229,12 +245,12 @@ export async function checkPendidikanV2ProductionReadiness(
     gates.push({ gate: "STAFF_LINKAGE_READY", status: "NOT_READY", details: String(err) });
   }
 
-  // Gate 5: Required OrgUnits Exist
+  // Gate 5: Required OrgUnits Exist (Approved Canonical Contracts from Architecture Lock / M3.1)
   try {
     if (db.orgUnit) {
       const units = await db.orgUnit.findMany();
       const unitCodes = new Set(units.map((u) => u.code));
-      const requiredCodes = ["OU-DIR", "OU-TAHFIZH", "OU-ASRAMA", "OU-KPS", "OU-OSDA-PUTRI"];
+      const requiredCodes = ["OU-OSDA-ROOT", "OU-OSDA-PUTRI", "OU-TKS-ROOT"];
       const missing = requiredCodes.filter((c) => !unitCodes.has(c));
       if (missing.length === 0) {
         gates.push({ gate: "REQUIRED_ORG_UNITS_READY", status: "READY", details: "All required organizational units exist" });
@@ -248,7 +264,7 @@ export async function checkPendidikanV2ProductionReadiness(
     gates.push({ gate: "REQUIRED_ORG_UNITS_READY", status: "NOT_READY", details: String(err) });
   }
 
-  // Gate 6: Required Position Templates Exist
+  // Gate 6: Required Position Templates Exist (Approved Institutional Activation Targets)
   try {
     if (db.position) {
       const positions = await db.position.findMany();
@@ -258,8 +274,8 @@ export async function checkPendidikanV2ProductionReadiness(
         "KABID_TAHFIZH",
         "MUSYRIF_TAHFIZH",
         "PEMBINA_HALAQOH",
-        "GURU_AKADEMIK",
-        "KEPALA_SEKOLAH",
+        "PETUGAS_OPERASIONAL_TAHFIZH",
+        "PETUGAS_OPERASIONAL_KEASRAMAAN",
         "KEPALA_KEASRAMAAN",
         "PEMBINA_ASRAMA",
       ];
@@ -296,9 +312,22 @@ export async function checkPendidikanV2ProductionReadiness(
 
   // Gate 8: User Assignments Ready
   try {
-    if (typeof db.$queryRawUnsafe === "function") {
+    if (db.assignment) {
+      const now = new Date();
+      const asgs = await db.assignment.findMany({
+        where: {
+          status: "ACTIVE",
+          OR: [{ validUntil: null }, { validUntil: { gte: now } }],
+        },
+      });
+      if (asgs.length > 0) {
+        gates.push({ gate: "USER_ASSIGNMENTS_READY", status: "READY", details: `${asgs.length} active user assignments found` });
+      } else {
+        gates.push({ gate: "USER_ASSIGNMENTS_READY", status: "NOT_READY", details: "Zero active user assignments found" });
+      }
+    } else if (typeof db.$queryRawUnsafe === "function") {
       const asgs = await db.$queryRawUnsafe<Array<{ count: string }>>(`
-        SELECT count(*)::text as count FROM "user_assignments" 
+        SELECT count(*)::text as count FROM "assignments" 
         WHERE "status" = 'ACTIVE' 
           AND ("valid_until" IS NULL OR "valid_until" >= NOW());
       `).catch(() => []);

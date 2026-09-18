@@ -688,6 +688,9 @@ export interface EducationSessionReadDTO {
   startedAt?: string | null;
   materi?: string | null;
   attendanceAvailable: boolean;
+  attendanceDeniedReason?: string | null;
+  materialAvailable: boolean;
+  materialDeniedReason?: string | null;
   mutationAvailable: boolean;
   mutationDeniedReason?: string | null;
 }
@@ -700,6 +703,8 @@ export interface EducationSessionReadDTO {
  * - cohortId / programLevel
  * - jp
  * - semesterMeetingNumber
+ *
+ * Strict fail-closed: If a criterion is provided, session field MUST exactly equal the criterion.
  */
 export function matchStudiUmumSession(
   sessions: EducationSessionReadDTO[],
@@ -716,22 +721,20 @@ export function matchStudiUmumSession(
 ): EducationSessionReadDTO | undefined {
   return sessions.find((s) => {
     if (s.educationTrack !== "STUDI_UMUM") return false;
-    if (criteria.scheduledDate && s.scheduledDate !== criteria.scheduledDate) return false;
+    if (criteria.scheduledDate !== undefined && s.scheduledDate !== criteria.scheduledDate) return false;
     if (criteria.programLevel !== undefined && s.programLevel !== criteria.programLevel) return false;
-    if (criteria.cohortId && s.cohortId && s.cohortId !== criteria.cohortId) return false;
+    if (criteria.cohortId !== undefined && s.cohortId !== criteria.cohortId) return false;
     if (criteria.jp !== undefined && s.jp !== criteria.jp) return false;
     if (
       criteria.semesterMeetingNumber !== undefined &&
-      s.semesterMeetingNumber !== null &&
-      s.semesterMeetingNumber !== undefined &&
       s.semesterMeetingNumber !== criteria.semesterMeetingNumber
     ) {
       return false;
     }
-    if (criteria.subjectId && s.subjectId !== criteria.subjectId) return false;
-    if (criteria.subjectCode && s.subjectCode && s.subjectCode !== criteria.subjectCode) return false;
+    if (criteria.subjectId !== undefined && s.subjectId !== criteria.subjectId) return false;
+    if (criteria.subjectCode !== undefined && s.subjectCode !== criteria.subjectCode) return false;
     if (
-      criteria.subjectName &&
+      criteria.subjectName !== undefined &&
       s.subjectName !== criteria.subjectName &&
       s.subject !== criteria.subjectName
     ) {
@@ -748,6 +751,8 @@ export function matchStudiUmumSession(
  * - subjectId / subjectCode / subjectName
  * - genderGroup
  * - pedagogicalLevel / programLevel
+ *
+ * Strict fail-closed: If a criterion is provided, session field MUST exactly equal the criterion.
  */
 export function matchKepesantrenanSession(
   sessions: EducationSessionReadDTO[],
@@ -759,24 +764,25 @@ export function matchKepesantrenanSession(
     genderGroup?: "PUTRA" | "PUTRI";
     pedagogicalLevel?: "TINGKAT_1" | "TINGKAT_2" | "TINGKAT_3";
     programLevel?: number;
+    cohortId?: string;
   }
 ): EducationSessionReadDTO | undefined {
   return sessions.find((s) => {
     if (s.educationTrack !== "KEPESANTRENAN") return false;
-    if (criteria.scheduledDate && s.scheduledDate !== criteria.scheduledDate) return false;
-    if (criteria.genderGroup && s.genderGroup && s.genderGroup !== criteria.genderGroup) return false;
+    if (criteria.scheduledDate !== undefined && s.scheduledDate !== criteria.scheduledDate) return false;
+    if (criteria.genderGroup !== undefined && s.genderGroup !== criteria.genderGroup) return false;
     if (
-      criteria.pedagogicalLevel &&
-      s.pedagogicalLevel &&
+      criteria.pedagogicalLevel !== undefined &&
       s.pedagogicalLevel !== criteria.pedagogicalLevel
     ) {
       return false;
     }
     if (criteria.programLevel !== undefined && s.programLevel !== criteria.programLevel) return false;
-    if (criteria.subjectId && s.subjectId !== criteria.subjectId) return false;
-    if (criteria.subjectCode && s.subjectCode && s.subjectCode !== criteria.subjectCode) return false;
+    if (criteria.cohortId !== undefined && s.cohortId !== criteria.cohortId) return false;
+    if (criteria.subjectId !== undefined && s.subjectId !== criteria.subjectId) return false;
+    if (criteria.subjectCode !== undefined && s.subjectCode !== criteria.subjectCode) return false;
     if (
-      criteria.subjectName &&
+      criteria.subjectName !== undefined &&
       s.subjectName !== criteria.subjectName &&
       s.subject !== criteria.subjectName
     ) {

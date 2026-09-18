@@ -152,10 +152,13 @@ export function AkademikModule({
   // Milestone 3.3B: Studi Umum Saturday Schedule & Session Management State
   const [selectedCohortStartYear, setSelectedCohortStartYear] = useState<number>(2026);
   const [selectedSemesterMeeting, setSelectedSemesterMeeting] = useState<number>(1);
+  const [selectedOperationalDateWita, setSelectedOperationalDateWita] = useState<string>("2026-09-19");
   const cohortLevel = (selectedCohortStartYear === 2026 ? 1 : selectedCohortStartYear === 2025 ? 2 : 3) as 1 | 2 | 3;
 
-  // Milestone 3.3B: Kepesantrenan Daily Schedule & Session Management State
+  // Milestone 3.3B & 3.3C1: Kepesantrenan Daily Schedule, Gender & Pedagogical Level State
   const [selectedKpsDay, setSelectedKpsDay] = useState<"Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday">("Monday");
+  const [selectedKpsGender, setSelectedKpsGender] = useState<"PUTRA" | "PUTRI">("PUTRA");
+  const [selectedKpsArabLevel, setSelectedKpsArabLevel] = useState<"TINGKAT_1" | "TINGKAT_2" | "TINGKAT_3">("TINGKAT_1");
 
   // Milestone 3.3C1: Server-Authoritative Education Sessions State
   type ServerSessionStatus = "LOADING" | "READY" | "NOT_ENABLED" | "SCHEMA_NOT_READY" | "PERMISSION_DENIED" | "ERROR";
@@ -502,8 +505,8 @@ export function AkademikModule({
                 </div>
               </div>
 
-              {/* Selector Angkatan/Tingkat & Pertemuan Semester */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
+              {/* Selector Angkatan/Tingkat, Pertemuan Semester & Tanggal Operasional */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3">
                 <div>
                   <label className="text-[11px] font-bold text-slate-600 block mb-1 uppercase tracking-wider">
                     Pilih Angkatan Program (Tingkat KBM)
@@ -537,6 +540,18 @@ export function AkademikModule({
                     </span>
                   </div>
                 </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 block mb-1 uppercase tracking-wider">
+                    Tanggal Operasional (Sabtu WITA)
+                  </label>
+                  <input
+                    type="date"
+                    value={selectedOperationalDateWita}
+                    onChange={(e) => setSelectedOperationalDateWita(e.target.value)}
+                    className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs sm:text-sm font-semibold text-slate-800"
+                  />
+                </div>
               </div>
             </CardHeader>
 
@@ -548,6 +563,14 @@ export function AkademikModule({
                     programLevel: cohortLevel,
                     jp: jpNum,
                     semesterMeetingNumber: selectedSemesterMeeting,
+                  });
+
+                  const suSession = matchStudiUmumSession(serverSessions, {
+                    scheduledDate: selectedOperationalDateWita,
+                    subjectName: schedule.subject,
+                    jp: schedule.jp,
+                    semesterMeetingNumber: selectedSemesterMeeting,
+                    programLevel: cohortLevel,
                   });
 
                   return (
@@ -599,19 +622,12 @@ export function AkademikModule({
                           <div className="flex justify-between text-[11px]">
                             <span className="text-slate-500">Guru Pengajar:</span>
                             <span className="font-semibold text-slate-600">
-                              Belum diaktifkan
+                              {suSession?.actualTeacherDisplay || suSession?.scheduledTeacherDisplay || "Belum diaktifkan"}
                             </span>
                           </div>
                           <div className="flex justify-between text-[11px]">
                             <span className="text-slate-500">Status Sesi:</span>
                             {(() => {
-                              const suSession = matchStudiUmumSession(serverSessions, {
-                                subjectName: schedule.subject,
-                                jp: schedule.jp,
-                                semesterMeetingNumber: selectedSemesterMeeting,
-                                programLevel: cohortLevel,
-                              });
-
                               if (serverSessionStatus === "LOADING") {
                                 return <span className="font-bold text-slate-500">○ MEMUAT...</span>;
                               }
@@ -644,13 +660,6 @@ export function AkademikModule({
 
                       <div className="mt-4 pt-3 border-t border-slate-100">
                         {(() => {
-                          const suSession = matchStudiUmumSession(serverSessions, {
-                            subjectName: schedule.subject,
-                            jp: schedule.jp,
-                            semesterMeetingNumber: selectedSemesterMeeting,
-                            programLevel: cohortLevel,
-                          });
-
                           if (serverSessionStatus === "READY" && suSession && suSession.mutationAvailable) {
                             return (
                               <Button
@@ -674,10 +683,16 @@ export function AkademikModule({
                             notice = "Skema database belum siap";
                           } else if (serverSessionStatus === "PERMISSION_DENIED") {
                             notice = "Akses tidak diotorisasi";
-                          } else if (suSession?.mutationDeniedReason === "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED") {
-                            notice = "Bukan guru terjadwal — kebijakan badal belum aktif";
+                          } else if (suSession?.mutationDeniedReason === "AUTHENTICATION_REQUIRED") {
+                            notice = "Harap masuk (login) untuk mengelola sesi";
+                          } else if (suSession?.mutationDeniedReason === "SCHEDULED_TEACHER_NOT_RESOLVED") {
+                            notice = "Guru terjadwal belum terdaftar di sesi";
                           } else if (suSession?.mutationDeniedReason === "STAFF_NOT_LINKED") {
                             notice = "Profil pendidik staf belum terhubung";
+                          } else if (suSession?.mutationDeniedReason === "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED") {
+                            notice = "Bukan guru terjadwal — kebijakan badal belum aktif";
+                          } else if (suSession?.mutationDeniedReason === "CANONICAL_AUTH_DENIED") {
+                            notice = "Wewenang mengajar tidak mencukupi";
                           }
 
                           return (
@@ -1243,30 +1258,84 @@ export function AkademikModule({
                         Waktu KBM terencana: 18:30–19:30 WITA (ba&apos;da Maghrib). Materi dan presensi santri terkunci hingga guru mengklik &quot;Mulai Pembelajaran&quot;.
                       </CardDescription>
                     </div>
-                    {/* Day Tabs */}
-                    <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-                      {[
-                        { day: "Monday", label: "Senin", mapel: "Bahasa Arab" },
-                        { day: "Tuesday", label: "Selasa", mapel: "Fikih" },
-                        { day: "Wednesday", label: "Rabu", mapel: "Tafsir" },
-                        { day: "Thursday", label: "Kamis", mapel: "Aqidah" },
-                        { day: "Friday", label: "Jumat", mapel: "Tajwid" },
-                      ].map((d) => (
+                    {/* Day Tabs & Gender Selector */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Gender Selector */}
+                      <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
                         <button
-                          key={d.day}
                           type="button"
-                          onClick={() => setSelectedKpsDay(d.day as "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday")}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                            selectedKpsDay === d.day
+                          onClick={() => setSelectedKpsGender("PUTRA")}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                            selectedKpsGender === "PUTRA"
                               ? "bg-[#0E7C3A] text-white shadow-xs"
                               : "text-slate-600 hover:text-slate-900"
                           }`}
                         >
-                          {d.label}
+                          Putra
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedKpsGender("PUTRI")}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                            selectedKpsGender === "PUTRI"
+                              ? "bg-[#0E7C3A] text-white shadow-xs"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          Putri
+                        </button>
+                      </div>
+
+                      {/* Day Tabs */}
+                      <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                        {[
+                          { day: "Monday", label: "Senin", mapel: "Bahasa Arab" },
+                          { day: "Tuesday", label: "Selasa", mapel: "Fikih" },
+                          { day: "Wednesday", label: "Rabu", mapel: "Tafsir" },
+                          { day: "Thursday", label: "Kamis", mapel: "Aqidah" },
+                          { day: "Friday", label: "Jumat", mapel: "Tajwid" },
+                        ].map((d) => (
+                          <button
+                            key={d.day}
+                            type="button"
+                            onClick={() => setSelectedKpsDay(d.day as "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday")}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                              selectedKpsDay === d.day
+                                ? "bg-[#0E7C3A] text-white shadow-xs"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                          >
+                            {d.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Monday Arabic Level Selector for Putra */}
+                  {selectedKpsGender === "PUTRA" && selectedKpsDay === "Monday" && (
+                    <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-slate-100 bg-amber-50/70 p-2 rounded-xl">
+                      <span className="text-[11px] font-bold text-amber-900 shrink-0">Tingkat Bahasa Arab Putra:</span>
+                      {[
+                        { level: "TINGKAT_1" as const, label: "Tingkat I (Ust. Abi Hudzaifah)" },
+                        { level: "TINGKAT_2" as const, label: "Tingkat II (Ust. Kamal Mukhtar)" },
+                        { level: "TINGKAT_3" as const, label: "Tingkat III (Ust. Andi Quarzy Ayatullah)" },
+                      ].map((t) => (
+                        <button
+                          key={t.level}
+                          type="button"
+                          onClick={() => setSelectedKpsArabLevel(t.level)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                            selectedKpsArabLevel === t.level
+                              ? "bg-amber-700 text-white shadow-xs"
+                              : "text-amber-800 hover:text-amber-950 bg-white/70"
+                          }`}
+                        >
+                          {t.label}
                         </button>
                       ))}
                     </div>
-                  </div>
+                  )}
                 </CardHeader>
 
                 <CardContent className="p-4 sm:p-5 space-y-5">
@@ -1278,6 +1347,20 @@ export function AkademikModule({
                       (k) => k.nama === dayDef?.name
                     );
 
+                    const kpsSession = matchKepesantrenanSession(serverSessions, {
+                      subjectName: dayDef?.name,
+                      genderGroup: selectedKpsGender,
+                      pedagogicalLevel: (selectedKpsGender === "PUTRA" && dayDef?.code === "KPS-ARB") ? selectedKpsArabLevel : undefined,
+                    });
+
+                    const expectedTeacher = selectedKpsGender === "PUTRI"
+                      ? "Ustazah Lisa Dwina Fitri"
+                      : (dayDef?.code === "KPS-ARB"
+                        ? (selectedKpsArabLevel === "TINGKAT_1" ? "Ust. Abi Hudzaifah" : selectedKpsArabLevel === "TINGKAT_2" ? "Ust. Kamal Mukhtar" : "Ust. Andi Quarzy Ayatullah")
+                        : (kpsFact?.guruDefault || "Berdasarkan Jadwal Resmi"));
+
+                    const displayTeacher = kpsSession?.actualTeacherDisplay || kpsSession?.scheduledTeacherDisplay || expectedTeacher;
+
                     return (
                       <div className="space-y-4">
                         {/* Session Status Banner */}
@@ -1285,24 +1368,31 @@ export function AkademikModule({
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="font-bold text-slate-900 text-sm">
-                                {dayDef?.dayNameId}: {dayDef?.name}
+                                {dayDef?.dayNameId}: {dayDef?.name} ({selectedKpsGender === "PUTRA" ? "Santri Putra" : "Santri Putri"})
                               </span>
-                              <Badge variant="neutral" size="sm" className="font-bold">
-                                ○ TERJADWAL
-                              </Badge>
+                              {(() => {
+                                if (serverSessionStatus === "LOADING") {
+                                  return <Badge variant="neutral" size="sm" className="font-bold">○ MEMUAT...</Badge>;
+                                }
+                                if (kpsSession) {
+                                  if (kpsSession.status === "STARTED") {
+                                    return <Badge variant="green" size="sm" className="font-bold">● BERLANGSUNG</Badge>;
+                                  }
+                                  if (kpsSession.status === "COMPLETED") {
+                                    return <Badge variant="sky" size="sm" className="font-bold">✔ SELESAI</Badge>;
+                                  }
+                                  return <Badge variant="neutral" size="sm" className="font-bold">○ TERJADWAL</Badge>;
+                                }
+                                return <Badge variant="neutral" size="sm" className="font-bold">○ TERJADWAL</Badge>;
+                              })()}
                             </div>
                             <p className="text-xs text-slate-500 mt-1">
-                              Jendela Waktu: {dayDef?.scheduledWindowWita} • Guru Terjadwal: {kpsFact?.guruDefault || "Berdasarkan Tingkat & Gender"} • Status: Belum dimulai
+                              Jendela Waktu: {dayDef?.scheduledWindowWita} • Guru Terjadwal: {displayTeacher} • Status: {kpsSession?.status === "STARTED" ? "Sedang Berlangsung" : kpsSession?.status === "COMPLETED" ? "Selesai" : "Belum Dimulai"}
                             </p>
                           </div>
 
                           <div>
                             {(() => {
-                              const kpsSession = matchKepesantrenanSession(serverSessions, {
-                                subjectName: dayDef?.name,
-                                genderGroup: "PUTRA",
-                              });
-
                               if (serverSessionStatus === "READY" && kpsSession && kpsSession.mutationAvailable) {
                                 return (
                                   <Button
@@ -1324,8 +1414,18 @@ export function AkademikModule({
                                 notice = "UAT belum aktif (PENDIDIKAN_V2_UAT_ENABLED=false)";
                               } else if (serverSessionStatus === "SCHEMA_NOT_READY") {
                                 notice = "Skema database belum siap";
+                              } else if (serverSessionStatus === "PERMISSION_DENIED") {
+                                notice = "Akses tidak diotorisasi";
+                              } else if (kpsSession?.mutationDeniedReason === "AUTHENTICATION_REQUIRED") {
+                                notice = "Harap masuk untuk mengelola sesi";
+                              } else if (kpsSession?.mutationDeniedReason === "SCHEDULED_TEACHER_NOT_RESOLVED") {
+                                notice = "Guru terjadwal belum terdaftar di sesi";
+                              } else if (kpsSession?.mutationDeniedReason === "STAFF_NOT_LINKED") {
+                                notice = "Profil pendidik staf belum terhubung";
                               } else if (kpsSession?.mutationDeniedReason === "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED") {
                                 notice = "Bukan guru terjadwal — kebijakan badal belum aktif";
+                              } else if (kpsSession?.mutationDeniedReason === "CANONICAL_AUTH_DENIED") {
+                                notice = "Wewenang mengajar tidak mencukupi";
                               }
 
                               return (
@@ -1353,9 +1453,9 @@ export function AkademikModule({
                                 <FileText className="h-4 w-4 text-[#0E7C3A]" />
                                 Catatan Materi Pelajaran (Manual)
                               </h5>
-                              <Badge variant="neutral" size="sm" className="font-semibold text-[10px]">
-                                <Lock className="h-3 w-3 inline mr-1" />
-                                Terkunci
+                              <Badge variant={kpsSession?.materialAvailable ? "green" : "neutral"} size="sm" className="font-semibold text-[10px]">
+                                {!kpsSession?.materialAvailable && <Lock className="h-3 w-3 inline mr-1" />}
+                                {kpsSession?.materialAvailable ? "Aktif" : "Terkunci"}
                               </Badge>
                             </div>
                             <p className="text-[11px] text-slate-500 mb-3">
@@ -1364,11 +1464,7 @@ export function AkademikModule({
 
                             <div className="space-y-2">
                               {(() => {
-                                const kpsSession = matchKepesantrenanSession(serverSessions, {
-                                  subjectName: dayDef?.name,
-                                  genderGroup: "PUTRA",
-                                });
-                                if (serverSessionStatus === "READY" && kpsSession && kpsSession.status === "STARTED") {
+                                if (serverSessionStatus === "READY" && kpsSession && kpsSession.materialAvailable) {
                                   return (
                                     <div className="space-y-2">
                                       <textarea
@@ -1390,19 +1486,29 @@ export function AkademikModule({
                                     </div>
                                   );
                                 }
+
+                                let materialNotice = "Pencatatan materi pembelajaran belum diaktifkan — menunggu aktivasi M3.3C.";
+                                if (kpsSession?.materialDeniedReason === "ACTOR_NOT_ACTUAL_TEACHER") {
+                                  materialNotice = "Hanya guru aktual yang dapat mencatat materi pembelajaran.";
+                                } else if (kpsSession?.materialDeniedReason === "SESSION_NOT_STARTED") {
+                                  materialNotice = "Sesi belum dimulai. Klik 'Mulai Pembelajaran' terlebih dahulu.";
+                                } else if (kpsSession?.materialDeniedReason === "UAT_NOT_ENABLED") {
+                                  materialNotice = "UAT materi pembelajaran belum aktif di server.";
+                                }
+
                                 return (
                                   <>
                                     <textarea
                                       rows={2}
                                       disabled
-                                      placeholder="Pencatatan materi pembelajaran belum diaktifkan — menunggu aktivasi M3.3C"
+                                      placeholder={materialNotice}
                                       value=""
                                       readOnly
                                       className="w-full p-2.5 rounded-xl border border-slate-200 text-xs text-slate-400 bg-slate-100 cursor-not-allowed resize-none"
                                     />
                                     <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-[11px] text-amber-800 flex items-center gap-2">
                                       <Lock className="h-4 w-4 shrink-0 text-amber-600" />
-                                      <span>Pencatatan materi pembelajaran belum diaktifkan — menunggu aktivasi M3.3C.</span>
+                                      <span>{materialNotice}</span>
                                     </div>
                                   </>
                                 );
@@ -1417,20 +1523,33 @@ export function AkademikModule({
                                 <Users className="h-4 w-4 text-[#0E7C3A]" />
                                 Presensi Santri Sesi KBM
                               </h5>
-                              <Badge variant="neutral" size="sm" className="font-semibold text-[10px]">
-                                <Lock className="h-3 w-3 inline mr-1" />
-                                Terkunci
+                              <Badge variant={kpsSession?.attendanceAvailable ? "green" : "neutral"} size="sm" className="font-semibold text-[10px]">
+                                {!kpsSession?.attendanceAvailable && <Lock className="h-3 w-3 inline mr-1" />}
+                                {kpsSession?.attendanceAvailable ? "Aktif" : "Terkunci"}
                               </Badge>
                             </div>
                             <p className="text-[11px] text-slate-500 mb-3">
                               Status resmi: <strong>HADIR</strong>, <strong>IZIN</strong>, <strong>SAKIT</strong>, <strong>ALFA</strong>. (Tanpa status Masbuk).
                             </p>
 
-                            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center py-6">
-                              <Users className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-                              <p className="text-xs font-bold text-slate-600">Daftar peserta sesi belum diaktifkan.</p>
-                              <p className="text-[11px] text-slate-400 mt-1">Presensi santri terverifikasi akan aktif pada Milestone 3.3C.</p>
-                            </div>
+                            {(() => {
+                              let attendanceNotice = "Presensi santri terverifikasi akan aktif pada Milestone 3.3C.";
+                              if (kpsSession?.attendanceDeniedReason === "ACTOR_NOT_ACTUAL_TEACHER") {
+                                attendanceNotice = "Hanya guru aktual yang dapat mencatat presensi santri.";
+                              } else if (kpsSession?.attendanceDeniedReason === "SESSION_NOT_STARTED") {
+                                attendanceNotice = "Sesi belum dimulai. Presensi terkunci hingga sesi dimulai.";
+                              } else if (kpsSession?.attendanceDeniedReason === "STUDI_UMUM_ATTENDANCE_POLICY_DEFERRED") {
+                                attendanceNotice = "Presensi Studi Umum ditangguhkan.";
+                              }
+
+                              return (
+                                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center py-6">
+                                  <Users className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                                  <p className="text-xs font-bold text-slate-600">Daftar peserta sesi belum diaktifkan.</p>
+                                  <p className="text-[11px] text-slate-400 mt-1">{attendanceNotice}</p>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>

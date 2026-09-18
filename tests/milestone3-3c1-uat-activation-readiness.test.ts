@@ -205,6 +205,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
           validFrom: new Date(Date.now() - 86400000),
           validUntil: null,
           positionCapabilities: [
+            { capabilityCode: "academic.schedule.read", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
             { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
             { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
             { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
@@ -504,7 +505,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
       );
     });
 
-    it("24. Read DTO returns authoritative fields", async () => {
+    it("24. Read DTO returns authoritative fields for authenticated actor", async () => {
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
       const db = createMockEducationDb([
         {
@@ -515,12 +516,22 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
           programLevel: 1,
           genderGroup: "PUTRA",
           status: "SCHEDULED",
+          scheduledStaffId: "stf-teacher-01",
           scheduledStaff: { nama: "Ustadz Ahmad" },
         },
       ]);
       const service = new PendidikanV2Service({ db: db as any, dataProvider: createMockDataProvider(), auditPersistence: createMockAuditPersistence() });
 
-      const sessions = await service.getEducationSessions({ educationTrack: "KEPESANTRENAN" });
+      // Unauthenticated call must fail-closed
+      await assert.rejects(
+        async () => service.getEducationSessions({ educationTrack: "KEPESANTRENAN" }),
+        /AUTHENTICATION_REQUIRED/
+      );
+
+      const sessions = await service.getEducationSessions(
+        { educationTrack: "KEPESANTRENAN" },
+        { actorUserId: "usr-teacher-01" }
+      );
       assert.strictEqual(sessions.length, 1);
       assert.strictEqual(sessions[0].sessionId, "sess-01");
       assert.strictEqual(sessions[0].subject, "Bahasa Arab");
@@ -531,16 +542,29 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
     it("25. Read DTO reports correct mutationAvailable based on server state", async () => {
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
       const db = createMockEducationDb([
-        { id: "sess-01", status: "SCHEDULED", educationTrack: "KEPESANTRENAN" },
+        {
+          id: "sess-01",
+          status: "SCHEDULED",
+          educationTrack: "KEPESANTRENAN",
+          scheduledStaffId: "stf-teacher-01",
+        },
       ]);
       const service = new PendidikanV2Service({ db: db as any, dataProvider: createMockDataProvider(), auditPersistence: createMockAuditPersistence() });
 
-      const sessions = await service.getEducationSessions();
+      // Authorized scheduled teacher => mutationAvailable: true
+      const sessions = await service.getEducationSessions(undefined, { actorUserId: "usr-teacher-01" });
       assert.strictEqual(sessions[0].mutationAvailable, true);
 
+      // Wrong teacher (substitute not approved) => mutationAvailable: false
+      const sessionsWrong = await service.getEducationSessions(undefined, { actorUserId: "usr-substitute" });
+      assert.strictEqual(sessionsWrong[0].mutationAvailable, false);
+      assert.strictEqual(sessionsWrong[0].mutationDeniedReason, "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED");
+
+      // UAT disabled => mutationAvailable: false
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "false";
-      const sessionsDisabled = await service.getEducationSessions();
+      const sessionsDisabled = await service.getEducationSessions(undefined, { actorUserId: "usr-teacher-01" });
       assert.strictEqual(sessionsDisabled[0].mutationAvailable, false);
+      assert.strictEqual(sessionsDisabled[0].mutationDeniedReason, "UAT_NOT_ENABLED");
     });
   });
 
