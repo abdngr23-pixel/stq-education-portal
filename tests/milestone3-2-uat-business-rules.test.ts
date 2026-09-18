@@ -731,7 +731,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
           return { unitId: "unit-osda-putri" };
         },
         async verifyHumanExecutor() {
-          return { id: "usr-executor", name: "Santriwati Pengurus", isActive: true };
+          return { userId: "usr-executor", id: "usr-executor", name: "Santriwati Pengurus", isActive: true };
         },
         async resolveResourceContext() {
           return {

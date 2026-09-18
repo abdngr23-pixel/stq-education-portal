@@ -70,12 +70,24 @@ The 5 granular health capabilities are explicitly demarcated between current ver
 | `health.case.update_status` | Memperbarui status medis (`DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`) | **VERIFIED_PRODUCTION**<br/>`updateStatusKesehatanAction` permits `MUDIR` (`KS`), `KEPALA_KEASRAMAAN` (`MK`). Admin TU strictly denied (`DENY`). | **APPROVED_TARGET_PENDING_TECHNICAL**<br/>`PETUGAS_KESEHATAN`. Pembina Kamar restricted to internal updates. | KS/MK: `VERIFIED_PRODUCTION`<br/>Target: `APPROVED_TARGET_PENDING_TECHNICAL` |
 | `health.case.referral` | Menerbitkan surat rujukan klinis ke Puskesmas / RS | **NONE (NO DEDICATED ACTION)**<br/>Main has NO dedicated action for external referral issuance. Updating status to `DIRUJUK_PUSKESMAS` via `updateStatusKesehatanAction` is not a dedicated referral capability. | `PETUGAS_KESEHATAN` recommends referral. | **PROPOSED_TBD**<br/>Final external referral sign-off receiver matrix is TBD pending Business Owner decision. |
 
-#### Canonical Keasramaan V2 Health Statuses & Legacy Read Bridge
-Canonical V2 statuses: `DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`.
-- `SEMBUH` $\implies$ Maps to `PULIH` (Deterministic)
+#### Canonical Keasramaan V2 Health Statuses & Legacy Read Bridge (M3.3A Foundation)
+Canonical V2 statuses are EXACTLY: `DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`.
 - `RAWAT_PONDOK` $\implies$ Maps to `DIPANTAU` (Deterministic)
+- `SEMBUH` $\implies$ Maps to `PULIH` (Deterministic)
 - `DIRUJUK_PUSKESMAS` $\implies$ Maps to `DIRUJUK` (Deterministic)
-- `PULANG` $\implies$ **AMBIGUOUS_PENDING_REVIEW** (Do NOT backfill; requires human business review).
+- `DIRUJUK_RS` $\implies$ Maps to `DIRUJUK` (Deterministic)
+- `PULANG` $\implies$ `REVIEW_REQUIRED` / **AMBIGUOUS_PENDING_REVIEW** (Ambiguous historical status; requires human review, never silently mapped).
+- *Unsupported/unknown strings* $\implies$ `UNKNOWN` (Safe fallback; zero speculative data fabrication).
+
+#### Health V2 Boundary Invariants:
+1. **Data Honesty**: Diagnosis (`diagnosa`) is optional; absent or empty diagnosis persists as `NULL`. No fake examination string is ever generated.
+2. **Read Bridge Immutability**: Legacy status mapping is purely read/translation oriented; it NEVER mutates database rows or rewrites historical records.
+3. **Dual Attribution on Unit Writes**: Unit accounts (e.g. Poskestren desk kiosks) require a verified human executor on write (`UNIT_EXECUTOR_REQUIRED`).
+4. **Privacy Isolation**: Aggregate operational visibility (`health.case.read_aggregate`) is strictly separated from clinical detail visibility (`health.case.read_detail`). Generic OSDA membership confers zero clinical detail access.
+5. **Dormitory Scoping**: Pembina Asrama access to health details is strictly `KAMAR`-scoped. Accessing santri in other rooms is denied (`OUT_OF_SCOPE_ACCESS_DENIED`).
+6. **Referral Authority**: External hospital/puskesmas referral issuance remains `PROPOSED_TBD`.
+7. **Daily Health Checklist Invariant**: Exactly 1 general checklist per operational day; M3.3A defines the business invariant with zero invented checklist questions in code.
+8. **Health Inventory Boundary Invariant**: Health owns inventory records/usage; physical maintenance and repairs are delegated to Sarpras; no premature inventory mutation in M3.3A.
 
 ---
 

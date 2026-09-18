@@ -187,6 +187,13 @@ enum StatusKesehatan {
   SEMBUH
 }
 
+enum HealthStatusV2 {
+  DIPANTAU
+  PULIH
+  DIRUJUK
+  DARURAT
+}
+
 enum KategoriLogistik {
   SEMBAKO
   OBAT_P3K
@@ -321,6 +328,11 @@ model User {
   assignments   Assignment[]
   unitPlacement UnitAccountPlacement?
 
+  // Health V2 Relations (Blocker E & D)
+  healthCasesRecorded      HealthCaseV2[]      @relation("HealthCasesRecordedByUser")
+  healthCaseEventsRecorded HealthCaseV2Event[] @relation("HealthEventsRecordedByUser")
+  healthCaseEventsExecuted HealthCaseV2Event[] @relation("HealthEventsExecutedByHuman")
+
   createdAt    DateTime    @default(now()) @map("created_at")
   updatedAt    DateTime    @updatedAt @map("updated_at")
 
@@ -370,6 +382,10 @@ model Staff {
 
   // Relasi Roadmap v2
   tasmiSimaanDiuji   TasmiSimaan[]    @relation("PengujiTasmiSimaan")
+
+  // Health V2 Relations (Blocker E & D)
+  healthCasesRecorded      HealthCaseV2[]      @relation("HealthCasesRecordedByStaff")
+  healthCaseEventsRecorded HealthCaseV2Event[] @relation("HealthEventsRecordedByStaff")
 
   createdAt          DateTime         @default(now()) @map("created_at")
   updatedAt          DateTime         @updatedAt @map("updated_at")
@@ -421,6 +437,7 @@ model Santri {
   // Relasi Fase 6
   ikhtibarList       IkhtibarTahfizh[]
   kesehatanList      CatatanKesehatan[]
+  healthCasesV2      HealthCaseV2[]
 
   // Relasi Fase 7
   saranList          KotakSaran[]
@@ -826,6 +843,52 @@ model CatatanKesehatan {
   @@index([santriId, status])
   @@index([santriId, tanggal])
   @@map("catatan_kesehatan")
+}
+
+model HealthCaseV2 {
+  id                String         @id @default(cuid())
+  santriId          String         @map("santri_id")
+  santri            Santri         @relation(fields: [santriId], references: [id], onDelete: Restrict)
+  occurredAt        DateTime       @map("occurred_at")
+  keluhan           String
+  tindakanAwal      String         @map("tindakan_awal")
+  diagnosa          String?
+  catatan           String?
+  attachmentUrl     String?        @map("attachment_url")
+  statusV2          HealthStatusV2 @map("status_v2")
+  recordedByUserId  String         @map("recorded_by_user_id")
+  recordedByUser    User           @relation("HealthCasesRecordedByUser", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+  recordedByStaffId String?        @map("recorded_by_staff_id")
+  recordedByStaff   Staff?         @relation("HealthCasesRecordedByStaff", fields: [recordedByStaffId], references: [id], onDelete: Restrict)
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  events            HealthCaseV2Event[]
+
+  @@index([santriId, statusV2])
+  @@index([santriId, occurredAt])
+  @@index([statusV2, occurredAt])
+  @@map("health_cases_v2")
+}
+
+model HealthCaseV2Event {
+  id                String          @id @default(cuid())
+  caseId            String          @map("case_id")
+  case              HealthCaseV2    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  previousStatus    HealthStatusV2? @map("previous_status")
+  newStatus         HealthStatusV2  @map("new_status")
+  tindakanLanjutan  String?         @map("tindakan_lanjutan")
+  catatan           String?
+  recordedByUserId  String          @map("recorded_by_user_id")
+  recordedByUser    User            @relation("HealthEventsRecordedByUser", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+  recordedByStaffId String?         @map("recorded_by_staff_id")
+  recordedByStaff   Staff?          @relation("HealthEventsRecordedByStaff", fields: [recordedByStaffId], references: [id], onDelete: Restrict)
+  humanExecutorId   String?         @map("human_executor_id")
+  humanExecutor     User?           @relation("HealthEventsExecutedByHuman", fields: [humanExecutorId], references: [id], onDelete: Restrict)
+  createdAt         DateTime        @default(now()) @map("created_at")
+
+  @@index([caseId, createdAt])
+  @@map("health_case_v2_events")
 }
 
 model StokLogistik {

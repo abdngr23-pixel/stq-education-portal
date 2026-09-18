@@ -1280,7 +1280,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.1: KEASRAMAAN V2 STRUCTURE & PLA
         },
         async verifyHumanExecutor(executorId: string) {
           if (executorId === "stf-01") {
-            return { id: "stf-01", name: "Ust. Ahmad", isActive: true };
+            return { userId: "usr-stf-01", id: "stf-01", name: "Ust. Ahmad", isActive: true };
           }
           return null;
         },

@@ -51,6 +51,19 @@ export interface CanonicalAuthorizationDecision {
   scopeType?: ScopeType;
   evaluatedUnitIds?: string[];
   grantUsed?: EffectiveCapabilityGrant;
+  verifiedExecutor?: CanonicalExecutorIdentity;
+}
+
+/**
+ * Normalized Canonical Executor Identity resolved server-side
+ */
+export interface CanonicalExecutorIdentity {
+  userId: string;
+  name: string;
+  staffId?: string | null;
+  santriId?: string | null;
+  isActive: boolean;
+  id?: string; // backwards compatibility alias for userId
 }
 
 /**
@@ -105,7 +118,7 @@ export interface ICanonicalDataProvider {
   getIdentity(userId: string): Promise<CanonicalIdentity | null>;
   getActiveAssignments(userId: string, now: Date): Promise<CanonicalAssignmentWithDetails[]>;
   getUnitAccountPlacement(userId: string): Promise<{ unitId: string } | null>;
-  verifyHumanExecutor(executorId: string): Promise<{ id: string; name: string; isActive: boolean } | null>;
+  verifyHumanExecutor(executorId: string): Promise<CanonicalExecutorIdentity | null>;
   resolveResourceContext(requested: RequestedResourceContext, subjectUserId?: string, capability?: string): Promise<ResolvedResourceContext | null>;
 }
 
@@ -228,6 +241,7 @@ export async function authorizeCanonical(
 
   // 2. Unit Account Placements and Invariants (AccountType.UNIT - Blocker 4)
   let placementUnitId: string | null = null;
+  let verifiedExecutor: CanonicalExecutorIdentity | undefined = undefined;
   if (identity.accountType === "UNIT") {
     if (params.dataProvider) {
       try {
@@ -322,6 +336,22 @@ export async function authorizeCanonical(
               reason: "Human executor profile is not active or could not be verified.",
             };
           }
+          if (!executor.userId || executor.userId.trim() === "") {
+            return {
+              decision: "DENY",
+              code: "SYSTEM_FAIL_CLOSED",
+              reasonCode: "UNIT_EXECUTOR_INVALID",
+              reason: "Human executor does not resolve to a canonical User.id.",
+            };
+          }
+          verifiedExecutor = {
+            userId: executor.userId,
+            id: executor.userId,
+            name: executor.name,
+            staffId: executor.staffId || null,
+            santriId: executor.santriId || null,
+            isActive: executor.isActive,
+          };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           return {
@@ -544,6 +574,7 @@ export async function authorizeCanonical(
         scopeType: grant.scopeType,
         evaluatedUnitIds: grant.unitIds,
         grantUsed: grant,
+        verifiedExecutor,
       };
     }
 
@@ -646,7 +677,7 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
       return placement ? { unitId: placement.unitId } : null;
     },
 
-    async verifyHumanExecutor(executorId: string): Promise<{ id: string; name: string; isActive: boolean } | null> {
+    async verifyHumanExecutor(executorId: string): Promise<CanonicalExecutorIdentity | null> {
       // Find human executor: support lookup by User.id, User.staffId, or User.santriId
       const user = await prisma.user.findFirst({
         where: {
@@ -663,8 +694,11 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
         // Must be AccountType.PERSONAL and User.status === "AKTIF"
         if (user.accountType !== "PERSONAL" || user.status !== "AKTIF") {
           return {
+            userId: user.id,
             id: user.id,
             name: user.username,
+            staffId: user.staffId || null,
+            santriId: user.santriId || null,
             isActive: false,
           };
         }
@@ -672,24 +706,33 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
         // Must have linked active Staff OR linked active Santri profile
         if (user.staff) {
           return {
+            userId: user.id,
             id: user.id,
             name: user.staff.nama,
+            staffId: user.staff.id,
+            santriId: user.santriId || null,
             isActive: user.staff.status === "AKTIF",
           };
         }
 
         if (user.santri) {
           return {
+            userId: user.id,
             id: user.id,
             name: user.santri.nama,
+            staffId: user.staffId || null,
+            santriId: user.santri.id,
             isActive: user.santri.status === "AKTIF",
           };
         }
 
         // Active personal User with neither Staff nor Santri human profile -> REJECT
         return {
+          userId: user.id,
           id: user.id,
           name: user.username,
+          staffId: null,
+          santriId: null,
           isActive: false,
         };
       }
@@ -701,12 +744,23 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
       });
 
       if (staff) {
-        if (!staff.user || staff.user.accountType !== "PERSONAL" || staff.user.status !== "AKTIF") {
-          return { id: staff.id, name: staff.nama, isActive: false };
+        const linkedUser = staff.user;
+        if (!linkedUser || linkedUser.accountType !== "PERSONAL" || linkedUser.status !== "AKTIF") {
+          return {
+            userId: linkedUser?.id || "",
+            id: linkedUser?.id || "",
+            name: staff.nama,
+            staffId: staff.id,
+            santriId: null,
+            isActive: false,
+          };
         }
         return {
-          id: staff.id,
+          userId: linkedUser.id,
+          id: linkedUser.id,
           name: staff.nama,
+          staffId: staff.id,
+          santriId: null,
           isActive: staff.status === "AKTIF",
         };
       }
@@ -718,12 +772,23 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
       });
 
       if (santri) {
-        if (!santri.user || santri.user.accountType !== "PERSONAL" || santri.user.status !== "AKTIF") {
-          return { id: santri.id, name: santri.nama, isActive: false };
+        const linkedUser = santri.user;
+        if (!linkedUser || linkedUser.accountType !== "PERSONAL" || linkedUser.status !== "AKTIF") {
+          return {
+            userId: linkedUser?.id || "",
+            id: linkedUser?.id || "",
+            name: santri.nama,
+            staffId: null,
+            santriId: santri.id,
+            isActive: false,
+          };
         }
         return {
-          id: santri.id,
+          userId: linkedUser.id,
+          id: linkedUser.id,
           name: santri.nama,
+          staffId: null,
+          santriId: santri.id,
           isActive: santri.status === "AKTIF",
         };
       }

@@ -1,5 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import EmbeddedPostgres from "embedded-postgres";
 import { PrismaClient } from "@prisma/client";
+import type { ICanonicalDataProvider } from "../lib/auth/canonical-evaluator";
 
 async function executeSqlStatementsOnClient(prismaClient: PrismaClient, sqlString: string): Promise<void> {
   // Strip single-line comments (-- ...)
@@ -2455,5 +2457,715 @@ export async function runIsolatedM31MigrationVerification(): Promise<M31Migratio
     try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
   }
 }
+
+export interface M33aMigrationVerificationResult {
+  pr8ExactShaVerified: boolean;
+  pr8MigrationApplied: boolean;
+  phase2aApplied: boolean;
+  m31MigrationApplied: boolean;
+  m33aMigrationApplied: boolean;
+  existingDataUnchanged: boolean;
+  existingPr8TablesIntact: boolean;
+  existingPlacementsIntact: boolean;
+  existingCatatanKesehatanIntact: boolean;
+  tableCreated: boolean;
+  eventsTableCreated: boolean;
+  statusOccurredIndexCreated: boolean;
+  eventCreatedAtIdxCreated: boolean;
+  enumCreated: boolean;
+  enumExactValuesVerified: boolean;
+  invalidEnumRejected: boolean;
+  nullableDiagnosaPersistsNull: boolean;
+  auditAttributionFieldsPresent: boolean;
+  eventInsertedSuccessfully: boolean;
+  createAuditRollbackVerified: boolean;
+  updateAuditRollbackVerified: boolean;
+  createAuditCommitAtomicVerified: boolean;
+  concurrentCasConflictVerified: boolean;
+  singleEventChainVerified: boolean;
+  singleAuditChainVerified: boolean;
+  simulationSuccess: boolean;
+}
+
+export async function simulateM33aMigrationChain(): Promise<M33aMigrationVerificationResult> {
+  const port = await findFreePort(5970 + Math.floor(Math.random() * 300));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `stq-m33a-${Date.now()}-${port}-`));
+  const testUrl = `postgresql://postgres:postgrespassword@127.0.0.1:${port}/stq_m33a_test?schema=public`;
+
+  verifyTestEnvironment(testUrl);
+
+  const pgInstance = new EmbeddedPostgres({
+    databaseDir: tempDir,
+    port,
+    user: "postgres",
+    password: "postgrespassword",
+    persistent: false,
+  });
+
+  let mainPid: number | null = null;
+  let descendantPids: Set<number> = new Set();
+  let client: PrismaClient | null = null;
+
+  try {
+    await pgInstance.initialise();
+    await pgInstance.start();
+
+    for (let i = 0; i < 30; i++) {
+      if (await isPortInUse(port)) break;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+
+    const detected = detectTestInstancePids(port, tempDir);
+    mainPid = detected.mainPid;
+    descendantPids = new Set(detected.descendantPids);
+
+    try {
+      await pgInstance.createDatabase("stq_m33a_test");
+    } catch {}
+
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      DATABASE_URL: testUrl,
+      TEST_DATABASE_URL: testUrl,
+      NODE_ENV: "test",
+      IS_TEST_RUN: "true",
+      ALLOW_ISOLATED_TEST_DB: "true",
+    };
+
+    const projectRoot = path.resolve(__dirname, "..");
+
+    // 1. Inisialisasi skema baseline warisan
+    execSync(`npx prisma db push --schema=tests/fixtures/baseline_schema.prisma --skip-generate --accept-data-loss`, {
+      env,
+      encoding: "utf-8",
+      cwd: projectRoot,
+    });
+
+    client = new PrismaClient({
+      datasources: { db: { url: testUrl } },
+    });
+
+    // 2. Terapkan migrasi 1..5 rantai main
+    const mainMigrations = [
+      "20260910083000_setoran_tahfizh_page_based",
+      "20260910090000_core_operational_final",
+      "20260910103000_p0_tahfizh_persistence",
+      "20260914100000_target_santri_float",
+      "20260914170000_add_jumlah_juz_mufar",
+    ];
+
+    for (const m of mainMigrations) {
+      const sqlPath = path.join(projectRoot, "prisma/migrations", m, "migration.sql");
+      const sql = fs.readFileSync(sqlPath, "utf-8");
+      await executeSqlStatementsOnClient(client, sql);
+    }
+
+    // 3. Verifikasi dan ambil migrasi PR #8 langsung dari SHA 9068cae5587b7219c394c5c25bf0de07a15b0726 (in-memory)
+    const PR8_EXACT_SHA = "9068cae5587b7219c394c5c25bf0de07a15b0726";
+    let pr8MigrationFetched = false;
+    let pr8ExactShaVerified = false;
+    let pr8Sql = "";
+    let pr8MigrationApplied = false;
+
+    try {
+      let commitExists = false;
+      try {
+        execSync(`git cat-file -e ${PR8_EXACT_SHA}`, { cwd: projectRoot, stdio: "ignore" });
+        commitExists = true;
+      } catch {
+        commitExists = false;
+      }
+
+      if (!commitExists) {
+        try {
+          execSync("git fetch origin review/tahfizh-quality-evaluation --depth=1", { cwd: projectRoot, stdio: "ignore" });
+        } catch {
+          try {
+            execSync(`git fetch origin ${PR8_EXACT_SHA} --depth=1`, { cwd: projectRoot, stdio: "ignore" });
+          } catch {}
+        }
+      }
+
+      let resolvedSha = "";
+      try {
+        resolvedSha = execSync(`git rev-parse --verify ${PR8_EXACT_SHA}`, { cwd: projectRoot, encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }).trim();
+      } catch {
+        try {
+          resolvedSha = execSync("git rev-parse FETCH_HEAD", { cwd: projectRoot, encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }).trim();
+        } catch {}
+      }
+
+      if (resolvedSha.toLowerCase() === PR8_EXACT_SHA.toLowerCase()) {
+        pr8ExactShaVerified = true;
+      }
+
+      if (pr8ExactShaVerified) {
+        pr8Sql = execSync(
+          `git show ${PR8_EXACT_SHA}:prisma/migrations/20260915100000_add_tahfizh_quality_engine/migration.sql`,
+          { encoding: "utf-8", cwd: projectRoot }
+        );
+        if (pr8Sql.length > 1000) {
+          pr8MigrationFetched = true;
+        }
+      }
+    } catch (fetchErr: unknown) {
+      const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+      console.error("[simulateM33aMigrationChain] Error retrieving PR #8 migration:", msg);
+    }
+
+    if (!pr8ExactShaVerified || !pr8MigrationFetched || !pr8Sql) {
+      throw new Error(`FAIL-CLOSED: PR #8 migration could not be verified or fetched from exact SHA ${PR8_EXACT_SHA}`);
+    }
+
+    await executeSqlStatementsOnClient(client, pr8Sql);
+    pr8MigrationApplied = true;
+
+    // 4. Terapkan migrasi Phase 2A
+    const phase2aSqlPath = path.join(projectRoot, "prisma/migrations/20260917000000_stq_architecture_lock_phase2a/migration.sql");
+    const phase2aSql = fs.readFileSync(phase2aSqlPath, "utf-8");
+    await executeSqlStatementsOnClient(client, phase2aSql);
+    const phase2aApplied = true;
+
+    // 5. Masukkan data representatif SEBELUM M3.1 dan M3.3A
+    await client.$executeRawUnsafe(`
+      INSERT INTO "staff" ("id", "staff_code", "nama", "no_hp", "role_staff", "status", "created_at", "updated_at")
+      VALUES ('stf-pre-m33', 'STF-PRE-M33', 'Ustadz Pre M33', '08123456780', 'MK', 'AKTIF', NOW(), NOW());
+    `);
+    await client.$executeRawUnsafe(`
+      INSERT INTO "users" ("id", "username", "email", "password_hash", "role", "status", "staff_id", "created_at", "updated_at")
+      VALUES ('usr-pre-m33', 'usrprem33', 'usr-pre-m33@stq.ac.id', 'dummy_hash', 'MK', 'AKTIF', 'stf-pre-m33', NOW(), NOW());
+    `);
+    await client.$executeRawUnsafe(`
+      INSERT INTO "santri" ("id", "nis", "nama", "kelas", "jenis_kelamin", "status", "created_at", "updated_at")
+      VALUES ('san-pre-m33', 'NIS-PRE-M33', 'Santri Pre M33', '7A', 'L', 'AKTIF', NOW(), NOW());
+    `);
+    await client.$executeRawUnsafe(`
+      INSERT INTO "evaluasi_rubu_tahfizh" ("id", "santri_id", "musyrif_id", "tanggal", "juz", "rubu_ke", "nilai_tajwid", "nilai_fashahah", "nilai_kelancaran", "nilai", "created_at", "updated_at")
+      VALUES ('eval-pre-m33', 'san-pre-m33', 'stf-pre-m33', NOW(), 1, 1, 'MUMTAZ', 'MUMTAZ', 'MUMTAZ', 'MUMTAZ', NOW(), NOW());
+    `);
+    await client.$executeRawUnsafe(`
+      INSERT INTO "org_units" ("id", "code", "name", "type", "domain", "gender_complex", "is_active", "created_at", "updated_at")
+      VALUES ('ou-pre-kmr-m33', 'OU-PRE-KMR-M33', 'Kamar Umar Pre M33', 'KAMAR', 'KEASRAMAAN', 'PUTRA', true, NOW(), NOW());
+    `);
+    await client.$executeRawUnsafe(`
+      INSERT INTO "catatan_kesehatan" ("id", "santri_id", "tanggal", "keluhan", "diagnosa", "tindakan", "status", "dicatat_oleh", "created_at", "updated_at")
+      VALUES ('ck-pre-m33', 'san-pre-m33', NOW(), 'Batuk dan pilek', 'Flu biasa', 'Diberi istirahat dan obat flu', 'RAWAT_PONDOK', 'petugas.uks', NOW(), NOW());
+    `);
+
+    // 6. Terapkan migrasi M3.1
+    const m31SqlPath = path.join(projectRoot, "prisma/migrations/20260917220000_m3_1_keasramaan_structure/migration.sql");
+    const m31Sql = fs.readFileSync(m31SqlPath, "utf-8");
+    await executeSqlStatementsOnClient(client, m31Sql);
+    const m31MigrationApplied = true;
+
+    // Masukkan placement representatif M3.1
+    await client.$executeRawUnsafe(`
+      INSERT INTO "santri_kamar_placements" ("id", "santri_id", "kamar_id", "is_active", "start_date", "created_at", "updated_at")
+      VALUES ('plc-pre-m33', 'san-pre-m33', 'ou-pre-kmr-m33', true, NOW(), NOW(), NOW());
+    `);
+
+    // Snapshot data sebelum M3.3A
+    const preUser = await client.$queryRawUnsafe<Array<{ id: string; email: string; role: string; status: string }>>(
+      `SELECT "id", "email", "role"::text, "status"::text FROM "users" WHERE "id" = 'usr-pre-m33';`
+    );
+    const preStaff = await client.$queryRawUnsafe<Array<{ id: string; nama: string; status: string }>>(
+      `SELECT "id", "nama", "status"::text FROM "staff" WHERE "id" = 'stf-pre-m33';`
+    );
+    const preSantri = await client.$queryRawUnsafe<Array<{ id: string; nis: string; status: string }>>(
+      `SELECT "id", "nis", "status"::text FROM "santri" WHERE "id" = 'san-pre-m33';`
+    );
+    const preEval = await client.$queryRawUnsafe<Array<{ id: string; santri_id: string; musyrif_id: string }>>(
+      `SELECT "id", "santri_id", "musyrif_id" FROM "evaluasi_rubu_tahfizh" WHERE "id" = 'eval-pre-m33';`
+    );
+    const prePlc = await client.$queryRawUnsafe<Array<{ id: string; santri_id: string; kamar_id: string }>>(
+      `SELECT "id", "santri_id", "kamar_id" FROM "santri_kamar_placements" WHERE "id" = 'plc-pre-m33';`
+    );
+    const preCk = await client.$queryRawUnsafe<Array<{ id: string; santri_id: string; keluhan: string; status: string }>>(
+      `SELECT "id", "santri_id", "keluhan", "status"::text FROM "catatan_kesehatan" WHERE "id" = 'ck-pre-m33';`
+    );
+
+    // 7. Terapkan migrasi M3.3A
+    const m33aSqlPath = path.join(projectRoot, "prisma/migrations/20260918120000_m3_3a_health_v2_backend/migration.sql");
+    const m33aSql = fs.readFileSync(m33aSqlPath, "utf-8");
+    await executeSqlStatementsOnClient(client, m33aSql);
+    const m33aMigrationApplied = true;
+
+    // 8. Verifikasi data representatif SETELAH M3.3A
+    const postUser = await client.$queryRawUnsafe<Array<{ id: string; email: string; role: string; status: string }>>(
+      `SELECT "id", "email", "role"::text, "status"::text FROM "users" WHERE "id" = 'usr-pre-m33';`
+    );
+    const postStaff = await client.$queryRawUnsafe<Array<{ id: string; nama: string; status: string }>>(
+      `SELECT "id", "nama", "status"::text FROM "staff" WHERE "id" = 'stf-pre-m33';`
+    );
+    const postSantri = await client.$queryRawUnsafe<Array<{ id: string; nis: string; status: string }>>(
+      `SELECT "id", "nis", "status"::text FROM "santri" WHERE "id" = 'san-pre-m33';`
+    );
+    const postEval = await client.$queryRawUnsafe<Array<{ id: string; santri_id: string; musyrif_id: string }>>(
+      `SELECT "id", "santri_id", "musyrif_id" FROM "evaluasi_rubu_tahfizh" WHERE "id" = 'eval-pre-m33';`
+    );
+    const postPlc = await client.$queryRawUnsafe<Array<{ id: string; santri_id: string; kamar_id: string }>>(
+      `SELECT "id", "santri_id", "kamar_id" FROM "santri_kamar_placements" WHERE "id" = 'plc-pre-m33';`
+    );
+    const postCk = await client.$queryRawUnsafe<Array<{ id: string; santri_id: string; keluhan: string; status: string }>>(
+      `SELECT "id", "santri_id", "keluhan", "status"::text FROM "catatan_kesehatan" WHERE "id" = 'ck-pre-m33';`
+    );
+
+    const existingDataUnchanged =
+      JSON.stringify(preUser) === JSON.stringify(postUser) &&
+      JSON.stringify(preStaff) === JSON.stringify(postStaff) &&
+      JSON.stringify(preSantri) === JSON.stringify(postSantri);
+
+    const existingPr8TablesIntact = postEval.length === 1 && JSON.stringify(preEval) === JSON.stringify(postEval);
+    const existingPlacementsIntact = postPlc.length === 1 && JSON.stringify(prePlc) === JSON.stringify(postPlc);
+    const existingCatatanKesehatanIntact = postCk.length === 1 && JSON.stringify(preCk) === JSON.stringify(postCk);
+
+    // 9. Verifikasi tabel health_cases_v2 dan health_case_v2_events dibuat
+    const tablesRes: Array<{ table_name: string }> = await client.$queryRawUnsafe(`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name IN ('health_cases_v2', 'health_case_v2_events');
+    `);
+    const tableCreated = tablesRes.some((t) => t.table_name === "health_cases_v2");
+    const eventsTableCreated = tablesRes.some((t) => t.table_name === "health_case_v2_events");
+
+    // Verifikasi index status_v2, occurred_at
+    const indexRes: Array<{ indexname: string }> = await client.$queryRawUnsafe(`
+      SELECT indexname FROM pg_indexes
+      WHERE tablename = 'health_cases_v2' AND indexname = 'health_cases_v2_status_v2_occurred_at_idx';
+    `);
+    const statusOccurredIndexCreated = indexRes.length === 1;
+
+    // Verifikasi index health_case_v2_events(case_id, created_at)
+    const eventIndexRes: Array<{ indexname: string }> = await client.$queryRawUnsafe(`
+      SELECT indexname FROM pg_indexes
+      WHERE tablename = 'health_case_v2_events' AND indexname = 'health_case_v2_events_case_id_created_at_idx';
+    `);
+    const eventCreatedAtIdxCreated = eventIndexRes.length === 1;
+
+    // 10. Verifikasi enum HealthStatusV2 dibuat dengan 4 nilai tepat
+    const enumRes: Array<{ enumlabel: string }> = await client.$queryRawUnsafe(`
+      SELECT e.enumlabel
+      FROM pg_enum e
+      JOIN pg_type t ON e.enumtypid = t.oid
+      WHERE t.typname = 'HealthStatusV2'
+      ORDER BY e.enumsortorder;
+    `);
+    const enumCreated = enumRes.length > 0;
+    const enumLabels = enumRes.map((r) => r.enumlabel);
+    const expectedLabels = ["DIPANTAU", "PULIH", "DIRUJUK", "DARURAT"];
+    const enumExactValuesVerified =
+      enumLabels.length === 4 &&
+      expectedLabels.every((lbl) => enumLabels.includes(lbl));
+
+    // 11. Uji insert baris HealthCaseV2 dengan diagnosa NULL (data honesty) & FK attribution
+    await client.$executeRawUnsafe(`
+      INSERT INTO "health_cases_v2" (
+        "id", "santri_id", "occurred_at", "keluhan", "tindakan_awal", "diagnosa", "status_v2", "recorded_by_user_id", "created_at", "updated_at"
+      ) VALUES (
+        'hc-01', 'san-pre-m33', NOW(), 'Pusing kepala', 'Istirahat di UKS', NULL, 'DIPANTAU'::"HealthStatusV2", 'usr-pre-m33', NOW(), NOW()
+      );
+    `);
+
+    // Uji insert baris HealthCaseV2Event terpisah (Blocker D & E)
+    await client.$executeRawUnsafe(`
+      INSERT INTO "health_case_v2_events" (
+        "id", "case_id", "previous_status", "new_status", "tindakan_lanjutan", "recorded_by_user_id", "created_at"
+      ) VALUES (
+        'hce-01', 'hc-01', 'DIPANTAU'::"HealthStatusV2", 'PULIH'::"HealthStatusV2", 'Diberikan vitamin dan dinyatakan pulih', 'usr-pre-m33', NOW()
+      );
+    `);
+
+    const insertedEvent = await client.$queryRawUnsafe<Array<{ id: string; case_id: string; new_status: string }>>(
+      `SELECT "id", "case_id", "new_status"::text FROM "health_case_v2_events" WHERE "id" = 'hce-01';`
+    );
+    const eventInsertedSuccessfully = insertedEvent.length === 1 && insertedEvent[0].case_id === "hc-01";
+
+    const insertedCase = await client.$queryRawUnsafe<Array<{ id: string; diagnosa: string | null; status_v2: string; recorded_by_user_id: string }>>(
+      `SELECT "id", "diagnosa", "status_v2"::text, "recorded_by_user_id" FROM "health_cases_v2" WHERE "id" = 'hc-01';`
+    );
+
+    const nullableDiagnosaPersistsNull = insertedCase.length === 1 && insertedCase[0].diagnosa === null;
+    const auditAttributionFieldsPresent = insertedCase.length === 1 && insertedCase[0].recorded_by_user_id === "usr-pre-m33";
+
+    // 12. Uji enum rejection: status tidak valid harus ditolak oleh Postgres
+    let invalidEnumRejected = false;
+    try {
+      await client.$executeRawUnsafe(`
+        INSERT INTO "health_cases_v2" (
+          "id", "santri_id", "occurred_at", "keluhan", "tindakan_awal", "status_v2", "recorded_by_user_id", "created_at", "updated_at"
+        ) VALUES (
+          'hc-02', 'san-pre-m33', NOW(), 'Keluhan', 'Tindakan', 'INVALID_STATUS'::"HealthStatusV2", 'usr-pre-m33', NOW(), NOW()
+        );
+      `);
+    } catch {
+      invalidEnumRejected = true;
+    }
+
+    // 13. Real isolated PostgreSQL transaction test for mandatory audit atomicity
+    // Case A: HealthCaseV2 create fails when audit in transaction fails -> rollback
+    let createAuditRollbackVerified = false;
+    try {
+      await client.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`
+          INSERT INTO "health_cases_v2" (
+            "id", "santri_id", "occurred_at", "keluhan", "tindakan_awal", "status_v2", "recorded_by_user_id", "created_at", "updated_at"
+          ) VALUES (
+            'hc-atomic-rollback', 'san-pre-m33', NOW(), 'Batuk', 'Sirup obat', 'DIPANTAU'::"HealthStatusV2", 'usr-pre-m33', NOW(), NOW()
+          );
+        `);
+        // Audit persistence failure simulated inside transaction
+        throw new Error("AUDIT_PERSISTENCE_FAILED: Database transaction forced rollback on audit failure");
+      });
+    } catch {
+      // Check that the business insert did NOT persist
+      const checkRow = await client.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT "id" FROM "health_cases_v2" WHERE "id" = 'hc-atomic-rollback';`
+      );
+      createAuditRollbackVerified = checkRow.length === 0;
+    }
+
+    // Case B: HealthCaseV2 update + event fails when audit in transaction fails -> rollback
+    let updateAuditRollbackVerified = false;
+    try {
+      await client.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`
+          UPDATE "health_cases_v2"
+          SET "status_v2" = 'DARURAT'::"HealthStatusV2", "updated_at" = NOW()
+          WHERE "id" = 'hc-01';
+        `);
+        await tx.$executeRawUnsafe(`
+          INSERT INTO "health_case_v2_events" (
+            "id", "case_id", "previous_status", "new_status", "tindakan_lanjutan", "recorded_by_user_id", "created_at"
+          ) VALUES (
+            'hce-atomic-rollback', 'hc-01', 'DIPANTAU'::"HealthStatusV2", 'DARURAT'::"HealthStatusV2", 'Pemeriksaan darurat', 'usr-pre-m33', NOW()
+          );
+        `);
+        // Force audit failure inside transaction
+        throw new Error("AUDIT_PERSISTENCE_FAILED: Database transaction forced rollback on audit failure");
+      });
+    } catch {
+      // Check that status was NOT updated and event was NOT created
+      const checkCase = await client.$queryRawUnsafe<Array<{ status_v2: string }>>(
+        `SELECT "status_v2"::text FROM "health_cases_v2" WHERE "id" = 'hc-01';`
+      );
+      const checkEvent = await client.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT "id" FROM "health_case_v2_events" WHERE "id" = 'hce-atomic-rollback';`
+      );
+      updateAuditRollbackVerified =
+        checkCase[0]?.status_v2 === "DIPANTAU" && checkEvent.length === 0;
+    }
+
+    // Case C: Atomic success when both business mutation and audit commit successfully
+    let createAuditCommitAtomicVerified = false;
+    try {
+      await client.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`
+          INSERT INTO "health_cases_v2" (
+            "id", "santri_id", "occurred_at", "keluhan", "tindakan_awal", "status_v2", "recorded_by_user_id", "created_at", "updated_at"
+          ) VALUES (
+            'hc-atomic-success', 'san-pre-m33', NOW(), 'Flu', 'Vitamin', 'DIPANTAU'::"HealthStatusV2", 'usr-pre-m33', NOW(), NOW()
+          );
+        `);
+        await tx.$executeRawUnsafe(`
+          INSERT INTO "canonical_audit_logs" (
+            "id", "technical_account_id", "technical_account_username", "action", "entity", "entity_id",
+            "capability_code", "position_code", "scope_type", "unit_id", "created_at"
+          ) VALUES (
+            'aud-atomic-success', 'usr-pre-m33', 'pre.user', 'health.case.create', 'HealthCaseV2', 'hc-atomic-success',
+            'health.case.create', 'PETUGAS_KESEHATAN', 'GLOBAL', 'ou-poskestren', NOW()
+          );
+        `);
+      });
+
+      const checkCase = await client.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT "id" FROM "health_cases_v2" WHERE "id" = 'hc-atomic-success';`
+      );
+      const checkAudit = await client.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT "id" FROM "canonical_audit_logs" WHERE "id" = 'aud-atomic-success';`
+      );
+      createAuditCommitAtomicVerified = checkCase.length === 1 && checkAudit.length === 1;
+    } catch {}
+
+    // Step 14: Real Concurrent Status Transition Test with Health V2 Service on Isolated PostgreSQL
+    let concurrentCasConflictVerified = false;
+    let singleEventChainVerified = false;
+    let singleAuditChainVerified = false;
+
+    try {
+      await client.$executeRawUnsafe(`
+        INSERT INTO "health_cases_v2" (
+          "id", "santri_id", "occurred_at", "keluhan", "tindakan_awal", "status_v2", "recorded_by_user_id", "created_at", "updated_at"
+        ) VALUES (
+          'hc-concurrent-test', 'san-pre-m33', NOW(), 'Sakit Kepala', 'Istirahat', 'DIPANTAU'::"HealthStatusV2", 'usr-pre-m33', NOW(), NOW()
+        );
+      `);
+
+      const testDataProvider: ICanonicalDataProvider = {
+        async getIdentity(id: string) {
+          return {
+            userId: id,
+            username: "pre.user",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            staffId: "stf-pre-m33",
+          };
+        },
+        async getActiveAssignments() {
+          return [
+            {
+              id: "asg-health-real",
+              userId: "usr-pre-m33",
+              positionId: "pos-health-real",
+              positionCode: "PETUGAS_KESEHATAN",
+              positionName: "Petugas Poskestren",
+              domain: "KEASRAMAAN",
+              unitId: "ou-poskestren",
+              unitCode: "OU-POSKESTREN",
+              unitName: "Poskestren",
+              status: "ACTIVE",
+              validFrom: new Date(Date.now() - 86400000),
+              validUntil: null,
+              positionCapabilities: [
+                {
+                  capabilityCode: "health.case.update_status",
+                  scopeType: "GLOBAL",
+                  businessRuleState: "VERIFIED_PRODUCTION",
+                },
+              ],
+              scopeUnits: [],
+            },
+          ];
+        },
+        async getUnitAccountPlacement() { return null; },
+        async verifyHumanExecutor(id: string) {
+          return { userId: id, id, name: "Petugas", isActive: true };
+        },
+        async resolveResourceContext() {
+          return { santriId: "san-pre-m33", orgUnitIds: [] };
+        },
+      };
+
+      const { createHealthV2Service } = await import("../lib/server/health-v2-service");
+      const realService = createHealthV2Service({
+        db: client,
+        dataProvider: testDataProvider,
+      });
+
+      // Orchestrate an actual overlapping concurrent transition:
+      // Tx A reads DIPANTAU, then pauses until Tx B reads DIPANTAU, updates to PULIH, and commits.
+      // Then Tx A attempts to update DIPANTAU -> DIRUJUK using optimistic compare-and-swap.
+      // Under PostgreSQL, Tx A's updateMany matches 0 rows and throws HEALTH_CASE_CONCURRENT_MODIFICATION.
+      let txAReadDipantau = false;
+      let txBCommittedPulih = false;
+      let resolveTxARead: () => void = () => {};
+      const txAReadPromise = new Promise<void>((r) => { resolveTxARead = r; });
+
+      const dbForTxA = new Proxy(client, {
+        get(target, prop) {
+          if (prop === "$transaction") {
+            return async (fn: (tx: any) => Promise<any>) => {
+              return (target as any).$transaction(async (tx: any) => {
+                const proxyTx = new Proxy(tx, {
+                  get(txTarget, txProp) {
+                    if (txProp === "healthCaseV2") {
+                      return new Proxy(txTarget.healthCaseV2, {
+                        get(caseTarget, caseProp) {
+                          if (caseProp === "findUnique") {
+                            return async (args: any) => {
+                              const res = await caseTarget.findUnique(args);
+                              if (args?.where?.id === "hc-concurrent-test" && !txAReadDipantau) {
+                                txAReadDipantau = true;
+                                resolveTxARead();
+                                const start = Date.now();
+                                while (!txBCommittedPulih && Date.now() - start < 4000) {
+                                  await new Promise((r) => setTimeout(r, 20));
+                                }
+                              }
+                              return res;
+                            };
+                          }
+                          return (caseTarget as any)[caseProp];
+                        },
+                      });
+                    }
+                    return (txTarget as any)[txProp];
+                  },
+                });
+                return fn(proxyTx);
+              });
+            };
+          }
+          return (target as any)[prop];
+        },
+      });
+
+      const serviceA = createHealthV2Service({
+        db: dbForTxA as unknown as PrismaClient,
+        dataProvider: testDataProvider,
+      });
+
+      // Start Tx A (reads DIPANTAU, pauses)
+      const promiseA = serviceA.updateCaseStatus(
+        {
+          id: "hc-concurrent-test",
+          newStatus: "DIRUJUK",
+          tindakanLanjutan: "Rujuk ke RS",
+        },
+        { actorUserId: "usr-pre-m33" }
+      );
+
+      // Wait until Tx A has confirmed reading DIPANTAU inside its transaction
+      await txAReadPromise;
+
+      // Tx B executes against PostgreSQL, updates DIPANTAU -> PULIH, and commits
+      const resultB = await realService.updateCaseStatus(
+        {
+          id: "hc-concurrent-test",
+          newStatus: "PULIH",
+          tindakanLanjutan: "Sudah sembuh dan stabil",
+        },
+        { actorUserId: "usr-pre-m33" }
+      );
+      txBCommittedPulih = true;
+
+      // Tx A resumes updateMany expecting DIPANTAU, but row is now PULIH in PostgreSQL
+      let txAError: any = null;
+      try {
+        await promiseA;
+      } catch (err) {
+        txAError = err;
+      }
+
+      const isConcurrentModificationError =
+        txAError instanceof Error &&
+        txAError.message.includes("HEALTH_CASE_CONCURRENT_MODIFICATION");
+
+      const eventsInPg = await client.$queryRawUnsafe<
+        Array<{ id: string; previous_status: string; new_status: string }>
+      >(
+        `SELECT "id", "previous_status"::text, "new_status"::text FROM "health_case_v2_events" WHERE "case_id" = 'hc-concurrent-test';`
+      );
+
+      const auditsInPg = await client.$queryRawUnsafe<
+        Array<{ id: string; action: string; before_state: any; after_state: any }>
+      >(
+        `SELECT "id", "action", "before_state", "after_state" FROM "canonical_audit_logs" WHERE "entity_id" = 'hc-concurrent-test' AND "action" = 'health.case.update_status';`
+      );
+
+      const finalCaseInPg = await client.$queryRawUnsafe<
+        Array<{ status_v2: string }>
+      >(
+        `SELECT "status_v2"::text FROM "health_cases_v2" WHERE "id" = 'hc-concurrent-test';`
+      );
+
+      concurrentCasConflictVerified =
+        isConcurrentModificationError &&
+        resultB.success === true &&
+        finalCaseInPg[0]?.status_v2 === "PULIH";
+
+      singleEventChainVerified =
+        eventsInPg.length === 1 &&
+        eventsInPg[0].previous_status === "DIPANTAU" &&
+        eventsInPg[0].new_status === "PULIH";
+
+      singleAuditChainVerified =
+        auditsInPg.length === 1 &&
+        (auditsInPg[0].before_state as any)?.statusV2 === "DIPANTAU" &&
+        (auditsInPg[0].after_state as any)?.statusV2 === "PULIH";
+    } catch (err) {
+      console.error("Step 14 concurrent test error:", err);
+    }
+
+    const simulationSuccess =
+      pr8ExactShaVerified &&
+      pr8MigrationApplied &&
+      phase2aApplied &&
+      m31MigrationApplied &&
+      m33aMigrationApplied &&
+      existingDataUnchanged &&
+      existingPr8TablesIntact &&
+      existingPlacementsIntact &&
+      existingCatatanKesehatanIntact &&
+      tableCreated &&
+      eventsTableCreated &&
+      statusOccurredIndexCreated &&
+      eventCreatedAtIdxCreated &&
+      enumCreated &&
+      enumExactValuesVerified &&
+      invalidEnumRejected &&
+      nullableDiagnosaPersistsNull &&
+      auditAttributionFieldsPresent &&
+      eventInsertedSuccessfully &&
+      createAuditRollbackVerified &&
+      updateAuditRollbackVerified &&
+      createAuditCommitAtomicVerified &&
+      concurrentCasConflictVerified &&
+      singleEventChainVerified &&
+      singleAuditChainVerified;
+
+    return {
+      pr8ExactShaVerified,
+      pr8MigrationApplied,
+      phase2aApplied,
+      m31MigrationApplied,
+      m33aMigrationApplied,
+      existingDataUnchanged,
+      existingPr8TablesIntact,
+      existingPlacementsIntact,
+      existingCatatanKesehatanIntact,
+      tableCreated,
+      eventsTableCreated,
+      statusOccurredIndexCreated,
+      eventCreatedAtIdxCreated,
+      enumCreated,
+      enumExactValuesVerified,
+      invalidEnumRejected,
+      nullableDiagnosaPersistsNull,
+      auditAttributionFieldsPresent,
+      eventInsertedSuccessfully,
+      createAuditRollbackVerified,
+      updateAuditRollbackVerified,
+      createAuditCommitAtomicVerified,
+      concurrentCasConflictVerified,
+      singleEventChainVerified,
+      singleAuditChainVerified,
+      simulationSuccess,
+    };
+  } finally {
+    if (client) {
+      try { await client.$disconnect(); } catch {}
+    }
+    const pgCtl = getPgCtlPath();
+    if (pgCtl && fs.existsSync(tempDir)) {
+      try {
+        spawnSync(pgCtl, ["stop", "-D", tempDir, "-m", "fast", "-w", "-t", "5"], {
+          encoding: "utf-8",
+          timeout: 6000,
+          stdio: "ignore",
+        });
+      } catch {}
+    }
+
+    try { await pgInstance.stop(); } catch {}
+
+    const pidsToKill = new Set<number>();
+    if (mainPid) pidsToKill.add(mainPid);
+    for (const p of descendantPids) pidsToKill.add(p);
+
+    for (const p of pidsToKill) {
+      if (verifyPostgresProcessOwnership(p, tempDir, mainPid)) {
+        try {
+          if (process.platform === "win32") {
+            spawnSync("taskkill", ["/PID", p.toString(), "/T", "/F"], { stdio: "ignore" });
+          } else {
+            process.kill(p, "SIGKILL");
+          }
+        } catch {}
+      }
+    }
+
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
 
 

@@ -2259,7 +2259,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 2: COMPATIBILITY & CANONICAL AUTHO
         async getUnitAccountPlacement() { return { unitId: "unit-kios-1" }; },
         async verifyHumanExecutor(execId) {
           if (execId === "stf-active") {
-            return { id: execId, name: "Ust. Ahmad", isActive: true };
+            return { userId: `usr-${execId}`, id: execId, name: "Ust. Ahmad", isActive: true };
           }
           return null;
         },
@@ -2345,7 +2345,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 2: COMPATIBILITY & CANONICAL AUTHO
         },
         async getActiveAssignments() { return [unitAsg]; },
         async getUnitAccountPlacement() { return { unitId: "unit-kios-1" }; },
-        async verifyHumanExecutor() { return { id: "stf-1", name: "Ust. Ahmad", isActive: true }; },
+        async verifyHumanExecutor() { return { userId: "usr-stf-1", id: "stf-1", name: "Ust. Ahmad", isActive: true }; },
         async resolveResourceContext() { return { orgUnitIds: ["unit-kios-1"] }; },
       };
 
@@ -2633,10 +2633,10 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 2: COMPATIBILITY & CANONICAL AUTHO
         async verifyHumanExecutor(execId) {
           if (execId === "usr-kiosk-exec") {
             // UNIT account trying to act as executor is rejected
-            return { id: execId, name: "kiosk", isActive: false };
+            return { userId: execId, id: execId, name: "kiosk", isActive: false };
           }
           if (execId === "stf-valid") {
-            return { id: execId, name: "Ust. Valid", isActive: true };
+            return { userId: execId, id: execId, name: "Ust. Valid", isActive: true };
           }
           return null;
         },
@@ -2771,17 +2771,17 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 2: COMPATIBILITY & CANONICAL AUTHO
         async verifyHumanExecutor(execId) {
           switch (execId) {
             case "exec-unit": // 1. UNIT executor -> DENY
-              return { id: execId, name: "unit.tech", isActive: false };
+              return { userId: execId, id: execId, name: "unit.tech", isActive: false };
             case "exec-personal-no-profile": // 2. PERSONAL User without Staff/Santri -> DENY
-              return { id: execId, name: "personal.orphan", isActive: false };
+              return { userId: execId, id: execId, name: "personal.orphan", isActive: false };
             case "exec-inactive-staff": // 3. inactive Staff -> DENY
-              return { id: execId, name: "staff.inactive", isActive: false };
+              return { userId: execId, id: execId, name: "staff.inactive", isActive: false };
             case "exec-inactive-santri": // 4. inactive Santri -> DENY
-              return { id: execId, name: "santri.inactive", isActive: false };
+              return { userId: execId, id: execId, name: "santri.inactive", isActive: false };
             case "exec-active-staff": // 5. active Staff -> eligible
-              return { id: execId, name: "staff.active", isActive: true };
+              return { userId: execId, id: execId, name: "staff.active", isActive: true };
             case "exec-active-santri": // 6. active Santri -> eligible
-              return { id: execId, name: "santri.active", isActive: true };
+              return { userId: execId, id: execId, name: "santri.active", isActive: true };
             default:
               return null;
           }

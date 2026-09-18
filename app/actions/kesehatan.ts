@@ -49,11 +49,13 @@ export async function catatKesehatanAction(formData: {
       return { success: false, message: 'Data santri tidak ditemukan.' };
     }
 
+    const sanitizedDiagnosa = formData.diagnosa?.trim() || null;
+
     const catatan = await prisma.catatanKesehatan.create({
       data: {
         santriId: formData.santriId,
         keluhan: formData.keluhan,
-        diagnosa: formData.diagnosa || 'Pemeriksaan awal asrama',
+        diagnosa: sanitizedDiagnosa,
         tindakan: formData.tindakan,
         status: formData.status || StatusKesehatan.RAWAT_PONDOK,
         dicatatOleh: session.username,
