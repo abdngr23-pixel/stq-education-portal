@@ -36,7 +36,12 @@ import {
   resolveStudiUmumSchedule,
   CANONICAL_KEPESANTRENAN_SUBJECT_DEFINITIONS,
   KEPESANTRENAN_SCHEDULED_FACTS,
+  isStudiUmumSubject,
+  STUDI_UMUM_MAPEL_OPTIONS,
+  MAPEL_OPTIONS,
 } from "@/lib/pendidikan-v2";
+
+export { STUDI_UMUM_MAPEL_OPTIONS, MAPEL_OPTIONS };
 
 export interface NilaiItem {
   id?: string;
@@ -58,22 +63,6 @@ export interface AkademikModuleProps {
   currentUserName: string;
   santriList: DashboardSantriSummary[];
 }
-
-export const MAPEL_OPTIONS = [
-  // 6 Mata Pelajaran Resmi Studi Umum
-  { id: "MP-SU-01", nama: "Matematika", kategori: "Studi Umum", guru: "Belum ditetapkan" },
-  { id: "MP-SU-02", nama: "Bahasa Inggris", kategori: "Studi Umum", guru: "Belum ditetapkan" },
-  { id: "MP-SU-03", nama: "IPS", kategori: "Studi Umum (PBL)", guru: "Belum ditetapkan" },
-  { id: "MP-SU-04", nama: "IPA", kategori: "Studi Umum (PBL)", guru: "Belum ditetapkan" },
-  { id: "MP-SU-05", nama: "Bahasa Indonesia", kategori: "Studi Umum (PBL)", guru: "Belum ditetapkan" },
-  { id: "MP-SU-06", nama: "TIK", kategori: "Studi Umum (PBL)", guru: "Belum ditetapkan" },
-  // 5 Mata Pelajaran Resmi Kepesantrenan
-  { id: "MP-KP-01", nama: "Bahasa Arab", kategori: "Kepesantrenan", guru: "Berdasarkan Tingkat & Gender" },
-  { id: "MP-KP-02", nama: "Fikih", kategori: "Kepesantrenan", guru: "Ust. Razan (Putra) / Ustazah Lisa (Putri)" },
-  { id: "MP-KP-03", nama: "Tafsir", kategori: "Kepesantrenan", guru: "Ust. Mujaddid (Putra) / Ustazah Lisa (Putri)" },
-  { id: "MP-KP-04", nama: "Aqidah", kategori: "Kepesantrenan", guru: "Ust. Alwan (Putra) / Ustazah Lisa (Putri)" },
-  { id: "MP-KP-05", nama: "Tajwid", kategori: "Kepesantrenan", guru: "Ust. Mujaddid (Putra) / Ustazah Lisa (Putri)" },
-];
 
 export const KEPESANTRENAN_INFO = [
   {
@@ -141,7 +130,7 @@ export function AkademikModule({
   const [selectedKelas, setSelectedKelas] = useState<string>("ALL");
   const [selectedTahunAjaran, setSelectedTahunAjaran] = useState<string>("2026/2027");
   const [selectedSemester, setSelectedSemester] = useState<number>(1);
-  const [selectedMapelId, setSelectedMapelId] = useState<string>("MP-KP-01");
+  const [selectedMapelId, setSelectedMapelId] = useState<string>("MP-SU-01");
   const [selectedJenisNilai, setSelectedJenisNilai] = useState<JenisNilai>("TUGAS");
 
   // Filter Santri yang Aktif Dinilai - Mulai kosong, tidak default ke angka 90 atau santri sembarang
@@ -217,7 +206,8 @@ export function AkademikModule({
 
   // Santri Terpilih (tanpa fallback berbahaya ke santriList[0] jika tidak sesuai)
   const currentSantri = santriList.find((s) => s.nis === selectedSantriNis);
-  const currentMapel = MAPEL_OPTIONS.find((m) => m.id === selectedMapelId) || MAPEL_OPTIONS[0];
+  const currentMapel =
+    STUDI_UMUM_MAPEL_OPTIONS.find((m) => m.id === selectedMapelId) || STUDI_UMUM_MAPEL_OPTIONS[0];
 
   // Nilai untuk santri terpilih pada rapor
   const santriNilaiForRapor = currentSantri
@@ -236,6 +226,15 @@ export function AkademikModule({
     }
     if (!currentSantri) {
       setFeedback({ type: "error", message: "Silakan pilih santri terlebih dahulu dari kelas yang sesuai." });
+      return;
+    }
+
+    // Defense-in-depth: Ensure mapel is strictly a Studi Umum subject
+    if (!currentMapel || !isStudiUmumSubject(currentMapel.nama) || !isStudiUmumSubject(selectedMapelId)) {
+      setFeedback({
+        type: "error",
+        message: "KEPESANTRENAN_ASSESSMENT_DEFERRED: Penilaian untuk mata pelajaran Kepesantrenan belum diaktifkan. Format penilaian resmi masih ditangguhkan.",
+      });
       return;
     }
 
@@ -630,7 +629,7 @@ export function AkademikModule({
                     onChange={(e) => setSelectedMapelId(e.target.value)}
                     className="w-full min-h-[42px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-semibold"
                   >
-                    {MAPEL_OPTIONS.map((m) => (
+                    {STUDI_UMUM_MAPEL_OPTIONS.map((m) => (
                       <option key={m.id} value={m.id}>
                         {m.nama}
                       </option>

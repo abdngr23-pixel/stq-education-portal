@@ -41,6 +41,24 @@ export type StudiUmumSubject = (typeof CANONICAL_STUDI_UMUM_SUBJECTS)[number];
 export type StudiUmumCoreSubject = (typeof STUDI_UMUM_CORE_SUBJECTS)[number];
 export type StudiUmumPblSubject = (typeof STUDI_UMUM_PBL_SUBJECTS)[number];
 
+export interface StudiUmumMapelOption {
+  readonly id: string;
+  readonly nama: StudiUmumSubject;
+  readonly kategori: string;
+  readonly guru: string;
+}
+
+export const STUDI_UMUM_MAPEL_OPTIONS: readonly StudiUmumMapelOption[] = [
+  { id: "MP-SU-01", nama: "Matematika", kategori: "Studi Umum", guru: "Belum ditetapkan" },
+  { id: "MP-SU-02", nama: "Bahasa Inggris", kategori: "Studi Umum", guru: "Belum ditetapkan" },
+  { id: "MP-SU-03", nama: "IPS", kategori: "Studi Umum (PBL)", guru: "Belum ditetapkan" },
+  { id: "MP-SU-04", nama: "IPA", kategori: "Studi Umum (PBL)", guru: "Belum ditetapkan" },
+  { id: "MP-SU-05", nama: "Bahasa Indonesia", kategori: "Studi Umum (PBL)", guru: "Belum ditetapkan" },
+  { id: "MP-SU-06", nama: "TIK", kategori: "Studi Umum (PBL)", guru: "Belum ditetapkan" },
+] as const;
+
+export const MAPEL_OPTIONS = STUDI_UMUM_MAPEL_OPTIONS;
+
 /**
  * Kepesantrenan exact 5 subjects:
  * 1. Bahasa Arab (KPS-ARB)
@@ -105,15 +123,23 @@ export const CANONICAL_KEPESANTRENAN_SUBJECT_DEFINITIONS: readonly Kepesantrenan
   },
 ] as const;
 
-export function isStudiUmumSubject(name: string): boolean {
-  return (CANONICAL_STUDI_UMUM_SUBJECTS as readonly string[]).includes(name);
+export function isStudiUmumSubject(nameOrId: string): boolean {
+  if (!nameOrId || typeof nameOrId !== "string") return false;
+  const trimmed = nameOrId.trim();
+  return (
+    (CANONICAL_STUDI_UMUM_SUBJECTS as readonly string[]).includes(trimmed) ||
+    /^MP-SU-0[1-6]$/.test(trimmed)
+  );
 }
 
 export function isKepesantrenanSubject(nameOrCode: string): boolean {
+  if (!nameOrCode || typeof nameOrCode !== "string") return false;
+  const trimmed = nameOrCode.trim();
   return (
-    (CANONICAL_KEPESANTRENAN_SUBJECTS as readonly string[]).includes(nameOrCode) ||
+    (CANONICAL_KEPESANTRENAN_SUBJECTS as readonly string[]).includes(trimmed) ||
+    /^MP-KP-0[1-5]$/.test(trimmed) ||
     CANONICAL_KEPESANTRENAN_SUBJECT_DEFINITIONS.some(
-      (k) => k.name.toLowerCase() === nameOrCode.toLowerCase() || k.code === nameOrCode
+      (k) => k.name.toLowerCase() === trimmed.toLowerCase() || k.code === trimmed
     )
   );
 }

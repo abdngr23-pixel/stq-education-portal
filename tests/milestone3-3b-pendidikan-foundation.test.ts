@@ -23,6 +23,10 @@ import {
   resolveStudiUmumSchedule,
   isApprovedKepesantrenanAttendanceStatus,
   isWitaSaturday,
+  isStudiUmumSubject,
+  isKepesantrenanSubject,
+  STUDI_UMUM_MAPEL_OPTIONS,
+  MAPEL_OPTIONS,
 } from "../lib/pendidikan-v2";
 
 import {
@@ -1748,6 +1752,92 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
       assert.deepStrictEqual(mockAudit.records[1].afterState, {
         records: [{ santriId: "san-01", status: "SAKIT" }],
       });
+    });
+  });
+
+  // ====================================================
+  // SECTION R: MERGE-BLOCKER SURGICAL FIX: CLOSE KEPESANTRENAN ASSESSMENT BYPASS
+  // ====================================================
+  describe("R. Merge-Blocker Surgical Fix: Close Kepesantrenan Assessment Bypass", () => {
+    it("R1. Active generic grading subject list contains exactly the 6 Studi Umum subjects", () => {
+      // 1. Array length is exactly 6
+      assert.strictEqual(STUDI_UMUM_MAPEL_OPTIONS.length, 6);
+      assert.strictEqual(MAPEL_OPTIONS.length, 6);
+
+      // 2. Exact subject names match canonical Studi Umum
+      const names = STUDI_UMUM_MAPEL_OPTIONS.map((m) => m.nama);
+      assert.deepStrictEqual(names, [
+        "Matematika",
+        "Bahasa Inggris",
+        "IPS",
+        "IPA",
+        "Bahasa Indonesia",
+        "TIK",
+      ]);
+
+      for (const opt of STUDI_UMUM_MAPEL_OPTIONS) {
+        assert.strictEqual(isStudiUmumSubject(opt.nama), true);
+        assert.strictEqual(isStudiUmumSubject(opt.id), true);
+        assert.strictEqual(opt.kategori.startsWith("Studi Umum"), true);
+      }
+    });
+
+    it("R2. Active generic grading selector contains zero Kepesantrenan subjects", () => {
+      const kepesantrenanNames = ["Bahasa Arab", "Fikih", "Tafsir", "Aqidah", "Tajwid"];
+      const kepesantrenanIds = ["MP-KP-01", "MP-KP-02", "MP-KP-03", "MP-KP-04", "MP-KP-05"];
+
+      for (const kps of kepesantrenanNames) {
+        assert.strictEqual(STUDI_UMUM_MAPEL_OPTIONS.some((m) => m.nama === kps), false);
+        assert.strictEqual(MAPEL_OPTIONS.some((m) => m.nama === kps), false);
+      }
+
+      for (const kId of kepesantrenanIds) {
+        assert.strictEqual(STUDI_UMUM_MAPEL_OPTIONS.some((m) => m.id === kId), false);
+        assert.strictEqual(MAPEL_OPTIONS.some((m) => m.id === kId), false);
+      }
+
+      // UI code verification: <select> dropdown maps over STUDI_UMUM_MAPEL_OPTIONS
+      assert.ok(uiModuleContent.includes("{STUDI_UMUM_MAPEL_OPTIONS.map((m) => ("));
+      assert.strictEqual(uiModuleContent.includes('id: "MP-KP-01", nama: "Bahasa Arab"'), false);
+    });
+
+    it("R3. Default selectedMapelId is a valid Studi Umum subject (MP-SU-01)", () => {
+      // Must NOT default to MP-KP-01
+      assert.strictEqual(uiModuleContent.includes('useState<string>("MP-KP-01")'), false);
+      // Must default to MP-SU-01
+      assert.ok(uiModuleContent.includes('useState<string>("MP-SU-01")'));
+      assert.strictEqual(isStudiUmumSubject("MP-SU-01"), true);
+      assert.strictEqual(isKepesantrenanSubject("MP-SU-01"), false);
+    });
+
+    it("R4. Manipulated Kepesantrenan selected mapel fails closed before inputNilaiAction invocation", () => {
+      // Guard function verification
+      assert.strictEqual(isStudiUmumSubject("MP-KP-01"), false);
+      assert.strictEqual(isStudiUmumSubject("KPS-ARB"), false);
+      assert.strictEqual(isStudiUmumSubject("Bahasa Arab"), false);
+      assert.strictEqual(isStudiUmumSubject("Fikih"), false);
+      assert.strictEqual(isStudiUmumSubject("Tafsir"), false);
+      assert.strictEqual(isStudiUmumSubject("Aqidah"), false);
+      assert.strictEqual(isStudiUmumSubject("Tajwid"), false);
+
+      // Defense-in-depth check exists in handleSaveNilai
+      assert.ok(uiModuleContent.includes("isStudiUmumSubject(currentMapel.nama)"));
+      assert.ok(uiModuleContent.includes("isStudiUmumSubject(selectedMapelId)"));
+      assert.ok(uiModuleContent.includes("KEPESANTRENAN_ASSESSMENT_DEFERRED"));
+    });
+
+    it("R5. Dedicated Kepesantrenan assessment remains disabled with honest notice", () => {
+      assert.ok(uiModuleContent.includes("PENILAIAN KEPESANTRENAN"));
+      assert.ok(uiModuleContent.includes("Belum diaktifkan — format penilaian belum ditetapkan."));
+      assert.strictEqual(uiModuleContent.includes("Simpan Nilai Kepesantrenan"), false);
+      assert.strictEqual(uiModuleContent.includes("handleSaveKepesantrenan"), false);
+      assert.strictEqual(uiModuleContent.includes("inputNilaiKepesantrenanAction"), false);
+    });
+
+    it("R6. Historical Kepesantrenan score records remain readable", () => {
+      assert.ok(uiModuleContent.includes("getNilaiKepesantrenanSantriAction"));
+      assert.ok(uiModuleContent.includes("kpsNilaiList"));
+      assert.ok(uiModuleContent.includes("Rekapitulasi Nilai Kepesantrenan Terverifikasi"));
     });
   });
 });
