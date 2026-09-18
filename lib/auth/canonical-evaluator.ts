@@ -58,7 +58,7 @@ export interface CanonicalAuthorizationDecision {
  * Normalized Canonical Executor Identity resolved server-side
  */
 export interface CanonicalExecutorIdentity {
-  userId?: string;
+  userId: string;
   name: string;
   staffId?: string | null;
   santriId?: string | null;
@@ -336,10 +336,21 @@ export async function authorizeCanonical(
               reason: "Human executor profile is not active or could not be verified.",
             };
           }
+          if (!executor.userId || executor.userId.trim() === "") {
+            return {
+              decision: "DENY",
+              code: "SYSTEM_FAIL_CLOSED",
+              reasonCode: "UNIT_EXECUTOR_INVALID",
+              reason: "Human executor does not resolve to a canonical User.id.",
+            };
+          }
           verifiedExecutor = {
-            ...executor,
-            userId: executor.userId || executor.id,
-            id: executor.id || executor.userId,
+            userId: executor.userId,
+            id: executor.userId,
+            name: executor.name,
+            staffId: executor.staffId || null,
+            santriId: executor.santriId || null,
+            isActive: executor.isActive,
           };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -736,8 +747,8 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
         const linkedUser = staff.user;
         if (!linkedUser || linkedUser.accountType !== "PERSONAL" || linkedUser.status !== "AKTIF") {
           return {
-            userId: linkedUser?.id || staff.id,
-            id: linkedUser?.id || staff.id,
+            userId: linkedUser?.id || "",
+            id: linkedUser?.id || "",
             name: staff.nama,
             staffId: staff.id,
             santriId: null,
@@ -764,8 +775,8 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
         const linkedUser = santri.user;
         if (!linkedUser || linkedUser.accountType !== "PERSONAL" || linkedUser.status !== "AKTIF") {
           return {
-            userId: linkedUser?.id || santri.id,
-            id: linkedUser?.id || santri.id,
+            userId: linkedUser?.id || "",
+            id: linkedUser?.id || "",
             name: santri.nama,
             staffId: null,
             santriId: santri.id,

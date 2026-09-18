@@ -3,7 +3,7 @@
 
 **Repository**: `abdngr23-pixel/stq-education-portal`  
 **Document**: `docs/STQ_MILESTONE3_3A_HEALTH_V2_BACKEND.md`  
-**Status**: `M3_3A_REMEDIATION_ROUND_1_AUDIT_READY`  
+**Status**: `M3_3A_REMEDIATION_ROUND_3_FINAL_CLOSURE`  
 **Canonical Main Baseline**: `f87b53826c660bbaf13ae134a74bfe26ae94a1be`  
 **PR #8 Immutable Baseline**: `9068cae5587b7219c394c5c25bf0de07a15b0726` (Strictly Open, Draft, Unmerged)  
 **Date**: `2026-09-18`
@@ -117,27 +117,49 @@ $$\text{SESSION / IDENTITY} \longrightarrow \text{ACTIVE ASSIGNMENTS} \longright
 
 ---
 
-## 5. Dual Attribution, Human Executor Verification & Audit
+## 5. Dual Attribution, Human Executor Verification, Audit & Concurrency
 
-### 5.1. Real Server-Side Human Executor Verification (Blocker B)
-When performing any state mutation (`saveHealthCaseV2Core`, `updateHealthCaseV2StatusCore`) through an account with `accountType === "UNIT"`:
-1. `humanExecutorId` must be provided.
+### 5.1. Mandatory Canonical User ID for Human Executor (Blocker B)
+When performing any state mutation through an account with `accountType === "UNIT"`:
+1. `humanExecutorId` must be provided in request context.
 2. The server-side evaluator verifies `humanExecutorId` via `dataProvider.verifyHumanExecutor`:
-   - Must resolve to an active user with `accountType === "PERSONAL"`.
-   - User `status` must be strictly `AKTIF`.
-   - User must have an active linked `Staff` or `Santri` identity.
-3. Unverified, inactive, non-personal, or random string executor identifiers fail closed with `UNIT_EXECUTOR_INVALID`.
+   - `CanonicalExecutorIdentity` requires mandatory `userId: string` (canonical `users.id`).
+   - Lookups by `Staff.id` or `Santri.id` normalize strictly to the linked canonical `User.id`.
+   - User must have `accountType === "PERSONAL"` and status `AKTIF`.
+   - Active executor missing canonical `User.id` fails closed with `UNIT_EXECUTOR_INVALID`.
+3. For UNIT mutations, `humanExecutorId` persisted in `health_case_v2_events` and canonical audit logs is **never null** and always stores the canonical `users.id`.
 
-### 5.2. Real Canonical Audit Persistence (Blocker C)
-All Health V2 mutations persist structured audit entries through `logCanonicalAudit`:
-- Context is derived directly from the authoritative authorization decision (`authDecision.positionCode`, `authDecision.scopeType`, `authDecision.capabilityCode`, `authDecision.assignmentId`).
-- Never hardcodes `positionCode = PETUGAS_KESEHATAN` or `scope = GLOBAL`.
-- Audit records include: `technicalAccountId`, `technicalAccountUsername`, `humanExecutorId`, `humanExecutorName`, `action`, `entity`, `entityId`, `capabilityCode`, `assignmentId`, `positionCode`, `scopeType`, `unitId`, `beforeState`, `afterState`, `resourceContext`, `clientRequestId`, and `timestamp`.
+### 5.2. Mandatory Transaction-Bound Persistent Audit (Blocker A)
+All Health V2 mutations require persistent canonical audit records committed in the **same database transaction**:
+- For `createCase`: `HealthCaseV2` create + `CanonicalAuditLog` create are atomic in `tx`.
+- For `updateCaseStatus`: `HealthCaseV2` update + `HealthCaseV2Event` create + `CanonicalAuditLog` create are atomic in `tx`.
+- `InMemoryAuditSink` may be used only for pure tests/shadow evaluation; it is **strictly rejected** as persistent audit for Health V2 mutations (`AUDIT_PERSISTENCE_REQUIRED`).
+- If audit persistence is unavailable, disabled, or fails: the transaction **fails closed and rolls back** all business writes (`AUDIT_PERSISTENCE_REQUIRED` / `AUDIT_PERSISTENCE_FAILED`).
 
-### 5.3. Tindakan Awal Immutability & Structured Follow-up (Blocker D)
-- `tindakanAwal` represents the initial immediate clinical treatment and remains permanently immutable.
-- Subsequent updates via `updateHealthCaseV2StatusCore` record follow-up treatments (`tindakanLanjutan`) as discrete rows in `health_case_v2_events`.
-- Text appending such as `[Tindakan Lanjutan]` into `tindakanAwal` is strictly forbidden.
+### 5.3. Update Forensic Snapshot Consistency (Blocker G)
+In `updateCaseStatus`:
+- The current case state is retrieved **inside the database transaction** (`tx.healthCaseV2.findUnique`).
+- `previousStatus` and `beforeState` are derived from the transactional read immediately prior to update.
+- Concurrency protection prevents simultaneous transitions from generating incorrect event chains or stale forensic snapshots.
+
+### 5.4. Canonical Aggregate Evaluation & Capability Orthogonality (Blocker C & D)
+- `getCasesAggregate()` requires `health.case.read_aggregate` explicitly; `health.case.read_detail` alone is denied.
+- `getCaseDetail()` requires `health.case.read_detail` explicitly; `health.case.read_aggregate` alone is denied.
+- All aggregate evaluations flow authoritatively through `authorizeCanonical`:
+  - `GLOBAL`: institutional aggregate authorized canonically; caller may filter by `kamarId`.
+  - `KAMAR`: evaluated canonically with authoritative room context from assignment; widening to other rooms fails closed (`OUT_OF_SCOPE_ACCESS_DENIED`).
+  - `UNIT` / `ASSIGNED_UNITS`: fails closed with `UNSUPPORTED_HEALTH_AGGREGATE_SCOPE` (zero invented room mappings).
+- Returns counts only (zero clinical details).
+
+### 5.5. Clean API Boundary & Single-Source Client Request ID (Blocker E & F)
+- Exported production service API accepts only clean `HealthV2RequestContext` (`actorUserId`, `humanExecutorId`, `clientRequestId`, `ipAddress`, `userAgent`, `now`).
+- Dependencies (`db`, `dataProvider`, `auditPersistence`) are constructor-only in `createHealthV2Service`.
+- Deprecated legacy wrappers (`saveHealthCaseV2Core`, `updateHealthCaseV2StatusCore`, etc.) and injected contexts are removed from production exports.
+- `clientRequestId` belongs solely to `HealthV2RequestContext` with zero fallbacks on input DTOs.
+
+### 5.6. Tindakan Awal Immutability & Structured Follow-up
+- `tindakanAwal` represents initial immediate treatment and remains permanently immutable.
+- Subsequent follow-ups (`tindakanLanjutan`) are stored strictly as discrete rows in `health_case_v2_events`.
 
 ---
 

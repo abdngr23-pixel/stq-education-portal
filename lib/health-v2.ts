@@ -27,9 +27,6 @@
  * 8. Inventory ownership belongs to Health (maintenance tasks delegated to Sarpras).
  */
 
-import type { ICanonicalDataProvider } from "@/lib/auth/canonical-evaluator";
-import type { IAuditSink } from "@/lib/auth/canonical-audit";
-
 export const CANONICAL_HEALTH_STATUSES_V2 = [
   "DIPANTAU",
   "PULIH",
@@ -111,8 +108,6 @@ export interface CreateHealthCaseV2Input {
   catatan?: string | null;
   attachmentUrl?: string | null;
   statusV2?: HealthStatusV2;
-  /** @deprecated Prefer passing clientRequestId via HealthV2RequestContext */
-  clientRequestId?: string | null;
 }
 
 export interface UpdateHealthCaseV2StatusInput {
@@ -121,8 +116,6 @@ export interface UpdateHealthCaseV2StatusInput {
   tindakanTambahan?: string | null;
   tindakanLanjutan?: string | null;
   catatan?: string | null;
-  /** @deprecated Prefer passing clientRequestId via HealthV2RequestContext */
-  clientRequestId?: string | null;
 }
 
 export interface HealthCaseV2EventDTO {
@@ -167,25 +160,5 @@ export interface HealthV2RequestContext {
   ipAddress?: string | null;
   userAgent?: string | null;
   now?: Date;
-}
-
-/**
- * @deprecated Use HealthV2RequestContext with createHealthV2Service({ db, dataProvider, auditSink }).
- * Retained for backwards compatibility with Round 1 test callers.
- */
-export interface HealthCaseV2AuditContext {
-  userId?: string;
-  actorUserId?: string;
-  username?: string;
-  staffId?: string | null;
-  accountType?: "PERSONAL" | "UNIT";
-  humanExecutorId?: string | null;
-  humanExecutorUsername?: string | null;
-  clientRequestId?: string | null;
-  ipAddress?: string | null;
-  userAgent?: string | null;
-  now?: Date;
-  dataProvider?: ICanonicalDataProvider;
-  auditSink?: IAuditSink;
 }
 

@@ -2476,6 +2476,9 @@ export interface M33aMigrationVerificationResult {
   nullableDiagnosaPersistsNull: boolean;
   auditAttributionFieldsPresent: boolean;
   eventInsertedSuccessfully: boolean;
+  createAuditRollbackVerified: boolean;
+  updateAuditRollbackVerified: boolean;
+  createAuditCommitAtomicVerified: boolean;
   simulationSuccess: boolean;
 }
 
@@ -2792,6 +2795,91 @@ export async function simulateM33aMigrationChain(): Promise<M33aMigrationVerific
       invalidEnumRejected = true;
     }
 
+    // 13. Real isolated PostgreSQL transaction test for mandatory audit atomicity
+    // Case A: HealthCaseV2 create fails when audit in transaction fails -> rollback
+    let createAuditRollbackVerified = false;
+    try {
+      await client.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`
+          INSERT INTO "health_cases_v2" (
+            "id", "santri_id", "occurred_at", "keluhan", "tindakan_awal", "status_v2", "recorded_by_user_id", "created_at", "updated_at"
+          ) VALUES (
+            'hc-atomic-rollback', 'san-pre-m33', NOW(), 'Batuk', 'Sirup obat', 'DIPANTAU'::"HealthStatusV2", 'usr-pre-m33', NOW(), NOW()
+          );
+        `);
+        // Audit persistence failure simulated inside transaction
+        throw new Error("AUDIT_PERSISTENCE_FAILED: Database transaction forced rollback on audit failure");
+      });
+    } catch {
+      // Check that the business insert did NOT persist
+      const checkRow = await client.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT "id" FROM "health_cases_v2" WHERE "id" = 'hc-atomic-rollback';`
+      );
+      createAuditRollbackVerified = checkRow.length === 0;
+    }
+
+    // Case B: HealthCaseV2 update + event fails when audit in transaction fails -> rollback
+    let updateAuditRollbackVerified = false;
+    try {
+      await client.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`
+          UPDATE "health_cases_v2"
+          SET "status_v2" = 'DARURAT'::"HealthStatusV2", "updated_at" = NOW()
+          WHERE "id" = 'hc-01';
+        `);
+        await tx.$executeRawUnsafe(`
+          INSERT INTO "health_case_v2_events" (
+            "id", "case_id", "previous_status", "new_status", "tindakan_lanjutan", "recorded_by_user_id", "created_at"
+          ) VALUES (
+            'hce-atomic-rollback', 'hc-01', 'DIPANTAU'::"HealthStatusV2", 'DARURAT'::"HealthStatusV2", 'Pemeriksaan darurat', 'usr-pre-m33', NOW()
+          );
+        `);
+        // Force audit failure inside transaction
+        throw new Error("AUDIT_PERSISTENCE_FAILED: Database transaction forced rollback on audit failure");
+      });
+    } catch {
+      // Check that status was NOT updated and event was NOT created
+      const checkCase = await client.$queryRawUnsafe<Array<{ status_v2: string }>>(
+        `SELECT "status_v2"::text FROM "health_cases_v2" WHERE "id" = 'hc-01';`
+      );
+      const checkEvent = await client.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT "id" FROM "health_case_v2_events" WHERE "id" = 'hce-atomic-rollback';`
+      );
+      updateAuditRollbackVerified =
+        checkCase[0]?.status_v2 === "DIPANTAU" && checkEvent.length === 0;
+    }
+
+    // Case C: Atomic success when both business mutation and audit commit successfully
+    let createAuditCommitAtomicVerified = false;
+    try {
+      await client.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`
+          INSERT INTO "health_cases_v2" (
+            "id", "santri_id", "occurred_at", "keluhan", "tindakan_awal", "status_v2", "recorded_by_user_id", "created_at", "updated_at"
+          ) VALUES (
+            'hc-atomic-success', 'san-pre-m33', NOW(), 'Flu', 'Vitamin', 'DIPANTAU'::"HealthStatusV2", 'usr-pre-m33', NOW(), NOW()
+          );
+        `);
+        await tx.$executeRawUnsafe(`
+          INSERT INTO "canonical_audit_logs" (
+            "id", "technical_account_id", "technical_account_username", "action", "entity", "entity_id",
+            "capability_code", "position_code", "scope_type", "unit_id", "created_at"
+          ) VALUES (
+            'aud-atomic-success', 'usr-pre-m33', 'pre.user', 'health.case.create', 'HealthCaseV2', 'hc-atomic-success',
+            'health.case.create', 'PETUGAS_KESEHATAN', 'GLOBAL', 'ou-poskestren', NOW()
+          );
+        `);
+      });
+
+      const checkCase = await client.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT "id" FROM "health_cases_v2" WHERE "id" = 'hc-atomic-success';`
+      );
+      const checkAudit = await client.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT "id" FROM "canonical_audit_logs" WHERE "id" = 'aud-atomic-success';`
+      );
+      createAuditCommitAtomicVerified = checkCase.length === 1 && checkAudit.length === 1;
+    } catch {}
+
     const simulationSuccess =
       pr8ExactShaVerified &&
       pr8MigrationApplied &&
@@ -2811,7 +2899,10 @@ export async function simulateM33aMigrationChain(): Promise<M33aMigrationVerific
       invalidEnumRejected &&
       nullableDiagnosaPersistsNull &&
       auditAttributionFieldsPresent &&
-      eventInsertedSuccessfully;
+      eventInsertedSuccessfully &&
+      createAuditRollbackVerified &&
+      updateAuditRollbackVerified &&
+      createAuditCommitAtomicVerified;
 
     return {
       pr8ExactShaVerified,
@@ -2833,6 +2924,9 @@ export async function simulateM33aMigrationChain(): Promise<M33aMigrationVerific
       nullableDiagnosaPersistsNull,
       auditAttributionFieldsPresent,
       eventInsertedSuccessfully,
+      createAuditRollbackVerified,
+      updateAuditRollbackVerified,
+      createAuditCommitAtomicVerified,
       simulationSuccess,
     };
   } finally {

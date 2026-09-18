@@ -8,11 +8,10 @@ import {
   HealthCaseV2DTO,
   HealthCaseV2EventDTO,
   HealthV2RequestContext,
-  HealthCaseV2AuditContext,
   CreateHealthCaseV2Input,
   UpdateHealthCaseV2StatusInput,
 } from "@/lib/health-v2";
-import { HEALTH_CAPABILITIES, ScopeType } from "@/types/architecture-lock";
+import { HEALTH_CAPABILITIES, ScopeType, CanonicalAuditRecord } from "@/types/architecture-lock";
 import {
   authorizeCanonical,
   createPrismaDataProvider,
@@ -20,42 +19,26 @@ import {
   CanonicalAssignmentWithDetails,
 } from "@/lib/auth/canonical-evaluator";
 import {
-  logCanonicalAudit,
-  activeAuditSink,
+  IAuditPersistence,
+  PrismaAuditPersistence,
   IAuditSink,
+  AuditDbClient,
+  InMemoryAuditSink,
 } from "@/lib/auth/canonical-audit";
+
+export { PrismaAuditPersistence };
+export type { IAuditPersistence };
 
 /**
  * Service dependencies separated from per-request context.
- * Test runners can supply mock db, mock dataProvider, and mock auditSink here.
- * Production callers instantiate the service with real database and sinks.
+ * Production callers instantiate the service with real database and transaction-bound persistence.
+ * Test runners can supply transaction-aware mocks here.
  */
 export interface HealthV2ServiceDependencies {
   db: PrismaClient;
   dataProvider?: ICanonicalDataProvider;
+  auditPersistence?: IAuditPersistence;
   auditSink?: IAuditSink;
-}
-
-export interface HealthCaseV2DetailContext extends Partial<HealthV2RequestContext> {
-  actorUserId: string;
-  // Legacy fields retained for backward-compatibility with Round 1 test callers, but ignored at runtime
-  actorRole?: string;
-  positionCode?: string;
-  capabilities?: string[];
-  isOsdaGeneric?: boolean;
-  scopeType?: ScopeType | "KAMAR" | "GLOBAL" | "ASSIGNED_UNITS";
-  assignedKamarId?: string | null;
-  dataProvider?: ICanonicalDataProvider;
-  now?: Date;
-}
-
-export interface HealthCaseV2AggregateContext extends Partial<HealthV2RequestContext> {
-  actorUserId: string;
-  // Legacy fields retained for backward-compatibility with Round 1 test callers, but ignored at runtime
-  actorRole?: string;
-  capabilities?: string[];
-  dataProvider?: ICanonicalDataProvider;
-  now?: Date;
 }
 
 export interface HealthCaseV2AggregateFilter {
@@ -129,22 +112,40 @@ export interface HealthV2Service {
 
 /**
  * Creates an authoritative Health V2 domain service instance.
- * Separates constructor dependencies (db, dataProvider, auditSink) from request context.
+ * Separates constructor dependencies (db, dataProvider, auditPersistence) from request context.
  */
 export function createHealthV2Service(deps: HealthV2ServiceDependencies): HealthV2Service {
   const db = deps.db;
   const dataProvider = deps.dataProvider || createPrismaDataProvider(db);
-  const auditSink = deps.auditSink || activeAuditSink;
+
+  // Blocker A: Audit persistence resolution.
+  // In-memory sink is identified and strictly rejected for mutations.
+  let auditPersistence: IAuditPersistence;
+  if (deps.auditPersistence) {
+    auditPersistence = deps.auditPersistence;
+  } else if (deps.auditSink) {
+    const isPersistent =
+      (deps.auditSink as unknown as { isPersistent?: boolean }).isPersistent ??
+      !(deps.auditSink instanceof InMemoryAuditSink);
+    auditPersistence = {
+      isPersistent,
+      async recordInTx(tx: AuditDbClient, record: CanonicalAuditRecord) {
+        await deps.auditSink!.record(record, tx);
+      },
+    };
+  } else {
+    auditPersistence = new PrismaAuditPersistence();
+  }
 
   return {
     /**
      * Creates a new Health V2 Case in the database.
      * Enforces:
-     * - Authoritative evaluation via canonical authorization evaluator (Blocker A)
-     * - Server-side canonical human executor verification (Blocker 1)
-     * - Mutation and audit atomicity inside transaction; rolls back on failure (Blocker 2)
-     * - Audit decision fail-closed: missing provenance throws AUTH_DECISION_INCOMPLETE (Blocker 4)
-     * - Request context owns clientRequestId single-source-of-truth (Blocker 7)
+     * - Authoritative evaluation via canonical authorization evaluator (Blocker A / Blocker C)
+     * - Server-side canonical human executor verification with mandatory User.id (Blocker B)
+     * - Mandatory transaction-bound persistent audit; rolls back on failure (Blocker A)
+     * - Audit decision fail-closed: missing provenance throws AUTH_DECISION_INCOMPLETE
+     * - Request context owns clientRequestId single-source-of-truth (Blocker F)
      * - Data honesty: optional diagnosa persists as NULL if empty
      * - Tindakan awal immutable
      */
@@ -152,22 +153,27 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
       input: CreateHealthCaseV2Input,
       context: HealthV2RequestContext
     ): Promise<{ success: boolean; data: HealthCaseV2DTO; audit: HealthV2OperationAudit }> {
-      const actorUserId = context.actorUserId || (context as unknown as { userId?: string }).userId;
+      // Blocker A: In-memory audit sink cannot qualify as persistent audit for mutations
+      if (
+        !auditPersistence ||
+        auditPersistence.isPersistent === false ||
+        auditPersistence instanceof InMemoryAuditSink
+      ) {
+        throw new Error(
+          "AUDIT_PERSISTENCE_REQUIRED: InMemoryAuditSink cannot qualify as persistent audit for Health V2 mutations."
+        );
+      }
+
+      const actorUserId = context.actorUserId;
       if (!actorUserId || actorUserId.trim() === "") {
         throw new Error("AUTHENTICATION_REQUIRED: actorUserId is required.");
       }
 
-      // Blocker 7: Single source of truth for clientRequestId
-      if (
-        input.clientRequestId &&
-        context.clientRequestId &&
-        input.clientRequestId !== context.clientRequestId
-      ) {
-        throw new Error(
-          `CLIENT_REQUEST_ID_MISMATCH: Input clientRequestId '${input.clientRequestId}' does not match context clientRequestId '${context.clientRequestId}'.`
-        );
+      // Blocker F: Single source of truth for clientRequestId is context ONLY
+      if ((input as any)?.clientRequestId && context?.clientRequestId && (input as any).clientRequestId !== context.clientRequestId) {
+        throw new Error("CLIENT_REQUEST_ID_MISMATCH: input.clientRequestId does not match context.clientRequestId");
       }
-      const clientRequestId = context.clientRequestId ?? input.clientRequestId ?? null;
+      const clientRequestId = context.clientRequestId ?? null;
       const now = context.now || new Date();
 
       // 1. Authoritative Identity Hydration
@@ -230,7 +236,7 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
         throw new Error(`PERMISSION_DENIED: ${authDecision.reason}`);
       }
 
-      // 5. Blocker 4: Authoritative Audit Provenance Must Fail Closed (No Fallbacks)
+      // 5. Authoritative Audit Provenance Must Fail Closed (No Fallbacks)
       const authoritativeUnitId =
         authDecision.grantUsed?.anchorUnitId || authDecision.evaluatedUnitIds?.[0];
       if (
@@ -245,19 +251,24 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
         );
       }
 
-      // 6. Blocker 1: Server-side canonical executor identity normalization
+      // 6. Blocker B: Server-side canonical executor identity normalization
+      // humanExecutorId must ALWAYS resolve to canonical User.id and never be null for UNIT mutations
       let canonicalExecutorUserId: string | null = null;
       let canonicalExecutorName: string | null = null;
       if (authDecision.verifiedExecutor) {
-        canonicalExecutorUserId = authDecision.verifiedExecutor.userId || authDecision.verifiedExecutor.id || null;
+        canonicalExecutorUserId = authDecision.verifiedExecutor.userId || null;
         canonicalExecutorName = authDecision.verifiedExecutor.name;
       } else if (context.humanExecutorId) {
         const verified = await dataProvider.verifyHumanExecutor(context.humanExecutorId);
-        if (!verified || !verified.isActive) {
-          throw new Error("UNIT_EXECUTOR_INVALID: Human executor profile is not active or could not be verified.");
+        if (!verified || !verified.isActive || !verified.userId || verified.userId.trim() === "") {
+          throw new Error("UNIT_EXECUTOR_INVALID: Human executor profile is not active or could not be verified with a canonical User.id.");
         }
-        canonicalExecutorUserId = verified.userId || verified.id || null;
+        canonicalExecutorUserId = verified.userId;
         canonicalExecutorName = verified.name;
+      }
+
+      if (identity.accountType === "UNIT" && (!canonicalExecutorUserId || canonicalExecutorUserId.trim() === "")) {
+        throw new Error("UNIT_EXECUTOR_INVALID: Unit account mutations require a verified human executor with canonical User.id.");
       }
 
       // 7. Validate keluhan & tindakanAwal
@@ -284,7 +295,7 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
       const attachmentUrl = input.attachmentUrl && input.attachmentUrl.trim().length > 0 ? input.attachmentUrl.trim() : null;
       const occurredAt = input.occurredAt ? new Date(input.occurredAt) : new Date();
 
-      // 10. Blocker 2: Atomic Transaction (HealthCaseV2 create + canonical audit create)
+      // 10. Blocker A: Atomic Transaction (HealthCaseV2 create + CanonicalAuditLog create)
       const { created, canonicalAuditRecord } = await runTransaction(db, async (tx) => {
         const createdRecord = await tx.healthCaseV2.create({
           data: {
@@ -301,44 +312,43 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
           },
         });
 
-        const auditLog = await logCanonicalAudit(
-          {
-            technicalAccountId: actorUserId,
-            technicalAccountUsername: identity.username,
-            humanExecutorId: canonicalExecutorUserId,
-            humanExecutorName: canonicalExecutorName,
-            action: "health.case.create",
-            entity: "HealthCaseV2",
-            entityId: createdRecord.id,
-            capabilityCode: authDecision.capabilityCode!,
-            assignmentId: authDecision.assignmentId!,
-            positionCode: authDecision.positionCode!,
-            scopeType: authDecision.scopeType as ScopeType,
-            unitId: authoritativeUnitId,
-            beforeState: null,
-            afterState: {
-              id: createdRecord.id,
-              santriId: createdRecord.santriId,
-              statusV2: createdRecord.statusV2,
-              keluhan: createdRecord.keluhan,
-              tindakanAwal: createdRecord.tindakanAwal,
-              diagnosa: createdRecord.diagnosa,
-            },
-            resourceContext: {
-              santriId: santri.id,
-              kamarId: resolvedResourceContext?.kamarId || null,
-            },
-            reason: null,
-            clientRequestId,
-            ipAddress: context.ipAddress || null,
-            userAgent: context.userAgent || null,
-            timestamp: createdRecord.createdAt,
+        const auditRecord: CanonicalAuditRecord = {
+          id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          technicalAccountId: actorUserId,
+          technicalAccountUsername: identity.username,
+          humanExecutorId: canonicalExecutorUserId,
+          humanExecutorName: canonicalExecutorName,
+          action: "health.case.create",
+          entity: "HealthCaseV2",
+          entityId: createdRecord.id,
+          capabilityCode: authDecision.capabilityCode!,
+          assignmentId: authDecision.assignmentId!,
+          positionCode: authDecision.positionCode!,
+          scopeType: authDecision.scopeType as ScopeType,
+          unitId: authoritativeUnitId,
+          beforeState: null,
+          afterState: {
+            id: createdRecord.id,
+            santriId: createdRecord.santriId,
+            statusV2: createdRecord.statusV2,
+            keluhan: createdRecord.keluhan,
+            tindakanAwal: createdRecord.tindakanAwal,
+            diagnosa: createdRecord.diagnosa,
           },
-          auditSink,
-          tx
-        );
+          resourceContext: {
+            santriId: santri.id,
+            kamarId: resolvedResourceContext?.kamarId || null,
+          },
+          reason: null,
+          clientRequestId,
+          ipAddress: context.ipAddress || null,
+          userAgent: context.userAgent || null,
+          timestamp: createdRecord.createdAt,
+        };
 
-        return { created: createdRecord, canonicalAuditRecord: auditLog };
+        await auditPersistence.recordInTx(tx as unknown as AuditDbClient, auditRecord);
+
+        return { created: createdRecord, canonicalAuditRecord: auditRecord };
       });
 
       const audit: HealthV2OperationAudit = {
@@ -382,34 +392,39 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
     /**
      * Updates status of an existing Health V2 Case.
      * Enforces:
-     * - Authoritative evaluation via canonical authorization evaluator (Blocker A)
-     * - Server-side canonical human executor verification (Blocker 1)
-     * - Mutation, Event, and Audit atomicity inside transaction; rolls back on failure (Blocker 2)
-     * - Audit decision fail-closed: missing provenance throws AUTH_DECISION_INCOMPLETE (Blocker 4)
+     * - Authoritative evaluation via canonical authorization evaluator (Blocker A / Blocker C)
+     * - Server-side canonical human executor verification with mandatory User.id (Blocker B)
+     * - Blocker G: Transactional current-state read for snapshot consistency
+     * - Blocker A: Mandatory transaction-bound persistent audit; rolls back on failure
      * - Tindakan awal immutability: initial treatment is NEVER modified
      * - Follow-up treatment recorded separately in HealthCaseV2Event
-     * - Request context owns clientRequestId single-source-of-truth (Blocker 7)
+     * - Request context owns clientRequestId single-source-of-truth (Blocker F)
      */
     async updateCaseStatus(
       input: UpdateHealthCaseV2StatusInput,
       context: HealthV2RequestContext
     ): Promise<{ success: boolean; data: HealthCaseV2DTO; audit: HealthV2OperationAudit }> {
-      const actorUserId = context.actorUserId || (context as unknown as { userId?: string }).userId;
+      // Blocker A: In-memory audit sink cannot qualify as persistent audit for mutations
+      if (
+        !auditPersistence ||
+        auditPersistence.isPersistent === false ||
+        auditPersistence instanceof InMemoryAuditSink
+      ) {
+        throw new Error(
+          "AUDIT_PERSISTENCE_REQUIRED: InMemoryAuditSink cannot qualify as persistent audit for Health V2 mutations."
+        );
+      }
+
+      const actorUserId = context.actorUserId;
       if (!actorUserId || actorUserId.trim() === "") {
         throw new Error("AUTHENTICATION_REQUIRED: actorUserId is required.");
       }
 
-      // Blocker 7: Single source of truth for clientRequestId
-      if (
-        input.clientRequestId &&
-        context.clientRequestId &&
-        input.clientRequestId !== context.clientRequestId
-      ) {
-        throw new Error(
-          `CLIENT_REQUEST_ID_MISMATCH: Input clientRequestId '${input.clientRequestId}' does not match context clientRequestId '${context.clientRequestId}'.`
-        );
+      // Blocker F: Single source of truth for clientRequestId is context ONLY
+      if ((input as any)?.clientRequestId && context?.clientRequestId && (input as any).clientRequestId !== context.clientRequestId) {
+        throw new Error("CLIENT_REQUEST_ID_MISMATCH: input.clientRequestId does not match context.clientRequestId");
       }
-      const clientRequestId = context.clientRequestId ?? input.clientRequestId ?? null;
+      const clientRequestId = context.clientRequestId ?? null;
       const now = context.now || new Date();
 
       // 1. Authoritative Identity Hydration
@@ -423,17 +438,17 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
         throw new Error(`INVALID_HEALTH_STATUS_V2: Status '${input.newStatus}' is not one of: ${CANONICAL_HEALTH_STATUSES_V2.join(", ")}`);
       }
 
-      // 3. Find existing case
-      const existing = await db.healthCaseV2.findUnique({
+      // 3. Pre-flight case lookup for resource context resolution
+      const preCase = await db.healthCaseV2.findUnique({
         where: { id: input.id },
       });
-      if (!existing) {
+      if (!preCase) {
         throw new Error(`HEALTH_CASE_NOT_FOUND: Health case with ID '${input.id}' does not exist.`);
       }
 
       // 4. Resolve authoritative resource context
       const resolvedResourceContext = await dataProvider.resolveResourceContext(
-        { santriId: existing.santriId },
+        { santriId: preCase.santriId },
         actorUserId,
         HEALTH_CAPABILITIES.UPDATE_STATUS
       );
@@ -442,7 +457,7 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
       const authDecision = await authorizeCanonical({
         identity,
         capability: HEALTH_CAPABILITIES.UPDATE_STATUS,
-        resourceContext: { santriId: existing.santriId },
+        resourceContext: { santriId: preCase.santriId },
         resolvedContext: resolvedResourceContext || undefined,
         executorContext: context.humanExecutorId
           ? {
@@ -472,7 +487,7 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
         throw new Error(`PERMISSION_DENIED: ${authDecision.reason}`);
       }
 
-      // 6. Blocker 4: Authoritative Audit Provenance Must Fail Closed (No Fallbacks)
+      // 6. Authoritative Audit Provenance Must Fail Closed (No Fallbacks)
       const authoritativeUnitId =
         authDecision.grantUsed?.anchorUnitId || authDecision.evaluatedUnitIds?.[0];
       if (
@@ -487,32 +502,45 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
         );
       }
 
-      // 7. Blocker 1: Server-side canonical executor identity normalization
+      // 7. Blocker B: Server-side canonical executor identity normalization
       let canonicalExecutorUserId: string | null = null;
       let canonicalExecutorName: string | null = null;
       if (authDecision.verifiedExecutor) {
-        canonicalExecutorUserId = authDecision.verifiedExecutor.userId || authDecision.verifiedExecutor.id || null;
+        canonicalExecutorUserId = authDecision.verifiedExecutor.userId || null;
         canonicalExecutorName = authDecision.verifiedExecutor.name;
       } else if (context.humanExecutorId) {
         const verified = await dataProvider.verifyHumanExecutor(context.humanExecutorId);
-        if (!verified || !verified.isActive) {
-          throw new Error("UNIT_EXECUTOR_INVALID: Human executor profile is not active or could not be verified.");
+        if (!verified || !verified.isActive || !verified.userId || verified.userId.trim() === "") {
+          throw new Error("UNIT_EXECUTOR_INVALID: Human executor profile is not active or could not be verified with a canonical User.id.");
         }
-        canonicalExecutorUserId = verified.userId || verified.id || null;
+        canonicalExecutorUserId = verified.userId;
         canonicalExecutorName = verified.name;
       }
 
-      const previousStatus = existing.statusV2 as HealthStatusV2;
+      if (identity.accountType === "UNIT" && (!canonicalExecutorUserId || canonicalExecutorUserId.trim() === "")) {
+        throw new Error("UNIT_EXECUTOR_INVALID: Unit account mutations require a verified human executor with canonical User.id.");
+      }
+
       const newStatus = input.newStatus;
       const tindakanLanjutan = input.tindakanLanjutan?.trim() || input.tindakanTambahan?.trim() || null;
 
-      // Tindakan Awal Immutability: initial treatment is NEVER modified
-      const updatedCatatan = input.catatan && input.catatan.trim().length > 0
-        ? input.catatan.trim()
-        : existing.catatan;
+      // 8. Blocker G & Blocker A: Transactional current-state read and atomic transaction
+      const { updated, event, canonicalAuditRecord, previousStatus } = await runTransaction(db, async (tx) => {
+        // Fetch current case INSIDE transaction to guarantee fresh forensic snapshot
+        const currentCase = await tx.healthCaseV2.findUnique({
+          where: { id: input.id },
+        });
+        if (!currentCase) {
+          throw new Error(`HEALTH_CASE_NOT_FOUND: Health case with ID '${input.id}' does not exist.`);
+        }
 
-      // 8. Blocker 2: Atomic Transaction (HealthCaseV2 update + HealthCaseV2Event create + canonical audit create)
-      const { updated, event, canonicalAuditRecord } = await runTransaction(db, async (tx) => {
+        const txPreviousStatus = currentCase.statusV2 as HealthStatusV2;
+
+        // Tindakan Awal Immutability: initial treatment is NEVER modified
+        const updatedCatatan = input.catatan && input.catatan.trim().length > 0
+          ? input.catatan.trim()
+          : currentCase.catatan;
+
         const updatedRecord = await tx.healthCaseV2.update({
           where: { id: input.id },
           data: {
@@ -526,8 +554,8 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
         // ONLY verified canonical User.id is stored in human_executor_id
         const eventRecord = await tx.healthCaseV2Event.create({
           data: {
-            caseId: existing.id,
-            previousStatus,
+            caseId: currentCase.id,
+            previousStatus: txPreviousStatus,
             newStatus,
             tindakanLanjutan,
             catatan: input.catatan?.trim() || null,
@@ -537,45 +565,49 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
           },
         });
 
-        const auditLog = await logCanonicalAudit(
-          {
-            technicalAccountId: actorUserId,
-            technicalAccountUsername: identity.username,
-            humanExecutorId: canonicalExecutorUserId,
-            humanExecutorName: canonicalExecutorName,
-            action: "health.case.update_status",
-            entity: "HealthCaseV2",
-            entityId: existing.id,
-            capabilityCode: authDecision.capabilityCode!,
-            assignmentId: authDecision.assignmentId!,
-            positionCode: authDecision.positionCode!,
-            scopeType: authDecision.scopeType as ScopeType,
-            unitId: authoritativeUnitId,
-            beforeState: {
-              statusV2: previousStatus,
-              catatan: existing.catatan,
-            },
-            afterState: {
-              statusV2: newStatus,
-              tindakanLanjutan,
-              catatan: updatedCatatan,
-              eventId: eventRecord.id,
-            },
-            resourceContext: {
-              santriId: existing.santriId,
-              kamarId: resolvedResourceContext?.kamarId || null,
-            },
-            reason: null,
-            clientRequestId,
-            ipAddress: context.ipAddress || null,
-            userAgent: context.userAgent || null,
-            timestamp: new Date(),
+        const auditRecord: CanonicalAuditRecord = {
+          id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          technicalAccountId: actorUserId,
+          technicalAccountUsername: identity.username,
+          humanExecutorId: canonicalExecutorUserId,
+          humanExecutorName: canonicalExecutorName,
+          action: "health.case.update_status",
+          entity: "HealthCaseV2",
+          entityId: currentCase.id,
+          capabilityCode: authDecision.capabilityCode!,
+          assignmentId: authDecision.assignmentId!,
+          positionCode: authDecision.positionCode!,
+          scopeType: authDecision.scopeType as ScopeType,
+          unitId: authoritativeUnitId,
+          beforeState: {
+            statusV2: txPreviousStatus,
+            catatan: currentCase.catatan,
           },
-          auditSink,
-          tx
-        );
+          afterState: {
+            statusV2: newStatus,
+            tindakanLanjutan,
+            catatan: updatedCatatan,
+            eventId: eventRecord.id,
+          },
+          resourceContext: {
+            santriId: currentCase.santriId,
+            kamarId: resolvedResourceContext?.kamarId || null,
+          },
+          reason: null,
+          clientRequestId,
+          ipAddress: context.ipAddress || null,
+          userAgent: context.userAgent || null,
+          timestamp: new Date(),
+        };
 
-        return { updated: updatedRecord, event: eventRecord, canonicalAuditRecord: auditLog };
+        await auditPersistence.recordInTx(tx as unknown as AuditDbClient, auditRecord);
+
+        return {
+          updated: updatedRecord,
+          event: eventRecord,
+          canonicalAuditRecord: auditRecord,
+          previousStatus: txPreviousStatus,
+        };
       });
 
       const audit: HealthV2OperationAudit = {
@@ -588,10 +620,10 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
         positionCode: canonicalAuditRecord.positionCode,
         capability: canonicalAuditRecord.capabilityCode,
         scope: canonicalAuditRecord.scopeType,
-        targetSantriId: existing.santriId,
+        targetSantriId: preCase.santriId,
         previousStatus,
         newStatus,
-        occurredAt: existing.occurredAt,
+        occurredAt: preCase.occurredAt,
         createdAt: canonicalAuditRecord.timestamp,
       };
 
@@ -633,17 +665,17 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
     /**
      * Fetches clinical details of a single Health V2 case.
      * Enforces:
-     * - Authoritative evaluation via canonical authorization evaluator (Blocker A)
+     * - Authoritative evaluation via canonical authorization evaluator (Blocker C)
      * - Explicit detail capability (health.case.read_detail)
      * - Generic OSDA membership alone confers zero detail access
-     * - Aggregate capability does NOT imply detail capability
+     * - Blocker D: Capability Orthogonality (aggregate capability does NOT imply detail capability)
      * - Pembina Asrama access is strictly KAMAR-scoped (different kamar -> OUT_OF_SCOPE_ACCESS_DENIED)
      */
     async getCaseDetail(
       id: string,
       context: HealthV2RequestContext
     ): Promise<{ success: boolean; data: HealthCaseV2DTO }> {
-      const actorUserId = context.actorUserId || (context as unknown as { userId?: string }).userId;
+      const actorUserId = context.actorUserId;
       if (!actorUserId || actorUserId.trim() === "") {
         throw new Error("AUTHENTICATION_REQUIRED: actorUserId is required.");
       }
@@ -676,7 +708,7 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
         HEALTH_CAPABILITIES.READ_DETAIL
       );
 
-      // 4. Authoritative Canonical Evaluation for Detail Read (Blocker A)
+      // 4. Authoritative Canonical Evaluation for Detail Read (Blocker D)
       const detailAuthDecision = await authorizeCanonical({
         identity,
         capability: HEALTH_CAPABILITIES.READ_DETAIL,
@@ -688,7 +720,7 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
       });
 
       if (detailAuthDecision.decision !== "ALLOW") {
-        // Check if user has aggregate capability only
+        // Blocker D: Check if caller has aggregate capability alone to emit precise diagnostic
         const aggAuthDecision = await authorizeCanonical({
           identity,
           capability: HEALTH_CAPABILITIES.READ_AGGREGATE,
@@ -749,18 +781,19 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
     /**
      * Fetches aggregated Health statistics without exposing clinical details.
      * Enforces:
-     * - Authoritative evaluation via canonical authorization evaluator (Blocker A)
-     * - Blocker 3: Aggregate authorization and DB filtering derive allowed scope server-side from canonical grant
-     *   - KAMAR: derived from authoritative assignment; query constrained to that kamar; cannot widen
-     *   - GLOBAL: institutional aggregate allowed
-     *   - Pembina with no authoritative kamar: DENY
+     * - Authoritative evaluation via canonical authorization evaluator (Blocker C)
+     * - Blocker D: Capability Orthogonality (strictly requires health.case.read_aggregate; READ_DETAIL does not imply READ_AGGREGATE)
+     * - Blocker C: Canonical scope derivation:
+     *   - GLOBAL: institutional aggregate evaluated canonically
+     *   - KAMAR: evaluated canonically with authoritative KAMAR context
+     *   - UNIT / ASSIGNED_UNITS: fails closed with UNSUPPORTED_HEALTH_AGGREGATE_SCOPE (no invented room mappings)
      * - Returns counts only: zero diagnosa, zero keluhan, zero patient notes exposed
      */
     async getCasesAggregate(
       filter: HealthCaseV2AggregateFilter,
       context: HealthV2RequestContext
     ): Promise<{ success: boolean; data: HealthCaseV2AggregateResult }> {
-      const actorUserId = context.actorUserId || (context as unknown as { userId?: string }).userId;
+      const actorUserId = context.actorUserId;
       if (!actorUserId || actorUserId.trim() === "") {
         throw new Error("AUTHENTICATION_REQUIRED: actorUserId is required.");
       }
@@ -772,12 +805,11 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
         throw new Error(`AUTHENTICATION_REQUIRED: User '${actorUserId}' does not exist or is not active.`);
       }
 
-      // 2. Blocker 3: Authoritative Grant & Scope Resolution from canonical active assignments
+      // 2. Resolve active assignments for health.case.read_aggregate
       const activeAssignments = await dataProvider.getActiveAssignments(actorUserId, now);
 
-      const validGrants: Array<{
+      const aggregateGrants: Array<{
         assignment: CanonicalAssignmentWithDetails;
-        capabilityCode: string;
         scopeType: ScopeType;
       }> = [];
 
@@ -789,58 +821,67 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
           [];
         for (const pc of capabilities) {
           if (
-            (pc.capabilityCode === HEALTH_CAPABILITIES.READ_AGGREGATE ||
-              pc.capabilityCode === HEALTH_CAPABILITIES.READ_DETAIL) &&
+            pc.capabilityCode === HEALTH_CAPABILITIES.READ_AGGREGATE &&
             pc.businessRuleState === "VERIFIED_PRODUCTION"
           ) {
-            validGrants.push({
+            aggregateGrants.push({
               assignment: a,
-              capabilityCode: pc.capabilityCode,
               scopeType: pc.scopeType as ScopeType,
             });
           }
         }
       }
 
-      if (validGrants.length === 0) {
+      if (aggregateGrants.length === 0) {
+        // Blocker D: Explicitly fail closed if user lacks health.case.read_aggregate
+        // Even if user possesses health.case.read_detail, READ_DETAIL alone does NOT imply aggregate!
         throw new Error("AGGREGATE_ACCESS_DENIED: User lacks 'health.case.read_aggregate' capability.");
       }
 
-      const globalGrant = validGrants.find((g) => g.scopeType === "GLOBAL");
-      const kamarGrant = validGrants.find((g) => g.scopeType === "KAMAR");
-      const unitGrant = validGrants.find((g) => g.scopeType === "UNIT" || g.scopeType === "ASSIGNED_UNITS");
+      const globalGrant = aggregateGrants.find((g) => g.scopeType === "GLOBAL");
+      const kamarGrant = aggregateGrants.find((g) => g.scopeType === "KAMAR");
+      const unitGrant = aggregateGrants.find(
+        (g) => g.scopeType === "UNIT" || g.scopeType === "ASSIGNED_UNITS"
+      );
 
       let forcedKamarId: string | null = null;
-      let forcedUnitIds: string[] | null = null;
 
       if (globalGrant) {
-        // GLOBAL institutional aggregate
+        // GLOBAL institutional aggregate: evaluated canonically
         const authDecision = await authorizeCanonical({
           identity,
-          capability: globalGrant.capabilityCode,
-          resourceContext: {},
+          capability: HEALTH_CAPABILITIES.READ_AGGREGATE,
+          resourceContext: filter.kamarId ? { kamarId: filter.kamarId } : {},
           isMutation: false,
           now,
           dataProvider,
         });
+
         if (authDecision.decision !== "ALLOW") {
           throw new Error(`AGGREGATE_ACCESS_DENIED: ${authDecision.reason}`);
         }
-        // Caller filter may narrow to a specific room if requested
+
         if (filter.kamarId) {
           forcedKamarId = filter.kamarId;
         }
       } else if (kamarGrant) {
-        // PEMBINA_ASRAMA: derive authoritative kamar from canonical assignment
+        // KAMAR scope: derive authoritative kamar from canonical assignment
         const authoritativeKamarId = kamarGrant.assignment.unitId;
         if (!authoritativeKamarId || authoritativeKamarId.trim() === "") {
           throw new Error("OUT_OF_SCOPE_ACCESS_DENIED: Pembina Asrama has no authoritative kamar assignment.");
         }
 
-        // Authorize strictly for authoritative room
+        // Caller cannot widen to another kamar
+        if (filter.kamarId && filter.kamarId !== authoritativeKamarId) {
+          throw new Error(
+            `OUT_OF_SCOPE_ACCESS_DENIED: Caller cannot widen aggregate query to kamar '${filter.kamarId}' outside authoritative assigned kamar '${authoritativeKamarId}'.`
+          );
+        }
+
+        // Authorize canonically strictly with authoritative room context
         const authDecision = await authorizeCanonical({
           identity,
-          capability: kamarGrant.capabilityCode,
+          capability: HEALTH_CAPABILITIES.READ_AGGREGATE,
           resourceContext: { kamarId: authoritativeKamarId },
           resolvedContext: { kamarId: authoritativeKamarId, orgUnitIds: [authoritativeKamarId] },
           isMutation: false,
@@ -852,25 +893,23 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
           throw new Error(`AGGREGATE_ACCESS_DENIED: ${authDecision.reason}`);
         }
 
-        // Caller cannot widen to another kamar!
-        if (filter.kamarId && filter.kamarId !== authoritativeKamarId) {
-          throw new Error(
-            `OUT_OF_SCOPE_ACCESS_DENIED: Caller cannot widen aggregate query to kamar '${filter.kamarId}' outside authoritative assigned kamar '${authoritativeKamarId}'.`
-          );
-        }
-
-        // Must be constrained to authoritative room
         forcedKamarId = authoritativeKamarId;
       } else if (unitGrant) {
-        if (unitGrant.scopeType === "UNIT") {
-          const unitId = unitGrant.assignment.unitId;
-          if (!unitId) {
-            throw new Error("OUT_OF_SCOPE_ACCESS_DENIED: Unit assignment has no unitId.");
-          }
-          forcedUnitIds = [unitId];
-        } else {
-          forcedUnitIds = unitGrant.assignment.scopeUnits.map((su) => su.unitId);
-        }
+        // UNIT or ASSIGNED_UNITS: must NOT bypass authorizeCanonical
+        const unitId = unitGrant.assignment.unitId || unitGrant.assignment.scopeUnits?.[0]?.unitId || "";
+        await authorizeCanonical({
+          identity,
+          capability: HEALTH_CAPABILITIES.READ_AGGREGATE,
+          resourceContext: { unitId },
+          isMutation: false,
+          now,
+          dataProvider,
+        });
+
+        // Blocker C: Do NOT invent room mapping for UNIT / ASSIGNED_UNITS. Fail closed.
+        throw new Error(
+          "UNSUPPORTED_HEALTH_AGGREGATE_SCOPE: Health aggregate for UNIT or ASSIGNED_UNITS scope is not supported in M3.3A."
+        );
       } else {
         throw new Error("AGGREGATE_ACCESS_DENIED: User has no valid scope for aggregate read.");
       }
@@ -897,18 +936,9 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
             },
           },
         };
-      } else if (forcedUnitIds && forcedUnitIds.length > 0) {
-        where.santri = {
-          kamarPlacements: {
-            some: {
-              kamarId: { in: forcedUnitIds },
-              isActive: true,
-            },
-          },
-        };
       }
 
-      // 4. Query group by status - counts only, zero clinical detail
+      // 4. Query aggregate counts only - zero patient clinical data exposed
       const grouped = await db.healthCaseV2.groupBy({
         by: ["statusV2"],
         where,
@@ -917,7 +947,12 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
         },
       });
 
-      const byStatus: Record<HealthStatusV2, number> = {
+      const byStatus: {
+        DIPANTAU: number;
+        PULIH: number;
+        DIRUJUK: number;
+        DARURAT: number;
+      } = {
         DIPANTAU: 0,
         PULIH: 0,
         DIRUJUK: 0,
@@ -947,86 +982,4 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
       };
     },
   };
-}
-
-/**
- * Backward-compatible wrapper delegating to createHealthV2Service.
- */
-export async function saveHealthCaseV2Core(
-  db: PrismaClient,
-  input: CreateHealthCaseV2Input,
-  context: HealthCaseV2AuditContext
-): Promise<{ success: boolean; data: HealthCaseV2DTO; audit: HealthV2OperationAudit }> {
-  const service = createHealthV2Service({
-    db,
-    dataProvider: context.dataProvider,
-    auditSink: context.auditSink,
-  });
-  return service.createCase(input, {
-    actorUserId: context.actorUserId || context.userId!,
-    humanExecutorId: context.humanExecutorId,
-    clientRequestId: context.clientRequestId,
-    ipAddress: context.ipAddress,
-    userAgent: context.userAgent,
-    now: context.now,
-  });
-}
-
-/**
- * Backward-compatible wrapper delegating to createHealthV2Service.
- */
-export async function updateHealthCaseV2StatusCore(
-  db: PrismaClient,
-  input: UpdateHealthCaseV2StatusInput,
-  context: HealthCaseV2AuditContext
-): Promise<{ success: boolean; data: HealthCaseV2DTO; audit: HealthV2OperationAudit }> {
-  const service = createHealthV2Service({
-    db,
-    dataProvider: context.dataProvider,
-    auditSink: context.auditSink,
-  });
-  return service.updateCaseStatus(input, {
-    actorUserId: context.actorUserId || context.userId!,
-    humanExecutorId: context.humanExecutorId,
-    clientRequestId: context.clientRequestId,
-    ipAddress: context.ipAddress,
-    userAgent: context.userAgent,
-    now: context.now,
-  });
-}
-
-/**
- * Backward-compatible wrapper delegating to createHealthV2Service.
- */
-export async function getHealthCaseV2DetailCore(
-  db: PrismaClient,
-  id: string,
-  context: HealthCaseV2DetailContext
-): Promise<{ success: boolean; data: HealthCaseV2DTO }> {
-  const service = createHealthV2Service({
-    db,
-    dataProvider: context.dataProvider,
-  });
-  return service.getCaseDetail(id, {
-    actorUserId: context.actorUserId,
-    now: context.now,
-  });
-}
-
-/**
- * Backward-compatible wrapper delegating to createHealthV2Service.
- */
-export async function getHealthCasesV2AggregateCore(
-  db: PrismaClient,
-  filter: HealthCaseV2AggregateFilter,
-  context: HealthCaseV2AggregateContext
-): Promise<{ success: boolean; data: HealthCaseV2AggregateResult }> {
-  const service = createHealthV2Service({
-    db,
-    dataProvider: context.dataProvider,
-  });
-  return service.getCasesAggregate(filter, {
-    actorUserId: context.actorUserId,
-    now: context.now,
-  });
 }

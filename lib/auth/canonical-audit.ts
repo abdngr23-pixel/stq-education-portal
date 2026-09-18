@@ -61,6 +61,7 @@ export interface IAuditSink {
  * In-memory audit sink for testing and shadow evaluation without production DB side-effects
  */
 export class InMemoryAuditSink implements IAuditSink {
+  readonly isPersistent: boolean = false;
   private records: CanonicalAuditRecord[] = [];
 
   async record(entry: CanonicalAuditRecord): Promise<void> {
@@ -81,6 +82,14 @@ export class InMemoryAuditSink implements IAuditSink {
 }
 
 /**
+ * Transaction-bound audit persistence interface for atomic business mutations.
+ */
+export interface IAuditPersistence {
+  readonly isPersistent?: boolean;
+  recordInTx(tx: AuditDbClient, record: CanonicalAuditRecord): Promise<void>;
+}
+
+/**
  * Prisma-backed audit sink for isolated test environments or production write activation
  */
 export class PrismaAuditSink implements IAuditSink {
@@ -93,11 +102,16 @@ export class PrismaAuditSink implements IAuditSink {
   async record(entry: CanonicalAuditRecord, tx?: AuditDbClient): Promise<void> {
     // Check safety: only persist if in test mode or if explicitly allowed
     if (process.env.NODE_ENV === "production" && process.env.ENABLE_CANONICAL_AUDIT_WRITES !== "true") {
-      // In production during Milestone 2 shadow phase, do not write to production table
+      if (tx) {
+        throw new Error("AUDIT_PERSISTENCE_REQUIRED: Canonical audit writes are disabled in production (ENABLE_CANONICAL_AUDIT_WRITES !== 'true').");
+      }
       return;
     }
 
     const db = tx || this.client || prisma;
+    if (!db || !db.canonicalAuditLog || typeof db.canonicalAuditLog.create !== "function") {
+      throw new Error("AUDIT_PERSISTENCE_REQUIRED: Database client does not provide canonicalAuditLog model.");
+    }
     await db.canonicalAuditLog.create({
       data: {
         id: entry.id,
@@ -154,6 +168,54 @@ export class PrismaAuditSink implements IAuditSink {
       userAgent: r.userAgent,
       timestamp: r.createdAt,
     }));
+  }
+}
+
+/**
+ * Prisma-backed transaction audit persistence for atomic mutation execution.
+ */
+export class PrismaAuditPersistence implements IAuditPersistence {
+  readonly isPersistent: boolean = true;
+
+  async recordInTx(tx: AuditDbClient, record: CanonicalAuditRecord): Promise<void> {
+    if (process.env.NODE_ENV === "production" && process.env.ENABLE_CANONICAL_AUDIT_WRITES !== "true") {
+      throw new Error("AUDIT_PERSISTENCE_REQUIRED: Canonical audit writes are disabled in production (ENABLE_CANONICAL_AUDIT_WRITES !== 'true').");
+    }
+
+    if (!tx || !tx.canonicalAuditLog || typeof tx.canonicalAuditLog.create !== "function") {
+      throw new Error("AUDIT_PERSISTENCE_REQUIRED: Transaction client does not provide canonicalAuditLog model.");
+    }
+
+    try {
+      await tx.canonicalAuditLog.create({
+        data: {
+          id: record.id,
+          technicalAccountId: record.technicalAccountId,
+          technicalAccountUsername: record.technicalAccountUsername,
+          humanExecutorId: record.humanExecutorId || null,
+          humanExecutorName: record.humanExecutorName || null,
+          action: record.action,
+          entity: record.entity,
+          entityId: record.entityId,
+          capabilityCode: record.capabilityCode,
+          assignmentId: record.assignmentId || null,
+          positionCode: record.positionCode,
+          scopeType: record.scopeType,
+          unitId: record.unitId,
+          beforeState: (record.beforeState as unknown as object) || undefined,
+          afterState: (record.afterState as unknown as object) || undefined,
+          resourceContext: (record.resourceContext as unknown as object) || undefined,
+          reason: record.reason || null,
+          clientRequestId: record.clientRequestId || null,
+          ipAddress: record.ipAddress || null,
+          userAgent: record.userAgent || null,
+          createdAt: record.timestamp,
+        },
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`AUDIT_PERSISTENCE_FAILED: Failed to persist canonical audit in transaction: ${msg}`);
+    }
   }
 }
 

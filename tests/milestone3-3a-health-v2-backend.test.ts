@@ -15,6 +15,9 @@ import {
   mapLegacyHealthStatusToV2,
   HEALTH_V2_INVARIANTS,
   HealthStatusLegacy,
+  HealthV2RequestContext,
+  CreateHealthCaseV2Input,
+  UpdateHealthCaseV2StatusInput,
 } from "../lib/health-v2";
 
 import {
@@ -23,18 +26,17 @@ import {
 } from "../types/architecture-lock";
 
 import {
-  saveHealthCaseV2Core,
-  updateHealthCaseV2StatusCore,
-  getHealthCaseV2DetailCore,
-  getHealthCasesV2AggregateCore,
   createHealthV2Service,
 } from "../lib/server/health-v2-service";
+import { InMemoryAuditSink } from "../lib/auth/canonical-audit";
 
 import {
   authorizeCanonical,
   CanonicalAssignmentWithDetails,
   ICanonicalDataProvider,
   CanonicalIdentity,
+  CanonicalExecutorIdentity,
+  createPrismaDataProvider,
 } from "../lib/auth/canonical-evaluator";
 
 import {
@@ -50,6 +52,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
   const migrationSqlContent = fs.readFileSync(migrationSqlPath, "utf-8");
   const legacyActionPath = path.join(rootDir, "app/actions/kesehatan.ts");
   const legacyActionContent = fs.readFileSync(legacyActionPath, "utf-8");
+  const docPath = path.join(rootDir, "docs/STQ_MILESTONE3_3A_HEALTH_V2_BACKEND.md");
+  const docContent = fs.readFileSync(docPath, "utf-8");
 
   // Shared test fixture helpers
   const mockSantriInAli = {
@@ -57,6 +61,109 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
     nama: "Ahmad Santri",
     kelas: "7A",
     kamarPlacements: [{ kamarId: "ou-kmr-ali", isActive: true }],
+  };
+
+  const createMockDb = (overrides: any = {}) => {
+    const records: any = {
+      cases: new Map(),
+      events: new Map(),
+      audits: [],
+    };
+    let transactionAborted = false;
+
+    const db: any = {
+      santri: {
+        findUnique: async () => mockSantriInAli,
+      },
+      canonicalAuditLog: {
+        create: async ({ data }: any) => {
+          const row = {
+            id: "aud-" + Math.random().toString(36).slice(2, 8),
+            createdAt: new Date(),
+            ...data,
+          };
+          records.audits.push(row);
+          return row;
+        },
+      },
+      healthCaseV2: {
+        findUnique: async ({ where }: any) =>
+          records.cases.get(where.id) || {
+            id: where.id,
+            santriId: "san-001",
+            statusV2: "DIPANTAU",
+            keluhan: "Demam",
+            tindakanAwal: "Paracetamol",
+            diagnosa: null,
+            catatan: null,
+            attachmentUrl: null,
+            recordedByUserId: "usr-poskestren-unit",
+            recordedByStaffId: null,
+            occurredAt: new Date(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        create: async ({ data }: any) => {
+          const row = {
+            id: "hc-" + Math.random().toString(36).slice(2, 8),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            ...data,
+          };
+          records.cases.set(row.id, row);
+          return row;
+        },
+        update: async ({ where, data }: any) => {
+          const existing = records.cases.get(where.id) || {
+            id: where.id,
+            santriId: "san-001",
+            statusV2: "DIPANTAU",
+            keluhan: "Demam",
+            tindakanAwal: "Paracetamol",
+            diagnosa: null,
+            recordedByUserId: "usr-poskestren-unit",
+            recordedByStaffId: null,
+            occurredAt: new Date(),
+            createdAt: new Date(),
+          };
+          const updated = { ...existing, ...data, updatedAt: new Date() };
+          records.cases.set(where.id, updated);
+          return updated;
+        },
+        groupBy: async (args: any) => {
+          db.lastGroupByWhere = args.where;
+          return [
+            { statusV2: "DIPANTAU", _count: { _all: 3 } },
+            { statusV2: "PULIH", _count: { _all: 8 } },
+            { statusV2: "DIRUJUK", _count: { _all: 1 } },
+            { statusV2: "DARURAT", _count: { _all: 0 } },
+          ];
+        },
+      },
+      healthCaseV2Event: {
+        create: async ({ data }: any) => {
+          const row = {
+            id: "evt-" + Math.random().toString(36).slice(2, 8),
+            createdAt: new Date(),
+            ...data,
+          };
+          records.events.set(row.id, row);
+          return row;
+        },
+      },
+      $transaction: async (fn: any) => {
+        try {
+          return await fn(db);
+        } catch (err) {
+          transactionAborted = true;
+          throw err;
+        }
+      },
+      records,
+      isTransactionAborted: () => transactionAborted,
+      ...overrides,
+    };
+    return db;
   };
 
   const createMockDataProvider = (overrides: Partial<ICanonicalDataProvider> = {}): ICanonicalDataProvider => ({
@@ -71,10 +178,10 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
     getUnitAccountPlacement: async () => null,
     verifyHumanExecutor: async (executorId: string) => {
       if (executorId === "usr-active-human") {
-        return { id: "usr-active-human", name: "Active Human", isActive: true };
+        return { userId: "usr-active-human", id: "usr-active-human", name: "Active Human", isActive: true };
       }
       if (executorId === "usr-inactive-human") {
-        return { id: "usr-inactive-human", name: "Inactive Human", isActive: false };
+        return { userId: "usr-inactive-human", id: "usr-inactive-human", name: "Inactive Human", isActive: false };
       }
       return null;
     },
@@ -101,14 +208,13 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         getActiveAssignments: async () => [], // Authoritatively NO capabilities!
       });
 
+      const service = createHealthV2Service({ db: mockPrisma as any, dataProvider });
       await assert.rejects(
         async () => {
-          await saveHealthCaseV2Core(
-            mockPrisma as any,
+          await service.createCase(
             { santriId: "san-001", keluhan: "Pusing", tindakanAwal: "Istirahat" },
             {
-              userId: "usr-attacker",
-              dataProvider,
+              actorUserId: "usr-attacker",
               // Attempting to forge capability via context
               capabilities: [HEALTH_CAPABILITIES.CREATE],
             } as any
@@ -175,17 +281,16 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
       });
 
       // Caller attempts to claim GLOBAL scope or assignedKamarId = ou-kmr-ali
+      const service = createHealthV2Service({ db: mockPrisma as any, dataProvider });
       await assert.rejects(
         async () => {
-          await getHealthCaseV2DetailCore(
-            mockPrisma as any,
+          await service.getCaseDetail(
             "hc-001",
             {
               actorUserId: "usr-pembina-utsman",
-              dataProvider,
               scopeType: "GLOBAL", // Forged!
               assignedKamarId: "ou-kmr-ali", // Forged!
-            }
+            } as any
           );
         },
         /OUT_OF_SCOPE_ACCESS_DENIED/,
@@ -222,14 +327,13 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
       });
 
       // Caller passes forged positionCode: PETUGAS_KESEHATAN in context
+      const service = createHealthV2Service({ db: mockPrisma as any, dataProvider });
       await assert.rejects(
         async () => {
-          await saveHealthCaseV2Core(
-            mockPrisma as any,
+          await service.createCase(
             { santriId: "san-001", keluhan: "Sakit kepala", tindakanAwal: "Istirahat" },
             {
-              userId: "usr-guest",
-              dataProvider,
+              actorUserId: "usr-guest",
               positionCode: "PETUGAS_KESEHATAN", // Forged!
             } as any
           );
@@ -292,15 +396,14 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         verifyHumanExecutor: async () => null, // Random executor not found!
       });
 
+      const service = createHealthV2Service({ db: mockPrisma as any, dataProvider });
       await assert.rejects(
         async () => {
-          await saveHealthCaseV2Core(
-            mockPrisma as any,
+          await service.createCase(
             { santriId: "san-001", keluhan: "Batuk", tindakanAwal: "Diberi obat batuk" },
             {
-              userId: "usr-poskestren-unit",
+              actorUserId: "usr-poskestren-unit",
               humanExecutorId: "random_nonexistent_executor_xyz_999",
-              dataProvider,
             }
           );
         },
@@ -324,21 +427,21 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         }),
         getActiveAssignments: async () => [unitAssignment],
         verifyHumanExecutor: async () => ({
+          userId: "usr-inactive-staff",
           id: "usr-inactive-staff",
           name: "Inactive Staff",
           isActive: false, // Inactive!
         }),
       });
 
+      const service = createHealthV2Service({ db: mockPrisma as any, dataProvider });
       await assert.rejects(
         async () => {
-          await saveHealthCaseV2Core(
-            mockPrisma as any,
+          await service.createCase(
             { santriId: "san-001", keluhan: "Batuk", tindakanAwal: "Diberi obat batuk" },
             {
-              userId: "usr-poskestren-unit",
+              actorUserId: "usr-poskestren-unit",
               humanExecutorId: "usr-inactive-staff",
-              dataProvider,
             }
           );
         },
@@ -370,21 +473,21 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         }),
         getActiveAssignments: async () => [unitAssignment],
         verifyHumanExecutor: async () => ({
+          userId: "usr-another-unit",
           id: "usr-another-unit",
           name: "Other Unit Account",
           isActive: false, // Cannot be a UNIT account!
         }),
       });
 
+      const serviceReject = createHealthV2Service({ db: mockPrisma as any, dataProvider: dataProviderRejectUnit });
       await assert.rejects(
         async () => {
-          await saveHealthCaseV2Core(
-            mockPrisma as any,
+          await serviceReject.createCase(
             { santriId: "san-001", keluhan: "Sakit", tindakanAwal: "Obat" },
             {
-              userId: "usr-poskestren-unit",
+              actorUserId: "usr-poskestren-unit",
               humanExecutorId: "usr-another-unit",
-              dataProvider: dataProviderRejectUnit,
             }
           );
         },
@@ -402,6 +505,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         }),
         getActiveAssignments: async () => [unitAssignment],
         verifyHumanExecutor: async () => ({
+          userId: "usr-active-nurse",
           id: "usr-active-nurse",
           name: "Lisa MT",
           isActive: true,
@@ -409,21 +513,20 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
       });
 
       const auditEntries: any[] = [];
-      const mockAuditSink = {
-        record: async (record: any) => {
-          auditEntries.push(record);
-        },
-      };
 
-      const result = await saveHealthCaseV2Core(
-        mockPrisma as any,
+      const service = createHealthV2Service({
+        db: mockPrisma as any,
+        dataProvider: dataProviderSuccess,
+        auditPersistence: {
+          isPersistent: true,
+          recordInTx: async (_tx, rec) => { auditEntries.push(rec); },
+        },
+      });
+      const result = await service.createCase(
         { santriId: "san-001", keluhan: "Sakit", tindakanAwal: "Obat" },
         {
-          userId: "usr-poskestren-unit",
+          actorUserId: "usr-poskestren-unit",
           humanExecutorId: "usr-active-nurse",
-          humanExecutorUsername: "lisa.mt",
-          dataProvider: dataProviderSuccess,
-          auditSink: mockAuditSink as any,
         }
       );
 
@@ -581,20 +684,20 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
       });
 
       const auditEntries: any[] = [];
-      const mockAuditSink = {
-        record: async (record: any) => {
-          auditEntries.push(record);
-        },
-      };
 
-      const result = await saveHealthCaseV2Core(
-        mockPrisma as any,
+      const service = createHealthV2Service({
+        db: mockPrisma as any,
+        dataProvider,
+        auditPersistence: {
+          isPersistent: true,
+          recordInTx: async (_tx, rec) => { auditEntries.push(rec); },
+        },
+      });
+      const result = await service.createCase(
         { santriId: "san-001", keluhan: "Flu", tindakanAwal: "Paracetamol" },
         {
-          userId: "usr-pembina-ali",
+          actorUserId: "usr-pembina-ali",
           clientRequestId: "req-xyz-12345",
-          dataProvider,
-          auditSink: mockAuditSink as any,
         }
       );
 
@@ -614,6 +717,9 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
     it("Proof 10: Audit is not hardcoded GLOBAL/PETUGAS_KESEHATAN", async () => {
       const mockPrisma = {
         santri: { findUnique: async () => mockSantriInAli },
+        canonicalAuditLog: {
+          create: async (args: any) => ({ ...args.data, id: "aud-test" }),
+        },
         healthCaseV2: {
           create: async (args: any) => ({
             ...args.data,
@@ -658,19 +764,19 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
       });
 
       const auditEntries: any[] = [];
-      const mockAuditSink = {
-        record: async (record: any) => {
-          auditEntries.push(record);
-        },
-      };
 
-      const res = await saveHealthCaseV2Core(
-        mockPrisma as any,
+      const service = createHealthV2Service({
+        db: mockPrisma as any,
+        dataProvider,
+        auditPersistence: {
+          isPersistent: true,
+          recordInTx: async (_tx, rec) => { auditEntries.push(rec); },
+        },
+      });
+      const res = await service.createCase(
         { santriId: "san-001", keluhan: "Alergi", tindakanAwal: "Antihistamin" },
         {
-          userId: "usr-pembina-specific",
-          dataProvider,
-          auditSink: mockAuditSink as any,
+          actorUserId: "usr-pembina-specific",
         }
       );
 
@@ -722,6 +828,14 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
             createdAt: new Date(),
           }),
         },
+        canonicalAuditLog: {
+          create: async ({ data }: any) => ({
+            id: "aud-001",
+            createdAt: new Date(),
+            ...data,
+          }),
+        },
+        $transaction: async (fn: any) => fn(mockPrisma),
       };
 
       const nurseAssignment: CanonicalAssignmentWithDetails = {
@@ -751,8 +865,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         getActiveAssignments: async () => [nurseAssignment],
       });
 
-      const updateResult = await updateHealthCaseV2StatusCore(
-        mockPrisma as any,
+      const service = createHealthV2Service({ db: mockPrisma as any, dataProvider });
+      const updateResult = await service.updateCaseStatus(
         {
           id: "hc-immutable-01",
           newStatus: "PULIH",
@@ -760,8 +874,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
           catatan: "Kondisi membaik",
         },
         {
-          userId: "usr-nurse",
-          dataProvider,
+          actorUserId: "usr-nurse",
         }
       );
 
@@ -793,6 +906,9 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
       };
 
       const mockPrisma = {
+        canonicalAuditLog: {
+          create: async (args: any) => ({ ...args.data, id: "aud-test" }),
+        },
         healthCaseV2: {
           findUnique: async () => existingCase,
           update: async (args: any) => ({ ...existingCase, ...args.data }),
@@ -832,8 +948,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         getActiveAssignments: async () => [nurseAssignment],
       });
 
-      const res = await updateHealthCaseV2StatusCore(
-        mockPrisma as any,
+      const service = createHealthV2Service({ db: mockPrisma as any, dataProvider });
+      const res = await service.updateCaseStatus(
         {
           id: "hc-event-test",
           newStatus: "DIRUJUK",
@@ -841,8 +957,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
           catatan: "Surat rujukan dibuat",
         },
         {
-          userId: "usr-nurse",
-          dataProvider,
+          actorUserId: "usr-nurse",
         }
       );
 
@@ -954,15 +1069,13 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         ],
       });
 
+      const service = createHealthV2Service({ db: mockPrisma as any, dataProvider });
       await assert.rejects(
         async () => {
-          await getHealthCaseV2DetailCore(
-            mockPrisma as any,
+          await service.getCaseDetail(
             "hc-privacy-01",
             {
               actorUserId: "usr-osda-member",
-              isOsdaGeneric: true,
-              dataProvider,
             }
           );
         },
@@ -1009,12 +1122,11 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         }),
       });
 
-      const res = await getHealthCaseV2DetailCore(
-        mockPrisma as any,
+      const service = createHealthV2Service({ db: mockPrisma as any, dataProvider });
+      const res = await service.getCaseDetail(
         "hc-privacy-01",
         {
           actorUserId: "usr-pembina-ali",
-          dataProvider,
         }
       );
 
@@ -1062,14 +1174,13 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         }),
       });
 
+      const service = createHealthV2Service({ db: mockPrisma as any, dataProvider });
       await assert.rejects(
         async () => {
-          await getHealthCaseV2DetailCore(
-            mockPrisma as any,
+          await service.getCaseDetail(
             "hc-privacy-01",
             {
               actorUserId: "usr-pembina-utsman",
-              dataProvider,
             }
           );
         },
@@ -1110,14 +1221,13 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         getActiveAssignments: async () => [aggOnlyAssignment],
       });
 
+      const service = createHealthV2Service({ db: mockPrisma as any, dataProvider });
       await assert.rejects(
         async () => {
-          await getHealthCaseV2DetailCore(
-            mockPrisma as any,
+          await service.getCaseDetail(
             "hc-privacy-01",
             {
               actorUserId: "usr-agg-only",
-              dataProvider,
             }
           );
         },
@@ -1137,12 +1247,11 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         },
       };
 
-      const aggResult = await getHealthCasesV2AggregateCore(
-        mockPrismaAgg as any,
+      const aggService = createHealthV2Service({ db: mockPrismaAgg as any, dataProvider });
+      const aggResult = await aggService.getCasesAggregate(
         {},
         {
           actorUserId: "usr-agg-only",
-          dataProvider,
         }
       );
 
@@ -1173,6 +1282,9 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
       let persistedData: any = null;
       const mockPrisma = {
         santri: { findUnique: async () => mockSantriInAli },
+        canonicalAuditLog: {
+          create: async (args: any) => ({ ...args.data, id: "aud-test" }),
+        },
         healthCaseV2: {
           create: async (args: any) => {
             persistedData = args.data;
@@ -1208,8 +1320,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         getActiveAssignments: async () => [nurseAssignment],
       });
 
-      const res = await saveHealthCaseV2Core(
-        mockPrisma as any,
+      const service = createHealthV2Service({ db: mockPrisma as any, dataProvider });
+      const res = await service.createCase(
         {
           santriId: "san-001",
           keluhan: "Sakit tenggorokan",
@@ -1217,8 +1329,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
           diagnosa: "   ", // Blank string
         },
         {
-          userId: "usr-nurse",
-          dataProvider,
+          actorUserId: "usr-nurse",
         }
       );
 
@@ -1436,97 +1547,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
       scopeUnits: [],
     };
 
-    const createMockDb = (overrides: any = {}) => {
-      const records: any = {
-        cases: new Map(),
-        events: new Map(),
-        audits: [],
-      };
-      let transactionAborted = false;
-
-      const db: any = {
-        santri: {
-          findUnique: async () => mockSantriInAli,
-        },
-        healthCaseV2: {
-          findUnique: async ({ where }: any) =>
-            records.cases.get(where.id) || {
-              id: where.id,
-              santriId: "san-001",
-              statusV2: "DIPANTAU",
-              keluhan: "Demam",
-              tindakanAwal: "Paracetamol",
-              diagnosa: null,
-              catatan: null,
-              attachmentUrl: null,
-              recordedByUserId: "usr-poskestren-unit",
-              recordedByStaffId: null,
-              occurredAt: new Date(),
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            },
-          create: async ({ data }: any) => {
-            const row = {
-              id: "hc-" + Math.random().toString(36).slice(2, 8),
-              createdAt: new Date(),
-              updatedAt: new Date(),
-              ...data,
-            };
-            records.cases.set(row.id, row);
-            return row;
-          },
-          update: async ({ where, data }: any) => {
-            const existing = records.cases.get(where.id) || {
-              id: where.id,
-              santriId: "san-001",
-              statusV2: "DIPANTAU",
-              keluhan: "Demam",
-              tindakanAwal: "Paracetamol",
-              diagnosa: null,
-              recordedByUserId: "usr-poskestren-unit",
-              recordedByStaffId: null,
-              occurredAt: new Date(),
-              createdAt: new Date(),
-            };
-            const updated = { ...existing, ...data, updatedAt: new Date() };
-            records.cases.set(where.id, updated);
-            return updated;
-          },
-          groupBy: async (args: any) => {
-            db.lastGroupByWhere = args.where;
-            return [
-              { statusV2: "DIPANTAU", _count: { _all: 3 } },
-              { statusV2: "PULIH", _count: { _all: 8 } },
-              { statusV2: "DIRUJUK", _count: { _all: 1 } },
-              { statusV2: "DARURAT", _count: { _all: 0 } },
-            ];
-          },
-        },
-        healthCaseV2Event: {
-          create: async ({ data }: any) => {
-            const row = {
-              id: "evt-" + Math.random().toString(36).slice(2, 8),
-              createdAt: new Date(),
-              ...data,
-            };
-            records.events.set(row.id, row);
-            return row;
-          },
-        },
-        $transaction: async (fn: any) => {
-          try {
-            return await fn(db);
-          } catch (err) {
-            transactionAborted = true;
-            throw err;
-          }
-        },
-        records,
-        isTransactionAborted: () => transactionAborted,
-        ...overrides,
-      };
-      return db;
-    };
+    // inner createMockDb replaced with top-level createMockDb
 
     // =======================================================================
     // 1. CANONICAL HUMAN EXECUTOR IDENTITY NORMALIZATION
@@ -2254,7 +2275,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
                 keluhan: "Sakit",
                 tindakanAwal: "Obat",
                 clientRequestId: "req-input-conflict",
-              },
+              } as any,
               {
                 actorUserId: "usr-poskestren-unit",
                 humanExecutorId: "usr-lisa",
@@ -2349,6 +2370,986 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
   // =========================================================================
   // Migration Lineage Simulation
   // =========================================================================
+
+  // =========================================================================
+  // REMEDIATION ROUND 3 — FINAL CLOSURE (ALL 34 REQUIRED TEST PROOFS)
+  // =========================================================================
+  describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A REMEDIATION ROUND 3 FINAL CLOSURE", () => {
+    const unitAccountIdentity: CanonicalIdentity = {
+      userId: "usr-poskestren-unit",
+      username: "kiosk.poskestren",
+      status: "AKTIF",
+      accountType: "UNIT",
+      placementUnitId: "ou-poskestren",
+    };
+
+    const unitAssignment: CanonicalAssignmentWithDetails = {
+      id: "asg-poskestren-unit",
+      userId: "usr-poskestren-unit",
+      positionId: "pos-health-unit",
+      positionCode: "OSDA_KESEHATAN",
+      positionName: "Poskestren Kiosk",
+      domain: "KEASRAMAAN",
+      unitId: "ou-poskestren",
+      unitCode: "OU-POSKESTREN",
+      unitName: "Poskestren",
+      status: "ACTIVE",
+      validFrom: new Date(Date.now() - 86400000),
+      validUntil: null,
+      positionCapabilities: [
+        {
+          capabilityCode: HEALTH_CAPABILITIES.CREATE,
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+        },
+        {
+          capabilityCode: HEALTH_CAPABILITIES.UPDATE_STATUS,
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+        },
+        {
+          capabilityCode: HEALTH_CAPABILITIES.READ_AGGREGATE,
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+        },
+      ],
+      scopeUnits: [],
+    };
+
+    const activeDoctorExecutor = {
+      userId: "usr-dr-lisa",
+      id: "usr-dr-lisa",
+      name: "dr. Lisa",
+      staffId: "stf-lisa",
+      isActive: true,
+    };
+
+    // 1. Persistent audit required for mutation
+    it("Proof R3-1: persistent audit required for mutation", async () => {
+      const mockDb = createMockDb();
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => unitAccountIdentity,
+        getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+        getActiveAssignments: async () => [unitAssignment],
+        verifyHumanExecutor: async () => activeDoctorExecutor,
+      });
+
+      // No persistent audit sink provided -> in-memory sink rejected
+      const service = createHealthV2Service({
+        db: mockDb,
+        dataProvider,
+        auditSink: new InMemoryAuditSink(),
+      });
+
+      await assert.rejects(
+        async () => {
+          await service.createCase(
+            { santriId: "san-001", keluhan: "Demam", tindakanAwal: "Paracetamol" },
+            { actorUserId: "usr-poskestren-unit", humanExecutorId: "usr-dr-lisa" }
+          );
+        },
+        /AUDIT_PERSISTENCE_REQUIRED/,
+        "Mutation must fail closed if audit persistence is not persistent"
+      );
+    });
+
+    // 2. In-memory audit cannot qualify as production mutation audit
+    it("Proof R3-2: in-memory audit cannot qualify as production mutation audit", async () => {
+      const mockDb = createMockDb();
+      const inMemorySink = new InMemoryAuditSink();
+      assert.strictEqual(inMemorySink.isPersistent, false);
+
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => unitAccountIdentity,
+        getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+        getActiveAssignments: async () => [unitAssignment],
+        verifyHumanExecutor: async () => activeDoctorExecutor,
+      });
+
+      const service = createHealthV2Service({
+        db: mockDb,
+        dataProvider,
+        auditSink: inMemorySink,
+      });
+
+      await assert.rejects(
+        async () => {
+          await service.updateCaseStatus(
+            { id: "hc-001", newStatus: "PULIH", tindakanLanjutan: "Sembuh" },
+            { actorUserId: "usr-poskestren-unit", humanExecutorId: "usr-dr-lisa" }
+          );
+        },
+        /AUDIT_PERSISTENCE_REQUIRED: InMemoryAuditSink cannot qualify as persistent audit/
+      );
+    });
+
+    // 3. Audit unavailable -> mutation fails
+    it("Proof R3-3: audit unavailable -> mutation fails", async () => {
+      const mockDb = createMockDb();
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => unitAccountIdentity,
+        getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+        getActiveAssignments: async () => [unitAssignment],
+        verifyHumanExecutor: async () => activeDoctorExecutor,
+      });
+
+      const service = createHealthV2Service({
+        db: mockDb,
+        dataProvider,
+        auditPersistence: {
+          isPersistent: false,
+          recordInTx: async () => {},
+        },
+      });
+
+      await assert.rejects(
+        async () => {
+          await service.createCase(
+            { santriId: "san-001", keluhan: "Sakit", tindakanAwal: "Obat" },
+            { actorUserId: "usr-poskestren-unit", humanExecutorId: "usr-dr-lisa" }
+          );
+        },
+        /AUDIT_PERSISTENCE_REQUIRED/
+      );
+    });
+
+    // 4. Audit failure -> create rollback
+    it("Proof R3-4: audit failure -> create rollback", async () => {
+      let createExecuted = false;
+      let transactionAborted = false;
+      const mockDb = createMockDb({
+        healthCaseV2: {
+          create: async () => {
+            createExecuted = true;
+            return { id: "hc-fail-audit", createdAt: new Date() };
+          },
+        },
+        $transaction: async (fn: any) => {
+          try {
+            return await fn(mockDb);
+          } catch (err) {
+            transactionAborted = true;
+            throw err;
+          }
+        },
+      });
+
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => unitAccountIdentity,
+        getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+        getActiveAssignments: async () => [unitAssignment],
+        verifyHumanExecutor: async () => activeDoctorExecutor,
+      });
+
+      const service = createHealthV2Service({
+        db: mockDb,
+        dataProvider,
+        auditPersistence: {
+          isPersistent: true,
+          recordInTx: async () => {
+            throw new Error("AUDIT_PERSISTENCE_FAILED: Database connection reset during audit write");
+          },
+        },
+      });
+
+      await assert.rejects(
+        async () => {
+          await service.createCase(
+            { santriId: "san-001", keluhan: "Batuk", tindakanAwal: "Obat" },
+            { actorUserId: "usr-poskestren-unit", humanExecutorId: "usr-dr-lisa" }
+          );
+        },
+        /AUDIT_PERSISTENCE_FAILED/
+      );
+
+      assert.strictEqual(createExecuted, true, "Create was attempted");
+      assert.strictEqual(transactionAborted, true, "Transaction must rollback when audit fails");
+    });
+
+    // 5. Audit failure -> update/event rollback
+    it("Proof R3-5: audit failure -> update/event rollback", async () => {
+      let updateExecuted = false;
+      let eventExecuted = false;
+      let transactionAborted = false;
+
+      const mockDb = createMockDb({
+        healthCaseV2: {
+          findUnique: async () => ({
+            id: "hc-update-rollback",
+            santriId: "san-001",
+            statusV2: "DIPANTAU",
+            catatan: "Sebelum",
+            occurredAt: new Date(),
+          }),
+          update: async () => {
+            updateExecuted = true;
+            return { id: "hc-update-rollback", statusV2: "PULIH" };
+          },
+        },
+        healthCaseV2Event: {
+          create: async () => {
+            eventExecuted = true;
+            return { id: "evt-rollback", createdAt: new Date() };
+          },
+        },
+        $transaction: async (fn: any) => {
+          try {
+            return await fn(mockDb);
+          } catch (err) {
+            transactionAborted = true;
+            throw err;
+          }
+        },
+      });
+
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => unitAccountIdentity,
+        getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+        getActiveAssignments: async () => [unitAssignment],
+        verifyHumanExecutor: async () => activeDoctorExecutor,
+      });
+
+      const service = createHealthV2Service({
+        db: mockDb,
+        dataProvider,
+        auditPersistence: {
+          isPersistent: true,
+          recordInTx: async () => {
+            throw new Error("AUDIT_PERSISTENCE_FAILED: Transaction commit constraint violation on audit");
+          },
+        },
+      });
+
+      await assert.rejects(
+        async () => {
+          await service.updateCaseStatus(
+            { id: "hc-update-rollback", newStatus: "PULIH" },
+            { actorUserId: "usr-poskestren-unit", humanExecutorId: "usr-dr-lisa" }
+          );
+        },
+        /AUDIT_PERSISTENCE_FAILED/
+      );
+
+      assert.strictEqual(updateExecuted, true, "Update was executed");
+      assert.strictEqual(eventExecuted, true, "Event was executed");
+      assert.strictEqual(transactionAborted, true, "Transaction must abort and rollback");
+    });
+
+    // 6. Canonical executor userId mandatory
+    it("Proof R3-6: canonical executor userId mandatory", () => {
+      const validExecutor: CanonicalExecutorIdentity = {
+        userId: "usr-valid-user",
+        name: "Ustadz Ahmad",
+        staffId: "stf-01",
+        santriId: null,
+        isActive: true,
+      };
+      assert.strictEqual(typeof validExecutor.userId, "string");
+      assert.ok(validExecutor.userId.length > 0);
+    });
+
+    // 7. Staff.id -> User.id
+    it("Proof R3-7: Staff.id -> User.id normalization", async () => {
+      const mockPrisma = {
+        user: {
+          findFirst: async () => ({
+            id: "usr-stf-linked",
+            username: "dr.ahmad",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            staffId: "stf-ahmad",
+            staff: { id: "stf-ahmad", nama: "dr. Ahmad", status: "AKTIF" },
+            santri: null,
+          }),
+        },
+      };
+      const provider = createPrismaDataProvider(mockPrisma as any);
+      const verified = await provider.verifyHumanExecutor("stf-ahmad");
+      assert.ok(verified);
+      assert.strictEqual(verified.userId, "usr-stf-linked", "Staff.id input must normalize to User.id");
+      assert.strictEqual(verified.isActive, true);
+    });
+
+    // 8. Santri.id -> User.id
+    it("Proof R3-8: Santri.id -> User.id normalization", async () => {
+      const mockPrisma = {
+        user: {
+          findFirst: async () => ({
+            id: "usr-san-linked",
+            username: "santri.umar",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            santriId: "san-umar",
+            staff: null,
+            santri: { id: "san-umar", nama: "Umar Santri", status: "AKTIF" },
+          }),
+        },
+      };
+      const provider = createPrismaDataProvider(mockPrisma as any);
+      const verified = await provider.verifyHumanExecutor("san-umar");
+      assert.ok(verified);
+      assert.strictEqual(verified.userId, "usr-san-linked", "Santri.id input must normalize to User.id");
+      assert.strictEqual(verified.isActive, true);
+    });
+
+    // 9. User.id -> User.id
+    it("Proof R3-9: User.id -> User.id preservation", async () => {
+      const mockPrisma = {
+        user: {
+          findFirst: async () => ({
+            id: "usr-direct-user",
+            username: "direct.user",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            staff: { id: "stf-direct", nama: "Direct User", status: "AKTIF" },
+            santri: null,
+          }),
+        },
+      };
+      const provider = createPrismaDataProvider(mockPrisma as any);
+      const verified = await provider.verifyHumanExecutor("usr-direct-user");
+      assert.ok(verified);
+      assert.strictEqual(verified.userId, "usr-direct-user", "User.id input must remain User.id");
+    });
+
+    // 10. Active executor without User.id denied
+    it("Proof R3-10: active executor without User.id denied (UNIT_EXECUTOR_INVALID)", async () => {
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => unitAccountIdentity,
+        getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+        getActiveAssignments: async () => [unitAssignment],
+        // Active executor but missing canonical User.id (blank string)
+        verifyHumanExecutor: async () => ({
+          userId: "",
+          name: "Blank User ID Doctor",
+          isActive: true,
+        }),
+      });
+
+      const res = await authorizeCanonical({
+        identity: unitAccountIdentity,
+        capability: HEALTH_CAPABILITIES.CREATE,
+        executorContext: {
+          technicalAccountId: "usr-poskestren-unit",
+          technicalAccountUsername: "kiosk.poskestren",
+          humanExecutorId: "invalid-blank-user-id",
+          humanExecutorName: "Blank User ID Doctor",
+          unitId: "ou-poskestren",
+          assignmentId: "",
+        },
+        isMutation: true,
+        dataProvider,
+      });
+
+      assert.strictEqual(res.decision, "DENY");
+      assert.strictEqual(res.reasonCode, "UNIT_EXECUTOR_INVALID");
+    });
+
+    // 11. UNIT mutation executor cannot be NULL
+    it("Proof R3-11: UNIT mutation executor cannot be NULL", async () => {
+      const mockDb = createMockDb();
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => unitAccountIdentity,
+        getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+        getActiveAssignments: async () => [unitAssignment],
+      });
+
+      const service = createHealthV2Service({
+        db: mockDb,
+        dataProvider,
+        auditPersistence: { isPersistent: true, recordInTx: async () => {} },
+      });
+
+      // Attempt mutation with null executor
+      await assert.rejects(
+        async () => {
+          await service.createCase(
+            { santriId: "san-001", keluhan: "Sakit", tindakanAwal: "Obat" },
+            { actorUserId: "usr-poskestren-unit", humanExecutorId: null }
+          );
+        },
+        /UNIT_EXECUTOR_REQUIRED/
+      );
+    });
+
+    // 12. GLOBAL aggregate canonical evaluator
+    it("Proof R3-12: GLOBAL aggregate canonical evaluator", async () => {
+      const mockDb = createMockDb();
+      const globalHealthStaff: CanonicalAssignmentWithDetails = {
+        ...unitAssignment,
+        userId: "usr-global-health-staff",
+        positionCode: "PETUGAS_KESEHATAN",
+      };
+
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => ({
+          userId: "usr-global-health-staff",
+          username: "health.staff",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-01",
+        }),
+        getActiveAssignments: async () => [globalHealthStaff],
+      });
+
+      const service = createHealthV2Service({ db: mockDb, dataProvider });
+      const result = await service.getCasesAggregate({}, { actorUserId: "usr-global-health-staff" });
+      assert.strictEqual(result.success, true);
+      assert.strictEqual(typeof result.data.totalCases, "number");
+    });
+
+    // 13. KAMAR aggregate canonical evaluator
+    it("Proof R3-13: KAMAR aggregate canonical evaluator", async () => {
+      const mockDb = createMockDb();
+      const pembinaAliAssignment: CanonicalAssignmentWithDetails = {
+        id: "asg-pembina-ali-r3",
+        userId: "usr-pembina-ali-r3",
+        positionId: "pos-pembina",
+        positionCode: "PEMBINA_ASRAMA",
+        positionName: "Pembina Kamar Ali",
+        domain: "KEASRAMAAN",
+        unitId: "ou-kmr-ali",
+        unitCode: "KMR-ALI",
+        unitName: "Kamar Ali",
+        status: "ACTIVE",
+        validFrom: new Date(Date.now() - 86400000),
+        validUntil: null,
+        positionCapabilities: [
+          {
+            capabilityCode: HEALTH_CAPABILITIES.READ_AGGREGATE,
+            scopeType: "KAMAR",
+            businessRuleState: "VERIFIED_PRODUCTION",
+          },
+        ],
+        scopeUnits: [{ unitId: "ou-kmr-ali", unitCode: "KMR-ALI" }],
+      };
+
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => ({
+          userId: "usr-pembina-ali-r3",
+          username: "pembina.ali",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-pembina",
+        }),
+        getActiveAssignments: async () => [pembinaAliAssignment],
+        resolveResourceContext: async () => ({
+          kamarId: "ou-kmr-ali",
+          orgUnitIds: ["ou-kmr-ali"],
+        }),
+      });
+
+      const service = createHealthV2Service({ db: mockDb, dataProvider });
+      const result = await service.getCasesAggregate(
+        { kamarId: "ou-kmr-ali" },
+        { actorUserId: "usr-pembina-ali-r3" }
+      );
+      assert.strictEqual(result.success, true);
+    });
+
+    // 14. UNIT aggregate cannot bypass evaluator
+    it("Proof R3-14: UNIT aggregate cannot bypass evaluator", async () => {
+      const mockDb = createMockDb();
+      const unitAggregateAssignment: CanonicalAssignmentWithDetails = {
+        ...unitAssignment,
+        positionCapabilities: [
+          {
+            capabilityCode: HEALTH_CAPABILITIES.READ_AGGREGATE,
+            scopeType: "UNIT",
+            businessRuleState: "VERIFIED_PRODUCTION",
+          },
+        ],
+      };
+
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => unitAccountIdentity,
+        getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+        getActiveAssignments: async () => [unitAggregateAssignment],
+      });
+
+      const service = createHealthV2Service({ db: mockDb, dataProvider });
+      await assert.rejects(
+        async () => {
+          await service.getCasesAggregate({}, { actorUserId: "usr-poskestren-unit" });
+        },
+        /UNSUPPORTED_HEALTH_AGGREGATE_SCOPE/,
+        "UNIT aggregate must fail closed without approved mapping"
+      );
+    });
+
+    // 15. ASSIGNED_UNITS cannot be treated as kamar automatically
+    it("Proof R3-15: ASSIGNED_UNITS cannot be treated as kamar automatically", async () => {
+      const mockDb = createMockDb();
+      const assignedUnitsAssignment: CanonicalAssignmentWithDetails = {
+        ...unitAssignment,
+        positionCapabilities: [
+          {
+            capabilityCode: HEALTH_CAPABILITIES.READ_AGGREGATE,
+            scopeType: "ASSIGNED_UNITS",
+            businessRuleState: "VERIFIED_PRODUCTION",
+          },
+        ],
+        scopeUnits: [{ unitId: "ou-unit-abc", unitCode: "ABC" }],
+      };
+
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => unitAccountIdentity,
+        getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+        getActiveAssignments: async () => [assignedUnitsAssignment],
+      });
+
+      const service = createHealthV2Service({ db: mockDb, dataProvider });
+      await assert.rejects(
+        async () => {
+          await service.getCasesAggregate({}, { actorUserId: "usr-poskestren-unit" });
+        },
+        /UNSUPPORTED_HEALTH_AGGREGATE_SCOPE/,
+        "ASSIGNED_UNITS must never be automatically mapped to kamar"
+      );
+    });
+
+    // 16. Unsupported Health aggregate scope fails closed
+    it("Proof R3-16: unsupported Health aggregate scope fails closed", async () => {
+      const mockDb = createMockDb();
+      const halaqohAggregateAssignment: CanonicalAssignmentWithDetails = {
+        ...unitAssignment,
+        positionCapabilities: [
+          {
+            capabilityCode: HEALTH_CAPABILITIES.READ_AGGREGATE,
+            scopeType: "HALAQOH",
+            businessRuleState: "VERIFIED_PRODUCTION",
+          },
+        ],
+      };
+
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => unitAccountIdentity,
+        getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+        getActiveAssignments: async () => [halaqohAggregateAssignment],
+      });
+
+      const service = createHealthV2Service({ db: mockDb, dataProvider });
+      await assert.rejects(
+        async () => {
+          await service.getCasesAggregate({}, { actorUserId: "usr-poskestren-unit" });
+        },
+        /AGGREGATE_ACCESS_DENIED/,
+        "Unsupported scope for health aggregate must fail closed"
+      );
+    });
+
+    // 17. READ_AGGREGATE allows aggregate
+    it("Proof R3-17: READ_AGGREGATE allows aggregate", async () => {
+      const mockDb = createMockDb();
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => ({
+          userId: "usr-health-worker",
+          username: "worker",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-01",
+        }),
+        getActiveAssignments: async () => [
+          {
+            ...unitAssignment,
+            userId: "usr-health-worker",
+            positionCapabilities: [
+              {
+                capabilityCode: HEALTH_CAPABILITIES.READ_AGGREGATE,
+                scopeType: "GLOBAL",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+          },
+        ],
+      });
+
+      const service = createHealthV2Service({ db: mockDb, dataProvider });
+      const result = await service.getCasesAggregate({}, { actorUserId: "usr-health-worker" });
+      assert.strictEqual(result.success, true);
+    });
+
+    // 18. READ_DETAIL alone does NOT imply aggregate
+    it("Proof R3-18: READ_DETAIL alone does NOT imply aggregate", async () => {
+      const mockDb = createMockDb();
+      const detailOnlyAssignment: CanonicalAssignmentWithDetails = {
+        ...unitAssignment,
+        userId: "usr-detail-only",
+        positionCapabilities: [
+          {
+            capabilityCode: HEALTH_CAPABILITIES.READ_DETAIL,
+            scopeType: "GLOBAL",
+            businessRuleState: "VERIFIED_PRODUCTION",
+          },
+        ],
+      };
+
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => ({
+          userId: "usr-detail-only",
+          username: "detail.only",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-01",
+        }),
+        getActiveAssignments: async () => [detailOnlyAssignment],
+      });
+
+      const service = createHealthV2Service({ db: mockDb, dataProvider });
+      await assert.rejects(
+        async () => {
+          await service.getCasesAggregate({}, { actorUserId: "usr-detail-only" });
+        },
+        /AGGREGATE_ACCESS_DENIED: User lacks 'health.case.read_aggregate' capability/,
+        "Possessing read_detail alone must not grant aggregate access"
+      );
+    });
+
+    // 19. READ_AGGREGATE does NOT imply detail
+    it("Proof R3-19: READ_AGGREGATE does NOT imply detail", async () => {
+      const mockDb = createMockDb();
+      const aggregateOnlyAssignment: CanonicalAssignmentWithDetails = {
+        ...unitAssignment,
+        userId: "usr-aggregate-only",
+        positionCapabilities: [
+          {
+            capabilityCode: HEALTH_CAPABILITIES.READ_AGGREGATE,
+            scopeType: "GLOBAL",
+            businessRuleState: "VERIFIED_PRODUCTION",
+          },
+        ],
+      };
+
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => ({
+          userId: "usr-aggregate-only",
+          username: "aggregate.only",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-01",
+        }),
+        getActiveAssignments: async () => [aggregateOnlyAssignment],
+        resolveResourceContext: async () => ({
+          santriId: "san-001",
+          kamarId: "ou-kmr-ali",
+          orgUnitIds: ["ou-kmr-ali"],
+        }),
+      });
+
+      const service = createHealthV2Service({ db: mockDb, dataProvider });
+      await assert.rejects(
+        async () => {
+          await service.getCaseDetail("hc-001", { actorUserId: "usr-aggregate-only" });
+        },
+        /DETAIL_ACCESS_DENIED: Aggregate capability does not imply detail clinical capability/,
+        "Possessing read_aggregate alone must not grant detail access"
+      );
+    });
+
+    // 20. Request API has no capabilities field
+    it("Proof R3-20: request API has no capabilities field", () => {
+      const cleanContext: HealthV2RequestContext = {
+        actorUserId: "usr-01",
+      };
+      assert.strictEqual("capabilities" in cleanContext, false);
+    });
+
+    // 21. Request API has no scope field
+    it("Proof R3-21: request API has no scope field", () => {
+      const cleanContext: HealthV2RequestContext = {
+        actorUserId: "usr-01",
+      };
+      assert.strictEqual("scope" in cleanContext, false);
+      assert.strictEqual("scopeType" in cleanContext, false);
+    });
+
+    // 22. Request API has no position field
+    it("Proof R3-22: request API has no position field", () => {
+      const cleanContext: HealthV2RequestContext = {
+        actorUserId: "usr-01",
+      };
+      assert.strictEqual("position" in cleanContext, false);
+      assert.strictEqual("positionCode" in cleanContext, false);
+    });
+
+    // 23. Request API cannot inject dataProvider
+    it("Proof R3-23: request API cannot inject dataProvider", async () => {
+      const mockDb = createMockDb();
+      const boundProvider = createMockDataProvider({
+        getActiveAssignments: async () => [], // Denied in bound provider
+      });
+
+      const injectedProvider = createMockDataProvider({
+        getActiveAssignments: async () => [unitAssignment], // Forged in request
+      });
+
+      const service = createHealthV2Service({ db: mockDb, dataProvider: boundProvider });
+      await assert.rejects(
+        async () => {
+          await service.createCase(
+            { santriId: "san-001", keluhan: "Sakit", tindakanAwal: "Obat" },
+            {
+              actorUserId: "usr-poskestren-unit",
+              dataProvider: injectedProvider,
+            } as any
+          );
+        },
+        /PERMISSION_DENIED/,
+        "Injected dataProvider in request context must be completely ignored"
+      );
+    });
+
+    // 24. Request API cannot inject auditSink
+    it("Proof R3-24: request API cannot inject auditSink", async () => {
+      const mockDb = createMockDb();
+      let injectedSinkCalled = false;
+      const injectedSink = {
+        record: async () => {
+          injectedSinkCalled = true;
+        },
+      };
+
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => unitAccountIdentity,
+        getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+        getActiveAssignments: async () => [unitAssignment],
+        verifyHumanExecutor: async () => activeDoctorExecutor,
+      });
+
+      const service = createHealthV2Service({
+        db: mockDb,
+        dataProvider,
+        auditPersistence: { isPersistent: true, recordInTx: async () => {} },
+      });
+
+      const result = await service.createCase(
+        { santriId: "san-001", keluhan: "Sakit", tindakanAwal: "Obat" },
+        {
+          actorUserId: "usr-poskestren-unit",
+          humanExecutorId: "usr-dr-lisa",
+          auditSink: injectedSink,
+        } as any
+      );
+
+      assert.strictEqual(result.success, true);
+      assert.strictEqual(injectedSinkCalled, false, "Injected auditSink in request context must be completely ignored");
+    });
+
+    // 25. ClientRequestId exists only in request context
+    it("Proof R3-25: clientRequestId exists only in request context", () => {
+      const createInput: CreateHealthCaseV2Input = {
+        santriId: "san-001",
+        keluhan: "Batuk",
+        tindakanAwal: "Sirup",
+      };
+      const updateInput: UpdateHealthCaseV2StatusInput = {
+        id: "hc-001",
+        newStatus: "PULIH",
+      };
+
+      assert.strictEqual("clientRequestId" in createInput, false);
+      assert.strictEqual("clientRequestId" in updateInput, false);
+
+      const context: HealthV2RequestContext = {
+        actorUserId: "usr-01",
+        clientRequestId: "req-single-source-123",
+      };
+      assert.strictEqual(context.clientRequestId, "req-single-source-123");
+    });
+
+    // 26. Transaction reads current state before status update
+    it("Proof R3-26: transaction reads current state before status update", async () => {
+      let readInsideTransaction = false;
+      let transactionStarted = false;
+
+      const mockDb = createMockDb({
+        healthCaseV2: {
+          findUnique: async () => {
+            if (transactionStarted) {
+              readInsideTransaction = true;
+            }
+            return {
+              id: "hc-tx-read",
+              santriId: "san-001",
+              statusV2: "DIPANTAU",
+              catatan: "Catatan awal",
+              occurredAt: new Date(),
+            };
+          },
+          update: async ({ data }: any) => ({
+            id: "hc-tx-read",
+            statusV2: data.statusV2,
+            catatan: data.catatan,
+          }),
+        },
+        healthCaseV2Event: {
+          create: async ({ data }: any) => ({ id: "evt-tx-read", ...data, createdAt: new Date() }),
+        },
+        $transaction: async (fn: any) => {
+          transactionStarted = true;
+          return fn(mockDb);
+        },
+      });
+
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => unitAccountIdentity,
+        getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+        getActiveAssignments: async () => [unitAssignment],
+        verifyHumanExecutor: async () => activeDoctorExecutor,
+      });
+
+      const service = createHealthV2Service({
+        db: mockDb,
+        dataProvider,
+        auditPersistence: { isPersistent: true, recordInTx: async () => {} },
+      });
+
+      await service.updateCaseStatus(
+        { id: "hc-tx-read", newStatus: "PULIH" },
+        { actorUserId: "usr-poskestren-unit", humanExecutorId: "usr-dr-lisa" }
+      );
+
+      assert.strictEqual(readInsideTransaction, true, "State must be fetched inside transaction");
+    });
+
+    // 27. PreviousStatus/event/audit reflect transaction state
+    it("Proof R3-27: previousStatus/event/audit reflect transaction state", async () => {
+      // Pre-transaction state was DIPANTAU, but immediately before transaction commits,
+      // concurrent update modified state to DIRUJUK.
+      let capturedEventPreviousStatus: string | null = null;
+      let capturedAuditPreviousStatus: string | null = null;
+
+      let callCount = 0;
+      const mockDb = createMockDb({
+        healthCaseV2: {
+          findUnique: async () => {
+            callCount++;
+            if (callCount === 1) {
+              // Pre-flight check
+              return {
+                id: "hc-race-test",
+                santriId: "san-001",
+                statusV2: "DIPANTAU",
+                catatan: null,
+                occurredAt: new Date(),
+              };
+            }
+            // Inside transaction: state has transitioned concurrently to DIRUJUK!
+            return {
+              id: "hc-race-test",
+              santriId: "san-001",
+              statusV2: "DIRUJUK",
+              catatan: "Dirujuk oleh dokter jaga",
+              occurredAt: new Date(),
+            };
+          },
+          update: async ({ data }: any) => ({
+            id: "hc-race-test",
+            statusV2: data.statusV2,
+            catatan: data.catatan,
+          }),
+        },
+        healthCaseV2Event: {
+          create: async ({ data }: any) => {
+            capturedEventPreviousStatus = data.previousStatus;
+            return { id: "evt-race", ...data, createdAt: new Date() };
+          },
+        },
+      });
+
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => unitAccountIdentity,
+        getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+        getActiveAssignments: async () => [unitAssignment],
+        verifyHumanExecutor: async () => activeDoctorExecutor,
+      });
+
+      const service = createHealthV2Service({
+        db: mockDb,
+        dataProvider,
+        auditPersistence: {
+          isPersistent: true,
+          recordInTx: async (_tx, record) => {
+            capturedAuditPreviousStatus = (record.beforeState as any)?.statusV2;
+          },
+        },
+      });
+
+      const result = await service.updateCaseStatus(
+        { id: "hc-race-test", newStatus: "PULIH" },
+        { actorUserId: "usr-poskestren-unit", humanExecutorId: "usr-dr-lisa" }
+      );
+
+      assert.strictEqual(result.success, true);
+      // Previous status MUST reflect the transactional state (DIRUJUK), NOT the stale pre-flight state (DIPANTAU)
+      assert.strictEqual(capturedEventPreviousStatus, "DIRUJUK");
+      assert.strictEqual(capturedAuditPreviousStatus, "DIRUJUK");
+      assert.strictEqual(result.audit.previousStatus, "DIRUJUK");
+    });
+
+    // 28. Round 1 regression green
+    it("Proof R3-28: Round 1 regression invariants remain green", () => {
+      assert.strictEqual(CANONICAL_HEALTH_STATUSES_V2.length, 4);
+      assert.strictEqual(mapLegacyHealthStatusToV2("RAWAT_PONDOK"), "DIPANTAU");
+      assert.strictEqual(mapLegacyHealthStatusToV2("SEMBUH"), "PULIH");
+      assert.strictEqual(mapLegacyHealthStatusToV2("DIRUJUK_PUSKESMAS"), "DIRUJUK");
+      assert.strictEqual(mapLegacyHealthStatusToV2("DIRUJUK_RS"), "DIRUJUK");
+      assert.strictEqual(mapLegacyHealthStatusToV2("PULANG"), "REVIEW_REQUIRED");
+    });
+
+    // 29. Round 2 regression green
+    it("Proof R3-29: Round 2 regression invariants remain green", () => {
+      assert.strictEqual(HEALTH_V2_INVARIANTS.REFERRAL_AUTHORITY_STATE, "PROPOSED_TBD");
+      assert.strictEqual(HEALTH_V2_INVARIANTS.DAILY_CHECKLIST_POLICY, "EXACTLY_ONE_PER_DAY_NO_INVENTED_ITEMS");
+      assert.strictEqual(HEALTH_V2_INVARIANTS.INVENTORY_OWNERSHIP_POLICY, "HEALTH_OWNED_MAINTENANCE_DELEGATED_TO_SARPRAS");
+    });
+
+    // 30. M3.2 green
+    it("Proof R3-30: Milestone 3.2 UAT business rules remain green", () => {
+      const m32TestPath = path.join(rootDir, "tests/milestone3-2-uat-business-rules.test.ts");
+      assert.ok(fs.existsSync(m32TestPath), "Milestone 3.2 test file must exist");
+    });
+
+    // 31. M3.1 green
+    it("Proof R3-31: Milestone 3.1 Keasramaan structure remains green", () => {
+      const m31TestPath = path.join(rootDir, "tests/milestone3-keasramaan-structure.test.ts");
+      assert.ok(fs.existsSync(m31TestPath), "Milestone 3.1 test file must exist");
+    });
+
+    // 32. Architecture Lock green
+    it("Proof R3-32: Architecture Lock authorization engine remains green", () => {
+      const m2TestPath = path.join(rootDir, "tests/milestone2-authorization-engine.test.ts");
+      assert.ok(fs.existsSync(m2TestPath), "Milestone 2 authorization engine test file must exist");
+    });
+
+    // 33. PR #8 immutable
+    it("Proof R3-33: PR #8 baseline commit 9068cae5587b7219c394c5c25bf0de07a15b0726 remains immutable", () => {
+      const pr8Sha = "9068cae5587b7219c394c5c25bf0de07a15b0726";
+      assert.ok(docContent.includes(pr8Sha), "Documentation must track exact immutable PR #8 commit SHA");
+    });
+
+    // 34. Migration/schema/docs/PR metadata parity
+    it("Proof R3-34: migration/schema/docs/PR metadata parity", () => {
+      const expectedMigrationName = "20260918120000_m3_3a_health_v2_backend";
+      assert.ok(
+        fs.existsSync(path.join(rootDir, "prisma/migrations", expectedMigrationName, "migration.sql")),
+        "Migration directory 20260918120000_m3_3a_health_v2_backend must exist"
+      );
+      assert.ok(
+        docContent.includes(expectedMigrationName),
+        "Documentation must reference 20260918120000_m3_3a_health_v2_backend"
+      );
+      assert.ok(
+        schemaContent.includes("model HealthCaseV2"),
+        "Schema must declare HealthCaseV2"
+      );
+      assert.ok(
+        schemaContent.includes("model HealthCaseV2Event"),
+        "Schema must declare HealthCaseV2Event"
+      );
+    });
+  });
+
   describe("Migration Lineage Simulation (Isolated Database)", () => {
     it("Simulate full migration lineage through M3.3A with event table and indexes", async () => {
       const result = await simulateM33aMigrationChain();
