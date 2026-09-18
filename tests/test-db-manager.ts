@@ -1,8 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import EmbeddedPostgres from "embedded-postgres";
 import { PrismaClient } from "@prisma/client";
-import { createHealthV2Service } from "../lib/server/health-v2-service";
-import { ICanonicalDataProvider } from "../lib/auth/canonical-evaluator";
+import type { ICanonicalDataProvider } from "../lib/auth/canonical-evaluator";
 
 async function executeSqlStatementsOnClient(prismaClient: PrismaClient, sqlString: string): Promise<void> {
   // Strip single-line comments (-- ...)
@@ -2945,6 +2944,7 @@ export async function simulateM33aMigrationChain(): Promise<M33aMigrationVerific
         },
       };
 
+      const { createHealthV2Service } = await import("../lib/server/health-v2-service");
       const realService = createHealthV2Service({
         db: client,
         dataProvider: testDataProvider,
