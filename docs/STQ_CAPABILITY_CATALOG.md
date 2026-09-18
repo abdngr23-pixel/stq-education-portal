@@ -108,12 +108,20 @@ Canonical V2 statuses are EXACTLY: `DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`.
 | `keasramaan.usroh.supervise` | Pengawasan tugas harian usroh kebersihan | `PEMBINA_ASRAMA` (`KAMAR`), `OSDA` (`UNIT`) | **PROPOSED_TBD** | Taskforce supervision |
 
 ### 3.3. Akademik & Kurikulum (`academic.*`)
-| Capability Code | Description | Authorized Positions | Status |
-| :--- | :--- | :--- | :--- |
-| `academic.score.input` | Menginput nilai harian/ujian mapel | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
-| `academic.score.read` | Membaca buku nilai santri | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
-| `academic.rapor.print` | Mencetak rapor semesteran santri | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
-| `academic.curriculum.manage`| Mengatur mata pelajaran, KKM, kurikulum | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
+| Capability Code | Description | Authorized Positions & Scope | Business Rule State | Boundary Invariant |
+| :--- | :--- | :--- | :--- | :--- |
+| `academic.schedule.read` | Membaca jadwal KBM Studi Umum dan Kepesantrenan | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Read schedule matrix and slot times |
+| `academic.session.start` | Memulai sesi pembelajaran (Mulai Pembelajaran) dan mencatat kehadiran guru aktual | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Requires authentic staff identity, CAS concurrency on SCHEDULED state, dual teacher attribution |
+| `academic.material.record` | Mencatat materi pelajaran manual yang telah diajarkan pada sesi berlangsung | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Gated on session STARTED, actual teacher ownership enforced, transactional audit rollback |
+| `academic.attendance.record` | Mencatat presensi santri peserta sesi pembelajaran (HADIR, IZIN, SAKIT, ALFA) | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Scoped to enrolled participants in EducationSessionParticipant; MASBUK rejected; Studi Umum deferred |
+| `academic.session.view` | Melihat detail sesi pembelajaran, materi, dan presensi santri | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Read session execution details |
+| `academic.session.complete` | Menyelesaikan dan menutup sesi pembelajaran | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Transition from STARTED to COMPLETED |
+| `academic.cohort.manage` | Mengelola data angkatan program dan kalender tahun ajaran | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Cohort management independent of external class labels |
+| `academic.teaching_assignment.manage` | Mengelola penetapan penugasan guru pengajar mata pelajaran | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Teaching assignment management |
+| `academic.score.input` | Menginput nilai harian/ujian mapel | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Assessment scoring deferred |
+| `academic.score.read` | Membaca buku nilai santri | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Assessment scoring deferred |
+| `academic.rapor.print` | Mencetak rapor semesteran santri | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Assessment scoring deferred |
+| `academic.curriculum.manage` | Mengatur mata pelajaran, KKM, kurikulum | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Assessment scoring deferred |
 
 ### 3.4. Logistik, Keuangan, Surat & Donatur (`logistics.*`, `finance.*`, `letters.*`, `sponsor.*`)
 | Capability Code | Description | Authorized Positions | Status |

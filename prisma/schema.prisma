@@ -194,6 +194,32 @@ enum HealthStatusV2 {
   DARURAT
 }
 
+// Enums Milestone 3.3B: Pendidikan Foundation
+enum EducationTrack {
+  STUDI_UMUM
+  KEPESANTRENAN
+}
+
+enum PedagogicalLevel {
+  TINGKAT_1
+  TINGKAT_2
+  TINGKAT_3
+}
+
+enum EducationSessionStatus {
+  SCHEDULED
+  STARTED
+  COMPLETED
+  CANCELLED
+}
+
+enum EducationAttendanceStatus {
+  HADIR
+  IZIN
+  SAKIT
+  ALFA
+}
+
 enum KategoriLogistik {
   SEMBAKO
   OBAT_P3K
@@ -333,6 +359,11 @@ model User {
   healthCaseEventsRecorded HealthCaseV2Event[] @relation("HealthEventsRecordedByUser")
   healthCaseEventsExecuted HealthCaseV2Event[] @relation("HealthEventsExecutedByHuman")
 
+  // Milestone 3.3B: Pendidikan Foundation Relations
+  actualTeacherEducationSessions    EducationSession[]           @relation("ActualTeacherUserSessions")
+  materiRecordedEducationSessions   EducationSession[]           @relation("MateriRecordedUserSessions")
+  recordedSessionAttendances        EducationSessionAttendance[] @relation("SessionAttendanceRecorder")
+
   createdAt    DateTime    @default(now()) @map("created_at")
   updatedAt    DateTime    @updatedAt @map("updated_at")
 
@@ -386,6 +417,11 @@ model Staff {
   // Health V2 Relations (Blocker E & D)
   healthCasesRecorded      HealthCaseV2[]      @relation("HealthCasesRecordedByStaff")
   healthCaseEventsRecorded HealthCaseV2Event[] @relation("HealthEventsRecordedByStaff")
+
+  // Milestone 3.3B: Pendidikan Foundation Relations
+  teachingAssignments              TeachingAssignment[]
+  scheduledEducationSessions       EducationSession[]   @relation("ScheduledStaffSessions")
+  actualTeacherEducationSessions   EducationSession[]   @relation("ActualTeacherStaffSessions")
 
   createdAt          DateTime         @default(now()) @map("created_at")
   updatedAt          DateTime         @updatedAt @map("updated_at")
@@ -452,6 +488,12 @@ model Santri {
   finalisasiBulananList FinalisasiBulananSantri[]
   kamarPlacements       SantriKamarPlacement[]
 
+  // Relasi Milestone 3.3B: Pendidikan Foundation
+  cohortId              String?                      @map("cohort_id")
+  cohort                EducationCohort?             @relation(fields: [cohortId], references: [id], onDelete: SetNull)
+  sessionAttendances    EducationSessionAttendance[]
+  sessionParticipations EducationSessionParticipant[]
+
   createdAt     DateTime         @default(now()) @map("created_at")
   updatedAt     DateTime         @updatedAt @map("updated_at")
   createdBy     String?          @map("created_by")
@@ -459,6 +501,7 @@ model Santri {
   @@index([kelas])
   @@index([status])
   @@index([halaqohId])
+  @@index([cohortId])
   @@map("santri")
 }
 
@@ -535,6 +578,11 @@ model MataPelajaran {
   guru        Staff?         @relation(fields: [guruId], references: [id])
   
   nilaiList   NilaiAkademik[]
+
+  // Relasi Milestone 3.3B: Pendidikan Foundation
+  teachingAssignments TeachingAssignment[]
+  educationSessions   EducationSession[]
+
   createdAt   DateTime       @default(now()) @map("created_at")
 
   @@index([guruId])
@@ -1328,4 +1376,131 @@ model SantriKamarPlacement {
   @@index([kamarId, isActive])
   @@map("santri_kamar_placements")
 }
+
+// ====================================================
+// CANONICAL PENDIDIKAN FOUNDATION (MILESTONE 3.3B)
+// ====================================================
+
+model EducationCohort {
+  id               String             @id @default(cuid())
+  code             String             @unique // e.g. "2024/2025" or "AKT-2024"
+  tahunAjaranMasuk String             @map("tahun_ajaran_masuk") // e.g. "2024/2025"
+  startYear        Int                @map("start_year") // e.g. 2024
+  isActive         Boolean            @default(true) @map("is_active")
+  santriList       Santri[]
+  sessions         EducationSession[]
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  @@index([startYear])
+  @@index([isActive])
+  @@map("education_cohorts")
+}
+
+model TeachingAssignment {
+  id                String             @id @default(cuid())
+  mapelId           String             @map("mapel_id")
+  mapel             MataPelajaran      @relation(fields: [mapelId], references: [id], onDelete: Restrict)
+  staffId           String             @map("staff_id")
+  staff             Staff              @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  educationTrack    EducationTrack     @map("education_track")
+  genderComplex     GenderComplex      @map("gender_complex")
+  pedagogicalLevel  PedagogicalLevel?  @map("pedagogical_level")
+  isActive          Boolean            @default(true) @map("is_active")
+  validFrom         DateTime           @map("valid_from")
+  validUntil        DateTime?          @map("valid_until")
+  scheduledSessions EducationSession[] @relation("ScheduledTeacherAssignment")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  @@index([mapelId])
+  @@index([staffId])
+  @@index([educationTrack])
+  @@index([genderComplex])
+  @@index([isActive])
+  @@map("teaching_assignments")
+}
+
+model EducationSession {
+  id                           String                        @id @default(cuid())
+  educationTrack               EducationTrack                @map("education_track")
+  subjectId                    String                        @map("subject_id")
+  subject                      MataPelajaran                 @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  scheduledDate                DateTime                      @map("scheduled_date")
+  plannedStartTime             String?                       @map("planned_start_time")
+  plannedEndTime               String?                       @map("planned_end_time")
+  cohortId                     String?                       @map("cohort_id")
+  cohort                       EducationCohort?              @relation(fields: [cohortId], references: [id], onDelete: SetNull)
+  programLevel                 Int?                          @map("program_level")
+  genderGroup                  GenderComplex?                @map("gender_group")
+  jp                           Int?
+  semesterMeetingNumber        Int?                          @map("semester_meeting_number")
+  pblPhase                     String?                       @map("pbl_phase")
+  pblBlockNumber               Int?                          @map("pbl_block_number")
+  scheduledTeacherAssignmentId String?                       @map("scheduled_teacher_assignment_id")
+  scheduledTeacherAssignment   TeachingAssignment?           @relation("ScheduledTeacherAssignment", fields: [scheduledTeacherAssignmentId], references: [id], onDelete: SetNull)
+  scheduledStaffId             String?                       @map("scheduled_staff_id")
+  scheduledStaff               Staff?                        @relation("ScheduledStaffSessions", fields: [scheduledStaffId], references: [id], onDelete: SetNull)
+  actualTeacherUserId          String?                       @map("actual_teacher_user_id")
+  actualTeacherUser            User?                         @relation("ActualTeacherUserSessions", fields: [actualTeacherUserId], references: [id], onDelete: SetNull)
+  actualTeacherStaffId         String?                       @map("actual_teacher_staff_id")
+  actualTeacherStaff           Staff?                        @relation("ActualTeacherStaffSessions", fields: [actualTeacherStaffId], references: [id], onDelete: SetNull)
+  startedAt                    DateTime?                     @map("started_at")
+  completedAt                  DateTime?                     @map("completed_at")
+  status                       EducationSessionStatus        @default(SCHEDULED)
+  materi                       String?
+  materiRecordedAt             DateTime?                     @map("materi_recorded_at")
+  materiRecordedByUserId       String?                       @map("materi_recorded_by_user_id")
+  materiRecordedByUser         User?                         @relation("MateriRecordedUserSessions", fields: [materiRecordedByUserId], references: [id], onDelete: SetNull)
+  participants                 EducationSessionParticipant[]
+  attendances                  EducationSessionAttendance[]
+  createdAt                    DateTime                      @default(now()) @map("created_at")
+  updatedAt                    DateTime                      @updatedAt @map("updated_at")
+
+  @@index([educationTrack])
+  @@index([subjectId])
+  @@index([scheduledDate])
+  @@index([cohortId])
+  @@index([status])
+  @@index([scheduledStaffId])
+  @@index([actualTeacherUserId])
+  @@map("education_sessions")
+}
+
+model EducationSessionParticipant {
+  id        String           @id @default(cuid())
+  sessionId String           @map("session_id")
+  session   EducationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  santriId  String           @map("santri_id")
+  santri    Santri           @relation(fields: [santriId], references: [id], onDelete: Restrict)
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  @@unique([sessionId, santriId])
+  @@index([sessionId])
+  @@index([santriId])
+  @@map("education_session_participants")
+}
+
+model EducationSessionAttendance {
+  id               String                    @id @default(cuid())
+  sessionId        String                    @map("session_id")
+  session          EducationSession          @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  santriId         String                    @map("santri_id")
+  santri           Santri                    @relation(fields: [santriId], references: [id], onDelete: Restrict)
+  status           EducationAttendanceStatus
+  note             String?
+  recordedByUserId String                    @map("recorded_by_user_id")
+  recordedByUser   User                      @relation("SessionAttendanceRecorder", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+  recordedAt       DateTime                  @default(now()) @map("recorded_at")
+  createdAt        DateTime                  @default(now()) @map("created_at")
+  updatedAt        DateTime                  @updatedAt @map("updated_at")
+
+  @@unique([sessionId, santriId])
+  @@index([sessionId])
+  @@index([santriId])
+  @@index([status])
+  @@map("education_session_attendances")
+}
+
+
 
