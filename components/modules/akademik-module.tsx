@@ -31,15 +31,14 @@ import {
   Search,
   Calendar,
   Clock,
-  PlayCircle,
   Lock,
-  Unlock,
   FileText,
   Users,
 } from "lucide-react";
 import {
   resolveStudiUmumSchedule,
   CANONICAL_KEPESANTRENAN_SUBJECT_DEFINITIONS,
+  KEPESANTRENAN_SCHEDULED_FACTS,
 } from "@/lib/pendidikan-v2";
 
 export interface NilaiItem {
@@ -83,52 +82,52 @@ export const KEPESANTRENAN_INFO = [
   {
     kode: "KPS-ARB",
     nama: "Bahasa Arab",
-    kitab: "Durus al-Lughah",
+    kitab: KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-ARB"].levels.TINGKAT_1.referenceBook,
     deskripsi: "Pendidikan Bahasa Arab berjenjang berdasarkan tingkat kemahiran pedagogis (Tingkat I, II, dan III).",
-    guruPutra: "Tingkat I: Ust. Abi Hudzaifah | Tingkat II: Ust. Kamal Mukhtar | Tingkat III: Ust. Andi Quarzy Ayatullah",
-    guruPutri: "Ustazah Lisa Dwina Fitri",
+    guruPutra: `Tingkat I: ${KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-ARB"].levels.TINGKAT_1.teacherName} | Tingkat II: ${KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-ARB"].levels.TINGKAT_2.teacherName} | Tingkat III: ${KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-ARB"].levels.TINGKAT_3.teacherName}`,
+    guruPutri: KEPESANTRENAN_SCHEDULED_FACTS.PUTRI["KPS-ARB"].teacherName,
     jadwal: "Senin, 18:30–19:30 WITA",
     guruDefault: "Berdasarkan Tingkat & Gender",
   },
   {
     kode: "KPS-FQH",
     nama: "Fikih",
-    kitab: null, // Null / TBD: Menunggu pengesahan kurikulum formal
+    kitab: KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-FQH"].referenceBook,
     deskripsi: "Kaidah thaharah, shalat, dan adab ibadah praktis harian santri.",
-    guruPutra: "Ust. Razan",
-    guruPutri: "Ustazah Lisa Dwina Fitri",
+    guruPutra: KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-FQH"].teacherName,
+    guruPutri: KEPESANTRENAN_SCHEDULED_FACTS.PUTRI["KPS-FQH"].teacherName,
     jadwal: "Selasa, 18:30–19:30 WITA",
-    guruDefault: "Ust. Razan / Ustazah Lisa",
+    guruDefault: `${KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-FQH"].teacherName} / ${KEPESANTRENAN_SCHEDULED_FACTS.PUTRI["KPS-FQH"].teacherName}`,
   },
   {
     kode: "KPS-TFS",
     nama: "Tafsir",
-    kitab: "Tafsir Terjemahan Per Kata & Tafsir Jalalain",
+    kitab: KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-TFS"].referenceBooks.join(" & "),
     deskripsi: "Tadabbur ayat-ayat suci Al-Qur'an dan pemahaman pesan tauhid serta hukum syari'at.",
-    guruPutra: "Ust. Mujaddid",
-    guruPutri: "Ustazah Lisa Dwina Fitri",
+    guruPutra: KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-TFS"].teacherName,
+    guruPutri: KEPESANTRENAN_SCHEDULED_FACTS.PUTRI["KPS-TFS"].teacherName,
     jadwal: "Rabu, 18:30–19:30 WITA",
-    guruDefault: "Ust. Mujaddid / Ustazah Lisa",
+    guruDefault: `${KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-TFS"].teacherName} / ${KEPESANTRENAN_SCHEDULED_FACTS.PUTRI["KPS-TFS"].teacherName}`,
   },
   {
     kode: "KPS-AQD",
     nama: "Aqidah",
-    kitab: null, // Null / TBD: Menunggu pengesahan kurikulum formal
+    kitab: KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-AQD"].referenceBook,
     deskripsi: "Penanaman aqidah shahihah, rukun iman, dan tauhid ahlussunnah wal jama'ah.",
-    guruPutra: "Ust. Alwan",
-    guruPutri: "Ustazah Lisa Dwina Fitri",
+    guruPutra: KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-AQD"].teacherName,
+    guruPutri: KEPESANTRENAN_SCHEDULED_FACTS.PUTRI["KPS-AQD"].teacherName,
     jadwal: "Kamis, 18:30–19:30 WITA",
-    guruDefault: "Ust. Alwan / Ustazah Lisa",
+    guruDefault: `${KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-AQD"].teacherName} / ${KEPESANTRENAN_SCHEDULED_FACTS.PUTRI["KPS-AQD"].teacherName}`,
   },
   {
     kode: "KPS-TJW",
     nama: "Tajwid",
-    kitab: "Matan Tuhfatul Athfal",
+    kitab: KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-TJW"].referenceBook,
     deskripsi: "Makharijul huruf, sifatul huruf, dan kaidah hukum tajwid praktis.",
-    guruPutra: "Ust. Mujaddid",
-    guruPutri: "Ustazah Lisa Dwina Fitri",
+    guruPutra: KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-TJW"].teacherName,
+    guruPutri: KEPESANTRENAN_SCHEDULED_FACTS.PUTRI["KPS-TJW"].teacherName,
     jadwal: "Jumat, 18:30–19:30 WITA",
-    guruDefault: "Ust. Mujaddid / Ustazah Lisa",
+    guruDefault: `${KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-TJW"].teacherName} / ${KEPESANTRENAN_SCHEDULED_FACTS.PUTRI["KPS-TJW"].teacherName}`,
   },
 ];
 
@@ -160,37 +159,10 @@ export function AkademikModule({
   // Milestone 3.3B: Studi Umum Saturday Schedule & Session Management State
   const [selectedCohortStartYear, setSelectedCohortStartYear] = useState<number>(2026);
   const [selectedSemesterMeeting, setSelectedSemesterMeeting] = useState<number>(1);
-  const [studiUmumSessionState, setStudiUmumSessionState] = useState<
-    Record<number, { status: "SCHEDULED" | "STARTED"; startedAt?: string; teacherName: string }>
-  >({
-    1: { status: "SCHEDULED", teacherName: "Belum ditetapkan" },
-    2: { status: "SCHEDULED", teacherName: "Belum ditetapkan" },
-    3: { status: "SCHEDULED", teacherName: "Belum ditetapkan" },
-  });
-
   const cohortLevel = (selectedCohortStartYear === 2026 ? 1 : selectedCohortStartYear === 2025 ? 2 : 3) as 1 | 2 | 3;
 
   // Milestone 3.3B: Kepesantrenan Daily Schedule & Session Management State
   const [selectedKpsDay, setSelectedKpsDay] = useState<"Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday">("Monday");
-  const [kpsSessionState, setKpsSessionState] = useState<
-    Record<
-      string,
-      {
-        status: "SCHEDULED" | "STARTED";
-        startedAt?: string;
-        teacherName: string;
-        materi?: string;
-        attendances: Record<string, "HADIR" | "IZIN" | "SAKIT" | "ALFA">;
-      }
-    >
-  >({
-    Monday: { status: "SCHEDULED", teacherName: "Berdasarkan Tingkat & Gender", attendances: {} },
-    Tuesday: { status: "SCHEDULED", teacherName: "Ust. Razan / Ustazah Lisa", attendances: {} },
-    Wednesday: { status: "SCHEDULED", teacherName: "Ust. Mujaddid / Ustazah Lisa", attendances: {} },
-    Thursday: { status: "SCHEDULED", teacherName: "Ust. Alwan / Ustazah Lisa", attendances: {} },
-    Friday: { status: "SCHEDULED", teacherName: "Ust. Mujaddid / Ustazah Lisa", attendances: {} },
-  });
-  const [materiInputTemp, setMateriInputTemp] = useState<string>("");
 
   // Load data nilai riil dari server action on mount
   useEffect(() => {
@@ -594,20 +566,11 @@ export function AkademikModule({
                     jp: jpNum,
                     semesterMeetingNumber: selectedSemesterMeeting,
                   });
-                  const sessionState = studiUmumSessionState[jpNum] || {
-                    status: "SCHEDULED",
-                    teacherName: "Belum ditetapkan",
-                  };
-                  const isStarted = sessionState.status === "STARTED";
 
                   return (
                     <div
                       key={jpNum}
-                      className={`p-4 rounded-2xl border transition-all flex flex-col justify-between ${
-                        isStarted
-                          ? "bg-emerald-50/40 border-emerald-300 ring-1 ring-emerald-300"
-                          : "bg-white border-slate-200 hover:border-slate-300"
-                      }`}
+                      className="p-4 rounded-2xl border transition-all flex flex-col justify-between bg-white border-slate-200"
                     >
                       <div className="space-y-3">
                         <div className="flex items-center justify-between gap-2">
@@ -652,57 +615,30 @@ export function AkademikModule({
                         <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs space-y-1">
                           <div className="flex justify-between text-[11px]">
                             <span className="text-slate-500">Guru Pengajar:</span>
-                            <span className="font-semibold text-slate-800">
-                              {sessionState.teacherName || "Belum ditetapkan"}
+                            <span className="font-semibold text-slate-600">
+                              Belum diaktifkan
                             </span>
                           </div>
                           <div className="flex justify-between text-[11px]">
                             <span className="text-slate-500">Status Sesi:</span>
-                            <span
-                              className={`font-bold ${
-                                isStarted ? "text-emerald-700" : "text-amber-700"
-                              }`}
-                            >
-                              {isStarted ? "● BERLANGSUNG" : "○ TERJADWAL"}
+                            <span className="font-bold text-amber-700">
+                              ○ TERJADWAL
                             </span>
                           </div>
                         </div>
                       </div>
 
                       <div className="mt-4 pt-3 border-t border-slate-100">
-                        {isStarted ? (
-                          <div className="text-center py-2 px-3 rounded-xl bg-emerald-100/70 text-emerald-900 text-xs font-bold flex items-center justify-center gap-1.5">
-                            <CheckCircle2 className="h-4 w-4 text-[#0E7C3A]" />
-                            KBM Dimulai ({sessionState.startedAt || "08:00 WITA"})
-                          </div>
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="primary"
-                            size="sm"
-                            className="w-full min-h-[44px] bg-[#0E7C3A] hover:bg-[#0B642E] text-xs font-bold gap-1.5"
-                            onClick={() => {
-                              setStudiUmumSessionState((prev) => ({
-                                ...prev,
-                                [jpNum]: {
-                                  status: "STARTED",
-                                  startedAt: new Date().toLocaleTimeString("id-ID", {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  }) + " WITA",
-                                  teacherName: currentUserName || "Guru Pengajar (Otentikasi)",
-                                },
-                              }));
-                              setFeedback({
-                                type: "success",
-                                message: `Sesi Studi Umum JP ${jpNum} (${schedule.subject}) berhasil dimulai oleh ${currentUserName || "Guru Pengajar"}. Presensi dan materi pembelajaran kini terbuka.`,
-                              });
-                            }}
-                          >
-                            <PlayCircle className="h-4 w-4" />
-                            Mulai Pembelajaran
-                          </Button>
-                        )}
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          disabled
+                          className="w-full min-h-[44px] bg-slate-100 text-slate-400 cursor-not-allowed text-xs font-bold gap-1.5 border border-slate-200"
+                        >
+                          <Lock className="h-4 w-4 text-slate-400" />
+                          Belum diaktifkan — menunggu aktivasi M3.3C
+                        </Button>
                       </div>
                     </div>
                   );
@@ -1306,14 +1242,11 @@ export function AkademikModule({
 
                 <CardContent className="p-4 sm:p-5 space-y-5">
                   {(() => {
-                    const currentDayState = kpsSessionState[selectedKpsDay] || {
-                      status: "SCHEDULED",
-                      teacherName: "Berdasarkan Tingkat & Gender",
-                      attendances: {},
-                    };
-                    const isKpsStarted = currentDayState.status === "STARTED";
                     const dayDef = CANONICAL_KEPESANTRENAN_SUBJECT_DEFINITIONS.find(
                       (s) => s.dayOfWeek === selectedKpsDay
+                    );
+                    const kpsFact = KEPESANTRENAN_INFO.find(
+                      (k) => k.nama === dayDef?.name
                     );
 
                     return (
@@ -1325,187 +1258,84 @@ export function AkademikModule({
                               <span className="font-bold text-slate-900 text-sm">
                                 {dayDef?.dayNameId}: {dayDef?.name}
                               </span>
-                              <Badge variant={isKpsStarted ? "green" : "neutral"} size="sm" className="font-bold">
-                                {isKpsStarted ? "● SESI BERLANGSUNG" : "○ TERJADWAL"}
+                              <Badge variant="neutral" size="sm" className="font-bold">
+                                ○ TERJADWAL
                               </Badge>
                             </div>
                             <p className="text-xs text-slate-500 mt-1">
-                              Jendela Waktu: {dayDef?.scheduledWindowWita} • Guru Terjadwal: {currentDayState.teacherName}
+                              Jendela Waktu: {dayDef?.scheduledWindowWita} • Guru Terjadwal: {kpsFact?.guruDefault || "Berdasarkan Tingkat & Gender"} • Status: Belum dimulai
                             </p>
                           </div>
 
                           <div>
-                            {isKpsStarted ? (
-                              <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 bg-emerald-100/70 px-3 py-2 rounded-xl">
-                                <CheckCircle2 className="h-4 w-4 text-[#0E7C3A]" />
-                                Dimulai oleh: {currentUserName || "Guru Pengajar"} ({currentDayState.startedAt || "18:30 WITA"})
-                              </div>
-                            ) : (
-                              <Button
-                                type="button"
-                                variant="primary"
-                                size="sm"
-                                className="min-h-[44px] bg-[#0E7C3A] hover:bg-[#0B642E] text-xs font-bold gap-1.5"
-                                onClick={() => {
-                                  setKpsSessionState((prev) => ({
-                                    ...prev,
-                                    [selectedKpsDay]: {
-                                      ...prev[selectedKpsDay],
-                                      status: "STARTED",
-                                      startedAt:
-                                        new Date().toLocaleTimeString("id-ID", {
-                                          hour: "2-digit",
-                                          minute: "2-digit",
-                                        }) + " WITA",
-                                      teacherName: currentUserName || "Guru Pengajar (Otentikasi)",
-                                    },
-                                  }));
-                                  setFeedback({
-                                    type: "success",
-                                    message: `Sesi KBM Kepesantrenan hari ${dayDef?.dayNameId} (${dayDef?.name}) berhasil dimulai. Pencatatan materi dan presensi santri kini terbuka.`,
-                                  });
-                                }}
-                              >
-                                <PlayCircle className="h-4 w-4" />
-                                Mulai Pembelajaran
-                              </Button>
-                            )}
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              disabled
+                              className="min-h-[44px] bg-slate-100 text-slate-400 cursor-not-allowed text-xs font-bold gap-1.5 border border-slate-200"
+                            >
+                              <Lock className="h-4 w-4 text-slate-400" />
+                              Belum diaktifkan — menunggu aktivasi M3.3C
+                            </Button>
                           </div>
                         </div>
 
                         {/* Gating Grid: Materi & Presensi */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                           {/* 1. Pencatatan Materi Pembelajaran (Manual) */}
-                          <div className={`p-4 rounded-2xl border transition-all ${
-                            isKpsStarted ? "bg-white border-slate-200" : "bg-slate-50/70 border-slate-200/80 opacity-80"
-                          }`}>
+                          <div className="p-4 rounded-2xl border transition-all bg-slate-50/70 border-slate-200/80 opacity-90">
                             <div className="flex items-center justify-between gap-2 mb-2">
                               <h5 className="font-bold text-xs sm:text-sm text-slate-900 flex items-center gap-1.5">
                                 <FileText className="h-4 w-4 text-[#0E7C3A]" />
                                 Catatan Materi Pelajaran (Manual)
                               </h5>
-                              <Badge variant={isKpsStarted ? "green" : "neutral"} size="sm" className="font-semibold text-[10px]">
-                                {isKpsStarted ? <Unlock className="h-3 w-3 inline mr-1" /> : <Lock className="h-3 w-3 inline mr-1" />}
-                                {isKpsStarted ? "Terbuka" : "Terkunci"}
+                              <Badge variant="neutral" size="sm" className="font-semibold text-[10px]">
+                                <Lock className="h-3 w-3 inline mr-1" />
+                                Terkunci
                               </Badge>
                             </div>
                             <p className="text-[11px] text-slate-500 mb-3">
                               Guru yang mengajar wajib menginput materi secara manual. Sistem tidak melakukan auto-advance.
                             </p>
 
-                            {isKpsStarted ? (
-                              <div className="space-y-2">
-                                <textarea
-                                  rows={2}
-                                  placeholder="Contoh: Bab Thaharah - Rukun Wudhu & Pembatalnya"
-                                  value={materiInputTemp || currentDayState.materi || ""}
-                                  onChange={(e) => setMateriInputTemp(e.target.value)}
-                                  className="w-full p-2.5 rounded-xl border border-slate-200 text-xs text-slate-800 bg-slate-50 focus:bg-white resize-none"
-                                />
-                                <div className="flex justify-end">
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="primary"
-                                    className="bg-[#0E7C3A] text-xs font-bold min-h-[38px]"
-                                    onClick={() => {
-                                      if (!materiInputTemp.trim()) {
-                                        setFeedback({ type: "error", message: "Materi pembelajaran tidak boleh kosong." });
-                                        return;
-                                      }
-                                      setKpsSessionState((prev) => ({
-                                        ...prev,
-                                        [selectedKpsDay]: {
-                                          ...prev[selectedKpsDay],
-                                          materi: materiInputTemp.trim(),
-                                        },
-                                      }));
-                                      setFeedback({ type: "success", message: "Materi pembelajaran berhasil disimpan secara manual." });
-                                    }}
-                                  >
-                                    <Save className="h-3.5 w-3.5" />
-                                    Simpan Materi
-                                  </Button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-800 flex items-center gap-2">
+                            <div className="space-y-2">
+                              <textarea
+                                rows={2}
+                                disabled
+                                placeholder="Pencatatan materi pembelajaran belum diaktifkan — menunggu aktivasi M3.3C"
+                                value=""
+                                readOnly
+                                className="w-full p-2.5 rounded-xl border border-slate-200 text-xs text-slate-400 bg-slate-100 cursor-not-allowed resize-none"
+                              />
+                              <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-[11px] text-amber-800 flex items-center gap-2">
                                 <Lock className="h-4 w-4 shrink-0 text-amber-600" />
-                                <span>Materi pembelajaran hanya dapat dicatat setelah guru mengklik &quot;Mulai Pembelajaran&quot;.</span>
+                                <span>Pencatatan materi pembelajaran belum diaktifkan — menunggu aktivasi M3.3C.</span>
                               </div>
-                            )}
+                            </div>
                           </div>
 
                           {/* 2. Presensi Santri (HADIR, IZIN, SAKIT, ALFA) */}
-                          <div className={`p-4 rounded-2xl border transition-all ${
-                            isKpsStarted ? "bg-white border-slate-200" : "bg-slate-50/70 border-slate-200/80 opacity-80"
-                          }`}>
+                          <div className="p-4 rounded-2xl border transition-all bg-slate-50/70 border-slate-200/80 opacity-90">
                             <div className="flex items-center justify-between gap-2 mb-2">
                               <h5 className="font-bold text-xs sm:text-sm text-slate-900 flex items-center gap-1.5">
                                 <Users className="h-4 w-4 text-[#0E7C3A]" />
                                 Presensi Santri Sesi KBM
                               </h5>
-                              <Badge variant={isKpsStarted ? "green" : "neutral"} size="sm" className="font-semibold text-[10px]">
-                                {isKpsStarted ? <Unlock className="h-3 w-3 inline mr-1" /> : <Lock className="h-3 w-3 inline mr-1" />}
-                                {isKpsStarted ? "Terbuka" : "Terkunci"}
+                              <Badge variant="neutral" size="sm" className="font-semibold text-[10px]">
+                                <Lock className="h-3 w-3 inline mr-1" />
+                                Terkunci
                               </Badge>
                             </div>
                             <p className="text-[11px] text-slate-500 mb-3">
                               Status resmi: <strong>HADIR</strong>, <strong>IZIN</strong>, <strong>SAKIT</strong>, <strong>ALFA</strong>. (Tanpa status Masbuk).
                             </p>
 
-                            {isKpsStarted ? (
-                              <div className="space-y-2 max-h-[140px] overflow-y-auto pr-1">
-                                {santriList.slice(0, 5).map((s) => {
-                                  const currentStatus = currentDayState.attendances[s.id] || "HADIR";
-                                  return (
-                                    <div key={s.id} className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50 border border-slate-100 text-xs">
-                                      <span className="font-semibold text-slate-900 truncate max-w-[120px] sm:max-w-[160px]">
-                                        {s.nama}
-                                      </span>
-                                      <div className="flex items-center gap-1">
-                                        {(["HADIR", "IZIN", "SAKIT", "ALFA"] as const).map((st) => (
-                                          <button
-                                            key={st}
-                                            type="button"
-                                            onClick={() => {
-                                              setKpsSessionState((prev) => ({
-                                                ...prev,
-                                                [selectedKpsDay]: {
-                                                  ...prev[selectedKpsDay],
-                                                  attendances: {
-                                                    ...prev[selectedKpsDay].attendances,
-                                                    [s.id]: st,
-                                                  },
-                                                },
-                                              }));
-                                            }}
-                                            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all min-h-[32px] ${
-                                              currentStatus === st
-                                                ? st === "HADIR"
-                                                  ? "bg-emerald-600 text-white"
-                                                  : st === "IZIN"
-                                                  ? "bg-sky-600 text-white"
-                                                  : st === "SAKIT"
-                                                  ? "bg-amber-600 text-white"
-                                                  : "bg-red-600 text-white"
-                                                : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
-                                            }`}
-                                          >
-                                            {st}
-                                          </button>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-800 flex items-center gap-2">
-                                <Lock className="h-4 w-4 shrink-0 text-amber-600" />
-                                <span>Presensi santri hanya dapat diisi setelah guru mengklik &quot;Mulai Pembelajaran&quot;.</span>
-                              </div>
-                            )}
+                            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center py-6">
+                              <Users className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                              <p className="text-xs font-bold text-slate-600">Daftar peserta sesi belum diaktifkan.</p>
+                              <p className="text-[11px] text-slate-400 mt-1">Presensi santri terverifikasi akan aktif pada Milestone 3.3C.</p>
+                            </div>
                           </div>
                         </div>
                       </div>

@@ -113,10 +113,12 @@ export class PendidikanV2Service {
       throw new Error("ACTOR_USER_ID_REQUIRED: Identitas pengguna autentikasi wajib disertakan");
     }
 
-    // 1. Resolve human executor
+    // 1. Resolve human executor and verify canonical User.id
     const executor = await this.dataProvider.verifyHumanExecutor(actorUserId);
-    if (!executor || !executor.isActive) {
-      throw new Error("ACTOR_NOT_ACTIVE: Akun pengguna tidak dalam status aktif");
+    if (!executor || !executor.isActive || !executor.userId) {
+      throw new Error(
+        "HUMAN_EXECUTOR_VERIFICATION_FAILED: Identitas pelaksana manusia tidak sah atau tidak aktif"
+      );
     }
 
     // 2. Resolve identity and ensure staff link
@@ -198,7 +200,7 @@ export class PendidikanV2Service {
         id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         technicalAccountId: actorUserId,
         technicalAccountUsername: technicalIdentity.username,
-        humanExecutorId: executor.id,
+        humanExecutorId: executor.userId,
         humanExecutorName: executor.name,
         action: "academic.session.start",
         entity: "EducationSession",
@@ -267,6 +269,11 @@ export class PendidikanV2Service {
     }
 
     const executor = await this.dataProvider.verifyHumanExecutor(actorUserId);
+    if (!executor || !executor.isActive || !executor.userId) {
+      throw new Error(
+        "HUMAN_EXECUTOR_VERIFICATION_FAILED: Identitas pelaksana manusia tidak sah atau tidak aktif"
+      );
+    }
 
     // 2. Authorize actor with canonical capability 'academic.material.record'
     const authDecision = await authorizeCanonical({
@@ -323,8 +330,8 @@ export class PendidikanV2Service {
         id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         technicalAccountId: actorUserId,
         technicalAccountUsername: technicalIdentity.username,
-        humanExecutorId: executor?.id || actorUserId,
-        humanExecutorName: executor?.name || technicalIdentity.username,
+        humanExecutorId: executor.userId,
+        humanExecutorName: executor.name,
         action: "academic.material.record",
         entity: "EducationSession",
         entityId: sessionId,
@@ -413,23 +420,47 @@ export class PendidikanV2Service {
     }
 
     const executor = await this.dataProvider.verifyHumanExecutor(actorUserId);
-
-    // 3. Authorize actor
-    const authDecision = await authorizeCanonical({
-      identity: technicalIdentity,
-      capability: "academic.attendance.record",
-      resourceContext: { educationSessionId: sessionId, santriId: recordsToProcess[0]?.santriId },
-      dataProvider: this.dataProvider,
-      isMutation: true,
-    });
-
-    if (authDecision.decision !== "ALLOW") {
+    if (!executor || !executor.isActive || !executor.userId) {
       throw new Error(
-        `CANONICAL_AUTHORIZATION_DENIED: Pengguna tidak berwenang mencatat presensi santri (${authDecision.reason || authDecision.reasonCode})`
+        "HUMAN_EXECUTOR_VERIFICATION_FAILED: Identitas pelaksana manusia tidak sah atau tidak aktif"
       );
     }
 
-    const provenance = validateAuditProvenance(authDecision);
+    // 3. Authorize actor for EVERY DISTINCT santriId in the batch
+    const distinctSantriIds = Array.from(new Set(recordsToProcess.map((r) => r.santriId)));
+    let primaryProvenance: {
+      assignmentId: string;
+      positionCode: string;
+      capabilityCode: string;
+      scopeType: ScopeType;
+      unitId: string;
+    } | null = null;
+
+    for (const sId of distinctSantriIds) {
+      const authDecision = await authorizeCanonical({
+        identity: technicalIdentity,
+        capability: "academic.attendance.record",
+        resourceContext: { educationSessionId: sessionId, santriId: sId },
+        dataProvider: this.dataProvider,
+        isMutation: true,
+      });
+
+      if (authDecision.decision !== "ALLOW") {
+        throw new Error(
+          `CANONICAL_AUTHORIZATION_DENIED: Pengguna tidak berwenang mencatat presensi santri '${sId}' (${authDecision.reason || authDecision.reasonCode})`
+        );
+      }
+
+      const provenance = validateAuditProvenance(authDecision);
+      if (!primaryProvenance) {
+        primaryProvenance = provenance;
+      }
+    }
+
+    if (!primaryProvenance) {
+      throw new Error("CANONICAL_AUTHORIZATION_DENIED: Tidak ada target presensi yang dapat diotorisasi");
+    }
+    const provenance = primaryProvenance;
 
     // 4. Atomic transaction: Track check + Gating + Actual teacher check + Participant integrity + Upsert + Audit
     return await this.db.$transaction(async (tx) => {
@@ -478,6 +509,29 @@ export class PendidikanV2Service {
         }
       }
 
+      // Load existing attendances for forensic beforeState
+      const beforeRecords: { santriId: string; status: EducationAttendanceStatus | null }[] = [];
+      const afterRecords: { santriId: string; status: EducationAttendanceStatus }[] = [];
+
+      for (const rec of recordsToProcess) {
+        const existing = await tx.educationSessionAttendance.findUnique({
+          where: {
+            sessionId_santriId: {
+              sessionId,
+              santriId: rec.santriId,
+            },
+          },
+        });
+        beforeRecords.push({
+          santriId: rec.santriId,
+          status: existing ? existing.status : null,
+        });
+        afterRecords.push({
+          santriId: rec.santriId,
+          status: rec.status,
+        });
+      }
+
       const recordedAt = new Date();
       const results = [];
 
@@ -508,13 +562,13 @@ export class PendidikanV2Service {
         results.push(attendance);
       }
 
-      // Record audit
+      // Record forensic audit
       const auditRecord: CanonicalAuditRecord = {
         id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         technicalAccountId: actorUserId,
         technicalAccountUsername: technicalIdentity.username,
-        humanExecutorId: executor?.id || actorUserId,
-        humanExecutorName: executor?.name || technicalIdentity.username,
+        humanExecutorId: executor.userId,
+        humanExecutorName: executor.name,
         action: "academic.attendance.record",
         entity: "EducationSessionAttendance",
         entityId: sessionId,
@@ -523,10 +577,11 @@ export class PendidikanV2Service {
         positionCode: provenance.positionCode,
         scopeType: provenance.scopeType,
         unitId: provenance.unitId,
-        beforeState: null,
+        beforeState: {
+          records: beforeRecords,
+        },
         afterState: {
-          sessionId,
-          recordedCount: results.length,
+          records: afterRecords,
         },
         resourceContext: { educationSessionId: sessionId, educationTrack: currentSession.educationTrack },
         clientRequestId: clientRequestId || null,

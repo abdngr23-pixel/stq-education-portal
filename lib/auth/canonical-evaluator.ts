@@ -864,7 +864,6 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
               scheduledStaffId: string | null;
               actualTeacherUserId: string | null;
               scheduledTeacherAssignmentId: string | null;
-              scheduledTeacherAssignment?: { targetUnitId?: string | null } | null;
             } | null>;
           };
         }).educationSession;
@@ -906,6 +905,39 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
         }
       }
 
+      // 1c. Trust Boundary Closure: EducationSession + Santri Participant Consistency
+      if (requested.educationSessionId && targetSantriId) {
+        const participantDelegate = (prisma as unknown as {
+          educationSessionParticipant?: {
+            findUnique: (args: {
+              where: {
+                sessionId_santriId: {
+                  sessionId: string;
+                  santriId: string;
+                };
+              };
+            }) => Promise<{ id: string; sessionId: string; santriId: string } | null>;
+          };
+        }).educationSessionParticipant;
+
+        if (participantDelegate) {
+          const participant = await participantDelegate.findUnique({
+            where: {
+              sessionId_santriId: {
+                sessionId: requested.educationSessionId,
+                santriId: targetSantriId,
+              },
+            },
+          });
+          if (!participant) {
+            // Santri is NOT an enrolled participant of this EducationSession -> fail closed
+            return null;
+          }
+        } else {
+          return null;
+        }
+      }
+
       // 2. Target Santri Hydration (Authoritative containment trust boundary)
       if (targetSantriId) {
         const targetSantri = await prisma.santri.findUnique({
@@ -918,16 +950,33 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
           return null;
         }
 
-        // Authoritative halaqoh containment strictly from database
-        halaqohId = targetSantri.halaqohId || undefined;
-        if (targetSantri.halaqohId) {
-          orgUnitIds.push(targetSantri.halaqohId);
+        const santriGenderComplex: GenderComplex | undefined =
+          targetSantri.jenisKelamin === "L" ? "PUTRA" : targetSantri.jenisKelamin === "P" ? "PUTRI" : undefined;
+
+        // Session Participant Gender Consistency (Fail closed on mismatch)
+        if (educationSession) {
+          if (educationSession.genderGroup === "PUTRA" && santriGenderComplex !== "PUTRA") {
+            // PUTRA session cannot contain PUTRI santri -> fail closed
+            return null;
+          }
+          if (educationSession.genderGroup === "PUTRI" && santriGenderComplex !== "PUTRI") {
+            // PUTRI session cannot contain PUTRA santri -> fail closed
+            return null;
+          }
         }
 
-        if (targetSantri.jenisKelamin === "L") {
-          unitGenderComplex = "PUTRA";
-        } else if (targetSantri.jenisKelamin === "P") {
-          unitGenderComplex = "PUTRI";
+        const isAcademicContext = orgDomain === "AKADEMIK" || Boolean(requested.educationSessionId);
+
+        // Cross-domain scope containment: Do NOT turn Tahfizh halaqoh into authorization scope for academic capabilities
+        if (!isAcademicContext) {
+          halaqohId = targetSantri.halaqohId || undefined;
+          if (targetSantri.halaqohId) {
+            orgUnitIds.push(targetSantri.halaqohId);
+          }
+        }
+
+        if (!unitGenderComplex) {
+          unitGenderComplex = santriGenderComplex;
         }
 
         // Capability-aware domain resolution: Derive strategic domain strictly from target capability namespace
@@ -949,7 +998,8 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
 
         // Authoritative Kamar Placement Hydration
         // Invariant: Caller-supplied requested.kamarId is strictly ignored and MUST NEVER override actual placement.
-        if (prisma.santriKamarPlacement) {
+        // Invariant: Academic context does NOT borrow Keasramaan kamar into academic scope.
+        if (prisma.santriKamarPlacement && !isAcademicContext) {
           const activePlacement = await prisma.santriKamarPlacement.findFirst({
             where: {
               santriId: targetSantri.id,

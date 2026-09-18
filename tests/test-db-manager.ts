@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import EmbeddedPostgres from "embedded-postgres";
 import { PrismaClient } from "@prisma/client";
-import type { ICanonicalDataProvider } from "../lib/auth/canonical-evaluator";
+import { createPrismaDataProvider, type ICanonicalDataProvider } from "../lib/auth/canonical-evaluator";
 
 async function executeSqlStatementsOnClient(prismaClient: PrismaClient, sqlString: string): Promise<void> {
   // Strip single-line comments (-- ...)
@@ -2515,6 +2515,10 @@ export interface M33bMigrationVerificationResult {
   sessionAuditRollbackVerified: boolean;
   concurrentSessionStartCasVerified: boolean;
   materialAuditRollbackVerified: boolean;
+  realProviderResourceResolutionVerified: boolean;
+  realServiceConcurrencyVerified: boolean;
+  realServiceMaterialRollbackVerified: boolean;
+  realServiceAttendanceBatchVerified: boolean;
   simulationSuccess: boolean;
 }
 
@@ -3203,6 +3207,11 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `stq-m33b-${Date.now()}-${port}-`));
   const testUrl = `postgresql://postgres:postgrespassword@127.0.0.1:${port}/stq_m33b_test?schema=public`;
 
+  const oldTestDbUrl = process.env.TEST_DATABASE_URL;
+  const oldDbUrl = process.env.DATABASE_URL;
+  process.env.TEST_DATABASE_URL = testUrl;
+  process.env.DATABASE_URL = testUrl;
+
   verifyTestEnvironment(testUrl);
 
   const pgInstance = new EmbeddedPostgres({
@@ -3709,6 +3718,341 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
       materialAuditRollbackVerified = checkMateri.length === 1 && checkMateri[0].materi === 'Materi Asli';
     }
 
+    // 22. Verifikasi Real Prisma Provider Resource Resolution dengan createPrismaDataProvider(client)
+    const realPrismaProvider = createPrismaDataProvider(client);
+
+    // 22a. Resolusi konteks sesi valid
+    const sessionContext = await realPrismaProvider.resolveResourceContext({ educationSessionId: "sess-01" });
+    const validSessionContextResolved =
+      sessionContext !== null &&
+      sessionContext.orgDomain === "AKADEMIK" &&
+      sessionContext.educationSessionId === "sess-01" &&
+      sessionContext.educationSession?.educationTrack === "STUDI_UMUM" &&
+      sessionContext.educationSession?.genderGroup === "PUTRA" &&
+      sessionContext.educationSession?.programLevel === 1 &&
+      (sessionContext as any).targetUnitId === undefined &&
+      Array.isArray(sessionContext.orgUnitIds) &&
+      sessionContext.orgUnitIds.length === 0;
+
+    // 22b. Resolusi peserta valid (san-pre-m33b terdaftar di part-01)
+    const participantContext = await realPrismaProvider.resolveResourceContext({
+      educationSessionId: "sess-01",
+      santriId: "san-pre-m33b",
+    });
+    const validParticipantResolved =
+      participantContext !== null &&
+      participantContext.santriId === "san-pre-m33b" &&
+      participantContext.educationSessionId === "sess-01";
+
+    // 22c. Santri bukan peserta (fail closed -> return null)
+    const nonParticipantContext = await realPrismaProvider.resolveResourceContext({
+      educationSessionId: "sess-01",
+      santriId: "san-non-enrolled",
+    });
+    const nonParticipantFailsClosed = nonParticipantContext === null;
+
+    // 22d. Sesi tidak ditemukan (fail closed -> return null)
+    const nonExistentContext = await realPrismaProvider.resolveResourceContext({
+      educationSessionId: "sess-does-not-exist",
+    });
+    const nonExistentSessionFailsClosed = nonExistentContext === null;
+
+    const realProviderResourceResolutionVerified =
+      validSessionContextResolved &&
+      validParticipantResolved &&
+      nonParticipantFailsClosed &&
+      nonExistentSessionFailsClosed;
+
+    // 23. Verifikasi Real Concurrent Service Test: PendidikanV2Service.startEducationSession
+    // Setup data peserta kedua untuk pengujian sesi kepesantrenan
+    await client.$executeRawUnsafe(`
+      INSERT INTO "santri" ("id", "nis", "nama", "kelas", "jenis_kelamin", "status", "cohort_id", "created_at", "updated_at")
+      VALUES ('san-pre-m33b-2', 'NIS-PRE-M33B-2', 'Santri Putra 2', '7A', 'L', 'AKTIF', 'coh-2024', NOW(), NOW())
+      ON CONFLICT ("id") DO NOTHING;
+    `);
+
+    // Sesi baru untuk pengujian service level
+    await client.$executeRawUnsafe(`
+      INSERT INTO "education_sessions" (
+        "id", "education_track", "subject_id", "scheduled_date", "cohort_id", "program_level", "gender_group", "jp",
+        "scheduled_teacher_assignment_id", "scheduled_staff_id", "status", "created_at", "updated_at"
+      ) VALUES (
+        'sess-svc-real', 'KEPESANTRENAN'::"EducationTrack", 'mp-legacy-01', NOW(), 'coh-2024', 1, 'PUTRA'::"GenderComplex", 1,
+        'ta-01', 'stf-pre-m33b', 'SCHEDULED'::"EducationSessionStatus", NOW(), NOW()
+      );
+    `);
+
+    // Daftarkan san-pre-m33b dan san-pre-m33b-2 sebagai peserta resmi
+    await client.$executeRawUnsafe(`
+      INSERT INTO "education_session_participants" ("id", "session_id", "santri_id", "created_at")
+      VALUES 
+        ('part-svc-01', 'sess-svc-real', 'san-pre-m33b', NOW()),
+        ('part-svc-02', 'sess-svc-real', 'san-pre-m33b-2', NOW())
+      ON CONFLICT DO NOTHING;
+    `);
+
+    const serviceDataProvider: ICanonicalDataProvider = {
+      getIdentity: (userId) => realPrismaProvider.getIdentity(userId),
+      verifyHumanExecutor: (id) => realPrismaProvider.verifyHumanExecutor(id),
+      resolveResourceContext: (ctx) => realPrismaProvider.resolveResourceContext(ctx),
+      getUnitAccountPlacement: (userId) => realPrismaProvider.getUnitAccountPlacement(userId),
+      getActiveAssignments: async (userId) => [
+        {
+          id: `asg-${userId}`,
+          userId,
+          positionId: "pos-guru-akademik",
+          positionCode: "GURU_AKADEMIK",
+          positionName: "Guru Akademik",
+          domain: "AKADEMIK",
+          unitId: "ou-pre-kmr-m33b",
+          unitCode: "OU-PRE-KMR-M33B",
+          unitName: "Unit Akademik",
+          status: "ACTIVE",
+          validFrom: new Date(Date.now() - 86400000),
+          validUntil: null,
+          positionCapabilities: [
+            {
+              capabilityCode: "academic.session.start",
+              scopeType: "GLOBAL",
+              businessRuleState: "VERIFIED_PRODUCTION",
+            },
+            {
+              capabilityCode: "academic.material.record",
+              scopeType: "GLOBAL",
+              businessRuleState: "VERIFIED_PRODUCTION",
+            },
+            {
+              capabilityCode: "academic.attendance.record",
+              scopeType: "GLOBAL",
+              businessRuleState: "VERIFIED_PRODUCTION",
+            },
+          ],
+          scopeUnits: [],
+        },
+      ],
+    };
+
+    const { PendidikanV2Service } = await import("../lib/server/pendidikan-v2-service");
+
+    // Gunakan koordinasi race condition deterministik untuk menguji CAS di level PostgreSQL
+    let txAEntered = false;
+    let txBCommitted = false;
+    let resolveTxAEntered: () => void = () => {};
+    const txAEnteredPromise = new Promise<void>((r) => { resolveTxAEntered = r; });
+
+    const clientForTxA = new Proxy(client, {
+      get(target, prop) {
+        if (prop === "$transaction") {
+          return async (fn: (tx: any) => Promise<any>) => {
+            return (target as any).$transaction(async (tx: any) => {
+              const proxyTx = new Proxy(tx, {
+                get(txTarget, txProp) {
+                  if (txProp === "educationSession") {
+                    return new Proxy(txTarget.educationSession, {
+                      get(sessTarget, sessProp) {
+                        if (sessProp === "findUnique") {
+                          return async (args: any) => {
+                            const res = await sessTarget.findUnique(args);
+                            if (args?.where?.id === "sess-svc-real" && !txAEntered) {
+                              txAEntered = true;
+                              resolveTxAEntered();
+                              const waitStart = Date.now();
+                              while (!txBCommitted && Date.now() - waitStart < 4000) {
+                                await new Promise((r) => setTimeout(r, 20));
+                              }
+                            }
+                            return res;
+                          };
+                        }
+                        return (sessTarget as any)[sessProp];
+                      },
+                    });
+                  }
+                  return (txTarget as any)[txProp];
+                },
+              });
+              return fn(proxyTx);
+            });
+          };
+        }
+        return (target as any)[prop];
+      },
+    });
+
+    const serviceA = new PendidikanV2Service({ db: clientForTxA as any, dataProvider: serviceDataProvider });
+    const serviceB = new PendidikanV2Service({ db: client, dataProvider: serviceDataProvider });
+
+    const promiseA = serviceA.startEducationSession({ sessionId: "sess-svc-real" }, { actorUserId: "usr-pre-m33b" });
+    await txAEnteredPromise;
+
+    // Tx B berjalan saat Tx A sedang berada di tengah transaksi (status masih SCHEDULED)
+    const resultB = await serviceB.startEducationSession({ sessionId: "sess-svc-real" }, { actorUserId: "usr-substitute" });
+    txBCommitted = true;
+
+    // Tx A melanjutkan update CAS: updateMany({ where: { id, status: 'SCHEDULED' } })
+    // Di PostgreSQL, baris sudah diubah ke 'STARTED' oleh Tx B, sehingga count = 0 dan melempar EDUCATION_SESSION_CONCURRENT_START
+    let txAErrorMsg = "";
+    try {
+      await promiseA;
+    } catch (err: unknown) {
+      txAErrorMsg = err instanceof Error ? err.message : String(err);
+    }
+
+    const realCasErrorVerified = txAErrorMsg.includes("EDUCATION_SESSION_CONCURRENT_START");
+    const resultBSuccess = resultB.success === true && resultB.session.status === "STARTED";
+
+    const dbSessAfterStart = await client.$queryRawUnsafe<Array<{ status: string; actual_teacher_user_id: string }>>(
+      `SELECT "status"::text, "actual_teacher_user_id" FROM "education_sessions" WHERE "id" = 'sess-svc-real';`
+    );
+    const dbSessVerified =
+      dbSessAfterStart.length === 1 &&
+      dbSessAfterStart[0].status === "STARTED" &&
+      dbSessAfterStart[0].actual_teacher_user_id === "usr-substitute";
+
+    const auditStartLogs = await client.$queryRawUnsafe<Array<{ id: string; action: string }>>(
+      `SELECT "id", "action" FROM "canonical_audit_logs" WHERE "entity_id" = 'sess-svc-real' AND "action" = 'academic.session.start';`
+    );
+    const singleAuditStartVerified = auditStartLogs.length === 1;
+
+    const realServiceConcurrencyVerified =
+      resultBSuccess && realCasErrorVerified && dbSessVerified && singleAuditStartVerified;
+
+    // 24. Verifikasi Real Material Audit Rollback dengan PendidikanV2Service.recordSessionMaterial
+    const failingAuditPersistence = {
+      isPersistent: true as const,
+      async recordInTx() {
+        throw new Error("AUDIT_PERSISTENCE_FAILED: Simulasi kegagalan audit sink untuk rollback materi");
+      },
+    };
+
+    const failingMaterialService = new PendidikanV2Service({
+      db: client,
+      dataProvider: serviceDataProvider,
+      auditPersistence: failingAuditPersistence as any,
+    });
+
+    let realMaterialRollbackThrew = false;
+    try {
+      await failingMaterialService.recordSessionMaterial(
+        { sessionId: "sess-svc-real", materi: "Materi Yang Harus Rollback" },
+        { actorUserId: "usr-substitute" }
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("AUDIT_PERSISTENCE_FAILED")) {
+        realMaterialRollbackThrew = true;
+      }
+    }
+
+    const dbSessionMateriCheck = await client.$queryRawUnsafe<Array<{ materi: string | null }>>(
+      `SELECT "materi" FROM "education_sessions" WHERE "id" = 'sess-svc-real';`
+    );
+    const realServiceMaterialRollbackVerified =
+      realMaterialRollbackThrew &&
+      dbSessionMateriCheck.length === 1 &&
+      dbSessionMateriCheck[0].materi === null;
+
+    // 25. Verifikasi Real Batch Attendance Transaction: Otorisasi Per-Target, Integritas Peserta & Audit Rollback
+    // 25a. Batch dengan santri bukan peserta ditolak sebelum transaksi
+    let nonParticipantBatchRejected = false;
+    try {
+      await serviceB.recordSessionAttendance(
+        {
+          sessionId: "sess-svc-real",
+          records: [
+            { santriId: "san-pre-m33b", status: "HADIR" },
+            { santriId: "san-non-enrolled", status: "HADIR" },
+          ],
+        },
+        { actorUserId: "usr-substitute" }
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (
+        msg.includes("CANONICAL_AUTHORIZATION_DENIED") ||
+        msg.includes("NON_PARTICIPANT_SANTRI_ATTENDANCE_DENIED")
+      ) {
+        nonParticipantBatchRejected = true;
+      }
+    }
+
+    const dbAttCountAfterNonPart = await client.$queryRawUnsafe<Array<{ count: string }>>(
+      `SELECT COUNT(*)::text as count FROM "education_session_attendances" WHERE "session_id" = 'sess-svc-real';`
+    );
+    const zeroAttAfterNonPart = dbAttCountAfterNonPart[0]?.count === "0";
+
+    // 25b. Batch dengan audit gagal me-rollback seluruh upsert presensi
+    const failingAttendanceService = new PendidikanV2Service({
+      db: client,
+      dataProvider: serviceDataProvider,
+      auditPersistence: failingAuditPersistence as any,
+    });
+
+    let auditFailBatchRejected = false;
+    try {
+      await failingAttendanceService.recordSessionAttendance(
+        {
+          sessionId: "sess-svc-real",
+          records: [
+            { santriId: "san-pre-m33b", status: "HADIR" },
+            { santriId: "san-pre-m33b-2", status: "IZIN" },
+          ],
+        },
+        { actorUserId: "usr-substitute" }
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("AUDIT_PERSISTENCE_FAILED")) {
+        auditFailBatchRejected = true;
+      }
+    }
+
+    const dbAttCountAfterAuditFail = await client.$queryRawUnsafe<Array<{ count: string }>>(
+      `SELECT COUNT(*)::text as count FROM "education_session_attendances" WHERE "session_id" = 'sess-svc-real';`
+    );
+    const zeroAttAfterAuditFail = dbAttCountAfterAuditFail[0]?.count === "0";
+
+    // 25c. Batch sukses mencatat presensi untuk seluruh peserta & menulis audit forensik dengan status diff
+    const attSuccessResult = await serviceB.recordSessionAttendance(
+      {
+        sessionId: "sess-svc-real",
+        records: [
+          { santriId: "san-pre-m33b", status: "HADIR" },
+          { santriId: "san-pre-m33b-2", status: "IZIN" },
+        ],
+      },
+      { actorUserId: "usr-substitute" }
+    );
+
+    const dbAttRecords = await client.$queryRawUnsafe<Array<{ santri_id: string; status: string; recorded_by_user_id: string }>>(
+      `SELECT "santri_id", "status"::text, "recorded_by_user_id" FROM "education_session_attendances" WHERE "session_id" = 'sess-svc-real' ORDER BY "santri_id";`
+    );
+
+    const attendancePersistedInDb =
+      attSuccessResult.success === true &&
+      dbAttRecords.length === 2 &&
+      dbAttRecords[0].santri_id === "san-pre-m33b" &&
+      dbAttRecords[0].status === "HADIR" &&
+      dbAttRecords[0].recorded_by_user_id === "usr-substitute" &&
+      dbAttRecords[1].santri_id === "san-pre-m33b-2" &&
+      dbAttRecords[1].status === "IZIN" &&
+      dbAttRecords[1].recorded_by_user_id === "usr-substitute";
+
+    const attAuditLog = await client.$queryRawUnsafe<Array<{ id: string; action: string; after_state: any }>>(
+      `SELECT "id", "action", "after_state" FROM "canonical_audit_logs" WHERE "entity_id" = 'sess-svc-real' AND "action" = 'academic.attendance.record';`
+    );
+    const attAuditLogPersisted =
+      attAuditLog.length === 1 &&
+      attAuditLog[0].after_state !== null;
+
+    const realServiceAttendanceBatchVerified =
+      nonParticipantBatchRejected &&
+      zeroAttAfterNonPart &&
+      auditFailBatchRejected &&
+      zeroAttAfterAuditFail &&
+      attendancePersistedInDb &&
+      attAuditLogPersisted;
+
     const simulationSuccess =
       pr8ExactShaVerified &&
       pr8MigrationApplied &&
@@ -3736,7 +4080,11 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
       actualVsScheduledTeacherVerified &&
       sessionAuditRollbackVerified &&
       concurrentSessionStartCasVerified &&
-      materialAuditRollbackVerified;
+      materialAuditRollbackVerified &&
+      realProviderResourceResolutionVerified &&
+      realServiceConcurrencyVerified &&
+      realServiceMaterialRollbackVerified &&
+      realServiceAttendanceBatchVerified;
 
     return {
       pr8ExactShaVerified,
@@ -3766,6 +4114,10 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
       sessionAuditRollbackVerified,
       concurrentSessionStartCasVerified,
       materialAuditRollbackVerified,
+      realProviderResourceResolutionVerified,
+      realServiceConcurrencyVerified,
+      realServiceMaterialRollbackVerified,
+      realServiceAttendanceBatchVerified,
       simulationSuccess,
     };
   } finally {
@@ -3802,5 +4154,16 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
     }
 
     try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+
+    if (oldTestDbUrl !== undefined) {
+      process.env.TEST_DATABASE_URL = oldTestDbUrl;
+    } else {
+      delete process.env.TEST_DATABASE_URL;
+    }
+    if (oldDbUrl !== undefined) {
+      process.env.DATABASE_URL = oldDbUrl;
+    } else {
+      delete process.env.DATABASE_URL;
+    }
   }
 }

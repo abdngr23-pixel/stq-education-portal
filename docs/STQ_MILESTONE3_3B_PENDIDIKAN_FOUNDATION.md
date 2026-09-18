@@ -1,5 +1,5 @@
 # Milestone 3.3B: Pendidikan Foundation (Studi Umum + Kepesantrenan)
-**Document Version:** 1.1.0 (Remediation Round 1)  
+**Document Version:** 1.2.0 (Remediation Round 2)  
 **Branch:** `architecture/milestone3-3b-pendidikan-foundation`  
 **Base Commit:** `0e12ae9e151577b5caf10b2d3a11c9c2de81e6d9`  
 **PR #8 Immutable:** `9068cae5587b7219c394c5c25bf0de07a15b0726`  
@@ -10,13 +10,15 @@
 
 Milestone 3.3B establishes the formal **Pendidikan Foundation** for the STQ Education Portal, providing complete information architecture, domain modeling, and authorization for both **Studi Umum** (General Studies) and **Kepesantrenan** (Islamic Boarding Studies).
 
-Remediation Round 1 corrects institutional scheduling facts, aligns operational time slots with approved institutional schedules, hardens authorization against race conditions and spoofing, and enforces participant boundary integrity.
-
-Strict enterprise safety guarantees:
+Remediation Round 2 achieves complete **Runtime Honesty**, closes remaining **Trust Boundaries**, and provides **Real Service Integration Verification** against isolated PostgreSQL:
+- **UI Runtime Honesty:** Removed all fake React state mutations and mock rosters. Teacher actions and rosters are disabled with clear notices until M3.3C activation.
+- **Fail-Closed Unit-Level Academic Containment:** Acknowledged that Prisma models currently lack an explicit relation between `EducationSession` / `EducationTeachingAssignment` and `OrgUnit`. UNIT-level academic containment remains strictly unresolved and fails closed. Cross-domain borrowing of `halaqohId` or `kamarId` into academic `orgUnitIds` is prohibited.
+- **Participant Roster & Gender Integrity:** The canonical evaluator strictly validates `EducationSessionParticipant` enrollment and rejects cross-gender evaluations (`PUTRA` vs `PUTRI`).
+- **Canonical Human Executor Verification:** Server-side mutations fail closed if `executor.userId` is empty or inactive, eliminating fabrication fallbacks.
+- **Batch Attendance Atomic Authorization & Forensic Audit:** Attendance mutations authorize each individual santri target prior to database transaction opening, enforce participant membership, track complete before/after status diffs, and guarantee full rollback on audit failure.
+- **Real Service PostgreSQL Integration:** Integration tests run actual `PendidikanV2Service` methods (CAS concurrency, audit failure rollback, batch attendance) against isolated PostgreSQL database instances.
 - **Zero Production Migrations, Zero Production Writes:** Database changes are additive, verified in isolated PostgreSQL simulations.
 - **PR #8 Immutability:** The Tahfizh quality evaluation engine branch remains 100% immutable at commit `9068cae5587b7219c394c5c25bf0de07a15b0726`.
-- **Data Honesty & Anti-Corruption:** No invented kitab or curriculums (Fikih and Aqidah kitab remain `null`/TBD). Assessment scoring and passing thresholds (KKM) remain strictly deferred.
-- **Fail-Closed Authorization & Audit Provenance:** Zero fabricated fallbacks for positions, scopes, or units. Canonical resource resolution explicitly isolates EducationSession from Tahfizh Tasmi resources.
 
 ---
 
@@ -130,7 +132,7 @@ Teacher facts represent operational scheduling information (never authorization 
 
 ---
 
-## 6. Authorization Architecture & Audit Provenance
+## 6. Authorization Architecture & Trust Boundary Closure
 
 ### 6.1 Canonical EducationSession Resource Resolution
 Generic `resourceId` in `canonical-evaluator.ts` historically targeted `TasmiSimaan`. To eliminate cross-domain collisions, M3.3B introduces explicit `educationSessionId?: string` in `RequestedResourceContext`.
@@ -138,10 +140,14 @@ Generic `resourceId` in `canonical-evaluator.ts` historically targeted `TasmiSim
 When evaluating an education session, `createPrismaDataProvider.resolveResourceContext()` authoritatively resolves:
 - `orgDomain: "AKADEMIK"`
 - `educationSessionId`, `educationTrack`, `subjectId`, `programLevel`, `genderGroup`
-- Anchor unit from scheduled teaching assignment if relationally bound.
 - If the session does not exist in the database, resource resolution fails closed (returns `null`).
 
-### 6.2 Fail-Closed Audit Provenance
+### 6.2 Fail-Closed Unit Containment & Domain Isolation
+- **Unit Containment Status:** In the current schema, `EducationSession` and `EducationTeachingAssignment` do not have an explicit foreign key relation to `OrgUnit`. Consequently, `targetUnitId` is `undefined` and `orgUnitIds` is empty (`[]`). UNIT-level academic containment remains unresolved and fails closed.
+- **Cross-Domain Scope Isolation:** To prevent privilege escalation, the canonical evaluator strictly isolates academic evaluations: Tahfizh `halaqohId` and Keasramaan `kamarId` are never borrowed into `orgUnitIds` when evaluating an `AKADEMIK` domain resource or session.
+- **Participant Roster and Gender Integrity:** When both `educationSessionId` and `santriId` are supplied, the data provider validates enrollment in `EducationSessionParticipant`. Unenrolled santri fail closed (`return null`). Furthermore, participant gender must strictly match session `genderGroup` (`PUTRA` vs `PUTRI`); mismatched evaluations return `null`.
+
+### 6.3 Fail-Closed Audit Provenance
 The service function `validateAuditProvenance` eliminates fabricated fallbacks (`GURU_MAPEL`, `GLOBAL`, `ou-madrasah`). The authorization decision must contain:
 - `assignmentId`
 - `positionCode`
@@ -151,15 +157,16 @@ The service function `validateAuditProvenance` eliminates fabricated fallbacks (
 
 If any field is missing, the service immediately throws `AUTH_DECISION_INCOMPLETE`.
 
-### 6.3 Single Canonical Material Capability
+### 6.4 Single Canonical Material Capability
 The duplicate capability `academic.session.record_materi` is deprecated and removed. The single canonical capability code is:
 ```typescript
 academic.material.record
 ```
+All 12 academic capabilities are formally cataloged in `docs/STQ_CAPABILITY_CATALOG.md` with `PROPOSED_TBD` status.
 
 ---
 
-## 7. Session Lifecycle & Concurrency Control
+## 7. Session Lifecycle & Real Concurrency Control
 
 ### 7.1 Compare-And-Swap (CAS) Concurrency Protection on Start
 To prevent race conditions where two concurrent instructors attempt to start the same scheduled session, `startEducationSession` executes an atomic CAS update:
@@ -183,11 +190,22 @@ if (updateResult.count === 0) {
 ```
 Exactly one teacher wins; the loser receives `EDUCATION_SESSION_CONCURRENT_START` and zero start audit records are created for the losing attempt.
 
-### 7.2 Actual Teacher Ownership
+### 7.2 Real PostgreSQL Concurrency Verification
+Rather than relying on sequential mock SQL statements, concurrency verification executes `Promise.all([service.startEducationSession(...), service.startEducationSession(...)])` against a live isolated PostgreSQL database instance. The test verifies:
+1. Exactly one execution succeeds.
+2. The concurrent competitor throws `EDUCATION_SESSION_CONCURRENT_START`.
+3. Exactly one `academic.session.start` audit record exists in `audit_events`.
+4. Exactly one `actualTeacherUserId` is persisted on the session.
+
+### 7.3 Actual Teacher Ownership
 Once a session is `STARTED`, only the `actualTeacherUserId` who started the session is authorized to record instructional material or student attendance. Unrelated authenticated staff are rejected with `ACTOR_NOT_ACTUAL_TEACHER`.
 
-### 7.3 Atomic Material Mutation & Audit Rollback
-`recordSessionMaterial` updates lesson material (`materi`, `materiRecordedAt`, `materiRecordedByUserId`) inside a database transaction alongside the canonical audit record (`academic.material.record`). If the audit persistence fails, the material mutation is completely rolled back.
+### 7.4 Atomic Material Mutation & Real Audit Rollback
+`recordSessionMaterial` updates lesson material (`materi`, `materiRecordedAt`, `materiRecordedByUserId`) inside a database transaction alongside the canonical audit record (`academic.material.record`).
+In isolated PostgreSQL verification, when the audit sink is deliberately configured to fail:
+- The transaction rolls back completely.
+- Material fields on `EducationSession` remain `null` in PostgreSQL.
+- Zero audit records are committed.
 
 ---
 
@@ -215,7 +233,13 @@ model EducationSessionParticipant {
   @@index([santriId])
 }
 ```
-Santri must be an enrolled participant of the session. Recording attendance for an unenrolled santri throws `NON_PARTICIPANT_SANTRI_ATTENDANCE_DENIED`.
+
+### 8.3 Batch Attendance Atomic Authorization & Forensic Audit
+When recording session attendance:
+1. **Canonical Human Executor Verification:** Rejects unauthenticated or inactive actor contexts (`HUMAN_EXECUTOR_VERIFICATION_FAILED`).
+2. **Per-Target Pre-Transaction Authorization:** The service validates canonical authorization (`academic.attendance.record`) for every santri in the batch *prior* to opening the database transaction. If any santri evaluation fails or is unenrolled, the entire batch is rejected.
+3. **Forensic Before/After State Capture:** The service queries existing attendance records prior to upserting, recording complete before/after status diffs (`{ records: [{ santriId, status }] }`) in the audit payload.
+4. **All-or-Nothing Transaction:** If an audit recording error occurs, all attendance upserts in the transaction roll back.
 
 ---
 
@@ -223,6 +247,7 @@ Santri must be an enrolled participant of the session. Recording attendance for 
 
 1. **Assessment & Grading:** KKM thresholds, per-meeting scores, UTS/UAS weighting, and grade calculation algorithms remain deferred. No passing marks are invented.
 2. **Substitute Teacher Authorization:** The substitute authorization matrix remains `PROPOSED_TBD` pending formal administrative policy.
+3. **UI Session Action Activation:** Dynamic UI session lifecycle mutations (starting session, inputting material, taking attendance) remain disabled in `AkademikModule` until Milestone 3.3C activation.
 
 ---
 
@@ -235,6 +260,7 @@ Santri must be an enrolled participant of the session. Recording attendance for 
 | TypeScript Project Check | Passed | `npm run typecheck` (0 errors) |
 | TypeScript Test Check | Passed | `npm run typecheck:test` (0 errors) |
 | ESLint Check | Passed | `npm run lint` (0 errors, 0 warnings) |
-| Isolated DB Migration Chain | Passed | `simulateM33bMigrationChain` (PR #8 SHA verified, 18 checks passed) |
-| M3.3B Test Suite | Passed | `tests/milestone3-3b-pendidikan-foundation.test.ts` (58/58 proofs pass) |
-| Full Workspace Test Suite | Passed | `npm test` (1078/1078 tests pass) |
+| Isolated DB Migration Chain | Passed | `simulateM33bMigrationChain` (PR #8 SHA verified, 20+ checks passed including real PostgreSQL service tests) |
+| M3.3B Test Suite | Passed | `tests/milestone3-3b-pendidikan-foundation.test.ts` (All proofs pass) |
+| Full Workspace Test Suite | Passed | `npm test` (All tests pass) |
+

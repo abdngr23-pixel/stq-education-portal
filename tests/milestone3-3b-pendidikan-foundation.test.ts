@@ -48,7 +48,7 @@ import {
   simulateM33bMigrationChain,
 } from "./test-db-manager";
 
-describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOUNDATION (REMEDIATION ROUND 1)", () => {
+describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOUNDATION (REMEDIATION ROUND 2)", () => {
   const rootDir = path.resolve(__dirname, "..");
   const schemaPath = path.join(rootDir, "prisma/schema.prisma");
   const schemaContent = fs.readFileSync(schemaPath, "utf-8");
@@ -111,6 +111,13 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
         },
       },
       educationSessionAttendance: {
+        findUnique: async ({ where }: any) => {
+          const key = where.sessionId_santriId
+            ? `${where.sessionId_santriId.sessionId}_${where.sessionId_santriId.santriId}`
+            : where.id;
+          const existing = attendances.get(key);
+          return existing ? { ...existing } : null;
+        },
         upsert: async ({ where, update, create }: any) => {
           const key = `${where.sessionId_santriId.sessionId}_${where.sessionId_santriId.santriId}`;
           const existing = attendances.get(key);
@@ -141,6 +148,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
         findUnique: txMock.educationSessionParticipant.findUnique,
       },
       educationSessionAttendance: {
+        findUnique: txMock.educationSessionAttendance.findUnique,
         upsert: txMock.educationSessionAttendance.upsert,
       },
       $transaction: async (cb: any) => {
@@ -730,6 +738,104 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
       const resolved = await provider.resolveResourceContext({ educationSessionId: "sess-nonexistent" });
       assert.strictEqual(resolved, null);
     });
+
+    it("H5. Resolving session context with santriId verifies participant enrollment (fails closed if unenrolled)", async () => {
+      const fakePrisma = {
+        educationSession: {
+          findUnique: async () => ({
+            id: "sess-01",
+            educationTrack: "STUDI_UMUM",
+            subjectId: "mp-01",
+            programLevel: 1,
+            genderGroup: "PUTRA",
+            scheduledStaffId: "stf-01",
+            scheduledTeacherAssignment: null,
+          }),
+        },
+        educationSessionParticipant: {
+          findUnique: async ({ where }: any) => {
+            if (where.sessionId_santriId?.santriId === "san-enrolled") {
+              return { sessionId: "sess-01", santriId: "san-enrolled" };
+            }
+            return null;
+          },
+        },
+        santri: {
+          findUnique: async ({ where }: any) => ({
+            id: where.id,
+            jenisKelamin: "L",
+          }),
+        },
+      };
+
+      const provider = createPrismaDataProvider(fakePrisma as any);
+
+      // Enrolled participant resolves
+      const enrolled = await provider.resolveResourceContext({
+        educationSessionId: "sess-01",
+        santriId: "san-enrolled",
+      });
+      assert.ok(enrolled !== null);
+      assert.strictEqual(enrolled?.santriId, "san-enrolled");
+
+      // Unenrolled santri fails closed
+      const unenrolled = await provider.resolveResourceContext({
+        educationSessionId: "sess-01",
+        santriId: "san-stranger",
+      });
+      assert.strictEqual(unenrolled, null);
+    });
+
+    it("H6. Session participant gender mismatch fails closed (PUTRA session rejects PUTRI santri)", async () => {
+      const fakePrisma = {
+        educationSession: {
+          findUnique: async () => ({
+            id: "sess-putra",
+            educationTrack: "KEPESANTRENAN",
+            subjectId: "mp-arb",
+            programLevel: 1,
+            genderGroup: "PUTRA",
+            scheduledStaffId: "stf-01",
+            scheduledTeacherAssignment: null,
+          }),
+        },
+        educationSessionParticipant: {
+          findUnique: async () => ({ sessionId: "sess-putra", santriId: "san-female" }),
+        },
+        santri: {
+          findUnique: async () => ({ id: "san-female", jenisKelamin: "P" }),
+        },
+      };
+
+      const provider = createPrismaDataProvider(fakePrisma as any);
+      const resolved = await provider.resolveResourceContext({
+        educationSessionId: "sess-putra",
+        santriId: "san-female",
+      });
+      assert.strictEqual(resolved, null, "Female santri in male session must fail closed");
+    });
+
+    it("H7. Academic context strictly isolates scope (zero halaqoh/kamar borrowed into orgUnitIds)", async () => {
+      const fakePrisma = {
+        educationSession: {
+          findUnique: async () => ({
+            id: "sess-acad",
+            educationTrack: "STUDI_UMUM",
+            subjectId: "mp-01",
+            programLevel: 1,
+            genderGroup: "PUTRA",
+            scheduledStaffId: "stf-01",
+            scheduledTeacherAssignment: null,
+          }),
+        },
+      };
+
+      const provider = createPrismaDataProvider(fakePrisma as any);
+      const resolved = await provider.resolveResourceContext({ educationSessionId: "sess-acad" });
+      assert.ok(resolved !== null);
+      assert.strictEqual(resolved?.orgDomain, "AKADEMIK");
+      assert.deepStrictEqual(resolved?.orgUnitIds, []);
+    });
   });
 
   // ====================================================
@@ -802,6 +908,39 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
       await assert.rejects(
         () => service.startEducationSession({ sessionId: "sess-01" }, { actorUserId: "usr-01" }),
         /AUTH_DECISION_INCOMPLETE/
+      );
+    });
+
+    it("I3. Human executor verification fails closed if userId is empty, null, or inactive", async () => {
+      const mockDb = createMockEducationDb([{ id: "sess-01", status: "SCHEDULED" }]);
+      const failingExecutorProvider: ICanonicalDataProvider = {
+        getIdentity: async () => ({
+          userId: "usr-01",
+          username: "guru.test",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-01",
+          name: "Guru Test",
+        }),
+        verifyHumanExecutor: async () => ({
+          userId: "", // Empty!
+          id: "",
+          name: "Invalid",
+          isActive: false, // Inactive!
+        }),
+        getActiveAssignments: async () => [],
+        getUnitAccountPlacement: async () => null,
+        resolveResourceContext: async () => null,
+      };
+
+      const service = createEducationV2Service({
+        db: mockDb as any,
+        dataProvider: failingExecutorProvider,
+      });
+
+      await assert.rejects(
+        () => service.startEducationSession({ sessionId: "sess-01" }, { actorUserId: "usr-01" }),
+        /HUMAN_EXECUTOR_VERIFICATION_FAILED/
       );
     });
   });
@@ -1115,6 +1254,97 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
       assert.strictEqual(isApprovedKepesantrenanAttendanceStatus("MASBUK"), false);
       assert.strictEqual(isApprovedKepesantrenanAttendanceStatus("TERLAMBAT"), false);
     });
+
+    it("N4. Batch attendance authorizes each individual santri and rejects entire batch if any fails", async () => {
+      const mockDb = createMockEducationDb(
+        [
+          {
+            id: "sess-batch-01",
+            status: "STARTED",
+            actualTeacherUserId: "usr-teacher-01",
+            educationTrack: "KEPESANTRENAN",
+          },
+        ],
+        [
+          { sessionId: "sess-batch-01", santriId: "san-01" },
+          // san-02 is NOT enrolled
+        ]
+      );
+      const mockAudit = createMockAuditPersistence();
+      const provider = createMockDataProvider();
+      const service = createEducationV2Service({
+        db: mockDb as any,
+        dataProvider: provider,
+        auditPersistence: mockAudit,
+      });
+
+      await assert.rejects(
+        () =>
+          service.recordSessionAttendance(
+            {
+              sessionId: "sess-batch-01",
+              records: [
+                { santriId: "san-01", status: "HADIR" },
+                { santriId: "san-02", status: "HADIR" },
+              ],
+            },
+            { actorUserId: "usr-teacher-01" }
+          ),
+        /CANONICAL_AUTHORIZATION_DENIED|NON_PARTICIPANT_SANTRI_ATTENDANCE_DENIED/
+      );
+
+      // Entire batch rejected: zero records in audit
+      assert.strictEqual(mockAudit.records.length, 0);
+    });
+
+    it("N5. Attendance captures complete before and after states for forensic audit", async () => {
+      const mockDb = createMockEducationDb(
+        [
+          {
+            id: "sess-diff-01",
+            status: "STARTED",
+            actualTeacherUserId: "usr-teacher-01",
+            educationTrack: "KEPESANTRENAN",
+          },
+        ],
+        [
+          { sessionId: "sess-diff-01", santriId: "san-01" },
+        ]
+      );
+      const mockAudit = createMockAuditPersistence();
+      const provider = createMockDataProvider();
+      const service = createEducationV2Service({
+        db: mockDb as any,
+        dataProvider: provider,
+        auditPersistence: mockAudit,
+      });
+
+      // Initial record
+      await service.recordSessionAttendance(
+        { sessionId: "sess-diff-01", santriId: "san-01", status: "HADIR" },
+        { actorUserId: "usr-teacher-01" }
+      );
+      assert.strictEqual(mockAudit.records.length, 1);
+      assert.deepStrictEqual(mockAudit.records[0].beforeState, {
+        records: [{ santriId: "san-01", status: null }],
+      });
+      assert.deepStrictEqual(mockAudit.records[0].afterState, {
+        records: [{ santriId: "san-01", status: "HADIR" }],
+      });
+
+      // Update record to IZIN
+      await service.recordSessionAttendance(
+        { sessionId: "sess-diff-01", santriId: "san-01", status: "IZIN" },
+        { actorUserId: "usr-teacher-01" }
+      );
+      assert.strictEqual(mockAudit.records.length, 2);
+      assert.deepStrictEqual(mockAudit.records[1].beforeState, {
+        records: [{ santriId: "san-01", status: "HADIR" }],
+      });
+      assert.deepStrictEqual(mockAudit.records[1].afterState, {
+        records: [{ santriId: "san-01", status: "IZIN" }],
+      });
+    });
   });
 
   // ====================================================
@@ -1152,6 +1382,10 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
       assert.strictEqual(result.sessionAuditRollbackVerified, true);
       assert.strictEqual(result.concurrentSessionStartCasVerified, true);
       assert.strictEqual(result.materialAuditRollbackVerified, true);
+      assert.strictEqual(result.realProviderResourceResolutionVerified, true);
+      assert.strictEqual(result.realServiceConcurrencyVerified, true);
+      assert.strictEqual(result.realServiceMaterialRollbackVerified, true);
+      assert.strictEqual(result.realServiceAttendanceBatchVerified, true);
     });
   });
 
@@ -1192,5 +1426,16 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
       assert.strictEqual(CANONICAL_KEPESANTRENAN_SUBJECT_DEFINITIONS.length, 5);
       assert.ok(KEPESANTRENAN_FORBIDDEN_ATTENDANCE_STATUSES.includes("MASBUK"));
     });
+
+    it("P5. UI runtime honesty: session lifecycle actions and roster remain honest & disabled", () => {
+      assert.ok(uiModuleContent.includes("Belum diaktifkan — menunggu aktivasi M3.3C"));
+      assert.ok(uiModuleContent.includes("Daftar peserta sesi belum diaktifkan."));
+      // No fake client-side mutation states
+      assert.strictEqual(uiModuleContent.includes("studiUmumSessionState"), false);
+      assert.strictEqual(uiModuleContent.includes("kpsSessionState"), false);
+      assert.strictEqual(uiModuleContent.includes("materiInputTemp"), false);
+      assert.strictEqual(uiModuleContent.includes("santriList.slice(0, 5)"), false);
+    });
   });
 });
+
