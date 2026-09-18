@@ -36,28 +36,62 @@ export interface ProductionReadinessReport {
 export interface ReadinessDbClient {
   $queryRawUnsafe?: <T = unknown>(query: string, ...values: unknown[]) => Promise<T>;
   user?: {
-    findMany: (args?: any) => Promise<Array<{ id: string; username: string; status: string; role: string; staffId: string | null }>>;
+    findMany: (args?: any) => Promise<Array<{
+      id: string;
+      username: string;
+      status: string;
+      role: string;
+      staffId: string | null;
+      accountType?: string;
+      [key: string]: any;
+    }>>;
   };
   staff?: {
-    findMany: (args?: any) => Promise<Array<{ id: string; status: string }>>;
+    findMany: (args?: any) => Promise<Array<{
+      id: string;
+      status: string;
+      [key: string]: any;
+    }>>;
   };
   orgUnit?: {
-    findMany: (args?: any) => Promise<Array<{ id: string; code: string }>>;
+    findMany: (args?: any) => Promise<Array<{
+      id: string;
+      code: string;
+      isActive?: boolean;
+      [key: string]: any;
+    }>>;
   };
   position?: {
-    findMany: (args?: any) => Promise<Array<{ id: string; code: string }>>;
+    findMany: (args?: any) => Promise<Array<{
+      id: string;
+      code: string;
+      isActive?: boolean;
+      requiresPersonalAccount?: boolean;
+      capabilities?: any[];
+      [key: string]: any;
+    }>>;
+  };
+  positionCapability?: {
+    findMany: (args?: any) => Promise<Array<{
+      id?: string;
+      positionId: string;
+      capabilityCode: string;
+      scopeType?: string;
+      businessRuleState: string;
+      [key: string]: any;
+    }>>;
   };
   capability?: {
     findMany: (args?: any) => Promise<Array<{ code: string; [key: string]: any }>>;
   };
   santri?: {
-    findMany: (args?: any) => Promise<Array<{ id: string; nis: string; nama: string; status?: string; cohortId: string | null }>>;
+    findMany: (args?: any) => Promise<Array<{ id: string; nis: string; nama: string; status?: string; cohortId: string | null; [key: string]: any }>>;
   };
   educationCohort?: {
-    findMany: (args?: any) => Promise<Array<{ id: string; code: string; isActive: boolean }>>;
+    findMany: (args?: any) => Promise<Array<{ id: string; code: string; isActive: boolean; [key: string]: any }>>;
   };
   mataPelajaran?: {
-    findMany: (args?: any) => Promise<Array<{ id: string; nama: string; kodeMapel?: string }>>;
+    findMany: (args?: any) => Promise<Array<{ id: string; nama: string; kodeMapel?: string; [key: string]: any }>>;
   };
   teachingAssignment?: {
     findMany: (args?: any) => Promise<Array<{
@@ -65,6 +99,9 @@ export interface ReadinessDbClient {
       mapelId?: string;
       mapel?: { id?: string; nama: string; kodeMapel?: string };
       staffId?: string | null;
+      staff?: { id: string; status: string; [key: string]: any };
+      user?: { id: string; status: string; accountType?: string; [key: string]: any };
+      assignment?: any;
       educationTrack: string;
       genderComplex: string;
       pedagogicalLevel?: string | null;
@@ -77,9 +114,14 @@ export interface ReadinessDbClient {
   assignment?: {
     findMany: (args?: any) => Promise<Array<{
       id: string;
+      userId?: string;
+      user?: any;
       positionId?: string;
-      position?: { id?: string; code: string };
+      position?: { id?: string; code: string; isActive?: boolean; capabilities?: any[] };
+      unitId?: string;
+      unit?: { id?: string; code: string; isActive?: boolean };
       status: string;
+      validFrom?: Date;
       validUntil: Date | null;
       [key: string]: any;
     }>>;
@@ -122,6 +164,45 @@ export const CANONICAL_REQUIRED_POSITION_CODES = [
   UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.positionCode,
   UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.PEMBINA_HALAQOH.positionCode,
   UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.positionCode,
+] as const;
+
+/**
+ * Programmatically derived UAT activation capability targets:
+ * 1. Education session activation capabilities (4 items)
+ * 2. Approved UAT target capabilities from UAT_ACTIVATION_TARGETS manifest (5 items)
+ * Deferred capabilities (academic.score.input, academic.rapor.print, etc.) are excluded.
+ */
+export const EDUCATION_SESSION_ACTIVATION_CAPABILITIES = [
+  ACADEMIC_CAPABILITIES.SCHEDULE_READ,
+  ACADEMIC_CAPABILITIES.SESSION_START,
+  ACADEMIC_CAPABILITIES.MATERIAL_RECORD,
+  ACADEMIC_CAPABILITIES.ATTENDANCE_RECORD,
+] as const;
+
+export const APPROVED_UAT_TARGET_CAPABILITY_CODES = [
+  UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].capabilityCode,
+  UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[1].capabilityCode,
+  UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.capabilityCode,
+  UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].capabilityCode,
+  UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[1].capabilityCode,
+] as const;
+
+export const REQUIRED_UAT_ACTIVATION_CAPABILITIES = [
+  ...EDUCATION_SESSION_ACTIVATION_CAPABILITIES,
+  ...APPROVED_UAT_TARGET_CAPABILITY_CODES,
+] as const;
+
+export const REQUIRED_STUDI_UMUM_TEACHER_CAPABILITIES = [
+  ACADEMIC_CAPABILITIES.SCHEDULE_READ,
+  ACADEMIC_CAPABILITIES.SESSION_START,
+  ACADEMIC_CAPABILITIES.MATERIAL_RECORD,
+] as const;
+
+export const REQUIRED_KEPESANTRENAN_TEACHER_CAPABILITIES = [
+  ACADEMIC_CAPABILITIES.SCHEDULE_READ,
+  ACADEMIC_CAPABILITIES.SESSION_START,
+  ACADEMIC_CAPABILITIES.MATERIAL_RECORD,
+  ACADEMIC_CAPABILITIES.ATTENDANCE_RECORD,
 ] as const;
 
 /**
@@ -360,16 +441,44 @@ export async function checkPendidikanV2ProductionReadiness(
     gates.push({ gate: "REQUIRED_POSITIONS_READY", status: "NOT_READY", details: String(err) });
   }
 
-  // Gate 7: Required Capabilities Registered
+  // Gate 7: Required Capabilities Registered (Verifies exact required activation capabilities)
   try {
     if (db.capability) {
       const caps = await db.capability.findMany();
-      const capCodes = new Set(caps.map((c) => c.code));
-      const missing = Object.values(ACADEMIC_CAPABILITIES).filter((c: string) => !capCodes.has(c));
+      const capCodes = new Set(caps.map((c: any) => c.code));
+      const missing = REQUIRED_UAT_ACTIVATION_CAPABILITIES.filter((c) => !capCodes.has(c));
       if (missing.length === 0) {
-        gates.push({ gate: "CAPABILITIES_REGISTERED", status: "READY", details: "All 12 academic capabilities registered" });
+        gates.push({
+          gate: "CAPABILITIES_REGISTERED",
+          status: "READY",
+          details: `All ${REQUIRED_UAT_ACTIVATION_CAPABILITIES.length} required activation capabilities registered`,
+        });
       } else {
-        gates.push({ gate: "CAPABILITIES_REGISTERED", status: "NOT_READY", details: `Missing capabilities: ${missing.join(", ")}` });
+        gates.push({
+          gate: "CAPABILITIES_REGISTERED",
+          status: "NOT_READY",
+          details: `Missing required activation capabilities: ${missing.join(", ")}`,
+          remediationAdvice: "Requires registration of all required UAT activation capabilities in database",
+        });
+      }
+    } else if (typeof db.$queryRawUnsafe === "function") {
+      const rows = await db.$queryRawUnsafe<Array<{ code: string }>>(`
+        SELECT "code" FROM "capabilities";
+      `).catch(() => []);
+      const capCodes = new Set(rows.map((r) => r.code));
+      const missing = REQUIRED_UAT_ACTIVATION_CAPABILITIES.filter((c) => !capCodes.has(c));
+      if (missing.length === 0) {
+        gates.push({
+          gate: "CAPABILITIES_REGISTERED",
+          status: "READY",
+          details: `All ${REQUIRED_UAT_ACTIVATION_CAPABILITIES.length} required activation capabilities registered`,
+        });
+      } else {
+        gates.push({
+          gate: "CAPABILITIES_REGISTERED",
+          status: "NOT_READY",
+          details: `Missing required activation capabilities: ${missing.join(", ")}`,
+        });
       }
     } else {
       gates.push({ gate: "CAPABILITIES_REGISTERED", status: "NOT_READY", details: "Capability repository unavailable" });
@@ -378,10 +487,10 @@ export async function checkPendidikanV2ProductionReadiness(
     gates.push({ gate: "CAPABILITIES_REGISTERED", status: "NOT_READY", details: String(err) });
   }
 
-  // Gate 8: User Assignments Ready (Verifies active coverage of all approved target positions)
+  // Gate 8: User Assignments Ready (Verifies active coverage of all approved target positions with active user/position/orgUnit/staff chains)
   try {
+    const now = new Date();
     if (db.assignment) {
-      const now = new Date();
       const asgs = await db.assignment.findMany({
         where: {
           status: "ACTIVE",
@@ -389,18 +498,61 @@ export async function checkPendidikanV2ProductionReadiness(
         },
         include: {
           position: true,
+          user: true,
+          unit: true,
         },
       });
 
-      let positionIdToCode = new Map<string, string>();
+      let usersMap = new Map<string, any>();
+      if (db.user && asgs.some((a: any) => !a.user && a.userId)) {
+        const users = await db.user.findMany().catch(() => []);
+        usersMap = new Map(users.map((u: any) => [u.id, u]));
+      }
+
+      let positionsMap = new Map<string, any>();
       if (db.position && asgs.some((a: any) => !a.position && a.positionId)) {
         const positions = await db.position.findMany().catch(() => []);
-        positionIdToCode = new Map(positions.map((p: any) => [p.id, p.code]));
+        positionsMap = new Map(positions.map((p: any) => [p.id, p]));
+      }
+
+      let unitsMap = new Map<string, any>();
+      if (db.orgUnit && asgs.some((a: any) => !a.unit && a.unitId)) {
+        const units = await db.orgUnit.findMany().catch(() => []);
+        unitsMap = new Map(units.map((u: any) => [u.id, u]));
+      }
+
+      let staffMap = new Map<string, any>();
+      if (db.staff) {
+        const staffs = await db.staff.findMany().catch(() => []);
+        staffMap = new Map(staffs.map((s: any) => [s.id, s]));
       }
 
       const coveredCodes = new Set<string>();
       for (const a of asgs) {
-        const code = a.position?.code || (a.positionId ? positionIdToCode.get(a.positionId) : null) || (a as any).positionCode;
+        if (a.status !== "ACTIVE") continue;
+        if (a.validFrom && new Date(a.validFrom) > now) continue;
+        if (a.validUntil && new Date(a.validUntil) < now) continue;
+
+        const pos = a.position || (a.positionId ? positionsMap.get(a.positionId) : null) || (a.positionCode ? { code: a.positionCode, isActive: true } : null);
+        if (!pos || pos.isActive === false) continue;
+
+        const unit = a.unit || (a.unitId ? unitsMap.get(a.unitId) : null);
+        if (unit && unit.isActive === false) continue;
+
+        const user = a.user || (a.userId ? usersMap.get(a.userId) : null);
+        if (user && !(user.status === "AKTIF" || user.status === "ACTIVE")) continue;
+
+        if (pos.requiresPersonalAccount !== false) {
+          if (user) {
+            if (user.accountType && user.accountType !== "PERSONAL") continue;
+            if (user.staffId) {
+              const staff = staffMap.get(user.staffId);
+              if (staff && !(staff.status === "AKTIF" || staff.status === "ACTIVE")) continue;
+            }
+          }
+        }
+
+        const code = pos.code || a.positionCode;
         if (code) coveredCodes.add(code);
       }
 
@@ -424,8 +576,20 @@ export async function checkPendidikanV2ProductionReadiness(
         SELECT DISTINCT p."code" 
         FROM "assignments" a
         JOIN "positions" p ON a."position_id" = p."id"
+        LEFT JOIN "org_units" o ON a."unit_id" = o."id"
+        LEFT JOIN "users" u ON a."user_id" = u."id"
+        LEFT JOIN "staff" s ON u."staff_id" = s."id"
         WHERE a."status" = 'ACTIVE' 
-          AND (a."valid_until" IS NULL OR a."valid_until" >= NOW());
+          AND (a."valid_from" IS NULL OR a."valid_from" <= NOW())
+          AND (a."valid_until" IS NULL OR a."valid_until" >= NOW())
+          AND p."is_active" = true
+          AND (o."id" IS NULL OR o."is_active" = true)
+          AND (u."id" IS NULL OR u."status" IN ('AKTIF', 'ACTIVE'))
+          AND (
+            p."requires_personal_account" = false 
+            OR u."staff_id" IS NULL 
+            OR s."status" IN ('AKTIF', 'ACTIVE')
+          );
       `).catch(() => []);
       const coveredCodes = new Set(rows.map((r) => r.code));
       const missing = CANONICAL_REQUIRED_POSITION_CODES.filter((c) => !coveredCodes.has(c));
@@ -449,10 +613,10 @@ export async function checkPendidikanV2ProductionReadiness(
     gates.push({ gate: "USER_ASSIGNMENTS_READY", status: "NOT_READY", details: String(err) });
   }
 
-  // Gate 9: Teaching Assignments Ready (Requires full coverage of 18 canonical slots: 6 Studi Umum, 7 Kps Putra, 5 Kps Putri)
+  // Gate 9: Teaching Assignments Ready (Requires full coverage of 18 canonical slots AND verified runtime authorization path for scheduled teachers)
   try {
+    const now = new Date();
     if (db.teachingAssignment) {
-      const now = new Date();
       const tas = await db.teachingAssignment.findMany({
         where: {
           isActive: true,
@@ -460,6 +624,7 @@ export async function checkPendidikanV2ProductionReadiness(
         },
         include: {
           mapel: true,
+          staff: true,
         },
       });
 
@@ -469,52 +634,231 @@ export async function checkPendidikanV2ProductionReadiness(
         mapelIdToObj = new Map(mapels.map((m: any) => [m.id, { nama: m.nama, kodeMapel: m.kodeMapel }]));
       }
 
+      let staffMap = new Map<string, any>();
+      if (db.staff) {
+        const staffs = await db.staff.findMany().catch(() => []);
+        staffMap = new Map(staffs.map((s: any) => [s.id, s]));
+      }
+
+      const usersByStaffId = new Map<string, any>();
+      if (db.user) {
+        const users = await db.user.findMany().catch(() => []);
+        for (const u of users) {
+          if (u.staffId) usersByStaffId.set(u.staffId, u);
+        }
+      }
+
+      let positionsMap = new Map<string, any>();
+      if (db.position) {
+        const positions = await db.position.findMany().catch(() => []);
+        positionsMap = new Map(positions.map((p: any) => [p.id, p]));
+      }
+
+      let unitsMap = new Map<string, any>();
+      if (db.orgUnit) {
+        const units = await db.orgUnit.findMany().catch(() => []);
+        unitsMap = new Map(units.map((u: any) => [u.id, u]));
+      }
+
+      const assignmentsByUserId = new Map<string, any[]>();
+      if (db.assignment) {
+        const asgs = await db.assignment.findMany({
+          where: {
+            status: "ACTIVE",
+            OR: [{ validUntil: null }, { validUntil: { gte: now } }],
+          },
+          include: {
+            position: true,
+            unit: true,
+          },
+        }).catch(() => []);
+        for (const a of asgs) {
+          if (a.userId) {
+            const list = assignmentsByUserId.get(a.userId) || [];
+            list.push(a);
+            assignmentsByUserId.set(a.userId, list);
+          }
+        }
+      }
+
+      const pcsByPositionId = new Map<string, any[]>();
+      if (db.positionCapability) {
+        const pcs = await db.positionCapability.findMany().catch(() => []);
+        for (const pc of pcs) {
+          if (pc.positionId) {
+            const list = pcsByPositionId.get(pc.positionId) || [];
+            list.push(pc);
+            pcsByPositionId.set(pc.positionId, list);
+          }
+        }
+      } else if (db.position) {
+        for (const p of positionsMap.values()) {
+          if (Array.isArray(p.capabilities)) {
+            pcsByPositionId.set(p.id, p.capabilities);
+          }
+        }
+      }
+
       const missingTargets: string[] = [];
+      const inactiveStaffTargets: string[] = [];
+      const unlinkedUserTargets: string[] = [];
+      const unassignedUserTargets: string[] = [];
+      const authIssues: string[] = [];
 
       for (const target of CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS) {
-        const hasMatch = tas.some((ta: any) => {
+        const matchingTas = tas.filter((ta: any) => {
           if (!ta.isActive) return false;
+          if (ta.validFrom && new Date(ta.validFrom) > now) return false;
           if (ta.validUntil && new Date(ta.validUntil) < now) return false;
           if (!ta.staffId) return false;
           if (ta.educationTrack !== target.track) return false;
+          if (target.genderComplex && ta.genderComplex !== target.genderComplex) return false;
+          if (target.pedagogicalLevel && ta.pedagogicalLevel !== target.pedagogicalLevel) return false;
 
-          // Gender check
-          if (target.genderComplex && ta.genderComplex !== target.genderComplex) {
-            return false;
-          }
-
-          // Pedagogical level check
-          if (target.pedagogicalLevel && ta.pedagogicalLevel !== target.pedagogicalLevel) {
-            return false;
-          }
-
-          // Subject resolution
           const mapelObj = ta.mapel || (ta.mapelId ? mapelIdToObj.get(ta.mapelId) : null);
           const subjectName = mapelObj?.nama || ta.mapelNama || ta.subjectName;
-
           if (!subjectName) return false;
           if (subjectName === target.subjectName) return true;
           if (target.subjectAliases && target.subjectAliases.includes(subjectName)) return true;
           return false;
         });
 
-        if (!hasMatch) {
+        if (matchingTas.length === 0) {
+          missingTargets.push(target.key);
+          continue;
+        }
+
+        let slotSatisfied = false;
+
+        for (const ta of matchingTas) {
+          const staffIdStr = typeof ta.staffId === "string" ? ta.staffId : "";
+          // 1. Staff check
+          const staff = ta.staff || (staffIdStr ? staffMap.get(staffIdStr) : null);
+          const staffStatus = staff?.status || ta.staffStatus;
+          if (!staffStatus || (staffStatus !== "AKTIF" && staffStatus !== "ACTIVE")) {
+            inactiveStaffTargets.push(`${target.key} (staff ${staffIdStr || "unknown"} missing or inactive)`);
+            continue;
+          }
+
+          // 2. User check
+          const usersOnStaff = (staff && Array.isArray(staff.users)) ? staff.users : [];
+          const user = (staffIdStr ? usersByStaffId.get(staffIdStr) : null) || usersOnStaff.find((u: any) => u.status === "AKTIF" || u.status === "ACTIVE") || usersOnStaff[0] || ta.user;
+          const userStatus = user?.status || ta.userStatus;
+          const userAccountType = user?.accountType || ta.userAccountType || "PERSONAL";
+          if (!user || (userStatus !== "AKTIF" && userStatus !== "ACTIVE") || userAccountType !== "PERSONAL") {
+            unlinkedUserTargets.push(`${target.key} (staff ${staffIdStr} lacks active linked PERSONAL User)`);
+            continue;
+          }
+
+          // 3. Assignment check
+          const userAsgs = (user && Array.isArray(user.assignments))
+            ? user.assignments
+            : (assignmentsByUserId.get(user.id) || (ta.assignment ? [ta.assignment] : []));
+          const activeAsgs = userAsgs.filter((a: any) => {
+            if (a.status !== "ACTIVE") return false;
+            if (a.validFrom && new Date(a.validFrom) > now) return false;
+            if (a.validUntil && new Date(a.validUntil) < now) return false;
+            const pos = a.position || (a.positionId ? positionsMap.get(a.positionId) : null);
+            if (pos && pos.isActive === false) return false;
+            const unit = a.unit || (a.unitId ? unitsMap.get(a.unitId) : null);
+            if (unit && unit.isActive === false) return false;
+            return true;
+          });
+
+          if (activeAsgs.length === 0) {
+            unassignedUserTargets.push(`${target.key} (user ${user.id} has no active Assignment)`);
+            continue;
+          }
+
+          // 4. PositionCapability check
+          const requiredCaps = target.track === "KEPESANTRENAN"
+            ? REQUIRED_KEPESANTRENAN_TEACHER_CAPABILITIES
+            : REQUIRED_STUDI_UMUM_TEACHER_CAPABILITIES;
+
+          let slotAuthOk = true;
+          for (const cap of requiredCaps) {
+            let capGrantOk = false;
+            let lastState: string | null = null;
+
+            for (const asg of activeAsgs) {
+              const posId = asg.positionId || asg.position?.id;
+              const pcs = (asg.position && Array.isArray(asg.position.capabilities))
+                ? asg.position.capabilities
+                : (pcsByPositionId.get(posId) || asg.capabilities || []);
+              const matchPc = pcs.find((p: any) => p.capabilityCode === cap || p.code === cap || p.capability?.code === cap);
+              if (matchPc) {
+                lastState = matchPc.businessRuleState;
+                if (matchPc.businessRuleState === "VERIFIED_PRODUCTION") {
+                  capGrantOk = true;
+                  break;
+                }
+              }
+            }
+
+            if (!capGrantOk) {
+              slotAuthOk = false;
+              if (lastState === "APPROVED_TARGET_PENDING_TECHNICAL") {
+                authIssues.push(`${target.key}: grant ${cap} is APPROVED_TARGET_PENDING_TECHNICAL (AUTHORIZATION_GRANT_NOT_RUNTIME_READY)`);
+              } else if (lastState === "PROPOSED_TBD") {
+                authIssues.push(`${target.key}: grant ${cap} is PROPOSED_TBD (AUTHORIZATION_GRANT_NOT_RUNTIME_READY)`);
+              } else {
+                authIssues.push(`${target.key}: grant ${cap} missing on active positions (ACADEMIC_TEACHER_AUTHORIZATION_POLICY_NOT_RUNTIME_READY)`);
+              }
+              break;
+            }
+          }
+
+          if (slotAuthOk) {
+            slotSatisfied = true;
+            break;
+          }
+        }
+
+        if (!slotSatisfied && matchingTas.length > 0 && authIssues.length === 0 && unassignedUserTargets.length === 0 && unlinkedUserTargets.length === 0 && inactiveStaffTargets.length === 0) {
           missingTargets.push(target.key);
         }
       }
 
-      if (missingTargets.length === 0) {
-        gates.push({
-          gate: "TEACHING_ASSIGNMENTS_READY",
-          status: "READY",
-          details: `All ${CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.length} required teaching assignment slots covered`,
-        });
-      } else {
+      if (missingTargets.length > 0) {
         gates.push({
           gate: "TEACHING_ASSIGNMENTS_READY",
           status: "NOT_READY",
           details: `Missing teaching assignment coverage: ${missingTargets.join(", ")}`,
           remediationAdvice: "Requires active teaching assignments with valid staff, mapel, track, and gender in M3.3C2",
+        });
+      } else if (inactiveStaffTargets.length > 0) {
+        gates.push({
+          gate: "TEACHING_ASSIGNMENTS_READY",
+          status: "NOT_READY",
+          details: `Teaching assignments point to inactive or missing Staff: ${inactiveStaffTargets.join(", ")}`,
+          remediationAdvice: "Scheduled teachers must be active Staff in database",
+        });
+      } else if (unlinkedUserTargets.length > 0) {
+        gates.push({
+          gate: "TEACHING_ASSIGNMENTS_READY",
+          status: "NOT_READY",
+          details: `Scheduled teachers lack active linked PERSONAL User: ${unlinkedUserTargets.join(", ")}`,
+          remediationAdvice: "BLOCKED_IDENTITY_LINKAGE: Scheduled teachers must be linked to active PERSONAL User accounts",
+        });
+      } else if (unassignedUserTargets.length > 0) {
+        gates.push({
+          gate: "TEACHING_ASSIGNMENTS_READY",
+          status: "NOT_READY",
+          details: `Scheduled teachers lack active Assignment: ${unassignedUserTargets.join(", ")}`,
+          remediationAdvice: "Scheduled teachers must have active Assignment to active Position and OrgUnit",
+        });
+      } else if (authIssues.length > 0) {
+        gates.push({
+          gate: "TEACHING_ASSIGNMENTS_READY",
+          status: "NOT_READY",
+          details: `ACADEMIC_TEACHER_AUTHORIZATION_POLICY_NOT_RUNTIME_READY: ${authIssues.join("; ")}`,
+          remediationAdvice: "AUTHORIZATION_GRANT_NOT_RUNTIME_READY: Requires Business Owner approved and verified production PositionCapability mappings in M3.3C2",
+        });
+      } else {
+        gates.push({
+          gate: "TEACHING_ASSIGNMENTS_READY",
+          status: "READY",
+          details: `All ${CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.length} required teaching assignment slots covered with verified runtime authorization chain`,
         });
       }
     } else if (typeof db.$queryRawUnsafe === "function") {
@@ -523,26 +867,61 @@ export async function checkPendidikanV2ProductionReadiness(
         education_track: string;
         gender_complex: string;
         pedagogical_level: string | null;
+        staff_id: string;
+        staff_status: string | null;
         mapel_nama: string;
         mapel_kode: string;
+        user_id: string | null;
+        user_status: string | null;
+        user_account_type: string | null;
+        assignment_id: string | null;
+        position_id: string | null;
+        position_is_active: boolean | null;
+        capability_code: string | null;
+        business_rule_state: string | null;
       }>>(`
         SELECT 
           ta."id", 
           ta."education_track", 
           ta."gender_complex", 
           ta."pedagogical_level", 
+          ta."staff_id",
+          s."status" as staff_status,
           m."nama" as mapel_nama, 
-          m."kode_mapel" as mapel_kode
+          m."kode_mapel" as mapel_kode,
+          u."id" as user_id,
+          u."status" as user_status,
+          u."account_type" as user_account_type,
+          a."id" as assignment_id,
+          p."id" as position_id,
+          p."is_active" as position_is_active,
+          pc."capability_code",
+          pc."business_rule_state"
         FROM "teaching_assignments" ta
         JOIN "mata_pelajaran" m ON ta."mapel_id" = m."id"
+        LEFT JOIN "staff" s ON ta."staff_id" = s."id"
+        LEFT JOIN "users" u ON u."staff_id" = s."id"
+        LEFT JOIN "assignments" a ON a."user_id" = u."id" 
+          AND a."status" = 'ACTIVE' 
+          AND (a."valid_from" IS NULL OR a."valid_from" <= NOW())
+          AND (a."valid_until" IS NULL OR a."valid_until" >= NOW())
+        LEFT JOIN "positions" p ON a."position_id" = p."id" AND p."is_active" = true
+        LEFT JOIN "org_units" o ON a."unit_id" = o."id" AND o."is_active" = true
+        LEFT JOIN "position_capabilities" pc ON pc."position_id" = p."id"
         WHERE ta."is_active" = true 
+          AND (ta."valid_from" IS NULL OR ta."valid_from" <= NOW())
           AND (ta."valid_until" IS NULL OR ta."valid_until" >= NOW())
           AND ta."staff_id" IS NOT NULL;
       `).catch(() => []);
 
       const missingTargets: string[] = [];
+      const inactiveStaffTargets: string[] = [];
+      const unlinkedUserTargets: string[] = [];
+      const unassignedUserTargets: string[] = [];
+      const authIssues: string[] = [];
+
       for (const target of CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS) {
-        const hasMatch = rows.some((r) => {
+        const matchingRows = rows.filter((r) => {
           if (r.education_track !== target.track) return false;
           if (target.genderComplex && r.gender_complex !== target.genderComplex) return false;
           if (target.pedagogicalLevel && r.pedagogical_level !== target.pedagogicalLevel) return false;
@@ -550,22 +929,100 @@ export async function checkPendidikanV2ProductionReadiness(
           if (target.subjectAliases && target.subjectAliases.includes(r.mapel_nama)) return true;
           return false;
         });
-        if (!hasMatch) {
+
+        if (matchingRows.length === 0) {
+          missingTargets.push(target.key);
+          continue;
+        }
+
+        const taIds = Array.from(new Set(matchingRows.map((r) => r.id)));
+        let slotSatisfied = false;
+
+        for (const taId of taIds) {
+          const taRows = matchingRows.filter((r) => r.id === taId);
+          const first = taRows[0];
+
+          if (!first.staff_status || !['AKTIF', 'ACTIVE'].includes(first.staff_status)) {
+            inactiveStaffTargets.push(`${target.key} (staff ${first.staff_id} missing or inactive)`);
+            continue;
+          }
+
+          if (!first.user_id || !['AKTIF', 'ACTIVE'].includes(first.user_status || '') || first.user_account_type !== 'PERSONAL') {
+            unlinkedUserTargets.push(`${target.key} (staff ${first.staff_id} lacks active linked PERSONAL User)`);
+            continue;
+          }
+
+          if (!first.assignment_id || first.position_is_active === false) {
+            unassignedUserTargets.push(`${target.key} (user ${first.user_id} has no active Assignment)`);
+            continue;
+          }
+
+          const requiredCaps = target.track === "KEPESANTRENAN"
+            ? REQUIRED_KEPESANTRENAN_TEACHER_CAPABILITIES
+            : REQUIRED_STUDI_UMUM_TEACHER_CAPABILITIES;
+
+          let slotAuthOk = true;
+          for (const cap of requiredCaps) {
+            const matchPc = taRows.find((r) => r.capability_code === cap);
+            if (!matchPc || matchPc.business_rule_state !== 'VERIFIED_PRODUCTION') {
+              slotAuthOk = false;
+              if (matchPc?.business_rule_state === 'APPROVED_TARGET_PENDING_TECHNICAL') {
+                authIssues.push(`${target.key}: grant ${cap} is APPROVED_TARGET_PENDING_TECHNICAL (AUTHORIZATION_GRANT_NOT_RUNTIME_READY)`);
+              } else if (matchPc?.business_rule_state === 'PROPOSED_TBD') {
+                authIssues.push(`${target.key}: grant ${cap} is PROPOSED_TBD (AUTHORIZATION_GRANT_NOT_RUNTIME_READY)`);
+              } else {
+                authIssues.push(`${target.key}: grant ${cap} missing on active positions (ACADEMIC_TEACHER_AUTHORIZATION_POLICY_NOT_RUNTIME_READY)`);
+              }
+              break;
+            }
+          }
+
+          if (slotAuthOk) {
+            slotSatisfied = true;
+            break;
+          }
+        }
+
+        if (!slotSatisfied && matchingRows.length > 0 && authIssues.length === 0 && unassignedUserTargets.length === 0 && unlinkedUserTargets.length === 0 && inactiveStaffTargets.length === 0) {
           missingTargets.push(target.key);
         }
       }
 
-      if (missingTargets.length === 0) {
-        gates.push({
-          gate: "TEACHING_ASSIGNMENTS_READY",
-          status: "READY",
-          details: `All ${CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.length} required teaching assignment slots covered`,
-        });
-      } else {
+      if (missingTargets.length > 0) {
         gates.push({
           gate: "TEACHING_ASSIGNMENTS_READY",
           status: "NOT_READY",
           details: `Missing teaching assignment coverage: ${missingTargets.join(", ")}`,
+        });
+      } else if (inactiveStaffTargets.length > 0) {
+        gates.push({
+          gate: "TEACHING_ASSIGNMENTS_READY",
+          status: "NOT_READY",
+          details: `Teaching assignments point to inactive or missing Staff: ${inactiveStaffTargets.join(", ")}`,
+        });
+      } else if (unlinkedUserTargets.length > 0) {
+        gates.push({
+          gate: "TEACHING_ASSIGNMENTS_READY",
+          status: "NOT_READY",
+          details: `Scheduled teachers lack active linked PERSONAL User: ${unlinkedUserTargets.join(", ")}`,
+        });
+      } else if (unassignedUserTargets.length > 0) {
+        gates.push({
+          gate: "TEACHING_ASSIGNMENTS_READY",
+          status: "NOT_READY",
+          details: `Scheduled teachers lack active Assignment: ${unassignedUserTargets.join(", ")}`,
+        });
+      } else if (authIssues.length > 0) {
+        gates.push({
+          gate: "TEACHING_ASSIGNMENTS_READY",
+          status: "NOT_READY",
+          details: `ACADEMIC_TEACHER_AUTHORIZATION_POLICY_NOT_RUNTIME_READY: ${authIssues.join("; ")}`,
+        });
+      } else {
+        gates.push({
+          gate: "TEACHING_ASSIGNMENTS_READY",
+          status: "READY",
+          details: `All ${CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.length} required teaching assignment slots covered with verified runtime authorization chain`,
         });
       }
     } else {

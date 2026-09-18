@@ -13,6 +13,11 @@ import {
   CANONICAL_READINESS_GATE_NAMES,
   CANONICAL_REQUIRED_POSITION_CODES,
   CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS,
+  REQUIRED_UAT_ACTIVATION_CAPABILITIES,
+  EDUCATION_SESSION_ACTIVATION_CAPABILITIES,
+  APPROVED_UAT_TARGET_CAPABILITY_CODES,
+  REQUIRED_STUDI_UMUM_TEACHER_CAPABILITIES,
+  REQUIRED_KEPESANTRENAN_TEACHER_CAPABILITIES,
 } from "../lib/server/pendidikan-v2-readiness";
 import { PendidikanV2Service } from "../lib/server/pendidikan-v2-service";
 import { createPrismaDataProvider } from "../lib/auth/canonical-evaluator";
@@ -184,27 +189,100 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(partialGate.status, "NOT_READY");
       assert.ok(partialGate.details.includes("Missing teaching assignment coverage"));
 
-      // 2. Complete coverage: all 18 canonical slots
+      // 2. Complete coverage: all 18 canonical slots with full relational authorization chain
+      const createMockSlotAssignments = (opts?: {
+        staffStatus?: string | null;
+        hasStaff?: boolean;
+        hasUser?: boolean;
+        userStatus?: string;
+        accountType?: string;
+        hasAssignment?: boolean;
+        assignmentStatus?: string;
+        positionActive?: boolean;
+        businessRuleState?: "PROPOSED_TBD" | "APPROVED_TARGET_PENDING_TECHNICAL" | "VERIFIED_PRODUCTION";
+        grantCapabilities?: string[];
+        overrideSlot?: { index: number; patch: (base: any) => any };
+      }) => {
+        const staffStatus = opts?.staffStatus ?? "AKTIF";
+        const hasStaff = opts?.hasStaff ?? true;
+        const hasUser = opts?.hasUser ?? true;
+        const userStatus = opts?.userStatus ?? "AKTIF";
+        const accountType = opts?.accountType ?? "PERSONAL";
+        const hasAssignment = opts?.hasAssignment ?? true;
+        const assignmentStatus = opts?.assignmentStatus ?? "ACTIVE";
+        const positionActive = opts?.positionActive ?? true;
+        const businessRuleState = opts?.businessRuleState ?? "VERIFIED_PRODUCTION";
+        const grantCapabilities = opts?.grantCapabilities ?? [
+          "academic.schedule.read",
+          "academic.session.start",
+          "academic.material.record",
+          "academic.attendance.record",
+        ];
+
+        return CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.map((t, idx) => {
+          const base = {
+            id: `ta-slot-${idx}`,
+            mapel: { nama: t.subjectName },
+            staffId: hasStaff ? `stf-${idx}` : null,
+            educationTrack: t.track,
+            genderComplex: t.genderComplex || "CAMPUR",
+            pedagogicalLevel: t.pedagogicalLevel || null,
+            isActive: true,
+            validUntil: null,
+            staff: hasStaff
+              ? {
+                  id: `stf-${idx}`,
+                  status: staffStatus,
+                  users: hasUser
+                    ? [
+                        {
+                          id: `usr-${idx}`,
+                          status: userStatus,
+                          accountType: accountType,
+                          assignments: hasAssignment
+                            ? [
+                                {
+                                  id: `asg-${idx}`,
+                                  status: assignmentStatus,
+                                  validFrom: new Date(Date.now() - 86400000),
+                                  validUntil: null,
+                                  unit: { id: "ou-1", isActive: true },
+                                  position: {
+                                    id: `pos-${idx}`,
+                                    isActive: positionActive,
+                                    capabilities: grantCapabilities.map((capCode) => ({
+                                      capabilityCode: capCode,
+                                      businessRuleState,
+                                      capability: { code: capCode, isBlocked: false },
+                                    })),
+                                  },
+                                },
+                              ]
+                            : [],
+                        },
+                      ]
+                    : [],
+                }
+              : null,
+          };
+
+          if (opts?.overrideSlot && opts.overrideSlot.index === idx) {
+            return opts.overrideSlot.patch(base);
+          }
+          return base;
+        });
+      };
+
       const fullMockDb = {
         teachingAssignment: {
-          findMany: async () =>
-            CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.map((t, idx) => ({
-              id: `ta-slot-${idx}`,
-              mapel: { nama: t.subjectName },
-              staffId: `stf-${idx}`,
-              educationTrack: t.track,
-              genderComplex: t.genderComplex || "CAMPUR",
-              pedagogicalLevel: t.pedagogicalLevel || null,
-              isActive: true,
-              validUntil: null,
-            })),
+          findMany: async () => createMockSlotAssignments(),
         },
       };
       const fullReport = await checkPendidikanV2ProductionReadiness(fullMockDb as any);
       const fullGate = fullReport.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(fullGate);
       assert.strictEqual(fullGate.status, "READY");
-      assert.ok(fullGate.details.includes("All 18 required teaching assignment slots covered"));
+      assert.ok(fullGate.details.includes("All 18 required teaching assignment slots covered with verified runtime authorization chain"));
     });
 
     it("2.6 Cohort readiness: inactive historical santri with no cohort does NOT block; active santri without cohort DOES block", async () => {
@@ -243,6 +321,433 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.ok(readyGate);
       assert.strictEqual(readyGate.status, "READY");
       assert.ok(readyGate.details.includes("All 1 active santri have explicit cohort assigned"));
+    });
+
+    // -------------------------------------------------------------------------
+    // SECTION 9 PROOFS: M3.3C1 FINAL AUTHORIZATION-READINESS SURGICAL FIX
+    // -------------------------------------------------------------------------
+    it("2.7 Proof 1: Required capability missing => CAPABILITIES_REGISTERED NOT_READY", async () => {
+      // 8 of 9 capabilities present, missing academic.session.start
+      const incompleteCaps = REQUIRED_UAT_ACTIVATION_CAPABILITIES.filter((c) => c !== "academic.session.start");
+      const mockDb = {
+        capability: {
+          findMany: async () => incompleteCaps.map((c) => ({ code: c })),
+        },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const capGate = report.gates.find((g) => g.gate === "CAPABILITIES_REGISTERED");
+      assert.ok(capGate);
+      assert.strictEqual(capGate.status, "NOT_READY");
+      assert.ok(capGate.details.includes("academic.session.start"));
+    });
+
+    it("2.8 Proof 2: Deferred unrelated academic capability missing (e.g. academic.score.input) => must NOT block C1 live-UAT capability registration gate", async () => {
+      // Exactly the 9 required capabilities; deferred capabilities (score.input, rapor.print, etc.) are absent
+      const mockDb = {
+        capability: {
+          findMany: async () => REQUIRED_UAT_ACTIVATION_CAPABILITIES.map((c) => ({ code: c })),
+        },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const capGate = report.gates.find((g) => g.gate === "CAPABILITIES_REGISTERED");
+      assert.ok(capGate);
+      assert.strictEqual(capGate.status, "READY");
+      assert.ok(capGate.details.includes("All 9 required activation capabilities registered"));
+    });
+
+    it("2.9 Proof 3: All required activation capability rows present => registration gate READY", async () => {
+      // Programmatic verification of capability subsets derived from UAT_ACTIVATION_TARGETS
+      assert.strictEqual(EDUCATION_SESSION_ACTIVATION_CAPABILITIES.length, 4);
+      assert.strictEqual(APPROVED_UAT_TARGET_CAPABILITY_CODES.length, 5);
+      assert.strictEqual(REQUIRED_STUDI_UMUM_TEACHER_CAPABILITIES.length, 3);
+      assert.strictEqual(REQUIRED_KEPESANTRENAN_TEACHER_CAPABILITIES.length, 4);
+      assert.strictEqual(REQUIRED_UAT_ACTIVATION_CAPABILITIES.length, 9);
+
+      const mockDb = {
+        capability: {
+          findMany: async () => [
+            ...REQUIRED_UAT_ACTIVATION_CAPABILITIES.map((c) => ({ code: c })),
+            { code: "unrelated.capability.extra" },
+          ],
+        },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const capGate = report.gates.find((g) => g.gate === "CAPABILITIES_REGISTERED");
+      assert.ok(capGate);
+      assert.strictEqual(capGate.status, "READY");
+    });
+
+    it("2.10 Proof 4: TeachingAssignment with inactive Staff => TEACHING_ASSIGNMENTS_READY NOT_READY", async () => {
+      // Helper function from test 2.5 scope
+      const createSlotsWithInactiveStaff = () =>
+        CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.map((t, idx) => ({
+          id: `ta-slot-${idx}`,
+          mapel: { nama: t.subjectName },
+          staffId: `stf-${idx}`,
+          educationTrack: t.track,
+          genderComplex: t.genderComplex || "CAMPUR",
+          pedagogicalLevel: t.pedagogicalLevel || null,
+          isActive: true,
+          validUntil: null,
+          staff: {
+            id: `stf-${idx}`,
+            // First slot has inactive staff
+            status: idx === 0 ? "NON_AKTIF" : "AKTIF",
+            users: [
+              {
+                id: `usr-${idx}`,
+                status: "AKTIF",
+                accountType: "PERSONAL",
+                assignments: [
+                  {
+                    id: `asg-${idx}`,
+                    status: "ACTIVE",
+                    validFrom: new Date(Date.now() - 86400000),
+                    validUntil: null,
+                    unit: { id: "ou-1", isActive: true },
+                    position: {
+                      id: `pos-${idx}`,
+                      isActive: true,
+                      capabilities: [
+                        "academic.schedule.read",
+                        "academic.session.start",
+                        "academic.material.record",
+                        "academic.attendance.record",
+                      ].map((capCode) => ({
+                        capabilityCode: capCode,
+                        businessRuleState: "VERIFIED_PRODUCTION",
+                        capability: { code: capCode, isBlocked: false },
+                      })),
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        }));
+
+      const mockDb = {
+        teachingAssignment: {
+          findMany: async () => createSlotsWithInactiveStaff(),
+        },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(gate.details.includes("inactive or missing Staff"));
+    });
+
+    it("2.11 Proof 5: Active scheduled Staff but no canonical Assignment/PositionCapability => authorization readiness NOT_READY", async () => {
+      const createSlotsWithoutAssignment = () =>
+        CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.map((t, idx) => ({
+          id: `ta-slot-${idx}`,
+          mapel: { nama: t.subjectName },
+          staffId: `stf-${idx}`,
+          educationTrack: t.track,
+          genderComplex: t.genderComplex || "CAMPUR",
+          pedagogicalLevel: t.pedagogicalLevel || null,
+          isActive: true,
+          validUntil: null,
+          staff: {
+            id: `stf-${idx}`,
+            status: "AKTIF",
+            users: [
+              {
+                id: `usr-${idx}`,
+                status: "AKTIF",
+                accountType: "PERSONAL",
+                assignments: [], // NO active assignments
+              },
+            ],
+          },
+        }));
+
+      const mockDb = {
+        teachingAssignment: {
+          findMany: async () => createSlotsWithoutAssignment(),
+        },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(
+        gate.details.includes("lack active Assignment") ||
+        gate.details.includes("ACADEMIC_TEACHER_AUTHORIZATION_POLICY_NOT_RUNTIME_READY")
+      );
+    });
+
+    it("2.12 Proof 6: PositionCapability PROPOSED_TBD => runtime readiness NOT_READY with AUTHORIZATION_GRANT_NOT_RUNTIME_READY", async () => {
+      const createSlotsWithProposedTbd = () =>
+        CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.map((t, idx) => ({
+          id: `ta-slot-${idx}`,
+          mapel: { nama: t.subjectName },
+          staffId: `stf-${idx}`,
+          educationTrack: t.track,
+          genderComplex: t.genderComplex || "CAMPUR",
+          pedagogicalLevel: t.pedagogicalLevel || null,
+          isActive: true,
+          validUntil: null,
+          staff: {
+            id: `stf-${idx}`,
+            status: "AKTIF",
+            users: [
+              {
+                id: `usr-${idx}`,
+                status: "AKTIF",
+                accountType: "PERSONAL",
+                assignments: [
+                  {
+                    id: `asg-${idx}`,
+                    status: "ACTIVE",
+                    validFrom: new Date(Date.now() - 86400000),
+                    validUntil: null,
+                    unit: { id: "ou-1", isActive: true },
+                    position: {
+                      id: `pos-${idx}`,
+                      isActive: true,
+                      capabilities: [
+                        "academic.schedule.read",
+                        "academic.session.start",
+                        "academic.material.record",
+                        "academic.attendance.record",
+                      ].map((capCode) => ({
+                        capabilityCode: capCode,
+                        businessRuleState: "PROPOSED_TBD", // PROPOSED_TBD => NOT READY
+                        capability: { code: capCode, isBlocked: false },
+                      })),
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        }));
+
+      const mockDb = {
+        teachingAssignment: {
+          findMany: async () => createSlotsWithProposedTbd(),
+        },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(gate.details.includes("AUTHORIZATION_GRANT_NOT_RUNTIME_READY"));
+      assert.ok(gate.details.includes("PROPOSED_TBD"));
+    });
+
+    it("2.13 Proof 7: PositionCapability APPROVED_TARGET_PENDING_TECHNICAL => runtime readiness NOT_READY with AUTHORIZATION_GRANT_NOT_RUNTIME_READY", async () => {
+      const createSlotsWithPendingTechnical = () =>
+        CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.map((t, idx) => ({
+          id: `ta-slot-${idx}`,
+          mapel: { nama: t.subjectName },
+          staffId: `stf-${idx}`,
+          educationTrack: t.track,
+          genderComplex: t.genderComplex || "CAMPUR",
+          pedagogicalLevel: t.pedagogicalLevel || null,
+          isActive: true,
+          validUntil: null,
+          staff: {
+            id: `stf-${idx}`,
+            status: "AKTIF",
+            users: [
+              {
+                id: `usr-${idx}`,
+                status: "AKTIF",
+                accountType: "PERSONAL",
+                assignments: [
+                  {
+                    id: `asg-${idx}`,
+                    status: "ACTIVE",
+                    validFrom: new Date(Date.now() - 86400000),
+                    validUntil: null,
+                    unit: { id: "ou-1", isActive: true },
+                    position: {
+                      id: `pos-${idx}`,
+                      isActive: true,
+                      capabilities: [
+                        "academic.schedule.read",
+                        "academic.session.start",
+                        "academic.material.record",
+                        "academic.attendance.record",
+                      ].map((capCode) => ({
+                        capabilityCode: capCode,
+                        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL", // Policy approved but NOT runtime authoritative
+                        capability: { code: capCode, isBlocked: false },
+                      })),
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        }));
+
+      const mockDb = {
+        teachingAssignment: {
+          findMany: async () => createSlotsWithPendingTechnical(),
+        },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(gate.details.includes("AUTHORIZATION_GRANT_NOT_RUNTIME_READY"));
+      assert.ok(gate.details.includes("APPROVED_TARGET_PENDING_TECHNICAL"));
+    });
+
+    it("2.14 Proof 8: Test-only VERIFIED_PRODUCTION capability + active relational chain => runtime authorization readiness PASS", async () => {
+      const createVerifiedSlots = () =>
+        CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.map((t, idx) => ({
+          id: `ta-slot-${idx}`,
+          mapel: { nama: t.subjectName },
+          staffId: `stf-${idx}`,
+          educationTrack: t.track,
+          genderComplex: t.genderComplex || "CAMPUR",
+          pedagogicalLevel: t.pedagogicalLevel || null,
+          isActive: true,
+          validUntil: null,
+          staff: {
+            id: `stf-${idx}`,
+            status: "AKTIF",
+            users: [
+              {
+                id: `usr-${idx}`,
+                status: "AKTIF",
+                accountType: "PERSONAL",
+                assignments: [
+                  {
+                    id: `asg-${idx}`,
+                    status: "ACTIVE",
+                    validFrom: new Date(Date.now() - 86400000),
+                    validUntil: null,
+                    unit: { id: "ou-1", isActive: true },
+                    position: {
+                      id: `pos-${idx}`,
+                      isActive: true,
+                      capabilities: [
+                        "academic.schedule.read",
+                        "academic.session.start",
+                        "academic.material.record",
+                        "academic.attendance.record",
+                      ].map((capCode) => ({
+                        capabilityCode: capCode,
+                        businessRuleState: "VERIFIED_PRODUCTION",
+                        capability: { code: capCode, isBlocked: false },
+                      })),
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        }));
+
+      const mockDb = {
+        teachingAssignment: {
+          findMany: async () => createVerifiedSlots(),
+        },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "READY");
+      assert.ok(gate.details.includes("All 18 required teaching assignment slots covered with verified runtime authorization chain"));
+    });
+
+    it("2.15 Proof 9: Unrelated active Assignment must not satisfy teacher auth readiness", async () => {
+      const createSlotsWithUnrelatedAssignments = () =>
+        CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.map((t, idx) => ({
+          id: `ta-slot-${idx}`,
+          mapel: { nama: t.subjectName },
+          staffId: `stf-${idx}`,
+          educationTrack: t.track,
+          genderComplex: t.genderComplex || "CAMPUR",
+          pedagogicalLevel: t.pedagogicalLevel || null,
+          isActive: true,
+          validUntil: null,
+          staff: {
+            id: `stf-${idx}`,
+            status: "AKTIF",
+            users: [
+              {
+                id: `usr-${idx}`,
+                status: "AKTIF",
+                accountType: "PERSONAL",
+                assignments: [
+                  {
+                    id: `asg-${idx}`,
+                    status: "ACTIVE",
+                    validFrom: new Date(Date.now() - 86400000),
+                    validUntil: null,
+                    unit: { id: "ou-1", isActive: true },
+                    position: {
+                      id: `pos-${idx}`,
+                      isActive: true,
+                      capabilities: [
+                        "tahfizh.recap.read",
+                        "keasramaan.permission.read",
+                      ].map((capCode) => ({
+                        capabilityCode: capCode,
+                        businessRuleState: "VERIFIED_PRODUCTION",
+                        capability: { code: capCode, isBlocked: false },
+                      })),
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        }));
+
+      const mockDb = {
+        teachingAssignment: {
+          findMany: async () => createSlotsWithUnrelatedAssignments(),
+        },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(gate.details.includes("ACADEMIC_TEACHER_AUTHORIZATION_POLICY_NOT_RUNTIME_READY"));
+    });
+
+    it("2.16 Proof 10 & Real PostgreSQL: Unprovisioned academic teacher policy honestly reports NOT_READY without fabrication", async () => {
+      // In isolated test PostgreSQL, before M3.3C2 teacher policies are provisioned, readiness reports honestly
+      const report = await checkPendidikanV2ProductionReadiness(prisma as any);
+      const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      // Must not fabricate any unapproved policy
+      assert.ok(
+        gate.details.includes("Missing teaching assignment coverage") ||
+        gate.details.includes("ACADEMIC_TEACHER_AUTHORIZATION_POLICY_NOT_RUNTIME_READY")
+      );
+    });
+
+    it("2.17 USER_ASSIGNMENTS_READY: Stale/inactive assignment chains are not counted as READY", async () => {
+      const mockDb = {
+        assignment: {
+          findMany: async () => [
+            {
+              id: "asg-inactive",
+              status: "INACTIVE",
+              validFrom: new Date(Date.now() - 86400000),
+              validUntil: null,
+              user: { id: "u-1", status: "AKTIF", staffId: "stf-1", staff: { id: "stf-1", status: "AKTIF" } },
+              position: { id: "pos-1", code: "MUDIR", isActive: true, requiresPersonalAccount: true },
+              unit: { id: "ou-1", isActive: true },
+            },
+          ],
+        },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(gate.details.includes("MUDIR"));
     });
   });
 
