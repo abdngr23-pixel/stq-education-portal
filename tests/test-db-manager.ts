@@ -2467,11 +2467,14 @@ export interface M33aMigrationVerificationResult {
   existingPlacementsIntact: boolean;
   existingCatatanKesehatanIntact: boolean;
   tableCreated: boolean;
+  eventsTableCreated: boolean;
+  statusOccurredIndexCreated: boolean;
   enumCreated: boolean;
   enumExactValuesVerified: boolean;
   invalidEnumRejected: boolean;
   nullableDiagnosaPersistsNull: boolean;
   auditAttributionFieldsPresent: boolean;
+  eventInsertedSuccessfully: boolean;
   simulationSuccess: boolean;
 }
 
@@ -2707,12 +2710,20 @@ export async function simulateM33aMigrationChain(): Promise<M33aMigrationVerific
     const existingPlacementsIntact = postPlc.length === 1 && JSON.stringify(prePlc) === JSON.stringify(postPlc);
     const existingCatatanKesehatanIntact = postCk.length === 1 && JSON.stringify(preCk) === JSON.stringify(postCk);
 
-    // 9. Verifikasi tabel health_cases_v2 dibuat
+    // 9. Verifikasi tabel health_cases_v2 dan health_case_v2_events dibuat
     const tablesRes: Array<{ table_name: string }> = await client.$queryRawUnsafe(`
       SELECT table_name FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_name = 'health_cases_v2';
+      WHERE table_schema = 'public' AND table_name IN ('health_cases_v2', 'health_case_v2_events');
     `);
-    const tableCreated = tablesRes.length === 1;
+    const tableCreated = tablesRes.some((t) => t.table_name === "health_cases_v2");
+    const eventsTableCreated = tablesRes.some((t) => t.table_name === "health_case_v2_events");
+
+    // Verifikasi index status_v2, occurred_at
+    const indexRes: Array<{ indexname: string }> = await client.$queryRawUnsafe(`
+      SELECT indexname FROM pg_indexes
+      WHERE tablename = 'health_cases_v2' AND indexname = 'health_cases_v2_status_v2_occurred_at_idx';
+    `);
+    const statusOccurredIndexCreated = indexRes.length === 1;
 
     // 10. Verifikasi enum HealthStatusV2 dibuat dengan 4 nilai tepat
     const enumRes: Array<{ enumlabel: string }> = await client.$queryRawUnsafe(`
@@ -2729,7 +2740,7 @@ export async function simulateM33aMigrationChain(): Promise<M33aMigrationVerific
       enumLabels.length === 4 &&
       expectedLabels.every((lbl) => enumLabels.includes(lbl));
 
-    // 11. Uji insert baris HealthCaseV2 dengan diagnosa NULL (data honesty)
+    // 11. Uji insert baris HealthCaseV2 dengan diagnosa NULL (data honesty) & FK attribution
     await client.$executeRawUnsafe(`
       INSERT INTO "health_cases_v2" (
         "id", "santri_id", "occurred_at", "keluhan", "tindakan_awal", "diagnosa", "status_v2", "recorded_by_user_id", "created_at", "updated_at"
@@ -2737,6 +2748,20 @@ export async function simulateM33aMigrationChain(): Promise<M33aMigrationVerific
         'hc-01', 'san-pre-m33', NOW(), 'Pusing kepala', 'Istirahat di UKS', NULL, 'DIPANTAU'::"HealthStatusV2", 'usr-pre-m33', NOW(), NOW()
       );
     `);
+
+    // Uji insert baris HealthCaseV2Event terpisah (Blocker D & E)
+    await client.$executeRawUnsafe(`
+      INSERT INTO "health_case_v2_events" (
+        "id", "case_id", "previous_status", "new_status", "tindakan_lanjutan", "recorded_by_user_id", "created_at"
+      ) VALUES (
+        'hce-01', 'hc-01', 'DIPANTAU'::"HealthStatusV2", 'PULIH'::"HealthStatusV2", 'Diberikan vitamin dan dinyatakan pulih', 'usr-pre-m33', NOW()
+      );
+    `);
+
+    const insertedEvent = await client.$queryRawUnsafe<Array<{ id: string; case_id: string; new_status: string }>>(
+      `SELECT "id", "case_id", "new_status"::text FROM "health_case_v2_events" WHERE "id" = 'hce-01';`
+    );
+    const eventInsertedSuccessfully = insertedEvent.length === 1 && insertedEvent[0].case_id === "hc-01";
 
     const insertedCase = await client.$queryRawUnsafe<Array<{ id: string; diagnosa: string | null; status_v2: string; recorded_by_user_id: string }>>(
       `SELECT "id", "diagnosa", "status_v2"::text, "recorded_by_user_id" FROM "health_cases_v2" WHERE "id" = 'hc-01';`
@@ -2770,11 +2795,14 @@ export async function simulateM33aMigrationChain(): Promise<M33aMigrationVerific
       existingPlacementsIntact &&
       existingCatatanKesehatanIntact &&
       tableCreated &&
+      eventsTableCreated &&
+      statusOccurredIndexCreated &&
       enumCreated &&
       enumExactValuesVerified &&
       invalidEnumRejected &&
       nullableDiagnosaPersistsNull &&
-      auditAttributionFieldsPresent;
+      auditAttributionFieldsPresent &&
+      eventInsertedSuccessfully;
 
     return {
       pr8ExactShaVerified,
@@ -2787,11 +2815,14 @@ export async function simulateM33aMigrationChain(): Promise<M33aMigrationVerific
       existingPlacementsIntact,
       existingCatatanKesehatanIntact,
       tableCreated,
+      eventsTableCreated,
+      statusOccurredIndexCreated,
       enumCreated,
       enumExactValuesVerified,
       invalidEnumRejected,
       nullableDiagnosaPersistsNull,
       auditAttributionFieldsPresent,
+      eventInsertedSuccessfully,
       simulationSuccess,
     };
   } finally {

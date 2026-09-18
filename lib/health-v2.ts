@@ -27,6 +27,9 @@
  * 8. Inventory ownership belongs to Health (maintenance tasks delegated to Sarpras).
  */
 
+import type { ICanonicalDataProvider } from "@/lib/auth/canonical-evaluator";
+import type { IAuditSink } from "@/lib/auth/canonical-audit";
+
 export const CANONICAL_HEALTH_STATUSES_V2 = [
   "DIPANTAU",
   "PULIH",
@@ -41,6 +44,8 @@ export type LegacyHealthStatus =
   | "DIRUJUK_PUSKESMAS"
   | "DIRUJUK_RS"
   | "SEMBUH";
+
+export type HealthStatusLegacy = LegacyHealthStatus | "PULANG";
 
 export type HealthStatusBridgeResult = HealthStatusV2 | "UNKNOWN" | "REVIEW_REQUIRED";
 
@@ -113,8 +118,22 @@ export interface UpdateHealthCaseV2StatusInput {
   id: string;
   newStatus: HealthStatusV2;
   tindakanTambahan?: string | null;
+  tindakanLanjutan?: string | null;
   catatan?: string | null;
   clientRequestId?: string | null;
+}
+
+export interface HealthCaseV2EventDTO {
+  id: string;
+  caseId: string;
+  previousStatus: HealthStatusV2 | null;
+  newStatus: HealthStatusV2;
+  tindakanLanjutan: string | null;
+  catatan: string | null;
+  recordedByUserId: string;
+  recordedByStaffId: string | null;
+  humanExecutorId: string | null;
+  createdAt: Date;
 }
 
 export interface HealthCaseV2DTO {
@@ -131,6 +150,7 @@ export interface HealthCaseV2DTO {
   recordedByStaffId: string | null;
   createdAt: Date;
   updatedAt: Date;
+  events?: HealthCaseV2EventDTO[];
 }
 
 export interface HealthCaseV2AuditContext {
@@ -141,4 +161,9 @@ export interface HealthCaseV2AuditContext {
   humanExecutorId?: string | null;
   humanExecutorUsername?: string | null;
   clientRequestId?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  now?: Date;
+  dataProvider?: ICanonicalDataProvider;
+  auditSink?: IAuditSink;
 }
