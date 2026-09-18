@@ -42,15 +42,25 @@ export interface ActionResponse<T = unknown> {
 
 /**
  * SERVER ACTION: Query education sessions (Server-authoritative read model)
- * Verifies schema readiness and returns authoritative DTOs.
+ * Verifies authenticated identity and schema readiness, returning authoritative DTOs.
+ * Never exposes sessions to unauthenticated callers.
  * Never fabricates empty [] or 0 on schema failure.
  */
 export async function getEducationSessionsAction(
   filter?: GetEducationSessionsFilter
 ): Promise<ActionResponse<EducationSessionReadDTO[]>> {
+  const session = await getCurrentSession();
+  if (!session || !session.userId) {
+    return {
+      success: false,
+      error: "UNAUTHORIZED: Sesi autentikasi Anda tidak valid atau telah berakhir. Harap login kembali.",
+      message: "UNAUTHORIZED: Sesi autentikasi Anda tidak valid atau telah berakhir. Harap login kembali.",
+    };
+  }
+
   try {
     const service = new PendidikanV2Service({ db: prisma });
-    const data = await service.getEducationSessions(filter);
+    const data = await service.getEducationSessions(filter, { actorUserId: session.userId });
     return { success: true, data };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

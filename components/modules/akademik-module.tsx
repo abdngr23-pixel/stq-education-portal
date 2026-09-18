@@ -40,6 +40,8 @@ import {
   STUDI_UMUM_MAPEL_OPTIONS,
   MAPEL_OPTIONS,
   EducationSessionReadDTO,
+  matchStudiUmumSession,
+  matchKepesantrenanSession,
 } from "@/lib/pendidikan-v2";
 import {
   getEducationSessionsAction,
@@ -157,21 +159,42 @@ export function AkademikModule({
   const [selectedKpsDay, setSelectedKpsDay] = useState<"Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday">("Monday");
 
   // Milestone 3.3C1: Server-Authoritative Education Sessions State
+  type ServerSessionStatus = "LOADING" | "READY" | "NOT_ENABLED" | "SCHEMA_NOT_READY" | "PERMISSION_DENIED" | "ERROR";
   const [serverSessions, setServerSessions] = useState<EducationSessionReadDTO[]>([]);
-  const [isServerReady, setIsServerReady] = useState<boolean>(false);
+  const [serverSessionStatus, setServerSessionStatus] = useState<ServerSessionStatus>("LOADING");
+  const [serverSessionErrorMsg, setServerSessionErrorMsg] = useState<string | null>(null);
   const [inputMateriText, setInputMateriText] = useState<string>("");
 
   useEffect(() => {
     let isMounted = true;
+    setServerSessionStatus("LOADING");
     getEducationSessionsAction()
       .then((res) => {
         if (!isMounted) return;
         if (res.success && res.data) {
           setServerSessions(res.data);
-          setIsServerReady(true);
+          setServerSessionStatus("READY");
+          setServerSessionErrorMsg(null);
+        } else {
+          const err = res.error || "Gagal memuat data sesi pembelajaran";
+          if (err.includes("NOT_ENABLED") || err.includes("UAT_NOT_ENABLED")) {
+            setServerSessionStatus("NOT_ENABLED");
+          } else if (err.includes("SCHEMA_NOT_READY")) {
+            setServerSessionStatus("SCHEMA_NOT_READY");
+          } else if (err.includes("UNAUTHORIZED") || err.includes("PERMISSION_DENIED")) {
+            setServerSessionStatus("PERMISSION_DENIED");
+          } else {
+            setServerSessionStatus("ERROR");
+          }
+          setServerSessionErrorMsg(err);
         }
       })
-      .catch(() => {});
+      .catch((err: unknown) => {
+        if (!isMounted) return;
+        const msg = err instanceof Error ? err.message : String(err);
+        setServerSessionStatus("ERROR");
+        setServerSessionErrorMsg(msg);
+      });
     return () => {
       isMounted = false;
     };
@@ -588,19 +611,54 @@ export function AkademikModule({
                           </div>
                           <div className="flex justify-between text-[11px]">
                             <span className="text-slate-500">Status Sesi:</span>
-                            <span className="font-bold text-amber-700">
-                              ○ TERJADWAL
-                            </span>
+                            {(() => {
+                              const suSession = matchStudiUmumSession(serverSessions, {
+                                subjectName: schedule.subject,
+                                jp: schedule.jp,
+                                semesterMeetingNumber: selectedSemesterMeeting,
+                                programLevel: cohortLevel,
+                              });
+
+                              if (serverSessionStatus === "LOADING") {
+                                return <span className="font-bold text-slate-500">○ MEMUAT...</span>;
+                              }
+                              if (serverSessionStatus === "NOT_ENABLED") {
+                                return <span className="font-bold text-amber-700">○ UAT NONAKTIF</span>;
+                              }
+                              if (serverSessionStatus === "SCHEMA_NOT_READY") {
+                                return <span className="font-bold text-amber-700">○ SKEMA BELUM SIAP</span>;
+                              }
+                              if (serverSessionStatus === "PERMISSION_DENIED") {
+                                return <span className="font-bold text-red-600">○ AKSES DITOLAK</span>;
+                              }
+                              if (serverSessionStatus === "ERROR") {
+                                return <span className="font-bold text-red-600">○ GAGAL MEMUAT</span>;
+                              }
+                              if (suSession) {
+                                if (suSession.status === "STARTED") {
+                                  return <span className="font-bold text-emerald-700">● BERLANGSUNG</span>;
+                                }
+                                if (suSession.status === "COMPLETED") {
+                                  return <span className="font-bold text-blue-700">✔ SELESAI</span>;
+                                }
+                                return <span className="font-bold text-amber-700">○ TERJADWAL</span>;
+                              }
+                              return <span className="font-bold text-slate-400">○ BELUM ADA DI SERVER</span>;
+                            })()}
                           </div>
                         </div>
                       </div>
 
                       <div className="mt-4 pt-3 border-t border-slate-100">
                         {(() => {
-                          const suSession = serverSessions.find(
-                            (s) => s.educationTrack === "STUDI_UMUM" && s.subject === schedule.subject
-                          );
-                          if (isServerReady && suSession && suSession.mutationAvailable) {
+                          const suSession = matchStudiUmumSession(serverSessions, {
+                            subjectName: schedule.subject,
+                            jp: schedule.jp,
+                            semesterMeetingNumber: selectedSemesterMeeting,
+                            programLevel: cohortLevel,
+                          });
+
+                          if (serverSessionStatus === "READY" && suSession && suSession.mutationAvailable) {
                             return (
                               <Button
                                 type="button"
@@ -613,6 +671,22 @@ export function AkademikModule({
                               </Button>
                             );
                           }
+
+                          let notice = "Belum diaktifkan — menunggu aktivasi M3.3C";
+                          if (serverSessionStatus === "LOADING") {
+                            notice = "Memuat status sesi dari server...";
+                          } else if (serverSessionStatus === "NOT_ENABLED") {
+                            notice = "UAT belum aktif (PENDIDIKAN_V2_UAT_ENABLED=false)";
+                          } else if (serverSessionStatus === "SCHEMA_NOT_READY") {
+                            notice = "Skema database belum siap";
+                          } else if (serverSessionStatus === "PERMISSION_DENIED") {
+                            notice = "Akses tidak diotorisasi";
+                          } else if (suSession?.mutationDeniedReason === "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED") {
+                            notice = "Bukan guru terjadwal — kebijakan badal belum aktif";
+                          } else if (suSession?.mutationDeniedReason === "STAFF_NOT_LINKED") {
+                            notice = "Profil pendidik staf belum terhubung";
+                          }
+
                           return (
                             <Button
                               type="button"
@@ -622,7 +696,7 @@ export function AkademikModule({
                               className="w-full min-h-[44px] bg-slate-100 text-slate-400 cursor-not-allowed text-xs font-bold gap-1.5 border border-slate-200"
                             >
                               <Lock className="h-4 w-4 text-slate-400" />
-                              Belum diaktifkan — menunggu aktivasi M3.3C
+                              {notice}
                             </Button>
                           );
                         })()}
@@ -1087,32 +1161,7 @@ export function AkademikModule({
       {/* 3. VIEW KURIKULUM & EVALUASI KEPESANTRENAN */}
       {subTab === "kepesantrenan" && (
         <div className="space-y-6">
-          {/* Fail-Closed Check */}
-          {!["KS", "MT", "PH", "ADM"].includes(userRole) ? (
-            <Card rounded="3xl" className="border border-amber-200 bg-amber-50/60 p-6 sm:p-8">
-              <div className="flex flex-col items-center text-center max-w-lg mx-auto space-y-4">
-                <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 shadow-xs">
-                  <ShieldAlert className="h-8 w-8" />
-                </div>
-                <div>
-                  <Badge variant="orange" size="md" className="font-bold mb-2">
-                    AKSES DITOLAK (FAIL-CLOSED)
-                  </Badge>
-                  <h3 className="text-lg font-bold text-slate-900 font-heading">
-                    Akses Terbatas: Kurikulum Kepesantrenan
-                  </h3>
-                  <p className="text-xs sm:text-sm text-slate-600 mt-2 leading-relaxed">
-                    Pengelolaan kurikulum dan penilaian 5 Mata Pelajaran Kepesantrenan dilindungi dengan kebijakan ketat (fail-closed) dan hanya dapat diakses oleh <strong>Mudir (KS)</strong>, <strong>Musyrif Tahfizh (MT)</strong>, dan <strong>Pembina Asrama (PH)</strong>.
-                  </p>
-                  <p className="text-xs text-amber-800 font-semibold mt-3 bg-amber-100/70 p-2.5 rounded-xl border border-amber-200">
-                    Peran Anda saat ini (<strong>{userRole}</strong>) tidak memiliki hak otorisasi untuk mencatat atau mengubah nilai kepesantrenan. Untuk input nilai Studi Umum, silakan gunakan tab <em>Input Penilaian Akademik</em>.
-                  </p>
-                </div>
-              </div>
-            </Card>
-          ) : (
-            <>
-              {/* Header Info */}
+          {/* Header Info */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-slate-50 p-4 sm:p-5 rounded-3xl border border-emerald-100">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
@@ -1256,10 +1305,12 @@ export function AkademikModule({
 
                           <div>
                             {(() => {
-                              const kpsSession = serverSessions.find(
-                                (s) => s.educationTrack === "KEPESANTRENAN" && s.subject === dayDef?.name
-                              );
-                              if (isServerReady && kpsSession && kpsSession.mutationAvailable) {
+                              const kpsSession = matchKepesantrenanSession(serverSessions, {
+                                subjectName: dayDef?.name,
+                                genderGroup: "PUTRA",
+                              });
+
+                              if (serverSessionStatus === "READY" && kpsSession && kpsSession.mutationAvailable) {
                                 return (
                                   <Button
                                     type="button"
@@ -1272,6 +1323,18 @@ export function AkademikModule({
                                   </Button>
                                 );
                               }
+
+                              let notice = "Belum diaktifkan — menunggu aktivasi M3.3C";
+                              if (serverSessionStatus === "LOADING") {
+                                notice = "Memuat status sesi...";
+                              } else if (serverSessionStatus === "NOT_ENABLED") {
+                                notice = "UAT belum aktif (PENDIDIKAN_V2_UAT_ENABLED=false)";
+                              } else if (serverSessionStatus === "SCHEMA_NOT_READY") {
+                                notice = "Skema database belum siap";
+                              } else if (kpsSession?.mutationDeniedReason === "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED") {
+                                notice = "Bukan guru terjadwal — kebijakan badal belum aktif";
+                              }
+
                               return (
                                 <Button
                                   type="button"
@@ -1281,7 +1344,7 @@ export function AkademikModule({
                                   className="min-h-[44px] bg-slate-100 text-slate-400 cursor-not-allowed text-xs font-bold gap-1.5 border border-slate-200"
                                 >
                                   <Lock className="h-4 w-4 text-slate-400" />
-                                  Belum diaktifkan — menunggu aktivasi M3.3C
+                                  {notice}
                                 </Button>
                               );
                             })()}
@@ -1308,10 +1371,11 @@ export function AkademikModule({
 
                             <div className="space-y-2">
                               {(() => {
-                                const kpsSession = serverSessions.find(
-                                  (s) => s.educationTrack === "KEPESANTRENAN" && s.subject === dayDef?.name
-                                );
-                                if (isServerReady && kpsSession && kpsSession.status === "STARTED") {
+                                const kpsSession = matchKepesantrenanSession(serverSessions, {
+                                  subjectName: dayDef?.name,
+                                  genderGroup: "PUTRA",
+                                });
+                                if (serverSessionStatus === "READY" && kpsSession && kpsSession.status === "STARTED") {
                                   return (
                                     <div className="space-y-2">
                                       <textarea
@@ -1328,7 +1392,7 @@ export function AkademikModule({
                                         onClick={() => handleRecordMaterial(kpsSession.sessionId)}
                                         className="bg-[#0E7C3A] hover:bg-[#0B642E] text-white text-xs font-bold"
                                       >
-                                        Simpan Materi
+                                        Simpan Materi Sesi
                                       </Button>
                                     </div>
                                   );
@@ -1508,8 +1572,6 @@ export function AkademikModule({
                   </table>
                 </CardContent>
               </Card>
-            </>
-          )}
         </div>
       )}
 

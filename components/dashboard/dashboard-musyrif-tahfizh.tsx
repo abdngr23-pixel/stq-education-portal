@@ -140,6 +140,26 @@ export function DashboardMusyrifTahfizh({
     });
   }, [santriList]);
 
+  const [selectedModalKelas, setSelectedModalKelas] = useState<string>("ALL");
+  const [selectedModalHalaqoh, setSelectedModalHalaqoh] = useState<string>("ALL");
+
+  // Derive dynamic authoritative options for modal filters
+  const availableModalKelas = useMemo(() => {
+    const classes = Array.from(new Set(resolvedSantriList.map((s) => s.kelas).filter(Boolean))) as string[];
+    return classes.sort();
+  }, [resolvedSantriList]);
+
+  const availableModalHalaqoh = useMemo(() => {
+    const halaqohs = Array.from(
+      new Set(
+        resolvedSantriList
+          .map((s: any) => s.halaqoh || s.halaqohNama || s.halaqohCode)
+          .filter(Boolean)
+      )
+    ) as string[];
+    return halaqohs.sort();
+  }, [resolvedSantriList]);
+
   // Santri yang sudah setor hari ini (hanya jika eksplisit true dari server)
   const santriSudahSetor = useMemo(() => {
     return resolvedSantriList.filter((s) => s.sudahSetorHariIni === true);
@@ -232,15 +252,27 @@ export function DashboardMusyrifTahfizh({
     }
   }, [selectedFilter, resolvedSantriList, santriBelumSetor]);
 
-  // Filter daftar santri untuk modal pencarian (berdasarkan filter aktif agar konsisten)
+  // Filter daftar santri untuk modal pencarian (UAT #3 Reconciled: Nama/NIS text match + separate Kelas filter + separate Halaqoh filter)
   const filteredModalSantri = useMemo(() => {
-    const baseList = activeFilteredList;
-    if (!searchQuery.trim()) return baseList;
-    const q = searchQuery.toLowerCase();
-    return baseList.filter(
-      (s) => s.nama.toLowerCase().includes(q) || s.nis.toLowerCase().includes(q)
-    );
-  }, [activeFilteredList, searchQuery]);
+    let list = activeFilteredList;
+
+    if (selectedModalKelas !== "ALL") {
+      list = list.filter((s) => s.kelas === selectedModalKelas);
+    }
+
+    if (selectedModalHalaqoh !== "ALL") {
+      list = list.filter((s: any) => (s.halaqoh || s.halaqohNama || s.halaqohCode) === selectedModalHalaqoh);
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(
+        (s) => s.nama.toLowerCase().includes(q) || s.nis.toLowerCase().includes(q)
+      );
+    }
+
+    return list;
+  }, [activeFilteredList, searchQuery, selectedModalKelas, selectedModalHalaqoh]);
 
   // Modal handlers
   const handleOpenModal = (e?: React.MouseEvent<HTMLButtonElement>) => {
@@ -253,6 +285,8 @@ export function DashboardMusyrifTahfizh({
   const handleCloseModal = () => {
     setShowAllSantriModal(false);
     setSearchQuery("");
+    setSelectedModalKelas("ALL");
+    setSelectedModalHalaqoh("ALL");
     // Kembalikan fokus ke trigger button setelah modal ditutup
     triggerButtonRef.current?.focus();
     const btn =
@@ -1117,8 +1151,8 @@ export function DashboardMusyrifTahfizh({
               </button>
             </div>
 
-            {/* Kotak Pencarian Ringkas */}
-            <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+            {/* Kotak Pencarian Ringkas & Filter Terpisah (UAT #3 Reconciled: Nama Only + Independent Filters) */}
+            <div className="p-4 border-b border-slate-100 bg-slate-50/50 space-y-2.5">
               <div className="relative">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                 <input
@@ -1130,9 +1164,42 @@ export function DashboardMusyrifTahfizh({
                   className="w-full pl-10 pr-4 py-2 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#0E7C3A]/20 focus:border-[#0E7C3A] min-h-[44px]"
                 />
               </div>
+
+              {/* Filter Independen: Kelas & Kelompok / Halaqoh */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <select
+                  data-testid="filter-modal-kelas"
+                  aria-label="Filter Kelas"
+                  value={selectedModalKelas}
+                  onChange={(e) => setSelectedModalKelas(e.target.value)}
+                  className="px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-[#0E7C3A]"
+                >
+                  <option value="ALL">Semua Kelas</option>
+                  {availableModalKelas.map((k) => (
+                    <option key={k} value={k}>
+                      Kelas {k}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  data-testid="filter-modal-halaqoh"
+                  aria-label="Filter Kelompok atau Halaqoh"
+                  value={selectedModalHalaqoh}
+                  onChange={(e) => setSelectedModalHalaqoh(e.target.value)}
+                  className="px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-[#0E7C3A]"
+                >
+                  <option value="ALL">Semua Halaqoh</option>
+                  {availableModalHalaqoh.map((h) => (
+                    <option key={h} value={h}>
+                      Halaqoh {h}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            {/* Isi Daftar Santri */}
+            {/* Isi Daftar Santri — UAT #3: Result Row NAMA ONLY */}
             <div className="overflow-y-auto flex-1 p-3 sm:p-4 divide-y divide-slate-100">
               {filteredModalSantri.length === 0 ? (
                 <div className="py-8 text-center text-slate-500">
@@ -1151,9 +1218,6 @@ export function DashboardMusyrifTahfizh({
                             {santri.nama}
                           </span>
                         </div>
-                        <p className="text-xs text-slate-500 truncate mt-0.5">
-                          Kelas {santri.kelas}
-                        </p>
                       </div>
 
                       <div className="shrink-0 self-start sm:self-center">

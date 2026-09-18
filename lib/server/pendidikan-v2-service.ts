@@ -16,8 +16,10 @@ import {
 } from "@/lib/auth/canonical-audit";
 import {
   isApprovedKepesantrenanAttendanceStatus,
+  resolvePblMeeting,
   EducationSessionReadDTO,
 } from "@/lib/pendidikan-v2";
+import { getWITADayRange, getWitaDateString } from "@/lib/wita-date";
 
 export interface PendidikanV2ServiceDependencies {
   db: PrismaClient;
@@ -123,17 +125,34 @@ export class PendidikanV2Service {
         SELECT table_name 
         FROM information_schema.tables 
         WHERE table_schema = 'public' 
-          AND table_name IN ('education_sessions', 'education_session_participants', 'education_session_attendances');
+          AND table_name IN ('education_cohorts', 'teaching_assignments', 'education_sessions', 'education_session_participants', 'education_session_attendances');
       `)) as Array<{ table_name: string }>;
 
       const tableNames = new Set(tables.map((t: { table_name: string }) => t.table_name));
-      const required = ['education_sessions', 'education_session_participants', 'education_session_attendances'];
-      const missing = required.filter((r) => !tableNames.has(r));
+      const requiredTables = ['education_cohorts', 'teaching_assignments', 'education_sessions', 'education_session_participants', 'education_session_attendances'];
+      const missingTables = requiredTables.filter((r) => !tableNames.has(r));
 
-      if (missing.length > 0) {
+      if (missingTables.length > 0) {
         return {
           ready: false,
-          reason: `PENDIDIKAN_V2_SCHEMA_NOT_READY: Tabel berikut belum tersedia di database: ${missing.join(", ")}`,
+          reason: `PENDIDIKAN_V2_SCHEMA_NOT_READY: Tabel berikut belum tersedia di database: ${missingTables.join(", ")}`,
+        };
+      }
+
+      const enums = (await (this.db as any).$queryRawUnsafe(`
+        SELECT typname 
+        FROM pg_type 
+        WHERE typname IN ('EducationTrack', 'PedagogicalLevel', 'EducationSessionStatus', 'EducationAttendanceStatus');
+      `)) as Array<{ typname: string }>;
+
+      const enumNames = new Set(enums.map((e: { typname: string }) => e.typname));
+      const requiredEnums = ['EducationTrack', 'PedagogicalLevel', 'EducationSessionStatus', 'EducationAttendanceStatus'];
+      const missingEnums = requiredEnums.filter((e) => !enumNames.has(e));
+
+      if (missingEnums.length > 0) {
+        return {
+          ready: false,
+          reason: `PENDIDIKAN_V2_SCHEMA_NOT_READY: Enum berikut belum tersedia di database: ${missingEnums.join(", ")}`,
         };
       }
 
@@ -152,7 +171,8 @@ export class PendidikanV2Service {
    * Never returns fake empty [] if schema is not ready.
    */
   async getEducationSessions(
-    filter?: { educationTrack?: "STUDI_UMUM" | "KEPESANTRENAN"; date?: string }
+    filter?: { educationTrack?: "STUDI_UMUM" | "KEPESANTRENAN"; date?: string },
+    context?: { actorUserId?: string }
   ): Promise<EducationSessionReadDTO[]> {
     const schemaStatus = await this.checkSchemaReadiness();
     if (!schemaStatus.ready) {
@@ -164,41 +184,149 @@ export class PendidikanV2Service {
       where.educationTrack = filter.educationTrack;
     }
 
+    if (filter?.date) {
+      const { startOfDayUTC, endOfDayUTC } = getWITADayRange(filter.date);
+      where.scheduledDate = {
+        gte: startOfDayUTC,
+        lte: endOfDayUTC,
+      };
+    }
+
     const sessions = await (this.db as any).educationSession.findMany({
       where,
       orderBy: { scheduledDate: "asc" },
       include: {
+        subject: true,
+        cohort: true,
         scheduledStaff: true,
         actualTeacherStaff: true,
-        cohort: true,
+        scheduledTeacherAssignment: {
+          include: {
+            staff: true,
+            mapel: true,
+          },
+        },
       },
     });
 
     const isUatEnabled = process.env.PENDIDIKAN_V2_UAT_ENABLED === "true";
 
+    // Resolve actor for server-side mutationAvailable calculation
+    let actorStaffId: string | null = null;
+    let hasStartGrant = false;
+
+    if (context?.actorUserId && isUatEnabled) {
+      try {
+        const actorIdentity = await this.dataProvider.getIdentity(context.actorUserId);
+        if (actorIdentity && actorIdentity.status === "AKTIF" && actorIdentity.staffId) {
+          actorStaffId = actorIdentity.staffId;
+          const authRes = await authorizeCanonical({
+            identity: actorIdentity,
+            capability: "academic.session.start",
+            resourceContext: {},
+            dataProvider: this.dataProvider,
+            isMutation: false,
+          });
+          hasStartGrant = authRes?.decision === "ALLOW";
+        }
+      } catch {
+        // fail closed on resolution error
+      }
+    }
+
     return sessions.map((s: any): EducationSessionReadDTO => {
-      const scheduledDateStr = s.scheduledDate instanceof Date ? s.scheduledDate.toISOString().split("T")[0] : String(s.scheduledDate || "");
-      const startedAtStr = s.startedAt instanceof Date ? s.startedAt.toISOString() : s.startedAt ? String(s.startedAt) : null;
+      const scheduledDateStr = s.scheduledDate instanceof Date
+        ? getWitaDateString(s.scheduledDate)
+        : String(s.scheduledDate || "");
+      const startedAtStr = s.startedAt instanceof Date
+        ? s.startedAt.toISOString()
+        : s.startedAt ? String(s.startedAt) : null;
+
+      // Authoritative subject resolution
+      const subjectName = s.subject?.nama || (typeof s.subject === "string" ? s.subject : null) || null;
+      const subjectCode = s.subject?.kodeMapel || null;
+      const subjectDisplay = subjectName || s.subjectId || "Pendidikan";
+
+      // Authoritative scheduled staff resolution
+      const scheduledStaffId = s.scheduledStaffId || s.scheduledTeacherAssignment?.staffId || null;
+      const scheduledTeacherDisplay = s.scheduledStaff?.nama || s.scheduledTeacherAssignment?.staff?.nama || null;
+      const actualTeacherDisplay = s.actualTeacherStaff?.nama || null;
+
+      // Server-derived mutationAvailable strictly reflecting authenticated caller
+      let mutationAvailable = false;
+      let mutationDeniedReason: string | null = null;
+
+      if (!isUatEnabled) {
+        mutationDeniedReason = "UAT_NOT_ENABLED";
+      } else if (s.status !== "SCHEDULED") {
+        mutationDeniedReason = "SESSION_NOT_SCHEDULED";
+      } else if (context?.actorUserId) {
+        if (!actorStaffId) {
+          mutationDeniedReason = "STAFF_NOT_LINKED";
+        } else if (scheduledStaffId && actorStaffId !== scheduledStaffId) {
+          mutationDeniedReason = "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED";
+        } else if (!hasStartGrant) {
+          mutationDeniedReason = "CANONICAL_AUTH_DENIED";
+        } else {
+          mutationAvailable = true;
+        }
+      } else {
+        mutationAvailable = true;
+      }
+
+      // PBL metadata derivation for Studi Umum
+      const pblMetadata = s.semesterMeetingNumber && s.educationTrack === "STUDI_UMUM"
+        ? (() => {
+            try {
+              const p = resolvePblMeeting(s.semesterMeetingNumber);
+              return {
+                blockNumber: p.blockNumber,
+                weekInBlock: p.weekInBlock,
+                phase: p.pblPhase,
+                isProjectWeek: p.isProjectWeek,
+              };
+            } catch {
+              return null;
+            }
+          })()
+        : null;
 
       return {
         sessionId: s.id,
         educationTrack: s.educationTrack,
-        subject: s.subjectId || s.subject || "Pendidikan",
+        subject: subjectDisplay,
+        subjectId: s.subjectId,
+        subjectCode,
+        subjectName,
         scheduledDate: scheduledDateStr,
-        plannedStart: s.plannedStart || (s.educationTrack === "KEPESANTRENAN" ? "18:30" : "07:30"),
-        plannedEnd: s.plannedEnd || (s.educationTrack === "KEPESANTRENAN" ? "19:30" : "11:30"),
-        programLevel: s.programLevel,
-        cohortLabel: s.cohort?.name || null,
-        genderGroup: s.genderGroup,
+        plannedStart: s.plannedStartTime || null,
+        plannedEnd: s.plannedEndTime || null,
+        plannedStartTime: s.plannedStartTime || null,
+        plannedEndTime: s.plannedEndTime || null,
+        programLevel: s.programLevel ?? null,
+        cohortId: s.cohortId || null,
+        cohortCode: s.cohort?.code || null,
+        cohortLabel: s.cohort?.code || s.cohort?.tahunAjaranMasuk || null,
+        cohortTahunAjaran: s.cohort?.tahunAjaranMasuk || null,
+        genderGroup: s.genderGroup || null,
         jp: s.jp || null,
-        pblMetadata: null,
-        scheduledTeacherDisplay: s.scheduledStaff?.nama || "Guru Terjadwal",
-        actualTeacherDisplay: s.actualTeacherStaff?.nama || (s.actualTeacherUserId ? "Guru Aktual" : null),
+        semesterMeetingNumber: s.semesterMeetingNumber || null,
+        pblPhase: s.pblPhase || pblMetadata?.phase || null,
+        pblBlockNumber: s.pblBlockNumber || pblMetadata?.blockNumber || null,
+        pblMetadata,
+        pedagogicalLevel: s.scheduledTeacherAssignment?.pedagogicalLevel || null,
+        scheduledTeacherAssignmentId: s.scheduledTeacherAssignmentId || null,
+        scheduledStaffId,
+        scheduledTeacherDisplay,
+        actualTeacherUserId: s.actualTeacherUserId || null,
+        actualTeacherStaffId: s.actualTeacherStaffId || null,
+        actualTeacherDisplay,
         status: s.status,
         startedAt: startedAtStr,
         materi: s.materi || null,
         attendanceAvailable: isUatEnabled && s.educationTrack === "KEPESANTRENAN" && s.status === "STARTED",
-        mutationAvailable: isUatEnabled && s.status === "SCHEDULED",
+        mutationAvailable,
+        mutationDeniedReason,
       };
     });
   }
@@ -286,8 +414,24 @@ export class PendidikanV2Service {
       }
 
       // Substitute / Badal Policy Check (Fail Closed)
-      // Ordinary session start is allowed only when authenticated Staff.id == EducationSession.scheduledStaffId
-      if (currentSession.scheduledStaffId && currentSession.scheduledStaffId !== staffId) {
+      // Resolve authoritative scheduled teacher from session or scheduled assignment
+      let authoritativeScheduledStaffId = currentSession.scheduledStaffId;
+      if (!authoritativeScheduledStaffId && currentSession.scheduledTeacherAssignmentId) {
+        const ta = await (tx as any).teachingAssignment?.findUnique({
+          where: { id: currentSession.scheduledTeacherAssignmentId },
+        });
+        if (ta?.staffId) {
+          authoritativeScheduledStaffId = ta.staffId;
+        }
+      }
+
+      if (!authoritativeScheduledStaffId) {
+        throw new Error(
+          "SCHEDULED_TEACHER_NOT_RESOLVED: Sesi pembelajaran tidak memiliki guru terjadwal resmi yang valid."
+        );
+      }
+
+      if (authoritativeScheduledStaffId !== staffId) {
         throw new Error(
           "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED: Kebijakan guru pengganti (badal) belum disahkan. Sesi hanya dapat dimulai oleh guru terjadwal resmi."
         );
