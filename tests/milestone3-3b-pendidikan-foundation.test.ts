@@ -2,6 +2,7 @@
 (process.env as Record<string, string | undefined>).NODE_ENV = "test";
 process.env.IS_TEST_RUN = "true";
 process.env.ALLOW_ISOLATED_TEST_DB = "true";
+process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -955,7 +956,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
   describe("J. Start Session Compare-And-Swap (CAS) Concurrency Protection", () => {
     it("J1. First start succeeds and transitions status from SCHEDULED to STARTED", async () => {
       const mockDb = createMockEducationDb([
-        { id: "sess-cas-01", status: "SCHEDULED", scheduledStaffId: "stf-scheduled" },
+        { id: "sess-cas-01", status: "SCHEDULED", scheduledStaffId: "stf-teacher-01" },
       ]);
       const mockAudit = createMockAuditPersistence();
       const provider = createMockDataProvider();

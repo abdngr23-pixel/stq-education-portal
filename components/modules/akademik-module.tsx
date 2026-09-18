@@ -39,7 +39,13 @@ import {
   isStudiUmumSubject,
   STUDI_UMUM_MAPEL_OPTIONS,
   MAPEL_OPTIONS,
+  EducationSessionReadDTO,
 } from "@/lib/pendidikan-v2";
+import {
+  getEducationSessionsAction,
+  startEducationSessionAction,
+  recordEducationSessionMaterialAction,
+} from "@/app/actions/pendidikan-v2";
 
 export { STUDI_UMUM_MAPEL_OPTIONS, MAPEL_OPTIONS };
 
@@ -149,6 +155,55 @@ export function AkademikModule({
 
   // Milestone 3.3B: Kepesantrenan Daily Schedule & Session Management State
   const [selectedKpsDay, setSelectedKpsDay] = useState<"Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday">("Monday");
+
+  // Milestone 3.3C1: Server-Authoritative Education Sessions State
+  const [serverSessions, setServerSessions] = useState<EducationSessionReadDTO[]>([]);
+  const [isServerReady, setIsServerReady] = useState<boolean>(false);
+  const [inputMateriText, setInputMateriText] = useState<string>("");
+
+  useEffect(() => {
+    let isMounted = true;
+    getEducationSessionsAction()
+      .then((res) => {
+        if (!isMounted) return;
+        if (res.success && res.data) {
+          setServerSessions(res.data);
+          setIsServerReady(true);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleStartSession = async (sessionId: string) => {
+    startTransition(async () => {
+      const res = await startEducationSessionAction({ sessionId });
+      if (res.success) {
+        setFeedback({ type: "success", message: res.message || "Sesi pembelajaran berhasil dimulai." });
+        const refetch = await getEducationSessionsAction();
+        if (refetch.success && refetch.data) setServerSessions(refetch.data);
+      } else {
+        setFeedback({ type: "error", message: res.error || res.message || "Gagal memulai sesi." });
+      }
+    });
+  };
+
+  const handleRecordMaterial = async (sessionId: string) => {
+    if (!inputMateriText.trim()) return;
+    startTransition(async () => {
+      const res = await recordEducationSessionMaterialAction({ sessionId, materi: inputMateriText.trim() });
+      if (res.success) {
+        setFeedback({ type: "success", message: res.message || "Materi pembelajaran berhasil disimpan." });
+        setInputMateriText("");
+        const refetch = await getEducationSessionsAction();
+        if (refetch.success && refetch.data) setServerSessions(refetch.data);
+      } else {
+        setFeedback({ type: "error", message: res.error || res.message || "Gagal menyimpan materi." });
+      }
+    });
+  };
 
   // Load data nilai riil dari server action on mount
   useEffect(() => {
@@ -541,16 +596,36 @@ export function AkademikModule({
                       </div>
 
                       <div className="mt-4 pt-3 border-t border-slate-100">
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          disabled
-                          className="w-full min-h-[44px] bg-slate-100 text-slate-400 cursor-not-allowed text-xs font-bold gap-1.5 border border-slate-200"
-                        >
-                          <Lock className="h-4 w-4 text-slate-400" />
-                          Belum diaktifkan — menunggu aktivasi M3.3C
-                        </Button>
+                        {(() => {
+                          const suSession = serverSessions.find(
+                            (s) => s.educationTrack === "STUDI_UMUM" && s.subject === schedule.subject
+                          );
+                          if (isServerReady && suSession && suSession.mutationAvailable) {
+                            return (
+                              <Button
+                                type="button"
+                                variant="primary"
+                                size="sm"
+                                onClick={() => handleStartSession(suSession.sessionId)}
+                                className="w-full min-h-[44px] bg-[#0E7C3A] hover:bg-[#0B642E] text-white text-xs font-bold gap-1.5"
+                              >
+                                Mulai Pembelajaran
+                              </Button>
+                            );
+                          }
+                          return (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              disabled
+                              className="w-full min-h-[44px] bg-slate-100 text-slate-400 cursor-not-allowed text-xs font-bold gap-1.5 border border-slate-200"
+                            >
+                              <Lock className="h-4 w-4 text-slate-400" />
+                              Belum diaktifkan — menunggu aktivasi M3.3C
+                            </Button>
+                          );
+                        })()}
                       </div>
                     </div>
                   );
@@ -1180,16 +1255,36 @@ export function AkademikModule({
                           </div>
 
                           <div>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              disabled
-                              className="min-h-[44px] bg-slate-100 text-slate-400 cursor-not-allowed text-xs font-bold gap-1.5 border border-slate-200"
-                            >
-                              <Lock className="h-4 w-4 text-slate-400" />
-                              Belum diaktifkan — menunggu aktivasi M3.3C
-                            </Button>
+                            {(() => {
+                              const kpsSession = serverSessions.find(
+                                (s) => s.educationTrack === "KEPESANTRENAN" && s.subject === dayDef?.name
+                              );
+                              if (isServerReady && kpsSession && kpsSession.mutationAvailable) {
+                                return (
+                                  <Button
+                                    type="button"
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={() => handleStartSession(kpsSession.sessionId)}
+                                    className="min-h-[44px] bg-[#0E7C3A] hover:bg-[#0B642E] text-white text-xs font-bold gap-1.5"
+                                  >
+                                    Mulai Pembelajaran
+                                  </Button>
+                                );
+                              }
+                              return (
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  disabled
+                                  className="min-h-[44px] bg-slate-100 text-slate-400 cursor-not-allowed text-xs font-bold gap-1.5 border border-slate-200"
+                                >
+                                  <Lock className="h-4 w-4 text-slate-400" />
+                                  Belum diaktifkan — menunggu aktivasi M3.3C
+                                </Button>
+                              );
+                            })()}
                           </div>
                         </div>
 
@@ -1212,18 +1307,49 @@ export function AkademikModule({
                             </p>
 
                             <div className="space-y-2">
-                              <textarea
-                                rows={2}
-                                disabled
-                                placeholder="Pencatatan materi pembelajaran belum diaktifkan — menunggu aktivasi M3.3C"
-                                value=""
-                                readOnly
-                                className="w-full p-2.5 rounded-xl border border-slate-200 text-xs text-slate-400 bg-slate-100 cursor-not-allowed resize-none"
-                              />
-                              <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-[11px] text-amber-800 flex items-center gap-2">
-                                <Lock className="h-4 w-4 shrink-0 text-amber-600" />
-                                <span>Pencatatan materi pembelajaran belum diaktifkan — menunggu aktivasi M3.3C.</span>
-                              </div>
+                              {(() => {
+                                const kpsSession = serverSessions.find(
+                                  (s) => s.educationTrack === "KEPESANTRENAN" && s.subject === dayDef?.name
+                                );
+                                if (isServerReady && kpsSession && kpsSession.status === "STARTED") {
+                                  return (
+                                    <div className="space-y-2">
+                                      <textarea
+                                        rows={2}
+                                        placeholder="Ketik ringkasan materi pembelajaran..."
+                                        value={inputMateriText}
+                                        onChange={(e) => setInputMateriText(e.target.value)}
+                                        className="w-full p-2.5 rounded-xl border border-slate-200 text-xs text-slate-800 bg-white resize-none"
+                                      />
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="primary"
+                                        onClick={() => handleRecordMaterial(kpsSession.sessionId)}
+                                        className="bg-[#0E7C3A] hover:bg-[#0B642E] text-white text-xs font-bold"
+                                      >
+                                        Simpan Materi
+                                      </Button>
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <>
+                                    <textarea
+                                      rows={2}
+                                      disabled
+                                      placeholder="Pencatatan materi pembelajaran belum diaktifkan — menunggu aktivasi M3.3C"
+                                      value=""
+                                      readOnly
+                                      className="w-full p-2.5 rounded-xl border border-slate-200 text-xs text-slate-400 bg-slate-100 cursor-not-allowed resize-none"
+                                    />
+                                    <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-[11px] text-amber-800 flex items-center gap-2">
+                                      <Lock className="h-4 w-4 shrink-0 text-amber-600" />
+                                      <span>Pencatatan materi pembelajaran belum diaktifkan — menunggu aktivasi M3.3C.</span>
+                                    </div>
+                                  </>
+                                );
+                              })()}
                             </div>
                           </div>
 

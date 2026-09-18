@@ -644,3 +644,33 @@ export const TEACHER_ACCOUNT_PREFIX = "guru.";
 export function getExpectedTeacherUsername(subjectSlug: string): string {
   return `${TEACHER_ACCOUNT_PREFIX}${subjectSlug.toLowerCase().replace(/\s+/g, "")}`;
 }
+
+// ====================================================
+// 8. SERVER-AUTHORITATIVE READ DTO FOR PENDIDIKAN UI
+// ====================================================
+
+export interface EducationSessionReadDTO {
+  sessionId: string;
+  educationTrack: EducationTrackType;
+  subject: string;
+  scheduledDate: string; // YYYY-MM-DD
+  plannedStart: string; // HH:mm
+  plannedEnd: string; // HH:mm
+  programLevel: number;
+  cohortLabel?: string | null;
+  genderGroup: "PUTRA" | "PUTRI";
+  jp?: number | null;
+  pblMetadata?: {
+    blockNumber: number;
+    weekInBlock: number;
+    phase: "THEORY" | "PROJECT";
+    isProjectWeek: boolean;
+  } | null;
+  scheduledTeacherDisplay: string;
+  actualTeacherDisplay?: string | null;
+  status: "SCHEDULED" | "STARTED" | "COMPLETED" | "CANCELLED";
+  startedAt?: string | null;
+  materi?: string | null;
+  attendanceAvailable: boolean;
+  mutationAvailable: boolean;
+}

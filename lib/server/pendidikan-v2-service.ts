@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import "server-only";
 
 import { PrismaClient, EducationAttendanceStatus } from "@prisma/client";
@@ -15,6 +16,7 @@ import {
 } from "@/lib/auth/canonical-audit";
 import {
   isApprovedKepesantrenanAttendanceStatus,
+  EducationSessionReadDTO,
 } from "@/lib/pendidikan-v2";
 
 export interface PendidikanV2ServiceDependencies {
@@ -97,6 +99,111 @@ export class PendidikanV2Service {
   }
 
   /**
+   * SERVER-SIDE SCHEMA READINESS GATE
+   * Evaluates if required M3.3B tables exist in the database.
+   * Returns explicit failure if tables are missing.
+   * NEVER returns fake empty [] or zero counts on schema failure.
+   */
+  async checkSchemaReadiness(): Promise<{ ready: boolean; reason?: string }> {
+    try {
+      if (typeof (this.db as any).$queryRawUnsafe !== "function") {
+        const hasSessions = !!(this.db as any).educationSession;
+        const hasParticipants = !!(this.db as any).educationSessionParticipant;
+        const hasAttendances = !!(this.db as any).educationSessionAttendance;
+        if (!hasSessions || !hasParticipants || !hasAttendances) {
+          return {
+            ready: false,
+            reason: "PENDIDIKAN_V2_SCHEMA_NOT_READY: Struktur tabel Pendidikan V2 tidak lengkap",
+          };
+        }
+        return { ready: true };
+      }
+
+      const tables = (await (this.db as any).$queryRawUnsafe(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+          AND table_name IN ('education_sessions', 'education_session_participants', 'education_session_attendances');
+      `)) as Array<{ table_name: string }>;
+
+      const tableNames = new Set(tables.map((t: { table_name: string }) => t.table_name));
+      const required = ['education_sessions', 'education_session_participants', 'education_session_attendances'];
+      const missing = required.filter((r) => !tableNames.has(r));
+
+      if (missing.length > 0) {
+        return {
+          ready: false,
+          reason: `PENDIDIKAN_V2_SCHEMA_NOT_READY: Tabel berikut belum tersedia di database: ${missing.join(", ")}`,
+        };
+      }
+
+      return { ready: true };
+    } catch (err: unknown) {
+      return {
+        ready: false,
+        reason: `PENDIDIKAN_V2_SCHEMA_NOT_READY: Gagal memverifikasi skema database (${err instanceof Error ? err.message : String(err)})`,
+      };
+    }
+  }
+
+  /**
+   * SERVER-AUTHORITATIVE READ DTO QUERY
+   * Fetches sessions and returns authoritatively derived DTOs.
+   * Never returns fake empty [] if schema is not ready.
+   */
+  async getEducationSessions(
+    filter?: { educationTrack?: "STUDI_UMUM" | "KEPESANTRENAN"; date?: string }
+  ): Promise<EducationSessionReadDTO[]> {
+    const schemaStatus = await this.checkSchemaReadiness();
+    if (!schemaStatus.ready) {
+      throw new Error(schemaStatus.reason || "PENDIDIKAN_V2_SCHEMA_NOT_READY: Tabel schema Pendidikan V2 belum tersedia di database");
+    }
+
+    const where: any = {};
+    if (filter?.educationTrack) {
+      where.educationTrack = filter.educationTrack;
+    }
+
+    const sessions = await (this.db as any).educationSession.findMany({
+      where,
+      orderBy: { scheduledDate: "asc" },
+      include: {
+        scheduledStaff: true,
+        actualTeacherStaff: true,
+        cohort: true,
+      },
+    });
+
+    const isUatEnabled = process.env.PENDIDIKAN_V2_UAT_ENABLED === "true";
+
+    return sessions.map((s: any): EducationSessionReadDTO => {
+      const scheduledDateStr = s.scheduledDate instanceof Date ? s.scheduledDate.toISOString().split("T")[0] : String(s.scheduledDate || "");
+      const startedAtStr = s.startedAt instanceof Date ? s.startedAt.toISOString() : s.startedAt ? String(s.startedAt) : null;
+
+      return {
+        sessionId: s.id,
+        educationTrack: s.educationTrack,
+        subject: s.subjectId || s.subject || "Pendidikan",
+        scheduledDate: scheduledDateStr,
+        plannedStart: s.plannedStart || (s.educationTrack === "KEPESANTRENAN" ? "18:30" : "07:30"),
+        plannedEnd: s.plannedEnd || (s.educationTrack === "KEPESANTRENAN" ? "19:30" : "11:30"),
+        programLevel: s.programLevel,
+        cohortLabel: s.cohort?.name || null,
+        genderGroup: s.genderGroup,
+        jp: s.jp || null,
+        pblMetadata: null,
+        scheduledTeacherDisplay: s.scheduledStaff?.nama || "Guru Terjadwal",
+        actualTeacherDisplay: s.actualTeacherStaff?.nama || (s.actualTeacherUserId ? "Guru Aktual" : null),
+        status: s.status,
+        startedAt: startedAtStr,
+        materi: s.materi || null,
+        attendanceAvailable: isUatEnabled && s.educationTrack === "KEPESANTRENAN" && s.status === "STARTED",
+        mutationAvailable: isUatEnabled && s.status === "SCHEDULED",
+      };
+    });
+  }
+
+  /**
    * "MULAI PEMBELAJARAN"
    * Teacher attendance evidence is the authenticated teacher clicking "Mulai Pembelajaran".
    * Derives actual teacher from authenticated identity; preserves scheduled teacher separately.
@@ -108,6 +215,16 @@ export class PendidikanV2Service {
   ) {
     const { sessionId } = input;
     const { actorUserId, clientRequestId, ipAddress, userAgent } = context;
+
+    // Server-side activation gate
+    if (process.env.PENDIDIKAN_V2_UAT_ENABLED !== "true") {
+      throw new Error("PENDIDIKAN_V2_UAT_NOT_ENABLED: Fitur aktivasi UAT Pendidikan V2 belum diaktifkan di tingkat server");
+    }
+
+    const schemaStatus = await this.checkSchemaReadiness();
+    if (!schemaStatus.ready) {
+      throw new Error(schemaStatus.reason || "PENDIDIKAN_V2_SCHEMA_NOT_READY: Tabel schema Pendidikan V2 belum tersedia di database");
+    }
 
     if (!actorUserId || typeof actorUserId !== "string" || !actorUserId.trim()) {
       throw new Error("ACTOR_USER_ID_REQUIRED: Identitas pengguna autentikasi wajib disertakan");
@@ -165,6 +282,14 @@ export class PendidikanV2Service {
       if (currentSession.status !== "SCHEDULED") {
         throw new Error(
           `INVALID_SESSION_STATUS: Sesi pembelajaran tidak dapat dimulai karena berstatus '${currentSession.status}'`
+        );
+      }
+
+      // Substitute / Badal Policy Check (Fail Closed)
+      // Ordinary session start is allowed only when authenticated Staff.id == EducationSession.scheduledStaffId
+      if (currentSession.scheduledStaffId && currentSession.scheduledStaffId !== staffId) {
+        throw new Error(
+          "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED: Kebijakan guru pengganti (badal) belum disahkan. Sesi hanya dapat dimulai oleh guru terjadwal resmi."
         );
       }
 
@@ -253,6 +378,16 @@ export class PendidikanV2Service {
   ) {
     const { sessionId, materi } = input;
     const { actorUserId, clientRequestId, ipAddress, userAgent } = context;
+
+    // Server-side activation gate
+    if (process.env.PENDIDIKAN_V2_UAT_ENABLED !== "true") {
+      throw new Error("PENDIDIKAN_V2_UAT_NOT_ENABLED: Fitur aktivasi UAT Pendidikan V2 belum diaktifkan di tingkat server");
+    }
+
+    const schemaStatus = await this.checkSchemaReadiness();
+    if (!schemaStatus.ready) {
+      throw new Error(schemaStatus.reason || "PENDIDIKAN_V2_SCHEMA_NOT_READY: Tabel schema Pendidikan V2 belum tersedia di database");
+    }
 
     if (!actorUserId || typeof actorUserId !== "string" || !actorUserId.trim()) {
       throw new Error("ACTOR_USER_ID_REQUIRED: Identitas pengguna autentikasi wajib disertakan");
@@ -380,6 +515,16 @@ export class PendidikanV2Service {
   ) {
     const { sessionId } = input;
     const { actorUserId, clientRequestId, ipAddress, userAgent } = context;
+
+    // Server-side activation gate
+    if (process.env.PENDIDIKAN_V2_UAT_ENABLED !== "true") {
+      throw new Error("PENDIDIKAN_V2_UAT_NOT_ENABLED: Fitur aktivasi UAT Pendidikan V2 belum diaktifkan di tingkat server");
+    }
+
+    const schemaStatus = await this.checkSchemaReadiness();
+    if (!schemaStatus.ready) {
+      throw new Error(schemaStatus.reason || "PENDIDIKAN_V2_SCHEMA_NOT_READY: Tabel schema Pendidikan V2 belum tersedia di database");
+    }
 
     if (!actorUserId || typeof actorUserId !== "string" || !actorUserId.trim()) {
       throw new Error("ACTOR_USER_ID_REQUIRED: Identitas pengguna autentikasi wajib disertakan");

@@ -3778,7 +3778,7 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
         "scheduled_teacher_assignment_id", "scheduled_staff_id", "status", "created_at", "updated_at"
       ) VALUES (
         'sess-svc-real', 'KEPESANTRENAN'::"EducationTrack", 'mp-legacy-01', NOW(), 'coh-2024', 1, 'PUTRA'::"GenderComplex", 1,
-        'ta-01', 'stf-pre-m33b', 'SCHEDULED'::"EducationSessionStatus", NOW(), NOW()
+        'ta-01', 'stf-substitute', 'SCHEDULED'::"EducationSessionStatus", NOW(), NOW()
       );
     `);
 
@@ -3882,7 +3882,7 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
     const serviceA = new PendidikanV2Service({ db: clientForTxA as any, dataProvider: serviceDataProvider });
     const serviceB = new PendidikanV2Service({ db: client, dataProvider: serviceDataProvider });
 
-    const promiseA = serviceA.startEducationSession({ sessionId: "sess-svc-real" }, { actorUserId: "usr-pre-m33b" });
+    const promiseA = serviceA.startEducationSession({ sessionId: "sess-svc-real" }, { actorUserId: "usr-substitute" });
     await txAEnteredPromise;
 
     // Tx B berjalan saat Tx A sedang berada di tengah transaksi (status masih SCHEDULED)

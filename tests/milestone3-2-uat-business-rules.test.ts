@@ -486,18 +486,18 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
   // =========================================================================
   // Section 3: UAT Item #3 — Search Display Contract
   // =========================================================================
-  describe("Section 3: UAT Item #3 — Search Display Contract (Nama + Kelas)", () => {
-    it("3.1. search result rendering contract = Nama + Kelas", () => {
+  describe("Section 3: UAT Item #3 — Search Display Contract (Nama Only, Reconciled)", () => {
+    it("3.1. search result rendering contract = Nama Only (reconciled M3.3C1)", () => {
       const formatted = formatSantriSearchResult({
         nama: "Ahmad Mujahid",
         kelas: "8A",
       });
 
       assert.strictEqual(formatted.nama, "Ahmad Mujahid");
+      assert.strictEqual(formatted.displayText, "Ahmad Mujahid");
       assert.strictEqual(formatted.kelas, "8A");
-      assert.strictEqual(formatted.displayText, "Ahmad Mujahid • Kelas 8A");
 
-      // Verify that dense attributes like NIS, capaian juz, or last setoran are not in the contract
+      // Verify that dense attributes like NIS, capaian juz, or last setoran are not in the contract or displayText
       assert.strictEqual((formatted as any).nis, undefined);
       assert.strictEqual((formatted as any).capaianJuz, undefined);
       assert.strictEqual((formatted as any).setoranTerakhir, undefined);
@@ -601,20 +601,35 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
   // =========================================================================
   // Section 6: UAT Item #6 — Absensi Guru + Santri Kepesantrenan
   // =========================================================================
-  describe("Section 6: UAT Item #6 — Absensi Guru + Santri Kepesantrenan", () => {
+  describe("Section 6: UAT Item #6 — Absensi Guru + Santri Kepesantrenan (Reconciled)", () => {
     it("6.1. Kepesantrenan attendance contract defines separate teacher and student attendance", () => {
       assert.deepStrictEqual([...KEPESANTRENAN_ATTENDANCE_CONTRACT.ACTOR_TYPES], ["TEACHER", "STUDENT"]);
       assert.ok(KEPESANTRENAN_ATTENDANCE_CONTRACT.SUBJECTS.includes("Bahasa Arab"));
       assert.ok(KEPESANTRENAN_ATTENDANCE_CONTRACT.SUBJECTS.includes("Fikih"));
       assert.ok(KEPESANTRENAN_ATTENDANCE_CONTRACT.SUBJECTS.includes("Tafsir"));
       assert.ok(KEPESANTRENAN_ATTENDANCE_CONTRACT.SUBJECTS.includes("Tajwid"));
-      assert.ok(KEPESANTRENAN_ATTENDANCE_CONTRACT.SUBJECTS.includes("Aqidah Islamiyah"));
+      assert.ok(
+        (KEPESANTRENAN_ATTENDANCE_CONTRACT.SUBJECTS as readonly string[]).includes("Aqidah") ||
+        (KEPESANTRENAN_ATTENDANCE_CONTRACT.SUBJECTS as readonly string[]).includes("Aqidah Islamiyah")
+      );
     });
 
-    it("6.2. Attendance status vocabulary is explicitly TBD / M3.3 Business Decision", () => {
+    it("6.2. Attendance status vocabulary is canonically reconciled in M3.3", () => {
       assert.strictEqual(
         KEPESANTRENAN_ATTENDANCE_CONTRACT.STATUS_VOCABULARY_POLICY,
-        "TBD / M3.3 BUSINESS DECISION"
+        "CANONICAL_RECONCILED"
+      );
+      assert.deepStrictEqual(
+        [...KEPESANTRENAN_ATTENDANCE_CONTRACT.STUDENT_ATTENDANCE_STATUSES],
+        ["HADIR", "IZIN", "SAKIT", "ALFA"]
+      );
+      assert.deepStrictEqual(
+        [...KEPESANTRENAN_ATTENDANCE_CONTRACT.FORBIDDEN_STATUSES],
+        ["MASBUK"]
+      );
+      assert.strictEqual(
+        KEPESANTRENAN_ATTENDANCE_CONTRACT.TEACHER_ATTENDANCE_EVIDENCE,
+        "SESSION_START_AUTHENTICATED_EXECUTION"
       );
     });
   });

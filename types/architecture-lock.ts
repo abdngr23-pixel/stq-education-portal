@@ -657,10 +657,13 @@ export const KEPESANTRENAN_ATTENDANCE_CONTRACT = {
     "Fikih",
     "Tafsir",
     "Tajwid",
-    "Aqidah Islamiyah",
+    "Aqidah",
   ] as const,
   ACTOR_TYPES: ["TEACHER", "STUDENT"] as const,
-  STATUS_VOCABULARY_POLICY: "TBD / M3.3 BUSINESS DECISION" as const,
+  STUDENT_ATTENDANCE_STATUSES: ["HADIR", "IZIN", "SAKIT", "ALFA"] as const,
+  FORBIDDEN_STATUSES: ["MASBUK"] as const,
+  STATUS_VOCABULARY_POLICY: "CANONICAL_RECONCILED" as const,
+  TEACHER_ATTENDANCE_EVIDENCE: "SESSION_START_AUTHENTICATED_EXECUTION" as const,
 } as const;
 
 /**
@@ -687,20 +690,93 @@ export const OSDA_PUTRI_UNIT_CONTRACT = {
 } as const;
 
 /**
- * UAT Rule #3: Santri Search Result Rendering Contract
- * Renders concise output showing only Nama and Kelas.
+ * UAT Rule #3: Santri Search Result Rendering Contract (Reconciled)
+ * Renders concise output showing NAMA ONLY in displayText.
+ * Kelas and Halaqoh/Kelompok are independent filter controls.
  */
-export function formatSantriSearchResult(santri: { nama: string; kelas: string }): {
+export function formatSantriSearchResult(santri: { nama: string; kelas?: string }): {
   nama: string;
-  kelas: string;
   displayText: string;
+  kelas?: string;
 } {
   return {
     nama: santri.nama,
+    displayText: santri.nama,
     kelas: santri.kelas,
-    displayText: `${santri.nama} • Kelas ${santri.kelas}`,
   };
 }
+
+/**
+ * Declarative UAT Activation Target Policy Manifest (M3.3C1)
+ * Declarative target truth only — strictly NON-PRODUCTION-WRITING.
+ * All target policies remain APPROVED_TARGET_PENDING_TECHNICAL.
+ */
+export const UAT_ACTIVATION_TARGETS = {
+  // A. Operational Tahfizh
+  OPERATIONAL_TAHFIZH: {
+    positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+    policies: [
+      {
+        capabilityCode: "tahfizh.recap.read",
+        scopeType: "GLOBAL",
+        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+        notes: "GLOBAL read of Tahfizh recap across all santri. Does not widen setoran write or reward issuance.",
+      },
+      {
+        capabilityCode: "tahfizh.reward.issue",
+        scopeType: "ASSIGNED_UNITS",
+        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+        notes: "Restricted to assigned units only. NEVER GLOBAL reward issuance for operational staff.",
+      },
+    ],
+  },
+  // B. Target Management
+  TARGET_MANAGEMENT: {
+    MUSYRIF_TAHFIZH: {
+      positionCode: "MUSYRIF_TAHFIZH",
+      capabilityCode: "tahfizh.target.manage",
+      scopeType: "HALAQOH",
+      businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+      notes: "Own assigned halaqoh only. Cross-halaqoh modifications denied.",
+    },
+    PEMBINA_HALAQOH: {
+      positionCode: "PEMBINA_HALAQOH",
+      capabilityCode: "tahfizh.target.manage",
+      scopeType: "HALAQOH",
+      businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+      notes: "Own assigned halaqoh only. Cross-halaqoh modifications denied.",
+    },
+  },
+  // C. Operational Keasramaan
+  OPERATIONAL_KEASRAMAAN: {
+    positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+    policies: [
+      {
+        capabilityCode: "keasramaan.permission.read",
+        scopeType: "ASSIGNED_UNITS",
+        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+      },
+      {
+        capabilityCode: "keasramaan.permission.create",
+        scopeType: "ASSIGNED_UNITS",
+        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+      },
+    ],
+    deniedApprovalCapabilities: ["keasramaan.permission.approve_mk", "keasramaan.permission.approve_ks"],
+    notes: "Read and create permissions for assigned units only. Approval capabilities strictly excluded.",
+  },
+  // D. OSDA PUTRI Unit Account
+  OSDA_PUTRI: {
+    accountCode: "OU-OSDA-PUTRI",
+    accountType: "UNIT",
+    genderComplex: "PUTRI",
+    maxActivePlacements: 1,
+    requiresVerifiedHumanExecutor: true,
+    preventPutraAccess: true,
+    businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+    notes: "Santriwati technical operational unit account. Strictly prevents PUTRA data leakage.",
+  },
+} as const;
 
 
 
