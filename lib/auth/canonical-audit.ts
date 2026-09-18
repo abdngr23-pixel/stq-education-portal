@@ -85,7 +85,7 @@ export class InMemoryAuditSink implements IAuditSink {
  * Transaction-bound audit persistence interface for atomic business mutations.
  */
 export interface IAuditPersistence {
-  readonly isPersistent?: boolean;
+  readonly isPersistent: true;
   recordInTx(tx: AuditDbClient, record: CanonicalAuditRecord): Promise<void>;
 }
 
@@ -175,7 +175,7 @@ export class PrismaAuditSink implements IAuditSink {
  * Prisma-backed transaction audit persistence for atomic mutation execution.
  */
 export class PrismaAuditPersistence implements IAuditPersistence {
-  readonly isPersistent: boolean = true;
+  readonly isPersistent = true as const;
 
   async recordInTx(tx: AuditDbClient, record: CanonicalAuditRecord): Promise<void> {
     if (process.env.NODE_ENV === "production" && process.env.ENABLE_CANONICAL_AUDIT_WRITES !== "true") {

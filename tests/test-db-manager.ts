@@ -1,5 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import EmbeddedPostgres from "embedded-postgres";
 import { PrismaClient } from "@prisma/client";
+import { createHealthV2Service } from "../lib/server/health-v2-service";
+import { ICanonicalDataProvider } from "../lib/auth/canonical-evaluator";
 
 async function executeSqlStatementsOnClient(prismaClient: PrismaClient, sqlString: string): Promise<void> {
   // Strip single-line comments (-- ...)
@@ -2479,6 +2482,9 @@ export interface M33aMigrationVerificationResult {
   createAuditRollbackVerified: boolean;
   updateAuditRollbackVerified: boolean;
   createAuditCommitAtomicVerified: boolean;
+  concurrentCasConflictVerified: boolean;
+  singleEventChainVerified: boolean;
+  singleAuditChainVerified: boolean;
   simulationSuccess: boolean;
 }
 
@@ -2880,6 +2886,195 @@ export async function simulateM33aMigrationChain(): Promise<M33aMigrationVerific
       createAuditCommitAtomicVerified = checkCase.length === 1 && checkAudit.length === 1;
     } catch {}
 
+    // Step 14: Real Concurrent Status Transition Test with Health V2 Service on Isolated PostgreSQL
+    let concurrentCasConflictVerified = false;
+    let singleEventChainVerified = false;
+    let singleAuditChainVerified = false;
+
+    try {
+      await client.$executeRawUnsafe(`
+        INSERT INTO "health_cases_v2" (
+          "id", "santri_id", "occurred_at", "keluhan", "tindakan_awal", "status_v2", "recorded_by_user_id", "created_at", "updated_at"
+        ) VALUES (
+          'hc-concurrent-test', 'san-pre-m33', NOW(), 'Sakit Kepala', 'Istirahat', 'DIPANTAU'::"HealthStatusV2", 'usr-pre-m33', NOW(), NOW()
+        );
+      `);
+
+      const testDataProvider: ICanonicalDataProvider = {
+        async getIdentity(id: string) {
+          return {
+            userId: id,
+            username: "pre.user",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            staffId: "stf-pre-m33",
+          };
+        },
+        async getActiveAssignments() {
+          return [
+            {
+              id: "asg-health-real",
+              userId: "usr-pre-m33",
+              positionId: "pos-health-real",
+              positionCode: "PETUGAS_KESEHATAN",
+              positionName: "Petugas Poskestren",
+              domain: "KEASRAMAAN",
+              unitId: "ou-poskestren",
+              unitCode: "OU-POSKESTREN",
+              unitName: "Poskestren",
+              status: "ACTIVE",
+              validFrom: new Date(Date.now() - 86400000),
+              validUntil: null,
+              positionCapabilities: [
+                {
+                  capabilityCode: "health.case.update_status",
+                  scopeType: "GLOBAL",
+                  businessRuleState: "VERIFIED_PRODUCTION",
+                },
+              ],
+              scopeUnits: [],
+            },
+          ];
+        },
+        async getUnitAccountPlacement() { return null; },
+        async verifyHumanExecutor(id: string) {
+          return { userId: id, id, name: "Petugas", isActive: true };
+        },
+        async resolveResourceContext() {
+          return { santriId: "san-pre-m33", orgUnitIds: [] };
+        },
+      };
+
+      const realService = createHealthV2Service({
+        db: client,
+        dataProvider: testDataProvider,
+      });
+
+      // Orchestrate an actual overlapping concurrent transition:
+      // Tx A reads DIPANTAU, then pauses until Tx B reads DIPANTAU, updates to PULIH, and commits.
+      // Then Tx A attempts to update DIPANTAU -> DIRUJUK using optimistic compare-and-swap.
+      // Under PostgreSQL, Tx A's updateMany matches 0 rows and throws HEALTH_CASE_CONCURRENT_MODIFICATION.
+      let txAReadDipantau = false;
+      let txBCommittedPulih = false;
+      let resolveTxARead: () => void = () => {};
+      const txAReadPromise = new Promise<void>((r) => { resolveTxARead = r; });
+
+      const dbForTxA = new Proxy(client, {
+        get(target, prop) {
+          if (prop === "$transaction") {
+            return async (fn: (tx: any) => Promise<any>) => {
+              return (target as any).$transaction(async (tx: any) => {
+                const proxyTx = new Proxy(tx, {
+                  get(txTarget, txProp) {
+                    if (txProp === "healthCaseV2") {
+                      return new Proxy(txTarget.healthCaseV2, {
+                        get(caseTarget, caseProp) {
+                          if (caseProp === "findUnique") {
+                            return async (args: any) => {
+                              const res = await caseTarget.findUnique(args);
+                              if (args?.where?.id === "hc-concurrent-test" && !txAReadDipantau) {
+                                txAReadDipantau = true;
+                                resolveTxARead();
+                                const start = Date.now();
+                                while (!txBCommittedPulih && Date.now() - start < 4000) {
+                                  await new Promise((r) => setTimeout(r, 20));
+                                }
+                              }
+                              return res;
+                            };
+                          }
+                          return (caseTarget as any)[caseProp];
+                        },
+                      });
+                    }
+                    return (txTarget as any)[txProp];
+                  },
+                });
+                return fn(proxyTx);
+              });
+            };
+          }
+          return (target as any)[prop];
+        },
+      });
+
+      const serviceA = createHealthV2Service({
+        db: dbForTxA as unknown as PrismaClient,
+        dataProvider: testDataProvider,
+      });
+
+      // Start Tx A (reads DIPANTAU, pauses)
+      const promiseA = serviceA.updateCaseStatus(
+        {
+          id: "hc-concurrent-test",
+          newStatus: "DIRUJUK",
+          tindakanLanjutan: "Rujuk ke RS",
+        },
+        { actorUserId: "usr-pre-m33" }
+      );
+
+      // Wait until Tx A has confirmed reading DIPANTAU inside its transaction
+      await txAReadPromise;
+
+      // Tx B executes against PostgreSQL, updates DIPANTAU -> PULIH, and commits
+      const resultB = await realService.updateCaseStatus(
+        {
+          id: "hc-concurrent-test",
+          newStatus: "PULIH",
+          tindakanLanjutan: "Sudah sembuh dan stabil",
+        },
+        { actorUserId: "usr-pre-m33" }
+      );
+      txBCommittedPulih = true;
+
+      // Tx A resumes updateMany expecting DIPANTAU, but row is now PULIH in PostgreSQL
+      let txAError: any = null;
+      try {
+        await promiseA;
+      } catch (err) {
+        txAError = err;
+      }
+
+      const isConcurrentModificationError =
+        txAError instanceof Error &&
+        txAError.message.includes("HEALTH_CASE_CONCURRENT_MODIFICATION");
+
+      const eventsInPg = await client.$queryRawUnsafe<
+        Array<{ id: string; previous_status: string; new_status: string }>
+      >(
+        `SELECT "id", "previous_status"::text, "new_status"::text FROM "health_case_v2_events" WHERE "case_id" = 'hc-concurrent-test';`
+      );
+
+      const auditsInPg = await client.$queryRawUnsafe<
+        Array<{ id: string; action: string; before_state: any; after_state: any }>
+      >(
+        `SELECT "id", "action", "before_state", "after_state" FROM "canonical_audit_logs" WHERE "entity_id" = 'hc-concurrent-test' AND "action" = 'health.case.update_status';`
+      );
+
+      const finalCaseInPg = await client.$queryRawUnsafe<
+        Array<{ status_v2: string }>
+      >(
+        `SELECT "status_v2"::text FROM "health_cases_v2" WHERE "id" = 'hc-concurrent-test';`
+      );
+
+      concurrentCasConflictVerified =
+        isConcurrentModificationError &&
+        resultB.success === true &&
+        finalCaseInPg[0]?.status_v2 === "PULIH";
+
+      singleEventChainVerified =
+        eventsInPg.length === 1 &&
+        eventsInPg[0].previous_status === "DIPANTAU" &&
+        eventsInPg[0].new_status === "PULIH";
+
+      singleAuditChainVerified =
+        auditsInPg.length === 1 &&
+        (auditsInPg[0].before_state as any)?.statusV2 === "DIPANTAU" &&
+        (auditsInPg[0].after_state as any)?.statusV2 === "PULIH";
+    } catch (err) {
+      console.error("Step 14 concurrent test error:", err);
+    }
+
     const simulationSuccess =
       pr8ExactShaVerified &&
       pr8MigrationApplied &&
@@ -2902,7 +3097,10 @@ export async function simulateM33aMigrationChain(): Promise<M33aMigrationVerific
       eventInsertedSuccessfully &&
       createAuditRollbackVerified &&
       updateAuditRollbackVerified &&
-      createAuditCommitAtomicVerified;
+      createAuditCommitAtomicVerified &&
+      concurrentCasConflictVerified &&
+      singleEventChainVerified &&
+      singleAuditChainVerified;
 
     return {
       pr8ExactShaVerified,
@@ -2927,6 +3125,9 @@ export async function simulateM33aMigrationChain(): Promise<M33aMigrationVerific
       createAuditRollbackVerified,
       updateAuditRollbackVerified,
       createAuditCommitAtomicVerified,
+      concurrentCasConflictVerified,
+      singleEventChainVerified,
+      singleAuditChainVerified,
       simulationSuccess,
     };
   } finally {

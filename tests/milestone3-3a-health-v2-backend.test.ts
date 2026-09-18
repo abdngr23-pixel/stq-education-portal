@@ -130,6 +130,36 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
           records.cases.set(where.id, updated);
           return updated;
         },
+        updateMany: async ({ where, data }: any) => {
+          const existing = records.cases.get(where?.id);
+          if (existing) {
+            if (where?.statusV2 && existing.statusV2 !== where.statusV2) {
+              return { count: 0 };
+            }
+            const updated = { ...existing, ...data, updatedAt: new Date() };
+            records.cases.set(where.id, updated);
+            return { count: 1 };
+          }
+          if (where?.statusV2 && where.statusV2 !== "DIPANTAU") {
+            return { count: 0 };
+          }
+          const defaultRecord = {
+            id: where?.id || "hc-mock",
+            santriId: "san-001",
+            statusV2: data?.statusV2 || "DIPANTAU",
+            keluhan: "Demam",
+            tindakanAwal: "Paracetamol",
+            diagnosa: null,
+            recordedByUserId: "usr-poskestren-unit",
+            recordedByStaffId: null,
+            occurredAt: new Date(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            ...data,
+          };
+          records.cases.set(defaultRecord.id, defaultRecord);
+          return { count: 1 };
+        },
         groupBy: async (args: any) => {
           db.lastGroupByWhere = args.where;
           return [
@@ -820,6 +850,10 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
             capturedUpdateData = args.data;
             return { ...existingCase, ...args.data };
           },
+          updateMany: async (args: any) => {
+            capturedUpdateData = args.data;
+            return { count: 1 };
+          },
         },
         healthCaseV2Event: {
           create: async (args: any) => ({
@@ -912,6 +946,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         healthCaseV2: {
           findUnique: async () => existingCase,
           update: async (args: any) => ({ ...existingCase, ...args.data }),
+          updateMany: async () => ({ count: 1 }),
         },
         healthCaseV2Event: {
           create: async (args: any) => {
@@ -1717,11 +1752,6 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
           },
         });
         const auditRecords: any[] = [];
-        const mockAuditSink = {
-          record: async (rec: any) => {
-            auditRecords.push(rec);
-          },
-        };
 
         const dataProvider = createMockDataProvider({
           getIdentity: async () => unitAccountIdentity,
@@ -1738,7 +1768,12 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         const service = createHealthV2Service({
           db: mockDb,
           dataProvider,
-          auditSink: mockAuditSink as any,
+          auditPersistence: {
+            isPersistent: true,
+            recordInTx: async (_tx, rec) => {
+              auditRecords.push(rec);
+            },
+          },
         });
         const result = await service.createCase(
           { santriId: "san-001", keluhan: "Batuk", tindakanAwal: "Sirup" },
@@ -1759,11 +1794,6 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
           },
         });
         const auditRecords: any[] = [];
-        const mockAuditSink = {
-          record: async (rec: any) => {
-            auditRecords.push(rec);
-          },
-        };
 
         const dataProvider = createMockDataProvider({
           getIdentity: async () => unitAccountIdentity,
@@ -1780,7 +1810,12 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         const service = createHealthV2Service({
           db: mockDb,
           dataProvider,
-          auditSink: mockAuditSink as any,
+          auditPersistence: {
+            isPersistent: true,
+            recordInTx: async (_tx, rec) => {
+              auditRecords.push(rec);
+            },
+          },
         });
         const result = await service.updateCaseStatus(
           { id: "hc-001", newStatus: "PULIH", tindakanLanjutan: "Sembuh total" },
@@ -1807,6 +1842,10 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
             update: async () => {
               updateExecuted = true;
               return { id: "hc-rollback-1", statusV2: "PULIH" };
+            },
+            updateMany: async () => {
+              updateExecuted = true;
+              return { count: 1 };
             },
           },
           healthCaseV2Event: {
@@ -1871,11 +1910,6 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
           },
         });
 
-        const failingAuditSink = {
-          record: async () => {
-            throw new Error("SIMULATED_MANDATORY_AUDIT_FAILURE");
-          },
-        };
 
         const dataProvider = createMockDataProvider({
           getIdentity: async () => unitAccountIdentity,
@@ -1892,7 +1926,12 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         const service = createHealthV2Service({
           db: mockDb,
           dataProvider,
-          auditSink: failingAuditSink as any,
+          auditPersistence: {
+            isPersistent: true,
+            recordInTx: async () => {
+              throw new Error("SIMULATED_MANDATORY_AUDIT_FAILURE");
+            },
+          },
         });
         await assert.rejects(
           async () => {
@@ -2290,11 +2329,6 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
       it("Proof R2-22: Request metadata context owns clientRequestId single-source-of-truth", async () => {
         const mockDb = createMockDb();
         let auditClientRequestId: string | null = null;
-        const mockAuditSink = {
-          record: async (rec: any) => {
-            auditClientRequestId = rec.clientRequestId;
-          },
-        };
 
         const dataProvider = createMockDataProvider({
           getIdentity: async () => unitAccountIdentity,
@@ -2306,7 +2340,12 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         const service = createHealthV2Service({
           db: mockDb,
           dataProvider,
-          auditSink: mockAuditSink as any,
+          auditPersistence: {
+            isPersistent: true,
+            recordInTx: async (_tx, rec) => {
+              auditClientRequestId = rec.clientRequestId || null;
+            },
+          },
         });
         const result = await service.createCase(
           { santriId: "san-001", keluhan: "Sakit", tindakanAwal: "Obat" },
@@ -2434,11 +2473,11 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         verifyHumanExecutor: async () => activeDoctorExecutor,
       });
 
-      // No persistent audit sink provided -> in-memory sink rejected
+      // Non-persistent audit persistence rejected
       const service = createHealthV2Service({
         db: mockDb,
         dataProvider,
-        auditSink: new InMemoryAuditSink(),
+        auditPersistence: { isPersistent: false as any, recordInTx: async () => {} },
       });
 
       await assert.rejects(
@@ -2469,7 +2508,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
       const service = createHealthV2Service({
         db: mockDb,
         dataProvider,
-        auditSink: inMemorySink,
+        auditPersistence: inMemorySink as any,
       });
 
       await assert.rejects(
@@ -2479,7 +2518,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
             { actorUserId: "usr-poskestren-unit", humanExecutorId: "usr-dr-lisa" }
           );
         },
-        /AUDIT_PERSISTENCE_REQUIRED: InMemoryAuditSink cannot qualify as persistent audit/
+        /AUDIT_PERSISTENCE_REQUIRED/
       );
     });
 
@@ -2497,7 +2536,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
         db: mockDb,
         dataProvider,
         auditPersistence: {
-          isPersistent: false,
+          isPersistent: false as any,
           recordInTx: async () => {},
         },
       });
@@ -2584,6 +2623,10 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
           update: async () => {
             updateExecuted = true;
             return { id: "hc-update-rollback", statusV2: "PULIH" };
+          },
+          updateMany: async () => {
+            updateExecuted = true;
+            return { count: 1 };
           },
         },
         healthCaseV2Event: {
@@ -3181,6 +3224,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
             statusV2: data.statusV2,
             catatan: data.catatan,
           }),
+          updateMany: async () => ({ count: 1 }),
         },
         healthCaseV2Event: {
           create: async ({ data }: any) => ({ id: "evt-tx-read", ...data, createdAt: new Date() }),
@@ -3248,6 +3292,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
             statusV2: data.statusV2,
             catatan: data.catatan,
           }),
+          updateMany: async () => ({ count: 1 }),
         },
         healthCaseV2Event: {
           create: async ({ data }: any) => {
@@ -3285,6 +3330,45 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
       assert.strictEqual(capturedEventPreviousStatus, "DIRUJUK");
       assert.strictEqual(capturedAuditPreviousStatus, "DIRUJUK");
       assert.strictEqual(result.audit.previousStatus, "DIRUJUK");
+    });
+
+    // 27b. Optimistic Compare-and-Swap (CAS) Concurrency Protection Proof
+    it("Proof R3-CAS: Concurrent modification where status changed between read and CAS throws HEALTH_CASE_CONCURRENT_MODIFICATION", async () => {
+      const mockDb = createMockDb({
+        healthCaseV2: {
+          findUnique: async () => ({
+            id: "hc-cas-conflict",
+            santriId: "san-001",
+            statusV2: "DIPANTAU",
+            catatan: null,
+            occurredAt: new Date(),
+          }),
+          updateMany: async () => ({ count: 0 }), // Simulates concurrent transaction already committed
+        },
+      });
+
+      const dataProvider = createMockDataProvider({
+        getIdentity: async () => unitAccountIdentity,
+        getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+        getActiveAssignments: async () => [unitAssignment],
+        verifyHumanExecutor: async () => activeDoctorExecutor,
+      });
+
+      const service = createHealthV2Service({
+        db: mockDb,
+        dataProvider,
+        auditPersistence: { isPersistent: true, recordInTx: async () => {} },
+      });
+
+      await assert.rejects(
+        async () => {
+          await service.updateCaseStatus(
+            { id: "hc-cas-conflict", newStatus: "PULIH" },
+            { actorUserId: "usr-poskestren-unit", humanExecutorId: "usr-dr-lisa" }
+          );
+        },
+        /HEALTH_CASE_CONCURRENT_MODIFICATION/
+      );
     });
 
     // 28. Round 1 regression green
@@ -3368,7 +3452,10 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
       assert.strictEqual(result.enumExactValuesVerified, true, "HealthStatusV2 enum must contain exactly the 4 canonical values");
       assert.strictEqual(result.nullableDiagnosaPersistsNull, true, "Nullable diagnosa must store NULL when omitted");
       assert.strictEqual(result.invalidEnumRejected, true, "Invalid enum values must be rejected by Postgres");
-      assert.strictEqual(result.auditAttributionFieldsPresent, true, "Audit attribution fields must be present");
+      assert.strictEqual(result.createAuditCommitAtomicVerified, true, "Create + audit atomic commit must be verified");
+      assert.strictEqual(result.concurrentCasConflictVerified, true, "Real PostgreSQL concurrent CAS conflict must be verified");
+      assert.strictEqual(result.singleEventChainVerified, true, "Real PostgreSQL must record exactly 1 event in competing transition");
+      assert.strictEqual(result.singleAuditChainVerified, true, "Real PostgreSQL must record exactly 1 audit log in competing transition");
       assert.strictEqual(result.simulationSuccess, true, "Overall migration simulation must succeed");
     });
   });

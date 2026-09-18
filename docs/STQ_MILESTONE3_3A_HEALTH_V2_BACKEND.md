@@ -132,15 +132,24 @@ When performing any state mutation through an account with `accountType === "UNI
 ### 5.2. Mandatory Transaction-Bound Persistent Audit (Blocker A)
 All Health V2 mutations require persistent canonical audit records committed in the **same database transaction**:
 - For `createCase`: `HealthCaseV2` create + `CanonicalAuditLog` create are atomic in `tx`.
-- For `updateCaseStatus`: `HealthCaseV2` update + `HealthCaseV2Event` create + `CanonicalAuditLog` create are atomic in `tx`.
+- For `updateCaseStatus`: `HealthCaseV2` conditional update + `HealthCaseV2Event` create + `CanonicalAuditLog` create are atomic in `tx`.
+- `HealthV2ServiceDependencies` explicitly accepts only `auditPersistence?: IAuditPersistence` with strict `readonly isPersistent: true` contract (defaulting to `PrismaAuditPersistence`). Loose heuristic adaptations of arbitrary `IAuditSink` have been removed.
 - `InMemoryAuditSink` may be used only for pure tests/shadow evaluation; it is **strictly rejected** as persistent audit for Health V2 mutations (`AUDIT_PERSISTENCE_REQUIRED`).
 - If audit persistence is unavailable, disabled, or fails: the transaction **fails closed and rolls back** all business writes (`AUDIT_PERSISTENCE_REQUIRED` / `AUDIT_PERSISTENCE_FAILED`).
 
-### 5.3. Update Forensic Snapshot Consistency (Blocker G)
+### 5.3. Update Forensic Snapshot Consistency & Optimistic Compare-and-Swap (CAS) Concurrency Protection (Blocker G)
 In `updateCaseStatus`:
 - The current case state is retrieved **inside the database transaction** (`tx.healthCaseV2.findUnique`).
-- `previousStatus` and `beforeState` are derived from the transactional read immediately prior to update.
-- Concurrency protection prevents simultaneous transitions from generating incorrect event chains or stale forensic snapshots.
+- `txPreviousStatus` and `beforeState` are derived from the transactional read immediately prior to update.
+- Concurrency protection is strictly enforced via **optimistic compare-and-swap (CAS)** using a conditional update:
+  - Updates row where `id = input.id AND statusV2 = txPreviousStatus`.
+  - Requires `casResult.count === 1`.
+  - If `count === 0` (e.g., competing transaction committed a different status concurrently), throws `HEALTH_CASE_CONCURRENT_MODIFICATION`.
+  - On conflict, the transaction rolls back cleanly with **zero event creation**, **zero audit write**, and **zero partial mutation**.
+- Guarantees that:
+  - Event history NEVER contains two events both claiming `DIPANTAU` as immediate predecessor when one succeeded the other.
+  - Audit `beforeState` and event `previousStatus` strictly reflect the true transactional predecessor.
+  - Verified with real isolated PostgreSQL tests executing overlapping concurrent transitions.
 
 ### 5.4. Canonical Aggregate Evaluation & Capability Orthogonality (Blocker C & D)
 - `getCasesAggregate()` requires `health.case.read_aggregate` explicitly; `health.case.read_detail` alone is denied.

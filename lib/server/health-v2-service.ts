@@ -21,9 +21,7 @@ import {
 import {
   IAuditPersistence,
   PrismaAuditPersistence,
-  IAuditSink,
   AuditDbClient,
-  InMemoryAuditSink,
 } from "@/lib/auth/canonical-audit";
 
 export { PrismaAuditPersistence };
@@ -38,7 +36,6 @@ export interface HealthV2ServiceDependencies {
   db: PrismaClient;
   dataProvider?: ICanonicalDataProvider;
   auditPersistence?: IAuditPersistence;
-  auditSink?: IAuditSink;
 }
 
 export interface HealthCaseV2AggregateFilter {
@@ -117,25 +114,7 @@ export interface HealthV2Service {
 export function createHealthV2Service(deps: HealthV2ServiceDependencies): HealthV2Service {
   const db = deps.db;
   const dataProvider = deps.dataProvider || createPrismaDataProvider(db);
-
-  // Blocker A: Audit persistence resolution.
-  // In-memory sink is identified and strictly rejected for mutations.
-  let auditPersistence: IAuditPersistence;
-  if (deps.auditPersistence) {
-    auditPersistence = deps.auditPersistence;
-  } else if (deps.auditSink) {
-    const isPersistent =
-      (deps.auditSink as unknown as { isPersistent?: boolean }).isPersistent ??
-      !(deps.auditSink instanceof InMemoryAuditSink);
-    auditPersistence = {
-      isPersistent,
-      async recordInTx(tx: AuditDbClient, record: CanonicalAuditRecord) {
-        await deps.auditSink!.record(record, tx);
-      },
-    };
-  } else {
-    auditPersistence = new PrismaAuditPersistence();
-  }
+  const auditPersistence: IAuditPersistence = deps.auditPersistence || new PrismaAuditPersistence();
 
   return {
     /**
@@ -153,14 +132,10 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
       input: CreateHealthCaseV2Input,
       context: HealthV2RequestContext
     ): Promise<{ success: boolean; data: HealthCaseV2DTO; audit: HealthV2OperationAudit }> {
-      // Blocker A: In-memory audit sink cannot qualify as persistent audit for mutations
-      if (
-        !auditPersistence ||
-        auditPersistence.isPersistent === false ||
-        auditPersistence instanceof InMemoryAuditSink
-      ) {
+      // Enforce persistent audit for mutations
+      if (!auditPersistence || (auditPersistence as unknown as { isPersistent?: boolean }).isPersistent !== true) {
         throw new Error(
-          "AUDIT_PERSISTENCE_REQUIRED: InMemoryAuditSink cannot qualify as persistent audit for Health V2 mutations."
+          "AUDIT_PERSISTENCE_REQUIRED: Persistent audit is required for Health V2 mutations."
         );
       }
 
@@ -405,14 +380,10 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
       input: UpdateHealthCaseV2StatusInput,
       context: HealthV2RequestContext
     ): Promise<{ success: boolean; data: HealthCaseV2DTO; audit: HealthV2OperationAudit }> {
-      // Blocker A: In-memory audit sink cannot qualify as persistent audit for mutations
-      if (
-        !auditPersistence ||
-        auditPersistence.isPersistent === false ||
-        auditPersistence instanceof InMemoryAuditSink
-      ) {
+      // Enforce persistent audit for mutations
+      if (!auditPersistence || (auditPersistence as unknown as { isPersistent?: boolean }).isPersistent !== true) {
         throw new Error(
-          "AUDIT_PERSISTENCE_REQUIRED: InMemoryAuditSink cannot qualify as persistent audit for Health V2 mutations."
+          "AUDIT_PERSISTENCE_REQUIRED: Persistent audit is required for Health V2 mutations."
         );
       }
 
@@ -543,14 +514,31 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
           ? input.catatan.trim()
           : currentCase.catatan;
 
-        const updatedRecord = await tx.healthCaseV2.update({
-          where: { id: input.id },
+        // Optimistic Compare-and-Swap (CAS): update row ONLY if statusV2 matches txPreviousStatus
+        const casResult = await tx.healthCaseV2.updateMany({
+          where: {
+            id: input.id,
+            statusV2: txPreviousStatus,
+          },
           data: {
             statusV2: newStatus,
             // tindakanAwal strictly untouched
             catatan: updatedCatatan,
           },
         });
+
+        if (casResult.count !== 1) {
+          throw new Error(
+            `HEALTH_CASE_CONCURRENT_MODIFICATION: Health case '${input.id}' status changed concurrently (expected: ${txPreviousStatus}).`
+          );
+        }
+
+        const updatedRecord = await tx.healthCaseV2.findUnique({
+          where: { id: input.id },
+        });
+        if (!updatedRecord) {
+          throw new Error(`HEALTH_CASE_NOT_FOUND: Health case with ID '${input.id}' does not exist.`);
+        }
 
         // Persist separate event for follow-up treatment history
         // ONLY verified canonical User.id is stored in human_executor_id
