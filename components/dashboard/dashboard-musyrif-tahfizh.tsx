@@ -153,7 +153,7 @@ export function DashboardMusyrifTahfizh({
     const halaqohs = Array.from(
       new Set(
         resolvedSantriList
-          .map((s: any) => s.halaqoh || s.halaqohNama || s.halaqohCode)
+          .map((s) => s.halaqoh)
           .filter(Boolean)
       )
     ) as string[];
@@ -261,7 +261,7 @@ export function DashboardMusyrifTahfizh({
     }
 
     if (selectedModalHalaqoh !== "ALL") {
-      list = list.filter((s: any) => (s.halaqoh || s.halaqohNama || s.halaqohCode) === selectedModalHalaqoh);
+      list = list.filter((s) => s.halaqoh === selectedModalHalaqoh);
     }
 
     if (searchQuery.trim()) {

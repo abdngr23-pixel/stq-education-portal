@@ -22,7 +22,6 @@ import {
   X,
   Filter,
   BookOpen,
-  ShieldAlert,
   BookMarked,
   Check,
   Search,
@@ -162,19 +161,16 @@ export function AkademikModule({
   type ServerSessionStatus = "LOADING" | "READY" | "NOT_ENABLED" | "SCHEMA_NOT_READY" | "PERMISSION_DENIED" | "ERROR";
   const [serverSessions, setServerSessions] = useState<EducationSessionReadDTO[]>([]);
   const [serverSessionStatus, setServerSessionStatus] = useState<ServerSessionStatus>("LOADING");
-  const [serverSessionErrorMsg, setServerSessionErrorMsg] = useState<string | null>(null);
   const [inputMateriText, setInputMateriText] = useState<string>("");
 
   useEffect(() => {
     let isMounted = true;
-    setServerSessionStatus("LOADING");
     getEducationSessionsAction()
       .then((res) => {
         if (!isMounted) return;
         if (res.success && res.data) {
           setServerSessions(res.data);
           setServerSessionStatus("READY");
-          setServerSessionErrorMsg(null);
         } else {
           const err = res.error || "Gagal memuat data sesi pembelajaran";
           if (err.includes("NOT_ENABLED") || err.includes("UAT_NOT_ENABLED")) {
@@ -186,14 +182,11 @@ export function AkademikModule({
           } else {
             setServerSessionStatus("ERROR");
           }
-          setServerSessionErrorMsg(err);
         }
       })
-      .catch((err: unknown) => {
+      .catch(() => {
         if (!isMounted) return;
-        const msg = err instanceof Error ? err.message : String(err);
         setServerSessionStatus("ERROR");
-        setServerSessionErrorMsg(msg);
       });
     return () => {
       isMounted = false;

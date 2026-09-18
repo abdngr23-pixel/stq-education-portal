@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import { execSync } from "node:child_process";
@@ -5,9 +6,6 @@ import {
   matchStudiUmumSession,
   matchKepesantrenanSession,
   EducationSessionReadDTO,
-  CANONICAL_KEPESANTRENAN_SUBJECT_DEFINITIONS,
-  CANONICAL_STUDI_UMUM_SUBJECTS,
-  KEPESANTRENAN_SCHEDULED_FACTS,
 } from "../lib/pendidikan-v2";
 import { formatSantriSearchResult } from "../types/architecture-lock";
 import { PendidikanV2Service } from "../lib/server/pendidikan-v2-service";
