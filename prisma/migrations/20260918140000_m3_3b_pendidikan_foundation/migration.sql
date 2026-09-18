@@ -187,3 +187,28 @@ ALTER TABLE "education_session_attendances" ADD CONSTRAINT "education_session_at
 
 -- AddForeignKey
 ALTER TABLE "education_session_attendances" ADD CONSTRAINT "education_session_attendances_recorded_by_user_id_fkey" FOREIGN KEY ("recorded_by_user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- CreateTable
+CREATE TABLE "education_session_participants" (
+    "id" TEXT NOT NULL,
+    "session_id" TEXT NOT NULL,
+    "santri_id" TEXT NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "education_session_participants_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "education_session_participants_session_id_santri_id_key" ON "education_session_participants"("session_id", "santri_id");
+
+-- CreateIndex
+CREATE INDEX "education_session_participants_session_id_idx" ON "education_session_participants"("session_id");
+
+-- CreateIndex
+CREATE INDEX "education_session_participants_santri_id_idx" ON "education_session_participants"("santri_id");
+
+-- AddForeignKey
+ALTER TABLE "education_session_participants" ADD CONSTRAINT "education_session_participants_session_id_fkey" FOREIGN KEY ("session_id") REFERENCES "education_sessions"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "education_session_participants" ADD CONSTRAINT "education_session_participants_santri_id_fkey" FOREIGN KEY ("santri_id") REFERENCES "santri"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

@@ -829,6 +829,83 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
         }
       }
 
+      let educationSession:
+        | {
+            id: string;
+            educationTrack: string;
+            subjectId: string;
+            cohortId: string | null;
+            programLevel: number | null;
+            genderGroup: GenderComplex | null;
+            scheduledStaffId: string | null;
+            actualTeacherUserId: string | null;
+            scheduledTeacherAssignmentId: string | null;
+          }
+        | undefined;
+
+      // 1b. Authoritative Education Session Resolution
+      if (requested.educationSessionId) {
+        const sessionDelegate = (prisma as unknown as {
+          educationSession?: {
+            findUnique: (args: {
+              where: { id: string };
+              include?: {
+                subject?: boolean;
+                cohort?: boolean;
+                scheduledTeacherAssignment?: boolean;
+              };
+            }) => Promise<{
+              id: string;
+              educationTrack: string;
+              subjectId: string;
+              cohortId: string | null;
+              programLevel: number | null;
+              genderGroup: GenderComplex | null;
+              scheduledStaffId: string | null;
+              actualTeacherUserId: string | null;
+              scheduledTeacherAssignmentId: string | null;
+              scheduledTeacherAssignment?: { targetUnitId?: string | null } | null;
+            } | null>;
+          };
+        }).educationSession;
+
+        if (sessionDelegate) {
+          const session = await sessionDelegate.findUnique({
+            where: { id: requested.educationSessionId },
+            include: {
+              subject: true,
+              cohort: true,
+              scheduledTeacherAssignment: true,
+            },
+          });
+          if (!session) {
+            // Explicit educationSessionId not found in database -> fail closed
+            return null;
+          }
+
+          educationSession = {
+            id: session.id,
+            educationTrack: session.educationTrack,
+            subjectId: session.subjectId,
+            cohortId: session.cohortId,
+            programLevel: session.programLevel,
+            genderGroup: session.genderGroup as GenderComplex | null,
+            scheduledStaffId: session.scheduledStaffId,
+            actualTeacherUserId: session.actualTeacherUserId,
+            scheduledTeacherAssignmentId: session.scheduledTeacherAssignmentId,
+          };
+
+          orgDomain = "AKADEMIK";
+          if (session.genderGroup === "PUTRA") {
+            unitGenderComplex = "PUTRA";
+          } else if (session.genderGroup === "PUTRI") {
+            unitGenderComplex = "PUTRI";
+          }
+        } else {
+          return null;
+        }
+      }
+
       // 2. Target Santri Hydration (Authoritative containment trust boundary)
       if (targetSantriId) {
         const targetSantri = await prisma.santri.findUnique({
@@ -1026,6 +1103,8 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
         orgDomain,
         targetUserId: requested.targetUserId,
         guardianLinkedSantriIds,
+        educationSessionId: requested.educationSessionId,
+        educationSession,
       };
     },
   };

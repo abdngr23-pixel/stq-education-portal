@@ -2503,14 +2503,18 @@ export interface M33bMigrationVerificationResult {
   assignmentTableCreated: boolean;
   sessionTableCreated: boolean;
   attendanceTableCreated: boolean;
+  participantTableCreated: boolean;
   educationEnumsCreated: boolean;
   educationEnumsExactValuesVerified: boolean;
   masbukEnumRejected: boolean;
   sessionIndexesCreated: boolean;
   attendanceUniqueConstraintVerified: boolean;
+  participantUniqueConstraintVerified: boolean;
   santriCohortLinkageVerified: boolean;
   actualVsScheduledTeacherVerified: boolean;
   sessionAuditRollbackVerified: boolean;
+  concurrentSessionStartCasVerified: boolean;
+  materialAuditRollbackVerified: boolean;
   simulationSuccess: boolean;
 }
 
@@ -3479,13 +3483,14 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
     const tablesRes: Array<{ table_name: string }> = await client.$queryRawUnsafe(`
       SELECT table_name FROM information_schema.tables
       WHERE table_schema = 'public' AND table_name IN (
-        'education_cohorts', 'teaching_assignments', 'education_sessions', 'education_session_attendances'
+        'education_cohorts', 'teaching_assignments', 'education_sessions', 'education_session_attendances', 'education_session_participants'
       );
     `);
     const cohortTableCreated = tablesRes.some((t) => t.table_name === "education_cohorts");
     const assignmentTableCreated = tablesRes.some((t) => t.table_name === "teaching_assignments");
     const sessionTableCreated = tablesRes.some((t) => t.table_name === "education_sessions");
     const attendanceTableCreated = tablesRes.some((t) => t.table_name === "education_session_attendances");
+    const participantTableCreated = tablesRes.some((t) => t.table_name === "education_session_participants");
 
     // 12. Verifikasi enum baru dibuat & exact labels
     const enumQuery: Array<{ typname: string; enumlabel: string }> = await client.$queryRawUnsafe(`
@@ -3525,13 +3530,14 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
     // 14. Verifikasi indexes pada session & attendance
     const idxQuery: Array<{ tablename: string; indexname: string }> = await client.$queryRawUnsafe(`
       SELECT tablename, indexname FROM pg_indexes
-      WHERE tablename IN ('education_sessions', 'education_session_attendances', 'santri')
+      WHERE tablename IN ('education_sessions', 'education_session_attendances', 'education_session_participants', 'santri')
       AND indexname IN (
         'education_sessions_education_track_idx',
         'education_sessions_scheduled_date_idx',
         'education_sessions_cohort_id_idx',
         'education_sessions_status_idx',
         'education_session_attendances_session_id_santri_id_key',
+        'education_session_participants_session_id_santri_id_key',
         'santri_cohort_id_idx'
       );
     `);
@@ -3596,7 +3602,23 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
       insertedSession[0].actual_teacher_user_id === 'usr-substitute' &&
       insertedSession[0].status === 'STARTED';
 
-    // 17. Verifikasi unique attendance per session & santri
+    // 17. Verifikasi insert Participant & Unique Constraint
+    await client.$executeRawUnsafe(`
+      INSERT INTO "education_session_participants" ("id", "session_id", "santri_id", "created_at")
+      VALUES ('part-01', 'sess-01', 'san-pre-m33b', NOW());
+    `);
+
+    let participantUniqueConstraintVerified = false;
+    try {
+      await client.$executeRawUnsafe(`
+        INSERT INTO "education_session_participants" ("id", "session_id", "santri_id", "created_at")
+        VALUES ('part-02-dup', 'sess-01', 'san-pre-m33b', NOW());
+      `);
+    } catch {
+      participantUniqueConstraintVerified = true;
+    }
+
+    // 18. Verifikasi unique attendance per session & santri
     await client.$executeRawUnsafe(`
       INSERT INTO "education_session_attendances" (
         "id", "session_id", "santri_id", "status", "recorded_by_user_id", "created_at", "updated_at"
@@ -3618,7 +3640,7 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
       attendanceUniqueConstraintVerified = true;
     }
 
-    // 18. Verifikasi atomisitas transaksi & audit rollback pada education session
+    // 19. Verifikasi atomisitas transaksi & audit rollback pada education session
     let sessionAuditRollbackVerified = false;
     try {
       await client.$transaction(async (tx) => {
@@ -3640,6 +3662,53 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
       sessionAuditRollbackVerified = checkSession.length === 0;
     }
 
+    // 20. Verifikasi Compare-And-Swap (CAS) Concurrency pada Start Education Session
+    await client.$executeRawUnsafe(`
+      INSERT INTO "education_sessions" (
+        "id", "education_track", "subject_id", "scheduled_date", "cohort_id", "program_level", "gender_group", "jp",
+        "status", "created_at", "updated_at"
+      ) VALUES (
+        'sess-cas-test', 'STUDI_UMUM'::"EducationTrack", 'mp-legacy-01', NOW(), 'coh-2024', 1, 'PUTRA'::"GenderComplex", 3,
+        'SCHEDULED'::"EducationSessionStatus", NOW(), NOW()
+      );
+    `);
+
+    // Guru A mengeksekusi CAS: status SCHEDULED -> STARTED
+    const casA = await client.$executeRawUnsafe(`
+      UPDATE "education_sessions"
+      SET "status" = 'STARTED'::"EducationSessionStatus", "actual_teacher_user_id" = 'usr-substitute', "started_at" = NOW()
+      WHERE "id" = 'sess-cas-test' AND "status" = 'SCHEDULED'::"EducationSessionStatus";
+    `);
+
+    // Guru B mencoba mengeksekusi CAS secara simultan: status SCHEDULED -> STARTED
+    const casB = await client.$executeRawUnsafe(`
+      UPDATE "education_sessions"
+      SET "status" = 'STARTED'::"EducationSessionStatus", "actual_teacher_user_id" = 'usr-pre-m33b', "started_at" = NOW()
+      WHERE "id" = 'sess-cas-test' AND "status" = 'SCHEDULED'::"EducationSessionStatus";
+    `);
+
+    const concurrentSessionStartCasVerified = casA === 1 && casB === 0;
+
+    // 21. Verifikasi Rollback Materi Pembelajaran saat Audit Gagal
+    await client.$executeRawUnsafe(`
+      UPDATE "education_sessions" SET "materi" = 'Materi Asli' WHERE "id" = 'sess-01';
+    `);
+
+    let materialAuditRollbackVerified = false;
+    try {
+      await client.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`
+          UPDATE "education_sessions" SET "materi" = 'Materi Percobaan Yang Harus Rollback' WHERE "id" = 'sess-01';
+        `);
+        throw new Error("CANONICAL_MATERIAL_AUDIT_FAILURE: Rollback transaksi materi");
+      });
+    } catch {
+      const checkMateri = await client.$queryRawUnsafe<Array<{ materi: string | null }>>(
+        `SELECT "materi" FROM "education_sessions" WHERE "id" = 'sess-01';`
+      );
+      materialAuditRollbackVerified = checkMateri.length === 1 && checkMateri[0].materi === 'Materi Asli';
+    }
+
     const simulationSuccess =
       pr8ExactShaVerified &&
       pr8MigrationApplied &&
@@ -3656,14 +3725,18 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
       assignmentTableCreated &&
       sessionTableCreated &&
       attendanceTableCreated &&
+      participantTableCreated &&
       educationEnumsCreated &&
       educationEnumsExactValuesVerified &&
       masbukEnumRejected &&
       sessionIndexesCreated &&
       attendanceUniqueConstraintVerified &&
+      participantUniqueConstraintVerified &&
       santriCohortLinkageVerified &&
       actualVsScheduledTeacherVerified &&
-      sessionAuditRollbackVerified;
+      sessionAuditRollbackVerified &&
+      concurrentSessionStartCasVerified &&
+      materialAuditRollbackVerified;
 
     return {
       pr8ExactShaVerified,
@@ -3681,14 +3754,18 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
       assignmentTableCreated,
       sessionTableCreated,
       attendanceTableCreated,
+      participantTableCreated,
       educationEnumsCreated,
       educationEnumsExactValuesVerified,
       masbukEnumRejected,
       sessionIndexesCreated,
       attendanceUniqueConstraintVerified,
+      participantUniqueConstraintVerified,
       santriCohortLinkageVerified,
       actualVsScheduledTeacherVerified,
       sessionAuditRollbackVerified,
+      concurrentSessionStartCasVerified,
+      materialAuditRollbackVerified,
       simulationSuccess,
     };
   } finally {

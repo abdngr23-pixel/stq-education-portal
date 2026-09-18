@@ -153,14 +153,29 @@ export function deriveProgramLevel(
     | undefined,
   maybeActiveYear?: string | number | null
 ): number | ProgramLevelResult {
-  if (typeof startYearOrParams === "number" && typeof maybeActiveYear === "number") {
-    return maybeActiveYear - startYearOrParams + 1;
-  }
-
-  if (typeof startYearOrParams === "number" && typeof maybeActiveYear === "string") {
-    const match = maybeActiveYear.match(/^(\d{4})\/(\d{4})$/);
-    const activeStartYear = match ? parseInt(match[1], 10) : parseInt(maybeActiveYear, 10);
-    return activeStartYear - startYearOrParams + 1;
+  if (
+    typeof startYearOrParams === "number" &&
+    (typeof maybeActiveYear === "number" || typeof maybeActiveYear === "string")
+  ) {
+    let activeStartYear: number;
+    if (typeof maybeActiveYear === "number") {
+      activeStartYear = maybeActiveYear;
+    } else {
+      const match = maybeActiveYear.match(/^(\d{4})\/(\d{4})$/);
+      if (!match) {
+        throw new Error(
+          `INVALID_ACADEMIC_YEAR_FORMAT: Format tahun ajaran '${maybeActiveYear}' harus YYYY/YYYY (misal 2026/2027)`
+        );
+      }
+      activeStartYear = parseInt(match[1], 10);
+    }
+    const level = activeStartYear - startYearOrParams + 1;
+    if (level < 1 || level > 3) {
+      throw new Error(
+        `COHORT_OUT_OF_PROGRAM_BOUNDS: Angkatan tahun ${startYearOrParams} berada di luar rentang aktif program 3 tahun (Tingkat terhitung: ${level})`
+      );
+    }
+    return level;
   }
 
   const params =
@@ -227,24 +242,24 @@ export interface StudiUmumJpSlot {
 const JP_SLOTS_DATA: StudiUmumJpSlot[] = [
   {
     jp: 1,
-    timeRangeWita: "08:00–09:20 WITA",
+    timeRangeWita: "08:00–09:50 WITA",
     startTime: "08:00",
-    endTime: "09:20",
-    durationMinutes: 80,
+    endTime: "09:50",
+    durationMinutes: 110,
   },
   {
     jp: 2,
-    timeRangeWita: "09:35–10:55 WITA",
-    startTime: "09:35",
-    endTime: "10:55",
-    durationMinutes: 80,
+    timeRangeWita: "10:00–11:50 WITA",
+    startTime: "10:00",
+    endTime: "11:50",
+    durationMinutes: 110,
   },
   {
     jp: 3,
-    timeRangeWita: "11:05–12:25 WITA",
-    startTime: "11:05",
-    endTime: "12:25",
-    durationMinutes: 80,
+    timeRangeWita: "13:30–15:20 WITA",
+    startTime: "13:30",
+    endTime: "15:20",
+    durationMinutes: 110,
   },
 ];
 
@@ -258,21 +273,23 @@ export const STUDI_UMUM_JP_SLOTS: StudiUmumJpSlot[] & {
   JP3: JP_SLOTS_DATA[2],
 });
 
-export const STUDI_UMUM_SCHEDULE_MATRIX: Record<1 | 2 | 3, Record<1 | 2 | 3, string>> = {
+export type StudiUmumSlotSubject = "Matematika" | "Bahasa Inggris" | "PBL";
+
+export const STUDI_UMUM_SCHEDULE_MATRIX: Record<1 | 2 | 3, Record<1 | 2 | 3, StudiUmumSlotSubject>> = {
   1: {
-    1: "Matematika",
-    2: "Bahasa Inggris",
-    3: "IPS",
+    1: "Bahasa Inggris",
+    2: "Matematika",
+    3: "PBL",
   },
   2: {
-    1: "IPA",
-    2: "Bahasa Indonesia",
-    3: "TIK",
+    1: "Matematika",
+    2: "PBL",
+    3: "Bahasa Inggris",
   },
   3: {
-    1: "TIK",
-    2: "Matematika",
-    3: "IPA",
+    1: "PBL",
+    2: "Bahasa Inggris",
+    3: "Matematika",
   },
 };
 
@@ -353,7 +370,7 @@ export interface StudiUmumScheduleResult {
   isProjectWeek?: boolean;
 }
 
-export function resolveStudiUmumSchedule(level: number, jp: number): string;
+export function resolveStudiUmumSchedule(level: number, jp: number): StudiUmumSlotSubject;
 export function resolveStudiUmumSchedule(params: {
   programLevel: number;
   jp: number;
@@ -362,9 +379,15 @@ export function resolveStudiUmumSchedule(params: {
 export function resolveStudiUmumSchedule(
   paramsOrLevel: { programLevel: number; jp: number; semesterMeetingNumber: number } | number,
   maybeJp?: number
-): string | StudiUmumScheduleResult {
+): StudiUmumSlotSubject | StudiUmumScheduleResult {
   if (typeof paramsOrLevel === "number" && typeof maybeJp === "number") {
-    return STUDI_UMUM_SCHEDULE_MATRIX[paramsOrLevel as 1 | 2 | 3]?.[maybeJp as 1 | 2 | 3] || "Matematika";
+    if (![1, 2, 3].includes(paramsOrLevel)) {
+      throw new Error(`INVALID_PROGRAM_LEVEL: Tingkat program (${paramsOrLevel}) harus 1, 2, atau 3.`);
+    }
+    if (![1, 2, 3].includes(maybeJp)) {
+      throw new Error(`INVALID_JP_SLOT: Jam Pelajaran (${maybeJp}) harus 1, 2, atau 3.`);
+    }
+    return STUDI_UMUM_SCHEDULE_MATRIX[paramsOrLevel as 1 | 2 | 3][maybeJp as 1 | 2 | 3];
   }
 
   const params = paramsOrLevel as { programLevel: number; jp: number; semesterMeetingNumber: number };
@@ -396,10 +419,9 @@ export function resolveStudiUmumSchedule(
       ? STUDI_UMUM_JP_SLOTS.JP2
       : STUDI_UMUM_JP_SLOTS.JP3;
 
-  const subject = STUDI_UMUM_SCHEDULE_MATRIX[programLevel as 1 | 2 | 3][jp as 1 | 2 | 3];
-  const isPblSubject = (STUDI_UMUM_PBL_SUBJECTS as readonly string[]).includes(subject);
+  const slotSubject = STUDI_UMUM_SCHEDULE_MATRIX[programLevel as 1 | 2 | 3][jp as 1 | 2 | 3];
 
-  if (isPblSubject) {
+  if (slotSubject === "PBL") {
     const pbl = resolvePblMeeting(semesterMeetingNumber);
     return {
       track: "STUDI_UMUM",
@@ -427,7 +449,7 @@ export function resolveStudiUmumSchedule(
     startTime: jpInfo.startTime,
     endTime: jpInfo.endTime,
     type: "CORE",
-    subject: subject as StudiUmumSubject,
+    subject: slotSubject as StudiUmumSubject,
   };
 }
 
@@ -458,88 +480,48 @@ export const KEPESANTRENAN_DAILY_SCHEDULE: Record<
  * Current Scheduling Facts (Putra & Putri)
  * IMPORTANT: These are business facts for schedule planning, NOT authorization keys.
  * Authorization is strictly relational via Staff, TeachingAssignment, Capability, Scope.
+ * Single canonical representation without contradictory duplicate mappings.
  */
 export const KEPESANTRENAN_SCHEDULED_FACTS = {
-  putra: {
-    bahasaArab: {
-      level1Teacher: "Ust. H. Jupri, Lc.",
-      level2Teacher: "Ust. H. Jupri, Lc.",
-      level3Teacher: "Ust. H. Jupri, Lc.",
-    },
-    fikih: {
-      kitab: null,
-      teacher: "Ust. Razan",
-    },
-    tafsir: {
-      kitab: "Tafsir Jalalain",
-      teacher: "Ust. Mujaddid",
-    },
-    aqidah: {
-      kitab: null,
-      teacher: "Ust. Alwan",
-    },
-    tajwid: {
-      kitab: "Matan Tuhfatul Athfal",
-      teacher: "Ust. Mujaddid",
-    },
-  },
-  putri: {
-    bahasaArab: {
-      level1Teacher: "Usth. Fatimah, S.Pd.",
-      level2Teacher: "Usth. Fatimah, S.Pd.",
-      level3Teacher: "Usth. Fatimah, S.Pd.",
-    },
-    fikih: {
-      kitab: null,
-      teacher: "Ustazah Lisa Dwina Fitri",
-    },
-    tafsir: {
-      kitab: "Tafsir Jalalain",
-      teacher: "Ustazah Lisa Dwina Fitri",
-    },
-    aqidah: {
-      kitab: null,
-      teacher: "Ustazah Lisa Dwina Fitri",
-    },
-    tajwid: {
-      kitab: "Matan Tuhfatul Athfal",
-      teacher: "Ustazah Lisa Dwina Fitri",
-    },
-  },
   PUTRA: {
     "KPS-ARB": {
+      code: "KPS-ARB",
       subject: "Bahasa Arab",
       levels: {
         TINGKAT_1: {
-          teacherName: "Ust. H. Jupri, Lc.",
+          teacherName: "Ust. Abi Hudzaifah",
           referenceBook: "Durus al-Lughah",
         },
         TINGKAT_2: {
-          teacherName: "Ust. H. Jupri, Lc.",
+          teacherName: "Ust. Kamal Mukhtar",
           referenceBook: "Durus al-Lughah",
         },
         TINGKAT_3: {
-          teacherName: "Ust. H. Jupri, Lc.",
+          teacherName: "Ust. Andi Quarzy Ayatullah",
           referenceBook: "Durus al-Lughah",
         },
       },
     },
     "KPS-FQH": {
+      code: "KPS-FQH",
       subject: "Fikih",
       teacherName: "Ust. Razan",
       referenceBook: null,
     },
     "KPS-TFS": {
+      code: "KPS-TFS",
       subject: "Tafsir",
       teacherName: "Ust. Mujaddid",
       referenceBooks: ["Tafsir Terjemahan Per Kata", "Tafsir Jalalain"],
     },
     "KPS-AQD": {
+      code: "KPS-AQD",
       subject: "Aqidah",
       teacherName: "Ust. Alwan",
       referenceBook: null,
     },
     "KPS-TJW": {
+      code: "KPS-TJW",
       subject: "Tajwid",
       teacherName: "Ust. Mujaddid",
       referenceBook: "Matan Tuhfatul Athfal",
@@ -547,9 +529,52 @@ export const KEPESANTRENAN_SCHEDULED_FACTS = {
   },
   PUTRI: {
     teacherName: "Ustazah Lisa Dwina Fitri",
-    subjects: ["KPS-ARB", "KPS-FQH", "KPS-TFS", "KPS-AQD", "KPS-TJW"],
+    "KPS-ARB": {
+      code: "KPS-ARB",
+      subject: "Bahasa Arab",
+      teacherName: "Ustazah Lisa Dwina Fitri",
+      referenceBook: "Durus al-Lughah",
+    },
+    "KPS-FQH": {
+      code: "KPS-FQH",
+      subject: "Fikih",
+      teacherName: "Ustazah Lisa Dwina Fitri",
+      referenceBook: null,
+    },
+    "KPS-TFS": {
+      code: "KPS-TFS",
+      subject: "Tafsir",
+      teacherName: "Ustazah Lisa Dwina Fitri",
+      referenceBooks: ["Tafsir Terjemahan Per Kata", "Tafsir Jalalain"],
+    },
+    "KPS-AQD": {
+      code: "KPS-AQD",
+      subject: "Aqidah",
+      teacherName: "Ustazah Lisa Dwina Fitri",
+      referenceBook: null,
+    },
+    "KPS-TJW": {
+      code: "KPS-TJW",
+      subject: "Tajwid",
+      teacherName: "Ustazah Lisa Dwina Fitri",
+      referenceBook: "Matan Tuhfatul Athfal",
+    },
   },
 } as const;
+
+/**
+ * Deterministic check whether a given date or timestamp falls on Saturday in WITA (Asia/Makassar, UTC+8).
+ * Ensures UTC date rollover boundaries are handled accurately and does NOT rely on server local timezone or getUTCDay().
+ */
+export function isWitaSaturday(date: Date | string | number): boolean {
+  const d = typeof date === "string" || typeof date === "number" ? new Date(date) : date;
+  if (isNaN(d.getTime())) return false;
+  const dayName = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Makassar",
+    weekday: "long",
+  }).format(d);
+  return dayName === "Saturday";
+}
 
 export function resolveKepesantrenanDaySubject(day: number | string): string | null {
   if (typeof day === "number") {

@@ -230,6 +230,7 @@ export interface RequestedResourceContext {
   halaqohId?: string;
   kamarId?: string;
   unitId?: string;
+  educationSessionId?: string;
 }
 
 /**
@@ -400,7 +401,6 @@ export const ACADEMIC_CAPABILITIES = {
   SCHEDULE_READ: "academic.schedule.read",
   SESSION_START: "academic.session.start",
   MATERIAL_RECORD: "academic.material.record",
-  SESSION_RECORD_MATERI: "academic.session.record_materi",
   ATTENDANCE_RECORD: "academic.attendance.record",
   SCORE_INPUT: "academic.score.input",
   SCORE_READ: "academic.score.read",

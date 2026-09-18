@@ -492,6 +492,7 @@ model Santri {
   cohortId              String?                      @map("cohort_id")
   cohort                EducationCohort?             @relation(fields: [cohortId], references: [id], onDelete: SetNull)
   sessionAttendances    EducationSessionAttendance[]
+  sessionParticipations EducationSessionParticipant[]
 
   createdAt     DateTime         @default(now()) @map("created_at")
   updatedAt     DateTime         @updatedAt @map("updated_at")
@@ -1451,6 +1452,7 @@ model EducationSession {
   materiRecordedAt             DateTime?                     @map("materi_recorded_at")
   materiRecordedByUserId       String?                       @map("materi_recorded_by_user_id")
   materiRecordedByUser         User?                         @relation("MateriRecordedUserSessions", fields: [materiRecordedByUserId], references: [id], onDelete: SetNull)
+  participants                 EducationSessionParticipant[]
   attendances                  EducationSessionAttendance[]
   createdAt                    DateTime                      @default(now()) @map("created_at")
   updatedAt                    DateTime                      @updatedAt @map("updated_at")
@@ -1463,6 +1465,20 @@ model EducationSession {
   @@index([scheduledStaffId])
   @@index([actualTeacherUserId])
   @@map("education_sessions")
+}
+
+model EducationSessionParticipant {
+  id        String           @id @default(cuid())
+  sessionId String           @map("session_id")
+  session   EducationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  santriId  String           @map("santri_id")
+  santri    Santri           @relation(fields: [santriId], references: [id], onDelete: Restrict)
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  @@unique([sessionId, santriId])
+  @@index([sessionId])
+  @@index([santriId])
+  @@map("education_session_participants")
 }
 
 model EducationSessionAttendance {
@@ -1485,5 +1501,6 @@ model EducationSessionAttendance {
   @@index([status])
   @@map("education_session_attendances")
 }
+
 
 

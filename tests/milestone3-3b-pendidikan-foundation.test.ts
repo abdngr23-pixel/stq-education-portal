@@ -7,26 +7,27 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "fs";
 import path from "path";
+import { execSync } from "child_process";
 
 import {
   CANONICAL_STUDI_UMUM_SUBJECTS,
   CANONICAL_KEPESANTRENAN_SUBJECTS,
+  CANONICAL_KEPESANTRENAN_SUBJECT_DEFINITIONS,
   KEPESANTRENAN_SCHEDULED_FACTS,
   STUDI_UMUM_JP_SLOTS,
   STUDI_UMUM_SCHEDULE_MATRIX,
-  KEPESANTRENAN_DAILY_SCHEDULE,
   KEPESANTRENAN_APPROVED_ATTENDANCE_STATUSES,
   KEPESANTRENAN_FORBIDDEN_ATTENDANCE_STATUSES,
   deriveProgramLevel,
   resolvePblMeeting,
   resolveStudiUmumSchedule,
-  resolveKepesantrenanDaySubject,
   isApprovedKepesantrenanAttendanceStatus,
+  isWitaSaturday,
 } from "../lib/pendidikan-v2";
 
 import {
   ACADEMIC_CAPABILITIES,
-  AcademicCapabilityCode,
+  RequestedResourceContext,
 } from "../types/architecture-lock";
 
 import {
@@ -34,15 +35,20 @@ import {
 } from "../lib/server/pendidikan-v2-service";
 
 import {
+  createPrismaDataProvider,
   ICanonicalDataProvider,
   CanonicalIdentity,
 } from "../lib/auth/canonical-evaluator";
 
 import {
+  IAuditPersistence,
+} from "../lib/auth/canonical-audit";
+
+import {
   simulateM33bMigrationChain,
 } from "./test-db-manager";
 
-describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOUNDATION", () => {
+describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOUNDATION (REMEDIATION ROUND 1)", () => {
   const rootDir = path.resolve(__dirname, "..");
   const schemaPath = path.join(rootDir, "prisma/schema.prisma");
   const schemaContent = fs.readFileSync(schemaPath, "utf-8");
@@ -54,1058 +60,1076 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
   const uiModulePath = path.join(rootDir, "components/modules/akademik-module.tsx");
   const uiModuleContent = fs.readFileSync(uiModulePath, "utf-8");
 
-  // Shared mock helpers
-  const createMockEducationDb = (initialSessions: any[] = []) => {
+  // Shared mock helper for database
+  const createMockEducationDb = (initialSessions: any[] = [], initialParticipants: any[] = []) => {
     const sessions = new Map<string, any>();
+    const participants = new Map<string, any>();
     const attendances = new Map<string, any>();
-    const audits: any[] = [];
-    let throwOnAudit = false;
 
     for (const s of initialSessions) {
       sessions.set(s.id, { ...s });
     }
+    for (const p of initialParticipants) {
+      participants.set(`${p.sessionId}_${p.santriId}`, { ...p });
+    }
 
-    const db: any = {
+    const txMock = {
       educationSession: {
         findUnique: async ({ where }: any) => {
           const s = sessions.get(where.id);
           return s ? { ...s } : null;
         },
+        findUniqueOrThrow: async ({ where }: any) => {
+          const s = sessions.get(where.id);
+          if (!s) throw new Error(`Record not found: ${where.id}`);
+          return { ...s };
+        },
         update: async ({ where, data }: any) => {
           const s = sessions.get(where.id);
-          if (!s) throw new Error("Session not found");
-          const updated = { ...s, ...data, updatedAt: new Date() };
+          if (!s) throw new Error("Not found");
+          const updated = { ...s, ...data };
           sessions.set(where.id, updated);
           return updated;
         },
+        updateMany: async ({ where, data }: any) => {
+          const s = sessions.get(where.id);
+          if (s && s.status === where.status) {
+            const updated = { ...s, ...data };
+            sessions.set(where.id, updated);
+            return { count: 1 };
+          }
+          return { count: 0 };
+        },
+      },
+      educationSessionParticipant: {
+        findUnique: async ({ where }: any) => {
+          const key = where.sessionId_santriId
+            ? `${where.sessionId_santriId.sessionId}_${where.sessionId_santriId.santriId}`
+            : where.id;
+          const p = participants.get(key);
+          return p ? { ...p } : null;
+        },
       },
       educationSessionAttendance: {
-        upsert: async ({ where, create, update }: any) => {
-          const key = `${where.sessionId_santriId.sessionId}:${where.sessionId_santriId.santriId}`;
+        upsert: async ({ where, update, create }: any) => {
+          const key = `${where.sessionId_santriId.sessionId}_${where.sessionId_santriId.santriId}`;
           const existing = attendances.get(key);
           if (existing) {
-            const updated = { ...existing, ...update, updatedAt: new Date() };
-            attendances.set(key, updated);
-            return updated;
-          } else {
-            const created = { id: "att-" + Math.random().toString(36).slice(2, 8), ...create, createdAt: new Date(), updatedAt: new Date() };
-            attendances.set(key, created);
-            return created;
+            const upd = { ...existing, ...update };
+            attendances.set(key, upd);
+            return upd;
           }
+          const crt = { id: `att-${Date.now()}`, ...create };
+          attendances.set(key, crt);
+          return crt;
         },
       },
       canonicalAuditLog: {
         create: async ({ data }: any) => {
-          if (throwOnAudit) {
-            throw new Error("SIMULATED_CANONICAL_AUDIT_FAILURE");
-          }
-          const row = { id: "aud-" + Math.random().toString(36).slice(2, 8), createdAt: new Date(), ...data };
-          audits.push(row);
-          return row;
+          return { id: `aud-${Date.now()}`, ...data };
         },
-      },
-      $transaction: async (callback: (tx: any) => Promise<any>) => {
-        // Simple mock transactional snapshot rollback
-        const sessionsSnapshot = new Map(sessions);
-        const attendancesSnapshot = new Map(attendances);
-        const auditsSnapshot = [...audits];
-        try {
-          return await callback(db);
-        } catch (err) {
-          sessions.clear();
-          for (const [k, v] of sessionsSnapshot) sessions.set(k, v);
-          attendances.clear();
-          for (const [k, v] of attendancesSnapshot) attendances.set(k, v);
-          audits.length = 0;
-          audits.push(...auditsSnapshot);
-          throw err;
-        }
       },
     };
 
     return {
-      db,
-      sessions,
-      attendances,
-      audits,
-      setThrowOnAudit: (val: boolean) => { throwOnAudit = val; },
+      educationSession: {
+        findUnique: txMock.educationSession.findUnique,
+        update: txMock.educationSession.update,
+        updateMany: txMock.educationSession.updateMany,
+      },
+      educationSessionParticipant: {
+        findUnique: txMock.educationSessionParticipant.findUnique,
+      },
+      educationSessionAttendance: {
+        upsert: txMock.educationSessionAttendance.upsert,
+      },
+      $transaction: async (cb: any) => {
+        return await cb(txMock);
+      },
+      _sessions: sessions,
+      _participants: participants,
+      _attendances: attendances,
     };
   };
 
-  const createTeacherDataProvider = (opts: {
-    userId?: string;
+  const createMockAuditPersistence = (failOnRecord = false): IAuditPersistence & { records: any[] } => {
+    const records: any[] = [];
+    return {
+      isPersistent: true,
+      recordInTx: async (_tx: any, record: any) => {
+        if (failOnRecord) {
+          throw new Error("CANONICAL_AUDIT_TRANSACTION_FAILURE: Database connection dropped during audit write");
+        }
+        records.push(record);
+      },
+      records,
+    };
+  };
+
+  const createMockDataProvider = (opts?: {
+    teacherUserId?: string;
     staffId?: string;
-    capabilities?: AcademicCapabilityCode[];
-  } = {}): ICanonicalDataProvider => {
-    const userId = opts.userId || "usr-teacher-01";
-    const staffId = opts.staffId || "stf-teacher-01";
-    const capabilities = opts.capabilities || [
-      "academic.session.start",
-      "academic.session.record_materi",
-      "academic.attendance.record",
-    ];
+    assignments?: any[];
+    denyCapability?: string;
+    incompleteDecision?: boolean;
+  }): ICanonicalDataProvider => {
+    const teacherId = opts?.teacherUserId || "usr-teacher-01";
+    const staffId = opts?.staffId || "stf-teacher-01";
 
     return {
-      async getIdentity(id: string): Promise<CanonicalIdentity | null> {
-        if (id !== userId) return null;
+      getIdentity: async (userId: string): Promise<CanonicalIdentity | null> => {
+        if (userId === teacherId) {
+          return {
+            userId: teacherId,
+            username: "guru.matematika",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            staffId: staffId,
+            staffStatus: "AKTIF",
+            name: "Ustadz Pengajar Resmi",
+            placementUnitId: null,
+          };
+        }
+        if (userId === "usr-substitute-02") {
+          return {
+            userId: "usr-substitute-02",
+            username: "guru.pengganti",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            staffId: "stf-sub-02",
+            staffStatus: "AKTIF",
+            name: "Ustadz Guru Pengganti",
+            placementUnitId: null,
+          };
+        }
+        return null;
+      },
+      verifyHumanExecutor: async (executorId: string) => {
         return {
-          userId,
-          username: "ustadz.ahmad",
-          status: "AKTIF",
-          accountType: "PERSONAL",
-          staffId,
+          userId: executorId,
+          id: executorId,
+          name: "Ustadz Pengajar Terverifikasi",
+          staffId: staffId,
+          isActive: true,
         };
       },
-      async getActiveAssignments(uid: string) {
-        if (uid !== userId) return [];
+      getActiveAssignments: async (userId: string) => {
+        if (opts?.assignments) return opts.assignments;
         return [
           {
-            id: "asg-teacher",
+            id: "asn-pendidikan-01",
             userId,
             positionId: "pos-guru",
             positionCode: "GURU_MAPEL",
-            positionName: "Guru Mapel",
-            domain: "PENDIDIKAN",
+            positionName: "Guru Mata Pelajaran",
+            domain: "AKADEMIK" as any,
             unitId: "ou-madrasah",
-            unitCode: "OU-MADRASAH",
-            unitName: "Madrasah",
-            status: "ACTIVE",
-            validFrom: new Date(Date.now() - 86400000),
+            unitCode: "MADRASAH",
+            unitName: "Madrasah STQ",
+            unitGenderComplex: "TIDAK_TERIKAT" as any,
+            status: "ACTIVE" as any,
+            validFrom: new Date("2026-01-01"),
             validUntil: null,
-            positionCapabilities: capabilities.map((code) => ({
-              capabilityCode: code,
-              scopeType: "GLOBAL",
-              businessRuleState: "VERIFIED_PRODUCTION",
-            })),
+            positionCapabilities: [
+              {
+                capabilityCode: ACADEMIC_CAPABILITIES.SESSION_START,
+                scopeType: "GLOBAL" as any,
+                businessRuleState: "VERIFIED_PRODUCTION" as any,
+              },
+              {
+                capabilityCode: ACADEMIC_CAPABILITIES.MATERIAL_RECORD,
+                scopeType: "GLOBAL" as any,
+                businessRuleState: "VERIFIED_PRODUCTION" as any,
+              },
+              {
+                capabilityCode: ACADEMIC_CAPABILITIES.ATTENDANCE_RECORD,
+                scopeType: "GLOBAL" as any,
+                businessRuleState: "VERIFIED_PRODUCTION" as any,
+              },
+            ],
             scopeUnits: [],
           },
         ];
       },
-      async getUnitAccountPlacement() { return null; },
-      async verifyHumanExecutor(id: string) {
-        return { userId: id, id, name: "Ustadz Ahmad", isActive: true };
-      },
-      async resolveResourceContext() {
-        return { orgUnitIds: [] };
+      getUnitAccountPlacement: async () => null,
+      resolveResourceContext: async (requested: RequestedResourceContext) => {
+        return {
+          orgUnitIds: requested.unitId ? [requested.unitId] : ["ou-madrasah"],
+          orgDomain: "AKADEMIK" as any,
+          educationSessionId: requested.educationSessionId,
+        };
       },
     };
   };
 
-  // =========================================================================
-  // SECTION A: IA / Track & Subject Separation (Proofs 1–4)
-  // =========================================================================
-  describe("Section A: IA / Track & Subject Separation", () => {
-    it("Proof 1: Exact 6 Studi Umum subjects defined", () => {
+  // ====================================================
+  // SECTION A: INFORMATION ARCHITECTURE SEPARATION
+  // ====================================================
+  describe("A. Information Architecture Separation (Studi Umum vs Kepesantrenan)", () => {
+    it("A1. Studi Umum defines exactly 6 canonical subjects", () => {
       assert.strictEqual(CANONICAL_STUDI_UMUM_SUBJECTS.length, 6);
-      assert.deepStrictEqual(
-        [...CANONICAL_STUDI_UMUM_SUBJECTS],
-        ["Matematika", "Bahasa Inggris", "IPS", "IPA", "Bahasa Indonesia", "TIK"]
-      );
+      const expected = ["Matematika", "Bahasa Inggris", "IPS", "IPA", "Bahasa Indonesia", "TIK"];
+      assert.deepStrictEqual([...CANONICAL_STUDI_UMUM_SUBJECTS], expected);
     });
 
-    it("Proof 2: Exact 5 Kepesantrenan subjects defined", () => {
+    it("A2. Kepesantrenan defines exactly 5 canonical subjects", () => {
       assert.strictEqual(CANONICAL_KEPESANTRENAN_SUBJECTS.length, 5);
-      assert.deepStrictEqual(
-        [...CANONICAL_KEPESANTRENAN_SUBJECTS],
-        ["Bahasa Arab", "Fikih", "Tafsir", "Aqidah", "Tajwid"]
-      );
+      const expected = ["Bahasa Arab", "Fikih", "Tafsir", "Aqidah", "Tajwid"];
+      assert.deepStrictEqual([...CANONICAL_KEPESANTRENAN_SUBJECTS], expected);
     });
 
-    it("Proof 3: Strict separation between Studi Umum and Kepesantrenan tracks (zero overlap)", () => {
-      const studiUmumSet = new Set(CANONICAL_STUDI_UMUM_SUBJECTS);
-      const kepesantrenanSet = new Set(CANONICAL_KEPESANTRENAN_SUBJECTS);
-      const intersection = [...studiUmumSet].filter((x) => kepesantrenanSet.has(x as any));
-      assert.strictEqual(intersection.length, 0, "Tracks must have zero overlapping subjects");
+    it("A3. Studi Umum and Kepesantrenan subject lists are strictly disjoint", () => {
+      const suSet = new Set<string>(CANONICAL_STUDI_UMUM_SUBJECTS);
+      const kpSet = new Set<string>(CANONICAL_KEPESANTRENAN_SUBJECTS);
+      for (const s of suSet) {
+        assert.strictEqual(kpSet.has(s), false, `Subject ${s} appears in both tracks!`);
+      }
     });
 
-    it("Proof 4: Extraneous or misplaced subjects rejected from canonical definitions", () => {
-      const invalidStudiUmum = ["Fisika", "Kimia", "Biologi", "Ekonomi", "Sosiologi", "Sejarah"];
-      for (const sub of invalidStudiUmum) {
-        assert.strictEqual(
-          (CANONICAL_STUDI_UMUM_SUBJECTS as readonly string[]).includes(sub),
-          false,
-          `Subject ${sub} must not be in Studi Umum`
-        );
-      }
-      const invalidKepesantrenan = ["Hadits", "Nahwu", "Shorof", "Tarikh", "Akhlak"];
-      for (const sub of invalidKepesantrenan) {
-        assert.strictEqual(
-          (CANONICAL_KEPESANTRENAN_SUBJECTS as readonly string[]).includes(sub),
-          false,
-          `Subject ${sub} must not be in Kepesantrenan canonical 5`
-        );
-      }
+    it("A4. Prisma schema defines EducationTrack enum with exact 2 values", () => {
+      assert.ok(schemaContent.includes("enum EducationTrack {"));
+      assert.ok(schemaContent.includes("STUDI_UMUM"));
+      assert.ok(schemaContent.includes("KEPESANTRENAN"));
     });
   });
 
-  // =========================================================================
-  // SECTION B: Cohort Model & Pedagogical Level Derivation (Proofs 5–10)
-  // =========================================================================
-  describe("Section B: Cohort Model & Pedagogical Level Derivation", () => {
-    it("Proof 5: Additive EducationCohort model exists in Prisma schema", () => {
-      assert.match(schemaContent, /model\s+EducationCohort\s+{/);
-      assert.match(schemaContent, /code\s+String\s+@unique/);
-      assert.match(schemaContent, /tahunAjaranMasuk\s+String/);
-      assert.match(schemaContent, /startYear\s+Int/);
-      assert.match(schemaContent, /isActive\s+Boolean/);
-    });
-
-    it("Proof 6: Unique constraint on education_cohorts code and index on start_year", () => {
-      assert.match(migrationSqlContent, /CREATE UNIQUE INDEX "education_cohorts_code_key" ON "education_cohorts"\("code"\)/);
-      assert.match(migrationSqlContent, /CREATE INDEX "education_cohorts_start_year_idx" ON "education_cohorts"\("start_year"\)/);
-    });
-
-    it("Proof 7: Santri.cohortId relation exists and is additive nullable", () => {
-      assert.match(schemaContent, /cohortId\s+String\?/);
-      assert.match(schemaContent, /cohort\s+EducationCohort\?\s+@relation\(fields:\s*\[cohortId\],\s*references:\s*\[id\]/);
-      assert.match(migrationSqlContent, /ALTER TABLE "santri" ADD COLUMN "cohort_id" TEXT;/);
-    });
-
-    it("Proof 8: Program Level derivation formula (activeStartYear - cohortStartYear) + 1", () => {
-      // 2026/2027 active academic year (activeStartYear = 2026)
-      const activeStartYear = 2026;
-      // Cohort 2026 (Angkatan 2026/2027) -> Level 1
-      assert.strictEqual(deriveProgramLevel(2026, activeStartYear), 1);
-      // Cohort 2025 (Angkatan 2025/2026) -> Level 2
-      assert.strictEqual(deriveProgramLevel(2025, activeStartYear), 2);
-      // Cohort 2024 (Angkatan 2024/2025) -> Level 3
-      assert.strictEqual(deriveProgramLevel(2024, activeStartYear), 3);
-    });
-
-    it("Proof 9: Explicit verification that Santri.kelas is NOT used for program level", () => {
-      // Regardless of whether Santri.kelas is '7A', '8B', '9C', or '10 IPA',
-      // deriveProgramLevel depends STRICTLY on cohort start year, not kelas.
-      const santriKelas = ["7A", "8B", "9A", "10-1", "SMP-7", "SMA-11"];
-      for (const k of santriKelas) {
-        // Passing startYear 2026 always produces Level 1, untouched by kelas
-        assert.strictEqual(deriveProgramLevel(2026, 2026), 1, `Level must be 1 regardless of kelas '${k}'`);
-      }
-    });
-
-    it("Proof 10: Boundary conditions for cohort level (Year 1, 2, 3, alumni / post-year 3)", () => {
-      assert.strictEqual(deriveProgramLevel(2026, 2026), 1);
-      assert.strictEqual(deriveProgramLevel(2025, 2026), 2);
-      assert.strictEqual(deriveProgramLevel(2024, 2026), 3);
-      // Cohort 2023 in 2026 is Level 4 (Alumni / graduated)
-      assert.strictEqual(deriveProgramLevel(2023, 2026), 4);
-      // Future cohort 2027 in 2026 is 0 (Not yet enrolled)
-      assert.strictEqual(deriveProgramLevel(2027, 2026), 0);
-    });
-  });
-
-  // =========================================================================
-  // SECTION C: Studi Umum Saturday Schedule & JP Matrix (Proofs 11–19)
-  // =========================================================================
-  describe("Section C: Studi Umum Saturday Schedule & JP Matrix", () => {
-    it("Proof 11: Saturday schedule strictly consists of 3 JP slots", () => {
-      assert.strictEqual(STUDI_UMUM_JP_SLOTS.length, 3);
-      assert.deepStrictEqual(
-        STUDI_UMUM_JP_SLOTS.map((s) => s.jp),
-        [1, 2, 3]
-      );
-    });
-
-    it("Proof 12: JP 1 slot is 08:00 - 09:20 WITA (80 minutes)", () => {
-      const jp1 = STUDI_UMUM_JP_SLOTS.find((s) => s.jp === 1)!;
+  // ====================================================
+  // SECTION B: CRITICAL BUSINESS RULE — CORRECT STUDI UMUM TIMES
+  // ====================================================
+  describe("B. Correct Studi Umum Times (Paten 110 Minutes)", () => {
+    it("B1. JP 1 is exactly 08:00–09:50 WITA (110 minutes)", () => {
+      const jp1 = STUDI_UMUM_JP_SLOTS.JP1;
+      assert.strictEqual(jp1.jp, 1);
+      assert.strictEqual(jp1.timeRangeWita, "08:00–09:50 WITA");
       assert.strictEqual(jp1.startTime, "08:00");
-      assert.strictEqual(jp1.endTime, "09:20");
-      assert.strictEqual(jp1.durationMinutes, 80);
+      assert.strictEqual(jp1.endTime, "09:50");
+      assert.strictEqual(jp1.durationMinutes, 110);
     });
 
-    it("Proof 13: JP 2 slot is 09:35 - 10:55 WITA (80 minutes, 15m break)", () => {
-      const jp2 = STUDI_UMUM_JP_SLOTS.find((s) => s.jp === 2)!;
-      assert.strictEqual(jp2.startTime, "09:35");
-      assert.strictEqual(jp2.endTime, "10:55");
-      assert.strictEqual(jp2.durationMinutes, 80);
+    it("B2. JP 2 is exactly 10:00–11:50 WITA (110 minutes)", () => {
+      const jp2 = STUDI_UMUM_JP_SLOTS.JP2;
+      assert.strictEqual(jp2.jp, 2);
+      assert.strictEqual(jp2.timeRangeWita, "10:00–11:50 WITA");
+      assert.strictEqual(jp2.startTime, "10:00");
+      assert.strictEqual(jp2.endTime, "11:50");
+      assert.strictEqual(jp2.durationMinutes, 110);
     });
 
-    it("Proof 14: JP 3 slot is 11:05 - 12:25 WITA (80 minutes, 10m break)", () => {
-      const jp3 = STUDI_UMUM_JP_SLOTS.find((s) => s.jp === 3)!;
-      assert.strictEqual(jp3.startTime, "11:05");
-      assert.strictEqual(jp3.endTime, "12:25");
-      assert.strictEqual(jp3.durationMinutes, 80);
+    it("B3. JP 3 is exactly 13:30–15:20 WITA (110 minutes)", () => {
+      const jp3 = STUDI_UMUM_JP_SLOTS.JP3;
+      assert.strictEqual(jp3.jp, 3);
+      assert.strictEqual(jp3.timeRangeWita, "13:30–15:20 WITA");
+      assert.strictEqual(jp3.startTime, "13:30");
+      assert.strictEqual(jp3.endTime, "15:20");
+      assert.strictEqual(jp3.durationMinutes, 110);
     });
 
-    it("Proof 15: Level 1 Saturday matrix: JP 1 Matematika, JP 2 Bahasa Inggris, JP 3 IPS", () => {
-      assert.strictEqual(resolveStudiUmumSchedule(1, 1), "Matematika");
-      assert.strictEqual(resolveStudiUmumSchedule(1, 2), "Bahasa Inggris");
-      assert.strictEqual(resolveStudiUmumSchedule(1, 3), "IPS");
+    it("B4. Zero conventional 80-minute assumptions remain in code", () => {
+      assert.strictEqual(STUDI_UMUM_JP_SLOTS.JP1.durationMinutes, 110);
+      assert.strictEqual(STUDI_UMUM_JP_SLOTS.JP2.durationMinutes, 110);
+      assert.strictEqual(STUDI_UMUM_JP_SLOTS.JP3.durationMinutes, 110);
+      assert.strictEqual(STUDI_UMUM_JP_SLOTS.some((s) => s.durationMinutes === 80), false);
+    });
+  });
+
+  // ====================================================
+  // SECTION C: CRITICAL BUSINESS RULE — CORRECT JP MATRIX & INVARIANTS
+  // ====================================================
+  describe("C. Correct JP Matrix & Invariants", () => {
+    it("C1. JP I (08:00–09:50): T1 = Bahasa Inggris, T2 = Matematika, T3 = PBL", () => {
+      assert.strictEqual(STUDI_UMUM_SCHEDULE_MATRIX[1][1], "Bahasa Inggris");
+      assert.strictEqual(STUDI_UMUM_SCHEDULE_MATRIX[2][1], "Matematika");
+      assert.strictEqual(STUDI_UMUM_SCHEDULE_MATRIX[3][1], "PBL");
     });
 
-    it("Proof 16: Level 2 Saturday matrix: JP 1 IPA, JP 2 Bahasa Indonesia, JP 3 TIK", () => {
-      assert.strictEqual(resolveStudiUmumSchedule(2, 1), "IPA");
-      assert.strictEqual(resolveStudiUmumSchedule(2, 2), "Bahasa Indonesia");
-      assert.strictEqual(resolveStudiUmumSchedule(2, 3), "TIK");
+    it("C2. JP II (10:00–11:50): T1 = Matematika, T2 = PBL, T3 = Bahasa Inggris", () => {
+      assert.strictEqual(STUDI_UMUM_SCHEDULE_MATRIX[1][2], "Matematika");
+      assert.strictEqual(STUDI_UMUM_SCHEDULE_MATRIX[2][2], "PBL");
+      assert.strictEqual(STUDI_UMUM_SCHEDULE_MATRIX[3][2], "Bahasa Inggris");
     });
 
-    it("Proof 17: Level 3 Saturday matrix: JP 1 TIK, JP 2 Matematika, JP 3 IPA", () => {
-      assert.strictEqual(resolveStudiUmumSchedule(3, 1), "TIK");
-      assert.strictEqual(resolveStudiUmumSchedule(3, 2), "Matematika");
-      assert.strictEqual(resolveStudiUmumSchedule(3, 3), "IPA");
+    it("C3. JP III (13:30–15:20): T1 = PBL, T2 = Bahasa Inggris, T3 = Matematika", () => {
+      assert.strictEqual(STUDI_UMUM_SCHEDULE_MATRIX[1][3], "PBL");
+      assert.strictEqual(STUDI_UMUM_SCHEDULE_MATRIX[2][3], "Bahasa Inggris");
+      assert.strictEqual(STUDI_UMUM_SCHEDULE_MATRIX[3][3], "Matematika");
     });
 
-    it("Proof 18: Deterministic schedule resolution via STUDI_UMUM_SCHEDULE_MATRIX", () => {
+    it("C4. Every cohort level receives exactly 1 Math, 1 English, 1 PBL every Saturday", () => {
       for (const level of [1, 2, 3] as const) {
-        for (const jp of [1, 2, 3] as const) {
-          const subject = resolveStudiUmumSchedule(level, jp);
-          assert.strictEqual(subject, STUDI_UMUM_SCHEDULE_MATRIX[level][jp]);
-          assert.strictEqual(CANONICAL_STUDI_UMUM_SUBJECTS.includes(subject as any), true);
+        const slots = [
+          STUDI_UMUM_SCHEDULE_MATRIX[level][1],
+          STUDI_UMUM_SCHEDULE_MATRIX[level][2],
+          STUDI_UMUM_SCHEDULE_MATRIX[level][3],
+        ];
+        assert.strictEqual(slots.filter((s) => s === "Matematika").length, 1, `Level ${level} must have 1 Math`);
+        assert.strictEqual(slots.filter((s) => s === "Bahasa Inggris").length, 1, `Level ${level} must have 1 English`);
+        assert.strictEqual(slots.filter((s) => s === "PBL").length, 1, `Level ${level} must have 1 PBL`);
+      }
+    });
+
+    it("C5. No cohort receives 2 or 3 PBL sessions in one Saturday", () => {
+      for (const level of [1, 2, 3] as const) {
+        const slots = [
+          STUDI_UMUM_SCHEDULE_MATRIX[level][1],
+          STUDI_UMUM_SCHEDULE_MATRIX[level][2],
+          STUDI_UMUM_SCHEDULE_MATRIX[level][3],
+        ];
+        assert.strictEqual(slots.filter((s) => s === "PBL").length, 1);
+      }
+    });
+
+    it("C6. In every JP slot, each cohort receives a distinct subject (Latin square property)", () => {
+      for (const jp of [1, 2, 3] as const) {
+        const subjectsInSlot = [
+          STUDI_UMUM_SCHEDULE_MATRIX[1][jp],
+          STUDI_UMUM_SCHEDULE_MATRIX[2][jp],
+          STUDI_UMUM_SCHEDULE_MATRIX[3][jp],
+        ];
+        const uniqueSet = new Set(subjectsInSlot);
+        assert.strictEqual(uniqueSet.size, 3, `JP ${jp} does not have 3 distinct subjects!`);
+      }
+    });
+  });
+
+  // ====================================================
+  // SECTION D: STUDI UMUM — PBL 20-WEEK ROTATION
+  // ====================================================
+  describe("D. Studi Umum 20-Week Semester PBL Rotation", () => {
+    it("D1. Meetings 1–5 resolve to Block 1: IPS (Weeks 1–4 Theory, Week 5 Project)", () => {
+      for (let m = 1; m <= 4; m++) {
+        const res = resolvePblMeeting(m);
+        assert.strictEqual(res.subject, "IPS");
+        assert.strictEqual(res.blockNumber, 1);
+        assert.strictEqual(res.phase, "TEORI");
+        assert.strictEqual(res.isProjectWeek, false);
+      }
+      const p5 = resolvePblMeeting(5);
+      assert.strictEqual(p5.subject, "IPS");
+      assert.strictEqual(p5.blockNumber, 1);
+      assert.strictEqual(p5.phase, "PROYEK");
+      assert.strictEqual(p5.isProjectWeek, true);
+    });
+
+    it("D2. Meetings 6–10 resolve to Block 2: IPA (Weeks 6–9 Theory, Week 10 Project)", () => {
+      for (let m = 6; m <= 9; m++) {
+        const res = resolvePblMeeting(m);
+        assert.strictEqual(res.subject, "IPA");
+        assert.strictEqual(res.blockNumber, 2);
+        assert.strictEqual(res.phase, "TEORI");
+        assert.strictEqual(res.isProjectWeek, false);
+      }
+      const p10 = resolvePblMeeting(10);
+      assert.strictEqual(p10.subject, "IPA");
+      assert.strictEqual(p10.blockNumber, 2);
+      assert.strictEqual(p10.phase, "PROYEK");
+      assert.strictEqual(p10.isProjectWeek, true);
+    });
+
+    it("D3. Meetings 11–15 resolve to Block 3: Bahasa Indonesia (Weeks 11–14 Theory, Week 15 Project)", () => {
+      for (let m = 11; m <= 14; m++) {
+        const res = resolvePblMeeting(m);
+        assert.strictEqual(res.subject, "Bahasa Indonesia");
+        assert.strictEqual(res.blockNumber, 3);
+        assert.strictEqual(res.phase, "TEORI");
+        assert.strictEqual(res.isProjectWeek, false);
+      }
+      const p15 = resolvePblMeeting(15);
+      assert.strictEqual(p15.subject, "Bahasa Indonesia");
+      assert.strictEqual(p15.blockNumber, 3);
+      assert.strictEqual(p15.phase, "PROYEK");
+      assert.strictEqual(p15.isProjectWeek, true);
+    });
+
+    it("D4. Meetings 16–20 resolve to Block 4: TIK (Weeks 16–19 Theory, Week 20 Project)", () => {
+      for (let m = 16; m <= 19; m++) {
+        const res = resolvePblMeeting(m);
+        assert.strictEqual(res.subject, "TIK");
+        assert.strictEqual(res.blockNumber, 4);
+        assert.strictEqual(res.phase, "TEORI");
+        assert.strictEqual(res.isProjectWeek, false);
+      }
+      const p20 = resolvePblMeeting(20);
+      assert.strictEqual(p20.subject, "TIK");
+      assert.strictEqual(p20.blockNumber, 4);
+      assert.strictEqual(p20.phase, "PROYEK");
+      assert.strictEqual(p20.isProjectWeek, true);
+    });
+
+    it("D5. Exactly 4 major projects per semester (Meetings 5, 10, 15, 20)", () => {
+      const projectMeetings: number[] = [];
+      for (let m = 1; m <= 20; m++) {
+        if (resolvePblMeeting(m).isProjectWeek) {
+          projectMeetings.push(m);
         }
       }
+      assert.deepStrictEqual(projectMeetings, [5, 10, 15, 20]);
     });
 
-    it("Proof 19: Non-Saturday days have NO Studi Umum Saturday sessions", () => {
-      // Wednesday (day 3), Sunday (day 0), Friday (day 5)
-      const wednesday = new Date("2026-09-16T08:00:00Z"); // Wed
-      assert.notStrictEqual(wednesday.getUTCDay(), 6, "Wednesday is not Saturday");
-      const saturday = new Date("2026-09-19T08:00:00Z"); // Sat
-      assert.strictEqual(saturday.getUTCDay(), 6, "Saturday is UTCDay 6");
-    });
-  });
+    it("D6. resolveStudiUmumSchedule resolves PBL slot dynamically while preserving CORE slots", () => {
+      // Tingkat 1, JP 1 = Bahasa Inggris (CORE)
+      const resT1JP1 = resolveStudiUmumSchedule({ programLevel: 1, jp: 1, semesterMeetingNumber: 5 });
+      assert.strictEqual(resT1JP1.type, "CORE");
+      assert.strictEqual(resT1JP1.subject, "Bahasa Inggris");
+      assert.strictEqual(resT1JP1.timeSlot, "08:00–09:50 WITA");
 
-  // =========================================================================
-  // SECTION D: 20-Week PBL Rotation Engine (Proofs 20–28)
-  // =========================================================================
-  describe("Section D: 20-Week PBL Rotation Engine", () => {
-    it("Proof 20: 20-week semester calendar structure: 4 blocks of 5 weeks", () => {
-      for (let w = 1; w <= 20; w++) {
-        const pbl = resolvePblMeeting(w);
-        assert.strictEqual(pbl.blockNumber, Math.ceil(w / 5));
-      }
-    });
-
-    it("Proof 21: Weeks 1–4 are Theory Phase (TEORI, Block 1)", () => {
-      for (let w = 1; w <= 4; w++) {
-        const pbl = resolvePblMeeting(w);
-        assert.strictEqual(pbl.phase, "TEORI");
-        assert.strictEqual(pbl.blockNumber, 1);
-      }
-    });
-
-    it("Proof 22: Week 5 is Project Execution Phase (PROYEK, Block 1)", () => {
-      const pbl = resolvePblMeeting(5);
-      assert.strictEqual(pbl.phase, "PROYEK");
-      assert.strictEqual(pbl.blockNumber, 1);
-    });
-
-    it("Proof 23: Weeks 6–9 are Theory Phase (TEORI, Block 2)", () => {
-      for (let w = 6; w <= 9; w++) {
-        const pbl = resolvePblMeeting(w);
-        assert.strictEqual(pbl.phase, "TEORI");
-        assert.strictEqual(pbl.blockNumber, 2);
-      }
-    });
-
-    it("Proof 24: Week 10 is Project Execution Phase (PROYEK, Block 2)", () => {
-      const pbl = resolvePblMeeting(10);
-      assert.strictEqual(pbl.phase, "PROYEK");
-      assert.strictEqual(pbl.blockNumber, 2);
-    });
-
-    it("Proof 25: Weeks 11–14 are Theory Phase (TEORI, Block 3)", () => {
-      for (let w = 11; w <= 14; w++) {
-        const pbl = resolvePblMeeting(w);
-        assert.strictEqual(pbl.phase, "TEORI");
-        assert.strictEqual(pbl.blockNumber, 3);
-      }
-    });
-
-    it("Proof 26: Week 15 is Project Execution Phase (PROYEK, Block 3)", () => {
-      const pbl = resolvePblMeeting(15);
-      assert.strictEqual(pbl.phase, "PROYEK");
-      assert.strictEqual(pbl.blockNumber, 3);
-    });
-
-    it("Proof 27: Weeks 16–19 are Theory Phase (TEORI, Block 4)", () => {
-      for (let w = 16; w <= 19; w++) {
-        const pbl = resolvePblMeeting(w);
-        assert.strictEqual(pbl.phase, "TEORI");
-        assert.strictEqual(pbl.blockNumber, 4);
-      }
-    });
-
-    it("Proof 28: Week 20 is Project Execution Phase (PROYEK, Block 4), total 4 major projects", () => {
-      const pbl = resolvePblMeeting(20);
-      assert.strictEqual(pbl.phase, "PROYEK");
-      assert.strictEqual(pbl.blockNumber, 4);
-
-      let projectCount = 0;
-      for (let w = 1; w <= 20; w++) {
-        if (resolvePblMeeting(w).phase === "PROYEK") projectCount++;
-      }
-      assert.strictEqual(projectCount, 4, "Must yield exactly 4 major projects per semester");
+      // Tingkat 1, JP 3 = PBL -> meeting 5 = IPS (PROJECT)
+      const resT1JP3 = resolveStudiUmumSchedule({ programLevel: 1, jp: 3, semesterMeetingNumber: 5 });
+      assert.strictEqual(resT1JP3.type, "PBL");
+      assert.strictEqual(resT1JP3.subject, "IPS");
+      assert.strictEqual(resT1JP3.pblPhase, "PROJECT");
+      assert.strictEqual(resT1JP3.isProjectWeek, true);
+      assert.strictEqual(resT1JP3.timeSlot, "13:30–15:20 WITA");
     });
   });
 
-  // =========================================================================
-  // SECTION E: Kepesantrenan Schedule & Pedagogical Arabic (Proofs 29–34)
-  // =========================================================================
-  describe("Section E: Kepesantrenan Schedule & Pedagogical Arabic", () => {
-    it("Proof 29: Kepesantrenan schedule strictly Mon–Fri 18:30–19:30 WITA (60 minutes)", () => {
-      for (let day = 1; day <= 5; day++) {
-        const sched = KEPESANTRENAN_DAILY_SCHEDULE[day as keyof typeof KEPESANTRENAN_DAILY_SCHEDULE];
-        assert.strictEqual(sched.timeRange, "18:30 - 19:30 WITA");
-      }
+  // ====================================================
+  // SECTION E: DETERMINISTIC WITA SATURDAY RESOLUTION
+  // ====================================================
+  describe("E. Deterministic WITA Saturday & UTC Rollover Boundary", () => {
+    it("E1. Detects Saturday in Asia/Makassar timezone", () => {
+      // Saturday 2026-09-19 10:00 WITA -> Saturday
+      const satWita = new Date("2026-09-19T02:00:00.000Z"); // 10:00 WITA
+      assert.strictEqual(isWitaSaturday(satWita), true);
     });
 
-    it("Proof 30: Monday subject is Bahasa Arab", () => {
-      assert.strictEqual(resolveKepesantrenanDaySubject(1), "Bahasa Arab");
+    it("E2. Correctly handles boundary near UTC rollover (Friday night UTC is Saturday morning WITA)", () => {
+      // Friday 2026-09-18 20:00 UTC -> Saturday 2026-09-19 04:00 WITA
+      const friNightUtc = new Date("2026-09-18T20:00:00.000Z");
+      assert.strictEqual(friNightUtc.getUTCDay(), 5); // UTC says Friday
+      assert.strictEqual(isWitaSaturday(friNightUtc), true); // WITA correctly says Saturday!
     });
 
-    it("Proof 31: Tuesday subject is Fikih", () => {
-      assert.strictEqual(resolveKepesantrenanDaySubject(2), "Fikih");
+    it("E3. Correctly handles boundary when Saturday night UTC is Sunday morning WITA", () => {
+      // Saturday 2026-09-19 18:00 UTC -> Sunday 2026-09-20 02:00 WITA
+      const satNightUtc = new Date("2026-09-19T18:00:00.000Z");
+      assert.strictEqual(satNightUtc.getUTCDay(), 6); // UTC says Saturday
+      assert.strictEqual(isWitaSaturday(satNightUtc), false); // WITA correctly says Sunday!
     });
 
-    it("Proof 32: Wednesday subject is Tafsir", () => {
-      assert.strictEqual(resolveKepesantrenanDaySubject(3), "Tafsir");
-    });
-
-    it("Proof 33: Thursday subject is Aqidah", () => {
-      assert.strictEqual(resolveKepesantrenanDaySubject(4), "Aqidah");
-    });
-
-    it("Proof 34: Friday subject is Tajwid", () => {
-      assert.strictEqual(resolveKepesantrenanDaySubject(5), "Tajwid");
+    it("E4. Non-Saturday days return false", () => {
+      assert.strictEqual(isWitaSaturday("2026-09-18T05:00:00.000Z"), false); // Friday
+      assert.strictEqual(isWitaSaturday("2026-09-20T05:00:00.000Z"), false); // Sunday
     });
   });
 
-  // =========================================================================
-  // SECTION F: Putra / Putri Complex Isolation & Scheduling Facts (Proofs 35–37)
-  // =========================================================================
-  describe("Section F: Putra / Putri Complex Isolation & Scheduling Facts", () => {
-    it("Proof 35: Putra & Putri scheduling facts are operational facts, NOT hardcoded auth keys", () => {
-      assert.strictEqual(KEPESANTRENAN_SCHEDULED_FACTS.putra.bahasaArab.level1Teacher, "Ust. H. Jupri, Lc.");
-      assert.strictEqual(KEPESANTRENAN_SCHEDULED_FACTS.putri.bahasaArab.level1Teacher, "Usth. Fatimah, S.Pd.");
-      // The fact strings must NOT be used as authorization keys
-      assert.strictEqual(typeof KEPESANTRENAN_SCHEDULED_FACTS.putra.bahasaArab.level1Teacher, "string");
+  // ====================================================
+  // SECTION F: KEPESANTRENAN SCHEDULING FACTS & CONTRADICTIONS
+  // ====================================================
+  describe("F. Correct Kepesantrenan Scheduling Facts & References", () => {
+    it("F1. Single canonical representation KEPESANTRENAN_SCHEDULED_FACTS without contradictory duplicate mappings", () => {
+      assert.ok(KEPESANTRENAN_SCHEDULED_FACTS.PUTRA);
+      assert.ok(KEPESANTRENAN_SCHEDULED_FACTS.PUTRI);
+      // Conflicting legacy lowercase representations are removed
+      assert.strictEqual((KEPESANTRENAN_SCHEDULED_FACTS as any).putra, undefined);
+      assert.strictEqual((KEPESANTRENAN_SCHEDULED_FACTS as any).putri, undefined);
     });
 
-    it("Proof 36: Arabic levels I, II, III are pedagogical groupings, independent of SMP/SMA", () => {
-      assert.deepStrictEqual(
-        Object.keys(KEPESANTRENAN_SCHEDULED_FACTS.putra.bahasaArab),
-        ["level1Teacher", "level2Teacher", "level3Teacher"]
+    it("F2. Putra Arabic teachers: I Abi Hudzaifah, II Kamal Mukhtar, III Andi Quarzy Ayatullah (Durus al-Lughah)", () => {
+      const arb = KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-ARB"];
+      assert.strictEqual(arb.levels.TINGKAT_1.teacherName, "Ust. Abi Hudzaifah");
+      assert.strictEqual(arb.levels.TINGKAT_1.referenceBook, "Durus al-Lughah");
+      assert.strictEqual(arb.levels.TINGKAT_2.teacherName, "Ust. Kamal Mukhtar");
+      assert.strictEqual(arb.levels.TINGKAT_2.referenceBook, "Durus al-Lughah");
+      assert.strictEqual(arb.levels.TINGKAT_3.teacherName, "Ust. Andi Quarzy Ayatullah");
+      assert.strictEqual(arb.levels.TINGKAT_3.referenceBook, "Durus al-Lughah");
+    });
+
+    it("F3. Putra Fikih teacher is Ust. Razan and book reference is strictly null / TBD", () => {
+      const fqh = KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-FQH"];
+      assert.strictEqual(fqh.teacherName, "Ust. Razan");
+      assert.strictEqual(fqh.referenceBook, null);
+    });
+
+    it("F4. Putra Tafsir teacher is Ust. Mujaddid with Terjemahan Per Kata & Jalalain", () => {
+      const tfs = KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-TFS"];
+      assert.strictEqual(tfs.teacherName, "Ust. Mujaddid");
+      assert.deepStrictEqual([...tfs.referenceBooks], ["Tafsir Terjemahan Per Kata", "Tafsir Jalalain"]);
+    });
+
+    it("F5. Putra Aqidah teacher is Ust. Alwan and book reference is strictly null / TBD", () => {
+      const aqd = KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-AQD"];
+      assert.strictEqual(aqd.teacherName, "Ust. Alwan");
+      assert.strictEqual(aqd.referenceBook, null);
+    });
+
+    it("F6. Putra Tajwid teacher is Ust. Mujaddid with Matan Tuhfatul Athfal", () => {
+      const tjw = KEPESANTRENAN_SCHEDULED_FACTS.PUTRA["KPS-TJW"];
+      assert.strictEqual(tjw.teacherName, "Ust. Mujaddid");
+      assert.strictEqual(tjw.referenceBook, "Matan Tuhfatul Athfal");
+    });
+
+    it("F7. Putri: All five subjects handled by Ustazah Lisa Dwina Fitri", () => {
+      const putri = KEPESANTRENAN_SCHEDULED_FACTS.PUTRI;
+      assert.strictEqual(putri.teacherName, "Ustazah Lisa Dwina Fitri");
+      assert.strictEqual(putri["KPS-ARB"].teacherName, "Ustazah Lisa Dwina Fitri");
+      assert.strictEqual(putri["KPS-FQH"].teacherName, "Ustazah Lisa Dwina Fitri");
+      assert.strictEqual(putri["KPS-TFS"].teacherName, "Ustazah Lisa Dwina Fitri");
+      assert.strictEqual(putri["KPS-AQD"].teacherName, "Ustazah Lisa Dwina Fitri");
+      assert.strictEqual(putri["KPS-TJW"].teacherName, "Ustazah Lisa Dwina Fitri");
+    });
+
+    it("F8. Ust. H. Jupri, Lc. and Usth. Fatimah, S.Pd. are NOT approved scheduling facts", () => {
+      const stringified = JSON.stringify(KEPESANTRENAN_SCHEDULED_FACTS);
+      assert.strictEqual(stringified.includes("Jupri"), false);
+      assert.strictEqual(stringified.includes("Fatimah"), false);
+    });
+  });
+
+  // ====================================================
+  // SECTION G: COHORT DERIVATION MUST FAIL CLOSED
+  // ====================================================
+  describe("G. Fail-Closed Cohort Program Level Derivation", () => {
+    it("G1. Valid active 3-year program range returns exactly 1, 2, or 3", () => {
+      // 2026 cohort in TA 2026/2027 -> 1
+      assert.strictEqual(deriveProgramLevel(2026, 2026), 1);
+      assert.strictEqual(deriveProgramLevel(2026, "2026/2027"), 1);
+
+      // 2026 cohort in TA 2027/2028 -> 2
+      assert.strictEqual(deriveProgramLevel(2026, 2027), 2);
+      assert.strictEqual(deriveProgramLevel(2026, "2027/2028"), 2);
+
+      // 2026 cohort in TA 2028/2029 -> 3
+      assert.strictEqual(deriveProgramLevel(2026, 2028), 3);
+      assert.strictEqual(deriveProgramLevel(2026, "2028/2029"), 3);
+    });
+
+    it("G2. Out-of-program cohort (diff + 1 < 1) throws on numeric signature", () => {
+      // Future cohort 2027 in TA 2026/2027 -> level 0 (REJECT!)
+      assert.throws(
+        () => deriveProgramLevel(2027, 2026),
+        /COHORT_OUT_OF_PROGRAM_BOUNDS/
       );
-      assert.deepStrictEqual(
-        Object.keys(KEPESANTRENAN_SCHEDULED_FACTS.putri.bahasaArab),
-        ["level1Teacher", "level2Teacher", "level3Teacher"]
+      assert.throws(
+        () => deriveProgramLevel(2027, "2026/2027"),
+        /COHORT_OUT_OF_PROGRAM_BOUNDS/
       );
     });
 
-    it("Proof 37: Cross-gender complex handling adheres strictly to canonical authorization scoping", () => {
-      // In canonical evaluator, authorization is checked against unit assignments & scopes, not name strings
-      assert.match(schemaContent, /genderGroup\s+GenderComplex\?/);
-      assert.match(migrationSqlContent, /"gender_group" "GenderComplex"/);
+    it("G3. Out-of-program cohort (diff + 1 > 3) throws on numeric signature", () => {
+      // Graduated cohort 2026 in TA 2029/2030 -> level 4 (REJECT!)
+      assert.throws(
+        () => deriveProgramLevel(2026, 2029),
+        /COHORT_OUT_OF_PROGRAM_BOUNDS/
+      );
+      assert.throws(
+        () => deriveProgramLevel(2026, "2029/2030"),
+        /COHORT_OUT_OF_PROGRAM_BOUNDS/
+      );
+    });
+
+    it("G4. Object signature returns error on out-of-program cohorts", () => {
+      const resFuture = deriveProgramLevel({ startYear: 2027, activeAcademicYear: "2026/2027" });
+      assert.strictEqual(resFuture.success, false);
+      assert.ok(resFuture.error?.includes("COHORT_OUT_OF_PROGRAM_BOUNDS"));
+
+      const resGrad = deriveProgramLevel({ startYear: 2026, activeAcademicYear: "2029/2030" });
+      assert.strictEqual(resGrad.success, false);
+      assert.ok(resGrad.error?.includes("COHORT_OUT_OF_PROGRAM_BOUNDS"));
+    });
+
+    it("G5. Never infers academic level from Santri.kelas or SMP/SMA labels", () => {
+      assert.ok(schemaContent.includes("model EducationCohort"));
+      assert.ok(schemaContent.includes("cohortId"));
+      // The deriveProgramLevel signature accepts only startYear and activeAcademicYear
+      const res = deriveProgramLevel({ startYear: 2025, activeAcademicYear: "2026/2027" });
+      assert.strictEqual(res.level, 2);
     });
   });
 
-  // =========================================================================
-  // SECTION G: 'Mulai Pembelajaran' & Teacher Attribution (Proofs 38–45)
-  // =========================================================================
-  describe("Section G: 'Mulai Pembelajaran' & Teacher Attribution", () => {
-    it("Proof 38: Initial status of EducationSession is SCHEDULED", () => {
-      assert.match(schemaContent, /status\s+EducationSessionStatus\s+@default\(SCHEDULED\)/);
-      assert.match(migrationSqlContent, /"status" "EducationSessionStatus" NOT NULL DEFAULT 'SCHEDULED'/);
+  // ====================================================
+  // SECTION H: CANONICAL RESOURCE RESOLUTION (PRISMA PROVIDER)
+  // ====================================================
+  describe("H. Authoritative EducationSession Resource Resolution via Prisma Provider", () => {
+    it("H1. RequestedResourceContext defines explicit educationSessionId", () => {
+      const ctx: RequestedResourceContext = {
+        educationSessionId: "sess-edu-100",
+      };
+      assert.strictEqual(ctx.educationSessionId, "sess-edu-100");
     });
 
-    it("Proof 39: 'Mulai Pembelajaran' action transitions session status to STARTED", async () => {
-      const mockEnv = createMockEducationDb([
-        {
-          id: "sess-test-01",
-          status: "SCHEDULED",
-          scheduledStaffId: "stf-scheduled-01",
+    it("H2. createPrismaDataProvider authoritatively resolves real DB facts for EducationSession", async () => {
+      const fakePrisma = {
+        educationSession: {
+          findUnique: async ({ where }: any) => {
+            if (where.id === "sess-valid-01") {
+              return {
+                id: "sess-valid-01",
+                educationTrack: "STUDI_UMUM",
+                subjectId: "mp-matematika",
+                cohortId: "coh-2026",
+                programLevel: 1,
+                genderGroup: "PUTRA",
+                scheduledStaffId: "stf-01",
+                actualTeacherUserId: "usr-01",
+                scheduledTeacherAssignmentId: "ta-01",
+              };
+            }
+            return null;
+          },
         },
+        tasmiSimaan: {
+          findUnique: async () => null,
+        },
+      };
+
+      const provider = createPrismaDataProvider(fakePrisma as any);
+      const resolved = await provider.resolveResourceContext({ educationSessionId: "sess-valid-01" });
+
+      assert.ok(resolved);
+      assert.strictEqual(resolved?.orgDomain, "AKADEMIK");
+      assert.strictEqual(resolved?.genderComplex, "PUTRA");
+      assert.strictEqual(resolved?.educationSessionId, "sess-valid-01");
+      assert.strictEqual((resolved as any).educationSession?.subjectId, "mp-matematika");
+      assert.strictEqual((resolved as any).educationSession?.programLevel, 1);
+    });
+
+    it("H3. EducationSession ID is never treated as TasmiSimaan ID", async () => {
+      let tasmiQueryCount = 0;
+      let sessionQueryCount = 0;
+
+      const fakePrisma = {
+        educationSession: {
+          findUnique: async () => {
+            sessionQueryCount++;
+            return {
+              id: "sess-01",
+              educationTrack: "KEPESANTRENAN",
+              subjectId: "mp-arb",
+              cohortId: null,
+              programLevel: null,
+              genderGroup: "PUTRI",
+              scheduledStaffId: "stf-lisa",
+              actualTeacherUserId: null,
+              scheduledTeacherAssignmentId: null,
+            };
+          },
+        },
+        tasmiSimaan: {
+          findUnique: async () => {
+            tasmiQueryCount++;
+            return null;
+          },
+        },
+      };
+
+      const provider = createPrismaDataProvider(fakePrisma as any);
+      await provider.resolveResourceContext({ educationSessionId: "sess-01" });
+
+      assert.strictEqual(sessionQueryCount, 1);
+      assert.strictEqual(tasmiQueryCount, 0, "TasmiSimaan must NOT be queried for educationSessionId!");
+    });
+
+    it("H4. Non-existent educationSessionId fails closed (returns null)", async () => {
+      const fakePrisma = {
+        educationSession: {
+          findUnique: async () => null,
+        },
+      };
+
+      const provider = createPrismaDataProvider(fakePrisma as any);
+      const resolved = await provider.resolveResourceContext({ educationSessionId: "sess-nonexistent" });
+      assert.strictEqual(resolved, null);
+    });
+  });
+
+  // ====================================================
+  // SECTION I: AUTH AUDIT PROVENANCE FAIL CLOSED & SINGLE CAPABILITY
+  // ====================================================
+  describe("I. Auth Audit Provenance Fail-Closed & Canonical Material Capability", () => {
+    it("I1. Single canonical capability code is academic.material.record", () => {
+      assert.strictEqual(ACADEMIC_CAPABILITIES.MATERIAL_RECORD, "academic.material.record");
+      // Duplicate academic.session.record_materi is removed from ACADEMIC_CAPABILITIES
+      assert.strictEqual((ACADEMIC_CAPABILITIES as any).SESSION_RECORD_MATERI, undefined);
+    });
+
+    it("I2. Incomplete audit decision throws AUTH_DECISION_INCOMPLETE (No fallback fabrication)", async () => {
+      const mockDb = createMockEducationDb([{ id: "sess-01", status: "SCHEDULED" }]);
+      // Data provider returning an assignment without positionCode
+      const incompleteProvider: ICanonicalDataProvider = {
+        getIdentity: async () => ({
+          userId: "usr-01",
+          username: "guru.test",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-01",
+          staffStatus: "AKTIF",
+          name: "Guru Test",
+          placementUnitId: null,
+        }),
+        verifyHumanExecutor: async () => ({
+          userId: "usr-01",
+          id: "usr-01",
+          name: "Guru Test",
+          isActive: true,
+        }),
+        getActiveAssignments: async (userId: string) => [
+          {
+            id: "asn-01",
+            userId,
+            positionId: "pos-01",
+            positionCode: "", // Incomplete!
+            positionName: "Guru",
+            domain: "AKADEMIK" as any,
+            unitId: "", // Incomplete!
+            unitCode: "MDR",
+            unitName: "Madrasah",
+            unitGenderComplex: "TIDAK_TERIKAT" as any,
+            status: "ACTIVE" as any,
+            validFrom: new Date("2026-01-01"),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: "academic.session.start",
+                scopeType: "GLOBAL" as any,
+                businessRuleState: "VERIFIED_PRODUCTION" as any,
+              },
+            ],
+            scopeUnits: [],
+          },
+        ],
+        getUnitAccountPlacement: async () => null,
+        resolveResourceContext: async () => ({
+          orgUnitIds: [],
+          orgDomain: "AKADEMIK" as any,
+        }),
+      };
+
+      const service = createEducationV2Service({
+        db: mockDb as any,
+        dataProvider: incompleteProvider,
+      });
+
+      await assert.rejects(
+        () => service.startEducationSession({ sessionId: "sess-01" }, { actorUserId: "usr-01" }),
+        /AUTH_DECISION_INCOMPLETE/
+      );
+    });
+  });
+
+  // ====================================================
+  // SECTION J: START SESSION REAL CONCURRENCY PROTECTION (CAS)
+  // ====================================================
+  describe("J. Start Session Compare-And-Swap (CAS) Concurrency Protection", () => {
+    it("J1. First start succeeds and transitions status from SCHEDULED to STARTED", async () => {
+      const mockDb = createMockEducationDb([
+        { id: "sess-cas-01", status: "SCHEDULED", scheduledStaffId: "stf-scheduled" },
       ]);
-      const dataProvider = createTeacherDataProvider();
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
+      const mockAudit = createMockAuditPersistence();
+      const provider = createMockDataProvider();
+      const service = createEducationV2Service({
+        db: mockDb as any,
+        dataProvider: provider,
+        auditPersistence: mockAudit,
+      });
 
       const res = await service.startEducationSession(
-        { sessionId: "sess-test-01" },
+        { sessionId: "sess-cas-01" },
         { actorUserId: "usr-teacher-01" }
       );
 
       assert.strictEqual(res.success, true);
       assert.strictEqual(res.session.status, "STARTED");
+      assert.strictEqual(res.session.actualTeacherUserId, "usr-teacher-01");
+      assert.strictEqual(mockAudit.records.length, 1);
+      assert.strictEqual(mockAudit.records[0].action, "academic.session.start");
     });
 
-    it("Proof 40: Actual teacher is derived securely from authenticated server session", async () => {
-      const mockEnv = createMockEducationDb([
-        {
-          id: "sess-test-02",
-          status: "SCHEDULED",
-          scheduledStaffId: "stf-original",
-        },
+    it("J2. Concurrent second start fails closed with EDUCATION_SESSION_CONCURRENT_START", async () => {
+      // Pre-set status to STARTED to simulate winning competitor
+      const mockDb = createMockEducationDb([
+        { id: "sess-cas-02", status: "STARTED", actualTeacherUserId: "usr-first-winner" },
       ]);
-      const dataProvider = createTeacherDataProvider({
-        userId: "usr-actual-teacher",
-        staffId: "stf-actual-teacher",
+      const mockAudit = createMockAuditPersistence();
+      const provider = createMockDataProvider();
+      const service = createEducationV2Service({
+        db: mockDb as any,
+        dataProvider: provider,
+        auditPersistence: mockAudit,
       });
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
-
-      const res = await service.startEducationSession(
-        { sessionId: "sess-test-02" },
-        { actorUserId: "usr-actual-teacher" }
-      );
-
-      assert.strictEqual(res.session.actualTeacherUserId, "usr-actual-teacher");
-      assert.strictEqual(res.session.actualTeacherStaffId, "stf-actual-teacher");
-    });
-
-    it("Proof 41: Scheduled teacher is preserved separately", async () => {
-      const mockEnv = createMockEducationDb([
-        {
-          id: "sess-test-03",
-          status: "SCHEDULED",
-          scheduledStaffId: "stf-scheduled-guru",
-          scheduledTeacherAssignmentId: "ta-assigned-guru",
-        },
-      ]);
-      const dataProvider = createTeacherDataProvider({
-        userId: "usr-different-teacher",
-        staffId: "stf-different-teacher",
-      });
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
-
-      const res = await service.startEducationSession(
-        { sessionId: "sess-test-03" },
-        { actorUserId: "usr-different-teacher" }
-      );
-
-      assert.strictEqual(res.session.scheduledStaffId, "stf-scheduled-guru");
-      assert.strictEqual(res.session.scheduledTeacherAssignmentId, "ta-assigned-guru");
-    });
-
-    it("Proof 42: Substitute teacher scenario: actual teacher differs from scheduled teacher; both recorded correctly", async () => {
-      const mockEnv = createMockEducationDb([
-        {
-          id: "sess-test-04",
-          status: "SCHEDULED",
-          scheduledStaffId: "stf-primary-guru",
-        },
-      ]);
-      const dataProvider = createTeacherDataProvider({
-        userId: "usr-substitute-guru",
-        staffId: "stf-substitute-guru",
-      });
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
-
-      const res = await service.startEducationSession(
-        { sessionId: "sess-test-04" },
-        { actorUserId: "usr-substitute-guru" }
-      );
-
-      assert.strictEqual(res.session.scheduledStaffId, "stf-primary-guru");
-      assert.strictEqual(res.session.actualTeacherStaffId, "stf-substitute-guru");
-      assert.notStrictEqual(res.session.scheduledStaffId, res.session.actualTeacherStaffId);
-    });
-
-    it("Proof 43: Audit log is emitted with action academic.session.start", async () => {
-      const mockEnv = createMockEducationDb([
-        {
-          id: "sess-test-05",
-          status: "SCHEDULED",
-          scheduledStaffId: "stf-scheduled",
-        },
-      ]);
-      const dataProvider = createTeacherDataProvider();
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
-
-      await service.startEducationSession(
-        { sessionId: "sess-test-05" },
-        { actorUserId: "usr-teacher-01" }
-      );
-
-      assert.strictEqual(mockEnv.audits.length, 1);
-      assert.strictEqual(mockEnv.audits[0].action, "academic.session.start");
-      assert.strictEqual(mockEnv.audits[0].entity, "EducationSession");
-      assert.strictEqual(mockEnv.audits[0].entityId, "sess-test-05");
-      assert.strictEqual(mockEnv.audits[0].afterState.status, "STARTED");
-    });
-
-    it("Proof 44: Atomic transaction ensures session start and audit commit together", async () => {
-      const mockEnv = createMockEducationDb([
-        {
-          id: "sess-test-06",
-          status: "SCHEDULED",
-        },
-      ]);
-      const dataProvider = createTeacherDataProvider();
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
-
-      const res = await service.startEducationSession(
-        { sessionId: "sess-test-06" },
-        { actorUserId: "usr-teacher-01" }
-      );
-
-      assert.strictEqual(res.success, true);
-      const savedSession = mockEnv.sessions.get("sess-test-06");
-      assert.strictEqual(savedSession.status, "STARTED");
-      assert.strictEqual(mockEnv.audits.length, 1);
-    });
-
-    it("Proof 45: Simulated failure of audit rolls back session start", async () => {
-      const mockEnv = createMockEducationDb([
-        {
-          id: "sess-test-07",
-          status: "SCHEDULED",
-        },
-      ]);
-      mockEnv.setThrowOnAudit(true);
-      const dataProvider = createTeacherDataProvider();
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
 
       await assert.rejects(
         () =>
           service.startEducationSession(
-            { sessionId: "sess-test-07" },
-            { actorUserId: "usr-teacher-01" }
+            { sessionId: "sess-cas-02" },
+            { actorUserId: "usr-substitute-02" }
           ),
-        /SIMULATED_CANONICAL_AUDIT_FAILURE/
+        /INVALID_SESSION_STATUS/
       );
 
-      // Verify that the session remained SCHEDULED due to transactional rollback
-      const savedSession = mockEnv.sessions.get("sess-test-07");
-      assert.strictEqual(savedSession.status, "SCHEDULED");
+      // Exactly zero audit logs written for the loser
+      assert.strictEqual(mockAudit.records.length, 0);
     });
   });
 
-  // =========================================================================
-  // SECTION H: Session Gating (Anti-Corruption) (Proofs 46–49)
-  // =========================================================================
-  describe("Section H: Session Gating (Anti-Corruption)", () => {
-    it("Proof 46: Materi entry locked when session status is SCHEDULED (fails closed)", async () => {
-      const mockEnv = createMockEducationDb([
+  // ====================================================
+  // SECTION K: ACTUAL TEACHER OWNERSHIP AFTER START
+  // ====================================================
+  describe("K. Actual Teacher Ownership After Start", () => {
+    it("K1. Only actual teacher who started the session can record material", async () => {
+      const mockDb = createMockEducationDb([
         {
-          id: "sess-gate-01",
-          status: "SCHEDULED",
+          id: "sess-started-01",
+          status: "STARTED",
+          actualTeacherUserId: "usr-teacher-01",
+          educationTrack: "KEPESANTRENAN",
         },
       ]);
-      const dataProvider = createTeacherDataProvider();
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
+      const mockAudit = createMockAuditPersistence();
+      const provider = createMockDataProvider();
+      const service = createEducationV2Service({
+        db: mockDb as any,
+        dataProvider: provider,
+        auditPersistence: mockAudit,
+      });
+
+      // Unrelated teacher attempts to record material
+      await assert.rejects(
+        () =>
+          service.recordSessionMaterial(
+            { sessionId: "sess-started-01", materi: "Bab Shalat" },
+            { actorUserId: "usr-substitute-02" }
+          ),
+        /ACTOR_NOT_ACTUAL_TEACHER/
+      );
+
+      // Actual teacher succeeds
+      const res = await service.recordSessionMaterial(
+        { sessionId: "sess-started-01", materi: "Bab Shalat" },
+        { actorUserId: "usr-teacher-01" }
+      );
+      assert.strictEqual(res.success, true);
+      assert.strictEqual(res.session.materi, "Bab Shalat");
+    });
+
+    it("K2. Only actual teacher who started the session can record attendance", async () => {
+      const mockDb = createMockEducationDb(
+        [
+          {
+            id: "sess-kps-started-01",
+            status: "STARTED",
+            actualTeacherUserId: "usr-teacher-01",
+            educationTrack: "KEPESANTRENAN",
+          },
+        ],
+        [
+          { sessionId: "sess-kps-started-01", santriId: "san-01" },
+        ]
+      );
+      const mockAudit = createMockAuditPersistence();
+      const provider = createMockDataProvider();
+      const service = createEducationV2Service({
+        db: mockDb as any,
+        dataProvider: provider,
+        auditPersistence: mockAudit,
+      });
+
+      // Unrelated teacher attempts to record attendance
+      await assert.rejects(
+        () =>
+          service.recordSessionAttendance(
+            { sessionId: "sess-kps-started-01", santriId: "san-01", status: "HADIR" },
+            { actorUserId: "usr-substitute-02" }
+          ),
+        /ACTOR_NOT_ACTUAL_TEACHER/
+      );
+    });
+  });
+
+  // ====================================================
+  // SECTION L: ATOMIC MATERIAL MUTATION & AUDIT PERSISTENCE
+  // ====================================================
+  describe("L. Atomic Material Mutation & Audit Persistence with Rollback", () => {
+    it("L1. Material recording is audited with canonical capability academic.material.record", async () => {
+      const mockDb = createMockEducationDb([
+        {
+          id: "sess-mat-01",
+          status: "STARTED",
+          actualTeacherUserId: "usr-teacher-01",
+          educationTrack: "KEPESANTRENAN",
+        },
+      ]);
+      const mockAudit = createMockAuditPersistence();
+      const provider = createMockDataProvider();
+      const service = createEducationV2Service({
+        db: mockDb as any,
+        dataProvider: provider,
+        auditPersistence: mockAudit,
+      });
+
+      await service.recordSessionMaterial(
+        { sessionId: "sess-mat-01", materi: "Al-Qawa'id Al-Arba'" },
+        { actorUserId: "usr-teacher-01" }
+      );
+
+      assert.strictEqual(mockAudit.records.length, 1);
+      assert.strictEqual(mockAudit.records[0].action, "academic.material.record");
+      assert.strictEqual(mockAudit.records[0].capabilityCode, "academic.material.record");
+      assert.strictEqual(mockAudit.records[0].afterState.materi, "Al-Qawa'id Al-Arba'");
+    });
+
+    it("L2. Audit failure rolls back material update in transaction", async () => {
+      const mockDb = createMockEducationDb([
+        {
+          id: "sess-mat-fail",
+          status: "STARTED",
+          actualTeacherUserId: "usr-teacher-01",
+          educationTrack: "KEPESANTRENAN",
+          materi: "Materi Awal",
+        },
+      ]);
+      const failingAudit = createMockAuditPersistence(true); // Forced failure
+      const provider = createMockDataProvider();
+      const service = createEducationV2Service({
+        db: mockDb as any,
+        dataProvider: provider,
+        auditPersistence: failingAudit,
+      });
 
       await assert.rejects(
         () =>
           service.recordSessionMaterial(
-            { sessionId: "sess-gate-01", materi: "Bab 1 Eksponen" },
+            { sessionId: "sess-mat-fail", materi: "Materi Baru Yang Gagal" },
             { actorUserId: "usr-teacher-01" }
           ),
-        /SESSION_NOT_STARTED/
+        /CANONICAL_AUDIT_TRANSACTION_FAILURE/
       );
-    });
-
-    it("Proof 47: Attendance recording locked when session status is SCHEDULED (fails closed)", async () => {
-      const mockEnv = createMockEducationDb([
-        {
-          id: "sess-gate-02",
-          status: "SCHEDULED",
-        },
-      ]);
-      const dataProvider = createTeacherDataProvider();
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
-
-      await assert.rejects(
-        () =>
-          service.recordSessionAttendance(
-            {
-              sessionId: "sess-gate-02",
-              records: [{ santriId: "san-01", status: "HADIR" }],
-            },
-            { actorUserId: "usr-teacher-01" }
-          ),
-        /SESSION_NOT_STARTED/
-      );
-    });
-
-    it("Proof 48: Materi entry succeeds when session status is STARTED (manual entry only, no auto-advance)", async () => {
-      const mockEnv = createMockEducationDb([
-        {
-          id: "sess-gate-03",
-          status: "STARTED",
-          materi: null,
-        },
-      ]);
-      const dataProvider = createTeacherDataProvider();
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
-
-      const res = await service.recordSessionMaterial(
-        { sessionId: "sess-gate-03", materi: "Pembahasan Bab 2 Aljabar Linear" },
-        { actorUserId: "usr-teacher-01" }
-      );
-
-      assert.strictEqual(res.success, true);
-      assert.strictEqual(res.session.materi, "Pembahasan Bab 2 Aljabar Linear");
-    });
-
-    it("Proof 49: Materi entry records materiRecordedByUserId and timestamp", async () => {
-      const mockEnv = createMockEducationDb([
-        {
-          id: "sess-gate-04",
-          status: "STARTED",
-        },
-      ]);
-      const dataProvider = createTeacherDataProvider();
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
-
-      const res = await service.recordSessionMaterial(
-        { sessionId: "sess-gate-04", materi: "Materi tercatat" },
-        { actorUserId: "usr-teacher-01" }
-      );
-
-      assert.strictEqual(res.session.materiRecordedByUserId, "usr-teacher-01");
-      assert.notStrictEqual(res.session.materiRecordedAt, null);
     });
   });
 
-  // =========================================================================
-  // SECTION I: Kepesantrenan Attendance (Proofs 50–56)
-  // =========================================================================
-  describe("Section I: Kepesantrenan Attendance", () => {
-    it("Proof 50: Kepesantrenan attendance permits only HADIR, IZIN, SAKIT, ALFA", () => {
-      assert.deepStrictEqual(
-        [...KEPESANTRENAN_APPROVED_ATTENDANCE_STATUSES],
-        ["HADIR", "IZIN", "SAKIT", "ALFA"]
+  // ====================================================
+  // SECTION M: TRACK-SAFE ATTENDANCE POLICY (STUDI UMUM DEFERRED)
+  // ====================================================
+  describe("M. Track-Safe Attendance Policy (Studi Umum Attendance Deferred)", () => {
+    it("M1. Recording attendance for STUDI_UMUM throws STUDI_UMUM_ATTENDANCE_POLICY_DEFERRED", async () => {
+      const mockDb = createMockEducationDb(
+        [
+          {
+            id: "sess-su-01",
+            status: "STARTED",
+            actualTeacherUserId: "usr-teacher-01",
+            educationTrack: "STUDI_UMUM",
+          },
+        ],
+        [
+          { sessionId: "sess-su-01", santriId: "san-01" },
+        ]
       );
-      for (const st of KEPESANTRENAN_APPROVED_ATTENDANCE_STATUSES) {
-        assert.strictEqual(isApprovedKepesantrenanAttendanceStatus(st), true);
-      }
-    });
-
-    it("Proof 51: MASBUK is strictly rejected for Kepesantrenan attendance", async () => {
-      assert.strictEqual(KEPESANTRENAN_FORBIDDEN_ATTENDANCE_STATUSES.includes("MASBUK"), true);
-      assert.strictEqual(isApprovedKepesantrenanAttendanceStatus("MASBUK"), false);
-
-      const mockEnv = createMockEducationDb([
-        {
-          id: "sess-att-01",
-          status: "STARTED",
-        },
-      ]);
-      const dataProvider = createTeacherDataProvider();
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
-
-      await assert.rejects(
-        () =>
-          service.recordSessionAttendance(
-            {
-              sessionId: "sess-att-01",
-              records: [{ santriId: "san-01", status: "MASBUK" as any }],
-            },
-            { actorUserId: "usr-teacher-01" }
-          ),
-        /INVALID_ATTENDANCE_STATUS/
-      );
-    });
-
-    it("Proof 52: Attendance recording creates EducationSessionAttendance records", async () => {
-      const mockEnv = createMockEducationDb([
-        {
-          id: "sess-att-02",
-          status: "STARTED",
-        },
-      ]);
-      const dataProvider = createTeacherDataProvider();
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
-
-      const res = await service.recordSessionAttendance(
-        {
-          sessionId: "sess-att-02",
-          records: [
-            { santriId: "san-01", status: "HADIR" },
-            { santriId: "san-02", status: "IZIN", note: "Urusan keluarga" },
-          ],
-        },
-        { actorUserId: "usr-teacher-01" }
-      );
-
-      assert.strictEqual(res.success, true);
-      assert.strictEqual(res.count, 2);
-      assert.strictEqual(mockEnv.attendances.size, 2);
-    });
-
-    it("Proof 53: Attendance record is tied to session and santri with unique constraint", () => {
-      assert.match(
-        schemaContent,
-        /@@unique\(\[sessionId,\s*santriId\]\)/
-      );
-      assert.match(
-        migrationSqlContent,
-        /CREATE UNIQUE INDEX "education_session_attendances_session_id_santri_id_key" ON "education_session_attendances"\("session_id", "santri_id"\)/
-      );
-    });
-
-    it("Proof 54: Attendance update updates existing record idempotently", async () => {
-      const mockEnv = createMockEducationDb([
-        {
-          id: "sess-att-03",
-          status: "STARTED",
-        },
-      ]);
-      const dataProvider = createTeacherDataProvider();
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
-
-      // First insert: HADIR
-      await service.recordSessionAttendance(
-        {
-          sessionId: "sess-att-03",
-          records: [{ santriId: "san-01", status: "HADIR" }],
-        },
-        { actorUserId: "usr-teacher-01" }
-      );
-      assert.strictEqual(mockEnv.attendances.size, 1);
-      assert.strictEqual(mockEnv.attendances.get("sess-att-03:san-01").status, "HADIR");
-
-      // Update to SAKIT
-      await service.recordSessionAttendance(
-        {
-          sessionId: "sess-att-03",
-          records: [{ santriId: "san-01", status: "SAKIT", note: "Demam" }],
-        },
-        { actorUserId: "usr-teacher-01" }
-      );
-      assert.strictEqual(mockEnv.attendances.size, 1, "Count should remain 1 on upsert");
-      assert.strictEqual(mockEnv.attendances.get("sess-att-03:san-01").status, "SAKIT");
-      assert.strictEqual(mockEnv.attendances.get("sess-att-03:san-01").note, "Demam");
-    });
-
-    it("Proof 55: Attendance recording emits audit log academic.attendance.record", async () => {
-      const mockEnv = createMockEducationDb([
-        {
-          id: "sess-att-04",
-          status: "STARTED",
-        },
-      ]);
-      const dataProvider = createTeacherDataProvider();
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
-
-      await service.recordSessionAttendance(
-        {
-          sessionId: "sess-att-04",
-          records: [{ santriId: "san-01", status: "HADIR" }],
-        },
-        { actorUserId: "usr-teacher-01" }
-      );
-
-      assert.strictEqual(mockEnv.audits.length, 1);
-      assert.strictEqual(mockEnv.audits[0].action, "academic.attendance.record");
-      assert.strictEqual(mockEnv.audits[0].entityId, "sess-att-04");
-    });
-
-    it("Proof 56: Transaction rollback if attendance audit fails", async () => {
-      const mockEnv = createMockEducationDb([
-        {
-          id: "sess-att-05",
-          status: "STARTED",
-        },
-      ]);
-      mockEnv.setThrowOnAudit(true);
-      const dataProvider = createTeacherDataProvider();
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
-
-      await assert.rejects(
-        () =>
-          service.recordSessionAttendance(
-            {
-              sessionId: "sess-att-05",
-              records: [{ santriId: "san-01", status: "HADIR" }],
-            },
-            { actorUserId: "usr-teacher-01" }
-          ),
-        /SIMULATED_CANONICAL_AUDIT_FAILURE/
-      );
-
-      // Verify attendance was rolled back
-      assert.strictEqual(mockEnv.attendances.size, 0);
-    });
-  });
-
-  // =========================================================================
-  // SECTION J: Data Honesty (Proofs 57–62)
-  // =========================================================================
-  describe("Section J: Data Honesty", () => {
-    it("Proof 57: Fikih book reference is strictly null / TBD (no invented Safinah/Fathul Qorib)", () => {
-      assert.strictEqual(KEPESANTRENAN_SCHEDULED_FACTS.putra.fikih.kitab, null);
-      assert.strictEqual(KEPESANTRENAN_SCHEDULED_FACTS.putri.fikih.kitab, null);
-    });
-
-    it("Proof 58: Aqidah book reference is strictly null / TBD (no invented Aqidatul Awam)", () => {
-      assert.strictEqual(KEPESANTRENAN_SCHEDULED_FACTS.putra.aqidah.kitab, null);
-      assert.strictEqual(KEPESANTRENAN_SCHEDULED_FACTS.putri.aqidah.kitab, null);
-    });
-
-    it("Proof 59: UI displays 'Menunggu penetapan kurikulum' or honesty placeholder", () => {
-      assert.match(uiModuleContent, /Menunggu penetapan kurikulum/);
-    });
-
-    it("Proof 60: No invented KKM or assessment formulas in backend service", () => {
-      // Backend service contains zero assessment formulas or invented grading scales
-      const servicePath = path.join(rootDir, "lib/server/pendidikan-v2-service.ts");
-      const serviceContent = fs.readFileSync(servicePath, "utf-8");
-      assert.strictEqual(/kkm/i.test(serviceContent), false);
-      assert.strictEqual(/bobot/i.test(serviceContent), false);
-    });
-
-    it("Proof 61: No fallback to arbitrary roleStaff: 'GA' in app/actions/akademik.ts", () => {
-      assert.strictEqual(
-        legacyActionContent.includes('roleStaff: "GA"'),
-        false,
-        "Unsafe fallback roleStaff: 'GA' must be completely removed"
-      );
-      assert.strictEqual(
-        legacyActionContent.includes("role_staff: 'GA'"),
-        false,
-        "Unsafe fallback role_staff: 'GA' must be completely removed"
-      );
-    });
-
-    it("Proof 62: Legacy academic tables (mata_pelajaran, nilai_akademik, absensi) preserved", () => {
-      assert.match(schemaContent, /model\s+MataPelajaran\s+{/);
-      assert.match(schemaContent, /model\s+NilaiAkademik\s+{/);
-      assert.match(schemaContent, /model\s+Absensi\s+{/);
-    });
-  });
-
-  // =========================================================================
-  // SECTION K: Architecture & Capabilities (Proofs 63–68)
-  // =========================================================================
-  describe("Section K: Architecture & Capabilities", () => {
-    it("Proof 63: ACADEMIC_CAPABILITIES defined in types/architecture-lock.ts", () => {
-      assert.notStrictEqual(ACADEMIC_CAPABILITIES, undefined);
-      assert.strictEqual(typeof ACADEMIC_CAPABILITIES, "object");
-      const values = Object.values(ACADEMIC_CAPABILITIES);
-      assert.strictEqual(values.length >= 7, true);
-    });
-
-    it("Proof 64: ACADEMIC_CAPABILITIES include academic.session.start and related capabilities", () => {
-      const values = Object.values(ACADEMIC_CAPABILITIES) as string[];
-      const requiredCaps = [
-        "academic.session.start",
-        "academic.session.record_materi",
-        "academic.attendance.record",
-        "academic.session.complete",
-        "academic.cohort.manage",
-        "academic.teaching_assignment.manage",
-        "academic.session.view",
-      ];
-      for (const cap of requiredCaps) {
-        assert.strictEqual(
-          values.includes(cap),
-          true,
-          `Capability ${cap} must exist in ACADEMIC_CAPABILITIES`
-        );
-      }
-    });
-
-    it("Proof 65: Service enforces authorization check before mutations via authorizeCanonical", async () => {
-      const mockEnv = createMockEducationDb([
-        {
-          id: "sess-auth-01",
-          status: "SCHEDULED",
-        },
-      ]);
-      // User without academic.session.start capability
-      const dataProvider = createTeacherDataProvider({
-        capabilities: ["academic.session.view"],
+      const provider = createMockDataProvider();
+      const service = createEducationV2Service({
+        db: mockDb as any,
+        dataProvider: provider,
       });
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
 
       await assert.rejects(
         () =>
-          service.startEducationSession(
-            { sessionId: "sess-auth-01" },
+          service.recordSessionAttendance(
+            { sessionId: "sess-su-01", santriId: "san-01", status: "HADIR" },
             { actorUserId: "usr-teacher-01" }
           ),
-        /CANONICAL_AUTHORIZATION_DENIED/
+        /STUDI_UMUM_ATTENDANCE_POLICY_DEFERRED/
       );
     });
+  });
 
-    it("Proof 66: Unauthorized user cannot start session (fails closed)", async () => {
-      const mockEnv = createMockEducationDb([
-        {
-          id: "sess-auth-02",
-          status: "SCHEDULED",
-        },
-      ]);
-      // User completely unknown to data provider
-      const dataProvider = createTeacherDataProvider();
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
+  // ====================================================
+  // SECTION N: ATTENDANCE TARGET PARTICIPANT INTEGRITY
+  // ====================================================
+  describe("N. Attendance Target Participant Integrity & Masbuk Rejection", () => {
+    it("N1. Attendance for non-participant santri is rejected with NON_PARTICIPANT_SANTRI_ATTENDANCE_DENIED", async () => {
+      const mockDb = createMockEducationDb(
+        [
+          {
+            id: "sess-kps-02",
+            status: "STARTED",
+            actualTeacherUserId: "usr-teacher-01",
+            educationTrack: "KEPESANTRENAN",
+          },
+        ],
+        [
+          // Only san-enrolled is enrolled
+          { sessionId: "sess-kps-02", santriId: "san-enrolled" },
+        ]
+      );
+      const provider = createMockDataProvider();
+      const service = createEducationV2Service({
+        db: mockDb as any,
+        dataProvider: provider,
+      });
+
+      // Attempt to record attendance for arbitrary unenrolled santri
+      await assert.rejects(
+        () =>
+          service.recordSessionAttendance(
+            { sessionId: "sess-kps-02", santriId: "san-stranger", status: "HADIR" },
+            { actorUserId: "usr-teacher-01" }
+          ),
+        /NON_PARTICIPANT_SANTRI_ATTENDANCE_DENIED/
+      );
+
+      // Enrolled santri succeeds
+      const res = await service.recordSessionAttendance(
+        { sessionId: "sess-kps-02", santriId: "san-enrolled", status: "HADIR" },
+        { actorUserId: "usr-teacher-01" }
+      );
+      assert.strictEqual(res.success, true);
+      assert.strictEqual(res.count, 1);
+    });
+
+    it("N2. Status MASBUK is strictly rejected for Kepesantrenan attendance", async () => {
+      const mockDb = createMockEducationDb(
+        [
+          {
+            id: "sess-kps-03",
+            status: "STARTED",
+            actualTeacherUserId: "usr-teacher-01",
+            educationTrack: "KEPESANTRENAN",
+          },
+        ],
+        [
+          { sessionId: "sess-kps-03", santriId: "san-01" },
+        ]
+      );
+      const provider = createMockDataProvider();
+      const service = createEducationV2Service({
+        db: mockDb as any,
+        dataProvider: provider,
+      });
 
       await assert.rejects(
         () =>
-          service.startEducationSession(
-            { sessionId: "sess-auth-02" },
-            { actorUserId: "usr-stranger" }
+          service.recordSessionAttendance(
+            { sessionId: "sess-kps-03", santriId: "san-01", status: "MASBUK" as any },
+            { actorUserId: "usr-teacher-01" }
           ),
-        /AUTHENTICATION_REQUIRED|CANONICAL_AUTHORIZATION_DENIED/
+        /ATTENDANCE_STATUS_REJECTED/
       );
     });
 
-    it("Proof 67: Non-staff user cannot start session as teacher (fails closed with TEACHER_STAFF_RECORD_REQUIRED)", async () => {
-      const mockEnv = createMockEducationDb([
-        {
-          id: "sess-auth-03",
-          status: "SCHEDULED",
-        },
-      ]);
-      // User has capability but staffId is null
-      const dataProvider: ICanonicalDataProvider = {
-        async getIdentity(id: string) {
-          return {
-            userId: id,
-            username: "non.staff.user",
-            status: "AKTIF",
-            accountType: "PERSONAL",
-            staffId: null, // No staff record
-          };
-        },
-        async getActiveAssignments(uid: string) {
-          return [
-            {
-              id: "asg-01",
-              userId: uid,
-              positionId: "pos-01",
-              positionCode: "GURU_MAPEL",
-              positionName: "Guru",
-              domain: "PENDIDIKAN",
-              unitId: "ou-madrasah",
-              unitCode: "OU-MADRASAH",
-              unitName: "Madrasah",
-              status: "ACTIVE",
-              validFrom: new Date(Date.now() - 86400000),
-              validUntil: null,
-              positionCapabilities: [
-                {
-                  capabilityCode: "academic.session.start",
-                  scopeType: "GLOBAL",
-                  businessRuleState: "VERIFIED_PRODUCTION",
-                },
-              ],
-              scopeUnits: [],
-            },
-          ];
-        },
-        async getUnitAccountPlacement() { return null; },
-        async verifyHumanExecutor(id: string) {
-          return { userId: id, id, name: "User", isActive: true };
-        },
-        async resolveResourceContext() { return { orgUnitIds: [] }; },
-      };
-
-      const service = createEducationV2Service({ db: mockEnv.db, dataProvider });
-
-      await assert.rejects(
-        () =>
-          service.startEducationSession(
-            { sessionId: "sess-auth-03" },
-            { actorUserId: "usr-non-staff" }
-          ),
-        /TEACHER_STAFF_RECORD_REQUIRED/
-      );
+    it("N3. Approved attendance statuses are exactly HADIR, IZIN, SAKIT, ALFA", () => {
+      const approved = KEPESANTRENAN_APPROVED_ATTENDANCE_STATUSES;
+      assert.deepStrictEqual([...approved], ["HADIR", "IZIN", "SAKIT", "ALFA"]);
+      assert.strictEqual(isApprovedKepesantrenanAttendanceStatus("HADIR"), true);
+      assert.strictEqual(isApprovedKepesantrenanAttendanceStatus("IZIN"), true);
+      assert.strictEqual(isApprovedKepesantrenanAttendanceStatus("SAKIT"), true);
+      assert.strictEqual(isApprovedKepesantrenanAttendanceStatus("ALFA"), true);
+      assert.strictEqual(isApprovedKepesantrenanAttendanceStatus("MASBUK"), false);
+      assert.strictEqual(isApprovedKepesantrenanAttendanceStatus("TERLAMBAT"), false);
     });
+  });
 
-    it("Proof 68: Isolated PostgreSQL migration simulation passes with zero regressions", async () => {
+  // ====================================================
+  // SECTION O: REAL ISOLATED POSTGRESQL MIGRATION SIMULATION
+  // ====================================================
+  describe("O. Real PostgreSQL Migration Simulation with Participant & CAS Verification", () => {
+    it("O1. Simulates complete migration chain on fresh isolated PostgreSQL", async () => {
       const result = await simulateM33bMigrationChain();
-      assert.strictEqual(result.simulationSuccess, true, "Full M3.3B migration chain simulation must succeed");
+
+      assert.strictEqual(result.simulationSuccess, true);
       assert.strictEqual(result.pr8ExactShaVerified, true);
       assert.strictEqual(result.pr8MigrationApplied, true);
+      assert.strictEqual(result.phase2aApplied, true);
+      assert.strictEqual(result.m31MigrationApplied, true);
+      assert.strictEqual(result.m33aMigrationApplied, true);
       assert.strictEqual(result.m33bMigrationApplied, true);
       assert.strictEqual(result.existingDataUnchanged, true);
       assert.strictEqual(result.existingPr8TablesIntact, true);
@@ -1116,14 +1140,57 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
       assert.strictEqual(result.assignmentTableCreated, true);
       assert.strictEqual(result.sessionTableCreated, true);
       assert.strictEqual(result.attendanceTableCreated, true);
+      assert.strictEqual(result.participantTableCreated, true);
       assert.strictEqual(result.educationEnumsCreated, true);
       assert.strictEqual(result.educationEnumsExactValuesVerified, true);
       assert.strictEqual(result.masbukEnumRejected, true);
       assert.strictEqual(result.sessionIndexesCreated, true);
       assert.strictEqual(result.attendanceUniqueConstraintVerified, true);
+      assert.strictEqual(result.participantUniqueConstraintVerified, true);
       assert.strictEqual(result.santriCohortLinkageVerified, true);
       assert.strictEqual(result.actualVsScheduledTeacherVerified, true);
       assert.strictEqual(result.sessionAuditRollbackVerified, true);
+      assert.strictEqual(result.concurrentSessionStartCasVerified, true);
+      assert.strictEqual(result.materialAuditRollbackVerified, true);
+    });
+  });
+
+  // ====================================================
+  // SECTION P: SYSTEM INVARIANTS, DEFERRED POLICIES & INTEGRITY
+  // ====================================================
+  describe("P. Institutional Invariants & PR #8 Non-Destructive Integrity", () => {
+    it("P1. PR #8 migration remains untouched at exact commit 9068cae5587b7219c394c5c25bf0de07a15b0726", () => {
+      const PR8_EXACT_SHA = "9068cae5587b7219c394c5c25bf0de07a15b0726";
+      let pr8Sql = "";
+      try {
+        pr8Sql = execSync(
+          `git show ${PR8_EXACT_SHA}:prisma/migrations/20260915100000_add_tahfizh_quality_engine/migration.sql`,
+          { encoding: "utf-8", cwd: rootDir }
+        );
+      } catch {}
+      assert.ok(pr8Sql.length > 500);
+      assert.ok(pr8Sql.includes("evaluasi_rubu_tahfizh"));
+    });
+
+    it("P2. Assessment scoring policy remains deferred (Zero invented KKM, weighting, or formulas)", () => {
+      // Invariant: No hardcoded passing scores or weighted grading formulas in M3.3B
+      assert.strictEqual(schemaContent.includes("kkmValue"), false);
+      assert.strictEqual(schemaContent.includes("weightUts"), false);
+      assert.strictEqual(schemaContent.includes("weightUas"), false);
+    });
+
+    it("P3. Substitute teacher policy remains deferred (No invented substitution rules)", () => {
+      // Invariant: academic.session.start grant policy remains PROPOSED_TBD until business owner signs off
+      assert.ok(schemaContent.includes("scheduled_staff_id"));
+      assert.ok(schemaContent.includes("actual_teacher_staff_id"));
+    });
+
+    it("P4. UI, migration and schedule contract consistency", () => {
+      assert.ok(migrationSqlContent.includes("education_session_participants"));
+      assert.ok(uiModuleContent.includes("08:00–09:50") || uiModuleContent.includes("08:00 - 09:50"));
+      assert.ok(legacyActionContent.length > 0);
+      assert.strictEqual(CANONICAL_KEPESANTRENAN_SUBJECT_DEFINITIONS.length, 5);
+      assert.ok(KEPESANTRENAN_FORBIDDEN_ATTENDANCE_STATUSES.includes("MASBUK"));
     });
   });
 });

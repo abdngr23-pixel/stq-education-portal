@@ -534,7 +534,7 @@ export function AkademikModule({
                     Jadwal KBM Studi Umum — Hari Sabtu
                   </CardTitle>
                   <CardDescription className="text-xs text-slate-500 mt-0.5">
-                    KBM Terstruktur 3 Jam Pelajaran (JP) mingguan berbasis Angkatan/Tingkat Program dan Rotasi PBL 20 Pertemuan.
+                    KBM Terstruktur 3 JP (@110 menit: 08:00–09:50, 10:00–11:50, 13:30–15:20 WITA) berbasis Rotasi PBL 20 Pertemuan. (Alur presensi santri Studi Umum ditangguhkan pada M3.3B).
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
