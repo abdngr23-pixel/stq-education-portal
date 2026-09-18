@@ -3727,9 +3727,9 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
       sessionContext !== null &&
       sessionContext.orgDomain === "AKADEMIK" &&
       sessionContext.educationSessionId === "sess-01" &&
-      sessionContext.educationSession?.educationTrack === "STUDI_UMUM" &&
-      sessionContext.educationSession?.genderGroup === "PUTRA" &&
-      sessionContext.educationSession?.programLevel === 1 &&
+      (sessionContext.educationSession as any)?.educationTrack === "STUDI_UMUM" &&
+      (sessionContext.educationSession as any)?.genderGroup === "PUTRA" &&
+      (sessionContext.educationSession as any)?.programLevel === 1 &&
       (sessionContext as any).targetUnitId === undefined &&
       Array.isArray(sessionContext.orgUnitIds) &&
       sessionContext.orgUnitIds.length === 0;
