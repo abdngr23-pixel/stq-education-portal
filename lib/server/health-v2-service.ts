@@ -170,7 +170,8 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
       }
 
       // Blocker F: Single source of truth for clientRequestId is context ONLY
-      if ((input as any)?.clientRequestId && context?.clientRequestId && (input as any).clientRequestId !== context.clientRequestId) {
+      const rawInput = input as unknown as Record<string, unknown>;
+      if (rawInput?.clientRequestId && context?.clientRequestId && rawInput.clientRequestId !== context.clientRequestId) {
         throw new Error("CLIENT_REQUEST_ID_MISMATCH: input.clientRequestId does not match context.clientRequestId");
       }
       const clientRequestId = context.clientRequestId ?? null;
@@ -421,7 +422,8 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
       }
 
       // Blocker F: Single source of truth for clientRequestId is context ONLY
-      if ((input as any)?.clientRequestId && context?.clientRequestId && (input as any).clientRequestId !== context.clientRequestId) {
+      const rawInput = input as unknown as Record<string, unknown>;
+      if (rawInput?.clientRequestId && context?.clientRequestId && rawInput.clientRequestId !== context.clientRequestId) {
         throw new Error("CLIENT_REQUEST_ID_MISMATCH: input.clientRequestId does not match context.clientRequestId");
       }
       const clientRequestId = context.clientRequestId ?? null;
