@@ -1,0 +1,595 @@
+/**
+ * Canonical Pendidikan Foundation (Studi Umum & Kepesantrenan)
+ * STQ Education Portal — Milestone 3.3B
+ *
+ * Single Source of Truth for:
+ * - Studi Umum exact subjects, Saturday JP matrix, and PBL 20-week rotation.
+ * - Kepesantrenan exact subjects, daily schedule, Arabic pedagogical levels, and scheduling facts.
+ * - Additive Cohort / Angkatan program-level calculation.
+ * - Attendance status validation (HADIR, IZIN, SAKIT, ALFA - NO MASBUK).
+ */
+
+// ====================================================
+// 1. TRACK & SUBJECT SEPARATION
+// ====================================================
+
+export const EDUCATION_TRACKS = {
+  STUDI_UMUM: "STUDI_UMUM",
+  KEPESANTRENAN: "KEPESANTRENAN",
+} as const;
+
+export type EducationTrackType = (typeof EDUCATION_TRACKS)[keyof typeof EDUCATION_TRACKS];
+
+/**
+ * Studi Umum exact 6 subjects:
+ * - Core / Weekly: Matematika, Bahasa Inggris
+ * - PBL Rotation: IPS, IPA, Bahasa Indonesia, TIK
+ */
+export const CANONICAL_STUDI_UMUM_SUBJECTS = [
+  "Matematika",
+  "Bahasa Inggris",
+  "IPS",
+  "IPA",
+  "Bahasa Indonesia",
+  "TIK",
+] as const;
+
+export const STUDI_UMUM_CORE_SUBJECTS = ["Matematika", "Bahasa Inggris"] as const;
+export const STUDI_UMUM_PBL_SUBJECTS = ["IPS", "IPA", "Bahasa Indonesia", "TIK"] as const;
+
+export type StudiUmumSubject = (typeof CANONICAL_STUDI_UMUM_SUBJECTS)[number];
+export type StudiUmumCoreSubject = (typeof STUDI_UMUM_CORE_SUBJECTS)[number];
+export type StudiUmumPblSubject = (typeof STUDI_UMUM_PBL_SUBJECTS)[number];
+
+/**
+ * Kepesantrenan exact 5 subjects:
+ * 1. Bahasa Arab (KPS-ARB)
+ * 2. Fikih (KPS-FQH)
+ * 3. Tafsir (KPS-TFS)
+ * 4. Aqidah (KPS-AQD)
+ * 5. Tajwid (KPS-TJW)
+ */
+export const CANONICAL_KEPESANTRENAN_SUBJECTS = [
+  "Bahasa Arab",
+  "Fikih",
+  "Tafsir",
+  "Aqidah",
+  "Tajwid",
+] as const;
+
+export type KepesantrenanSubject = (typeof CANONICAL_KEPESANTRENAN_SUBJECTS)[number];
+
+export interface KepesantrenanSubjectDefinition {
+  code: string;
+  name: KepesantrenanSubject;
+  dayOfWeek: "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday";
+  dayNameId: "Senin" | "Selasa" | "Rabu" | "Kamis" | "Jumat";
+  scheduledWindowWita: string;
+}
+
+export const CANONICAL_KEPESANTRENAN_SUBJECT_DEFINITIONS: readonly KepesantrenanSubjectDefinition[] = [
+  {
+    code: "KPS-ARB",
+    name: "Bahasa Arab",
+    dayOfWeek: "Monday",
+    dayNameId: "Senin",
+    scheduledWindowWita: "18:30–19:30 WITA",
+  },
+  {
+    code: "KPS-FQH",
+    name: "Fikih",
+    dayOfWeek: "Tuesday",
+    dayNameId: "Selasa",
+    scheduledWindowWita: "18:30–19:30 WITA",
+  },
+  {
+    code: "KPS-TFS",
+    name: "Tafsir",
+    dayOfWeek: "Wednesday",
+    dayNameId: "Rabu",
+    scheduledWindowWita: "18:30–19:30 WITA",
+  },
+  {
+    code: "KPS-AQD",
+    name: "Aqidah",
+    dayOfWeek: "Thursday",
+    dayNameId: "Kamis",
+    scheduledWindowWita: "18:30–19:30 WITA",
+  },
+  {
+    code: "KPS-TJW",
+    name: "Tajwid",
+    dayOfWeek: "Friday",
+    dayNameId: "Jumat",
+    scheduledWindowWita: "18:30–19:30 WITA",
+  },
+] as const;
+
+export function isStudiUmumSubject(name: string): boolean {
+  return (CANONICAL_STUDI_UMUM_SUBJECTS as readonly string[]).includes(name);
+}
+
+export function isKepesantrenanSubject(nameOrCode: string): boolean {
+  return (
+    (CANONICAL_KEPESANTRENAN_SUBJECTS as readonly string[]).includes(nameOrCode) ||
+    CANONICAL_KEPESANTRENAN_SUBJECT_DEFINITIONS.some(
+      (k) => k.name.toLowerCase() === nameOrCode.toLowerCase() || k.code === nameOrCode
+    )
+  );
+}
+
+// ====================================================
+// 2. COHORT / ANGKATAN & PROGRAM LEVEL DERIVATION
+// ====================================================
+
+export interface ProgramLevelResult {
+  success: boolean;
+  level?: number;
+  error?: string;
+}
+
+/**
+ * Derive active program level from active academic year and cohort start year.
+ * Examples:
+ * - Cohort 2026/2027 (startYear 2026) during TA 2026/2027 => Tingkat 1
+ * - Cohort 2026/2027 during TA 2027/2028 => Tingkat 2
+ * - Cohort 2026/2027 during TA 2028/2029 => Tingkat 3
+ *
+ * Supports both function signatures:
+ * 1. deriveProgramLevel(cohortStartYear: number, activeStartYear: number): number
+ * 2. deriveProgramLevel({ startYear, activeAcademicYear }): ProgramLevelResult
+ */
+export function deriveProgramLevel(cohortStartYear: number, activeStartYear: number): number;
+export function deriveProgramLevel(cohortStartYear: number, activeAcademicYear: string): number;
+export function deriveProgramLevel(params: {
+  startYear: number | null | undefined;
+  activeAcademicYear: string | null | undefined;
+}): ProgramLevelResult;
+export function deriveProgramLevel(
+  startYearOrParams:
+    | { startYear: number | null | undefined; activeAcademicYear: string | null | undefined }
+    | number
+    | null
+    | undefined,
+  maybeActiveYear?: string | number | null
+): number | ProgramLevelResult {
+  if (typeof startYearOrParams === "number" && typeof maybeActiveYear === "number") {
+    return maybeActiveYear - startYearOrParams + 1;
+  }
+
+  if (typeof startYearOrParams === "number" && typeof maybeActiveYear === "string") {
+    const match = maybeActiveYear.match(/^(\d{4})\/(\d{4})$/);
+    const activeStartYear = match ? parseInt(match[1], 10) : parseInt(maybeActiveYear, 10);
+    return activeStartYear - startYearOrParams + 1;
+  }
+
+  const params =
+    startYearOrParams && typeof startYearOrParams === "object"
+      ? startYearOrParams
+      : {
+          startYear: startYearOrParams as number | null | undefined,
+          activeAcademicYear: maybeActiveYear as string | null | undefined,
+        };
+
+  const { startYear, activeAcademicYear } = params;
+
+  if (!startYear || typeof startYear !== "number" || startYear < 2000 || startYear > 2100) {
+    return {
+      success: false,
+      error: "COHORT_START_YEAR_INVALID: Tahun masuk angkatan tidak valid atau belum diisi",
+    };
+  }
+
+  if (!activeAcademicYear || typeof activeAcademicYear !== "string") {
+    return {
+      success: false,
+      error: "ACTIVE_ACADEMIC_YEAR_REQUIRED: Tahun ajaran aktif wajib ditentukan",
+    };
+  }
+
+  const match = activeAcademicYear.match(/^(\d{4})\/(\d{4})$/);
+  if (!match) {
+    return {
+      success: false,
+      error: `INVALID_ACADEMIC_YEAR_FORMAT: Format tahun ajaran '${activeAcademicYear}' harus YYYY/YYYY (misal 2026/2027)`,
+    };
+  }
+
+  const activeStartYear = parseInt(match[1], 10);
+  const diff = activeStartYear - startYear;
+  const level = diff + 1;
+
+  if (level < 1 || level > 3) {
+    return {
+      success: false,
+      error: `COHORT_OUT_OF_PROGRAM_BOUNDS: Angkatan tahun ${startYear} berada di luar rentang aktif program 3 tahun untuk TA ${activeAcademicYear} (Tingkat terhitung: ${level})`,
+    };
+  }
+
+  return {
+    success: true,
+    level,
+  };
+}
+
+// ====================================================
+// 3. STUDI UMUM — SATURDAY SCHEDULE & JP MATRIX
+// ====================================================
+
+export interface StudiUmumJpSlot {
+  jp: 1 | 2 | 3;
+  timeRangeWita: string;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+}
+
+const JP_SLOTS_DATA: StudiUmumJpSlot[] = [
+  {
+    jp: 1,
+    timeRangeWita: "08:00–09:20 WITA",
+    startTime: "08:00",
+    endTime: "09:20",
+    durationMinutes: 80,
+  },
+  {
+    jp: 2,
+    timeRangeWita: "09:35–10:55 WITA",
+    startTime: "09:35",
+    endTime: "10:55",
+    durationMinutes: 80,
+  },
+  {
+    jp: 3,
+    timeRangeWita: "11:05–12:25 WITA",
+    startTime: "11:05",
+    endTime: "12:25",
+    durationMinutes: 80,
+  },
+];
+
+export const STUDI_UMUM_JP_SLOTS: StudiUmumJpSlot[] & {
+  JP1: StudiUmumJpSlot;
+  JP2: StudiUmumJpSlot;
+  JP3: StudiUmumJpSlot;
+} = Object.assign([...JP_SLOTS_DATA], {
+  JP1: JP_SLOTS_DATA[0],
+  JP2: JP_SLOTS_DATA[1],
+  JP3: JP_SLOTS_DATA[2],
+});
+
+export const STUDI_UMUM_SCHEDULE_MATRIX: Record<1 | 2 | 3, Record<1 | 2 | 3, string>> = {
+  1: {
+    1: "Matematika",
+    2: "Bahasa Inggris",
+    3: "IPS",
+  },
+  2: {
+    1: "IPA",
+    2: "Bahasa Indonesia",
+    3: "TIK",
+  },
+  3: {
+    1: "TIK",
+    2: "Matematika",
+    3: "IPA",
+  },
+};
+
+export const STUDI_UMUM_JP_MATRIX = STUDI_UMUM_SCHEDULE_MATRIX;
+
+// ====================================================
+// 4. STUDI UMUM — PBL 20-WEEK ROTATION
+// ====================================================
+
+export const TOTAL_SEMESTER_SATURDAYS = 20;
+
+export interface PblMeetingResolution {
+  subject: StudiUmumPblSubject;
+  blockNumber: 1 | 2 | 3 | 4;
+  weekInBlock: 1 | 2 | 3 | 4 | 5;
+  pblPhase: "THEORY" | "PROJECT";
+  phase: "TEORI" | "PROYEK";
+  isProjectWeek: boolean;
+}
+
+export function resolvePblMeeting(meetingNumber: number): PblMeetingResolution {
+  if (
+    typeof meetingNumber !== "number" ||
+    !Number.isInteger(meetingNumber) ||
+    meetingNumber < 1 ||
+    meetingNumber > TOTAL_SEMESTER_SATURDAYS
+  ) {
+    throw new Error(
+      `INVALID_PBL_MEETING_NUMBER: Nomor pertemuan semester (${meetingNumber}) tidak valid. Harus berada di rentang 1 sampai 20.`
+    );
+  }
+
+  let subject: StudiUmumPblSubject;
+  let blockNumber: 1 | 2 | 3 | 4;
+
+  if (meetingNumber >= 1 && meetingNumber <= 5) {
+    subject = "IPS";
+    blockNumber = 1;
+  } else if (meetingNumber >= 6 && meetingNumber <= 10) {
+    subject = "IPA";
+    blockNumber = 2;
+  } else if (meetingNumber >= 11 && meetingNumber <= 15) {
+    subject = "Bahasa Indonesia";
+    blockNumber = 3;
+  } else {
+    subject = "TIK";
+    blockNumber = 4;
+  }
+
+  const weekInBlock = (((meetingNumber - 1) % 5) + 1) as 1 | 2 | 3 | 4 | 5;
+  const isProjectWeek = weekInBlock === 5;
+  const pblPhase = isProjectWeek ? "PROJECT" : "THEORY";
+  const phase = isProjectWeek ? "PROYEK" : "TEORI";
+
+  return {
+    subject,
+    blockNumber,
+    weekInBlock,
+    pblPhase,
+    phase,
+    isProjectWeek,
+  };
+}
+
+export interface StudiUmumScheduleResult {
+  track: "STUDI_UMUM";
+  jp: 1 | 2 | 3;
+  programLevel: 1 | 2 | 3;
+  semesterMeetingNumber: number;
+  timeSlot: string;
+  startTime: string;
+  endTime: string;
+  type: "CORE" | "PBL";
+  subject: StudiUmumSubject;
+  pblPhase?: "THEORY" | "PROJECT";
+  pblBlockNumber?: 1 | 2 | 3 | 4;
+  pblWeekInBlock?: 1 | 2 | 3 | 4 | 5;
+  isProjectWeek?: boolean;
+}
+
+export function resolveStudiUmumSchedule(level: number, jp: number): string;
+export function resolveStudiUmumSchedule(params: {
+  programLevel: number;
+  jp: number;
+  semesterMeetingNumber: number;
+}): StudiUmumScheduleResult;
+export function resolveStudiUmumSchedule(
+  paramsOrLevel: { programLevel: number; jp: number; semesterMeetingNumber: number } | number,
+  maybeJp?: number
+): string | StudiUmumScheduleResult {
+  if (typeof paramsOrLevel === "number" && typeof maybeJp === "number") {
+    return STUDI_UMUM_SCHEDULE_MATRIX[paramsOrLevel as 1 | 2 | 3]?.[maybeJp as 1 | 2 | 3] || "Matematika";
+  }
+
+  const params = paramsOrLevel as { programLevel: number; jp: number; semesterMeetingNumber: number };
+  const { programLevel, jp, semesterMeetingNumber } = params;
+
+  if (![1, 2, 3].includes(programLevel)) {
+    throw new Error(`INVALID_PROGRAM_LEVEL: Tingkat program (${programLevel}) harus 1, 2, atau 3.`);
+  }
+
+  if (![1, 2, 3].includes(jp)) {
+    throw new Error(`INVALID_JP_SLOT: Jam Pelajaran (${jp}) harus 1, 2, atau 3.`);
+  }
+
+  if (
+    typeof semesterMeetingNumber !== "number" ||
+    !Number.isInteger(semesterMeetingNumber) ||
+    semesterMeetingNumber < 1 ||
+    semesterMeetingNumber > TOTAL_SEMESTER_SATURDAYS
+  ) {
+    throw new Error(
+      `INVALID_SEMESTER_MEETING_NUMBER: Nomor pertemuan semester (${semesterMeetingNumber}) harus antara 1 dan 20.`
+    );
+  }
+
+  const jpInfo =
+    jp === 1
+      ? STUDI_UMUM_JP_SLOTS.JP1
+      : jp === 2
+      ? STUDI_UMUM_JP_SLOTS.JP2
+      : STUDI_UMUM_JP_SLOTS.JP3;
+
+  const subject = STUDI_UMUM_SCHEDULE_MATRIX[programLevel as 1 | 2 | 3][jp as 1 | 2 | 3];
+  const isPblSubject = (STUDI_UMUM_PBL_SUBJECTS as readonly string[]).includes(subject);
+
+  if (isPblSubject) {
+    const pbl = resolvePblMeeting(semesterMeetingNumber);
+    return {
+      track: "STUDI_UMUM",
+      jp: jp as 1 | 2 | 3,
+      programLevel: programLevel as 1 | 2 | 3,
+      semesterMeetingNumber,
+      timeSlot: jpInfo.timeRangeWita,
+      startTime: jpInfo.startTime,
+      endTime: jpInfo.endTime,
+      type: "PBL",
+      subject: pbl.subject,
+      pblPhase: pbl.pblPhase,
+      pblBlockNumber: pbl.blockNumber,
+      pblWeekInBlock: pbl.weekInBlock,
+      isProjectWeek: pbl.isProjectWeek,
+    };
+  }
+
+  return {
+    track: "STUDI_UMUM",
+    jp: jp as 1 | 2 | 3,
+    programLevel: programLevel as 1 | 2 | 3,
+    semesterMeetingNumber,
+    timeSlot: jpInfo.timeRangeWita,
+    startTime: jpInfo.startTime,
+    endTime: jpInfo.endTime,
+    type: "CORE",
+    subject: subject as StudiUmumSubject,
+  };
+}
+
+// ====================================================
+// 5. KEPESANTRENAN — PEDAGOGICAL LEVELS & FACTS
+// ====================================================
+
+export const KEPESANTRENAN_ARABIC_LEVELS = [
+  "TINGKAT_1",
+  "TINGKAT_2",
+  "TINGKAT_3",
+] as const;
+
+export type KepesantrenanArabicLevel = (typeof KEPESANTRENAN_ARABIC_LEVELS)[number];
+
+export const KEPESANTRENAN_DAILY_SCHEDULE: Record<
+  1 | 2 | 3 | 4 | 5,
+  { subject: KepesantrenanSubject; timeRange: string; dayName: string }
+> = {
+  1: { subject: "Bahasa Arab", timeRange: "18:30 - 19:30 WITA", dayName: "Senin" },
+  2: { subject: "Fikih", timeRange: "18:30 - 19:30 WITA", dayName: "Selasa" },
+  3: { subject: "Tafsir", timeRange: "18:30 - 19:30 WITA", dayName: "Rabu" },
+  4: { subject: "Aqidah", timeRange: "18:30 - 19:30 WITA", dayName: "Kamis" },
+  5: { subject: "Tajwid", timeRange: "18:30 - 19:30 WITA", dayName: "Jumat" },
+};
+
+/**
+ * Current Scheduling Facts (Putra & Putri)
+ * IMPORTANT: These are business facts for schedule planning, NOT authorization keys.
+ * Authorization is strictly relational via Staff, TeachingAssignment, Capability, Scope.
+ */
+export const KEPESANTRENAN_SCHEDULED_FACTS = {
+  putra: {
+    bahasaArab: {
+      level1Teacher: "Ust. H. Jupri, Lc.",
+      level2Teacher: "Ust. H. Jupri, Lc.",
+      level3Teacher: "Ust. H. Jupri, Lc.",
+    },
+    fikih: {
+      kitab: null,
+      teacher: "Ust. Razan",
+    },
+    tafsir: {
+      kitab: "Tafsir Jalalain",
+      teacher: "Ust. Mujaddid",
+    },
+    aqidah: {
+      kitab: null,
+      teacher: "Ust. Alwan",
+    },
+    tajwid: {
+      kitab: "Matan Tuhfatul Athfal",
+      teacher: "Ust. Mujaddid",
+    },
+  },
+  putri: {
+    bahasaArab: {
+      level1Teacher: "Usth. Fatimah, S.Pd.",
+      level2Teacher: "Usth. Fatimah, S.Pd.",
+      level3Teacher: "Usth. Fatimah, S.Pd.",
+    },
+    fikih: {
+      kitab: null,
+      teacher: "Ustazah Lisa Dwina Fitri",
+    },
+    tafsir: {
+      kitab: "Tafsir Jalalain",
+      teacher: "Ustazah Lisa Dwina Fitri",
+    },
+    aqidah: {
+      kitab: null,
+      teacher: "Ustazah Lisa Dwina Fitri",
+    },
+    tajwid: {
+      kitab: "Matan Tuhfatul Athfal",
+      teacher: "Ustazah Lisa Dwina Fitri",
+    },
+  },
+  PUTRA: {
+    "KPS-ARB": {
+      subject: "Bahasa Arab",
+      levels: {
+        TINGKAT_1: {
+          teacherName: "Ust. H. Jupri, Lc.",
+          referenceBook: "Durus al-Lughah",
+        },
+        TINGKAT_2: {
+          teacherName: "Ust. H. Jupri, Lc.",
+          referenceBook: "Durus al-Lughah",
+        },
+        TINGKAT_3: {
+          teacherName: "Ust. H. Jupri, Lc.",
+          referenceBook: "Durus al-Lughah",
+        },
+      },
+    },
+    "KPS-FQH": {
+      subject: "Fikih",
+      teacherName: "Ust. Razan",
+      referenceBook: null,
+    },
+    "KPS-TFS": {
+      subject: "Tafsir",
+      teacherName: "Ust. Mujaddid",
+      referenceBooks: ["Tafsir Terjemahan Per Kata", "Tafsir Jalalain"],
+    },
+    "KPS-AQD": {
+      subject: "Aqidah",
+      teacherName: "Ust. Alwan",
+      referenceBook: null,
+    },
+    "KPS-TJW": {
+      subject: "Tajwid",
+      teacherName: "Ust. Mujaddid",
+      referenceBook: "Matan Tuhfatul Athfal",
+    },
+  },
+  PUTRI: {
+    teacherName: "Ustazah Lisa Dwina Fitri",
+    subjects: ["KPS-ARB", "KPS-FQH", "KPS-TFS", "KPS-AQD", "KPS-TJW"],
+  },
+} as const;
+
+export function resolveKepesantrenanDaySubject(day: number | string): string | null {
+  if (typeof day === "number") {
+    return KEPESANTRENAN_DAILY_SCHEDULE[day as 1 | 2 | 3 | 4 | 5]?.subject || null;
+  }
+  const norm = day.trim().toLowerCase();
+  if (norm === "1" || norm === "monday" || norm === "senin") return "Bahasa Arab";
+  if (norm === "2" || norm === "tuesday" || norm === "selasa") return "Fikih";
+  if (norm === "3" || norm === "wednesday" || norm === "rabu") return "Tafsir";
+  if (norm === "4" || norm === "thursday" || norm === "kamis") return "Aqidah";
+  if (norm === "5" || norm === "friday" || norm === "jumat") return "Tajwid";
+  return null;
+}
+
+// ====================================================
+// 6. KEPESANTRENAN STUDENT ATTENDANCE STATUSES
+// ====================================================
+
+export const KEPESANTRENAN_APPROVED_ATTENDANCE_STATUSES = [
+  "HADIR",
+  "IZIN",
+  "SAKIT",
+  "ALFA",
+] as const;
+
+export const APPROVED_KEPESANTRENAN_ATTENDANCE_STATUSES = KEPESANTRENAN_APPROVED_ATTENDANCE_STATUSES;
+export const KEPESANTRENAN_FORBIDDEN_ATTENDANCE_STATUSES = ["MASBUK"] as const;
+
+export type ApprovedKepesantrenanAttendanceStatus =
+  (typeof KEPESANTRENAN_APPROVED_ATTENDANCE_STATUSES)[number];
+
+export function isApprovedKepesantrenanAttendanceStatus(status: string): boolean {
+  return (KEPESANTRENAN_APPROVED_ATTENDANCE_STATUSES as readonly string[]).includes(status);
+}
+
+// ====================================================
+// 7. TEACHER ACCOUNT NAMING CONVENTION
+// ====================================================
+
+export const TEACHER_ACCOUNT_PREFIX = "guru.";
+export function getExpectedTeacherUsername(subjectSlug: string): string {
+  return `${TEACHER_ACCOUNT_PREFIX}${subjectSlug.toLowerCase().replace(/\s+/g, "")}`;
+}

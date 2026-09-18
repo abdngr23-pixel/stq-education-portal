@@ -33,9 +33,14 @@ export async function inputNilaiAction(input: InputNilaiData) {
   }
 
   try {
-    const guruStaff = session.staffId
-      ? await prisma.staff.findUnique({ where: { id: session.staffId } })
-      : await prisma.staff.findFirst({ where: { roleStaff: "GA" } });
+    if (!session.staffId) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Akun Anda tidak terhubung ke data staf pengajar resmi.",
+      };
+    }
+
+    const guruStaff = await prisma.staff.findUnique({ where: { id: session.staffId } });
 
     if (!guruStaff) {
       return { success: false, message: "Data staf pengajar tidak ditemukan." };

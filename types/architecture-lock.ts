@@ -392,6 +392,30 @@ export type HealthCapabilityCode =
   (typeof HEALTH_CAPABILITIES)[keyof typeof HEALTH_CAPABILITIES];
 
 /**
+ * Canonical Academic / Pendidikan Domain Granular Capabilities
+ * Formally adhering to <namespace>.<entity>.<action> nomenclature.
+ * Note: New capabilities default to PROPOSED_TBD until verified in production.
+ */
+export const ACADEMIC_CAPABILITIES = {
+  SCHEDULE_READ: "academic.schedule.read",
+  SESSION_START: "academic.session.start",
+  MATERIAL_RECORD: "academic.material.record",
+  SESSION_RECORD_MATERI: "academic.session.record_materi",
+  ATTENDANCE_RECORD: "academic.attendance.record",
+  SCORE_INPUT: "academic.score.input",
+  SCORE_READ: "academic.score.read",
+  RAPOR_PRINT: "academic.rapor.print",
+  CURRICULUM_MANAGE: "academic.curriculum.manage",
+  SESSION_COMPLETE: "academic.session.complete",
+  COHORT_MANAGE: "academic.cohort.manage",
+  TEACHING_ASSIGNMENT_MANAGE: "academic.teaching_assignment.manage",
+  SESSION_VIEW: "academic.session.view",
+} as const;
+
+export type AcademicCapabilityCode =
+  (typeof ACADEMIC_CAPABILITIES)[keyof typeof ACADEMIC_CAPABILITIES];
+
+/**
  * Candidate Prisma Schema Relational Parity Representation
  * Exact 1:1 structural representation for future Phase A additive schema.
  */
