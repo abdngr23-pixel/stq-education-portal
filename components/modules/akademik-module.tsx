@@ -9,11 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { inputNilaiAction, getNilaiAkademikListAction } from "@/app/actions/akademik";
 import {
-  getMataPelajaranKepesantrenanAction,
-  inputNilaiKepesantrenanAction,
   getNilaiKepesantrenanSantriAction,
 } from "@/app/actions/kepesantrenan";
-import { konversiPredikatNilai, konversiAngkaKeHurufKepesantrenan as konversiAngkaKeHuruf } from "@/lib/educational-rules";
+import { konversiPredikatNilai } from "@/lib/educational-rules";
 import { PrintRapor } from "@/components/print/print-rapor";
 import { JenisNilai } from "@prisma/client";
 import {
@@ -26,7 +24,6 @@ import {
   BookOpen,
   ShieldAlert,
   BookMarked,
-  Save,
   Check,
   Search,
   Calendar,
@@ -298,18 +295,7 @@ export function AkademikModule({
   };
 
   // Kepesantrenan States
-  const [kepesantrenanMapelList, setKepesantrenanMapelList] = useState<
-    Array<{ id: string; kodeMapel: string; nama: string; guru?: { nama: string } | null }>
-  >([]);
   const [selectedKpsKode, setSelectedKpsKode] = useState<string>("KPS-ARB");
-  const [selectedKpsSantriId, setSelectedKpsSantriId] = useState<string>("");
-  const effectiveKpsSantriId =
-    selectedKpsSantriId && santriList.some((s) => s.id === selectedKpsSantriId)
-      ? selectedKpsSantriId
-      : santriList[0]?.id || "";
-  const [inputKpsAngka, setInputKpsAngka] = useState<string>("");
-  const [catatanKps, setCatatanKps] = useState<string>("");
-  const [selectedKpsJenis, setSelectedKpsJenis] = useState<JenisNilai>("TUGAS");
   const [kpsNilaiList, setKpsNilaiList] = useState<
     Array<{
       id: string;
@@ -328,21 +314,9 @@ export function AkademikModule({
   >([]);
   const [kpsSearch, setKpsSearch] = useState<string>("");
 
-  // Load data mapel & nilai kepesantrenan dari DB
+  // Load nilai kepesantrenan dari DB untuk kebutuhan historis
   useEffect(() => {
     let isMounted = true;
-    getMataPelajaranKepesantrenanAction().then((res) => {
-      if (isMounted && res.success && res.data && res.data.length > 0) {
-        setKepesantrenanMapelList(
-          res.data.map((m) => ({
-            id: m.id,
-            kodeMapel: m.kodeMapel,
-            nama: m.nama,
-            guru: m.guru,
-          }))
-        );
-      }
-    });
 
     getNilaiKepesantrenanSantriAction({}).then((res) => {
       if (isMounted && res.success && res.data) {
@@ -355,67 +329,6 @@ export function AkademikModule({
     };
   }, []);
 
-  const handleSaveKepesantrenan = () => {
-    setFeedback(null);
-    if (!["KS", "MT", "PH", "ADM"].includes(userRole)) {
-      setFeedback({
-        type: "error",
-        message: `Akses Ditolak: Peran '${userRole}' tidak berwenang mengelola nilai Kepesantrenan (khusus KS, MT, PH).`,
-      });
-      return;
-    }
-
-    const santriObj = santriList.find((s) => s.id === effectiveKpsSantriId);
-    if (!santriObj) {
-      setFeedback({ type: "error", message: "Silakan pilih santri terlebih dahulu." });
-      return;
-    }
-
-    if (!inputKpsAngka.trim()) {
-      setFeedback({ type: "error", message: "Nilai angka kepesantrenan wajib diisi." });
-      return;
-    }
-
-    const angkaNum = parseFloat(inputKpsAngka);
-    if (isNaN(angkaNum) || angkaNum < 0 || angkaNum > 100) {
-      setFeedback({ type: "error", message: "Nilai angka harus berada dalam rentang 0 hingga 100." });
-      return;
-    }
-
-    const mapelObj = kepesantrenanMapelList.find((m) => m.kodeMapel === selectedKpsKode);
-    const mapelId = mapelObj?.id || selectedKpsKode;
-
-    startTransition(async () => {
-      const res = await inputNilaiKepesantrenanAction({
-        santriId: santriObj.id,
-        mapelId: mapelId,
-        semester: selectedSemester,
-        tahunAjaran: selectedTahunAjaran,
-        jenis: selectedKpsJenis,
-        angka: angkaNum,
-        catatan: catatanKps,
-      });
-
-      if (res.success) {
-        const huruf = konversiAngkaKeHuruf(angkaNum);
-        setFeedback({
-          type: "success",
-          message: res.message || `Nilai kepesantrenan untuk ${santriObj.nama} berhasil disimpan (${angkaNum} - ${huruf}).`,
-        });
-        setInputKpsAngka("");
-        setCatatanKps("");
-        const refreshRes = await getNilaiKepesantrenanSantriAction({});
-        if (refreshRes.success && refreshRes.data) {
-          setKpsNilaiList(refreshRes.data);
-        }
-      } else {
-        setFeedback({
-          type: "error",
-          message: res.message || "Gagal menyimpan nilai materi kepesantrenan.",
-        });
-      }
-    });
-  };
 
   return (
     <div className="space-y-6">
@@ -1344,137 +1257,39 @@ export function AkademikModule({
                 </CardContent>
               </Card>
 
-              {/* Formulir Input Nilai Kepesantrenan */}
+              {/* PENILAIAN KEPESANTRENAN (DEFERRED IN M3.3B) */}
               <Card rounded="3xl" className="border border-slate-200 shadow-xs bg-white">
                 <CardHeader className="pb-3 border-b border-slate-100">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
                       <CardTitle className="text-sm sm:text-base font-bold text-slate-900 font-heading flex items-center gap-2">
-                        <BookMarked className="h-4 w-4 text-[#0E7C3A]" />
-                        Formulir Evaluasi Nilai: {KEPESANTRENAN_INFO.find((k) => k.kode === selectedKpsKode)?.nama} ({selectedKpsKode})
+                        <BookMarked className="h-4 w-4 text-slate-400" />
+                        PENILAIAN KEPESANTRENAN
                       </CardTitle>
                       <CardDescription className="text-xs text-slate-500">
-                        Input nilai santri menggunakan primary key riil database. Predikat huruf otomatis dihitung server.
+                        Belum diaktifkan — format penilaian belum ditetapkan.
                       </CardDescription>
                     </div>
+                    <Badge variant="neutral" size="sm" className="font-semibold text-xs">
+                      <Lock className="h-3 w-3 inline mr-1" />
+                      Penilaian Ditangguhkan
+                    </Badge>
                   </div>
                 </CardHeader>
-                <CardContent className="pt-4 space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    {/* Pilih Santri */}
-                    <div>
-                      <label className="text-[11px] font-bold text-slate-500 block mb-1 uppercase tracking-wider">
-                        Pilih Santri
-                      </label>
-                      <select
-                        value={effectiveKpsSantriId}
-                        onChange={(e) => setSelectedKpsSantriId(e.target.value)}
-                        className="w-full min-h-[42px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-semibold"
-                      >
-                        {santriList.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.nama} ({s.kelas}) - {s.nis}
-                          </option>
-                        ))}
-                      </select>
+                <CardContent className="pt-5 pb-6">
+                  <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 text-center max-w-lg mx-auto space-y-3">
+                    <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mx-auto">
+                      <Lock className="h-6 w-6" />
                     </div>
-
-                    {/* Mata Pelajaran */}
-                    <div>
-                      <label className="text-[11px] font-bold text-slate-500 block mb-1 uppercase tracking-wider">
-                        Mata Pelajaran
-                      </label>
-                      <select
-                        value={selectedKpsKode}
-                        onChange={(e) => setSelectedKpsKode(e.target.value)}
-                        className="w-full min-h-[42px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-semibold"
-                      >
-                        {KEPESANTRENAN_INFO.map((k) => (
-                          <option key={k.kode} value={k.kode}>
-                            {k.kode} - {k.nama}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Jenis Evaluasi */}
-                    <div>
-                      <label className="text-[11px] font-bold text-slate-500 block mb-1 uppercase tracking-wider">
-                        Jenis Evaluasi
-                      </label>
-                      <select
-                        value={selectedKpsJenis}
-                        onChange={(e) => setSelectedKpsJenis(e.target.value as JenisNilai)}
-                        className="w-full min-h-[42px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-semibold"
-                      >
-                        <option value="TUGAS">Tugas / Mutaba&apos;ah</option>
-                        <option value="UH">Ulangan Harian (UH)</option>
-                        <option value="UTS">Ujian Tengah Semester (UTS)</option>
-                        <option value="UAS">Ujian Akhir Semester (UAS)</option>
-                      </select>
-                    </div>
-
-                    {/* Nilai Angka */}
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                          Nilai Angka (0-100)
-                        </label>
-                        {inputKpsAngka && !isNaN(parseFloat(inputKpsAngka)) && (
-                          <Badge
-                            variant={
-                              parseFloat(inputKpsAngka) >= 85
-                                ? "green"
-                                : parseFloat(inputKpsAngka) >= 75
-                                ? "sky"
-                                : "orange"
-                            }
-                            size="sm"
-                            className="font-bold"
-                          >
-                            Predikat: {konversiAngkaKeHuruf(parseFloat(inputKpsAngka))}
-                          </Badge>
-                        )}
-                      </div>
-                      <Input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="1"
-                        placeholder="Contoh: 88"
-                        value={inputKpsAngka}
-                        onChange={(e) => setInputKpsAngka(e.target.value)}
-                        className="min-h-[42px] text-xs sm:text-sm font-bold"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Catatan Pengampu */}
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-500 block mb-1 uppercase tracking-wider">
-                      Catatan Evaluasi / Pengampu (Opsional)
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={catatanKps}
-                      onChange={(e) => setCatatanKps(e.target.value)}
-                      placeholder="Catatan keaktifan santri, setoran hafalan matan, atau pemahaman kaidah..."
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm resize-none"
-                    />
-                  </div>
-
-                  {/* Submit Button */}
-                  <div className="flex justify-end pt-2">
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={handleSaveKepesantrenan}
-                      disabled={isPending || !inputKpsAngka}
-                      className="bg-[#0E7C3A] hover:bg-[#0B642E] text-xs font-bold gap-2 px-6 min-h-[42px]"
-                    >
-                      <Save className="h-4 w-4" />
-                      {isPending ? "Menyimpan Nilai..." : "Simpan Nilai Kepesantrenan"}
-                    </Button>
+                    <h4 className="text-sm font-bold text-slate-800 font-heading">
+                      Penilaian Kepesantrenan Belum Diaktifkan
+                    </h4>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Belum diaktifkan — format penilaian belum ditetapkan. Kebijakan komponen evaluasi, pembobotan, dan pengujian belum difinalisasi oleh pimpinan ma&apos;had.
+                    </p>
+                    <p className="text-[11px] text-slate-400 italic">
+                      Rekapitulasi riwayat nilai terdahulu tetap dapat ditinjau pada tabel di bawah untuk kebutuhan arsip dan kompatibilitas sistem.
+                    </p>
                   </div>
                 </CardContent>
               </Card>

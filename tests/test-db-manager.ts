@@ -3918,6 +3918,17 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
       resultBSuccess && realCasErrorVerified && dbSessVerified && singleAuditStartVerified;
 
     // 24. Verifikasi Real Material Audit Rollback dengan PendidikanV2Service.recordSessionMaterial
+    const baselineSessionSnapshot = await client.$queryRawUnsafe<
+      Array<{
+        materi: string | null;
+        materi_recorded_at: Date | null;
+        materi_recorded_by_user_id: string | null;
+        updated_at: Date;
+      }>
+    >(
+      `SELECT "materi", "materi_recorded_at", "materi_recorded_by_user_id", "updated_at" FROM "education_sessions" WHERE "id" = 'sess-svc-real';`
+    );
+
     const failingAuditPersistence = {
       isPersistent: true as const,
       async recordInTx() {
@@ -3944,13 +3955,24 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
       }
     }
 
-    const dbSessionMateriCheck = await client.$queryRawUnsafe<Array<{ materi: string | null }>>(
-      `SELECT "materi" FROM "education_sessions" WHERE "id" = 'sess-svc-real';`
+    const dbSessionMateriCheck = await client.$queryRawUnsafe<
+      Array<{
+        materi: string | null;
+        materi_recorded_at: Date | null;
+        materi_recorded_by_user_id: string | null;
+        updated_at: Date;
+      }>
+    >(
+      `SELECT "materi", "materi_recorded_at", "materi_recorded_by_user_id", "updated_at" FROM "education_sessions" WHERE "id" = 'sess-svc-real';`
     );
     const realServiceMaterialRollbackVerified =
       realMaterialRollbackThrew &&
+      baselineSessionSnapshot.length === 1 &&
       dbSessionMateriCheck.length === 1 &&
-      dbSessionMateriCheck[0].materi === null;
+      dbSessionMateriCheck[0].materi === baselineSessionSnapshot[0].materi &&
+      dbSessionMateriCheck[0].materi_recorded_at === baselineSessionSnapshot[0].materi_recorded_at &&
+      dbSessionMateriCheck[0].materi_recorded_by_user_id === baselineSessionSnapshot[0].materi_recorded_by_user_id &&
+      new Date(dbSessionMateriCheck[0].updated_at).getTime() === new Date(baselineSessionSnapshot[0].updated_at).getTime();
 
     // 25. Verifikasi Real Batch Attendance Transaction: Otorisasi Per-Target, Integritas Peserta & Audit Rollback
     // 25a. Batch dengan santri bukan peserta ditolak sebelum transaksi
@@ -3981,7 +4003,70 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
     );
     const zeroAttAfterNonPart = dbAttCountAfterNonPart[0]?.count === "0";
 
-    // 25b. Batch dengan audit gagal me-rollback seluruh upsert presensi
+    // 25b. Batch dengan provenance otorisasi berbeda (mixed provenance) gagal closed dan menulis 0 baris
+    let mixedEvalCount = 0;
+    const mixedProvenanceDataProvider: ICanonicalDataProvider = {
+      ...serviceDataProvider,
+      getActiveAssignments: async (userId) => {
+        mixedEvalCount++;
+        const asgId = mixedEvalCount % 2 === 1 ? "asg-unit-alpha" : "asg-unit-beta";
+        return [
+          {
+            id: asgId,
+            userId,
+            positionId: "pos-guru-akademik",
+            positionCode: "GURU_AKADEMIK",
+            positionName: "Guru Akademik",
+            domain: "AKADEMIK",
+            unitId: "ou-pre-kmr-m33b",
+            unitCode: "OU-PRE-KMR-M33B",
+            unitName: "Unit Akademik",
+            status: "ACTIVE",
+            validFrom: new Date(Date.now() - 86400000),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: "academic.attendance.record",
+                scopeType: "GLOBAL",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [],
+          },
+        ];
+      },
+    };
+
+    const mixedService = new PendidikanV2Service({
+      db: client,
+      dataProvider: mixedProvenanceDataProvider,
+    });
+
+    let mixedProvenanceRejected = false;
+    try {
+      await mixedService.recordSessionAttendance(
+        {
+          sessionId: "sess-svc-real",
+          records: [
+            { santriId: "san-pre-m33b", status: "HADIR" },
+            { santriId: "san-pre-m33b-2", status: "IZIN" },
+          ],
+        },
+        { actorUserId: "usr-substitute" }
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("ATTENDANCE_BATCH_MIXED_AUTHORIZATION_PROVENANCE")) {
+        mixedProvenanceRejected = true;
+      }
+    }
+
+    const dbAttCountAfterMixed = await client.$queryRawUnsafe<Array<{ count: string }>>(
+      `SELECT COUNT(*)::text as count FROM "education_session_attendances" WHERE "session_id" = 'sess-svc-real';`
+    );
+    const zeroAttAfterMixed = dbAttCountAfterMixed[0]?.count === "0";
+
+    // 25c. Batch dengan audit gagal me-rollback seluruh upsert presensi
     const failingAttendanceService = new PendidikanV2Service({
       db: client,
       dataProvider: serviceDataProvider,
@@ -4012,7 +4097,7 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
     );
     const zeroAttAfterAuditFail = dbAttCountAfterAuditFail[0]?.count === "0";
 
-    // 25c. Batch sukses mencatat presensi untuk seluruh peserta & menulis audit forensik dengan status diff
+    // 25d. Batch sukses mencatat presensi untuk seluruh peserta & menulis audit forensik dengan status diff
     const attSuccessResult = await serviceB.recordSessionAttendance(
       {
         sessionId: "sess-svc-real",
@@ -4038,20 +4123,63 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
       dbAttRecords[1].status === "IZIN" &&
       dbAttRecords[1].recorded_by_user_id === "usr-substitute";
 
-    const attAuditLog = await client.$queryRawUnsafe<Array<{ id: string; action: string; after_state: any }>>(
-      `SELECT "id", "action", "after_state" FROM "canonical_audit_logs" WHERE "entity_id" = 'sess-svc-real' AND "action" = 'academic.attendance.record';`
+    const attAuditLog = await client.$queryRawUnsafe<Array<{ id: string; action: string; before_state: any; after_state: any }>>(
+      `SELECT "id", "action", "before_state", "after_state" FROM "canonical_audit_logs" WHERE "entity_id" = 'sess-svc-real' AND "action" = 'academic.attendance.record' ORDER BY "created_at" ASC;`
     );
-    const attAuditLogPersisted =
-      attAuditLog.length === 1 &&
-      attAuditLog[0].after_state !== null;
+
+    const firstAuditBefore = typeof attAuditLog[0]?.before_state === "string" ? JSON.parse(attAuditLog[0].before_state) : attAuditLog[0]?.before_state;
+    const firstAuditAfter = typeof attAuditLog[0]?.after_state === "string" ? JSON.parse(attAuditLog[0].after_state) : attAuditLog[0]?.after_state;
+
+    const initialBatchAuditVerified =
+      attAuditLog.length >= 1 &&
+      Array.isArray(firstAuditBefore?.records) &&
+      firstAuditBefore.records.some((r: any) => r.santriId === "san-pre-m33b" && r.status === null) &&
+      firstAuditBefore.records.some((r: any) => r.santriId === "san-pre-m33b-2" && r.status === null) &&
+      Array.isArray(firstAuditAfter?.records) &&
+      firstAuditAfter.records.some((r: any) => r.santriId === "san-pre-m33b" && r.status === "HADIR") &&
+      firstAuditAfter.records.some((r: any) => r.santriId === "san-pre-m33b-2" && r.status === "IZIN");
+
+    // 25e. Pengujian update: Santri A diubah HADIR -> SAKIT
+    const updateSuccessResult = await serviceB.recordSessionAttendance(
+      {
+        sessionId: "sess-svc-real",
+        records: [{ santriId: "san-pre-m33b", status: "SAKIT" }],
+      },
+      { actorUserId: "usr-substitute" }
+    );
+
+    const dbAttAfterUpdate = await client.$queryRawUnsafe<Array<{ santri_id: string; status: string }>>(
+      `SELECT "santri_id", "status"::text FROM "education_session_attendances" WHERE "session_id" = 'sess-svc-real' AND "santri_id" = 'san-pre-m33b';`
+    );
+    const dbUpdateVerified = dbAttAfterUpdate.length === 1 && dbAttAfterUpdate[0].status === "SAKIT";
+
+    const updateAuditLog = await client.$queryRawUnsafe<Array<{ id: string; action: string; before_state: any; after_state: any }>>(
+      `SELECT "id", "action", "before_state", "after_state" FROM "canonical_audit_logs" WHERE "entity_id" = 'sess-svc-real' AND "action" = 'academic.attendance.record' ORDER BY "created_at" DESC LIMIT 1;`
+    );
+    const latestAuditBefore = typeof updateAuditLog[0]?.before_state === "string" ? JSON.parse(updateAuditLog[0].before_state) : updateAuditLog[0]?.before_state;
+    const latestAuditAfter = typeof updateAuditLog[0]?.after_state === "string" ? JSON.parse(updateAuditLog[0].after_state) : updateAuditLog[0]?.after_state;
+
+    const updateAuditVerified =
+      updateSuccessResult.success === true &&
+      dbUpdateVerified &&
+      updateAuditLog.length === 1 &&
+      Array.isArray(latestAuditBefore?.records) &&
+      latestAuditBefore.records[0]?.santriId === "san-pre-m33b" &&
+      latestAuditBefore.records[0]?.status === "HADIR" &&
+      Array.isArray(latestAuditAfter?.records) &&
+      latestAuditAfter.records[0]?.santriId === "san-pre-m33b" &&
+      latestAuditAfter.records[0]?.status === "SAKIT";
 
     const realServiceAttendanceBatchVerified =
       nonParticipantBatchRejected &&
       zeroAttAfterNonPart &&
+      mixedProvenanceRejected &&
+      zeroAttAfterMixed &&
       auditFailBatchRejected &&
       zeroAttAfterAuditFail &&
       attendancePersistedInDb &&
-      attAuditLogPersisted;
+      initialBatchAuditVerified &&
+      updateAuditVerified;
 
     const simulationSuccess =
       pr8ExactShaVerified &&

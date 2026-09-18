@@ -1,5 +1,5 @@
 # Milestone 3.3B: Pendidikan Foundation (Studi Umum + Kepesantrenan)
-**Document Version:** 1.2.0 (Remediation Round 2)  
+**Document Version:** 1.3.0 (Final Micro-Fix: Assessment Deferred + Audit Provenance Closure)  
 **Branch:** `architecture/milestone3-3b-pendidikan-foundation`  
 **Base Commit:** `0e12ae9e151577b5caf10b2d3a11c9c2de81e6d9`  
 **PR #8 Immutable:** `9068cae5587b7219c394c5c25bf0de07a15b0726`  
@@ -10,15 +10,14 @@
 
 Milestone 3.3B establishes the formal **Pendidikan Foundation** for the STQ Education Portal, providing complete information architecture, domain modeling, and authorization for both **Studi Umum** (General Studies) and **Kepesantrenan** (Islamic Boarding Studies).
 
-Remediation Round 2 achieves complete **Runtime Honesty**, closes remaining **Trust Boundaries**, and provides **Real Service Integration Verification** against isolated PostgreSQL:
-- **UI Runtime Honesty:** Removed all fake React state mutations and mock rosters. Teacher actions and rosters are disabled with clear notices until M3.3C activation.
-- **Fail-Closed Unit-Level Academic Containment:** Acknowledged that Prisma models currently lack an explicit relation between `EducationSession` / `EducationTeachingAssignment` and `OrgUnit`. UNIT-level academic containment remains strictly unresolved and fails closed. Cross-domain borrowing of `halaqohId` or `kamarId` into academic `orgUnitIds` is prohibited.
-- **Participant Roster & Gender Integrity:** The canonical evaluator strictly validates `EducationSessionParticipant` enrollment and rejects cross-gender evaluations (`PUTRA` vs `PUTRI`).
-- **Canonical Human Executor Verification:** Server-side mutations fail closed if `executor.userId` is empty or inactive, eliminating fabrication fallbacks.
-- **Batch Attendance Atomic Authorization & Forensic Audit:** Attendance mutations authorize each individual santri target prior to database transaction opening, enforce participant membership, track complete before/after status diffs, and guarantee full rollback on audit failure.
-- **Real Service PostgreSQL Integration:** Integration tests run actual `PendidikanV2Service` methods (CAS concurrency, audit failure rollback, batch attendance) against isolated PostgreSQL database instances.
-- **Zero Production Migrations, Zero Production Writes:** Database changes are additive, verified in isolated PostgreSQL simulations.
-- **PR #8 Immutability:** The Tahfizh quality evaluation engine branch remains 100% immutable at commit `9068cae5587b7219c394c5c25bf0de07a15b0726`.
+The Final Micro-Fix enforces complete **Assessment Deferral** and **Batch Audit Provenance Closure**:
+- **Canonical Kepesantrenan Assessment Formally Deferred:** Business Owner has not finalized assessment frequency, components, test structures, UH/UTS/UAS policies, or report aggregation formulas. All new Kepesantrenan assessment mutation UI is disabled (`Belum diaktifkan — format penilaian belum ditetapkan`). No new scores are created or submitted from the canonical workflow. Legacy `NilaiAkademik` structures and historical records remain preserved and readable for backward compatibility.
+- **Batch Attendance Authorization Provenance Consistency:** Attendance batch mutations authorize each distinct santri target and require all targets in the batch to resolve to the exact same canonical provenance (`assignmentId`, `positionCode`, `capabilityCode`, `scopeType`, `unitId`). Mixed-provenance batches fail closed with `ATTENDANCE_BATCH_MIXED_AUTHORIZATION_PROVENANCE` with zero database writes.
+- **UI Runtime Honesty:** Teacher session actions, lesson material logging, attendance rosters, and assessment forms are honestly disabled pending formal activation.
+- **Fail-Closed Unit-Level Academic Containment:** Prisma models lack an explicit relation between academic sessions/assignments and `OrgUnit`. UNIT-level academic containment remains unresolved and fails closed. Cross-domain borrowing of `halaqohId` or `kamarId` into academic `orgUnitIds` is strictly prohibited.
+- **Real Service PostgreSQL Integration:** Tests execute actual `PendidikanV2Service` methods (CAS concurrency, audit failure rollback, batch attendance, forensic before/after state diffs) against isolated PostgreSQL database instances.
+- **Zero Production Migrations, Zero Production Writes:** Additive schema verified in isolated PostgreSQL simulations.
+- **PR #8 Immutability:** PR #8 remains 100% immutable at commit `9068cae5587b7219c394c5c25bf0de07a15b0726`.
 
 ---
 
@@ -238,16 +237,33 @@ model EducationSessionParticipant {
 When recording session attendance:
 1. **Canonical Human Executor Verification:** Rejects unauthenticated or inactive actor contexts (`HUMAN_EXECUTOR_VERIFICATION_FAILED`).
 2. **Per-Target Pre-Transaction Authorization:** The service validates canonical authorization (`academic.attendance.record`) for every santri in the batch *prior* to opening the database transaction. If any santri evaluation fails or is unenrolled, the entire batch is rejected.
-3. **Forensic Before/After State Capture:** The service queries existing attendance records prior to upserting, recording complete before/after status diffs (`{ records: [{ santriId, status }] }`) in the audit payload.
-4. **All-or-Nothing Transaction:** If an audit recording error occurs, all attendance upserts in the transaction roll back.
+3. **Uniform Canonical Provenance Consistency:** Requires every target santri evaluation in the batch to resolve to the exact same canonical authorization provenance (`assignmentId`, `positionCode`, `capabilityCode`, `scopeType`, `unitId`). If multiple targets resolve to divergent provenances, the service fails closed with `ATTENDANCE_BATCH_MIXED_AUTHORIZATION_PROVENANCE` before the database transaction opens, guaranteeing zero database writes and preserving single-audit semantic integrity.
+4. **Forensic Before/After State Capture:** The service queries existing attendance records prior to upserting, recording complete before/after status diffs (`{ records: [{ santriId, status }] }`) in the audit payload.
+5. **All-or-Nothing Transaction:** If an audit recording error occurs, all attendance upserts in the transaction roll back atomically.
 
 ---
 
 ## 9. Deferred Policies
 
-1. **Assessment & Grading:** KKM thresholds, per-meeting scores, UTS/UAS weighting, and grade calculation algorithms remain deferred. No passing marks are invented.
-2. **Substitute Teacher Authorization:** The substitute authorization matrix remains `PROPOSED_TBD` pending formal administrative policy.
-3. **UI Session Action Activation:** Dynamic UI session lifecycle mutations (starting session, inputting material, taking attendance) remain disabled in `AkademikModule` until Milestone 3.3C activation.
+### 9.1 Canonical Kepesantrenan Assessment Policy: Formally Deferred
+- **Canonical Status:** DEFERRED.
+- **Legacy Compatibility:** Existing legacy `NilaiAkademik` structures and historical database records are preserved intact for compatibility and historical audit purposes. Existing records remain readable in read-only tables.
+- **Non-Invention Guarantee:** Milestone 3.3B does NOT approve or establish:
+  - `TUGAS`, `UH`, `UTS`, or `UAS` as approved Kepesantrenan policy (these exist solely as legacy schema enum values).
+  - Numeric 0–100 scale requirements.
+  - Automatic letter grade predicate conversions (`A`, `B`, `C`, `D`).
+  - Passing thresholds (KKM).
+  - Score weighting or semester report aggregation formulas.
+- **UI Mutation Gating:** All new Kepesantrenan assessment mutation UI is disabled in `components/modules/akademik-module.tsx`. The interface displays an honest disabled card: *"PENILAIAN KEPESANTRENAN: Belum diaktifkan — format penilaian belum ditetapkan."* with no editable score inputs, no evaluation type selectors, and no mutation submit buttons. No new Kepesantrenan scores can be submitted from the M3.3B canonical workflow.
+
+### 9.2 Studi Umum Assessment Boundary
+- Studi Umum grading and assessment redesign is excluded from M3.3B and remains deferred. Legacy academic functionality is strictly preserved where it exists, cleanly decoupled from the new canonical Pendidikan session foundation.
+
+### 9.3 Substitute Teacher Authorization Matrix
+- The substitute authorization matrix remains `PROPOSED_TBD` pending formal administrative policy and business owner sign-off.
+
+### 9.4 UI Dynamic Session Action Activation
+- Dynamic UI session lifecycle mutations (starting session, inputting material, taking attendance) remain disabled in `AkademikModule` until Milestone 3.3C activation.
 
 ---
 

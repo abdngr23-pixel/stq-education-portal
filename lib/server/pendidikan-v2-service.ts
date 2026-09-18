@@ -428,7 +428,7 @@ export class PendidikanV2Service {
 
     // 3. Authorize actor for EVERY DISTINCT santriId in the batch
     const distinctSantriIds = Array.from(new Set(recordsToProcess.map((r) => r.santriId)));
-    let primaryProvenance: {
+    let sharedProvenance: {
       assignmentId: string;
       positionCode: string;
       capabilityCode: string;
@@ -452,15 +452,29 @@ export class PendidikanV2Service {
       }
 
       const provenance = validateAuditProvenance(authDecision);
-      if (!primaryProvenance) {
-        primaryProvenance = provenance;
+      if (!sharedProvenance) {
+        sharedProvenance = provenance;
+      } else {
+        // Enforce that all targets in one batch resolve to the SAME canonical provenance
+        const isIdentical =
+          sharedProvenance.assignmentId === provenance.assignmentId &&
+          sharedProvenance.positionCode === provenance.positionCode &&
+          sharedProvenance.capabilityCode === provenance.capabilityCode &&
+          sharedProvenance.scopeType === provenance.scopeType &&
+          sharedProvenance.unitId === provenance.unitId;
+
+        if (!isIdentical) {
+          throw new Error(
+            "ATTENDANCE_BATCH_MIXED_AUTHORIZATION_PROVENANCE: Target presensi dalam batch memiliki provenance otorisasi yang berbeda. Seluruh batch ditolak."
+          );
+        }
       }
     }
 
-    if (!primaryProvenance) {
+    if (!sharedProvenance) {
       throw new Error("CANONICAL_AUTHORIZATION_DENIED: Tidak ada target presensi yang dapat diotorisasi");
     }
-    const provenance = primaryProvenance;
+    const provenance = sharedProvenance;
 
     // 4. Atomic transaction: Track check + Gating + Actual teacher check + Participant integrity + Upsert + Audit
     return await this.db.$transaction(async (tx) => {

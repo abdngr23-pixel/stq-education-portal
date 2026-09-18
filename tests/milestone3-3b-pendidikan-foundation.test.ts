@@ -1437,5 +1437,318 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
       assert.strictEqual(uiModuleContent.includes("santriList.slice(0, 5)"), false);
     });
   });
+
+  // ====================================================
+  // SECTION Q: FINAL MICRO-FIX: KEPESANTRENAN ASSESSMENT DEFERRED & BATCH PROVENANCE
+  // ====================================================
+  describe("Q. Final Micro-Fix: Kepesantrenan Assessment Deferred & Batch Audit Provenance", () => {
+    it("Q1. Canonical Kepesantrenan assessment mutation UI is completely disabled", () => {
+      // 1. Mutation action import removed
+      assert.strictEqual(uiModuleContent.includes("inputNilaiKepesantrenanAction"), false);
+      // 2. Mutation handler removed
+      assert.strictEqual(uiModuleContent.includes("handleSaveKepesantrenan"), false);
+      // 3. Mutation states removed
+      assert.strictEqual(uiModuleContent.includes("inputKpsAngka"), false);
+      assert.strictEqual(uiModuleContent.includes("selectedKpsJenis"), false);
+      // 4. Submit button removed
+      assert.strictEqual(uiModuleContent.includes("Simpan Nilai Kepesantrenan"), false);
+      // 5. Active evaluation form title removed
+      assert.strictEqual(uiModuleContent.includes("Formulir Evaluasi Nilai"), false);
+    });
+
+    it("Q2. Assessment deferred notice and disabled card are visible in UI", () => {
+      assert.ok(uiModuleContent.includes("PENILAIAN KEPESANTRENAN"));
+      assert.ok(uiModuleContent.includes("Belum diaktifkan — format penilaian belum ditetapkan."));
+      assert.ok(uiModuleContent.includes("Penilaian Ditangguhkan"));
+      assert.ok(uiModuleContent.includes("Penilaian Kepesantrenan Belum Diaktifkan"));
+    });
+
+    it("Q3. Legacy NilaiAkademik historical data remains readable", () => {
+      // Historical read action remains imported and invoked
+      assert.ok(uiModuleContent.includes("getNilaiKepesantrenanSantriAction"));
+      assert.ok(uiModuleContent.includes("kpsNilaiList"));
+      assert.ok(uiModuleContent.includes("Rekapitulasi Nilai Kepesantrenan Terverifikasi"));
+    });
+
+    it("Q4. Batch attendance with same canonical provenance succeeds", async () => {
+      const mockDb = createMockEducationDb(
+        [
+          {
+            id: "sess-q-01",
+            status: "STARTED",
+            actualTeacherUserId: "usr-teacher-01",
+            educationTrack: "KEPESANTRENAN",
+          },
+        ],
+        [
+          { sessionId: "sess-q-01", santriId: "san-01" },
+          { sessionId: "sess-q-01", santriId: "san-02" },
+        ]
+      );
+      const mockAudit = createMockAuditPersistence();
+      const provider = createMockDataProvider();
+      const service = createEducationV2Service({
+        db: mockDb as any,
+        dataProvider: provider,
+        auditPersistence: mockAudit,
+      });
+
+      const res = await service.recordSessionAttendance(
+        {
+          sessionId: "sess-q-01",
+          records: [
+            { santriId: "san-01", status: "HADIR" },
+            { santriId: "san-02", status: "IZIN" },
+          ],
+        },
+        { actorUserId: "usr-teacher-01" }
+      );
+
+      assert.strictEqual(res.success, true);
+      assert.strictEqual(res.count, 2);
+      assert.strictEqual(mockAudit.records.length, 1);
+      assert.strictEqual(mockAudit.records[0].action, "academic.attendance.record");
+    });
+
+    it("Q5. Batch attendance with mixed provenance fails closed with ATTENDANCE_BATCH_MIXED_AUTHORIZATION_PROVENANCE", async () => {
+      const mockDb = createMockEducationDb(
+        [
+          {
+            id: "sess-q-02",
+            status: "STARTED",
+            actualTeacherUserId: "usr-teacher-01",
+            educationTrack: "KEPESANTRENAN",
+          },
+        ],
+        [
+          { sessionId: "sess-q-02", santriId: "san-01" },
+          { sessionId: "sess-q-02", santriId: "san-02" },
+        ]
+      );
+      const mockAudit = createMockAuditPersistence();
+      const baseProvider = createMockDataProvider();
+
+      let evalCount = 0;
+      const alternatingAssignmentProvider = {
+        ...baseProvider,
+        getActiveAssignments: async () => {
+          evalCount++;
+          const asgId = evalCount % 2 === 1 ? "asg-alpha" : "asg-beta";
+          return [
+            {
+              id: asgId,
+              userId: "usr-teacher-01",
+              positionId: "pos-01",
+              positionCode: "GURU_AKADEMIK",
+              positionName: "Guru Akademik",
+              domain: "AKADEMIK",
+              unitId: "ou-01",
+              unitCode: "OU-01",
+              unitName: "Unit 1",
+              status: "ACTIVE" as const,
+              validFrom: new Date(Date.now() - 86400000),
+              validUntil: null,
+              positionCapabilities: [
+                {
+                  capabilityCode: "academic.attendance.record",
+                  scopeType: "GLOBAL" as const,
+                  businessRuleState: "VERIFIED_PRODUCTION" as const,
+                },
+              ],
+              scopeUnits: [],
+            },
+          ];
+        },
+      };
+
+      const mixedService = createEducationV2Service({
+        db: mockDb as any,
+        dataProvider: alternatingAssignmentProvider,
+        auditPersistence: mockAudit,
+      });
+
+      await assert.rejects(
+        () =>
+          mixedService.recordSessionAttendance(
+            {
+              sessionId: "sess-q-02",
+              records: [
+                { santriId: "san-01", status: "HADIR" },
+                { santriId: "san-02", status: "IZIN" },
+              ],
+            },
+            { actorUserId: "usr-teacher-01" }
+          ),
+        /ATTENDANCE_BATCH_MIXED_AUTHORIZATION_PROVENANCE/
+      );
+    });
+
+    it("Q6. Mixed-provenance batch writes exactly zero attendance records and zero audit logs", async () => {
+      const mockDb = createMockEducationDb(
+        [
+          {
+            id: "sess-q-02b",
+            status: "STARTED",
+            actualTeacherUserId: "usr-teacher-01",
+            educationTrack: "KEPESANTRENAN",
+          },
+        ],
+        [
+          { sessionId: "sess-q-02b", santriId: "san-01" },
+          { sessionId: "sess-q-02b", santriId: "san-02" },
+        ]
+      );
+      const mockAudit = createMockAuditPersistence();
+      const baseProvider = createMockDataProvider();
+
+      let evalCount = 0;
+      const alternatingAssignmentProvider = {
+        ...baseProvider,
+        getActiveAssignments: async () => {
+          evalCount++;
+          const asgId = evalCount % 2 === 1 ? "asg-alpha" : "asg-beta";
+          return [
+            {
+              id: asgId,
+              userId: "usr-teacher-01",
+              positionId: "pos-01",
+              positionCode: "GURU_AKADEMIK",
+              positionName: "Guru Akademik",
+              domain: "AKADEMIK",
+              unitId: "ou-01",
+              unitCode: "OU-01",
+              unitName: "Unit 1",
+              status: "ACTIVE" as const,
+              validFrom: new Date(Date.now() - 86400000),
+              validUntil: null,
+              positionCapabilities: [
+                {
+                  capabilityCode: "academic.attendance.record",
+                  scopeType: "GLOBAL" as const,
+                  businessRuleState: "VERIFIED_PRODUCTION" as const,
+                },
+              ],
+              scopeUnits: [],
+            },
+          ];
+        },
+      };
+
+      const mixedService = createEducationV2Service({
+        db: mockDb as any,
+        dataProvider: alternatingAssignmentProvider,
+        auditPersistence: mockAudit,
+      });
+
+      try {
+        await mixedService.recordSessionAttendance(
+          {
+            sessionId: "sess-q-02b",
+            records: [
+              { santriId: "san-01", status: "HADIR" },
+              { santriId: "san-02", status: "IZIN" },
+            ],
+          },
+          { actorUserId: "usr-teacher-01" }
+        );
+      } catch {}
+
+      assert.strictEqual(mockAudit.records.length, 0);
+      assert.strictEqual(mockDb._attendances.size, 0);
+    });
+
+    it("Q7. Exact attendance audit before/after state records verified for multiple targets", async () => {
+      const mockDb = createMockEducationDb(
+        [
+          {
+            id: "sess-q-03",
+            status: "STARTED",
+            actualTeacherUserId: "usr-teacher-01",
+            educationTrack: "KEPESANTRENAN",
+          },
+        ],
+        [
+          { sessionId: "sess-q-03", santriId: "san-01" },
+          { sessionId: "sess-q-03", santriId: "san-02" },
+        ]
+      );
+      const mockAudit = createMockAuditPersistence();
+      const provider = createMockDataProvider();
+      const service = createEducationV2Service({
+        db: mockDb as any,
+        dataProvider: provider,
+        auditPersistence: mockAudit,
+      });
+
+      // Initial batch: both have status = null
+      await service.recordSessionAttendance(
+        {
+          sessionId: "sess-q-03",
+          records: [
+            { santriId: "san-01", status: "HADIR" },
+            { santriId: "san-02", status: "IZIN" },
+          ],
+        },
+        { actorUserId: "usr-teacher-01" }
+      );
+
+      assert.strictEqual(mockAudit.records.length, 1);
+      assert.deepStrictEqual(mockAudit.records[0].beforeState, {
+        records: [
+          { santriId: "san-01", status: null },
+          { santriId: "san-02", status: null },
+        ],
+      });
+      assert.deepStrictEqual(mockAudit.records[0].afterState, {
+        records: [
+          { santriId: "san-01", status: "HADIR" },
+          { santriId: "san-02", status: "IZIN" },
+        ],
+      });
+    });
+
+    it("Q8. Attendance update HADIR -> SAKIT forensic proof", async () => {
+      const mockDb = createMockEducationDb(
+        [
+          {
+            id: "sess-q-04",
+            status: "STARTED",
+            actualTeacherUserId: "usr-teacher-01",
+            educationTrack: "KEPESANTRENAN",
+          },
+        ],
+        [
+          { sessionId: "sess-q-04", santriId: "san-01" },
+        ]
+      );
+      const mockAudit = createMockAuditPersistence();
+      const provider = createMockDataProvider();
+      const service = createEducationV2Service({
+        db: mockDb as any,
+        dataProvider: provider,
+        auditPersistence: mockAudit,
+      });
+
+      // 1. Initial HADIR
+      await service.recordSessionAttendance(
+        { sessionId: "sess-q-04", santriId: "san-01", status: "HADIR" },
+        { actorUserId: "usr-teacher-01" }
+      );
+
+      // 2. Update to SAKIT
+      await service.recordSessionAttendance(
+        { sessionId: "sess-q-04", santriId: "san-01", status: "SAKIT" },
+        { actorUserId: "usr-teacher-01" }
+      );
+
+      assert.strictEqual(mockAudit.records.length, 2);
+      assert.deepStrictEqual(mockAudit.records[1].beforeState, {
+        records: [{ santriId: "san-01", status: "HADIR" }],
+      });
+      assert.deepStrictEqual(mockAudit.records[1].afterState, {
+        records: [{ santriId: "san-01", status: "SAKIT" }],
+      });
+    });
+  });
 });
 
