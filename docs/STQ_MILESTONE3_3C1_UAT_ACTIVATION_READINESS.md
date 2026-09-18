@@ -41,7 +41,7 @@ Milestone 3.3C is partitioned into two distinct phases to ensure institutional d
 ### 2. Context Consolidation: Architecture State Matrix
 
 #### 2.1 Implemented & Locked (M3.3A & M3.3B)
-- **Health V2 Backend Foundation**: Additive schema, biometric metrics, clinic visits, medicine inventory, atomic audits, and multi-tenant isolation.
+- **Health V2 Backend Foundation**: Additive schema (`health_cases_v2`, `health_case_v2_events`, `HealthStatusV2`), atomic audit, concurrency foundation, and multi-tenant isolation.
 - **Pendidikan Foundation**: Additive schema (`education_sessions`, `education_session_participants`, `education_session_attendances`), 6 canonical Studi Umum subjects, 5 Kepesantrenan subjects.
 - **Studi Umum Saturday JP Matrix & PBL 20-Week Rotation**: Canonical derivation of theory vs project weeks without manual tampering.
 - **Kepesantrenan Daily Schedule**: Monday–Friday 18:30–19:30 WITA schedule windows with Arabic 3-tier pedagogical level facts.
@@ -61,7 +61,7 @@ Milestone 3.3C is partitioned into two distinct phases to ensure institutional d
 #### 2.3 Formally Deferred Scope
 - **Kepesantrenan Assessment / Grading**: Formal evaluation format, components, KKM thresholds, score weighting, and letter conversions remain intentionally unapproved. Active UI displays honest disabled notice.
 - **Substitute / Badal Teacher Policy**: Business Owner has not authorized which teacher may substitute for another. Any non-scheduled teacher start fails closed with `SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED`.
-- **Academic Unit Containment**: Prisma schema models currently lack explicit relations between `EducationSession` / `EducationTeachingAssignment` and `OrgUnit`. Academic unit containment remains fail-closed (`orgUnitIds: []`).
+- **Academic Unit Containment**: Prisma schema models currently lack explicit relations between `EducationSession` / `TeachingAssignment` and `OrgUnit`. Academic unit containment remains fail-closed (`orgUnitIds: []`).
 - **Teacher Account Provisioning**: Creation of personal or shared teacher accounts (`guru.matematika`, etc.) is deferred to M3.3C2.
 - **Production Canonical Cutover**: Legacy authorization and ABAC compatibility paths remain active. Canonical engine is NOT cut over globally in production.
 
@@ -134,18 +134,18 @@ Milestone 3.3C is partitioned into two distinct phases to ensure institutional d
 
 ### 5. Production Readiness Diagnostic Framework (`M3_3C_PRODUCTION_READINESS`)
 
-A non-writing, read-only diagnostic engine (`checkPendidikanV2ProductionReadiness`) evaluates 11 critical readiness gates:
-1. `M3_3A_SCHEMA_APPLIED`: `health_cases_v2`, `health_case_v2_events` exist; enum `HealthStatusV2` exists.
-2. `M3_3B_SCHEMA_APPLIED`: `education_cohorts`, `teaching_assignments`, `education_sessions`, `education_session_participants`, `education_session_attendances` exist; enums `EducationTrack`, `PedagogicalLevel`, `EducationSessionStatus`, `EducationAttendanceStatus` exist.
-3. `CANONICAL_AUDIT_TABLE_READY`: `canonical_audit_logs` exists.
+A non-writing, read-only diagnostic engine (`checkPendidikanV2ProductionReadiness`) evaluates 11 critical readiness gates using the canonical registry (`CANONICAL_READINESS_GATE_NAMES`):
+1. `M3_3A_SCHEMA_READY`: `health_cases_v2`, `health_case_v2_events` exist; enum `HealthStatusV2` exists.
+2. `M3_3B_SCHEMA_READY`: `education_cohorts`, `teaching_assignments`, `education_sessions`, `education_session_participants`, `education_session_attendances` exist; enums `EducationTrack`, `PedagogicalLevel`, `EducationSessionStatus`, `EducationAttendanceStatus` exist.
+3. `CANONICAL_AUDIT_READY`: `canonical_audit_logs` exists.
 4. `STAFF_LINKAGE_READY`: Operational personal accounts have active linked `Staff` records. Accounts lacking linkage (such as `razan.mt`) are reported as `BLOCKED_IDENTITY_LINKAGE`.
-5. `REQUIRED_ORG_UNITS_EXIST`: Required organizational units exist (`OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`).
-6. `POSITION_TEMPLATES_EXIST`: Required Position records exist (`MUDIR`, `KABID_TAHFIZH`, `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, `PETUGAS_OPERASIONAL_TAHFIZH`, `PETUGAS_OPERASIONAL_KEASRAMAAN`, `KEPALA_KEASRAMAAN`, `PEMBINA_ASRAMA`).
+5. `REQUIRED_ORG_UNITS_READY`: Required organizational units exist (`OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT` derived from canonical contract constants).
+6. `REQUIRED_POSITIONS_READY`: Required Position records exist (`MUDIR`, `KABID_TAHFIZH`, `KEPALA_KEASRAMAAN`, `PETUGAS_OPERASIONAL_TAHFIZH`, `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, `PETUGAS_OPERASIONAL_KEASRAMAAN` derived from approved UAT targets; strictly no invented `PEMBINA_ASRAMA`).
 7. `CAPABILITIES_REGISTERED`: All 12 academic capabilities registered.
-8. `USER_ASSIGNMENTS_EXIST`: Active teaching/operational assignments exist.
-9. `TEACHING_ASSIGNMENTS_EXIST`: `teaching_assignments` populated with active records.
-10. `COHORTS_ASSIGNED`: Santri have explicit `cohort_id` assigned (never backfilled from class names).
-11. `FEATURE_FLAG_ENABLED`: `PENDIDIKAN_V2_UAT_ENABLED` is configured as `true`.
+8. `USER_ASSIGNMENTS_READY`: Active user assignments exist covering all approved target positions.
+9. `TEACHING_ASSIGNMENTS_READY`: Full active assignment coverage for all 18 canonical slots (6 Studi Umum, 7 Kps Putra, 5 Kps Putri).
+10. `COHORTS_ASSIGNED`: Relevant active santri population have explicit `cohort_id` assigned without deriving from school class or age (inactive historical santri do not block).
+11. `RUNTIME_ACTIVATION_FLAG`: `PENDIDIKAN_V2_UAT_ENABLED` is configured as `true`.
 
 ---
 

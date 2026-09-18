@@ -190,21 +190,6 @@ export class PendidikanV2Service {
       throw new Error("AUTHENTICATION_REQUIRED: Pengguna tidak terdaftar atau tidak aktif");
     }
 
-    // 3. Authorize read access via canonical capability 'academic.schedule.read'
-    const globalReadAuth = await authorizeCanonical({
-      identity: actorIdentity,
-      capability: "academic.schedule.read",
-      resourceContext: undefined,
-      dataProvider: this.dataProvider,
-      isMutation: false,
-    });
-
-    if (globalReadAuth.decision !== "ALLOW") {
-      throw new Error(
-        `PERMISSION_DENIED: Pengguna tidak berwenang membaca jadwal sesi pembelajaran (${globalReadAuth.reason || globalReadAuth.reasonCode})`
-      );
-    }
-
     const isUatEnabled = process.env.PENDIDIKAN_V2_UAT_ENABLED === "true";
 
     const where: any = {};

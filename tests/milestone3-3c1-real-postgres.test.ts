@@ -10,6 +10,9 @@ import { PrismaClient } from "@prisma/client";
 import { startTestDatabase, stopTestDatabase } from "./test-db-manager";
 import {
   checkPendidikanV2ProductionReadiness,
+  CANONICAL_READINESS_GATE_NAMES,
+  CANONICAL_REQUIRED_POSITION_CODES,
+  CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS,
 } from "../lib/server/pendidikan-v2-readiness";
 import { PendidikanV2Service } from "../lib/server/pendidikan-v2-service";
 import { createPrismaDataProvider } from "../lib/auth/canonical-evaluator";
@@ -138,6 +141,108 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.ok(staffGate.details.includes("razan.mt"));
       assert.ok(report.unlinkedStaffAccounts.includes("razan.mt"));
       assert.ok(staffGate.remediationAdvice?.includes("BLOCKED_IDENTITY_LINKAGE"));
+    });
+
+    it("2.3 checkPendidikanV2ProductionReadiness gates exactly equal CANONICAL_READINESS_GATE_NAMES", async () => {
+      const report = await checkPendidikanV2ProductionReadiness(prisma as any);
+      const gateNames = report.gates.map((g) => g.gate);
+      assert.deepStrictEqual(gateNames, Array.from(CANONICAL_READINESS_GATE_NAMES));
+      assert.strictEqual(gateNames.length, 11);
+    });
+
+    it("2.4 Required positions gate: missing target positions => NOT_READY, PEMBINA_ASRAMA not required", async () => {
+      const report = await checkPendidikanV2ProductionReadiness(prisma as any);
+      const posGate = report.gates.find((g) => g.gate === "REQUIRED_POSITIONS_READY");
+      assert.ok(posGate);
+      assert.strictEqual(posGate.status, "NOT_READY");
+      assert.ok(posGate.details.includes("MUDIR"));
+      // Assert PEMBINA_ASRAMA is NOT required
+      assert.ok(!CANONICAL_REQUIRED_POSITION_CODES.includes("PEMBINA_ASRAMA" as any));
+      assert.ok(!posGate.details.includes("PEMBINA_ASRAMA"), "PEMBINA_ASRAMA must not be in missing required positions");
+    });
+
+    it("2.5 TeachingAssignment readiness: one assignment only => NOT_READY, complete fixture coverage => READY", async () => {
+      // 1. Partial: only one assignment
+      const partialMockDb = {
+        teachingAssignment: {
+          findMany: async () => [
+            {
+              id: "ta-mat-1",
+              mapel: { nama: "Matematika" },
+              staffId: "stf-1",
+              educationTrack: "STUDI_UMUM",
+              genderComplex: "CAMPUR",
+              isActive: true,
+              validUntil: null,
+            },
+          ],
+        },
+      };
+      const partialReport = await checkPendidikanV2ProductionReadiness(partialMockDb as any);
+      const partialGate = partialReport.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
+      assert.ok(partialGate);
+      assert.strictEqual(partialGate.status, "NOT_READY");
+      assert.ok(partialGate.details.includes("Missing teaching assignment coverage"));
+
+      // 2. Complete coverage: all 18 canonical slots
+      const fullMockDb = {
+        teachingAssignment: {
+          findMany: async () =>
+            CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.map((t, idx) => ({
+              id: `ta-slot-${idx}`,
+              mapel: { nama: t.subjectName },
+              staffId: `stf-${idx}`,
+              educationTrack: t.track,
+              genderComplex: t.genderComplex || "CAMPUR",
+              pedagogicalLevel: t.pedagogicalLevel || null,
+              isActive: true,
+              validUntil: null,
+            })),
+        },
+      };
+      const fullReport = await checkPendidikanV2ProductionReadiness(fullMockDb as any);
+      const fullGate = fullReport.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
+      assert.ok(fullGate);
+      assert.strictEqual(fullGate.status, "READY");
+      assert.ok(fullGate.details.includes("All 18 required teaching assignment slots covered"));
+    });
+
+    it("2.6 Cohort readiness: inactive historical santri with no cohort does NOT block; active santri without cohort DOES block", async () => {
+      // 1. Active santri without cohort blocks with COHORT_NOT_ASSIGNED
+      const blockedMockDb = {
+        santri: {
+          findMany: async () => [
+            { id: "san-1", nis: "S001", nama: "Santri Aktif", status: "AKTIF", cohortId: null },
+          ],
+        },
+      };
+      const blockedReport = await checkPendidikanV2ProductionReadiness(blockedMockDb as any);
+      const blockedGate = blockedReport.gates.find((g) => g.gate === "COHORTS_ASSIGNED");
+      assert.ok(blockedGate);
+      assert.strictEqual(blockedGate.status, "NOT_READY");
+      assert.ok(blockedGate.details.includes("COHORT_NOT_ASSIGNED"));
+
+      // 2. Inactive/alumni santri (LULUS, MUTASI, KELUAR) without cohort does NOT block if active santri has cohort
+      const readyMockDb = {
+        santri: {
+          findMany: async (args?: any) => {
+            const all = [
+              { id: "san-1", nis: "S001", nama: "Santri Aktif", status: "AKTIF", cohortId: "coh-1" },
+              { id: "san-2", nis: "S002", nama: "Alumni Lulus", status: "LULUS", cohortId: null },
+              { id: "san-3", nis: "S003", nama: "Santri Mutasi", status: "MUTASI", cohortId: null },
+            ];
+            if (args?.where?.status === "AKTIF") {
+              return all.filter((s) => s.status === "AKTIF");
+            }
+            return all;
+          },
+        },
+      };
+      const readyReport = await checkPendidikanV2ProductionReadiness(readyMockDb as any);
+      const readyGate = readyReport.gates.find((g) => g.gate === "COHORTS_ASSIGNED");
+      assert.ok(readyGate);
+      assert.strictEqual(readyGate.status, "READY");
+      assert.ok(readyGate.details.includes("All 1 active santri have explicit cohort assigned"));
     });
   });
 
@@ -351,12 +456,24 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
             scheduledStaffId: STF_AHMAD,
             status: "SCHEDULED",
           },
-          // 4) Bahasa Arab PUTRA T1
+          // 4) Bahasa Arab PUTRA T1 on 2026-09-21
           {
             id: "sess-kps-arb-t1",
             educationTrack: "KEPESANTRENAN",
             subjectId: ARB_MAPEL_ID,
             scheduledDate: new Date("2026-09-21T00:00:00Z"),
+            programLevel: 1,
+            genderGroup: "PUTRA",
+            scheduledStaffId: STF_ABI,
+            scheduledTeacherAssignmentId: "ta-arb-abi",
+            status: "SCHEDULED",
+          },
+          // 4b) Bahasa Arab PUTRA T1 on 2026-09-28 (Weekly recurring collision test)
+          {
+            id: "sess-kps-arb-t1-week2",
+            educationTrack: "KEPESANTRENAN",
+            subjectId: ARB_MAPEL_ID,
+            scheduledDate: new Date("2026-09-28T00:00:00Z"),
             programLevel: 1,
             genderGroup: "PUTRA",
             scheduledStaffId: STF_ABI,
@@ -511,19 +628,35 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(matchJp2.sessionId, "sess-col-jp-2");
     });
 
-    it("3.7 Collision Cases 4, 5, 6: Bahasa Arab PUTRA Tingkat 1, 2, 3 distinguished without ambiguity", async () => {
+    it("3.7 Collision Cases 4, 5, 6 & Date Disambiguation: Bahasa Arab PUTRA T1 on 2026-09-21 vs 2026-09-28 resolves exact requested date without aliasing", async () => {
       const dtos = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
 
-      const matchT1 = matchKepesantrenanSession(dtos, {
+      // Selecting 2026-09-28 must return ONLY the second session
+      const matchWeek2 = matchKepesantrenanSession(dtos, {
+        scheduledDate: "2026-09-28",
         subjectName: "Bahasa Arab",
         genderGroup: "PUTRA",
         pedagogicalLevel: "TINGKAT_1",
       });
-      assert.ok(matchT1);
-      assert.strictEqual(matchT1.sessionId, "sess-kps-arb-t1");
-      assert.strictEqual(matchT1.scheduledTeacherDisplay, "Ust. Abi Hudzaifah");
+      assert.ok(matchWeek2);
+      assert.strictEqual(matchWeek2.sessionId, "sess-kps-arb-t1-week2");
+      assert.strictEqual(matchWeek2.scheduledDate, "2026-09-28");
+      assert.strictEqual(matchWeek2.scheduledTeacherDisplay, "Ust. Abi Hudzaifah");
 
+      // Selecting 2026-09-21 returns ONLY the first session
+      const matchWeek1 = matchKepesantrenanSession(dtos, {
+        scheduledDate: "2026-09-21",
+        subjectName: "Bahasa Arab",
+        genderGroup: "PUTRA",
+        pedagogicalLevel: "TINGKAT_1",
+      });
+      assert.ok(matchWeek1);
+      assert.strictEqual(matchWeek1.sessionId, "sess-kps-arb-t1");
+      assert.strictEqual(matchWeek1.scheduledDate, "2026-09-21");
+
+      // Distinct levels on same date: T2 & T3
       const matchT2 = matchKepesantrenanSession(dtos, {
+        scheduledDate: "2026-09-21",
         subjectName: "Bahasa Arab",
         genderGroup: "PUTRA",
         pedagogicalLevel: "TINGKAT_2",
@@ -533,6 +666,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(matchT2.scheduledTeacherDisplay, "Ust. Kamal Mukhtar");
 
       const matchT3 = matchKepesantrenanSession(dtos, {
+        scheduledDate: "2026-09-21",
         subjectName: "Bahasa Arab",
         genderGroup: "PUTRA",
         pedagogicalLevel: "TINGKAT_3",

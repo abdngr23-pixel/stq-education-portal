@@ -42,6 +42,7 @@ import {
   matchStudiUmumSession,
   matchKepesantrenanSession,
 } from "@/lib/pendidikan-v2";
+import { getTodayWITADateString } from "@/lib/wita-date";
 import {
   getEducationSessionsAction,
   startEducationSessionAction,
@@ -152,13 +153,14 @@ export function AkademikModule({
   // Milestone 3.3B: Studi Umum Saturday Schedule & Session Management State
   const [selectedCohortStartYear, setSelectedCohortStartYear] = useState<number>(2026);
   const [selectedSemesterMeeting, setSelectedSemesterMeeting] = useState<number>(1);
-  const [selectedOperationalDateWita, setSelectedOperationalDateWita] = useState<string>("2026-09-19");
+  const [selectedOperationalDateWita, setSelectedOperationalDateWita] = useState<string>(() => getTodayWITADateString());
   const cohortLevel = (selectedCohortStartYear === 2026 ? 1 : selectedCohortStartYear === 2025 ? 2 : 3) as 1 | 2 | 3;
 
   // Milestone 3.3B & 3.3C1: Kepesantrenan Daily Schedule, Gender & Pedagogical Level State
   const [selectedKpsDay, setSelectedKpsDay] = useState<"Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday">("Monday");
   const [selectedKpsGender, setSelectedKpsGender] = useState<"PUTRA" | "PUTRI">("PUTRA");
   const [selectedKpsArabLevel, setSelectedKpsArabLevel] = useState<"TINGKAT_1" | "TINGKAT_2" | "TINGKAT_3">("TINGKAT_1");
+  const [selectedKpsDateWita, setSelectedKpsDateWita] = useState<string>(() => getTodayWITADateString());
 
   // Milestone 3.3C1: Server-Authoritative Education Sessions State
   type ServerSessionStatus = "LOADING" | "READY" | "NOT_ENABLED" | "SCHEMA_NOT_READY" | "PERMISSION_DENIED" | "ERROR";
@@ -1286,6 +1288,19 @@ export function AkademikModule({
                         </button>
                       </div>
 
+                      {/* Tanggal WITA Selector */}
+                      <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                        <span className="text-[11px] font-bold text-slate-500 pl-1.5 shrink-0 flex items-center gap-1">
+                          <Calendar className="h-3.5 w-3.5 text-slate-500" /> Tanggal:
+                        </span>
+                        <input
+                          type="date"
+                          value={selectedKpsDateWita}
+                          onChange={(e) => setSelectedKpsDateWita(e.target.value)}
+                          className="px-2 py-0.5 text-xs font-semibold bg-white rounded-lg border border-slate-200 text-slate-700 outline-none focus:ring-1 focus:ring-[#0E7C3A]"
+                        />
+                      </div>
+
                       {/* Day Tabs */}
                       <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
                         {[
@@ -1348,6 +1363,7 @@ export function AkademikModule({
                     );
 
                     const kpsSession = matchKepesantrenanSession(serverSessions, {
+                      scheduledDate: selectedKpsDateWita,
                       subjectName: dayDef?.name,
                       genderGroup: selectedKpsGender,
                       pedagogicalLevel: (selectedKpsGender === "PUTRA" && dayDef?.code === "KPS-ARB") ? selectedKpsArabLevel : undefined,
@@ -1361,6 +1377,18 @@ export function AkademikModule({
 
                     const displayTeacher = kpsSession?.actualTeacherDisplay || kpsSession?.scheduledTeacherDisplay || expectedTeacher;
 
+                    const statusText = (() => {
+                      if (serverSessionStatus === "LOADING") return "Memuat...";
+                      if (serverSessionStatus === "NOT_ENABLED") return "UAT Nonaktif";
+                      if (serverSessionStatus === "SCHEMA_NOT_READY") return "Skema Belum Siap";
+                      if (serverSessionStatus === "PERMISSION_DENIED") return "Akses Ditolak";
+                      if (serverSessionStatus === "ERROR") return "Gagal Memuat";
+                      if (!kpsSession) return "Belum Ada Sesi";
+                      if (kpsSession.status === "STARTED") return "Sedang Berlangsung";
+                      if (kpsSession.status === "COMPLETED") return "Selesai";
+                      return "Terjadwal";
+                    })();
+
                     return (
                       <div className="space-y-4">
                         {/* Session Status Banner */}
@@ -1372,22 +1400,37 @@ export function AkademikModule({
                               </span>
                               {(() => {
                                 if (serverSessionStatus === "LOADING") {
-                                  return <Badge variant="neutral" size="sm" className="font-bold">○ MEMUAT...</Badge>;
+                                  return <Badge variant="neutral" size="sm" className="font-bold">○ MEMUAT</Badge>;
                                 }
-                                if (kpsSession) {
-                                  if (kpsSession.status === "STARTED") {
-                                    return <Badge variant="green" size="sm" className="font-bold">● BERLANGSUNG</Badge>;
-                                  }
-                                  if (kpsSession.status === "COMPLETED") {
-                                    return <Badge variant="sky" size="sm" className="font-bold">✔ SELESAI</Badge>;
-                                  }
+                                if (serverSessionStatus === "NOT_ENABLED") {
+                                  return <Badge variant="neutral" size="sm" className="font-bold">⚠ UAT NONAKTIF</Badge>;
+                                }
+                                if (serverSessionStatus === "SCHEMA_NOT_READY") {
+                                  return <Badge variant="ditolak" size="sm" className="font-bold">⚠ SKEMA BELUM SIAP</Badge>;
+                                }
+                                if (serverSessionStatus === "PERMISSION_DENIED") {
+                                  return <Badge variant="orange" size="sm" className="font-bold">⛔ AKSES DITOLAK</Badge>;
+                                }
+                                if (serverSessionStatus === "ERROR") {
+                                  return <Badge variant="ditolak" size="sm" className="font-bold">✖ GAGAL MEMUAT</Badge>;
+                                }
+                                if (!kpsSession) {
+                                  return <Badge variant="neutral" size="sm" className="font-bold">○ BELUM ADA SESI</Badge>;
+                                }
+                                if (kpsSession.status === "STARTED") {
+                                  return <Badge variant="green" size="sm" className="font-bold">● BERLANGSUNG</Badge>;
+                                }
+                                if (kpsSession.status === "COMPLETED") {
+                                  return <Badge variant="sky" size="sm" className="font-bold">✔ SELESAI</Badge>;
+                                }
+                                if (kpsSession.status === "SCHEDULED") {
                                   return <Badge variant="neutral" size="sm" className="font-bold">○ TERJADWAL</Badge>;
                                 }
-                                return <Badge variant="neutral" size="sm" className="font-bold">○ TERJADWAL</Badge>;
+                                return <Badge variant="neutral" size="sm" className="font-bold">○ BELUM ADA SESI</Badge>;
                               })()}
                             </div>
                             <p className="text-xs text-slate-500 mt-1">
-                              Jendela Waktu: {dayDef?.scheduledWindowWita} • Guru Terjadwal: {displayTeacher} • Status: {kpsSession?.status === "STARTED" ? "Sedang Berlangsung" : kpsSession?.status === "COMPLETED" ? "Selesai" : "Belum Dimulai"}
+                              Jendela Waktu: {dayDef?.scheduledWindowWita} • Tanggal: {selectedKpsDateWita} • Guru Terjadwal: {displayTeacher} • Status: {statusText}
                             </p>
                           </div>
 
@@ -1416,6 +1459,8 @@ export function AkademikModule({
                                 notice = "Skema database belum siap";
                               } else if (serverSessionStatus === "PERMISSION_DENIED") {
                                 notice = "Akses tidak diotorisasi";
+                              } else if (!kpsSession) {
+                                notice = "Sesi pembelajaran belum tersedia untuk tanggal ini";
                               } else if (kpsSession?.mutationDeniedReason === "AUTHENTICATION_REQUIRED") {
                                 notice = "Harap masuk untuk mengelola sesi";
                               } else if (kpsSession?.mutationDeniedReason === "SCHEDULED_TEACHER_NOT_RESOLVED") {

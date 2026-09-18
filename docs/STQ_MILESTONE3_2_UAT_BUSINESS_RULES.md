@@ -89,7 +89,7 @@ Milestone 3.2 resolves this ambiguity deterministically and fails closed:
 - Capability/resource-aware domain resolution in `lib/auth/canonical-evaluator.ts`
 - Backdated setoran validation (`occurredAt` vs immutable `createdAt`) in `lib/tahfizh-persistence.ts`
 - Halaqoh attendance MASBUK removal (new entries) & Tahajjud SHOLAT/ALFA constraint
-- Simplified search display contract (`Nama` + `Kelas`) in `dashboard-musyrif-tahfizh.tsx`
+- Simplified search display contract (NAMA ONLY, separate Kelas + Halaqoh filters) in `dashboard-musyrif-tahfizh.tsx`
 - Separation of Studi Umum vs Kepesantrenan in `akademik-module.tsx`
 - Complete test suite `tests/milestone3-2-uat-business-rules.test.ts` (22 required tests)
 
