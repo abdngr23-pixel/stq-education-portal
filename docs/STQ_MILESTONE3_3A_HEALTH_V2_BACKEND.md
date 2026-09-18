@@ -174,7 +174,7 @@ The migration `prisma/migrations/20260918120000_m3_3a_health_v2_backend/migratio
    - `health_cases_v2_santri_id_status_v2_idx` on `health_cases_v2(santri_id, status_v2)`
    - `health_cases_v2_santri_id_occurred_at_idx` on `health_cases_v2(santri_id, occurred_at)`
    - `health_cases_v2_status_v2_occurred_at_idx` on `health_cases_v2(status_v2, occurred_at)`
-   - `health_case_v2_events_case_id_occurred_at_idx` on `health_case_v2_events(case_id, occurred_at)`
+   - `health_case_v2_events_case_id_created_at_idx` on `health_case_v2_events(case_id, created_at)`
 
 ### 7.2. Lineage Simulation (`simulateM33aMigrationChain`)
 In `tests/test-db-manager.ts`, the automated simulation executes:

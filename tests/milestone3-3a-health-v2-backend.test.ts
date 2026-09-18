@@ -27,6 +27,7 @@ import {
   updateHealthCaseV2StatusCore,
   getHealthCaseV2DetailCore,
   getHealthCasesV2AggregateCore,
+  createHealthV2Service,
 } from "../lib/server/health-v2-service";
 
 import {
@@ -1333,6 +1334,1015 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3A HEALTH V2 BACK
       }
 
       assert.ok(commitVerified, `PR #8 exact SHA ${PR8_EXACT_SHA} must exist and be immutable`);
+    });
+  });
+
+  // =========================================================================
+  // M3.3A REMEDIATION ROUND 2 — FINAL SECURITY & CONSISTENCY CLOSURE
+  // =========================================================================
+  describe("M3.3A Remediation Round 2 — Final Security & Consistency Closure", () => {
+    const docPath = path.join(rootDir, "docs/STQ_MILESTONE3_3A_HEALTH_V2_BACKEND.md");
+    const docContent = fs.readFileSync(docPath, "utf-8");
+
+    const unitAccountIdentity: CanonicalIdentity = {
+      userId: "usr-poskestren-unit",
+      username: "poskestren",
+      status: "AKTIF",
+      accountType: "UNIT",
+      placementUnitId: "ou-poskestren",
+    };
+
+    const unitAssignment: CanonicalAssignmentWithDetails = {
+      id: "asg-poskestren",
+      userId: "usr-poskestren-unit",
+      positionId: "pos-poskestren",
+      positionCode: "OSDA_KESEHATAN",
+      positionName: "OSDA Poskestren",
+      domain: "KEASRAMAAN",
+      unitId: "ou-poskestren",
+      unitCode: "POSKESTREN",
+      unitName: "Poskestren",
+      status: "ACTIVE",
+      validFrom: new Date(Date.now() - 86400000),
+      validUntil: null,
+      positionCapabilities: [
+        {
+          capabilityCode: HEALTH_CAPABILITIES.CREATE,
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+        },
+        {
+          capabilityCode: HEALTH_CAPABILITIES.UPDATE_STATUS,
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+        },
+      ],
+      scopeUnits: [],
+    };
+
+    const pembinaAliAssignment: CanonicalAssignmentWithDetails = {
+      id: "asg-pembina-ali",
+      userId: "usr-pembina-ali",
+      positionId: "pos-pembina-asrama",
+      positionCode: "PEMBINA_ASRAMA",
+      positionName: "Pembina Asrama",
+      domain: "KEASRAMAAN",
+      unitId: "ou-kmr-ali",
+      unitCode: "KMR_ALI",
+      unitName: "Kamar Ali",
+      status: "ACTIVE",
+      validFrom: new Date(Date.now() - 86400000),
+      validUntil: null,
+      positionCapabilities: [
+        {
+          capabilityCode: HEALTH_CAPABILITIES.READ_AGGREGATE,
+          scopeType: "KAMAR",
+          businessRuleState: "VERIFIED_PRODUCTION",
+        },
+        {
+          capabilityCode: HEALTH_CAPABILITIES.READ_DETAIL,
+          scopeType: "KAMAR",
+          businessRuleState: "VERIFIED_PRODUCTION",
+        },
+      ],
+      scopeUnits: [],
+    };
+
+    const globalHealthStaffAssignment: CanonicalAssignmentWithDetails = {
+      id: "asg-health-staff-global",
+      userId: "usr-health-staff",
+      positionId: "pos-petugas-kesehatan",
+      positionCode: "PETUGAS_KESEHATAN",
+      positionName: "Petugas Kesehatan",
+      domain: "KEASRAMAAN",
+      unitId: "ou-poskestren",
+      unitCode: "POSKESTREN",
+      unitName: "Poskestren",
+      status: "ACTIVE",
+      validFrom: new Date(Date.now() - 86400000),
+      validUntil: null,
+      positionCapabilities: [
+        {
+          capabilityCode: HEALTH_CAPABILITIES.READ_AGGREGATE,
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+        },
+        {
+          capabilityCode: HEALTH_CAPABILITIES.READ_DETAIL,
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+        },
+      ],
+      scopeUnits: [],
+    };
+
+    const createMockDb = (overrides: any = {}) => {
+      const records: any = {
+        cases: new Map(),
+        events: new Map(),
+        audits: [],
+      };
+      let transactionAborted = false;
+
+      const db: any = {
+        santri: {
+          findUnique: async () => mockSantriInAli,
+        },
+        healthCaseV2: {
+          findUnique: async ({ where }: any) =>
+            records.cases.get(where.id) || {
+              id: where.id,
+              santriId: "san-001",
+              statusV2: "DIPANTAU",
+              keluhan: "Demam",
+              tindakanAwal: "Paracetamol",
+              diagnosa: null,
+              catatan: null,
+              attachmentUrl: null,
+              recordedByUserId: "usr-poskestren-unit",
+              recordedByStaffId: null,
+              occurredAt: new Date(),
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          create: async ({ data }: any) => {
+            const row = {
+              id: "hc-" + Math.random().toString(36).slice(2, 8),
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              ...data,
+            };
+            records.cases.set(row.id, row);
+            return row;
+          },
+          update: async ({ where, data }: any) => {
+            const existing = records.cases.get(where.id) || {
+              id: where.id,
+              santriId: "san-001",
+              statusV2: "DIPANTAU",
+              keluhan: "Demam",
+              tindakanAwal: "Paracetamol",
+              diagnosa: null,
+              recordedByUserId: "usr-poskestren-unit",
+              recordedByStaffId: null,
+              occurredAt: new Date(),
+              createdAt: new Date(),
+            };
+            const updated = { ...existing, ...data, updatedAt: new Date() };
+            records.cases.set(where.id, updated);
+            return updated;
+          },
+          groupBy: async (args: any) => {
+            db.lastGroupByWhere = args.where;
+            return [
+              { statusV2: "DIPANTAU", _count: { _all: 3 } },
+              { statusV2: "PULIH", _count: { _all: 8 } },
+              { statusV2: "DIRUJUK", _count: { _all: 1 } },
+              { statusV2: "DARURAT", _count: { _all: 0 } },
+            ];
+          },
+        },
+        healthCaseV2Event: {
+          create: async ({ data }: any) => {
+            const row = {
+              id: "evt-" + Math.random().toString(36).slice(2, 8),
+              createdAt: new Date(),
+              ...data,
+            };
+            records.events.set(row.id, row);
+            return row;
+          },
+        },
+        $transaction: async (fn: any) => {
+          try {
+            return await fn(db);
+          } catch (err) {
+            transactionAborted = true;
+            throw err;
+          }
+        },
+        records,
+        isTransactionAborted: () => transactionAborted,
+        ...overrides,
+      };
+      return db;
+    };
+
+    // =======================================================================
+    // 1. CANONICAL HUMAN EXECUTOR IDENTITY NORMALIZATION
+    // =======================================================================
+    describe("Blocker 1: Canonical Human Executor Identity Normalization", () => {
+      it("Proof R2-1: Executor supplied as Staff.id normalizes to linked User.id", async () => {
+        const mockDb = createMockDb();
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => unitAccountIdentity,
+          getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+          getActiveAssignments: async () => [unitAssignment],
+          verifyHumanExecutor: async (executorId: string) => {
+            if (executorId === "stf-lisa") {
+              return {
+                userId: "usr-lisa",
+                id: "usr-lisa",
+                staffId: "stf-lisa",
+                name: "dr. Lisa",
+                isActive: true,
+              };
+            }
+            return null;
+          },
+        });
+
+        const service = createHealthV2Service({ db: mockDb, dataProvider });
+        const result = await service.updateCaseStatus(
+          { id: "hc-001", newStatus: "PULIH", tindakanLanjutan: "Pasien sembuh" },
+          { actorUserId: "usr-poskestren-unit", humanExecutorId: "stf-lisa" }
+        );
+
+        assert.strictEqual(result.success, true);
+        // Persisted event human_executor_id must be linked User.id, NEVER Staff.id
+        assert.strictEqual(result.data.events![0].humanExecutorId, "usr-lisa");
+        assert.strictEqual(result.audit.humanExecutorId, "usr-lisa");
+        assert.strictEqual(result.audit.humanExecutorUsername, "dr. Lisa");
+      });
+
+      it("Proof R2-2: Executor supplied as Santri.id normalizes to linked User.id", async () => {
+        const mockDb = createMockDb();
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => unitAccountIdentity,
+          getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+          getActiveAssignments: async () => [unitAssignment],
+          verifyHumanExecutor: async (executorId: string) => {
+            if (executorId === "san-ahmad") {
+              return {
+                userId: "usr-ahmad",
+                id: "usr-ahmad",
+                santriId: "san-ahmad",
+                name: "Ahmad Santri",
+                isActive: true,
+              };
+            }
+            return null;
+          },
+        });
+
+        const service = createHealthV2Service({ db: mockDb, dataProvider });
+        const result = await service.updateCaseStatus(
+          { id: "hc-001", newStatus: "DIPANTAU", tindakanLanjutan: "Santri piket jaga" },
+          { actorUserId: "usr-poskestren-unit", humanExecutorId: "san-ahmad" }
+        );
+
+        assert.strictEqual(result.success, true);
+        assert.strictEqual(result.data.events![0].humanExecutorId, "usr-ahmad");
+        assert.strictEqual(result.audit.humanExecutorId, "usr-ahmad");
+        assert.strictEqual(result.audit.humanExecutorUsername, "Ahmad Santri");
+      });
+
+      it("Proof R2-3: Caller fake executor name cannot alter audit identity", async () => {
+        const mockDb = createMockDb();
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => unitAccountIdentity,
+          getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+          getActiveAssignments: async () => [unitAssignment],
+          verifyHumanExecutor: async (executorId: string) => {
+            if (executorId === "stf-lisa") {
+              return {
+                userId: "usr-lisa",
+                id: "usr-lisa",
+                staffId: "stf-lisa",
+                name: "dr. Lisa",
+                isActive: true,
+              };
+            }
+            return null;
+          },
+        });
+
+        const service = createHealthV2Service({ db: mockDb, dataProvider });
+        const result = await service.createCase(
+          { santriId: "san-001", keluhan: "Sakit", tindakanAwal: "Obat" },
+          {
+            actorUserId: "usr-poskestren-unit",
+            humanExecutorId: "stf-lisa",
+            // Adversary sends fake name in request context
+            humanExecutorUsername: "hacked-admin-identity",
+          } as any
+        );
+
+        assert.strictEqual(result.success, true);
+        assert.strictEqual(result.audit.humanExecutorId, "usr-lisa");
+        // Server-side verified name MUST be used in audit, never caller-supplied fake name
+        assert.strictEqual(result.audit.humanExecutorUsername, "dr. Lisa");
+        assert.notStrictEqual(result.audit.humanExecutorUsername, "hacked-admin-identity");
+      });
+
+      it("Proof R2-4: Random or unverified executor ID is strictly denied", async () => {
+        const mockDb = createMockDb();
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => unitAccountIdentity,
+          getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+          getActiveAssignments: async () => [unitAssignment],
+          verifyHumanExecutor: async () => null, // Not found
+        });
+
+        const service = createHealthV2Service({ db: mockDb, dataProvider });
+        await assert.rejects(
+          async () => {
+            await service.createCase(
+              { santriId: "san-001", keluhan: "Sakit", tindakanAwal: "Obat" },
+              { actorUserId: "usr-poskestren-unit", humanExecutorId: "usr-random-attacker" }
+            );
+          },
+          /UNIT_EXECUTOR_INVALID/
+        );
+      });
+
+      it("Proof R2-5: Inactive executor identity is strictly denied", async () => {
+        const mockDb = createMockDb();
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => unitAccountIdentity,
+          getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+          getActiveAssignments: async () => [unitAssignment],
+          verifyHumanExecutor: async (executorId: string) => ({
+            userId: executorId,
+            id: executorId,
+            name: "Inactive Doctor",
+            isActive: false, // Inactive!
+          }),
+        });
+
+        const service = createHealthV2Service({ db: mockDb, dataProvider });
+        await assert.rejects(
+          async () => {
+            await service.createCase(
+              { santriId: "san-001", keluhan: "Sakit", tindakanAwal: "Obat" },
+              { actorUserId: "usr-poskestren-unit", humanExecutorId: "usr-inactive" }
+            );
+          },
+          /UNIT_EXECUTOR_INVALID/
+        );
+      });
+    });
+
+    // =======================================================================
+    // 2. MUTATION / EVENT / AUDIT ATOMICITY
+    // =======================================================================
+    describe("Blocker 2: Mutation / Event / Audit Atomicity", () => {
+      it("Proof R2-6: Create + Audit commit atomically in transaction", async () => {
+        let transactionUsed = false;
+        const mockDb = createMockDb({
+          $transaction: async (fn: any) => {
+            transactionUsed = true;
+            return fn(mockDb);
+          },
+        });
+        const auditRecords: any[] = [];
+        const mockAuditSink = {
+          record: async (rec: any) => {
+            auditRecords.push(rec);
+          },
+        };
+
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => unitAccountIdentity,
+          getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+          getActiveAssignments: async () => [unitAssignment],
+          verifyHumanExecutor: async (id: string) => ({
+            userId: id,
+            id,
+            name: "dr. Lisa",
+            isActive: true,
+          }),
+        });
+
+        const service = createHealthV2Service({
+          db: mockDb,
+          dataProvider,
+          auditSink: mockAuditSink as any,
+        });
+        const result = await service.createCase(
+          { santriId: "san-001", keluhan: "Batuk", tindakanAwal: "Sirup" },
+          { actorUserId: "usr-poskestren-unit", humanExecutorId: "usr-lisa" }
+        );
+
+        assert.strictEqual(result.success, true);
+        assert.strictEqual(transactionUsed, true, "Must execute within database transaction");
+        assert.strictEqual(auditRecords.length, 1, "Audit record must be created");
+      });
+
+      it("Proof R2-7: Update + Event + Audit commit atomically in transaction", async () => {
+        let transactionUsed = false;
+        const mockDb = createMockDb({
+          $transaction: async (fn: any) => {
+            transactionUsed = true;
+            return fn(mockDb);
+          },
+        });
+        const auditRecords: any[] = [];
+        const mockAuditSink = {
+          record: async (rec: any) => {
+            auditRecords.push(rec);
+          },
+        };
+
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => unitAccountIdentity,
+          getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+          getActiveAssignments: async () => [unitAssignment],
+          verifyHumanExecutor: async (id: string) => ({
+            userId: id,
+            id,
+            name: "dr. Lisa",
+            isActive: true,
+          }),
+        });
+
+        const service = createHealthV2Service({
+          db: mockDb,
+          dataProvider,
+          auditSink: mockAuditSink as any,
+        });
+        const result = await service.updateCaseStatus(
+          { id: "hc-001", newStatus: "PULIH", tindakanLanjutan: "Sembuh total" },
+          { actorUserId: "usr-poskestren-unit", humanExecutorId: "usr-lisa" }
+        );
+
+        assert.strictEqual(result.success, true);
+        assert.strictEqual(transactionUsed, true);
+        assert.strictEqual(auditRecords.length, 1);
+        assert.strictEqual(result.data.events!.length, 1);
+      });
+
+      it("Proof R2-8: Event failure rolls back update in transaction", async () => {
+        let updateExecuted = false;
+        let transactionAborted = false;
+        const mockDb = createMockDb({
+          healthCaseV2: {
+            findUnique: async () => ({
+              id: "hc-rollback-1",
+              santriId: "san-001",
+              statusV2: "DIPANTAU",
+              occurredAt: new Date(),
+            }),
+            update: async () => {
+              updateExecuted = true;
+              return { id: "hc-rollback-1", statusV2: "PULIH" };
+            },
+          },
+          healthCaseV2Event: {
+            create: async () => {
+              throw new Error("SIMULATED_EVENT_PERSISTENCE_FAILURE");
+            },
+          },
+          $transaction: async (fn: any) => {
+            try {
+              return await fn(mockDb);
+            } catch (err) {
+              transactionAborted = true;
+              throw err;
+            }
+          },
+        });
+
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => unitAccountIdentity,
+          getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+          getActiveAssignments: async () => [unitAssignment],
+          verifyHumanExecutor: async (id: string) => ({
+            userId: id,
+            id,
+            name: "dr. Lisa",
+            isActive: true,
+          }),
+        });
+
+        const service = createHealthV2Service({ db: mockDb, dataProvider });
+        await assert.rejects(
+          async () => {
+            await service.updateCaseStatus(
+              { id: "hc-rollback-1", newStatus: "PULIH" },
+              { actorUserId: "usr-poskestren-unit", humanExecutorId: "usr-lisa" }
+            );
+          },
+          /SIMULATED_EVENT_PERSISTENCE_FAILURE/
+        );
+
+        assert.strictEqual(updateExecuted, true, "Update attempted");
+        assert.strictEqual(transactionAborted, true, "Transaction must abort and rollback");
+      });
+
+      it("Proof R2-9: Audit failure rolls back mutation and event", async () => {
+        let mutationExecuted = false;
+        let transactionAborted = false;
+        const mockDb = createMockDb({
+          healthCaseV2: {
+            create: async () => {
+              mutationExecuted = true;
+              return { id: "hc-audit-fail", createdAt: new Date() };
+            },
+          },
+          $transaction: async (fn: any) => {
+            try {
+              return await fn(mockDb);
+            } catch (err) {
+              transactionAborted = true;
+              throw err;
+            }
+          },
+        });
+
+        const failingAuditSink = {
+          record: async () => {
+            throw new Error("SIMULATED_MANDATORY_AUDIT_FAILURE");
+          },
+        };
+
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => unitAccountIdentity,
+          getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+          getActiveAssignments: async () => [unitAssignment],
+          verifyHumanExecutor: async (id: string) => ({
+            userId: id,
+            id,
+            name: "dr. Lisa",
+            isActive: true,
+          }),
+        });
+
+        const service = createHealthV2Service({
+          db: mockDb,
+          dataProvider,
+          auditSink: failingAuditSink as any,
+        });
+        await assert.rejects(
+          async () => {
+            await service.createCase(
+              { santriId: "san-001", keluhan: "Sakit", tindakanAwal: "Obat" },
+              { actorUserId: "usr-poskestren-unit", humanExecutorId: "usr-lisa" }
+            );
+          },
+          /SIMULATED_MANDATORY_AUDIT_FAILURE/
+        );
+
+        assert.strictEqual(mutationExecuted, true, "Mutation attempted");
+        assert.strictEqual(transactionAborted, true, "Transaction must abort and rollback on audit failure");
+      });
+    });
+
+    // =======================================================================
+    // 3. AGGREGATE KAMAR SCOPE
+    // =======================================================================
+    describe("Blocker 3: Aggregate Kamar Scope Derivation & Enforcement", () => {
+      it("Proof R2-10: Pembina KAMAR aggregate own kamar = ALLOW and query constrained", async () => {
+        let capturedWhere: any = null;
+        const mockDb = createMockDb({
+          healthCaseV2: {
+            groupBy: async ({ where }: any) => {
+              capturedWhere = where;
+              return [{ statusV2: "DIPANTAU", _count: { _all: 2 } }];
+            },
+          },
+        });
+
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => ({
+            userId: "usr-pembina-ali",
+            username: "pembina.ali",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            staffId: "stf-pembina",
+          }),
+          getActiveAssignments: async () => [pembinaAliAssignment],
+        });
+
+        const service = createHealthV2Service({ db: mockDb, dataProvider });
+        const result = await service.getCasesAggregate(
+          { kamarId: "ou-kmr-ali" },
+          { actorUserId: "usr-pembina-ali" }
+        );
+
+        assert.strictEqual(result.success, true);
+        assert.strictEqual(capturedWhere.santri.kamarPlacements.some.kamarId, "ou-kmr-ali");
+      });
+
+      it("Proof R2-11: Pembina cannot widen aggregate to other kamar = DENY", async () => {
+        const mockDb = createMockDb();
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => ({
+            userId: "usr-pembina-ali",
+            username: "pembina.ali",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            staffId: "stf-pembina",
+          }),
+          getActiveAssignments: async () => [pembinaAliAssignment],
+        });
+
+        const service = createHealthV2Service({ db: mockDb, dataProvider });
+        await assert.rejects(
+          async () => {
+            // Assigned to ou-kmr-ali, attempts to query ou-kmr-utsman
+            await service.getCasesAggregate(
+              { kamarId: "ou-kmr-utsman" },
+              { actorUserId: "usr-pembina-ali" }
+            );
+          },
+          /OUT_OF_SCOPE_ACCESS_DENIED/,
+          "Caller cannot widen aggregate query to another kamar"
+        );
+      });
+
+      it("Proof R2-12: Pembina with no authoritative kamar = DENY", async () => {
+        const mockDb = createMockDb();
+        const unassignedPembina: CanonicalAssignmentWithDetails = {
+          ...pembinaAliAssignment,
+          unitId: "", // No authoritative kamar assigned
+        };
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => ({
+            userId: "usr-pembina-unassigned",
+            username: "pembina.none",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            staffId: "stf-none",
+          }),
+          getActiveAssignments: async () => [unassignedPembina],
+        });
+
+        const service = createHealthV2Service({ db: mockDb, dataProvider });
+        await assert.rejects(
+          async () => {
+            await service.getCasesAggregate({}, { actorUserId: "usr-pembina-unassigned" });
+          },
+          /OUT_OF_SCOPE_ACCESS_DENIED/
+        );
+      });
+
+      it("Proof R2-13: GLOBAL health staff aggregate works across institution", async () => {
+        let capturedWhere: any = null;
+        const mockDb = createMockDb({
+          healthCaseV2: {
+            groupBy: async ({ where }: any) => {
+              capturedWhere = where;
+              return [{ statusV2: "DIPANTAU", _count: { _all: 5 } }];
+            },
+          },
+        });
+
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => ({
+            userId: "usr-health-staff",
+            username: "petugas.kesehatan",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            staffId: "stf-01",
+          }),
+          getActiveAssignments: async () => [globalHealthStaffAssignment],
+        });
+
+        const service = createHealthV2Service({ db: mockDb, dataProvider });
+        const result = await service.getCasesAggregate({}, { actorUserId: "usr-health-staff" });
+
+        assert.strictEqual(result.success, true);
+        // Global aggregate has no forced kamar constraint
+        assert.strictEqual(capturedWhere.santri, undefined);
+      });
+
+      it("Proof R2-14: Aggregate result never exposes clinical details", async () => {
+        const mockDb = createMockDb();
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => ({
+            userId: "usr-health-staff",
+            username: "petugas.kesehatan",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            staffId: "stf-01",
+          }),
+          getActiveAssignments: async () => [globalHealthStaffAssignment],
+        });
+
+        const service = createHealthV2Service({ db: mockDb, dataProvider });
+        const result = await service.getCasesAggregate({}, { actorUserId: "usr-health-staff" });
+
+        // Must contain only numerical aggregate fields
+        const keys = Object.keys(result.data).sort();
+        assert.deepStrictEqual(keys, ["activeCases", "byStatus", "recoveredCases", "totalCases"]);
+        assert.strictEqual((result.data as any).diagnosa, undefined);
+        assert.strictEqual((result.data as any).keluhan, undefined);
+        assert.strictEqual((result.data as any).tindakanAwal, undefined);
+        assert.strictEqual((result.data as any).events, undefined);
+      });
+    });
+
+    // =======================================================================
+    // 4. AUDIT DECISION MUST FAIL CLOSED
+    // =======================================================================
+    describe("Blocker 4: Audit Decision Fail-Closed (No Unknown/Global Fallbacks)", () => {
+      it("Proof R2-15: Missing decision assignment fails closed (AUTH_DECISION_INCOMPLETE)", async () => {
+        const mockDb = createMockDb();
+        // Incomplete grant missing assignmentId
+        const incompleteAssignment: CanonicalAssignmentWithDetails = {
+          ...unitAssignment,
+          id: "",
+        };
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => unitAccountIdentity,
+          getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+          getActiveAssignments: async () => [incompleteAssignment],
+          verifyHumanExecutor: async (id: string) => ({ userId: id, id, name: "dr. Lisa", isActive: true }),
+        });
+
+        const service = createHealthV2Service({ db: mockDb, dataProvider });
+        await assert.rejects(
+          async () => {
+            await service.createCase(
+              { santriId: "san-001", keluhan: "Sakit", tindakanAwal: "Obat" },
+              { actorUserId: "usr-poskestren-unit", humanExecutorId: "usr-lisa" }
+            );
+          },
+          /AUTH_DECISION_INCOMPLETE/
+        );
+      });
+
+      it("Proof R2-16: Missing decision position fails closed", async () => {
+        const mockDb = createMockDb();
+        const incompleteAssignment: CanonicalAssignmentWithDetails = {
+          ...unitAssignment,
+          positionCode: "",
+        };
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => unitAccountIdentity,
+          getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+          getActiveAssignments: async () => [incompleteAssignment],
+          verifyHumanExecutor: async (id: string) => ({ userId: id, id, name: "dr. Lisa", isActive: true }),
+        });
+
+        const service = createHealthV2Service({ db: mockDb, dataProvider });
+        await assert.rejects(
+          async () => {
+            await service.createCase(
+              { santriId: "san-001", keluhan: "Sakit", tindakanAwal: "Obat" },
+              { actorUserId: "usr-poskestren-unit", humanExecutorId: "usr-lisa" }
+            );
+          },
+          /AUTH_DECISION_INCOMPLETE/
+        );
+      });
+
+      it("Proof R2-17: Missing decision scope fails closed", async () => {
+        const mockDb = createMockDb();
+        const incompleteAssignment: CanonicalAssignmentWithDetails = {
+          ...unitAssignment,
+          positionCapabilities: [
+            {
+              capabilityCode: HEALTH_CAPABILITIES.CREATE,
+              scopeType: "" as any,
+              businessRuleState: "VERIFIED_PRODUCTION",
+            },
+          ],
+        };
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => unitAccountIdentity,
+          getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+          getActiveAssignments: async () => [incompleteAssignment],
+          verifyHumanExecutor: async (id: string) => ({ userId: id, id, name: "dr. Lisa", isActive: true }),
+        });
+
+        const service = createHealthV2Service({ db: mockDb, dataProvider });
+        await assert.rejects(
+          async () => {
+            await service.createCase(
+              { santriId: "san-001", keluhan: "Sakit", tindakanAwal: "Obat" },
+              { actorUserId: "usr-poskestren-unit", humanExecutorId: "usr-lisa" }
+            );
+          },
+          /AUTH_DECISION_INCOMPLETE|PERMISSION_DENIED/
+        );
+      });
+
+      it("Proof R2-18: Missing decision authoritative unit fails closed (no GLOBAL/UNKNOWN fallback)", async () => {
+        const mockDb = createMockDb();
+        const missingUnitStaffAssignment: CanonicalAssignmentWithDetails = {
+          ...globalHealthStaffAssignment,
+          unitId: "", // Missing anchor unit!
+          positionCapabilities: [
+            {
+              capabilityCode: HEALTH_CAPABILITIES.CREATE,
+              scopeType: "GLOBAL",
+              businessRuleState: "VERIFIED_PRODUCTION",
+            },
+          ],
+        };
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => ({
+            userId: "usr-health-staff",
+            username: "petugas.kesehatan",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            staffId: "stf-01",
+          }),
+          getActiveAssignments: async () => [missingUnitStaffAssignment],
+        });
+
+        const service = createHealthV2Service({ db: mockDb, dataProvider });
+        await assert.rejects(
+          async () => {
+            await service.createCase(
+              { santriId: "san-001", keluhan: "Sakit", tindakanAwal: "Obat" },
+              { actorUserId: "usr-health-staff" }
+            );
+          },
+          /AUTH_DECISION_INCOMPLETE/
+        );
+      });
+    });
+
+    // =======================================================================
+    // 5. REMOVE CALLER AUTHORIZATION SEAMS & DEPENDENCY SEPARATION
+    // =======================================================================
+    describe("Blocker 5: Clean Service Context & Dependency Separation", () => {
+      it("Proof R2-19: Request context has no caller capabilities, scope, or position", async () => {
+        const mockDb = createMockDb();
+        const emptyAssignmentsProvider = createMockDataProvider({
+          getIdentity: async () => ({
+            userId: "usr-attacker",
+            username: "attacker",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+          }),
+          getActiveAssignments: async () => [], // No assignments in DB!
+        });
+
+        const service = createHealthV2Service({ db: mockDb, dataProvider: emptyAssignmentsProvider });
+        // Caller injects synthetic authorization fields into request context
+        const forgedContext = {
+          actorUserId: "usr-attacker",
+          capabilities: [HEALTH_CAPABILITIES.CREATE],
+          scopeType: "GLOBAL",
+          positionCode: "PETUGAS_KESEHATAN",
+        };
+
+        await assert.rejects(
+          async () => {
+            await service.createCase(
+              { santriId: "san-001", keluhan: "Sakit", tindakanAwal: "Obat" },
+              forgedContext as any
+            );
+          },
+          /PERMISSION_DENIED/,
+          "Service must derive authority solely from authoritative database, ignoring context capabilities/scope"
+        );
+      });
+
+      it("Proof R2-20: Production request callers cannot inject dataProvider or auditSink via request context", async () => {
+        const mockDb = createMockDb();
+        const boundDataProvider = createMockDataProvider({
+          getIdentity: async () => ({
+            userId: "usr-victim",
+            username: "victim",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+          }),
+          getActiveAssignments: async () => [], // Denied!
+        });
+
+        let fakeProviderUsed = false;
+        const injectedFakeProvider: ICanonicalDataProvider = createMockDataProvider({
+          getActiveAssignments: async () => {
+            fakeProviderUsed = true;
+            return [globalHealthStaffAssignment];
+          },
+        });
+
+        const service = createHealthV2Service({ db: mockDb, dataProvider: boundDataProvider });
+
+        await assert.rejects(
+          async () => {
+            await service.createCase(
+              { santriId: "san-001", keluhan: "Sakit", tindakanAwal: "Obat" },
+              {
+                actorUserId: "usr-victim",
+                dataProvider: injectedFakeProvider,
+              } as any
+            );
+          },
+          /PERMISSION_DENIED/
+        );
+
+        assert.strictEqual(fakeProviderUsed, false, "Per-request dataProvider injection must be ignored");
+      });
+    });
+
+    // =======================================================================
+    // 6. CLIENT REQUEST ID SINGLE SOURCE
+    // =======================================================================
+    describe("Blocker 7: Client Request ID Single Source", () => {
+      it("Proof R2-21: Conflicting input and context clientRequestId throws CLIENT_REQUEST_ID_MISMATCH", async () => {
+        const mockDb = createMockDb();
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => unitAccountIdentity,
+          getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+          getActiveAssignments: async () => [unitAssignment],
+          verifyHumanExecutor: async (id: string) => ({ userId: id, id, name: "dr. Lisa", isActive: true }),
+        });
+
+        const service = createHealthV2Service({ db: mockDb, dataProvider });
+        await assert.rejects(
+          async () => {
+            await service.createCase(
+              {
+                santriId: "san-001",
+                keluhan: "Sakit",
+                tindakanAwal: "Obat",
+                clientRequestId: "req-input-conflict",
+              },
+              {
+                actorUserId: "usr-poskestren-unit",
+                humanExecutorId: "usr-lisa",
+                clientRequestId: "req-context-authoritative",
+              }
+            );
+          },
+          /CLIENT_REQUEST_ID_MISMATCH/
+        );
+      });
+
+      it("Proof R2-22: Request metadata context owns clientRequestId single-source-of-truth", async () => {
+        const mockDb = createMockDb();
+        let auditClientRequestId: string | null = null;
+        const mockAuditSink = {
+          record: async (rec: any) => {
+            auditClientRequestId = rec.clientRequestId;
+          },
+        };
+
+        const dataProvider = createMockDataProvider({
+          getIdentity: async () => unitAccountIdentity,
+          getUnitAccountPlacement: async () => ({ unitId: "ou-poskestren" }),
+          getActiveAssignments: async () => [unitAssignment],
+          verifyHumanExecutor: async (id: string) => ({ userId: id, id, name: "dr. Lisa", isActive: true }),
+        });
+
+        const service = createHealthV2Service({
+          db: mockDb,
+          dataProvider,
+          auditSink: mockAuditSink as any,
+        });
+        const result = await service.createCase(
+          { santriId: "san-001", keluhan: "Sakit", tindakanAwal: "Obat" },
+          {
+            actorUserId: "usr-poskestren-unit",
+            humanExecutorId: "usr-lisa",
+            clientRequestId: "req-from-metadata-context-789",
+          }
+        );
+
+        assert.strictEqual(result.success, true);
+        assert.strictEqual(auditClientRequestId, "req-from-metadata-context-789");
+      });
+    });
+
+    // =======================================================================
+    // 7. DOCUMENTATION PARITY
+    // =======================================================================
+    describe("Blocker 6: Documentation, Migration & Schema Parity", () => {
+      it("Proof R2-23: Schema, migration SQL, and M3.3A doc describe the same event index (case_id, created_at)", () => {
+        // 1. Prisma schema check
+        assert.ok(
+          schemaContent.includes("@@index([caseId, createdAt])"),
+          "Prisma schema must index caseId and createdAt on HealthCaseV2Event"
+        );
+
+        // 2. Migration SQL check
+        assert.ok(
+          migrationSqlContent.includes(
+            'CREATE INDEX "health_case_v2_events_case_id_created_at_idx" ON "health_case_v2_events"("case_id", "created_at");'
+          ),
+          "Migration SQL must create health_case_v2_events_case_id_created_at_idx on (case_id, created_at)"
+        );
+
+        // 3. Documentation check
+        assert.ok(
+          docContent.includes("health_case_v2_events_case_id_created_at_idx"),
+          "M3.3A documentation must cite health_case_v2_events_case_id_created_at_idx"
+        );
+
+        // 4. Contradictory index claims must be completely eliminated
+        assert.strictEqual(
+          docContent.includes("health_case_v2_events_case_id_occurred_at_idx"),
+          false,
+          "Zero occurrences of obsolete occurred_at event index in documentation"
+        );
+        assert.strictEqual(
+          migrationSqlContent.includes("health_case_v2_events_case_id_occurred_at_idx"),
+          false,
+          "Zero occurrences of obsolete occurred_at event index in migration SQL"
+        );
+        assert.strictEqual(
+          schemaContent.includes("caseId, occurredAt"),
+          false,
+          "Zero occurrences of obsolete occurred_at event index in Prisma schema"
+        );
+      });
     });
   });
 

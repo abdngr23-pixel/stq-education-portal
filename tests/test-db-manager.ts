@@ -2469,6 +2469,7 @@ export interface M33aMigrationVerificationResult {
   tableCreated: boolean;
   eventsTableCreated: boolean;
   statusOccurredIndexCreated: boolean;
+  eventCreatedAtIdxCreated: boolean;
   enumCreated: boolean;
   enumExactValuesVerified: boolean;
   invalidEnumRejected: boolean;
@@ -2725,6 +2726,13 @@ export async function simulateM33aMigrationChain(): Promise<M33aMigrationVerific
     `);
     const statusOccurredIndexCreated = indexRes.length === 1;
 
+    // Verifikasi index health_case_v2_events(case_id, created_at)
+    const eventIndexRes: Array<{ indexname: string }> = await client.$queryRawUnsafe(`
+      SELECT indexname FROM pg_indexes
+      WHERE tablename = 'health_case_v2_events' AND indexname = 'health_case_v2_events_case_id_created_at_idx';
+    `);
+    const eventCreatedAtIdxCreated = eventIndexRes.length === 1;
+
     // 10. Verifikasi enum HealthStatusV2 dibuat dengan 4 nilai tepat
     const enumRes: Array<{ enumlabel: string }> = await client.$queryRawUnsafe(`
       SELECT e.enumlabel
@@ -2797,6 +2805,7 @@ export async function simulateM33aMigrationChain(): Promise<M33aMigrationVerific
       tableCreated &&
       eventsTableCreated &&
       statusOccurredIndexCreated &&
+      eventCreatedAtIdxCreated &&
       enumCreated &&
       enumExactValuesVerified &&
       invalidEnumRejected &&
@@ -2817,6 +2826,7 @@ export async function simulateM33aMigrationChain(): Promise<M33aMigrationVerific
       tableCreated,
       eventsTableCreated,
       statusOccurredIndexCreated,
+      eventCreatedAtIdxCreated,
       enumCreated,
       enumExactValuesVerified,
       invalidEnumRejected,

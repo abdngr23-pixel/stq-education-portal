@@ -40,11 +40,20 @@ export interface CreateAuditRecordParams {
   timestamp?: Date;
 }
 
+export type AuditDbClient = {
+  canonicalAuditLog: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    create: (args: any) => Promise<any>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    findMany?: (args?: any) => Promise<any>;
+  };
+};
+
 /**
  * Audit log sink interface allowing pluggable storage (in-memory for tests, Prisma for DB)
  */
 export interface IAuditSink {
-  record(entry: CanonicalAuditRecord): Promise<void>;
+  record(entry: CanonicalAuditRecord, tx?: AuditDbClient): Promise<void>;
   queryByEntity?(entity: string, entityId: string): Promise<CanonicalAuditRecord[]>;
 }
 
@@ -75,42 +84,45 @@ export class InMemoryAuditSink implements IAuditSink {
  * Prisma-backed audit sink for isolated test environments or production write activation
  */
 export class PrismaAuditSink implements IAuditSink {
-  async record(entry: CanonicalAuditRecord): Promise<void> {
+  private client?: AuditDbClient;
+
+  constructor(client?: AuditDbClient) {
+    this.client = client;
+  }
+
+  async record(entry: CanonicalAuditRecord, tx?: AuditDbClient): Promise<void> {
     // Check safety: only persist if in test mode or if explicitly allowed
     if (process.env.NODE_ENV === "production" && process.env.ENABLE_CANONICAL_AUDIT_WRITES !== "true") {
       // In production during Milestone 2 shadow phase, do not write to production table
       return;
     }
 
-    try {
-      await prisma.canonicalAuditLog.create({
-        data: {
-          id: entry.id,
-          technicalAccountId: entry.technicalAccountId,
-          technicalAccountUsername: entry.technicalAccountUsername,
-          humanExecutorId: entry.humanExecutorId || null,
-          humanExecutorName: entry.humanExecutorName || null,
-          action: entry.action,
-          entity: entry.entity,
-          entityId: entry.entityId,
-          capabilityCode: entry.capabilityCode,
-          assignmentId: entry.assignmentId || null,
-          positionCode: entry.positionCode,
-          scopeType: entry.scopeType,
-          unitId: entry.unitId,
-          beforeState: (entry.beforeState as unknown as object) || undefined,
-          afterState: (entry.afterState as unknown as object) || undefined,
-          resourceContext: (entry.resourceContext as unknown as object) || undefined,
-          reason: entry.reason || null,
-          clientRequestId: entry.clientRequestId || null,
-          ipAddress: entry.ipAddress || null,
-          userAgent: entry.userAgent || null,
-          createdAt: entry.timestamp,
-        },
-      });
-    } catch (err: unknown) {
-      console.error("[CanonicalAudit] Failed to persist audit log:", err);
-    }
+    const db = tx || this.client || prisma;
+    await db.canonicalAuditLog.create({
+      data: {
+        id: entry.id,
+        technicalAccountId: entry.technicalAccountId,
+        technicalAccountUsername: entry.technicalAccountUsername,
+        humanExecutorId: entry.humanExecutorId || null,
+        humanExecutorName: entry.humanExecutorName || null,
+        action: entry.action,
+        entity: entry.entity,
+        entityId: entry.entityId,
+        capabilityCode: entry.capabilityCode,
+        assignmentId: entry.assignmentId || null,
+        positionCode: entry.positionCode,
+        scopeType: entry.scopeType,
+        unitId: entry.unitId,
+        beforeState: (entry.beforeState as unknown as object) || undefined,
+        afterState: (entry.afterState as unknown as object) || undefined,
+        resourceContext: (entry.resourceContext as unknown as object) || undefined,
+        reason: entry.reason || null,
+        clientRequestId: entry.clientRequestId || null,
+        ipAddress: entry.ipAddress || null,
+        userAgent: entry.userAgent || null,
+        createdAt: entry.timestamp,
+      },
+    });
   }
 
   async queryByEntity(entity: string, entityId: string): Promise<CanonicalAuditRecord[]> {
@@ -159,7 +171,8 @@ export function setActiveAuditSink(sink: IAuditSink): void {
  */
 export async function logCanonicalAudit(
   params: CreateAuditRecordParams,
-  sink: IAuditSink = activeAuditSink
+  sink: IAuditSink = activeAuditSink,
+  tx?: AuditDbClient
 ): Promise<CanonicalAuditRecord> {
   const record: CanonicalAuditRecord = {
     id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
@@ -185,7 +198,7 @@ export async function logCanonicalAudit(
     timestamp: params.timestamp || new Date(),
   };
 
-  await sink.record(record);
+  await sink.record(record, tx);
   return record;
 }
 

@@ -111,6 +111,7 @@ export interface CreateHealthCaseV2Input {
   catatan?: string | null;
   attachmentUrl?: string | null;
   statusV2?: HealthStatusV2;
+  /** @deprecated Prefer passing clientRequestId via HealthV2RequestContext */
   clientRequestId?: string | null;
 }
 
@@ -120,6 +121,7 @@ export interface UpdateHealthCaseV2StatusInput {
   tindakanTambahan?: string | null;
   tindakanLanjutan?: string | null;
   catatan?: string | null;
+  /** @deprecated Prefer passing clientRequestId via HealthV2RequestContext */
   clientRequestId?: string | null;
 }
 
@@ -153,8 +155,27 @@ export interface HealthCaseV2DTO {
   events?: HealthCaseV2EventDTO[];
 }
 
+/**
+ * Clean Request-Facing Context for Health V2 Services.
+ * Contains zero synthetic authorization inputs (no capabilities, no roles, no positions, no scopes).
+ * Authoritative context is resolved entirely server-side from active assignments and DB records.
+ */
+export interface HealthV2RequestContext {
+  actorUserId: string;
+  humanExecutorId?: string | null;
+  clientRequestId?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  now?: Date;
+}
+
+/**
+ * @deprecated Use HealthV2RequestContext with createHealthV2Service({ db, dataProvider, auditSink }).
+ * Retained for backwards compatibility with Round 1 test callers.
+ */
 export interface HealthCaseV2AuditContext {
-  userId: string;
+  userId?: string;
+  actorUserId?: string;
   username?: string;
   staffId?: string | null;
   accountType?: "PERSONAL" | "UNIT";
@@ -167,3 +188,4 @@ export interface HealthCaseV2AuditContext {
   dataProvider?: ICanonicalDataProvider;
   auditSink?: IAuditSink;
 }
+
