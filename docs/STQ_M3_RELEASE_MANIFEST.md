@@ -1864,8 +1864,7 @@
   - **Dry-run evidence:** Staging/local UAT runbook passes.
   - **Positive test:** All 6 scenarios succeed as expected.
   - **Negative test:** N/A
-  - **Reconciliation evidence:** UAT evidence log with timestamps and session IDs.
-  - **Rollback/recovery consideration:** Preserve test execution evidence and audit logs. Zero production data modified.
+  - **Rollback/recovery consideration:** ZERO UNEXPECTED PRODUCTION DATA MUTATION. UAT positive scenarios may create controlled production test mutations only after explicit C2E authorization. Every mutation must have captured pre-state/post-state and audit attribution. No unrelated production data may be modified. Test records must not be automatically deleted merely to restore a "clean" result. Any cleanup/compensating mutation requires explicit authorization and exact record identification.
   - **Evidence Pack reference:** `EVID-UAT-POS`
   - **Gate:** GATE-C2E
   - **Status:** `NOT_READY`
@@ -1902,28 +1901,28 @@
 ### Z. RECOVERY / FINAL SIGN-OFF
 - **REL-REC-01 | Rollback & Disaster Recovery Runbook**
   - **Domain:** RECOVERY / RUNBOOK
-  - **Requirement:** Comprehensive fail-closed rollback protocol:
-    - Pre-C2B failure: zero rollback needed (zero writes executed).
-    - C2B DDL failure: restore pre-C2B backup into production.
-    - C2C provisioning failure: execute reverse compensating DML script.
-    - C2D activation failure: toggle `PENDIDIKAN_V2_UAT_ENABLED=false` and reset `businessRuleState`.
-    - C2E failure: disable feature flags, revoke test assignments.
-  - **Source of truth:** `docs/STQ_M3_RELEASE_MANIFEST.md`
+  - **Requirement:** Comprehensive fail-closed rollback protocol (FAILURE -> STOP further release progression -> preserve evidence -> inspect actual database/environment state -> compare against captured before-state -> use transaction rollback only if transaction is still safely open -> determine whether any compensating action is actually necessary -> require explicit Business Owner authorization for any new production mutation -> execute only exact compensating actions based on known changed IDs and captured before-state -> independently reconcile after recovery):
+    - Pre-C2B failure: Zero recovery mutation needed; verify zero production writes occurred.
+    - C2B DDL failure: DO NOT automatically restore production. Inspect actual migration/database state first (production restore is a high-risk mutation). Restore only if actual failure state strictly requires it AND explicit recovery authorization is granted.
+    - C2C provisioning failure: DO NOT automatically execute reverse DML. Never delete pre-existing rows; never blanket-null fields. Prefer transaction rollback if still possible; otherwise perform only explicitly authorized compensating actions based on exact rows created/changed during the failed operation and captured before-state.
+    - C2D activation failure: Stop release progression. Feature flag may be disabled if required as a fail-safe and explicitly authorized according to runbook. Do NOT blindly reset `businessRuleState`; any `businessRuleState` compensation must use captured before-state and explicit authorization.
+    - C2E failure: Stop UAT/release progression. Preserve test data and audit evidence. Do NOT automatically revoke/delete assignments or test records; determine exact recovery actions from captured before-state and explicit authorization.
+  - **Source of truth:** `docs/STQ_M3_RELEASE_MANIFEST.md`, `docs/STQ_M3_RELEASE_DEPENDENCIES.md`
   - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** Documented in control plane.
-  - **Target state:** Ready for execution if triggered.
+  - **Current state:** Documented in control plane; non-destructive recovery policy enforced.
+  - **Target state:** Ready for execution if triggered; zero automated destructive mutations.
   - **Dependency:** None
-  - **Production write required?:** NO (Activated only upon incident)
-  - **Owner authorization required?:** YES (To trigger rollback)
+  - **Production write required?:** YES (`FUTURE_RECOVERY_MAY_REQUIRE_PRODUCTION_WRITE = YES; CURRENT_PR_EXECUTED_PRODUCTION_WRITE = 0`)
+  - **Owner authorization required?:** YES (Mandatory for any recovery mutation)
   - **Dry-run evidence:** Rollback procedure walkthrough.
-  - **Positive test:** Verified clean abort at each gate.
-  - **Negative test:** Recovery tested in isolated environment.
-  - **Reconciliation evidence:** Rollback drill documentation.
-  - **Rollback/recovery consideration:** Built into each stage.
+  - **Positive test:** Verified clean abort and evidence preservation at each gate.
+  - **Negative test:** Recovery drill tested in isolated staging environment without data loss.
+  - **Reconciliation evidence:** Rollback drill documentation and before/after state comparison.
+  - **Rollback/recovery consideration:** Built into each stage; fail-closed and non-destructive.
   - **Evidence Pack reference:** `EVID-REC-RUNBOOK`
   - **Gate:** ALL GATES
   - **Status:** `BLOCKED` (Requires backup gate completion)
-  - **Notes / unresolved decision:** Incident safety net.
+  - **Notes / unresolved decision:** Incident safety net; zero automated destructive mutations.
 
 - **REL-REC-02 | Post-Release Integrity & Drift Audit**
   - **Domain:** RECOVERY / DRIFT_AUDIT
@@ -2033,9 +2032,9 @@
 ## 3. Pre-Flight Diagnostic Summary
 
 - **Total Release Items Cataloged:** 100
-- **PASS (Verified Baseline / Guard Invariants):** 12
+- **PASS (Verified Baseline / Guard Invariants):** 11
 - **READY (Ready for Execution):** 0 (Zero items ready for mutation without prerequisites)
-- **BLOCKED (Hard Gated by Backup, Credentials, or Decisions):** 30
-- **NOT_READY (Waiting on Upstream Gate Completion):** 58
+- **BLOCKED (Hard Gated by Backup, Decisions, or Dependencies):** 41
+- **NOT_READY (Waiting on Upstream Gate Completion):** 48
 - **Current Authorization State:** **ZERO PRODUCTION WRITES AUTHORIZED**
 - **C2B Execution Status:** `STRICTLY BLOCKED` until backup verification and owner authorization.
