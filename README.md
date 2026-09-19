@@ -1,5 +1,19 @@
 # 🕌 STQ Education Portal (Darul Ulum Cendekia)
 
+> [!CAUTION]
+> **PROJECT CONTEXT / SOURCE OF TRUTH**
+>
+> This README is an onboarding and product-overview document. It is **not** the authoritative source for current business rules, authorization policy, migration state, or production rollout status.
+>
+> Before implementing or changing the system, read:
+>
+> 1. [`STQ_PROJECT_CONTEXT.md`](./STQ_PROJECT_CONTEXT.md) — mandatory project bootstrap and authority hierarchy.
+> 2. [`docs/STQ_CURRENT_STATE.md`](./docs/STQ_CURRENT_STATE.md) — exact current Git/production/migration/release checkpoint.
+> 3. [`types/architecture-lock.ts`](./types/architecture-lock.ts) — machine-checked canonical architecture contract.
+> 4. [`docs/STQ_ARCHITECTURE_LOCK.md`](./docs/STQ_ARCHITECTURE_LOCK.md) — canonical architecture and policy boundaries.
+>
+> If this README conflicts with those sources, the canonical sources above win.
+
 Sistem Informasi Manajemen Terpadu Pondok Pesantren Tahfizh Quran berbasis **Next.js 16 (App Router)**, **Tailwind CSS v4**, **PostgreSQL**, dan **Prisma ORM**, menggantikan sistem lama berbasis Google Apps Script & Google Spreadsheet.
 
 ---
