@@ -359,17 +359,22 @@ Hardened backup behavior is unit-tested in `tests/backup-db.test.ts`:
 The following provisioning tasks are required for Milestone 3.3C2C (post-migration). **No provisioning was performed in C2A.**
 
 ### A. Academic Structure & Cohort Policy
-1. **Education Cohort Definition (Canonical Business Rule):**
+1. **Education Cohort & Tingkat Definition (Canonical Business Rule):**
    - An `EducationCohort` represents a permanent **ANGKATAN / TAHUN AJARAN MASUK** (e.g., `2024/2025`, `2025/2026`, `2026/2027`).
    - Gender (`PUTRA` / `PUTRI`) is completely separate and must **NEVER** define cohort identity.
-   - Current *Tingkat Studi Umum* (1 / 2 / 3, representing school grades 7, 8, 9) is a derived/current program position and must **NOT** replace or mutate permanent cohort identity.
+   - **Tingkat Studi Umum (1 / 2 / 3)** is current program position.
+   - Formal school class is a separate attribute.
+   - School class must **NOT** define `EducationCohort`.
+   - School class must **NOT** be treated as canonical equivalent to Tingkat Studi Umum.
+   - Current observed correlation must not become a business rule.
+   - Tingkat Studi Umum must **NOT** replace or mutate permanent cohort identity.
 2. **Current Production Source Data Evaluation:**
-   - Active santri demographic distribution across current classes:
-     - Grade 7: `7A` (8), `7B` (16), `7C` (5) $\rightarrow$ Total: 29 santri
-     - Grade 8: `8A` (10), `8B` (6), `8C` (3) $\rightarrow$ Total: 19 santri
-     - Grade 9: `9A` (7), `9C` (2) $\rightarrow$ Total: 9 santri
+   - Active santri demographic distribution across current formal school classes:
+     - Class 7: `7A` (8), `7B` (16), `7C` (5) $\rightarrow$ Total: 29 santri
+     - Class 8: `8A` (10), `8B` (6), `8C` (3) $\rightarrow$ Total: 19 santri
+     - Class 9: `9A` (7), `9C` (2) $\rightarrow$ Total: 9 santri
      - Total active santri: 57
-   - **Data Quality Gap:** The production `santri` table lacks an explicit `angkatan` or `tahun_masuk` column. Permanent entry cohort cannot be inferred merely from current class assignment without administrative verification.
+   - **Data Quality Gap:** The production `santri` table records formal school classes but lacks an explicit `angkatan` or `tahun_masuk` column. School class does not define cohort identity, and permanent entry cohort cannot be inferred from class without administrative confirmation.
    - **Santri with Unresolved Permanent Cohort:** 57 (all active santri).
    - **Status:**
      $$\mathbf{COHORT\_MAPPING = NEEDS\_BUSINESS\_INPUT}$$
