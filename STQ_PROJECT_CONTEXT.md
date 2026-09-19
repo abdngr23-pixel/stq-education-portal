@@ -72,7 +72,9 @@ Defines approved structural architecture, non-negotiable boundaries, organizatio
 ### Level 3 — Current release / production state
 `docs/STQ_CURRENT_STATE.md`
 
-Defines the current main baseline, current milestone, production migration state, blockers, immutable guards, and next authorized task.
+Defines verified repository checkpoints, current milestone and production state, migration state, blockers, immutable guards, and the next planned or authorized gate.
+
+Embedded commit SHAs are checkpoint references only. The actual live `main` HEAD must always be resolved directly from Git/GitHub.
 
 This file is intentionally updated more frequently than the master context.
 
