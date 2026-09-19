@@ -1,5 +1,5 @@
 # STQ EDUCATION PORTAL — M3.3 EVIDENCE PACK STANDARD
-**Production Verification Protocols, Mandatory Evidence Artifacts & Release Freeze Rules**
+**Production Verification Protocols, Mandatory Evidence Artifacts & Privacy/Security Hardening**
 **Document**: `docs/STQ_M3_EVIDENCE_PACK_STANDARD.md`
 **Status**: `CONTROL_PLANE_ACTIVE`
 **Baseline Commit (`main`)**: `8e670491d1ed0c88a480ed90186153e96ca1dea3`
@@ -8,29 +8,57 @@
 
 ---
 
-## 1. Evidence Pack Philosophy & Retention Invariants
+## 1. Evidence Classification & Privacy/Security Architecture
 
-To guarantee verifiable data integrity, zero undocumented side-effects, and absolute auditability during the M3.3 Release Train, **no production phase is considered complete without a sealed, immutable Evidence Pack**.
+To guarantee verifiable data integrity, zero undocumented side-effects, and absolute auditability during the M3.3 Release Train while strictly protecting operational credentials and personal privacy, all release evidence is partitioned into two distinct classes:
 
-### Core Invariants
-1. **Zero Evidence Omission**: Every query, command output, migration log, and database mutation must be captured verbatim without truncation.
-2. **Cryptographic Sealing**: All artifact files within an evidence pack must have their SHA-256 checksums recorded in a root `MANIFEST.sha256` file immediately upon completion.
-3. **Dual Timestamping**: Every log entry must include UTC and WITA (Asia/Makassar, UTC+8) timestamps.
-4. **Executor Attribution**: Evidence files must record the Git SHA, operator system username, IP address, and authenticated database identity.
-5. **Fail-Closed Gate Pass**: A downstream stage cannot begin unless the upstream Evidence Pack is complete, validated against its manifest checksums, and signed off by the Business Owner.
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   EVIDENCE CLASSIFICATION MODEL                                  │
+│                                                                                                  │
+│   CLASS A: REPOSITORY-SAFE EVIDENCE (Committed to Git after Sanitization)                       │
+│   • Cryptographic SHA-256 Checksums (MANIFEST.sha256)                                            │
+│   • Record counts and relation cardinalities (e.g. 57 santri, 10 staff)                          │
+│   • Database schema names, table names, column names, enum labels                                │
+│   • Migration filenames and execution statuses                                                   │
+│   • PASS / FAIL gate diagnostic results                                                          │
+│   • Redacted command metadata, non-sensitive public identifiers                                  │
+│   • Summarized authorization decisions (ALLOW / DENY + reason code)                              │
+│                                                                                                  │
+│   CLASS B: RESTRICTED RAW EVIDENCE (STRICTLY FORBIDDEN IN GIT — Secure Vault Storage)           │
+│   • Connection strings (`DATABASE_URL`, `DIRECT_URL`, `BACKUP_DATABASE_URL`)                     │
+│   • Authentication tokens, session cookies, JWTs, API tokens, private keys                       │
+│   • Password hashes (`passwordHash`), PINs, raw credentials                                      │
+│   • Secret environment variable values                                                           │
+│   • Full unredacted table dumps of `users` or `staff` containing PII / phone numbers             │
+│   • Raw unredacted audit-log dumps, raw Authorization headers                                    │
+│   • Personally sensitive `beforeState` / `afterState` payloads                                   │
+│   • Complete physical SQL database exports (`.dump`, `.tar`, `.sql`)                             │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Mandatory Redaction Rules
+Every artifact committed to the repository must be strictly sanitized. The following keys and substrings must be replaced with `[REDACTED]` or omitted prior to commit:
+- `DATABASE_URL`, `DIRECT_URL`, `BACKUP_DATABASE_URL`
+- `password`, `passwordHash`, `pin`, `token`, `secret`, `jwt`
+- `cookie`, `set-cookie`, `authorization`, `bearer`
+- Phone numbers, personal email addresses, national identity numbers
+- Private cryptographic keys and certificates
+
+Evidence integrity is preserved through SHA-256 hashes of the raw restricted artifacts recorded in a sanitized manifest (`MANIFEST.sha256`), allowing independent mathematical verification without exposing sensitive operational data in version control.
 
 ---
 
 ## 2. Directory Layout & Artifact Registry
 
-All production release evidence is stored within the versioned `evidence/` hierarchy:
+Repository-safe evidence is organized within the versioned `evidence/` directory hierarchy:
 
 ```
 evidence/
 ├── C2B_MIGRATION/
 │   ├── MANIFEST.sha256
 │   ├── 00_PRE_BACKUP_VERIFICATION.json
-│   ├── 01_MIGRATION_DEPLOY_RAW.log
+│   ├── 01_MIGRATION_DEPLOY_SUMMARY.log
 │   ├── 02_POST_MIGRATION_SCHEMA_CATALOG.json
 │   ├── 03_PRISMA_MIGRATIONS_TABLE_DUMP.json
 │   ├── 04_AUTOMATED_REGRESSION_TEST_RESULTS.log
@@ -65,7 +93,7 @@ evidence/
     ├── UAT_07_TAHFIZH_TARGET_MANAGE.json
     ├── UAT_08_KEASRAMAAN_PERMISSION_READ.json
     ├── UAT_09_KEASRAMAAN_PERMISSION_CREATE.json
-    ├── UAT_AUDIT_LOG_FULL_DUMP.json
+    ├── UAT_AUDIT_LOG_SANITIZED_EXTRACT.json
     └── UAT_EXECUTIVE_SUMMARY_AND_ACCEPTANCE.md
 ```
 
@@ -75,18 +103,19 @@ evidence/
 
 ### 3.1 C2B Migration Evidence Pack
 - **`00_PRE_BACKUP_VERIFICATION.json`**:
-  - Exact file path, file size in bytes, and SHA-256 hash of the physical database dump (`.dump` or `.tar`).
-  - Scratch database restoration log verifying table count, row counts for `users`, `santri`, `halaqoh`, and `audit_events`.
-- **`01_MIGRATION_DEPLOY_RAW.log`**:
-  - Full verbatim stdout and stderr from `npx prisma migrate deploy`.
+  - File size in bytes and SHA-256 hash of the physical database dump (`.dump`).
+  - Scratch database restoration verification log confirming table count, row count checksums for `users`, `santri`, `halaqoh`, and `audit_events` without logging raw row contents.
+  - Confirmation that dump connection used least-privilege read access (`SELECT` on required objects) and restore used isolated scratch credentials.
+- **`01_MIGRATION_DEPLOY_SUMMARY.log`**:
+  - Sanitized stdout and stderr from `npx prisma migrate deploy` (connection strings and credentials redacted).
   - Exit code (must be `0`).
 - **`02_POST_MIGRATION_SCHEMA_CATALOG.json`**:
   - Query output from PostgreSQL `information_schema.tables`, `columns`, and `pg_enum`.
-  - Confirms existence of M3.3A tables (`health_cases_v2`, `health_case_v2_events`, enum `HealthStatusV2`).
-  - Confirms existence of M3.3B tables (`education_cohorts`, `teaching_assignments`, `education_sessions`, `education_session_participants`, `education_session_attendances`, enums `EducationTrack`, `PedagogicalLevel`, `EducationSessionStatus`, `EducationAttendanceStatus`).
+  - Confirms presence of M3.3A tables (`health_cases_v2`, `health_case_v2_events`, enum `HealthStatusV2`).
+  - Confirms presence of M3.3B tables (`education_cohorts`, `teaching_assignments`, `education_sessions`, `education_session_participants`, `education_session_attendances`, enums `EducationTrack`, `PedagogicalLevel`, `EducationSessionStatus`, `EducationAttendanceStatus`).
 - **`03_PRISMA_MIGRATIONS_TABLE_DUMP.json`**:
-  - Query `SELECT id, checksum, migration_name, finished_at FROM _prisma_migrations ORDER BY started_at ASC;`.
-  - Verification that migration checksums match repository migration SQL files exactly.
+  - Sanitized query: `SELECT id, checksum, migration_name, finished_at FROM _prisma_migrations ORDER BY started_at ASC;`.
+  - Checksums matched 100% against repository migration files.
 - **`04_AUTOMATED_REGRESSION_TEST_RESULTS.log`**:
   - Output of test suite verifying non-regression of core auth, Tahfizh persistence, and existing endpoints.
 - **`05_C2B_STAGE_SIGN_OFF.md`**:
@@ -94,22 +123,22 @@ evidence/
 
 ### 3.2 C2C Provisioning Evidence Pack
 - **`00_PRE_PROVISIONING_IDENTITY_AUDIT.json`**:
-  - Snapshot of all records in `users`, `staff`, `positions`, `assignments`, and `teaching_assignments`.
+  - Least-data identity verification: selected non-secret identifiers (`id`, `username`, `role`, `accountType`, `status`), staff linkage state (`staffId != null`), and table row counts. Zero password hashes, PINs, or personal phone numbers.
 - **`01_REFERENCE_CATALOG_SEED_OUTPUT.json`**:
   - Record IDs and codes for 6 canonical Studi Umum subjects (`MP-SU-01` to `MP-SU-06`) and 5 Kepesantrenan subjects.
-  - Record IDs for `EducationCohort` (Tingkat 1, Tingkat 2, Tingkat 3).
+  - Record IDs for `EducationCohort` representing permanent admission year cohorts (e.g. `2024/2025`, `2025/2026`; strictly NEVER `Tingkat 1/2/3`). Note: Cohort creation remains `BLOCKED` until authoritative Business Owner admission data is provided.
   - Record IDs for `OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`.
 - **`02_POSITIONS_AND_CAPABILITIES_SEED_OUTPUT.json`**:
   - Position records (`MUDIR`, `KABID_TAHFIZH`, `KEPALA_KEASRAMAAN`, `PETUGAS_OPERASIONAL_TAHFIZH`, `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, `PETUGAS_OPERASIONAL_KEASRAMAAN`, `GURU_AKADEMIK`, `GURU_KEPESANTRENAN`).
   - 9 UAT capability records (`academic.*`, `tahfizh.*`, `keasramaan.*`).
-  - `PositionCapability` records with assigned scope types (`GLOBAL`, `DOMAIN`, `ASSIGNED_UNITS`, `HALAQOH`, `UNIT`).
+  - `PositionCapability` records with assigned canonical scopes (`GLOBAL`, `DOMAIN`, `ASSIGNED_UNITS`, `HALAQOH`).
 - **`03_STAFF_LINKAGE_VERIFICATION.json`**:
-  - Active staff records: `STF-0001` (Mudir), `STF-0002` (Kabid Tahfizh), `STF-0003` (Ust. Razan Mufli, S.Pd).
-  - User-to-staff linkages for all provisioned teaching and operational accounts.
+  - Active staff records and user-to-staff linkages verified via read-only audit.
+  - Note: `musyrif.tahifzh` staff linkage is `UNKNOWN / MUST_VERIFY_READ_ONLY`. Do not invent specific Staff IDs (`STF-0001`, `STF-0002`, `STF-0003`, `STF-0004`).
 - **`04_RAZAN_MT_ISOLATION_PROOF.json`**:
-  - Query proof that `razan.mt` has `staffId: null`, 0 `assignments`, 0 `capabilities`, and status `DEPRECATED`.
+  - Proof that `razan.mt` has `staffId: null`, 0 `assignments`, 0 `capabilities`, and is targeted for decommission via schema-supported deactivation (e.g. status `NONAKTIF` or `SUSPENDED`, login disabled).
 - **`05_MUSYRIF_TAHIFZH_INSPECTION.json`**:
-  - Read-only query proof of `musyrif.tahifzh` user record, role, and linked assignments.
+  - Read-only query proof of `musyrif.tahifzh` user record, role, and current linkage state. Classified as `BUSINESS_OWNER_DESIGNATED`, staff linkage `UNKNOWN / MUST_VERIFY_READ_ONLY`.
 - **`06_TEACHING_ASSIGNMENTS_18_SLOTS.json`**:
   - Verification that all 18 canonical teaching slots (6 Studi Umum, 7 Kps Putra, 5 Kps Putri) are covered by active `TeachingAssignment` records.
 - **`07_READINESS_DIAGNOSTIC_11_GATES.json`**:
@@ -119,13 +148,13 @@ evidence/
 
 ### 3.3 C2D Runtime Activation Evidence Pack
 - **`00_RUNTIME_ENVIRONMENT_AUDIT.json`**:
-  - Non-secret environment variable inspection verifying `PENDIDIKAN_V2_UAT_ENABLED=true` in active process.
+  - Non-secret environment variable inspection verifying `PENDIDIKAN_V2_UAT_ENABLED=true` in active process (all secrets and database URLs redacted).
 - **`01_FEATURE_FLAG_VERIFICATION.log`**:
   - Direct HTTP response confirming API endpoints acknowledge feature enablement without schema errors.
 - **`02_AUTHORIZATION_CANONICAL_PROBES.log`**:
-  - Successful authorization probe results for all 9 UAT capabilities with authorized credentials.
+  - Authorization probe results for the 9 UAT capabilities with authorized credentials.
 - **`03_NEGATIVE_SECURITY_PROBES.log`**:
-  - Verification that unauthorized tokens, scope violations, and missing staff linkages are rejected with `403 Forbidden` / `SCOPE_MISMATCH`.
+  - Verification that unauthorized requests, scope violations, and missing staff linkages return `403 Forbidden` / `SCOPE_MISMATCH`.
   - Substitute teacher probe verifying non-scheduled teacher is rejected with `SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED`.
 - **`04_AUDIT_SINK_LIVENESS_CHECK.json`**:
   - Verification that audit events are written to `canonical_audit_logs` / `audit_events`.
@@ -134,33 +163,33 @@ evidence/
 
 ### 3.4 C2E Live UAT Evidence Pack
 - **`UAT_01` to `UAT_09` Artifacts**:
-  - Request and response payloads for each scenario.
-  - Pre-state and post-state database diffs for affected records.
-  - Screenshots / UI interaction captures demonstrating successful user flow.
-- **`UAT_AUDIT_LOG_FULL_DUMP.json`**:
-  - Filtered export of all audit log rows generated during the UAT testing window.
+  - Sanitized request and response payloads for each scenario.
+  - Pre-state and post-state database diffs for affected non-sensitive fields.
+  - UI interaction captures (sanitized DOM inspection or screenshots).
+- **`UAT_AUDIT_LOG_SANITIZED_EXTRACT.json`**:
+  - Filtered export containing only the specific audit log entries generated by the UAT test actions (personal details and secrets redacted).
 - **`UAT_EXECUTIVE_SUMMARY_AND_ACCEPTANCE.md`**:
   - Final acceptance document signed by testing personnel and the Business Owner.
 
 ---
 
-## 4. Release Freeze Protocol & Operational Safety Windows
+## 4. Release Freeze Protocol & Safety Guidelines
 
-To protect live school operations and avoid data corruption during database migration and provisioning, the following operational window protocol is strictly enforced:
-
-### 4.1 Scheduled Maintenance Window
-- **Permitted Execution Window**: 22:00 WITA to 04:00 WITA (outside core school, tahfizh setoran, and academic session hours).
-- **Prohibited Hours**: 05:00 WITA to 21:30 WITA (active setoran, classes, and halaqoh sessions).
+### 4.1 Proposed Maintenance Window
+- **Proposed Execution Window**: `22:00 WITA to 04:00 WITA` (outside core school, tahfizh setoran, and academic session hours).
+- **Policy Decision State**: `PROPOSED_TBD / OWNER_APPROVAL_REQUIRED`
+- **Notice**: This window is an engineering proposal. No production deployment may rely on or execute during this window until the Business Owner explicitly authorizes the schedule. (Likewise, designated off-hours are proposals, not locked institutional policy).
 
 ### 4.2 Maintenance Freeze Procedures
-1. **Pre-Freeze Notice**: Post system maintenance notice on portal 2 hours prior to window.
+1. **Pre-Freeze Notice**: Post system maintenance notice on portal prior to agreed window.
 2. **Read-Only Lockout**: Enable maintenance mode banner to prevent concurrent user mutations during migration.
 3. **Session Drain**: Allow active HTTP requests to complete; verify no long-running transactions exist in `pg_stat_activity`.
 4. **Execution Under Freeze**:
    - Gate 0 (Backup) $\rightarrow$ Gate 1 (Migration) $\rightarrow$ Gate 2 (Reconcile) $\rightarrow$ Gate 3 (Provision) $\rightarrow$ Gate 4 (Reconcile) $\rightarrow$ Gate 5 (Activate).
-5. **Emergency Abort Criteria**:
-   - Migration takes $> 10$ minutes.
-   - Any unhandled SQL constraint violation occurs.
-   - Core regression suite fails.
-   - If aborted, restore pre-migration backup immediately and unfreeze in legacy state.
+5. **Abort & Incident Assessment Trigger**:
+   - Unexpected migration duration, transaction stalls, or lock contention acts as an **ABORT/ASSESS** trigger:
+     - Stop further release progression immediately.
+     - Inspect migration and database connection state.
+     - **DO NOT automatically restore production**. Database restore is itself a high-risk production mutation.
+     - Restore from backup only if the actual failure state requires it and the recovery action is explicitly authorized according to the release incident procedure.
 6. **Post-Release Unfreeze**: Verify all 11 diagnostic gates pass, release maintenance banner, and re-enable active portal operations.

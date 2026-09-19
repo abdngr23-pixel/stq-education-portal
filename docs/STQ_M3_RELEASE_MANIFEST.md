@@ -3,7 +3,10 @@
 
 - **Repository:** `abdngr23-pixel/stq-education-portal`
 - **Canonical Main Checkpoint:** `8e670491d1ed0c88a480ed90186153e96ca1dea3` (Post-PR #24 Merge)
-- **Status:** ACTIVE CONTROL PLANE
+- **Status:** ACTIVE CONTROL PLANE (AUDIT REMEDIATION APPLIED)
+- **Control-Plane Drafting:** COMPLETE
+- **Control-Plane Audit:** REMEDIATION_COMPLETE_READY_FOR_AUDIT
+- **Production Readiness:** BLOCKED (Pending Gate 0 prerequisites and Business Owner authorization)
 - **Execution Model:** PARALLEL PREPARATION | SERIAL PRODUCTION EXECUTION | FAIL-CLOSED GATES | MANDATORY EVIDENCE PACKS
 - **Current Production Mutation Authorization:** **ZERO PRODUCTION WRITES AUTHORIZED IN THIS PHASE**
 
@@ -17,7 +20,7 @@
 | **B. Database & Migration** | 4 | 2 | 0 | 2 | 0 |
 | **C. Backup & Restore** | 4 | 0 | 0 | 4 | 0 |
 | **D. Staff Linkage** | 3 | 0 | 0 | 1 | 2 |
-| **E. Account Cleanup / Decommission** | 4 | 0 | 0 | 2 | 2 |
+| **E. Account Cleanup / Decommission** | 4 | 0 | 0 | 3 | 1 |
 | **F. Org Units** | 4 | 0 | 0 | 1 | 3 |
 | **G. Positions** | 4 | 0 | 0 | 1 | 3 |
 | **H. Capabilities** | 3 | 0 | 0 | 1 | 2 |
@@ -32,7 +35,7 @@
 | **Q. Studi Umum Domain** | 3 | 0 | 0 | 1 | 2 |
 | **R. Kepesantrenan Domain** | 3 | 1 | 0 | 0 | 2 |
 | **S. Subjects (Mata Pelajaran)** | 3 | 0 | 0 | 1 | 2 |
-| **T. Cohorts (Angkatan)** | 3 | 0 | 0 | 1 | 2 |
+| **T. Cohorts (Angkatan)** | 3 | 0 | 0 | 2 | 1 |
 | **U. Teaching Assignments** | 3 | 0 | 0 | 1 | 2 |
 | **V. Feature Flags / Policy Activation** | 3 | 0 | 0 | 1 | 2 |
 | **W. Authorization Engine** | 4 | 1 | 0 | 1 | 2 |
@@ -40,7 +43,7 @@
 | **Y. Production UAT** | 3 | 0 | 0 | 1 | 2 |
 | **Z. Recovery & Final Sign-Off** | 3 | 0 | 0 | 1 | 2 |
 | **AA. Unresolved Business Decisions** | 10 | 0 | 0 | 3 | 7 |
-| **TOTALS** | **100** | **12** | **0** | **30** | **58** |
+| **TOTALS** | **100** | **12** | **0** | **32** | **56** |
 
 ### Gate Status Overview:
 - **GATE-C2B (Production Migration):** `BLOCKED` (Pending verified backup execution and separate Business Owner C2B authorization).
@@ -57,7 +60,7 @@
   - **Domain:** GIT / HISTORICAL
   - **Requirement:** Maintain PR #8 (`review/tahfizh-quality-evaluation`) intact as open, draft, unmerged; zero wholesale merge, zero casual rebasing.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md`, `STQ_PROJECT_CONTEXT.md`
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** OPEN / DRAFT / UNMERGED at HEAD `9068cae5587b7219c394c5c25bf0de07a15b0726`.
   - **Target state:** Maintained intact indefinitely until formal historical retirement.
   - **Dependency:** None
@@ -77,7 +80,7 @@
   - **Domain:** GIT / MILESTONE
   - **Requirement:** Verified closure of M3.3C2A preflight milestone.
   - **Source of truth:** `docs/STQ_MILESTONE3_3C2A_PRODUCTION_PREFLIGHT.md`
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** MERGED at commit `8492089a0dedddb05a176c66e941305c80037404`.
   - **Target state:** Closed historical milestone.
   - **Dependency:** None
@@ -97,7 +100,7 @@
   - **Domain:** GIT / MIGRATION_LEDGER
   - **Requirement:** Reconcile historical migration `20260915100000_add_tahfizh_quality_engine` into main repo lineage.
   - **Source of truth:** `docs/STQ_MILESTONE3_3C2A1_PR8_LEDGER_RECONCILIATION.md`
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** MERGED at commit `5ba4060f841304a189fce622d39243864b7c453a`.
   - **Target state:** Closed reconciliation milestone.
   - **Dependency:** REL-GIT-02
@@ -117,7 +120,7 @@
   - **Domain:** GIT / CONTEXT_LOCK
   - **Requirement:** Canonical project bootstrap, authority precedence, and non-self-referential Git HEAD rules locked into persistent memory.
   - **Source of truth:** `STQ_PROJECT_CONTEXT.md`, `docs/STQ_CURRENT_STATE.md`
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** MERGED at commit `8e670491d1ed0c88a480ed90186153e96ca1dea3`.
   - **Target state:** Closed bootstrap lock milestone.
   - **Dependency:** REL-GIT-03
@@ -137,9 +140,9 @@
   - **Domain:** GIT / RELEASE_CONTROL
   - **Requirement:** Dedicated release branch `release/m3-3-safe-release-control-plane` created; main frozen for unrelated merges during release operations.
   - **Source of truth:** `docs/STQ_M3_RELEASE_MANIFEST.md`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Branch created from main checkpoint `8e670491d1ed0c88a480ed90186153e96ca1dea3`.
-  - **Target state:** Gated PR merged upon completion of all release train gates.
+  - **Target state:** PR #25 audited -> remediated -> owner authorized -> merged to canonical main -> post-merge verified -> THEN used as merged control plane on main for Gate 0 onward. (PR #25 is NOT held open during execution of Gates 0-9; future release evidence is tracked in separate follow-up PRs).
   - **Dependency:** REL-GIT-04
   - **Production write required?:** NO
   - **Owner authorization required?:** YES
@@ -160,7 +163,7 @@
   - **Domain:** DATABASE / MIGRATION_LEDGER
   - **Requirement:** Historical migration `20260915100000_add_tahfizh_quality_engine` present in local migrations with checksum `fc96b177d5219c5b2853c6c86a0fa3d28bce0944890bfde9de2e5d6fe7391467`.
   - **Source of truth:** `prisma/migrations/20260915100000_add_tahfizh_quality_engine/migration.sql`
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Present in `main` repository tree and present in production `_prisma_migrations`.
   - **Target state:** Unchanged, permanently synchronized.
   - **Dependency:** REL-GIT-03
@@ -180,7 +183,7 @@
   - **Domain:** DATABASE / PREFLIGHT
   - **Requirement:** Verify `prisma migrate status` against production using direct wire connection before applying any migration.
   - **Source of truth:** `docs/STQ_MILESTONE3_3C2A_PRODUCTION_PREFLIGHT.md`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Last C2A read-only audit observed exactly 2 pending migrations (`m3_3a` and `m3_3b`). Must be re-verified live before C2B.
   - **Target state:** Verified clean status showing only authorized migrations pending.
   - **Dependency:** REL-BCK-04 (Verified Backup Gate PASS)
@@ -200,7 +203,7 @@
   - **Domain:** DATABASE / HEALTH_V2
   - **Requirement:** Deploy additive migration creating enum `HealthStatusV2`, tables `health_cases_v2` and `health_case_v2_events`.
   - **Source of truth:** `prisma/migrations/20260918120000_m3_3a_health_v2_backend/migration.sql`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Code complete in repository; NOT APPLIED in production.
   - **Target state:** Applied in production `_prisma_migrations` with matching checksum.
   - **Dependency:** REL-MIG-02, REL-BCK-04, Business Owner C2B Authorization
@@ -220,7 +223,7 @@
   - **Domain:** DATABASE / PENDIDIKAN_FOUNDATION
   - **Requirement:** Deploy additive migration creating Pendidikan enums, `education_cohorts`, `teaching_assignments`, `education_sessions`, etc., and nullable column `santri.cohort_id`.
   - **Source of truth:** `prisma/migrations/20260918140000_m3_3b_pendidikan_foundation/migration.sql`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Code complete in repository; NOT APPLIED in production.
   - **Target state:** Applied in production `_prisma_migrations` with matching checksum.
   - **Dependency:** REL-MIG-03, REL-BCK-04, Business Owner C2B Authorization
@@ -243,7 +246,7 @@
   - **Domain:** BACKUP / TOOLING
   - **Requirement:** Authoritative `pg_dump` binary present in execution PATH; minimum sensible version compatible with PostgreSQL 16+.
   - **Source of truth:** `scripts/backup-db.ts`, `tests/backup-db.test.ts`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** `pg_dump` binary ABSENT in local Windows PATH.
   - **Target state:** Valid binary available in execution environment (e.g. Linux CI runner, container, or client tools).
   - **Dependency:** None
@@ -263,7 +266,7 @@
   - **Domain:** BACKUP / PROTOCOL
   - **Requirement:** Provide direct PostgreSQL connection string via `BACKUP_DATABASE_URL` or `DIRECT_DATABASE_URL`. Rejects Prisma Accelerate (`prisma+postgres://`).
   - **Source of truth:** `scripts/backup-db.ts`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Direct URL not configured in current agent environment; secrets redacted.
   - **Target state:** Valid direct connection string provided to backup runner with credentials redacted in all logs.
   - **Dependency:** REL-BCK-01
@@ -283,7 +286,7 @@
   - **Domain:** BACKUP / EXECUTION
   - **Requirement:** Execute `pg_dump` against production, generate `.sql` dump file, verify file size $\ge 500$ bytes, compute cryptographic `.sha256` checksum.
   - **Source of truth:** `scripts/backup-db.ts`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** NOT EXECUTED. Zero production backups executed yet.
   - **Target state:** Cryptographically verified dump artifact and `.sha256` file archived.
   - **Dependency:** REL-BCK-01, REL-BCK-02, Explicit Owner Authorization
@@ -303,7 +306,7 @@
   - **Domain:** BACKUP / RESTORE_TEST
   - **Requirement:** Restore verified dump into an isolated staging/test PostgreSQL instance; verify row counts for `santri` (57), `users` (18), `staff` (10), `mata_pelajaran` (9).
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 12)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** NOT EXECUTED.
   - **Target state:** Verified successful restore with 100% table and row count fidelity.
   - **Dependency:** REL-BCK-03
@@ -326,7 +329,7 @@
   - **Domain:** IDENTITY / STAFF_LINKAGE
   - **Requirement:** Maintain verified record of 10 linked Staff (`STF-0001` to `STF-0010`) and 8 unlinked users in production.
   - **Source of truth:** `docs/STQ_MILESTONE3_3C2A_PRODUCTION_PREFLIGHT.md`
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Audited in C2A; `STAFF_LINKAGE_READY = BLOCKED`.
   - **Target state:** Identified accounts resolved to appropriate modality before assignment.
   - **Dependency:** None
@@ -346,7 +349,7 @@
   - **Domain:** IDENTITY / STAFF_LINKAGE
   - **Requirement:** Resolve account modality for `musyrifah.putri` and `pembina.halaqoh` (link to valid active Staff profile or classify as UNIT account with verified executor).
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 9)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unlinked operational accounts in production; zero runtime authority.
   - **Target state:** Explicitly linked to Staff or assigned as UNIT accounts.
   - **Dependency:** GATE-C2B, Explicit Owner Authorization
@@ -366,7 +369,7 @@
   - **Domain:** IDENTITY / MODALITY
   - **Requirement:** Validate that accounts without Staff linkage (`santri.obama`, `santri.fatih`, `walisantri`, `yayasan`, `osda`) correctly adhere to their designated modality and do not trigger fake linkage errors.
   - **Source of truth:** `STQ_PROJECT_CONTEXT.md` (Section 6)
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Verified present in production without staff linkage.
   - **Target state:** Formally classified in C2C schema.
   - **Dependency:** GATE-C2B
@@ -387,12 +390,12 @@
 ### E. ACCOUNT CLEANUP / DECOMMISSION
 - **REL-ACC-01 | razan.mt Deprecation & Linkage Prohibition**
   - **Domain:** IDENTITY / ACCOUNT_DECOMMISSION
-  - **Requirement:** Enforce Business Owner decision: `razan.mt` is DEPRECATED / DECOMMISSION TARGET. Strictly PROHIBIT linking to Staff `STF-0003`. Strictly PROHIBIT granting Position, Assignment, Capability, or runtime authority.
+  - **Requirement:** Enforce Business Owner decision: `razan.mt` is DEPRECATED / DECOMMISSION TARGET. Strictly PROHIBIT linking to Staff `STF-0003` (or any Staff profile). Strictly PROHIBIT granting Position, Assignment, Capability, or runtime authority. Target implementation is decommission via schema-supported deactivation/revocation (e.g. status = NONAKTIF or SUSPENDED, login disabled); hard delete remains prohibited pending read-only dependency audit.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 9), `STQ_PROJECT_CONTEXT.md` (Section 6)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** `RAZAN_MT_TARGET_STATE = DECOMMISSION`, `RAZAN_MT_STAFF_LINKAGE = PROHIBITED`, `RAZAN_MT_DECOMMISSION_EXECUTION = NOT_STARTED`.
-  - **Target state:** Decommissioned in controlled C2C operation after dependency audit.
-  - **Dependency:** None (Invariant is active now)
+  - **Target state:** Decommissioned in controlled C2C operation via schema-supported deactivation after dependency audit.
+  - **Dependency:** REL-ACC-02 (Pre-decommission dependency audit)
   - **Production write required?:** NO in this stage (Enforced in policy/docs)
   - **Owner authorization required?:** YES (Satisfied by owner decision)
   - **Dry-run evidence:** Documentation lock in PR #24.
@@ -402,14 +405,14 @@
   - **Rollback/recovery consideration:** N/A
   - **Evidence Pack reference:** `EVID-ACC-RAZAN`
   - **Gate:** GATE-C2C
-  - **Status:** `NOT_READY` (Awaiting C2C execution window)
+  - **Status:** `BLOCKED` (Gated by pre-decommission read-only dependency audit)
   - **Notes / unresolved decision:** Do not hard delete yet.
 
 - **REL-ACC-02 | razan.mt Pre-Decommission Read-Only Dependency Audit**
   - **Domain:** IDENTITY / AUDIT
   - **Requirement:** Before any deactivation/deletion in production, perform comprehensive read-only dependency audit: historical records, transactions, audit logs, active sessions, halaqoh ownership, and foreign keys.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 9)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** NOT EXECUTED.
   - **Target state:** Completed audit report proving whether deactivation vs deletion is safe.
   - **Dependency:** Direct DB access in C2C
@@ -427,11 +430,11 @@
 
 - **REL-ACC-03 | musyrif.tahifzh Business Owner Designation & Pre-Provisioning Verification**
   - **Domain:** IDENTITY / KABID_TAHFIZH
-  - **Requirement:** Document operational account designation `musyrif.tahifzh` as Business Owner designated; verify exact username presence and Staff linkage read-only before provisioning canonical Position/Assignment. Preserve exact spelling.
+  - **Requirement:** Document operational account designation `musyrif.tahifzh` as Business Owner designated; verify exact username presence and Staff linkage read-only before provisioning canonical Position/Assignment. Preserve exact spelling. REMOVE all unsupported assumptions that `musyrif.tahifzh` -> `STF-0002` or that `STF-0002` is definitively Kabid Tahfizh. Ust. Razan Mufli, S.Pd is Kabid Tahfizh and historically associated with `STF-0003`, BUT do NOT automatically link `musyrif.tahifzh` to `STF-0003` either. Exact production User -> Staff relationship must first be verified read-only.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 9)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
-  - **Current state:** `KABID_TAHFIZH_ACCOUNT_OWNER_DESIGNATION = musyrif.tahifzh` (Business Owner designated; production existence NOT independently verified).
-  - **Target state:** Verified in production database; provisioned to canonical `KABID_TAHFIZH` position if valid.
+  - **PolicyDecisionState:** `APPROVED` (Account designation approved; Staff linkage UNKNOWN / MUST_VERIFY_READ_ONLY)
+  - **Current state:** `MUSYRIF_TAHIFZH_ACCOUNT = BUSINESS_OWNER_DESIGNATED`, `MUSYRIF_TAHIFZH_STAFF_LINKAGE = UNKNOWN / MUST_VERIFY_READ_ONLY`.
+  - **Target state:** Verified in production database via read-only inspection; provisioned to canonical `KABID_TAHFIZH` position if verified.
   - **Dependency:** Direct DB access in C2C
   - **Production write required?:** NO in this stage
   - **Owner authorization required?:** YES
@@ -449,7 +452,7 @@
   - **Domain:** IDENTITY / AUTHORIZATION
   - **Requirement:** Verify that exactly ONE active operational account holds the canonical `KABID_TAHFIZH` position; ensure zero duplicate authority between `razan.mt` and `musyrif.tahifzh`.
   - **Source of truth:** `STQ_PROJECT_CONTEXT.md` (Section 8)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Neither holds canonical Assignment in production (zero assignments currently).
   - **Target state:** Exactly one active Assignment for `KABID_TAHFIZH`.
   - **Dependency:** REL-ACC-01, REL-ACC-03
@@ -472,7 +475,7 @@
   - **Domain:** ORG_UNITS / FOUNDATION
   - **Requirement:** Provision canonical root `OU-INSTITUTION` and domain units: `OU-TAHFIZH`, `OU-KEASRAMAAN`, `OU-AKADEMIK`, `OU-MANAJEMEN`.
   - **Source of truth:** `types/architecture-lock.ts`, `docs/STQ_ARCHITECTURE_LOCK.md` (Section 4)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unseeded in production (`org_units = 0`).
   - **Target state:** Provisioned idempotently in C2C.
   - **Dependency:** GATE-C2B
@@ -492,7 +495,7 @@
   - **Domain:** ORG_UNITS / KEASRAMAAN
   - **Requirement:** Provision `OU-OSDA-ROOT` (type `ORGANIZATION`) and 5 divisions (`KEAMANAN_KEDISIPLINAN`, `PENDIDIKAN_IBADAH`, `KEBERSIHAN_KERAPIHAN`, `KESEHATAN`, `SARANA_PRASARANA`).
   - **Source of truth:** `types/architecture-lock.ts` (`KEASRAMAAN_STRUCTURE`)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unseeded in production.
   - **Target state:** Provisioned under `OU-KEASRAMAAN`.
   - **Dependency:** REL-OU-01
@@ -512,7 +515,7 @@
   - **Domain:** ORG_UNITS / KEASRAMAAN
   - **Requirement:** Provision `OU-TKS-ROOT` and 6 service units: `OU-TKS-DAPUR`, `OU-TKS-MASJID`, `OU-TKS-PENDIDIKAN`, `OU-TKS-YAYASAN`, `OU-TKS-AIR-MINUM`, `OU-TKS-AIR-SUMUR`.
   - **Source of truth:** `types/architecture-lock.ts` (`TKS_STRUCTURE_CONTRACT`)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unseeded in production.
   - **Target state:** Provisioned under `OU-KEASRAMAAN`.
   - **Dependency:** REL-OU-01
@@ -532,7 +535,7 @@
   - **Domain:** ORG_UNITS / BACKFILL
   - **Requirement:** Reconcile existing production halaqoh circles and kamar into OrgUnit representations (`type: HALAQOH` and `type: KAMAR`).
   - **Source of truth:** `types/architecture-lock.ts`, production `halaqoh` table
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unlinked/unbackfilled in production.
   - **Target state:** 1:1 OrgUnit representation for each operational circle and room.
   - **Dependency:** REL-OU-01
@@ -555,7 +558,7 @@
   - **Domain:** POSITIONS / LEADERSHIP
   - **Requirement:** Provision positions: `MUDIR`, `KEPALA_SEKOLAH`, `KEPALA_BIDANG_TAHFIZH` / `KABID_TAHFIZH`, `KEPALA_KEASRAMAAN` / `MUSYRIF_KEASRAMAAN`.
   - **Source of truth:** `types/architecture-lock.ts`, `docs/STQ_ARCHITECTURE_LOCK.md`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unseeded in production (`positions = 0`).
   - **Target state:** Provisioned with `isLeadership = true`, `requiresPersonalAccount = true`.
   - **Dependency:** REL-OU-01
@@ -575,7 +578,7 @@
   - **Domain:** POSITIONS / OPERATIONAL
   - **Requirement:** Provision operational positions: `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, `MUDABBIR`, `GURU_AKADEMIK`, `PETUGAS_OPERASIONAL_TAHFIZH`, `PETUGAS_OPERASIONAL_KEASRAMAAN`.
   - **Source of truth:** `types/architecture-lock.ts`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unseeded in production.
   - **Target state:** Provisioned with correct domain and unit type constraints.
   - **Dependency:** REL-POS-01
@@ -595,7 +598,7 @@
   - **Domain:** POSITIONS / STUDENT
   - **Requirement:** Provision student positions: `KETUA_OSDA`, `SEKRETARIS_OSDA`, `BENDAHARA_OSDA`, `MULTIMEDIA_OSDA`, and OSDA division roles.
   - **Source of truth:** `types/architecture-lock.ts` (`KEASRAMAAN_STRUCTURE`)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unseeded in production.
   - **Target state:** Provisioned under `KEASRAMAAN` domain.
   - **Dependency:** REL-POS-01
@@ -615,7 +618,7 @@
   - **Domain:** POSITIONS / UNIT_DESK
   - **Requirement:** Provision positions designated for `AccountType = UNIT`: `UNIT_OPERASIONAL_PUTRI`, `UNIT_POSKESTREN`, `UNIT_TKS`.
   - **Source of truth:** `types/architecture-lock.ts`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unseeded in production.
   - **Target state:** Provisioned with `requiresPersonalAccount = false`.
   - **Dependency:** REL-POS-01
@@ -647,7 +650,7 @@
     8. `keasramaan.permission.read`
     9. `keasramaan.permission.create`
   - **Source of truth:** `types/architecture-lock.ts` (`ACADEMIC_CAPABILITIES`, `TAHFIZH_M32_CAPABILITIES`, `KEASRAMAAN_PERMISSION_CAPABILITIES`)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unseeded in production (`capabilities = 0`).
   - **Target state:** Registered in `capabilities` table.
   - **Dependency:** GATE-C2B
@@ -667,7 +670,7 @@
   - **Domain:** CAPABILITIES / DEFERRED
   - **Requirement:** Keep remaining academic capabilities (`academic.score.input`, `academic.score.read`, `academic.rapor.print`, `academic.curriculum.manage`, `academic.session.complete`, `academic.cohort.manage`, `academic.teaching_assignment.manage`, `academic.session.view`) deferred; do not seed as active UAT targets.
   - **Source of truth:** `types/architecture-lock.ts`
-  - **BusinessRuleState:** `PROPOSED_TBD`
+  - **PolicyDecisionState:** `PROPOSED_TBD`
   - **Current state:** Defined in TypeScript; unseeded in DB.
   - **Target state:** Retained as deferred.
   - **Dependency:** None
@@ -687,7 +690,7 @@
   - **Domain:** CAPABILITIES / EXCLUSION
   - **Requirement:** Ensure `keasramaan.permission.approve_mk` and `keasramaan.permission.approve_ks` remain strictly excluded from operational position grants.
   - **Source of truth:** `types/architecture-lock.ts` (`UAT_ACTIVATION_TARGETS`)
-  - **BusinessRuleState:** `PROPOSED_TBD`
+  - **PolicyDecisionState:** `PROPOSED_TBD`
   - **Current state:** Excluded from target grants.
   - **Target state:** Excluded in production PositionCapability mappings.
   - **Dependency:** None
@@ -793,7 +796,7 @@
   - **Domain:** ASSIGNMENTS / LEADERSHIP
   - **Requirement:** Provision active Assignment for Mudir (`mudir` -> `MUDIR` anchored to `OU-INSTITUTION`).
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md`, `types/architecture-lock.ts`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unassigned in production (`assignments = 0`).
   - **Target state:** Provisioned with `status: ACTIVE`, valid time window.
   - **Dependency:** GATE-C2B, REL-POS-01, REL-OU-01
@@ -813,7 +816,7 @@
   - **Domain:** ASSIGNMENTS / TAHFIZH
   - **Requirement:** Provision active Assignments for Musyrif Tahfizh anchored to their respective `HALAQOH` OrgUnits.
   - **Source of truth:** Production `halaqoh` table and staff linkage evidence
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unassigned in production.
   - **Target state:** Provisioned with `status: ACTIVE`.
   - **Dependency:** REL-OU-04, REL-POS-02, REL-STF-01
@@ -833,7 +836,7 @@
   - **Domain:** ASSIGNMENTS / TAHFIZH
   - **Requirement:** Provision active Assignment for designated Kabid Tahfizh account (`musyrif.tahifzh` if verified) anchored to `OU-TAHFIZH`.
   - **Source of truth:** REL-ACC-03, `docs/STQ_CURRENT_STATE.md`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unassigned in production.
   - **Target state:** Provisioned after verified pre-provisioning audit.
   - **Dependency:** REL-ACC-03, REL-ACC-04, REL-POS-01
@@ -853,7 +856,7 @@
   - **Domain:** ASSIGNMENTS / AKADEMIK
   - **Requirement:** Provision active Assignments for academic teachers (`GURU_AKADEMIK`) anchored to `OU-AKADEMIK`.
   - **Source of truth:** `types/architecture-lock.ts`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unassigned in production.
   - **Target state:** Provisioned with `status: ACTIVE`.
   - **Dependency:** REL-POS-02, REL-OU-01, REL-STF-01
@@ -876,7 +879,7 @@
   - **Domain:** SCOPE_UNITS / TAHFIZH
   - **Requirement:** For assignments holding `tahfizh.reward.issue`, bind permitted halaqoh unit IDs relationally in `assignment_scope_units`.
   - **Source of truth:** `types/architecture-lock.ts` (`AssignmentScopeUnit`)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unseeded in production.
   - **Target state:** Relational scope units bound.
   - **Dependency:** REL-ASN-02, REL-PC-01
@@ -896,7 +899,7 @@
   - **Domain:** SCOPE_UNITS / KEASRAMAAN
   - **Requirement:** For assignments holding `keasramaan.permission.*`, bind permitted dorm/kamar unit IDs relationally in `assignment_scope_units`.
   - **Source of truth:** `types/architecture-lock.ts`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unseeded in production.
   - **Target state:** Relational scope units bound.
   - **Dependency:** REL-PC-03, REL-OU-02
@@ -916,7 +919,7 @@
   - **Domain:** SCOPE_UNITS / AKADEMIK
   - **Requirement:** For `GURU_AKADEMIK` assignments, bind assigned cohort/subject unit IDs relationally in `assignment_scope_units`.
   - **Source of truth:** `types/architecture-lock.ts`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unseeded in production.
   - **Target state:** Relational scope units bound.
   - **Dependency:** REL-ASN-04, REL-PC-04
@@ -939,7 +942,7 @@
   - **Domain:** ACCOUNT_MODALITY / PERSONAL
   - **Requirement:** Asatidz and staff operational roles enforce `AccountType: PERSONAL`; sensitive positions require verified Staff profile linkage (`staff_id` not null).
   - **Source of truth:** `types/architecture-lock.ts`, `STQ_PROJECT_CONTEXT.md` (Section 6)
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Policy locked in documentation and types.
   - **Target state:** Enforced across all active personal assignments.
   - **Dependency:** REL-STF-01
@@ -959,7 +962,7 @@
   - **Domain:** ACCOUNT_MODALITY / UNIT
   - **Requirement:** Unit accounts (`AccountType: UNIT`) represent functional desks; max active placement = 1; every mutating transaction must record verified `humanExecutorId` and immutable snapshot.
   - **Source of truth:** `types/architecture-lock.ts` (`UnitAccountPlacement`, `UnitAccountExecutorContext`)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Defined in architecture lock; unseeded in DB.
   - **Target state:** Enforced in runtime execution and audit logger.
   - **Dependency:** REL-POS-04
@@ -979,7 +982,7 @@
   - **Domain:** ACCOUNT_MODALITY / INVARIANT
   - **Requirement:** Username and display name patterns must NEVER confer authority; authority derives strictly from active Assignment + PositionCapability + Scope + server-resolved resource context.
   - **Source of truth:** `STQ_PROJECT_CONTEXT.md` (Section 5)
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Enforced across server actions and authorization engine.
   - **Target state:** Maintained indefinitely.
   - **Dependency:** None
@@ -1002,7 +1005,7 @@
   - **Domain:** OSDA_PUTRI / IDENTITY
   - **Requirement:** Account code `OU-OSDA-PUTRI`, `accountType: UNIT`, `genderComplex: PUTRI`, `maxActivePlacements: 1`, requires verified human executor.
   - **Source of truth:** `types/architecture-lock.ts` (`OSDA_PUTRI_UNIT_CONTRACT`)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Defined in contract; unseeded in DB.
   - **Target state:** Provisioned in C2C.
   - **Dependency:** GATE-C2B, REL-OU-02
@@ -1022,7 +1025,7 @@
   - **Domain:** OSDA_PUTRI / SECURITY
   - **Requirement:** `OU-OSDA-PUTRI` transactions and queries strictly fail closed on PUTRA santri data (`preventPutraAccess = true`).
   - **Source of truth:** `types/architecture-lock.ts` (`OSDA_PUTRI_UNIT_CONTRACT.INVARIANTS`)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Contract verified in unit tests.
   - **Target state:** Enforced in production queries.
   - **Dependency:** REL-OPU-01
@@ -1042,7 +1045,7 @@
   - **Domain:** OSDA_PUTRI / AUDIT
   - **Requirement:** All operational mutations executed via `OU-OSDA-PUTRI` must log verified `humanExecutorId` referencing active santriwati profile.
   - **Source of truth:** `types/architecture-lock.ts` (`UnitAccountExecutorContext`)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Supported in canonical audit logging schema.
   - **Target state:** Active in production Server Actions.
   - **Dependency:** REL-OPU-01
@@ -1065,7 +1068,7 @@
   - **Domain:** TAHFIZH / UX
   - **Requirement:** Setoran entry remains a focused single-page workflow; do not reintroduce unnecessary wizards or steppers.
   - **Source of truth:** `STQ_PROJECT_CONTEXT.md` (Section 8)
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Implemented in production UI.
   - **Target state:** Maintained intact.
   - **Dependency:** None
@@ -1085,7 +1088,7 @@
   - **Domain:** TAHFIZH / ATTENDANCE
   - **Requirement:** New halaqoh attendance entries strictly restricted to `HADIR`, `SAKIT`, `IZIN`, `ALFA`. `MASBUK` is strictly forbidden for new records.
   - **Source of truth:** `types/architecture-lock.ts` (`HALAQOH_ATTENDANCE_NEW_ENTRY_OPTIONS`)
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Enforced in code and schema.
   - **Target state:** Maintained in production.
   - **Dependency:** None
@@ -1105,7 +1108,7 @@
   - **Domain:** TAHFIZH / TIMEZONE
   - **Requirement:** Backdated tahfizh entries and operational dates strictly adhere to WITA (Asia-Makassar / UTC+8) semantics.
   - **Source of truth:** `STQ_PROJECT_CONTEXT.md` (Section 8)
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Enforced in date parsing utilities.
   - **Target state:** Maintained in production.
   - **Dependency:** None
@@ -1125,7 +1128,7 @@
   - **Domain:** TAHFIZH / TAHAJJUD
   - **Requirement:** Tahajjud attendance strictly limited to exactly two choices: `SHOLAT` and `ALFA`.
   - **Source of truth:** `types/architecture-lock.ts` (`TAHAJJUD_ATTENDANCE_NEW_ENTRY_OPTIONS`)
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Enforced in code.
   - **Target state:** Maintained in production.
   - **Dependency:** None
@@ -1148,7 +1151,7 @@
   - **Domain:** KEASRAMAAN / TOPOLOGY
   - **Requirement:** Canonical hierarchy locked: Mudir -> Kepala Keasramaan -> Mudabbir -> OSDA & TKS -> Usroh / Santri. Mudabbir is pembina kamar using personal account.
   - **Source of truth:** `STQ_PROJECT_CONTEXT.md` (Section 7)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Locked in documentation and architecture types.
   - **Target state:** Enforced in C2C OrgUnit and Position trees.
   - **Dependency:** REL-OU-02, REL-POS-01
@@ -1168,7 +1171,7 @@
   - **Domain:** KEASRAMAAN / PERMISSION
   - **Requirement:** `PETUGAS_OPERASIONAL_KEASRAMAAN` holds read and create authority over permissions for assigned units only; approval capabilities excluded.
   - **Source of truth:** `types/architecture-lock.ts` (`UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN`)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Defined in architecture lock; unseeded in DB.
   - **Target state:** Active in C2D.
   - **Dependency:** REL-PC-03, REL-ASU-02
@@ -1188,7 +1191,7 @@
   - **Domain:** KEASRAMAAN / USROH
   - **Requirement:** Usroh taskforces represent functional cleaning groups under OSDA; cleanliness functionally supervised by Divisi Kebersihan.
   - **Source of truth:** `types/architecture-lock.ts` (`OrgUnitType: USROH`)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Defined in types; unseeded in DB.
   - **Target state:** Seeded in C2C.
   - **Dependency:** REL-OU-02
@@ -1208,7 +1211,7 @@
   - **Domain:** KEASRAMAAN / KAMAR
   - **Requirement:** Kamar units (`type: KAMAR`) strictly model physical boarding rooms; santri resident assignment is 1:1.
   - **Source of truth:** `types/architecture-lock.ts`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unseeded in DB.
   - **Target state:** Seeded in C2C.
   - **Dependency:** REL-OU-01
@@ -1231,7 +1234,7 @@
   - **Domain:** HEALTH / VOCABULARY
   - **Requirement:** Canonical statuses are exactly `DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`. Zero fake diagnosis, zero mock data.
   - **Source of truth:** `types/architecture-lock.ts` (`CANONICAL_HEALTH_STATUSES_V2`)
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Code complete; DB migration pending C2B.
   - **Target state:** Active in production database enum `HealthStatusV2`.
   - **Dependency:** REL-MIG-03
@@ -1251,7 +1254,7 @@
   - **Domain:** HEALTH / TOPOLOGY
   - **Requirement:** Poskestren unit `OU-POSKESTREN` is structurally enclosed under `OU-KEASRAMAAN`.
   - **Source of truth:** `types/architecture-lock.ts` (`OrgDomain: KEASRAMAAN`)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unseeded in DB.
   - **Target state:** Seeded in C2C.
   - **Dependency:** REL-OU-01
@@ -1271,7 +1274,7 @@
   - **Domain:** HEALTH / GOVERNANCE
   - **Requirement:** External referral authority remains `PROPOSED_TBD` until explicit Business Owner approval. Zero operational write granted.
   - **Source of truth:** `STQ_PROJECT_CONTEXT.md` (Section 18)
-  - **BusinessRuleState:** `PROPOSED_TBD`
+  - **PolicyDecisionState:** `PROPOSED_TBD`
   - **Current state:** Unresolved; no capability activated.
   - **Target state:** Maintained unresolved/fail-closed.
   - **Dependency:** Business Owner Decision
@@ -1294,7 +1297,7 @@
   - **Domain:** STUDI_UMUM / SUBJECTS
   - **Requirement:** Required 6 subjects: Matematika, Bahasa Inggris, IPS, IPA, Bahasa Indonesia, TIK. Currently production only contains ambiguous `Matematika Terapan`; remaining 5 missing.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 10)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** 5 missing, 1 ambiguous (`Matematika Terapan`).
   - **Target state:** Resolved and seeded in C2C.
   - **Dependency:** GATE-C2B, Explicit Owner Authorization
@@ -1314,7 +1317,7 @@
   - **Domain:** STUDI_UMUM / COHORTS
   - **Requirement:** Tingkat Studi Umum 1/2/3 represents current student program position. Formal school grade is separate and must NEVER define EducationCohort.
   - **Source of truth:** `STQ_PROJECT_CONTEXT.md` (Section 10)
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Locked in documentation and tests.
   - **Target state:** Enforced in cohort mapping logic.
   - **Dependency:** None
@@ -1334,7 +1337,7 @@
   - **Domain:** STUDI_UMUM / PEDAGOGY
   - **Requirement:** Map educational tracks to enum `PedagogicalLevel`: `TAHFIDZ_INTENSIF`, `DIROSAH_ISLAMIYAH`, `PBL`, `BAHASA_ARAB`, `BAHASA_INGGRIS`, `MATEMATIKA`.
   - **Source of truth:** `types/architecture-lock.ts`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Code complete; DB migration pending C2B.
   - **Target state:** Active in production database enum `PedagogicalLevel`.
   - **Dependency:** REL-MIG-04
@@ -1357,7 +1360,7 @@
   - **Domain:** KEPESANTRENAN / SUBJECTS
   - **Requirement:** 5 canonical subjects verified present in production: Bahasa Arab (`KPS-ARB`), Fikih (`KPS-FQH`), Tafsir (`KPS-TFS`), Aqidah Islamiyah (`KPS-AQD`), Tajwid (`KPS-TJW`).
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 10)
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Verified present in production database during C2A preflight audit.
   - **Target state:** Maintained intact.
   - **Dependency:** None
@@ -1377,7 +1380,7 @@
   - **Domain:** KEPESANTRENAN / ATTENDANCE
   - **Requirement:** Structural separation between Teacher and Student attendance. Teacher attendance evidence = `SESSION_START_AUTHENTICATED_EXECUTION`. Student attendance options = `HADIR`, `IZIN`, `SAKIT`, `ALFA` (`MASBUK` forbidden).
   - **Source of truth:** `types/architecture-lock.ts` (`KEPESANTRENAN_ATTENDANCE_CONTRACT`)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Locked in contract; runtime activation pending C2D.
   - **Target state:** Enforced in Pendidikan V2 Server Actions.
   - **Dependency:** REL-MIG-04
@@ -1397,7 +1400,7 @@
   - **Domain:** KEPESANTRENAN / CURRICULUM
   - **Requirement:** Reference textbooks/curricula for Fikih and Aqidah remain `PROPOSED_TBD` / unresolved business decision. Zero canonical curriculum locked.
   - **Source of truth:** `STQ_PROJECT_CONTEXT.md` (Section 18)
-  - **BusinessRuleState:** `PROPOSED_TBD`
+  - **PolicyDecisionState:** `PROPOSED_TBD`
   - **Current state:** Unresolved.
   - **Target state:** Maintained unresolved until owner decision.
   - **Dependency:** Business Owner Decision
@@ -1420,7 +1423,7 @@
   - **Domain:** SUBJECTS / DEDUPLICATION
   - **Requirement:** Production contains legacy duplicates: `Bahasa Arab & Nahwu` vs `Bahasa Arab`, `Fiqih Ibadah` vs `Fikih`, `Matematika Terapan` vs `Matematika`. Design safe reconciliation plan without silent deletion.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 10)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Present in production.
   - **Target state:** Reconciled in C2C after dependency audit.
   - **Dependency:** GATE-C2B, Explicit Owner Authorization
@@ -1440,7 +1443,7 @@
   - **Domain:** SUBJECTS / CATEGORIES
   - **Requirement:** Strict separation in `mata_pelajaran.category`: `UMUM` vs `KEPESANTRENAN`.
   - **Source of truth:** `prisma/schema.prisma`
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Verified in production schema.
   - **Target state:** Maintained.
   - **Dependency:** None
@@ -1460,7 +1463,7 @@
   - **Domain:** SUBJECTS / SEED_DESIGN
   - **Requirement:** Provisioning script for missing Studi Umum subjects must classify every record as `CREATE`, `EXISTS_MATCH`, `CONFLICT`, or `SKIP`.
   - **Source of truth:** `docs/STQ_M3_RELEASE_MANIFEST.md`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Design complete.
   - **Target state:** Executed in C2C.
   - **Dependency:** REL-SBJ-01
@@ -1483,7 +1486,7 @@
   - **Domain:** COHORTS / DATA_GAP
   - **Requirement:** All 57 active santri lack authoritative permanent `angkatan` and `tahun_masuk` in production. Do NOT infer from gender, current class, or age.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 11)
-  - **BusinessRuleState:** `PROPOSED_TBD`
+  - **PolicyDecisionState:** `PROPOSED_TBD`
   - **Current state:** `COHORT_MAPPING = NEEDS_BUSINESS_INPUT`.
   - **Target state:** Authoritative mapping table provided by Business Owner before backfill.
   - **Dependency:** Explicit Business Owner Decision
@@ -1501,29 +1504,29 @@
 
 - **REL-COH-02 | EducationCohort Table Provisioning**
   - **Domain:** COHORTS / DDL_PROVISION
-  - **Requirement:** Table `education_cohorts` created via migration M3.3B; seed canonical cohorts (`Tingkat 1`, `Tingkat 2`, `Tingkat 3`).
-  - **Source of truth:** `prisma/migrations/20260918140000_m3_3b_pendidikan_foundation/migration.sql`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
-  - **Current state:** DDL pending C2B; unseeded in DB.
-  - **Target state:** Seeded in C2C.
-  - **Dependency:** REL-MIG-04
+  - **Requirement:** Table `education_cohorts` created via migration M3.3B. Cohort rows represent permanent admission cohorts / year of entry (e.g. `2024/2025`, `2025/2026`), NEVER `Tingkat 1/2/3`. Do NOT plan automatic cohort creation from Tingkat, class, gender, or age. Seeding remains BLOCKED until authoritative business owner admission cohort data is provided.
+  - **Source of truth:** `prisma/migrations/20260918140000_m3_3b_pendidikan_foundation/migration.sql`, Canonical Business Rule
+  - **PolicyDecisionState:** `PROPOSED_TBD` (Awaiting authoritative admission year data from Business Owner)
+  - **Current state:** DDL pending C2B; cohort seed definition BLOCKED pending admission year data.
+  - **Target state:** Seeded in C2C after admission year data is provided.
+  - **Dependency:** REL-MIG-04, REL-COH-01
   - **Production write required?:** YES (INSERT in C2C)
-  - **Owner authorization required?:** YES
+  - **Owner authorization required?:** YES (Admission cohort data sign-off)
   - **Dry-run evidence:** C2C dry-run SQL.
-  - **Positive test:** Cohort records queryable via Prisma.
+  - **Positive test:** Cohort records queryable via Prisma with admission year labels.
   - **Negative test:** Unique name constraint blocks duplicate cohorts.
   - **Reconciliation evidence:** Cohorts table audit.
   - **Rollback/recovery consideration:** Delete cohorts if batch fails.
   - **Evidence Pack reference:** `EVID-COH-PROVISION`
   - **Gate:** GATE-C2C
-  - **Status:** `NOT_READY`
-  - **Notes / unresolved decision:** Foundational grouping.
+  - **Status:** `BLOCKED` (Awaiting authoritative admission cohort data)
+  - **Notes / unresolved decision:** Admission year semantics; Tingkat is current position only.
 
 - **REL-COH-03 | santri.cohort_id Nullable Backfill Guard**
   - **Domain:** COHORTS / BACKFILL
   - **Requirement:** Backfill `santri.cohort_id` ONLY after authoritative mapping is approved; preserve nullability until 100% verified.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 11)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Column absent in prod; backfill not started.
   - **Target state:** Backfilled in C2C after owner decision.
   - **Dependency:** REL-COH-01, REL-COH-02
@@ -1546,7 +1549,7 @@
   - **Domain:** TEACHING_ASSIGNMENTS / DDL_PROVISION
   - **Requirement:** Table `teaching_assignments` created via migration M3.3B to model teacher ownership of subject + cohort.
   - **Source of truth:** `prisma/migrations/20260918140000_m3_3b_pendidikan_foundation/migration.sql`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Pending C2B.
   - **Target state:** Seeded in C2C.
   - **Dependency:** REL-MIG-04
@@ -1566,7 +1569,7 @@
   - **Domain:** TEACHING_ASSIGNMENTS / GOVERNANCE
   - **Requirement:** Teacher account modality (PERSONAL linked Staff vs UNIT + verified human executor) remains an unresolved business decision. Design supports both.
   - **Source of truth:** `STQ_PROJECT_CONTEXT.md` (Section 18)
-  - **BusinessRuleState:** `PROPOSED_TBD`
+  - **PolicyDecisionState:** `PROPOSED_TBD`
   - **Current state:** Unresolved business decision #2.
   - **Target state:** Resolved by Business Owner before teacher assignment provisioning.
   - **Dependency:** Explicit Business Owner Decision
@@ -1586,7 +1589,7 @@
   - **Domain:** TEACHING_ASSIGNMENTS / BADAL
   - **Requirement:** Substitute teacher authorization matrix remains `PROPOSED_TBD`. Actual authenticated teacher derived server-side.
   - **Source of truth:** `STQ_PROJECT_CONTEXT.md` (Section 18)
-  - **BusinessRuleState:** `PROPOSED_TBD`
+  - **PolicyDecisionState:** `PROPOSED_TBD`
   - **Current state:** Unresolved business decision #3.
   - **Target state:** Maintained unresolved until owner authorization.
   - **Dependency:** Explicit Business Owner Decision
@@ -1609,7 +1612,7 @@
   - **Domain:** FEATURE_FLAGS / PENDIDIKAN_V2
   - **Requirement:** Runtime flag `PENDIDIKAN_V2_UAT_ENABLED` defaults to `false` in production. Must remain false through C2B and C2C; activated strictly in C2D under explicit owner authorization.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 8)
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION` (Currently false)
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** `RUNTIME_ACTIVATION_FLAG = NOT_READY` (`false` in production).
   - **Target state:** Activated (`true`) in C2D.
   - **Dependency:** GATE-C2B, GATE-C2C
@@ -1629,7 +1632,7 @@
   - **Domain:** FEATURE_FLAGS / CAPABILITY_PROMOTION
   - **Requirement:** Capabilities remain `APPROVED_TARGET_PENDING_TECHNICAL` (zero runtime authority) until promoted in C2D to `VERIFIED_PRODUCTION` via explicit database UPDATE.
   - **Source of truth:** `types/architecture-lock.ts` (`BusinessRuleState`)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Zero capabilities in `VERIFIED_PRODUCTION`.
   - **Target state:** Promoted in C2D.
   - **Dependency:** GATE-C2C, Explicit Owner Authorization
@@ -1649,7 +1652,7 @@
   - **Domain:** FEATURE_FLAGS / CUTOVER
   - **Requirement:** Global authorization cutover is NOT included in M3.3. Legacy authorization compatibility paths remain active for unmigrated domains.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 17)
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Hybrid compatibility active.
   - **Target state:** Maintained throughout M3.3 release train.
   - **Dependency:** None
@@ -1672,7 +1675,7 @@
   - **Domain:** AUTHORIZATION / ENGINE
   - **Requirement:** Enforce canonical chain: `SESSION -> IDENTITY -> ACTIVE ASSIGNMENTS -> POSITIONS -> CAPABILITIES -> SCOPE -> RESOURCE CONTEXT -> ALLOW/DENY`.
   - **Source of truth:** `types/architecture-lock.ts` (`IAuthorizationEngine`), `STQ_PROJECT_CONTEXT.md` (Section 5)
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Fully implemented and unit tested (`tests/milestone2-authorization-engine.test.ts`).
   - **Target state:** Enforced across all production endpoints.
   - **Dependency:** None
@@ -1692,7 +1695,7 @@
   - **Domain:** AUTHORIZATION / RESOURCE_CONTEXT
   - **Requirement:** Caller-provided resource parameters (`RequestedResourceContext`) are strictly untrusted IDs; engine must hydrate server-side authoritative context (`ResolvedResourceContext`).
   - **Source of truth:** `types/architecture-lock.ts` (`RequestedResourceContext`, `ResolvedResourceContext`)
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Enforced in engine implementation.
   - **Target state:** Maintained in production.
   - **Dependency:** None
@@ -1712,7 +1715,7 @@
   - **Domain:** AUTHORIZATION / MULTI_GRANT
   - **Requirement:** User holding multiple active assignments evaluating same capability across different scopes evaluates all grants; ALLOW if at least one matches.
   - **Source of truth:** `types/architecture-lock.ts` (`IAuthorizationEngine.authorize`)
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Implemented in engine.
   - **Target state:** Maintained in production.
   - **Dependency:** None
@@ -1732,7 +1735,7 @@
   - **Domain:** AUTHORIZATION / FAIL_CLOSED
   - **Requirement:** Any unexpected exception, unmapped capability, missing assignment, or database query error returns `SYSTEM_FAIL_CLOSED` and denies access. Never return fake healthy or empty data.
   - **Source of truth:** `types/architecture-lock.ts` (`SYSTEM_FAIL_CLOSED`)
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Implemented in engine error handlers.
   - **Target state:** Maintained in production.
   - **Dependency:** None
@@ -1755,7 +1758,7 @@
   - **Domain:** AUDIT / SCHEMA
   - **Requirement:** Table `canonical_audit_logs` present in production; captures technical account, human executor, action, entity, before/after states, capability, position, unit, scope, client IP, timestamp.
   - **Source of truth:** `types/architecture-lock.ts` (`CanonicalAuditRecord`), `prisma/schema.prisma`
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Table present in production database (`CANONICAL_AUDIT_READY = READY` in C2A).
   - **Target state:** Fully utilized by all M3.3 mutating actions.
   - **Dependency:** None
@@ -1775,7 +1778,7 @@
   - **Domain:** AUDIT / NON_REPUDIATION
   - **Requirement:** Every mutating transaction executed by a UNIT account (`AccountType: UNIT`) MUST record non-null `humanExecutorId` and `humanExecutorName`.
   - **Source of truth:** `types/architecture-lock.ts` (`UnitAccountExecutorContext`)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Enforced in architecture contracts.
   - **Target state:** Active in production Server Actions.
   - **Dependency:** REL-AUD-01, REL-MOD-02
@@ -1795,7 +1798,7 @@
   - **Domain:** AUDIT / INTEGRITY
   - **Requirement:** Never execute hidden background mutations to "repair" data to satisfy green test results. All migrations, linkages, and state changes must be auditable and authorized.
   - **Source of truth:** `STQ_PROJECT_CONTEXT.md` (Section 14)
-  - **BusinessRuleState:** `VERIFIED_PRODUCTION`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Enforced across all PR workflows.
   - **Target state:** Maintained throughout release train.
   - **Dependency:** None
@@ -1818,7 +1821,7 @@
   - **Domain:** PRODUCTION_UAT / GATE
   - **Requirement:** Live production UAT commences ONLY after GATE-C2B, GATE-C2C, and GATE-C2D are 100% satisfied and verified with evidence packs.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 17)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Preceding gates blocked/not ready; UAT blocked.
   - **Target state:** Executed in C2E window.
   - **Dependency:** GATE-C2D
@@ -1844,7 +1847,7 @@
     5. Academic teacher starts session for assigned cohort/subject (`ALLOW`).
     6. OSDA Putri accesses permitted PUTRI dashboard (`ALLOW`).
   - **Source of truth:** `docs/STQ_M3_RELEASE_MANIFEST.md`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Prepared in test matrix; pending C2E.
   - **Target state:** Executed live by users/testers with PASS evidence.
   - **Dependency:** REL-UAT-01
@@ -1870,7 +1873,7 @@
     5. OSDA Putri attempts access to santri putra records (`DENY`).
     6. Unassigned teacher attempts session start (`DENY`).
   - **Source of truth:** `docs/STQ_M3_RELEASE_MANIFEST.md`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Prepared in test matrix; pending C2E.
   - **Target state:** Executed live with verified DENY results.
   - **Dependency:** REL-UAT-01
@@ -1898,7 +1901,7 @@
     - C2D activation failure: toggle `PENDIDIKAN_V2_UAT_ENABLED=false` and reset `businessRuleState`.
     - C2E failure: disable feature flags, revoke test assignments.
   - **Source of truth:** `docs/STQ_M3_RELEASE_MANIFEST.md`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Documented in control plane.
   - **Target state:** Ready for execution if triggered.
   - **Dependency:** None
@@ -1918,7 +1921,7 @@
   - **Domain:** RECOVERY / DRIFT_AUDIT
   - **Requirement:** Post-C2E audit checking: zero orphaned rows, zero unexpected table count changes, zero drift between Prisma schema and production catalog, PR #8 untouched.
   - **Source of truth:** `docs/STQ_M3_RELEASE_MANIFEST.md`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Audit queries prepared.
   - **Target state:** Executed post-C2E.
   - **Dependency:** REL-UAT-02, REL-UAT-03
@@ -1938,7 +1941,7 @@
   - **Domain:** RECOVERY / SIGN_OFF
   - **Requirement:** Formal institutional closure and sign-off by Business Owner upon successful completion of C2E UAT evidence pack.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Milestone train open.
   - **Target state:** Formal closure of M3.3 milestone.
   - **Dependency:** REL-REC-02
