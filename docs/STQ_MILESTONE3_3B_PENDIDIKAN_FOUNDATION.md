@@ -1,5 +1,5 @@
 # Milestone 3.3B: Pendidikan Foundation (Studi Umum + Kepesantrenan)
-**Document Version:** 1.3.0 (Final Micro-Fix: Assessment Deferred + Audit Provenance Closure)  
+**Document Version:** 1.4.0 (Milestone 3.3C1: UAT Activation Readiness & Policy Reconciliation)  
 **Branch:** `architecture/milestone3-3b-pendidikan-foundation`  
 **Base Commit:** `0e12ae9e151577b5caf10b2d3a11c9c2de81e6d9`  
 **PR #8 Immutable:** `9068cae5587b7219c394c5c25bf0de07a15b0726`  
@@ -278,5 +278,20 @@ When recording session attendance:
 | ESLint Check | Passed | `npm run lint` (0 errors, 0 warnings) |
 | Isolated DB Migration Chain | Passed | `simulateM33bMigrationChain` (PR #8 SHA verified, 20+ checks passed including real PostgreSQL service tests) |
 | M3.3B Test Suite | Passed | `tests/milestone3-3b-pendidikan-foundation.test.ts` (All proofs pass) |
+| M3.3C1 Test Suite | Passed | `tests/milestone3-3c1-uat-activation-readiness.test.ts` (51/51 tests pass) |
 | Full Workspace Test Suite | Passed | `npm test` (All tests pass) |
+
+---
+
+## 11. Milestone 3.3C1: UAT Activation Readiness & Policy Reconciliation
+
+### 11.1. Business Rule Reconciliation Matrix
+1. **UAT #3 (Search Result Display):** Latest Business Owner decision dictates **Nama Only** display (`Muhammad Fatih`). Search rows/cards do not include `kelas`, `NIS`, or halaqoh. `Kelas` and `Halaqoh` are provided as independent filter controls.
+2. **UAT #5 (Curriculum Separation):** 6 canonical Studi Umum subjects (`Matematika`, `Bahasa Inggris`, `IPS`, `IPA`, `Bahasa Indonesia`, `TIK`) and 5 canonical Kepesantrenan subjects (`Bahasa Arab`, `Fikih`, `Tafsir`, `Aqidah`, `Tajwid`).
+3. **UAT #6 (Attendance Vocabulary & Teacher Attendance):** Canonical student attendance statuses are strictly `HADIR`, `IZIN`, `SAKIT`, `ALFA` (`MASBUK` is rejected with zero tolerance). Teacher attendance is not recorded via a manual status dropdown; rather, it is evidenced by the authenticated teacher successfully executing the server action *"Mulai Pembelajaran"*.
+4. **Declarative UAT Activation Targets Manifest:** Encoded in `types/architecture-lock.ts` under `UAT_ACTIVATION_TARGETS` with all policies kept in `APPROVED_TARGET_PENDING_TECHNICAL` to guarantee zero unapproved runtime authorization privilege escalation.
+5. **Production Readiness Diagnostic Framework:** Implemented in `lib/server/pendidikan-v2-readiness.ts` containing 11 pre-activation safety gates. Inspects schema, unlinked staff accounts, and placement invariants with 100% read-only operations and zero writes.
+6. **Explicit Runtime Activation Gate:** `process.env.PENDIDIKAN_V2_UAT_ENABLED === "true"`. When disabled (default), all session start, lesson material, and student attendance mutations fail closed with `PENDIDIKAN_V2_UAT_NOT_ENABLED`.
+7. **Production Migration Safety:** 0 production migrations applied; 0 production writes performed. PR #8 commit `9068cae5587b7219c394c5c25bf0de07a15b0726` remains 100% untouched.
+
 

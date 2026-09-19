@@ -22,7 +22,6 @@ import {
   X,
   Filter,
   BookOpen,
-  ShieldAlert,
   BookMarked,
   Check,
   Search,
@@ -39,7 +38,16 @@ import {
   isStudiUmumSubject,
   STUDI_UMUM_MAPEL_OPTIONS,
   MAPEL_OPTIONS,
+  EducationSessionReadDTO,
+  matchStudiUmumSession,
+  matchKepesantrenanSession,
 } from "@/lib/pendidikan-v2";
+import { getTodayWITADateString } from "@/lib/wita-date";
+import {
+  getEducationSessionsAction,
+  startEducationSessionAction,
+  recordEducationSessionMaterialAction,
+} from "@/app/actions/pendidikan-v2";
 
 export { STUDI_UMUM_MAPEL_OPTIONS, MAPEL_OPTIONS };
 
@@ -145,10 +153,78 @@ export function AkademikModule({
   // Milestone 3.3B: Studi Umum Saturday Schedule & Session Management State
   const [selectedCohortStartYear, setSelectedCohortStartYear] = useState<number>(2026);
   const [selectedSemesterMeeting, setSelectedSemesterMeeting] = useState<number>(1);
+  const [selectedOperationalDateWita, setSelectedOperationalDateWita] = useState<string>(() => getTodayWITADateString());
   const cohortLevel = (selectedCohortStartYear === 2026 ? 1 : selectedCohortStartYear === 2025 ? 2 : 3) as 1 | 2 | 3;
 
-  // Milestone 3.3B: Kepesantrenan Daily Schedule & Session Management State
+  // Milestone 3.3B & 3.3C1: Kepesantrenan Daily Schedule, Gender & Pedagogical Level State
   const [selectedKpsDay, setSelectedKpsDay] = useState<"Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday">("Monday");
+  const [selectedKpsGender, setSelectedKpsGender] = useState<"PUTRA" | "PUTRI">("PUTRA");
+  const [selectedKpsArabLevel, setSelectedKpsArabLevel] = useState<"TINGKAT_1" | "TINGKAT_2" | "TINGKAT_3">("TINGKAT_1");
+  const [selectedKpsDateWita, setSelectedKpsDateWita] = useState<string>(() => getTodayWITADateString());
+
+  // Milestone 3.3C1: Server-Authoritative Education Sessions State
+  type ServerSessionStatus = "LOADING" | "READY" | "NOT_ENABLED" | "SCHEMA_NOT_READY" | "PERMISSION_DENIED" | "ERROR";
+  const [serverSessions, setServerSessions] = useState<EducationSessionReadDTO[]>([]);
+  const [serverSessionStatus, setServerSessionStatus] = useState<ServerSessionStatus>("LOADING");
+  const [inputMateriText, setInputMateriText] = useState<string>("");
+
+  useEffect(() => {
+    let isMounted = true;
+    getEducationSessionsAction()
+      .then((res) => {
+        if (!isMounted) return;
+        if (res.success && res.data) {
+          setServerSessions(res.data);
+          setServerSessionStatus("READY");
+        } else {
+          const err = res.error || "Gagal memuat data sesi pembelajaran";
+          if (err.includes("NOT_ENABLED") || err.includes("UAT_NOT_ENABLED")) {
+            setServerSessionStatus("NOT_ENABLED");
+          } else if (err.includes("SCHEMA_NOT_READY")) {
+            setServerSessionStatus("SCHEMA_NOT_READY");
+          } else if (err.includes("UNAUTHORIZED") || err.includes("PERMISSION_DENIED")) {
+            setServerSessionStatus("PERMISSION_DENIED");
+          } else {
+            setServerSessionStatus("ERROR");
+          }
+        }
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setServerSessionStatus("ERROR");
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleStartSession = async (sessionId: string) => {
+    startTransition(async () => {
+      const res = await startEducationSessionAction({ sessionId });
+      if (res.success) {
+        setFeedback({ type: "success", message: res.message || "Sesi pembelajaran berhasil dimulai." });
+        const refetch = await getEducationSessionsAction();
+        if (refetch.success && refetch.data) setServerSessions(refetch.data);
+      } else {
+        setFeedback({ type: "error", message: res.error || res.message || "Gagal memulai sesi." });
+      }
+    });
+  };
+
+  const handleRecordMaterial = async (sessionId: string) => {
+    if (!inputMateriText.trim()) return;
+    startTransition(async () => {
+      const res = await recordEducationSessionMaterialAction({ sessionId, materi: inputMateriText.trim() });
+      if (res.success) {
+        setFeedback({ type: "success", message: res.message || "Materi pembelajaran berhasil disimpan." });
+        setInputMateriText("");
+        const refetch = await getEducationSessionsAction();
+        if (refetch.success && refetch.data) setServerSessions(refetch.data);
+      } else {
+        setFeedback({ type: "error", message: res.error || res.message || "Gagal menyimpan materi." });
+      }
+    });
+  };
 
   // Load data nilai riil dari server action on mount
   useEffect(() => {
@@ -431,8 +507,8 @@ export function AkademikModule({
                 </div>
               </div>
 
-              {/* Selector Angkatan/Tingkat & Pertemuan Semester */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
+              {/* Selector Angkatan/Tingkat, Pertemuan Semester & Tanggal Operasional */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3">
                 <div>
                   <label className="text-[11px] font-bold text-slate-600 block mb-1 uppercase tracking-wider">
                     Pilih Angkatan Program (Tingkat KBM)
@@ -466,6 +542,18 @@ export function AkademikModule({
                     </span>
                   </div>
                 </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 block mb-1 uppercase tracking-wider">
+                    Tanggal Operasional (Sabtu WITA)
+                  </label>
+                  <input
+                    type="date"
+                    value={selectedOperationalDateWita}
+                    onChange={(e) => setSelectedOperationalDateWita(e.target.value)}
+                    className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs sm:text-sm font-semibold text-slate-800"
+                  />
+                </div>
               </div>
             </CardHeader>
 
@@ -477,6 +565,14 @@ export function AkademikModule({
                     programLevel: cohortLevel,
                     jp: jpNum,
                     semesterMeetingNumber: selectedSemesterMeeting,
+                  });
+
+                  const suSession = matchStudiUmumSession(serverSessions, {
+                    scheduledDate: selectedOperationalDateWita,
+                    subjectName: schedule.subject,
+                    jp: schedule.jp,
+                    semesterMeetingNumber: selectedSemesterMeeting,
+                    programLevel: cohortLevel,
                   });
 
                   return (
@@ -528,29 +624,92 @@ export function AkademikModule({
                           <div className="flex justify-between text-[11px]">
                             <span className="text-slate-500">Guru Pengajar:</span>
                             <span className="font-semibold text-slate-600">
-                              Belum diaktifkan
+                              {suSession?.actualTeacherDisplay || suSession?.scheduledTeacherDisplay || "Belum diaktifkan"}
                             </span>
                           </div>
                           <div className="flex justify-between text-[11px]">
                             <span className="text-slate-500">Status Sesi:</span>
-                            <span className="font-bold text-amber-700">
-                              ○ TERJADWAL
-                            </span>
+                            {(() => {
+                              if (serverSessionStatus === "LOADING") {
+                                return <span className="font-bold text-slate-500">○ MEMUAT...</span>;
+                              }
+                              if (serverSessionStatus === "NOT_ENABLED") {
+                                return <span className="font-bold text-amber-700">○ UAT NONAKTIF</span>;
+                              }
+                              if (serverSessionStatus === "SCHEMA_NOT_READY") {
+                                return <span className="font-bold text-amber-700">○ SKEMA BELUM SIAP</span>;
+                              }
+                              if (serverSessionStatus === "PERMISSION_DENIED") {
+                                return <span className="font-bold text-red-600">○ AKSES DITOLAK</span>;
+                              }
+                              if (serverSessionStatus === "ERROR") {
+                                return <span className="font-bold text-red-600">○ GAGAL MEMUAT</span>;
+                              }
+                              if (suSession) {
+                                if (suSession.status === "STARTED") {
+                                  return <span className="font-bold text-emerald-700">● BERLANGSUNG</span>;
+                                }
+                                if (suSession.status === "COMPLETED") {
+                                  return <span className="font-bold text-blue-700">✔ SELESAI</span>;
+                                }
+                                return <span className="font-bold text-amber-700">○ TERJADWAL</span>;
+                              }
+                              return <span className="font-bold text-slate-400">○ BELUM ADA DI SERVER</span>;
+                            })()}
                           </div>
                         </div>
                       </div>
 
                       <div className="mt-4 pt-3 border-t border-slate-100">
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          disabled
-                          className="w-full min-h-[44px] bg-slate-100 text-slate-400 cursor-not-allowed text-xs font-bold gap-1.5 border border-slate-200"
-                        >
-                          <Lock className="h-4 w-4 text-slate-400" />
-                          Belum diaktifkan — menunggu aktivasi M3.3C
-                        </Button>
+                        {(() => {
+                          if (serverSessionStatus === "READY" && suSession && suSession.mutationAvailable) {
+                            return (
+                              <Button
+                                type="button"
+                                variant="primary"
+                                size="sm"
+                                onClick={() => handleStartSession(suSession.sessionId)}
+                                className="w-full min-h-[44px] bg-[#0E7C3A] hover:bg-[#0B642E] text-white text-xs font-bold gap-1.5"
+                              >
+                                Mulai Pembelajaran
+                              </Button>
+                            );
+                          }
+
+                          let notice = "Belum diaktifkan — menunggu aktivasi M3.3C";
+                          if (serverSessionStatus === "LOADING") {
+                            notice = "Memuat status sesi dari server...";
+                          } else if (serverSessionStatus === "NOT_ENABLED") {
+                            notice = "UAT belum aktif (PENDIDIKAN_V2_UAT_ENABLED=false)";
+                          } else if (serverSessionStatus === "SCHEMA_NOT_READY") {
+                            notice = "Skema database belum siap";
+                          } else if (serverSessionStatus === "PERMISSION_DENIED") {
+                            notice = "Akses tidak diotorisasi";
+                          } else if (suSession?.mutationDeniedReason === "AUTHENTICATION_REQUIRED") {
+                            notice = "Harap masuk (login) untuk mengelola sesi";
+                          } else if (suSession?.mutationDeniedReason === "SCHEDULED_TEACHER_NOT_RESOLVED") {
+                            notice = "Guru terjadwal belum terdaftar di sesi";
+                          } else if (suSession?.mutationDeniedReason === "STAFF_NOT_LINKED") {
+                            notice = "Profil pendidik staf belum terhubung";
+                          } else if (suSession?.mutationDeniedReason === "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED") {
+                            notice = "Bukan guru terjadwal — kebijakan badal belum aktif";
+                          } else if (suSession?.mutationDeniedReason === "CANONICAL_AUTH_DENIED") {
+                            notice = "Wewenang mengajar tidak mencukupi";
+                          }
+
+                          return (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              disabled
+                              className="w-full min-h-[44px] bg-slate-100 text-slate-400 cursor-not-allowed text-xs font-bold gap-1.5 border border-slate-200"
+                            >
+                              <Lock className="h-4 w-4 text-slate-400" />
+                              {notice}
+                            </Button>
+                          );
+                        })()}
                       </div>
                     </div>
                   );
@@ -1012,32 +1171,7 @@ export function AkademikModule({
       {/* 3. VIEW KURIKULUM & EVALUASI KEPESANTRENAN */}
       {subTab === "kepesantrenan" && (
         <div className="space-y-6">
-          {/* Fail-Closed Check */}
-          {!["KS", "MT", "PH", "ADM"].includes(userRole) ? (
-            <Card rounded="3xl" className="border border-amber-200 bg-amber-50/60 p-6 sm:p-8">
-              <div className="flex flex-col items-center text-center max-w-lg mx-auto space-y-4">
-                <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 shadow-xs">
-                  <ShieldAlert className="h-8 w-8" />
-                </div>
-                <div>
-                  <Badge variant="orange" size="md" className="font-bold mb-2">
-                    AKSES DITOLAK (FAIL-CLOSED)
-                  </Badge>
-                  <h3 className="text-lg font-bold text-slate-900 font-heading">
-                    Akses Terbatas: Kurikulum Kepesantrenan
-                  </h3>
-                  <p className="text-xs sm:text-sm text-slate-600 mt-2 leading-relaxed">
-                    Pengelolaan kurikulum dan penilaian 5 Mata Pelajaran Kepesantrenan dilindungi dengan kebijakan ketat (fail-closed) dan hanya dapat diakses oleh <strong>Mudir (KS)</strong>, <strong>Musyrif Tahfizh (MT)</strong>, dan <strong>Pembina Asrama (PH)</strong>.
-                  </p>
-                  <p className="text-xs text-amber-800 font-semibold mt-3 bg-amber-100/70 p-2.5 rounded-xl border border-amber-200">
-                    Peran Anda saat ini (<strong>{userRole}</strong>) tidak memiliki hak otorisasi untuk mencatat atau mengubah nilai kepesantrenan. Untuk input nilai Studi Umum, silakan gunakan tab <em>Input Penilaian Akademik</em>.
-                  </p>
-                </div>
-              </div>
-            </Card>
-          ) : (
-            <>
-              {/* Header Info */}
+          {/* Header Info */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-slate-50 p-4 sm:p-5 rounded-3xl border border-emerald-100">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
@@ -1126,30 +1260,97 @@ export function AkademikModule({
                         Waktu KBM terencana: 18:30–19:30 WITA (ba&apos;da Maghrib). Materi dan presensi santri terkunci hingga guru mengklik &quot;Mulai Pembelajaran&quot;.
                       </CardDescription>
                     </div>
-                    {/* Day Tabs */}
-                    <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-                      {[
-                        { day: "Monday", label: "Senin", mapel: "Bahasa Arab" },
-                        { day: "Tuesday", label: "Selasa", mapel: "Fikih" },
-                        { day: "Wednesday", label: "Rabu", mapel: "Tafsir" },
-                        { day: "Thursday", label: "Kamis", mapel: "Aqidah" },
-                        { day: "Friday", label: "Jumat", mapel: "Tajwid" },
-                      ].map((d) => (
+                    {/* Day Tabs & Gender Selector */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Gender Selector */}
+                      <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
                         <button
-                          key={d.day}
                           type="button"
-                          onClick={() => setSelectedKpsDay(d.day as "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday")}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                            selectedKpsDay === d.day
+                          onClick={() => setSelectedKpsGender("PUTRA")}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                            selectedKpsGender === "PUTRA"
                               ? "bg-[#0E7C3A] text-white shadow-xs"
                               : "text-slate-600 hover:text-slate-900"
                           }`}
                         >
-                          {d.label}
+                          Putra
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedKpsGender("PUTRI")}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                            selectedKpsGender === "PUTRI"
+                              ? "bg-[#0E7C3A] text-white shadow-xs"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          Putri
+                        </button>
+                      </div>
+
+                      {/* Tanggal WITA Selector */}
+                      <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                        <span className="text-[11px] font-bold text-slate-500 pl-1.5 shrink-0 flex items-center gap-1">
+                          <Calendar className="h-3.5 w-3.5 text-slate-500" /> Tanggal:
+                        </span>
+                        <input
+                          type="date"
+                          value={selectedKpsDateWita}
+                          onChange={(e) => setSelectedKpsDateWita(e.target.value)}
+                          className="px-2 py-0.5 text-xs font-semibold bg-white rounded-lg border border-slate-200 text-slate-700 outline-none focus:ring-1 focus:ring-[#0E7C3A]"
+                        />
+                      </div>
+
+                      {/* Day Tabs */}
+                      <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                        {[
+                          { day: "Monday", label: "Senin", mapel: "Bahasa Arab" },
+                          { day: "Tuesday", label: "Selasa", mapel: "Fikih" },
+                          { day: "Wednesday", label: "Rabu", mapel: "Tafsir" },
+                          { day: "Thursday", label: "Kamis", mapel: "Aqidah" },
+                          { day: "Friday", label: "Jumat", mapel: "Tajwid" },
+                        ].map((d) => (
+                          <button
+                            key={d.day}
+                            type="button"
+                            onClick={() => setSelectedKpsDay(d.day as "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday")}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                              selectedKpsDay === d.day
+                                ? "bg-[#0E7C3A] text-white shadow-xs"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                          >
+                            {d.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Monday Arabic Level Selector for Putra */}
+                  {selectedKpsGender === "PUTRA" && selectedKpsDay === "Monday" && (
+                    <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-slate-100 bg-amber-50/70 p-2 rounded-xl">
+                      <span className="text-[11px] font-bold text-amber-900 shrink-0">Tingkat Bahasa Arab Putra:</span>
+                      {[
+                        { level: "TINGKAT_1" as const, label: "Tingkat I (Ust. Abi Hudzaifah)" },
+                        { level: "TINGKAT_2" as const, label: "Tingkat II (Ust. Kamal Mukhtar)" },
+                        { level: "TINGKAT_3" as const, label: "Tingkat III (Ust. Andi Quarzy Ayatullah)" },
+                      ].map((t) => (
+                        <button
+                          key={t.level}
+                          type="button"
+                          onClick={() => setSelectedKpsArabLevel(t.level)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                            selectedKpsArabLevel === t.level
+                              ? "bg-amber-700 text-white shadow-xs"
+                              : "text-amber-800 hover:text-amber-950 bg-white/70"
+                          }`}
+                        >
+                          {t.label}
                         </button>
                       ))}
                     </div>
-                  </div>
+                  )}
                 </CardHeader>
 
                 <CardContent className="p-4 sm:p-5 space-y-5">
@@ -1161,6 +1362,33 @@ export function AkademikModule({
                       (k) => k.nama === dayDef?.name
                     );
 
+                    const kpsSession = matchKepesantrenanSession(serverSessions, {
+                      scheduledDate: selectedKpsDateWita,
+                      subjectName: dayDef?.name,
+                      genderGroup: selectedKpsGender,
+                      pedagogicalLevel: (selectedKpsGender === "PUTRA" && dayDef?.code === "KPS-ARB") ? selectedKpsArabLevel : undefined,
+                    });
+
+                    const expectedTeacher = selectedKpsGender === "PUTRI"
+                      ? "Ustazah Lisa Dwina Fitri"
+                      : (dayDef?.code === "KPS-ARB"
+                        ? (selectedKpsArabLevel === "TINGKAT_1" ? "Ust. Abi Hudzaifah" : selectedKpsArabLevel === "TINGKAT_2" ? "Ust. Kamal Mukhtar" : "Ust. Andi Quarzy Ayatullah")
+                        : (kpsFact?.guruDefault || "Berdasarkan Jadwal Resmi"));
+
+                    const displayTeacher = kpsSession?.actualTeacherDisplay || kpsSession?.scheduledTeacherDisplay || expectedTeacher;
+
+                    const statusText = (() => {
+                      if (serverSessionStatus === "LOADING") return "Memuat...";
+                      if (serverSessionStatus === "NOT_ENABLED") return "UAT Nonaktif";
+                      if (serverSessionStatus === "SCHEMA_NOT_READY") return "Skema Belum Siap";
+                      if (serverSessionStatus === "PERMISSION_DENIED") return "Akses Ditolak";
+                      if (serverSessionStatus === "ERROR") return "Gagal Memuat";
+                      if (!kpsSession) return "Belum Ada Sesi";
+                      if (kpsSession.status === "STARTED") return "Sedang Berlangsung";
+                      if (kpsSession.status === "COMPLETED") return "Selesai";
+                      return "Terjadwal";
+                    })();
+
                     return (
                       <div className="space-y-4">
                         {/* Session Status Banner */}
@@ -1168,28 +1396,96 @@ export function AkademikModule({
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="font-bold text-slate-900 text-sm">
-                                {dayDef?.dayNameId}: {dayDef?.name}
+                                {dayDef?.dayNameId}: {dayDef?.name} ({selectedKpsGender === "PUTRA" ? "Santri Putra" : "Santri Putri"})
                               </span>
-                              <Badge variant="neutral" size="sm" className="font-bold">
-                                ○ TERJADWAL
-                              </Badge>
+                              {(() => {
+                                if (serverSessionStatus === "LOADING") {
+                                  return <Badge variant="neutral" size="sm" className="font-bold">○ MEMUAT</Badge>;
+                                }
+                                if (serverSessionStatus === "NOT_ENABLED") {
+                                  return <Badge variant="neutral" size="sm" className="font-bold">⚠ UAT NONAKTIF</Badge>;
+                                }
+                                if (serverSessionStatus === "SCHEMA_NOT_READY") {
+                                  return <Badge variant="ditolak" size="sm" className="font-bold">⚠ SKEMA BELUM SIAP</Badge>;
+                                }
+                                if (serverSessionStatus === "PERMISSION_DENIED") {
+                                  return <Badge variant="orange" size="sm" className="font-bold">⛔ AKSES DITOLAK</Badge>;
+                                }
+                                if (serverSessionStatus === "ERROR") {
+                                  return <Badge variant="ditolak" size="sm" className="font-bold">✖ GAGAL MEMUAT</Badge>;
+                                }
+                                if (!kpsSession) {
+                                  return <Badge variant="neutral" size="sm" className="font-bold">○ BELUM ADA SESI</Badge>;
+                                }
+                                if (kpsSession.status === "STARTED") {
+                                  return <Badge variant="green" size="sm" className="font-bold">● BERLANGSUNG</Badge>;
+                                }
+                                if (kpsSession.status === "COMPLETED") {
+                                  return <Badge variant="sky" size="sm" className="font-bold">✔ SELESAI</Badge>;
+                                }
+                                if (kpsSession.status === "SCHEDULED") {
+                                  return <Badge variant="neutral" size="sm" className="font-bold">○ TERJADWAL</Badge>;
+                                }
+                                return <Badge variant="neutral" size="sm" className="font-bold">○ BELUM ADA SESI</Badge>;
+                              })()}
                             </div>
                             <p className="text-xs text-slate-500 mt-1">
-                              Jendela Waktu: {dayDef?.scheduledWindowWita} • Guru Terjadwal: {kpsFact?.guruDefault || "Berdasarkan Tingkat & Gender"} • Status: Belum dimulai
+                              Jendela Waktu: {dayDef?.scheduledWindowWita} • Tanggal: {selectedKpsDateWita} • Guru Terjadwal: {displayTeacher} • Status: {statusText}
                             </p>
                           </div>
 
                           <div>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              disabled
-                              className="min-h-[44px] bg-slate-100 text-slate-400 cursor-not-allowed text-xs font-bold gap-1.5 border border-slate-200"
-                            >
-                              <Lock className="h-4 w-4 text-slate-400" />
-                              Belum diaktifkan — menunggu aktivasi M3.3C
-                            </Button>
+                            {(() => {
+                              if (serverSessionStatus === "READY" && kpsSession && kpsSession.mutationAvailable) {
+                                return (
+                                  <Button
+                                    type="button"
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={() => handleStartSession(kpsSession.sessionId)}
+                                    className="min-h-[44px] bg-[#0E7C3A] hover:bg-[#0B642E] text-white text-xs font-bold gap-1.5"
+                                  >
+                                    Mulai Pembelajaran
+                                  </Button>
+                                );
+                              }
+
+                              let notice = "Belum diaktifkan — menunggu aktivasi M3.3C";
+                              if (serverSessionStatus === "LOADING") {
+                                notice = "Memuat status sesi...";
+                              } else if (serverSessionStatus === "NOT_ENABLED") {
+                                notice = "UAT belum aktif (PENDIDIKAN_V2_UAT_ENABLED=false)";
+                              } else if (serverSessionStatus === "SCHEMA_NOT_READY") {
+                                notice = "Skema database belum siap";
+                              } else if (serverSessionStatus === "PERMISSION_DENIED") {
+                                notice = "Akses tidak diotorisasi";
+                              } else if (!kpsSession) {
+                                notice = "Sesi pembelajaran belum tersedia untuk tanggal ini";
+                              } else if (kpsSession?.mutationDeniedReason === "AUTHENTICATION_REQUIRED") {
+                                notice = "Harap masuk untuk mengelola sesi";
+                              } else if (kpsSession?.mutationDeniedReason === "SCHEDULED_TEACHER_NOT_RESOLVED") {
+                                notice = "Guru terjadwal belum terdaftar di sesi";
+                              } else if (kpsSession?.mutationDeniedReason === "STAFF_NOT_LINKED") {
+                                notice = "Profil pendidik staf belum terhubung";
+                              } else if (kpsSession?.mutationDeniedReason === "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED") {
+                                notice = "Bukan guru terjadwal — kebijakan badal belum aktif";
+                              } else if (kpsSession?.mutationDeniedReason === "CANONICAL_AUTH_DENIED") {
+                                notice = "Wewenang mengajar tidak mencukupi";
+                              }
+
+                              return (
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  disabled
+                                  className="min-h-[44px] bg-slate-100 text-slate-400 cursor-not-allowed text-xs font-bold gap-1.5 border border-slate-200"
+                                >
+                                  <Lock className="h-4 w-4 text-slate-400" />
+                                  {notice}
+                                </Button>
+                              );
+                            })()}
                           </div>
                         </div>
 
@@ -1202,9 +1498,9 @@ export function AkademikModule({
                                 <FileText className="h-4 w-4 text-[#0E7C3A]" />
                                 Catatan Materi Pelajaran (Manual)
                               </h5>
-                              <Badge variant="neutral" size="sm" className="font-semibold text-[10px]">
-                                <Lock className="h-3 w-3 inline mr-1" />
-                                Terkunci
+                              <Badge variant={kpsSession?.materialAvailable ? "green" : "neutral"} size="sm" className="font-semibold text-[10px]">
+                                {!kpsSession?.materialAvailable && <Lock className="h-3 w-3 inline mr-1" />}
+                                {kpsSession?.materialAvailable ? "Aktif" : "Terkunci"}
                               </Badge>
                             </div>
                             <p className="text-[11px] text-slate-500 mb-3">
@@ -1212,18 +1508,56 @@ export function AkademikModule({
                             </p>
 
                             <div className="space-y-2">
-                              <textarea
-                                rows={2}
-                                disabled
-                                placeholder="Pencatatan materi pembelajaran belum diaktifkan — menunggu aktivasi M3.3C"
-                                value=""
-                                readOnly
-                                className="w-full p-2.5 rounded-xl border border-slate-200 text-xs text-slate-400 bg-slate-100 cursor-not-allowed resize-none"
-                              />
-                              <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-[11px] text-amber-800 flex items-center gap-2">
-                                <Lock className="h-4 w-4 shrink-0 text-amber-600" />
-                                <span>Pencatatan materi pembelajaran belum diaktifkan — menunggu aktivasi M3.3C.</span>
-                              </div>
+                              {(() => {
+                                if (serverSessionStatus === "READY" && kpsSession && kpsSession.materialAvailable) {
+                                  return (
+                                    <div className="space-y-2">
+                                      <textarea
+                                        rows={2}
+                                        placeholder="Ketik ringkasan materi pembelajaran..."
+                                        value={inputMateriText}
+                                        onChange={(e) => setInputMateriText(e.target.value)}
+                                        className="w-full p-2.5 rounded-xl border border-slate-200 text-xs text-slate-800 bg-white resize-none"
+                                      />
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="primary"
+                                        onClick={() => handleRecordMaterial(kpsSession.sessionId)}
+                                        className="bg-[#0E7C3A] hover:bg-[#0B642E] text-white text-xs font-bold"
+                                      >
+                                        Simpan Materi Sesi
+                                      </Button>
+                                    </div>
+                                  );
+                                }
+
+                                let materialNotice = "Pencatatan materi pembelajaran belum diaktifkan — menunggu aktivasi M3.3C.";
+                                if (kpsSession?.materialDeniedReason === "ACTOR_NOT_ACTUAL_TEACHER") {
+                                  materialNotice = "Hanya guru aktual yang dapat mencatat materi pembelajaran.";
+                                } else if (kpsSession?.materialDeniedReason === "SESSION_NOT_STARTED") {
+                                  materialNotice = "Sesi belum dimulai. Klik 'Mulai Pembelajaran' terlebih dahulu.";
+                                } else if (kpsSession?.materialDeniedReason === "UAT_NOT_ENABLED") {
+                                  materialNotice = "UAT materi pembelajaran belum aktif di server.";
+                                }
+
+                                return (
+                                  <>
+                                    <textarea
+                                      rows={2}
+                                      disabled
+                                      placeholder={materialNotice}
+                                      value=""
+                                      readOnly
+                                      className="w-full p-2.5 rounded-xl border border-slate-200 text-xs text-slate-400 bg-slate-100 cursor-not-allowed resize-none"
+                                    />
+                                    <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-[11px] text-amber-800 flex items-center gap-2">
+                                      <Lock className="h-4 w-4 shrink-0 text-amber-600" />
+                                      <span>{materialNotice}</span>
+                                    </div>
+                                  </>
+                                );
+                              })()}
                             </div>
                           </div>
 
@@ -1234,20 +1568,33 @@ export function AkademikModule({
                                 <Users className="h-4 w-4 text-[#0E7C3A]" />
                                 Presensi Santri Sesi KBM
                               </h5>
-                              <Badge variant="neutral" size="sm" className="font-semibold text-[10px]">
-                                <Lock className="h-3 w-3 inline mr-1" />
-                                Terkunci
+                              <Badge variant={kpsSession?.attendanceAvailable ? "green" : "neutral"} size="sm" className="font-semibold text-[10px]">
+                                {!kpsSession?.attendanceAvailable && <Lock className="h-3 w-3 inline mr-1" />}
+                                {kpsSession?.attendanceAvailable ? "Aktif" : "Terkunci"}
                               </Badge>
                             </div>
                             <p className="text-[11px] text-slate-500 mb-3">
                               Status resmi: <strong>HADIR</strong>, <strong>IZIN</strong>, <strong>SAKIT</strong>, <strong>ALFA</strong>. (Tanpa status Masbuk).
                             </p>
 
-                            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center py-6">
-                              <Users className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-                              <p className="text-xs font-bold text-slate-600">Daftar peserta sesi belum diaktifkan.</p>
-                              <p className="text-[11px] text-slate-400 mt-1">Presensi santri terverifikasi akan aktif pada Milestone 3.3C.</p>
-                            </div>
+                            {(() => {
+                              let attendanceNotice = "Presensi santri terverifikasi akan aktif pada Milestone 3.3C.";
+                              if (kpsSession?.attendanceDeniedReason === "ACTOR_NOT_ACTUAL_TEACHER") {
+                                attendanceNotice = "Hanya guru aktual yang dapat mencatat presensi santri.";
+                              } else if (kpsSession?.attendanceDeniedReason === "SESSION_NOT_STARTED") {
+                                attendanceNotice = "Sesi belum dimulai. Presensi terkunci hingga sesi dimulai.";
+                              } else if (kpsSession?.attendanceDeniedReason === "STUDI_UMUM_ATTENDANCE_POLICY_DEFERRED") {
+                                attendanceNotice = "Presensi Studi Umum ditangguhkan.";
+                              }
+
+                              return (
+                                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center py-6">
+                                  <Users className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                                  <p className="text-xs font-bold text-slate-600">Daftar peserta sesi belum diaktifkan.</p>
+                                  <p className="text-[11px] text-slate-400 mt-1">{attendanceNotice}</p>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>
@@ -1382,8 +1729,6 @@ export function AkademikModule({
                   </table>
                 </CardContent>
               </Card>
-            </>
-          )}
         </div>
       )}
 

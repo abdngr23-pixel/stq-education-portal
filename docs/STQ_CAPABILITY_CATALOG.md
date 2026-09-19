@@ -142,3 +142,30 @@ Canonical V2 statuses are EXACTLY: `DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`.
 | `system.assignment.manage` | Manajemen penetapan penugasan (Assignment) | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
 | `system.audit.read` | Memeriksa rekam jejak forensic Audit Log | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
 | `system.calendar.manage` | Mengatur kalender kegiatan & libur pondok | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
+
+---
+
+## 4. Milestone 3.3C1: Reconciled Business Rules & UAT Activation Manifest
+
+### 4.1. Business Rule Reconciliation Matrix
+| Item | Old / Superseded Drafting | Canonical Reconciled Decision (M3.3C1) | Code Manifest / Implementation |
+| :--- | :--- | :--- | :--- |
+| **UAT #3 (Search)** | "Search result shows Nama + Kelas" | **Nama Only** display; Kelas & Halaqoh are independent filters | `formatSantriSearchResult()` in `types/architecture-lock.ts` |
+| **UAT #5 (Subjects)** | Generic curriculum lists | **6 Studi Umum Subjects** (Matematika, B. Inggris, IPS, IPA, B. Indonesia, TIK); **5 Kepesantrenan Subjects** (B. Arab, Fikih, Tafsir, Aqidah, Tajwid) | `CANONICAL_STUDI_UMUM_SUBJECTS`, `CANONICAL_KEPESANTRENAN_SUBJECTS` in `lib/pendidikan-v2.ts` |
+| **UAT #6 (Attendance)** | Attendance vocabulary TBD | **HADIR, IZIN, SAKIT, ALFA** (MASBUK strictly forbidden). Teacher attendance evidenced by authenticated session start execution. | `KEPESANTRENAN_APPROVED_ATTENDANCE_STATUSES`, `KEPESANTRENAN_ATTENDANCE_CONTRACT` |
+| **Substitute Policy** | Undefined badal handling | **Deferred**: Ordinary start requires authenticated Staff.id == EducationSession.scheduledStaffId; fails closed with `SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED`. | `PendidikanV2Service.startEducationSession()` |
+| **Scoring Policy** | Undefined KKM/weighting | **Deferred**: Zero invented KKM or calculation formulas; historical score reading preserved, mutation locked. | `components/modules/akademik-module.tsx` |
+
+### 4.2. Declarative UAT Activation Targets Manifest
+Defined in `types/architecture-lock.ts` as `UAT_ACTIVATION_TARGETS`:
+- **OPERATIONAL_TAHFIZH**: `tahfizh.recap.read` (`GLOBAL`), `tahfizh.reward.issue` (`ASSIGNED_UNITS`), `tahfizh.setoran.backdate` (`ASSIGNED_UNITS`).
+- **TARGET_MANAGEMENT**: `MUSYRIF_TAHFIZH` (`HALAQOH`), `PEMBINA_HALAQOH` (`HALAQOH`).
+- **OPERATIONAL_KEASRAMAAN**: `keasramaan.permission.read` (`ASSIGNED_UNITS`), `keasramaan.permission.create` (`ASSIGNED_UNITS`). Denies all approval tiers.
+- **OSDA_PUTRI**: Max 1 active placement, `PUTRI` gender boundary enforced, prevents `PUTRA` resource access.
+
+### 4.3. Production Readiness Diagnostic Framework & Runtime Gate
+- **11 Pre-Activation Verification Gates** implemented in `lib/server/pendidikan-v2-readiness.ts`. Performs 100% read-only inspections with zero writes/DDL.
+- **Explicit Activation Gate**: `process.env.PENDIDIKAN_V2_UAT_ENABLED === "true"`. When disabled, all session starts, material records, and attendance updates fail closed with `PENDIDIKAN_V2_UAT_NOT_ENABLED`.
+- **Server Schema Readiness**: `PendidikanV2Service.checkSchemaReadiness()` verifies presence of `education_sessions`, `education_session_participants`, and `education_session_attendances`. Fails closed with `PENDIDIKAN_V2_SCHEMA_NOT_READY`; never fabricates empty arrays or zero counts.
+- **Production Migration Safety**: Exact zero migrations applied to production; production writes = 0.
+

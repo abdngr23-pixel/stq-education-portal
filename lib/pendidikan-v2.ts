@@ -644,3 +644,151 @@ export const TEACHER_ACCOUNT_PREFIX = "guru.";
 export function getExpectedTeacherUsername(subjectSlug: string): string {
   return `${TEACHER_ACCOUNT_PREFIX}${subjectSlug.toLowerCase().replace(/\s+/g, "")}`;
 }
+
+// ====================================================
+// 8. SERVER-AUTHORITATIVE READ DTO FOR PENDIDIKAN UI
+// ====================================================
+
+export interface EducationSessionReadDTO {
+  sessionId: string;
+  educationTrack: EducationTrackType;
+  subject: string;
+  subjectId: string;
+  subjectCode?: string | null;
+  subjectName?: string | null;
+  scheduledDate: string; // YYYY-MM-DD WITA
+  plannedStart: string | null; // HH:mm
+  plannedEnd: string | null; // HH:mm
+  plannedStartTime?: string | null;
+  plannedEndTime?: string | null;
+  programLevel: number | null;
+  cohortId?: string | null;
+  cohortCode?: string | null;
+  cohortLabel?: string | null;
+  cohortTahunAjaran?: string | null;
+  genderGroup: "PUTRA" | "PUTRI" | null;
+  jp?: number | null;
+  semesterMeetingNumber?: number | null;
+  pblPhase?: string | null;
+  pblBlockNumber?: number | null;
+  pblMetadata?: {
+    blockNumber: number;
+    weekInBlock: number;
+    phase: "THEORY" | "PROJECT";
+    isProjectWeek: boolean;
+  } | null;
+  pedagogicalLevel?: "TINGKAT_1" | "TINGKAT_2" | "TINGKAT_3" | null;
+  scheduledTeacherAssignmentId?: string | null;
+  scheduledStaffId?: string | null;
+  scheduledTeacherDisplay: string | null;
+  actualTeacherUserId?: string | null;
+  actualTeacherStaffId?: string | null;
+  actualTeacherDisplay?: string | null;
+  status: "SCHEDULED" | "STARTED" | "COMPLETED" | "CANCELLED";
+  startedAt?: string | null;
+  materi?: string | null;
+  attendanceAvailable: boolean;
+  attendanceDeniedReason?: string | null;
+  materialAvailable: boolean;
+  materialDeniedReason?: string | null;
+  mutationAvailable: boolean;
+  mutationDeniedReason?: string | null;
+}
+
+/**
+ * Match Studi Umum session by full authoritative identity:
+ * - educationTrack = STUDI_UMUM
+ * - scheduledDate
+ * - subjectId / subjectCode / subjectName
+ * - cohortId / programLevel
+ * - jp
+ * - semesterMeetingNumber
+ *
+ * Strict fail-closed: If a criterion is provided, session field MUST exactly equal the criterion.
+ */
+export function matchStudiUmumSession(
+  sessions: EducationSessionReadDTO[],
+  criteria: {
+    scheduledDate?: string;
+    subjectId?: string;
+    subjectCode?: string;
+    subjectName?: string;
+    cohortId?: string;
+    programLevel?: number;
+    jp?: number;
+    semesterMeetingNumber?: number;
+  }
+): EducationSessionReadDTO | undefined {
+  return sessions.find((s) => {
+    if (s.educationTrack !== "STUDI_UMUM") return false;
+    if (criteria.scheduledDate !== undefined && s.scheduledDate !== criteria.scheduledDate) return false;
+    if (criteria.programLevel !== undefined && s.programLevel !== criteria.programLevel) return false;
+    if (criteria.cohortId !== undefined && s.cohortId !== criteria.cohortId) return false;
+    if (criteria.jp !== undefined && s.jp !== criteria.jp) return false;
+    if (
+      criteria.semesterMeetingNumber !== undefined &&
+      s.semesterMeetingNumber !== criteria.semesterMeetingNumber
+    ) {
+      return false;
+    }
+    if (criteria.subjectId !== undefined && s.subjectId !== criteria.subjectId) return false;
+    if (criteria.subjectCode !== undefined && s.subjectCode !== criteria.subjectCode) return false;
+    if (
+      criteria.subjectName !== undefined &&
+      s.subjectName !== criteria.subjectName &&
+      s.subject !== criteria.subjectName
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Match Kepesantrenan session by full authoritative identity:
+ * - educationTrack = KEPESANTRENAN
+ * - scheduledDate
+ * - subjectId / subjectCode / subjectName
+ * - genderGroup
+ * - pedagogicalLevel / programLevel
+ *
+ * Strict fail-closed: If a criterion is provided, session field MUST exactly equal the criterion.
+ */
+export function matchKepesantrenanSession(
+  sessions: EducationSessionReadDTO[],
+  criteria: {
+    scheduledDate?: string;
+    subjectId?: string;
+    subjectCode?: string;
+    subjectName?: string;
+    genderGroup?: "PUTRA" | "PUTRI";
+    pedagogicalLevel?: "TINGKAT_1" | "TINGKAT_2" | "TINGKAT_3";
+    programLevel?: number;
+    cohortId?: string;
+  }
+): EducationSessionReadDTO | undefined {
+  return sessions.find((s) => {
+    if (s.educationTrack !== "KEPESANTRENAN") return false;
+    if (criteria.scheduledDate !== undefined && s.scheduledDate !== criteria.scheduledDate) return false;
+    if (criteria.genderGroup !== undefined && s.genderGroup !== criteria.genderGroup) return false;
+    if (
+      criteria.pedagogicalLevel !== undefined &&
+      s.pedagogicalLevel !== criteria.pedagogicalLevel
+    ) {
+      return false;
+    }
+    if (criteria.programLevel !== undefined && s.programLevel !== criteria.programLevel) return false;
+    if (criteria.cohortId !== undefined && s.cohortId !== criteria.cohortId) return false;
+    if (criteria.subjectId !== undefined && s.subjectId !== criteria.subjectId) return false;
+    if (criteria.subjectCode !== undefined && s.subjectCode !== criteria.subjectCode) return false;
+    if (
+      criteria.subjectName !== undefined &&
+      s.subjectName !== criteria.subjectName &&
+      s.subject !== criteria.subjectName
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
