@@ -108,6 +108,7 @@ evidence/
     - Query production database read-only: `SELECT version(), current_setting('server_version_num');`.
     - Detect client `pg_dump --version`.
     - Fail closed if client major version is older than production server major version (`client_major < server_major => FAIL_CLOSED`).
+    - Tooling parity note: `scripts/backup-db.ts` does not currently implement this comparison automatedly (`PG_DUMP_MAJOR_COMPATIBILITY_GUARD = REQUIRED / NOT_IMPLEMENTED_IN_BACKUP_SCRIPT`); verification must be performed via audited preflight step or enhanced tooling prior to Gate 0 exit.
   - **Dynamic T0 Snapshot & Verification**:
     - Pre-backup read-only query captures T0 row counts across all tables (`users`, `santri`, `halaqoh`, `staff`, `audit_events`, etc.).
     - Dry-run restore executes `psql -f <backup.sql>` against an isolated scratch database.
@@ -135,7 +136,7 @@ evidence/
 - **`01_REFERENCE_CATALOG_SEED_OUTPUT.json`**:
   - Record IDs and codes for 6 canonical Studi Umum subjects (`MP-SU-01` to `MP-SU-06`) and 5 Kepesantrenan subjects.
   - Record IDs for `EducationCohort` representing permanent admission year cohorts (e.g. `2024/2025`, `2025/2026`; strictly NEVER `Tingkat 1/2/3`). Dynamic rule: 100% of authoritatively in-scope active santri captured at C2C preflight must have an approved permanent cohort mapping or the gate remains `BLOCKED`.
-  - Record IDs for required OrgUnits (`OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`). Extra org units (`OU-INSTITUTION`, `OU-TAHFIZH`, etc.) are `PROPOSED_TBD` and not part of minimum C2C gate.
+  - Record IDs for required OrgUnits (`OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`). Extra org units (`OU-INSTITUTION`, `OU-TAHFIZH`, `OU-KEASRAMAAN`, `OU-AKADEMIK`, `OU-MANAJEMEN`) are `PROPOSED_TBD` and not part of minimum C2C gate.
 - **`02_POSITIONS_AND_CAPABILITIES_SEED_OUTPUT.json`**:
   - Position records strictly limited to approved gate set: `MUDIR`, `KABID_TAHFIZH`, `KEPALA_KEASRAMAAN`, `PETUGAS_OPERASIONAL_TAHFIZH`, `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, `PETUGAS_OPERASIONAL_KEASRAMAAN`.
   - 9 UAT capability records registered in database (`academic.*`, `tahfizh.*`, `keasramaan.*`).
@@ -156,6 +157,7 @@ evidence/
   - Read-only query proof of `musyrif.tahifzh` user record, role, and current linkage state. Classified as `BUSINESS_OWNER_DESIGNATED`, staff linkage `UNKNOWN / MUST_VERIFY_READ_ONLY`.
 - **`06_TEACHING_ASSIGNMENTS_18_SLOTS.json`**:
   - Verification of teaching assignments modeling subject + education track + gender complex + optional pedagogical level + validity period (Prisma fields: `mapelId`, `staffId`, `educationTrack`, `genderComplex`, `pedagogicalLevel`, `validFrom`, `validUntil`). Note: `TeachingAssignment` does NOT contain `cohortId`.
+  - Invariant Distinction: A valid `TeachingAssignment` alone does NOT confer canonical runtime authority. Likewise, canonical `Assignment` alone does not prove a teacher is scheduled for a particular `EducationSession`. Both layers are verified independently.
 - **`07_READINESS_DIAGNOSTIC_11_GATES.json`**:
   - Full output of `checkPendidikanV2ProductionReadiness()` evaluating canonical readiness gates.
 - **`08_C2C_STAGE_SIGN_OFF.md`**:

@@ -22,12 +22,12 @@
 | **C. Backup & Restore** | 4 | 0 | 0 | 4 | 0 |
 | **D. Staff Linkage** | 3 | 0 | 0 | 1 | 2 |
 | **E. Account Cleanup / Decommission** | 4 | 0 | 0 | 3 | 1 |
-| **F. Org Units** | 4 | 0 | 0 | 1 | 3 |
+| **F. Org Units** | 4 | 0 | 0 | 3 | 1 |
 | **G. Positions** | 4 | 0 | 0 | 1 | 3 |
 | **H. Capabilities** | 3 | 0 | 0 | 1 | 2 |
 | **I. Position Capabilities** | 4 | 0 | 0 | 2 | 2 |
-| **J. Assignments** | 4 | 0 | 0 | 1 | 3 |
-| **K. Assignment Scope Units** | 3 | 0 | 0 | 1 | 2 |
+| **J. Assignments** | 4 | 0 | 0 | 3 | 1 |
+| **K. Assignment Scope Units** | 3 | 0 | 0 | 2 | 1 |
 | **L. Account Modality** | 3 | 0 | 0 | 0 | 3 |
 | **M. OSDA Putri** | 3 | 0 | 0 | 1 | 2 |
 | **N. Tahfizh Domain** | 4 | 1 | 0 | 1 | 2 |
@@ -44,7 +44,7 @@
 | **Y. Production UAT** | 3 | 0 | 0 | 1 | 2 |
 | **Z. Recovery & Final Sign-Off** | 3 | 0 | 0 | 1 | 2 |
 | **AA. Unresolved Business Decisions** | 10 | 0 | 0 | 3 | 7 |
-| **TOTALS** | **100** | **11** | **0** | **34** | **55** |
+| **TOTALS** | **100** | **11** | **0** | **39** | **50** |
 
 ### Gate Status Overview:
 - **GATE-C2B (Production Migration):** `BLOCKED` (Pending verified backup execution and separate Business Owner C2B authorization).
@@ -245,11 +245,11 @@
 ### C. BACKUP / RESTORE
 - **REL-BCK-01 | Backup Tooling & Binary Availability Audit**
   - **Domain:** BACKUP / TOOLING
-  - **Requirement:** Verify `pg_dump` client binary availability and major version compatibility. Before Gate 0: query production PostgreSQL server version READ-ONLY (`SELECT version(), current_setting('server_version_num')`); record `server_version` and `server_version_num`; detect client `pg_dump` major version; require compatible client/server versions; fail closed if client `pg_dump` is older than production server major version (`client_major < server_major => FAIL_CLOSED`); prefer matching production major version (PostgreSQL 17 observed in C2A preflight). Do not hardcode `>= 16` as universally sufficient.
+  - **Requirement:** Verify `pg_dump` client binary availability and major version compatibility. Before Gate 0: query production PostgreSQL server version READ-ONLY (`SELECT version(), current_setting('server_version_num')`); record `server_version` and `server_version_num`; detect client `pg_dump` major version; require compatible client/server versions; fail closed if client `pg_dump` is older than production server major version (`client_major < server_major => FAIL_CLOSED`); prefer matching production major version (PostgreSQL 17 observed in C2A preflight). Honesty guard: `scripts/backup-db.ts` checks binary presence and version string, but the major version compatibility check (`client_major < server_major => FAIL_CLOSED`) is not currently implemented in `backup-db.ts` itself (`PG_DUMP_MAJOR_COMPATIBILITY_GUARD = REQUIRED / NOT_IMPLEMENTED_IN_BACKUP_SCRIPT`). Gate 0 remains BLOCKED until either: (A) an audited tooling implementation enforces it, or (B) an explicitly defined audited preflight step performs the read-only server/client version comparison before backup execution. Do not provide false automated assurance.
   - **Source of truth:** `scripts/backup-db.ts`, `tests/backup-db.test.ts`
   - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** `pg_dump` binary ABSENT in local Windows PATH.
-  - **Target state:** Valid binary available in execution environment with client major version matching or exceeding production server major version.
+  - **Current state:** `pg_dump` binary ABSENT in local Windows PATH; `PG_DUMP_MAJOR_COMPATIBILITY_GUARD = REQUIRED / NOT_IMPLEMENTED_IN_BACKUP_SCRIPT`.
+  - **Target state:** Valid binary available in execution environment with client major version matching or exceeding production server major version verified via audited tooling or explicit preflight step.
   - **Dependency:** None
   - **Production write required?:** NO
   - **Owner authorization required?:** NO
@@ -260,8 +260,8 @@
   - **Rollback/recovery consideration:** N/A
   - **Evidence Pack reference:** `EVID-BCK-TOOLING`
   - **Gate:** GATE-C2B
-  - **Status:** `BLOCKED` (pg_dump not available in host environment)
-  - **Notes / unresolved decision:** Mandatory prerequisite before dump capture.
+  - **Status:** `BLOCKED` (pg_dump absent in host environment; version guard not implemented in script)
+  - **Notes / unresolved decision:** Mandatory prerequisite before dump capture. Tooling parity honesty enforced.
 
 - **REL-BCK-02 | Direct PostgreSQL Wire Connection Audit**
   - **Domain:** BACKUP / PROTOCOL
@@ -494,63 +494,63 @@
 
 - **REL-OU-02 | OSDA Root & Division Unit Provisioning**
   - **Domain:** ORG_UNITS / KEASRAMAAN
-  - **Requirement:** Provision `OU-OSDA-ROOT` (type `ORGANIZATION`) and 5 divisions (`KEAMANAN_KEDISIPLINAN`, `PENDIDIKAN_IBADAH`, `KEBERSIHAN_KERAPIHAN`, `KESEHATAN`, `SARANA_PRASARANA`).
+  - **Requirement:** Provision `OU-OSDA-ROOT` (type `ORGANIZATION`) and 5 divisions (`KEAMANAN_KEDISIPLINAN`, `PENDIDIKAN_IBADAH`, `KEBERSIHAN_KERAPIHAN`, `KESEHATAN`, `SARANA_PRASARANA`). Until exact anchor/parent unit codes receive authoritative approval: classify parent/anchor selection as `BLOCKED / PROPOSED_TBD`; do NOT provision an Assignment or unit requiring an unprovisioned parent unit; do NOT silently create `OU-KEASRAMAAN` merely to satisfy a dependency.
   - **Source of truth:** `types/architecture-lock.ts` (`KEASRAMAAN_STRUCTURE`)
-  - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** Unseeded in production.
-  - **Target state:** Provisioned under `OU-KEASRAMAAN`.
-  - **Dependency:** REL-OU-01
+  - **PolicyDecisionState:** `PROPOSED_TBD` (Parent/anchor code `OU-KEASRAMAAN` unapproved)
+  - **Current state:** Unseeded in production; parent anchor unapproved.
+  - **Target state:** Hierarchy provisioned under authorized parent unit once parent code is approved.
+  - **Dependency:** REL-OU-01, Authoritative Parent Unit Approval
   - **Production write required?:** YES (INSERT)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** C2C dry-run script.
-  - **Positive test:** Relational hierarchy verifies `parentId = OU-OSDA-ROOT.id`.
-  - **Negative test:** Rejects creation if parent unit missing.
+  - **Positive test:** Relational hierarchy verifies `parentId = OU-OSDA-ROOT.id` under approved parent anchor.
+  - **Negative test:** Rejects creation if parent unit missing or unapproved.
   - **Reconciliation evidence:** OrgUnit tree query.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-OU-OSDA`
   - **Gate:** GATE-C2C
-  - **Status:** `NOT_READY`
-  - **Notes / unresolved decision:** Keasramaan sub-structure.
+  - **Status:** `BLOCKED` (Required parent relationship cannot be satisfied without unapproved OU-KEASRAMAAN)
+  - **Notes / unresolved decision:** Parent unit anchor remains PROPOSED_TBD / BLOCKED.
 
 - **REL-OU-03 | TKS Root & Service Unit Provisioning**
   - **Domain:** ORG_UNITS / KEASRAMAAN
-  - **Requirement:** Provision `OU-TKS-ROOT` and 6 service units: `OU-TKS-DAPUR`, `OU-TKS-MASJID`, `OU-TKS-PENDIDIKAN`, `OU-TKS-YAYASAN`, `OU-TKS-AIR-MINUM`, `OU-TKS-AIR-SUMUR`.
+  - **Requirement:** Provision `OU-TKS-ROOT` and 6 service units: `OU-TKS-DAPUR`, `OU-TKS-MASJID`, `OU-TKS-PENDIDIKAN`, `OU-TKS-YAYASAN`, `OU-TKS-AIR-MINUM`, `OU-TKS-AIR-SUMUR`. Until exact anchor/parent unit codes receive authoritative approval: classify parent/anchor selection as `BLOCKED / PROPOSED_TBD`; do NOT provision an Assignment or unit requiring an unprovisioned parent unit; do NOT silently create `OU-KEASRAMAAN` merely to satisfy a dependency.
   - **Source of truth:** `types/architecture-lock.ts` (`TKS_STRUCTURE_CONTRACT`)
-  - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** Unseeded in production.
-  - **Target state:** Provisioned under `OU-KEASRAMAAN`.
-  - **Dependency:** REL-OU-01
+  - **PolicyDecisionState:** `PROPOSED_TBD` (Parent/anchor code `OU-KEASRAMAAN` unapproved)
+  - **Current state:** Unseeded in production; parent anchor unapproved.
+  - **Target state:** Hierarchy provisioned under authorized parent unit once parent code is approved.
+  - **Dependency:** REL-OU-01, Authoritative Parent Unit Approval
   - **Production write required?:** YES (INSERT)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** C2C dry-run script.
-  - **Positive test:** Service units correctly map to `SERVICE_UNIT` type.
-  - **Negative test:** `hasCentralKetua = false` constraint verified.
+  - **Positive test:** Service units correctly map to `SERVICE_UNIT` type under approved parent anchor.
+  - **Negative test:** `hasCentralKetua = false` constraint verified; rejects if parent unapproved.
   - **Reconciliation evidence:** OrgUnit tree query.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-OU-TKS`
   - **Gate:** GATE-C2C
-  - **Status:** `NOT_READY`
-  - **Notes / unresolved decision:** Structured service units.
+  - **Status:** `BLOCKED` (Required parent relationship cannot be satisfied without unapproved OU-KEASRAMAAN)
+  - **Notes / unresolved decision:** Parent unit anchor remains PROPOSED_TBD / BLOCKED.
 
 - **REL-OU-04 | Halaqoh & Kamar Unit Backfill Reconciliation**
   - **Domain:** ORG_UNITS / BACKFILL
-  - **Requirement:** Reconcile existing production halaqoh circles and kamar into OrgUnit representations (`type: HALAQOH` and `type: KAMAR`).
+  - **Requirement:** Reconcile existing production halaqoh circles and kamar into OrgUnit representations (`type: HALAQOH` and `type: KAMAR`). Remove hardcoded historical counts from future requirements. Success is defined dynamically at live C2C T0 preflight: query current active santri, query current halaqoh/kamar relationships, reconcile 100% of authoritative in-scope records, zero orphan mapping. (Historical 57 santri preserved only as C2A checkpoint reference).
   - **Source of truth:** `types/architecture-lock.ts`, production `halaqoh` table
   - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Unlinked/unbackfilled in production.
-  - **Target state:** 1:1 OrgUnit representation for each operational circle and room.
+  - **Target state:** 1:1 OrgUnit representation for each operational circle and room based on live C2C T0 population.
   - **Dependency:** REL-OU-01
   - **Production write required?:** YES (INSERT)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** Dry-run mapping existing halaqoh IDs to target OrgUnits.
-  - **Positive test:** All 57 santri assigned halaqohs have corresponding OrgUnits.
-  - **Negative test:** Zero orphaned halaqohs.
-  - **Reconciliation evidence:** Row count match between `halaqoh` and `org_units WHERE type = 'HALAQOH'`.
+  - **Positive test:** 100% of authoritatively in-scope records captured at live C2C T0 preflight have corresponding OrgUnits; zero orphaned halaqohs/rooms.
+  - **Negative test:** Zero orphaned halaqohs or rooms.
+  - **Reconciliation evidence:** Row count match between live `halaqoh` and `org_units WHERE type = 'HALAQOH'`.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-OU-HALAQOH`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
-  - **Notes / unresolved decision:** Preserves existing halaqoh IDs.
+  - **Notes / unresolved decision:** Preserves existing halaqoh IDs; dynamic T0 population reconciliation.
 
 ---
 
@@ -802,23 +802,23 @@
 ### J. ASSIGNMENTS
 - **REL-ASN-01 | Mudir & Leadership Assignment Provisioning**
   - **Domain:** ASSIGNMENTS / LEADERSHIP
-  - **Requirement:** Provision active Assignment for Mudir (`mudir` -> `MUDIR` anchored to `OU-INSTITUTION`).
+  - **Requirement:** Provision active Assignment for Mudir (`MUDIR_OPERATIONAL_ACCOUNT = MUST_VERIFY_READ_ONLY` -> `MUDIR`). Do not assume literal username `mudir` unless authoritative production read-only evidence proves that exact account; names/usernames do not grant authority. Anchor `OU-INSTITUTION` is unapproved (`PROPOSED_TBD`). Until exact anchor unit code receives authoritative approval: classify anchor selection as `BLOCKED / PROPOSED_TBD`; do NOT provision an Assignment requiring an unprovisioned parent unit; do NOT silently create `OU-INSTITUTION` merely to satisfy a dependency.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md`, `types/architecture-lock.ts`
-  - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** Unassigned in production (`assignments = 0`).
-  - **Target state:** Provisioned with `status: ACTIVE`, valid time window.
-  - **Dependency:** GATE-C2B, REL-POS-01, REL-OU-01
+  - **PolicyDecisionState:** `PROPOSED_TBD` (Anchor OU-INSTITUTION unapproved; username must verify read-only)
+  - **Current state:** Unassigned in production (`assignments = 0`); operational username unverified; anchor OU-INSTITUTION unapproved.
+  - **Target state:** Provisioned with `status: ACTIVE`, valid time window once account and anchor are verified and approved.
+  - **Dependency:** GATE-C2B, REL-POS-01, REL-OU-01, Authoritative Anchor Approval
   - **Production write required?:** YES (INSERT)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** C2C dry-run script.
-  - **Positive test:** Mudir assignment active in DB query.
-  - **Negative test:** Expired window fails closed.
+  - **Positive test:** Mudir assignment active in DB query under verified account and approved anchor.
+  - **Negative test:** Expired window fails closed; unapproved anchor fails closed.
   - **Reconciliation evidence:** Assignment query.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-ASN-LEAD`
   - **Gate:** GATE-C2C
-  - **Status:** `BLOCKED` (Awaiting C2B completion)
-  - **Notes / unresolved decision:** Top leadership anchor.
+  - **Status:** `BLOCKED` (Anchor OU-INSTITUTION unapproved; account requires read-only verification)
+  - **Notes / unresolved decision:** Anchor unit selection remains PROPOSED_TBD / BLOCKED.
 
 - **REL-ASN-02 | Musyrif Tahfizh Halaqoh Assignments Provisioning**
   - **Domain:** ASSIGNMENTS / TAHFIZH
@@ -842,43 +842,43 @@
 
 - **REL-ASN-03 | Kabid Tahfizh Operational Assignment Provisioning**
   - **Domain:** ASSIGNMENTS / TAHFIZH
-  - **Requirement:** Provision active Assignment for designated Kabid Tahfizh account (`musyrif.tahifzh` if verified) anchored to `OU-TAHFIZH`.
+  - **Requirement:** Provision active Assignment for designated Kabid Tahfizh account (`musyrif.tahifzh` if verified read-only). Anchor `OU-TAHFIZH` is unapproved (`PROPOSED_TBD`). Until exact anchor unit code receives authoritative approval: classify anchor selection as `BLOCKED / PROPOSED_TBD`; do NOT provision an Assignment requiring an unprovisioned parent unit; do NOT silently create `OU-TAHFIZH` merely to satisfy a dependency.
   - **Source of truth:** REL-ACC-03, `docs/STQ_CURRENT_STATE.md`
-  - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** Unassigned in production.
-  - **Target state:** Provisioned after verified pre-provisioning audit.
-  - **Dependency:** REL-ACC-03, REL-ACC-04, REL-POS-01
+  - **PolicyDecisionState:** `PROPOSED_TBD` (Anchor OU-TAHFIZH unapproved)
+  - **Current state:** Unassigned in production; anchor OU-TAHFIZH unapproved.
+  - **Target state:** Provisioned after verified pre-provisioning audit and authoritative anchor approval.
+  - **Dependency:** REL-ACC-03, REL-ACC-04, REL-POS-01, Authoritative Anchor Approval
   - **Production write required?:** YES (INSERT)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** C2C dry-run SQL.
-  - **Positive test:** Exactly 1 active assignment for `KABID_TAHFIZH`.
-  - **Negative test:** Rejects if target user not confirmed or duplicate exists.
+  - **Positive test:** Exactly 1 active assignment for `KABID_TAHFIZH` under approved anchor.
+  - **Negative test:** Rejects if target user not confirmed or duplicate exists or anchor unapproved.
   - **Reconciliation evidence:** Assignment table query.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-ASN-KABID`
   - **Gate:** GATE-C2C
-  - **Status:** `NOT_READY`
-  - **Notes / unresolved decision:** Conditional on read-only account verification.
+  - **Status:** `BLOCKED` (Anchor OU-TAHFIZH unapproved; account requires read-only verification)
+  - **Notes / unresolved decision:** Anchor unit selection remains PROPOSED_TBD / BLOCKED.
 
 - **REL-ASN-04 | Academic Teacher Assignments Provisioning**
   - **Domain:** ASSIGNMENTS / AKADEMIK
-  - **Requirement:** Provision active Assignments for academic teachers (`GURU_AKADEMIK`) anchored to `OU-AKADEMIK`.
-  - **Source of truth:** `types/architecture-lock.ts`
-  - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** Unassigned in production.
-  - **Target state:** Provisioned with `status: ACTIVE`.
-  - **Dependency:** REL-POS-02, REL-OU-01, REL-STF-01
+  - **Requirement:** Provision active Assignments for academic teachers (`GURU_AKADEMIK`). Dependent on `REL-PC-04`. Until exact anchor unit code (`OU-AKADEMIK`), `GURU_AKADEMIK` grant policy, teacher account modality, and academic OrgUnit containment receive authoritative approval: classify academic assignments as `BLOCKED / PROPOSED_TBD`. Do NOT provision active canonical academic Assignment before these dependencies are approved. Do NOT silently create `OU-AKADEMIK` merely to satisfy a dependency.
+  - **Source of truth:** `types/architecture-lock.ts`, `docs/STQ_M3_RELEASE_DEPENDENCIES.md`
+  - **PolicyDecisionState:** `PROPOSED_TBD`
+  - **Current state:** Unassigned in production; grant policy, teacher modality, containment, and anchor unit unresolved.
+  - **Target state:** Provisioned with `status: ACTIVE` only after all academic dependencies are approved.
+  - **Dependency:** REL-PC-04, REL-POS-02, REL-OU-01, REL-STF-01, Authoritative Anchor Approval
   - **Production write required?:** YES (INSERT)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** C2C dry-run SQL.
-  - **Positive test:** Teacher assignments active in query.
-  - **Negative test:** Unassigned teacher denied session start.
+  - **Positive test:** Teacher assignments active in query once all academic blockers resolved.
+  - **Negative test:** Unassigned teacher denied session start; assignment creation blocked while dependencies unapproved.
   - **Reconciliation evidence:** Assignment table query.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-ASN-TEACHER`
   - **Gate:** GATE-C2C
-  - **Status:** `NOT_READY`
-  - **Notes / unresolved decision:** Teacher accounts require linkage resolution.
+  - **Status:** `BLOCKED` (Gated by REL-PC-04, teacher account modality, unit containment, and anchor unit approval)
+  - **Notes / unresolved decision:** GURU_AKADEMIK grant policy unresolved; teacher account modality unresolved; academic OrgUnit containment unresolved; canonical academic assignment anchor unresolved.
 
 ---
 
@@ -925,23 +925,23 @@
 
 - **REL-ASU-03 | Academic Teacher Scope Units Binding**
   - **Domain:** SCOPE_UNITS / AKADEMIK
-  - **Requirement:** For `GURU_AKADEMIK` assignments, bind assigned cohort/subject unit IDs relationally in `assignment_scope_units`.
-  - **Source of truth:** `types/architecture-lock.ts`
-  - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** Unseeded in production.
-  - **Target state:** Relational scope units bound.
-  - **Dependency:** REL-ASN-04, REL-PC-04
+  - **Requirement:** Binding academic teachers to scope units. Canonical Prisma contract: `AssignmentScopeUnit.unitId` references `OrgUnit.id`. Cohort IDs and Subject IDs are NOT OrgUnit IDs. Do NOT invent cohort/subject pseudo-OrgUnits. Academic containment remains `ACADEMIC_UNIT_CONTAINMENT = BLOCKED_TECHNICAL` until a canonical authoritative OrgUnit containment model is approved.
+  - **Source of truth:** `types/architecture-lock.ts`, `prisma/schema.prisma`
+  - **PolicyDecisionState:** `PROPOSED_TBD`
+  - **Current state:** Unseeded in production; academic unit containment blocked technically.
+  - **Target state:** Relational scope units bound only after authoritative OrgUnit containment model is approved.
+  - **Dependency:** REL-ASN-04, REL-PC-04, Authoritative OrgUnit Containment Model
   - **Production write required?:** YES (INSERT)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** C2C dry-run SQL.
-  - **Positive test:** Scope units match authorized cohorts.
-  - **Negative test:** Access denied to unassigned cohorts.
+  - **Positive test:** Scope units match authorized OrgUnits once containment model approved.
+  - **Negative test:** Fail closed if pseudo-OrgUnits (cohort/subject IDs) are used as unitId; access denied to unassigned units.
   - **Reconciliation evidence:** Scope units table query.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-ASU-AKAD`
   - **Gate:** GATE-C2C
-  - **Status:** `NOT_READY`
-  - **Notes / unresolved decision:** Scope isolation for academic sessions.
+  - **Status:** `BLOCKED` (AssignmentScopeUnit.unitId references OrgUnit.id; cohort/subject pseudo-OrgUnits forbidden; academic containment is BLOCKED_TECHNICAL)
+  - **Notes / unresolved decision:** Academic containment remains BLOCKED_TECHNICAL pending canonical model approval.
 
 ---
 
@@ -1618,23 +1618,23 @@
 ### V. FEATURE FLAGS / POLICY ACTIVATION
 - **REL-FLG-01 | PENDIDIKAN_V2_UAT_ENABLED Feature Flag Guard**
   - **Domain:** FEATURE_FLAGS / PENDIDIKAN_V2
-  - **Requirement:** Runtime flag `PENDIDIKAN_V2_UAT_ENABLED` defaults to `false` in production. Must remain false through C2B and C2C; activated strictly in C2D under explicit owner authorization.
-  - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 8)
+  - **Requirement:** Runtime flag `PENDIDIKAN_V2_UAT_ENABLED` defaults to `false` in production. Must remain false through C2B and C2C; activated strictly in C2D under explicit owner authorization. Gate 5 C2D Pendidikan activation requires ALL of: (1) C2B schema reconciliation PASS; (2) C2C prerequisite provisioning PASS; (3) academic capability registration complete; (4) academic PositionCapability policy explicitly approved; (5) teacher account modality resolved; (6) teacher User/Staff identity linkage verified; (7) academic resource/unit containment resolved; (8) required academic Assignments resolved; (9) relevant TeachingAssignments verified; (10) Business Owner explicit C2D authorization. If ANY remains PROPOSED_TBD / BLOCKED: PENDIDIKAN_V2_UAT_ENABLED MUST REMAIN FALSE. Upstream generic Gate 4 status cannot bypass explicit academic blockers.
+  - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 8), `docs/STQ_M3_RELEASE_DEPENDENCIES.md` (Rule 9)
   - **PolicyDecisionState:** `APPROVED`
   - **Current state:** `RUNTIME_ACTIVATION_FLAG = NOT_READY` (`false` in production).
-  - **Target state:** Activated (`true`) in C2D.
-  - **Dependency:** GATE-C2B, GATE-C2C
+  - **Target state:** Activated (`true`) in C2D only after ALL academic prerequisites pass.
+  - **Dependency:** GATE-C2B, GATE-C2C, REL-PC-04, REL-ASN-04, REL-ASU-03, Explicit Owner Authorization
   - **Production write required?:** YES (Environment variable or flag toggle in C2D)
   - **Owner authorization required?:** YES (Explicit C2D authorization)
-  - **Dry-run evidence:** Flag check in `lib/server/pendidikan-v2-readiness.ts`.
-  - **Positive test:** When true, Pendidikan V2 UI and actions unlock.
-  - **Negative test:** When false, all V2 endpoints return fail-closed maintenance response.
+  - **Dry-run evidence:** Flag check in `lib/server/pendidikan-v2-service.ts`.
+  - **Positive test:** When true and all prerequisites satisfied, Pendidikan V2 UI and actions unlock.
+  - **Negative test:** When false or blockers persist, all V2 endpoints return fail-closed response.
   - **Reconciliation evidence:** Deployment environment inspection.
   - **Rollback/recovery consideration:** Toggle flag back to `false` to instantly disable V2 runtime.
   - **Evidence Pack reference:** `EVID-FLG-PENDIDIKAN`
   - **Gate:** GATE-C2D
-  - **Status:** `BLOCKED` (Awaiting C2B & C2C completion)
-  - **Notes / unresolved decision:** Master runtime kill-switch.
+  - **Status:** `BLOCKED` (Academic grant, teacher modality, containment, and assignment blockers persist)
+  - **Notes / unresolved decision:** Master runtime kill-switch; strictly fails closed while academic blockers persist.
 
 - **REL-FLG-02 | PositionCapabilities BusinessRuleState Promotion in C2D**
   - **Domain:** FEATURE_FLAGS / CAPABILITY_PROMOTION

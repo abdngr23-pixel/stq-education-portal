@@ -62,11 +62,11 @@ flowchart TD
 | **Gate 1** | **C2B Production Migration** | Gate 0 signed off | Re-verify historical migration checksum/readiness; execute pending authorized migrations (`20260918120000_m3_3a_health_v2_backend`, `20260918140000_m3_3b_pendidikan_foundation`). PR #8 reconciliation was completed in PR #23. | Migration deploy returns exit code 0; `_prisma_migrations` contains all applied records | Gate 2 (Schema Reconciliation) | **NOT_READY** *(Gated by Gate 0)* |
 | **Gate 2** | **Post-Migration Reconciliation** | Gate 1 successful | Introspect production database information schema; verify existence of all required tables, columns, indexes, and enums | 0 missing tables; 0 column mismatches; Prisma validation passes cleanly | Gate 3 (C2C Provisioning) | **NOT_READY** *(Gated by Gate 1)* |
 | **Gate 3** | **C2C Foundation & Provisioning** | Gate 2 verified | Seed canonical subjects, minimum approved org units (`OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`), approved positions, 9 UAT capabilities, verified staff profiles, and user assignments. Cohort creation remains blocked pending owner admission data. | Database insert logs show expected row count; zero identity linkage violations | Gate 4 (Provisioning Reconciliation) | **NOT_READY** *(Gated by Gate 2)* |
-| **Gate 4** | **Post-Provisioning Reconciliation** | Gate 3 completed | Verify staff-to-account linkages, teaching assignment coverage (18 slots), and `razan.mt` decommission/isolation state | Linkage audit shows `razan.mt` has 0 staff links; all 18 teaching slots filled with valid staff IDs | Gate 5 (C2D Activation) | **NOT_READY** *(Gated by Gate 3)* |
-| **Gate 5** | **C2D Runtime Activation** | Gate 4 verified | Set `PENDIDIKAN_V2_UAT_ENABLED=true` in production environment | Server config inspection verifies flag is active; endpoint responds with authoritative DTO | Gate 6 (Auth Diagnostic) | **NOT_READY** *(Gated by Gate 4)* |
+| **Gate 4** | **Post-Provisioning Reconciliation** | Gate 3 completed | Verify staff-to-account linkages, teaching assignment coverage (18 slots), and `razan.mt` decommission/isolation state | Linkage audit shows `razan.mt` has 0 staff links; all 18 teaching slots filled with valid staff IDs | Gate 5 (C2D Activation; strictly contingent on zero academic blockers) | **NOT_READY** *(Gated by Gate 3)* |
+| **Gate 5** | **C2D Runtime Activation (Pendidikan V2 Server Flag)** | ALL of: Gate 2 C2B schema reconciliation PASS; Gate 4 C2C prerequisite provisioning PASS; academic capability registration complete; academic PositionCapability policy explicitly approved; teacher account modality resolved; teacher User/Staff identity linkage verified; academic resource/unit containment resolved; required academic Assignments resolved; relevant TeachingAssignments verified; Business Owner explicit C2D authorization. If ANY remains PROPOSED_TBD / BLOCKED, PENDIDIKAN_V2_UAT_ENABLED MUST REMAIN FALSE. | Set `PENDIDIKAN_V2_UAT_ENABLED=true` in production environment only after all prerequisites pass | Server config inspection verifies flag is active; endpoint responds with authoritative DTO | Gate 6 (Auth Diagnostic) | **BLOCKED** *(Blocked by academic grant policy, teacher modality, and unit containment)* |
 | **Gate 6** | **Authorization & Diagnostic Verification** | Gate 5 active | Run `checkPendidikanV2ProductionReadiness` against live production instance | All 11 canonical readiness gates evaluate to `READY: true`; zero deny errors on valid tokens | Gate 7 (Live UAT) | **NOT_READY** *(Gated by Gate 5)* |
 | **Gate 7** | **C2E Live Production UAT** | Gate 6 passed | Execute live scenarios UAT-01 through UAT-09 with designated test accounts (UAT-04 restricted strictly to Kepesantrenan attendance) | 100% scenario test passes; sanitized audit logs capture all session transitions and mutations | Gate 8 (Final Audit) | **NOT_READY** *(Gated by Gate 6)* |
-| **Gate 8** | **Final Gap Audit & Decommissioning** | Gate 7 passed | Verify decommission of `razan.mt` via schema-supported deactivation; audit all logs for unintended side-effects | `razan.mt` decommissioned/deactivated; zero anomalous audit log entries | Gate 9 (Stable Baseline) | **NOT_READY** *(Gated by Gate 7)* |
+| **Gate 8** | **Final Gap Audit & Decommission State Re-Verification** | Gate 7 passed | Final re-verification only: confirm `razan.mt` decommission state (mutated during C2C after dependency audit & authorization) remains fully intact in schema and sessions; audit all logs for unintended side-effects | `razan.mt` decommissioned/deactivated state verified; zero anomalous audit log entries | Gate 9 (Stable Baseline) | **NOT_READY** *(Gated by Gate 7)* |
 | **Gate 9** | **Release Sign-Off & Stable Baseline** | Gate 8 passed | Compile Master Evidence Pack; produce walkthrough; Business Owner signs off | Formal signed document; baseline tagged in Git | **STABLE BASELINE** | **NOT_READY** *(Gated by Gate 8)* |
 
 ---
@@ -158,9 +158,12 @@ graph TD
    - Verify staff profiles based on read-only production audit without inventing unverified Staff ID assignments.
    - `musyrif.tahifzh` staff linkage is `UNKNOWN / MUST_VERIFY_READ_ONLY`.
    - `musyrifah.putri` and `pembina.halaqoh`: `ACCOUNT_MODALITY = UNRESOLVED / MUST_VERIFY` (`PolicyDecisionState: PROPOSED_TBD`). Canonical Assignment authority = 0; legacy runtime authority must be audited and may exist in production until explicit cutover. Read-only effective access audit required prior to C2C.
-   - **Critical Guard**: `razan.mt` must NEVER be linked to Staff `STF-0003` or any Staff profile. Target state is decommission via schema-supported deactivation/revocation (`status = NONAKTIF` or `SUSPENDED`).
-8. **Step 6.1 & 6.2 (Assignments & Scope Units)**: Create user assignments with active Staff profile enforcement for personal accounts, and human executor attribution for unit accounts. Attach unit containment where applicable.
+   - **`razan.mt` Decommission Lifecycle**: `razan.mt` must NEVER be linked to Staff `STF-0003` or any Staff profile. Target state is decommission via schema-supported deactivation/revocation (`status = NONAKTIF` or `SUSPENDED`). The controlled deactivation mutation belongs to authorized C2C account cleanup after read-only dependency audit and explicit owner authorization. Gate 8 serves strictly as final re-verification of this decommission state, not the initial mutation.
+8. **Step 6.1 & 6.2 (Assignments & Scope Units)**:
+   - Create user assignments with active Staff profile enforcement for personal accounts, and human executor attribution for unit accounts. Attach unit containment where applicable.
+   - **Academic Teacher Assignments (`REL-ASN-04`) and Scope Units (`REL-ASU-03`)**: Both are classified as `BLOCKED / PROPOSED_TBD`. Because `REL-PC-04` is blocked, teacher account modality is unresolved, and academic unit containment is unresolved, no active canonical academic Assignment may be provisioned. Furthermore, `AssignmentScopeUnit.unitId` strictly references `OrgUnit.id`; cohort IDs and subject IDs are NOT OrgUnit IDs and cannot be bound as pseudo-OrgUnits. Academic containment remains `ACADEMIC_UNIT_CONTAINMENT = BLOCKED_TECHNICAL` until an authoritative model is approved.
 9. **Step 7.1 (Teaching Assignments)**: Configure teaching assignments modeling subject + education track + gender complex + optional pedagogical level + validity period (Prisma fields: `mapelId`, `staffId`, `educationTrack`, `genderComplex`, `pedagogicalLevel`, `validFrom`, `validUntil`). Note: `TeachingAssignment` does NOT contain `cohortId` (cohort assignment is held independently on `EducationSession`). All 18 canonical slots covered.
+   - **TeachingAssignment vs Canonical Assignment Distinction**: Keep these concepts distinct: `TeachingAssignment` (Step 7.1) is the scheduled pedagogical Staff assignment for subject/track/gender/level. A valid `TeachingAssignment` alone does NOT confer canonical runtime authority. Canonical `Assignment` (Step 6.1) is the `User -> Position -> OrgUnit` authorization anchor. Canonical `Assignment` alone does not prove a teacher is scheduled for a particular `EducationSession`. Both layers are required and independently evaluated.
 10. **Step 8.1 (Diagnostic Execution)**: Run `checkPendidikanV2ProductionReadiness()`. All 11 gates must evaluate to `READY: true`.
 
 ---
@@ -177,7 +180,8 @@ graph TD
 
 ### Rule 3: Strict Backup Prerequisites & Tooling Parity
 - **Specification**: Production writes are strictly prohibited until a logical PostgreSQL backup (`pg_dump -F p`, plain SQL) is verified via automated restore (`psql`) into a temporary scratch instance, confirming `RESTORED_T0 == SOURCE_T0`.
-- **Version Compatibility**: Client `pg_dump` major version must match or be newer than production PostgreSQL server major version (`client_major < server_major => FAIL_CLOSED`).
+- **Backup Tooling Major Version Guard**: `scripts/backup-db.ts` checks `pg_dump` availability and version string, but client major vs server major fail-closed check (`client_major < server_major => FAIL_CLOSED`) is NOT currently implemented by `backup-db.ts` itself (`PG_DUMP_MAJOR_COMPATIBILITY_GUARD = REQUIRED / NOT_IMPLEMENTED_IN_BACKUP_SCRIPT`).
+- **Gate 0 Blocker**: Gate 0 remains `BLOCKED` until either: (A) an audited tooling implementation enforces it, or (B) an explicitly defined audited preflight step performs the read-only server/client version comparison before backup execution.
 - **Enforcement**: Deployment scripts require valid `BACKUP_VERIFICATION_PASS` token containing backup file SHA-256, server version parity record, and restore row-count checksums matching T0 snapshot.
 
 ### Rule 4: Zero Manual Overrides
@@ -198,3 +202,17 @@ graph TD
 ### Rule 8: Non-Destructive Rollback Protocol
 - **Specification**: Generic destructive rollback (e.g. automatic deletion of rows, blanket-nulling fields) is strictly prohibited.
 - **Enforcement**: If an operation fails mid-way: `STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state.` Never run corrective production writes from a validation step alone.
+
+### Rule 9: Gate 3 / Gate 4 / Gate 5 Academic Blocker Invariant
+- **Specification**: An upstream generic Gate 4 status CANNOT bypass an explicit academic blocker. Gate 5 C2D Pendidikan activation requires ALL of:
+  1. C2B schema reconciliation PASS
+  2. C2C prerequisite provisioning PASS
+  3. Academic capability registration complete
+  4. Academic PositionCapability policy explicitly approved
+  5. Teacher account modality resolved
+  6. Teacher User/Staff identity linkage verified
+  7. Academic resource/unit containment resolved
+  8. Required academic Assignments resolved
+  9. Relevant TeachingAssignments verified
+  10. Business Owner explicit C2D authorization
+- **Enforcement**: If ANY of the above remains `PROPOSED_TBD / BLOCKED`, `PENDIDIKAN_V2_UAT_ENABLED` MUST REMAIN `FALSE`.
