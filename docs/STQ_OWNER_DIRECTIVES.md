@@ -36,7 +36,7 @@ This document serves as the persistent repository registry for authoritative Bus
    It is **NOT** a universal retrospective archive of all historical STQ requirements. Unreconciled or future domains (Portal Wali Santri, advanced Portal Santri, Orang Tua Asuh / Sponsor, advanced Master Data development, and expanded WhatsApp workflows) remain formally **DEFERRED**.
 
 2. **Non-Cancellation by Omission (Semantic Rule)**:
-   The **ABSENCE** of a historical requirement from `STQ_OWNER_DIRECTIVES.md` **DOES NOT** mean it is cancelled. Historical requirements continue to bind according to their foundational source documents (cataloged in [`docs/STQ_REQUIREMENT_SOURCE_MAP.md`](file:///d:/stq-education-portal-antigravity/stq-education-portal/docs/STQ_REQUIREMENT_SOURCE_MAP.md)). Only an explicit newer directive possessing:
+   The **ABSENCE** of a historical requirement from `STQ_OWNER_DIRECTIVES.md` **DOES NOT** mean it is cancelled. Historical requirements continue to bind according to their foundational source documents (cataloged in [`docs/STQ_REQUIREMENT_SOURCE_MAP.md`](docs/STQ_REQUIREMENT_SOURCE_MAP.md)). Only an explicit newer directive possessing:
    - `SUPERSEDES: <target>` or
    - `SUPERSEDED_BY: <target>`
    may alter or replace an older decision.
@@ -54,7 +54,7 @@ This document serves as the persistent repository registry for authoritative Bus
    - **Keputusan Business Owner**: Faithful, unambiguous formulation of the Business Owner's decision.
    - **Canonical Interpretation**: Clear, unambiguous technical and institutional interpretation.
    - **Affected Domain**: Impacted operational and system domains (e.g., IDENTITY, TAHFIZH, PENDIDIKAN, KEASRAMAAN, AUDIT).
-   - **Implementation Status**: Current codebase implementation state following the mandatory lifecycle progression.
+   - **Implementation Status**: Current implementation state based on independent evidence-backed tracking dimensions.
    - **Production Status**: Current state of the live production environment.
    - **Supersedes / Superseded-By**: Explicit cross-references to prior or subsequent directives or foundational sources.
    - **Acceptance Criteria**: Verifiable criteria required to satisfy the directive.
@@ -182,7 +182,7 @@ This document serves as the persistent repository registry for authoritative Bus
 - **Canonical Interpretation:** In the Tahfizh santri picker and general search dropdowns, each result item must display only `Nama` and `Kelas` (e.g. "Habiba Asri • Kelas 7B"). NIS and halaqoh name must not be appended to general search results unless a specific administrative screen explicitly mandates NIS display.
 - **Affected Domain:** UI / TAHFIZH
 - **Implementation Status:** `CODE_PARTIAL` (`components/dashboard/dashboard-musyrif-tahfizh.tsx` lines 783 & 978 currently still display `({santri.nis})` in search result modals; UI cleanup required)
-- **Production Status:** `NOT_LIVE`
+- **Production Status:** `NOT_LIVE / REQUIRES_FRESH_READ_ONLY_VERIFICATION` (Production behavior requires fresh verification)
 - **Supersedes / Superseded-By:** Supersedes modal search result layouts appending `({santri.nis})`
 - **Acceptance Criteria:** Search dropdown and list items render `santri.nama` and `santri.kelas` only; `({santri.nis})` is omitted from general search list.
 - **Evidence / Reference:** `components/dashboard/dashboard-musyrif-tahfizh.tsx:783,978`.
@@ -210,7 +210,7 @@ This document serves as the persistent repository registry for authoritative Bus
 - **Canonical Interpretation:** Formal academic education is structured into two distinct tracks: `STUDI_UMUM` and `KEPESANTRENAN` (exact spelling). They operate with separate subject catalogs, curricula, schedule structures, and tracking logic under the `EducationTrack` domain enum. The database migration is `20260918140000_m3_3b_pendidikan_foundation`.
 - **Affected Domain:** PENDIDIKAN / ARCHITECTURE
 - **Implementation Status:** `CODE_COMPLETE` (Enum `EducationTrack` with values `STUDI_UMUM` and `KEPESANTRENAN` defined in `prisma/schema.prisma:198` and migration `20260918140000_m3_3b_pendidikan_foundation`; service layer tested in `tests/pendidikan-v2-service.test.ts`)
-- **Production Status:** `NOT_LIVE` (Prisma migration `20260918140000_m3_3b_pendidikan_foundation` pending deployment at Gate C2B)
+- **Production Status:** `NOT_LIVE / REQUIRES_FRESH_READ_ONLY_VERIFICATION` (LAST_KNOWN_POINT_IN_TIME / release-train observation: Prisma migration `20260918140000_m3_3b_pendidikan_foundation` pending deployment at Gate C2B; REQUIRES_FRESH_READ_ONLY_VERIFICATION before Gate execution)
 - **Supersedes / Superseded-By:** Supersedes unified single-track academic assumptions
 - **Acceptance Criteria:** Database schema and services enforce strict boundary between `STUDI_UMUM` and `KEPESANTRENAN` tracks.
 - **Evidence / Reference:** `prisma/schema.prisma:198`, `prisma/migrations/20260918140000_m3_3b_pendidikan_foundation/migration.sql:2`, `lib/server/pendidikan-v2-service.ts`.
@@ -224,7 +224,7 @@ This document serves as the persistent repository registry for authoritative Bus
 - **Canonical Interpretation:** In the `KEPESANTRENAN` track, teacher attendance is verified and recorded when the assigned teacher triggers the authenticated "Mulai Pembelajaran" action (`startEducationSession`). Scheduled teacher and actual authenticated executor are stored separately. Student attendance is recorded under that active session, restricted strictly to `HADIR`, `IZIN`, `SAKIT`, and `ALFA` (NO MASBUK). Server activation is governed by server flag `PENDIDIKAN_V2_UAT_ENABLED`.
 - **Affected Domain:** PENDIDIKAN / PRESENSI
 - **Implementation Status:** `CODE_COMPLETE` (Implemented in `lib/server/pendidikan-v2-service.ts` methods `startEducationSession` and `recordSessionAttendance`, verified in `tests/pendidikan-v2-service.test.ts`)
-- **Production Status:** `NOT_LIVE` (Server flag `PENDIDIKAN_V2_UAT_ENABLED` unset/false; schema pending Gate C2B)
+- **Production Status:** `NOT_LIVE / REQUIRES_FRESH_READ_ONLY_VERIFICATION` (LAST_KNOWN_POINT_IN_TIME / release-train observation: server flag `PENDIDIKAN_V2_UAT_ENABLED` unset/false and schema pending Gate C2B; REQUIRES_FRESH_READ_ONLY_VERIFICATION before Gate execution)
 - **Supersedes / Superseded-By:** None
 - **Acceptance Criteria:** Unauthenticated/unauthorized teacher cannot initiate session; teacher timestamp logged at start; student attendance rejects any status outside `HADIR`, `IZIN`, `SAKIT`, `ALFA`.
 - **Evidence / Reference:** `lib/server/pendidikan-v2-service.ts:436,752`, `tests/milestone3-3c1-uat-activation-readiness.test.ts:223`.
@@ -382,8 +382,8 @@ This document serves as the persistent repository registry for authoritative Bus
 - **Keputusan Business Owner:** `razan.mt` = DEPRECATED / DECOMMISSION TARGET; jangan hubungkan ke staffCode STF-0003; jangan berikan otoritas kanonikal baru.
 - **Canonical Interpretation:** Account `razan.mt` is designated for controlled decommissioning at Gate C2C. It must not be linked to active Staff record `STF-0003` (Ust. Razan Mufli) in canonical architecture, nor receive new canonical Positions or Capabilities. Post-decommission verification must prove server session resolver rejects non-AKTIF user.
 - **Affected Domain:** IDENTITY / GOVERNANCE / DECOMMISSION
-- **Implementation Status:** `CODE_COMPLETE` (Release manifest REL-ACC-02 and dependencies document decommission requirement; no new canonical grants configured)
-- **Production Status:** `NOT_LIVE` (Decommission mutation pending Gate C2C execution)
+- **Implementation Status:** `TARGET_DESIGNED` (Release manifest REL-ACC-02 and dependencies document decommission requirement and prohibition of canonical grants; operational decommission execution is pending Gate C2C)
+- **Production Status:** `NOT_LIVE / REQUIRES_FRESH_READ_ONLY_VERIFICATION` (LAST_KNOWN_POINT_IN_TIME / release-train observation: decommission mutation pending Gate C2C execution; REQUIRES_FRESH_READ_ONLY_VERIFICATION before Gate execution)
 - **Supersedes / Superseded-By:** None
 - **Acceptance Criteria:** `razan.mt` is deactivated during C2C; zero canonical assignments granted; sessions fail closed.
 - **Evidence / Reference:** `docs/STQ_M3_RELEASE_MANIFEST.md` REL-ACC-02, `docs/STQ_CURRENT_STATE.md:534`.
@@ -414,8 +414,8 @@ This document serves as the persistent repository registry for authoritative Bus
   2. Legacy `Role` is compatibility metadata only; UI hiding is not authorization.
   3. UNIT accounts: Shared technical account + verified human executor. A manually typed executor name in client UI is descriptive metadata only and does **NOT** constitute sufficient proof of identity.
 - **Affected Domain:** ARCHITECTURE / AUTHORIZATION / SECURITY
-- **Implementation Status:** `CODE_COMPLETE` (Architectural contracts enforced in `types/architecture-lock.ts` and `lib/auth/canonical-evaluator.ts`)
-- **Production Status:** `NOT_LIVE` (Runtime shadow mode; production enforcement pending Gate C2D)
+- **Implementation Status:** `CODE_PARTIAL` (Canonical architecture contracts and pure evaluator exist in `types/architecture-lock.ts` and `lib/auth/canonical-evaluator.ts`, but runtime adoption is incomplete across legacy server actions and production remains in shadow/not-active mode; full enforcement pending controlled Gate C2D activation)
+- **Production Status:** `NOT_LIVE / REQUIRES_FRESH_READ_ONLY_VERIFICATION` (LAST_KNOWN_POINT_IN_TIME / release-train observation: runtime shadow mode; production enforcement pending Gate C2D; REQUIRES_FRESH_READ_ONLY_VERIFICATION before Gate execution)
 - **Supersedes / Superseded-By:** Supersedes legacy role-based conditional logic
 - **Acceptance Criteria:** Server actions evaluate canonical capability and scope; UNIT mutations record immutable snapshots of verified human executor.
 - **Evidence / Reference:** `types/architecture-lock.ts:58-95`, `docs/STQ_ARCHITECTURE_LOCK.md:58-95`.
@@ -429,10 +429,10 @@ This matrix evaluates Points 2 through 13 of the Business Owner directives, repo
 | Point | Directive / Subject | Business Rule Status | Code Status | Backend Auth Status | UI Status | Production Status | Canonical Evidence & Technical Reality |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **P02** | `musyirfah.putri` can see Tahfizh recap for ALL santri | `BUSINESS_DECISION_CONFIRMED` | `CODE_PARTIAL` | `BACKEND_NOT_AUTHORIZED` | `UI_NOT_COMPLETE` | `NOT_LIVE / UNVERIFIED` | `tahfizh.recap.read` scope `GLOBAL` defined in `types/architecture-lock.ts:599` and contract tests; server action `app/actions/tahfizh.ts` still uses legacy role checks; release train lacks `PositionCapability` seeding in production. |
-| **P03** | Santri search/picker display = NAMA + KELAS only (no NIS/halaqoh) | `BUSINESS_DECISION_CONFIRMED` | `CODE_PARTIAL` | `N/A` | `UI_NOT_COMPLETE` | `NOT_LIVE / UNVERIFIED` | Code in `components/dashboard/dashboard-musyrif-tahfizh.tsx:783,978` still renders `({santri.nis})` in search result modals. Client UI cleanup required. Production runs legacy UI. |
+| **P03** | Santri search/picker display = NAMA + KELAS only (no NIS/halaqoh) | `BUSINESS_DECISION_CONFIRMED` | `CODE_PARTIAL` | `N/A` | `UI_NOT_COMPLETE` | `NOT_LIVE / REQUIRES_FRESH_READ_ONLY_VERIFICATION` | Code in `components/dashboard/dashboard-musyrif-tahfizh.tsx:783,978` still renders `({santri.nis})` in search result modals. Client UI cleanup required. Production behavior requires fresh verification. |
 | **P04** | MT & PH update target in assigned halaqoh/scope only | `BUSINESS_DECISION_CONFIRMED` | `CODE_PARTIAL` | `BACKEND_NOT_AUTHORIZED` | `UI_COMPLETE` | `NOT_LIVE / UNVERIFIED` | Legacy halaqoh check exists in `app/actions/laporan-bulanan.ts:558` (`upsertTargetSantriAction`), but canonical ABAC capability `tahfizh.target.manage` evaluator is not yet wired to runtime action. |
-| **P05** | Studi Umum & Kepesantrenan two distinct tracks | `BUSINESS_DECISION_CONFIRMED` | `CODE_COMPLETE` | `BACKEND_AUTHORIZED` | `UI_COMPLETE` | `NOT_LIVE` | Enum `EducationTrack` (`STUDI_UMUM`, `KEPESANTRENAN`) defined in `prisma/schema.prisma:198` and tested. Server flag `PENDIDIKAN_V2_UAT_ENABLED=false` and migration `20260918140000_m3_3b_pendidikan_foundation` pending deployment at Gate C2B. |
-| **P06** | Kepesantrenan teacher session start + HADIR/IZIN/SAKIT/ALFA | `BUSINESS_DECISION_CONFIRMED` | `CODE_COMPLETE` | `BACKEND_AUTHORIZED` | `UI_COMPLETE` | `NOT_LIVE` | Implemented in `PendidikanV2Service` methods `startEducationSession` and `recordSessionAttendance` with tests. Production schema unapplied; server flag `PENDIDIKAN_V2_UAT_ENABLED` unset/false. |
+| **P05** | Studi Umum & Kepesantrenan two distinct tracks | `BUSINESS_DECISION_CONFIRMED` | `CODE_COMPLETE` | `BACKEND_AUTHORIZED` | `UI_COMPLETE` | `NOT_LIVE / REQUIRES_FRESH_READ_ONLY_VERIFICATION` | Enum `EducationTrack` (`STUDI_UMUM`, `KEPESANTRENAN`) defined in `prisma/schema.prisma:198` and tested. LAST_KNOWN_POINT_IN_TIME / release-train observation: server flag unset/false and migration `20260918140000_m3_3b_pendidikan_foundation` pending deployment at Gate C2B; REQUIRES_FRESH_READ_ONLY_VERIFICATION before Gate execution. |
+| **P06** | Kepesantrenan teacher session start + HADIR/IZIN/SAKIT/ALFA | `BUSINESS_DECISION_CONFIRMED` | `CODE_COMPLETE` | `BACKEND_AUTHORIZED` | `UI_COMPLETE` | `NOT_LIVE / REQUIRES_FRESH_READ_ONLY_VERIFICATION` | Implemented in `PendidikanV2Service` methods `startEducationSession` and `recordSessionAttendance` with tests. LAST_KNOWN_POINT_IN_TIME / release-train observation: production schema unapplied and server flag unset; REQUIRES_FRESH_READ_ONLY_VERIFICATION before Gate execution. |
 | **P07** | Halaqoh attendance has NO MASBUK for new entries | `BUSINESS_DECISION_CONFIRMED` | `CODE_COMPLETE` | `N/A` | `UI_COMPLETE` | `REQUIRES_FRESH_READ_ONLY_VERIFICATION` | `FORBIDDEN_STATUSES: ["MASBUK"]` enforced in `tests/presensi.test.ts:122-137` and UI components. Production state requires fresh verification. |
 | **P08** | Tahajjud business choices: SHOLAT & ALFA | `BUSINESS_DECISION_CONFIRMED` | `CODE_COMPLETE` | `BACKEND_AUTHORIZED` | `UI_COMPLETE` | `REQUIRES_FRESH_READ_ONLY_VERIFICATION` | Enforced in `tests/presensi.test.ts:105-121`. Database enum `StatusAbsensi` contains `HADIR, IZIN, SAKIT, ALFA` (does not literally contain `SHOLAT`); persistence maps `SHOLAT` to `HADIR` with report notes. Production state requires fresh verification. |
 | **P09** | `musyirfah.putri` perizinan PUTRI access (final workflow) | `BUSINESS_DECISION_CONFIRMED` | `CODE_PARTIAL` | `BACKEND_NOT_AUTHORIZED` | `UI_NOT_COMPLETE` | `NOT_LIVE / UNVERIFIED` | `keasramaan.permission.read` and `create` scoped to PUTRI; approval authority excluded (`types/architecture-lock.ts:601`). Legacy UI `perizinan-module.tsx` still uses legacy role switches and lacks multi-santri ticket expansion. |
@@ -614,7 +614,7 @@ Formal academic education is architecturally split into two distinct tracks: **S
 ## 7. Maintenance & Evolution Protocol
 
 When a new Business Owner directive is communicated:
-1. Verify whether the directive alters or supersedes an entry in this registry or [`docs/STQ_REQUIREMENT_SOURCE_MAP.md`](file:///d:/stq-education-portal-antigravity/stq-education-portal/docs/STQ_REQUIREMENT_SOURCE_MAP.md).
+1. Verify whether the directive alters or supersedes an entry in this registry or [`docs/STQ_REQUIREMENT_SOURCE_MAP.md`](docs/STQ_REQUIREMENT_SOURCE_MAP.md).
 2. Assign the next sequential Directive ID (`DIR-YYYY-NNN`).
 3. Record all ten mandatory attributes in Section 2 before writing application code.
 4. If the directive supersedes an earlier entry, mark the earlier entry as `SUPERSEDED` and link both entries' `supersedes`/`superseded-by` fields.
