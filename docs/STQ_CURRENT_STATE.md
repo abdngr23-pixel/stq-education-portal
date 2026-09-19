@@ -7,30 +7,38 @@
 
 > This file is intentionally dynamic. Update it after every major merge, migration, production provisioning step, activation step, or explicit business-policy change.
 
+> [!IMPORTANT]
+> The actual current `main` HEAD is an external repository fact and must always be resolved directly from Git/GitHub before implementation, audit, merge, migration, deployment, or production work.
+>
+> An embedded SHA in this document is a historical/checkpoint reference, not proof of the present live `main` HEAD.
+
 ---
 
-## 1. Canonical Git baseline
+## 1. Verified Repository Checkpoint
 
-Current `main`:
+All commit SHAs recorded below are verified historical checkpoints, not self-updating HEAD declarations. The present live `main` HEAD must always be queried directly from Git/GitHub.
 
-`8492089a0dedddb05a176c66e941305c80037404`
+### Verified checkpoints
 
-This commit is the merge commit for PR #22:
+- **Initial Project Context Lock source baseline:**
+  `8492089a0dedddb05a176c66e941305c80037404`
+  (Merge commit for PR #22: `M3.3C2A: Production Preflight & Backup Security Hardening`)
+  - PR #22 state: MERGED
+  - Merge commit: `8492089a0dedddb05a176c66e941305c80037404`
+  - Post-merge CI run: `35417547600` (SUCCESS)
+  - Vercel `stq-education-portal`: SUCCESS
+  - Vercel `stq-education-portal-app`: SUCCESS
+  - Classification: `M3_3C2A = OFFICIALLY_CLOSED`
 
-`M3.3C2A: Production Preflight & Backup Security Hardening`
-
-PR #22:
-
-- state: MERGED
-- merge commit: `8492089a0dedddb05a176c66e941305c80037404`
-- post-merge CI run: `35417547600`
-- CI result: SUCCESS
-- Vercel `stq-education-portal`: SUCCESS
-- Vercel `stq-education-portal-app`: SUCCESS
-
-Classification:
-
-`M3_3C2A = OFFICIALLY_CLOSED`
+- **M3.3C2A.1 post-reconciliation verified main checkpoint:**
+  `5ba4060f841304a189fce622d39243864b7c453a`
+  (Merge commit for PR #23: `M3.3C2A.1: PR #8 Migration Ledger + Prisma Schema Parity Reconciliation`)
+  - PR #23 state: MERGED
+  - Merge commit: `5ba4060f841304a189fce622d39243864b7c453a`
+  - Post-merge CI run: `35418182740` (SUCCESS)
+  - Vercel `stq-education-portal`: SUCCESS
+  - Vercel `stq-education-portal-app`: SUCCESS
+  - Classification: `M3.3C2A.1 = MERGED_AND_POSTMERGE_VERIFIED`
 
 ---
 
@@ -65,9 +73,9 @@ Do not:
 
 ---
 
-## 3. Historical PR #8 production migration condition
+## 3. Historical PR #8 production migration condition & reconciliation status
 
-Production already contains migration:
+Production contains migration:
 
 `20260915100000_add_tahfizh_quality_engine`
 
@@ -79,50 +87,54 @@ Exact production checksum:
 
 `fc96b177d5219c5b2853c6c86a0fa3d28bce0944890bfde9de2e5d6fe7391467`
 
-The exact historical migration artifact at PR #8 HEAD has independently verified SHA-256 equal to the same production checksum.
+The exact historical migration artifact is now present in canonical `main` repository lineage (restored via PR #23, merged at checkpoint `5ba4060f841304a189fce622d39243864b7c453a`), and its exact checksum remains:
 
-Current `main` does not yet contain that historical migration directory and does not fully model its production-existing Prisma schema.
+`fc96b177d5219c5b2853c6c86a0fa3d28bce0944890bfde9de2e5d6fe7391467`
 
-Therefore:
+Current canonical `main` lineage also includes the required Prisma schema parity declarations.
 
-`PRODUCTION_MIGRATION_HISTORY = BLOCKED`
+Reconciliation status:
 
-Do not run `prisma migrate deploy` while the repository/ledger divergence remains unreconciled.
+- `M3.3C2A.1 PR #8 Migration Ledger + Prisma Schema Parity Reconciliation = MERGED_AND_POSTMERGE_VERIFIED`
+- `PR #23 = MERGED` (Merge commit checkpoint: `5ba4060f841304a189fce622d39243864b7c453a`)
+- `PR8_MIGRATION_LEDGER_RECONCILIATION = COMPLETE`
+- `MIGRATION_LEDGER_DIVERGENCE = RESOLVED`
+
+The previous repository condition ("production migration applied but missing locally") has been resolved and is no longer an active blocker.
+
+PR #8 itself was NOT merged and remains:
+- OPEN / DRAFT / UNMERGED
+- HEAD: `9068cae5587b7219c394c5c25bf0de07a15b0726`
 
 ---
 
-## 4. Current explicitly authorized task
+## 4. Current next planned gate & operational boundaries
 
-The Business Owner has explicitly authorized:
+M3.3C2A.1 PR #8 migration ledger + Prisma schema parity reconciliation is COMPLETE (merged via PR #23).
 
-**PR #8 historical migration reconciliation for migration ledger + Prisma schema parity only, without merging PR #8 runtime/features.**
+### Current next planned gate:
 
-Authorized scope:
+**REAL PRODUCTION BACKUP READINESS**
 
-- restore the exact historical migration artifact into canonical main lineage;
-- preserve exact historical migration identity/checksum;
-- restore Prisma schema representation only for schema that already exists in production because of that migration;
-- add tests/docs proving parity;
-- perform read-only production verification;
-- create a DRAFT reconciliation PR;
-- independent audit before any merge.
+Requirements remain:
 
-Not authorized:
+- direct PostgreSQL wire-compatible connection
+- `pg_dump`
+- verified dump file
+- SHA-256 checksum
+- isolated restore verification
 
-- merge PR #8;
-- copy PR #8 UI;
-- copy PR #8 Server Actions;
-- copy Tahfizh quality runtime/business logic;
-- activate Tahfizh quality engine;
-- alter production data;
-- alter `_prisma_migrations`;
-- run `prisma migrate deploy`;
-- run `prisma migrate resolve`;
-- perform new production schema changes as part of reconciliation.
+IMPORTANT:
 
-Required safety principle:
+- Do NOT execute the backup as part of this PR.
+- Do NOT perform any production write.
+- Do NOT start C2B.
 
-The historical migration is already applied in production. Reconciliation exists to make repository history and Prisma schema represent production reality. It must not re-execute the migration against production.
+`M3.3C2B` remains:
+
+`BLOCKED / NOT STARTED`
+
+until backup requirements and separate Business Owner authorization are satisfied.
 
 ---
 
@@ -450,32 +462,30 @@ Completed:
 - M3.3B code ✅
 - M3.3C1 ✅
 - M3.3C2A ✅
+- M3.3C2A.1 (PR #8 migration ledger + Prisma schema parity reconciliation — PR #23) ✅
 
 Current next step:
 
-### STEP 1 — migration ledger + Prisma schema reconciliation
-Historical PR #8 migration only.
+### Current next planned gate — REAL PRODUCTION BACKUP READINESS
 
-Authorized now.
+Requirements remain:
 
-No production writes.
-
-Then:
-
-### STEP 2 — real production backup readiness
-
-Requires:
-
-- direct PostgreSQL connection
-- pg_dump
-- verified dump
-- SHA-256
+- direct PostgreSQL wire-compatible connection
+- `pg_dump`
+- verified dump file
+- SHA-256 checksum
 - isolated restore verification
 
-Then, only after separate authorization:
+IMPORTANT:
+
+- Do NOT execute the backup as part of this PR.
+- Do NOT perform any production write.
+- Do NOT start C2B.
+
+Then, only after backup requirements and separate Business Owner authorization are satisfied:
 
 ### STEP 3 — M3.3C2B
-Production M3.3A + M3.3B migration.
+Production M3.3A + M3.3B migration. (Currently: BLOCKED / NOT STARTED)
 
 Then:
 
@@ -512,15 +522,30 @@ Live production UAT and final sign-off.
 
 ## 18. Gate before C2B
 
-C2B must remain blocked until all are true:
+Gate verification status before C2B:
 
-1. PR #8 migration-ledger/schema reconciliation is independently audited;
-2. Business Owner explicitly authorizes its merge;
-3. reconciliation is merged and post-merge verified;
-4. production `prisma migrate status` is clean/expected;
-5. a real production backup with SHA-256 and isolated restore verification is complete;
-6. Business Owner separately authorizes C2B.
+1. PR #8 migration-ledger/schema reconciliation independently audited
+   = SATISFIED
 
-Current classification:
+2. Business Owner explicitly authorized reconciliation merge
+   = SATISFIED
+
+3. Reconciliation merged and post-merge verified
+   = SATISFIED (PR #23 merged at commit checkpoint `5ba4060f841304a189fce622d39243864b7c453a`)
+
+4. Production prisma migrate status
+   = Last read-only reconciliation verification showed only:
+     - `20260918120000_m3_3a_health_v2_backend`
+     - `20260918140000_m3_3b_pendidikan_foundation`
+     pending.
+     *(Note: This is a point-in-time audit observation, not a permanent truth. Production migrate status must be re-verified from the merged main context before C2B execution.)*
+
+5. Real production backup + SHA-256 + isolated restore
+   = NOT SATISFIED / BLOCKED
+
+6. Separate Business Owner authorization for C2B
+   = NOT GRANTED
+
+Therefore:
 
 `C2B = BLOCKED`

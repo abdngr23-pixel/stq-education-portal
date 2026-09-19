@@ -715,6 +715,12 @@ Instead:
 
 ## 20. Context maintenance rule
 
+### Invariant: Non-self-referential Git HEAD truth
+
+- Actual Git refs/HEAD must always be queried directly from Git/GitHub before implementation, audit, merge, migration, deployment, or production operations.
+- Repository documents record verified checkpoints, not self-updating Git HEAD truth.
+- Never trust an embedded SHA as proof that it is still the live `main` HEAD.
+
 After every major milestone merge, migration, production provisioning step, or business-policy change:
 
 1. update `docs/STQ_CURRENT_STATE.md`;
