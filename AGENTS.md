@@ -13,16 +13,31 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 Before ANY implementation, refactor, architecture decision, business-rule change, authorization work, migration work, database operation, production action, or release decision:
 
 1. Read `STQ_PROJECT_CONTEXT.md`.
-2. Read `docs/STQ_CURRENT_STATE.md`.
-3. Read `types/architecture-lock.ts`.
-4. Read `docs/STQ_ARCHITECTURE_LOCK.md`.
-5. Read the relevant domain/milestone specification referenced by those files.
-6. Inspect the actual current code/diff/database evidence relevant to the task.
+2. Read `docs/STQ_OWNER_DIRECTIVES.md`.
+3. Read `docs/STQ_REQUIREMENT_SOURCE_MAP.md`.
+4. Read `docs/STQ_CURRENT_STATE.md`.
+5. Read `types/architecture-lock.ts`.
+6. Read `docs/STQ_ARCHITECTURE_LOCK.md`.
+7. Read the relevant domain source/specification referenced by those files.
+8. Inspect the actual source code/diff/database evidence relevant to the task.
 
 ## Hard rules
 
+- Repository owner directives, not conversational agent memory, are the persistent business-requirement source of truth.
 - `STQ_PROJECT_CONTEXT.md` is the mandatory project bootstrap/index.
+- `docs/STQ_OWNER_DIRECTIVES.md` is the canonical Business Owner directive registry for newest explicit decisions.
+- `docs/STQ_REQUIREMENT_SOURCE_MAP.md` catalogs foundational requirement sources and provenance.
 - `docs/STQ_CURRENT_STATE.md` is the current release/production checkpoint.
+- Do NOT allow a newly-created Owner Directive to fabricate a business decision unsupported by Business Owner input.
+- Precedence must strictly preserve:
+  NEWEST EXPLICIT BUSINESS OWNER DECISION
+  → repository Owner Directive
+  → machine-checked architecture contract where compatible
+  → architecture/domain specification
+  → current production/release evidence
+  → historical documents
+  → implementation behavior
+  → README
 - `README.md` is NOT authoritative business policy.
 - Legacy `Role`, names, usernames, UI visibility, and stale docs do NOT prove authorization.
 - Never infer a missing business rule.
