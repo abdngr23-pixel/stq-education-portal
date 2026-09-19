@@ -23,7 +23,7 @@
 | **D. Staff Linkage** | 3 | 0 | 0 | 1 | 2 |
 | **E. Account Cleanup / Decommission** | 4 | 0 | 0 | 3 | 1 |
 | **F. Org Units** | 4 | 0 | 0 | 3 | 1 |
-| **G. Positions** | 4 | 0 | 0 | 1 | 3 |
+| **G. Positions** | 4 | 0 | 0 | 2 | 2 |
 | **H. Capabilities** | 3 | 0 | 0 | 1 | 2 |
 | **I. Position Capabilities** | 4 | 0 | 0 | 2 | 2 |
 | **J. Assignments** | 4 | 0 | 0 | 3 | 1 |
@@ -31,7 +31,7 @@
 | **L. Account Modality** | 3 | 0 | 0 | 0 | 3 |
 | **M. OSDA Putri** | 3 | 0 | 0 | 1 | 2 |
 | **N. Tahfizh Domain** | 4 | 1 | 0 | 1 | 2 |
-| **O. Keasramaan Domain** | 4 | 0 | 0 | 1 | 3 |
+| **O. Keasramaan Domain** | 4 | 0 | 0 | 2 | 2 |
 | **P. Health Domain (Health V2)** | 3 | 1 | 0 | 1 | 1 |
 | **Q. Studi Umum Domain** | 3 | 0 | 0 | 1 | 2 |
 | **R. Kepesantrenan Domain** | 3 | 1 | 0 | 0 | 2 |
@@ -44,7 +44,7 @@
 | **Y. Production UAT** | 3 | 0 | 0 | 1 | 2 |
 | **Z. Recovery & Final Sign-Off** | 3 | 0 | 0 | 1 | 2 |
 | **AA. Unresolved Business Decisions** | 10 | 0 | 0 | 3 | 7 |
-| **TOTALS** | **100** | **11** | **0** | **39** | **50** |
+| **TOTALS** | **100** | **11** | **0** | **41** | **48** |
 
 ### Gate Status Overview:
 - **GATE-C2B (Production Migration):** `BLOCKED` (Pending verified backup execution and separate Business Owner C2B authorization).
@@ -597,43 +597,43 @@
 
 - **REL-POS-03 | Student Leadership & Desk Positions Provisioning**
   - **Domain:** POSITIONS / STUDENT
-  - **Requirement:** Provision student positions: `KETUA_OSDA`, `SEKRETARIS_OSDA`, `BENDAHARA_OSDA`, `MULTIMEDIA_OSDA`, and OSDA division roles.
-  - **Source of truth:** `types/architecture-lock.ts` (`KEASRAMAAN_STRUCTURE`)
-  - **PolicyDecisionState:** `APPROVED`
+  - **Requirement:** Provision exactly the 4 canonical student leadership core positions: `KETUA_OSDA`, `SEKRETARIS_OSDA`, `BENDAHARA_OSDA`, `MULTIMEDIA_OSDA` (`OSDA_CORE_POSITION_CODES = CANONICAL / APPROVED STRUCTURAL FACT`). `OSDA_DIVISIONS` defines organizational divisions, not automatically Position codes (`OSDA_DIVISION_POSITION_CODES = PROPOSED_TBD / EXACT CODES NOT YET DEFINED`). Exclude any unspecified division-role Position creation; do not seed invented Position codes for divisions until exact canonical codes are approved.
+  - **Source of truth:** `types/architecture-lock.ts` (`KEASRAMAAN_STRUCTURE.OSDA_CORE_POSITIONS`)
+  - **PolicyDecisionState:** `APPROVED` (for the 4 canonical core positions; `PROPOSED_TBD` for division position codes)
   - **Current state:** Unseeded in production.
-  - **Target state:** Provisioned under `KEASRAMAAN` domain.
+  - **Target state:** Provisioned under `KEASRAMAAN` domain for the 4 canonical core positions.
   - **Dependency:** REL-POS-01
   - **Production write required?:** YES (INSERT)
   - **Owner authorization required?:** YES
-  - **Dry-run evidence:** C2C dry-run SQL.
-  - **Positive test:** Positions allow `ORGANIZATION` and `DIVISION` unit types.
-  - **Negative test:** Rejects invalid domain binding.
+  - **Dry-run evidence:** C2C dry-run SQL for the 4 core positions.
+  - **Positive test:** Core positions allow `ORGANIZATION` and `DIVISION` unit types.
+  - **Negative test:** Rejects invalid domain binding; blocks unapproved division position codes.
   - **Reconciliation evidence:** Position table audit.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-POS-STUDENT`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
-  - **Notes / unresolved decision:** Student leadership roles.
+  - **Notes / unresolved decision:** Student leadership core positions locked; division position codes TBD.
 
 - **REL-POS-04 | Unit Functional Desk Positions Provisioning**
   - **Domain:** POSITIONS / UNIT_DESK
-  - **Requirement:** Provision positions designated for `AccountType = UNIT`: `UNIT_OPERASIONAL_PUTRI`, `UNIT_POSKESTREN`, `UNIT_TKS`.
-  - **Source of truth:** `types/architecture-lock.ts`
-  - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** Unseeded in production.
-  - **Target state:** Provisioned with `requiresPersonalAccount = false`.
-  - **Dependency:** REL-POS-01
-  - **Production write required?:** YES (INSERT)
+  - **Requirement:** UNIT accounts (`AccountType.UNIT`) represent functional desks and are an account modality, not a Position definition. UNIT accounts may receive canonical Assignments only through an approved Position and must retain verified human executor attribution for mutations. Exact Position codes (e.g. `UNIT_OPERASIONAL_PUTRI`, `UNIT_POSKESTREN`, `UNIT_TKS`) are `NOT YET APPROVED` in canonical architecture and must NOT be provisioned unless a future explicit Business Owner/canonical contract approves those exact codes. Do not invent a Position merely because `accountType = UNIT`.
+  - **Source of truth:** `types/architecture-lock.ts` (`AccountType.UNIT` modality rule)
+  - **PolicyDecisionState:** `PROPOSED_TBD` (Exact unit desk Position codes not yet approved)
+  - **Current state:** Unapproved / unseeded in production.
+  - **Target state:** Unit credential modality governed; exact Position codes blocked until explicitly approved.
+  - **Dependency:** REL-POS-01, Business Owner Decision
+  - **Production write required?:** YES (INSERT; BLOCKED)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** C2C dry-run SQL.
-  - **Positive test:** `requiresPersonalAccount` is false.
-  - **Negative test:** Rejects personal account assignment if position restricted.
+  - **Positive test:** UNIT account assignment permitted only through explicitly approved Position codes.
+  - **Negative test:** Rejects provisioning or assignment to invented/unapproved unit Position codes.
   - **Reconciliation evidence:** Position table audit.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-POS-UNIT`
   - **Gate:** GATE-C2C
-  - **Status:** `NOT_READY`
-  - **Notes / unresolved decision:** Enforces unit credential modality.
+  - **Status:** `BLOCKED` (Exact unit Position codes not yet approved; speculative codes removed)
+  - **Notes / unresolved decision:** Exact Position codes for UNIT accounts unresolved.
 
 ---
 
@@ -1217,23 +1217,23 @@
 
 - **REL-KEA-04 | Kamar Dormitory Unit Integrity**
   - **Domain:** KEASRAMAAN / KAMAR
-  - **Requirement:** Kamar units (`type: KAMAR`) strictly model physical boarding rooms; santri resident assignment is 1:1.
+  - **Requirement:** Kamar units (`type: KAMAR`) strictly model physical boarding rooms within domain `KEASRAMAAN`; santri resident assignment is 1:1. Their exact authoritative parent OrgUnit must be resolved and approved before C2C provisioning. Fail closed if exact parent remains unresolved. Do not provision rooms bound to unapproved speculative parent code `OU-KEASRAMAAN`.
   - **Source of truth:** `types/architecture-lock.ts`
-  - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** Unseeded in DB.
-  - **Target state:** Seeded in C2C.
-  - **Dependency:** REL-OU-01
-  - **Production write required?:** YES (INSERT)
+  - **PolicyDecisionState:** `APPROVED` (for KAMAR semantic/domain rule; `PROPOSED_TBD` for exact parent OrgUnit code)
+  - **Current state:** Unseeded in DB; exact parent OrgUnit unresolved.
+  - **Target state:** Seeded in C2C once authoritative parent OrgUnit is approved.
+  - **Dependency:** REL-OU-01, Business Owner Decision
+  - **Production write required?:** YES (INSERT; BLOCKED)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** C2C dry-run SQL.
-  - **Positive test:** Rooms bound to `OU-KEASRAMAAN`.
-  - **Negative test:** Rejects invalid gender complex binding.
+  - **Positive test:** Kamar units use domain `KEASRAMAAN`; resident santri mapping is 1:1.
+  - **Negative test:** Fail closed if exact parent OrgUnit remains unresolved; reject invalid gender complex binding.
   - **Reconciliation evidence:** OrgUnit table audit.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-KEA-KAMAR`
   - **Gate:** GATE-C2C
-  - **Status:** `NOT_READY`
-  - **Notes / unresolved decision:** Physical dorm structure.
+  - **Status:** `BLOCKED` (Awaiting authoritative parent OrgUnit resolution; fail-closed)
+  - **Notes / unresolved decision:** Physical dorm structure; exact parent OrgUnit anchor TBD.
 
 ---
 
@@ -1260,23 +1260,23 @@
 
 - **REL-HLT-02 | Poskestren Structural Enclosure Under Keasramaan**
   - **Domain:** HEALTH / TOPOLOGY
-  - **Requirement:** Poskestren unit `OU-POSKESTREN` is structurally enclosed under `OU-KEASRAMAAN`.
+  - **Requirement:** Poskestren / Health is structurally enclosed under the `KEASRAMAAN` domain (`HEALTH_STRUCTURAL_ENCLOSURE = APPROVED`). However, exact production OrgUnit codes (`EXACT_POSKESTREN_ORGUNIT_CODE = PROPOSED_TBD`) and parent codes (`EXACT_KEASRAMAAN_PARENT_CODE = PROPOSED_TBD`) are not approved canonical records. Do NOT provision speculative OrgUnit records such as `OU-POSKESTREN` under `OU-KEASRAMAAN`. Zero Health/Poskestren OrgUnit insertion until exact code and parent relationship are authoritatively approved. The business fact that Health/Poskestren belongs structurally inside `KEASRAMAAN` remains preserved.
   - **Source of truth:** `types/architecture-lock.ts` (`OrgDomain: KEASRAMAAN`)
-  - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** Unseeded in DB.
-  - **Target state:** Seeded in C2C.
-  - **Dependency:** REL-OU-01
-  - **Production write required?:** YES (INSERT)
+  - **PolicyDecisionState:** `PROPOSED_TBD` (for exact topology provisioning; `APPROVED` for structural domain enclosure)
+  - **Current state:** Unseeded in DB; exact unit and parent codes unresolved.
+  - **Target state:** Structural enclosure preserved; exact DB insertion blocked pending code approval.
+  - **Dependency:** REL-OU-01, Business Owner Decision
+  - **Production write required?:** YES (INSERT; BLOCKED)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** C2C dry-run SQL.
-  - **Positive test:** Parent unit verified as `OU-KEASRAMAAN`.
-  - **Negative test:** Top-level health domain rejected.
+  - **Positive test:** Health domain operations validate structural enclosure under `KEASRAMAAN` once exact unit and parent codes are approved.
+  - **Negative test:** Rejects standalone top-level health domain; blocks insertion of unapproved speculative OrgUnit codes.
   - **Reconciliation evidence:** OrgUnit query.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-HLT-TOPOLOGY`
   - **Gate:** GATE-C2C
-  - **Status:** `BLOCKED` (Awaiting C2B completion)
-  - **Notes / unresolved decision:** Decouples domain from capability.
+  - **Status:** `BLOCKED` (Exact OrgUnit code and parent code not approved; zero insertion authorized)
+  - **Notes / unresolved decision:** Decouples domain enclosure from speculative database codes.
 
 - **REL-HLT-03 | External Health Referral Authority Decision**
   - **Domain:** HEALTH / GOVERNANCE
