@@ -156,7 +156,21 @@ export async function getSantriListForSession(
     const list = await db.santri.findMany({
       where,
       orderBy: { nis: "asc" },
-      include: {
+      select: {
+        id: true,
+        nis: true,
+        nama: true,
+        kelas: true,
+        jenisKelamin: true,
+        status: true,
+        namaWali: true,
+        noHpWali: true,
+        halaqohId: true,
+        modalHafalanAwalHalaman: true,
+        tanggalBaselineTahfizh: true,
+        targetAkhirProgramJuz: true,
+        createdAt: true,
+        updatedAt: true,
         halaqoh: {
           include: { pembina: true },
         },

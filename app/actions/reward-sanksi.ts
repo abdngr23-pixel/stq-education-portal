@@ -381,7 +381,10 @@ export async function previewFinalisasiBulananAction(params: {
 
     const santriList = await prisma.santri.findMany({
       where: whereSantri,
-      include: {
+      select: {
+        id: true,
+        nis: true,
+        nama: true,
         halaqoh: { select: { nama: true } },
         targetList: {
           where: { jenis: "SABAQ", bulan: params.bulan, tahunAjaran: params.tahunAjaran },

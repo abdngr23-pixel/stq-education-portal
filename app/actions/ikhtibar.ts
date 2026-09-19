@@ -33,7 +33,19 @@ export async function ajukanIkhtibarAction(formData: {
 
     const santri = await prisma.santri.findUnique({
       where: { id: formData.santriId },
-      include: { halaqoh: true },
+      select: {
+        id: true,
+        nama: true,
+        nis: true,
+        halaqohId: true,
+        halaqoh: {
+          select: {
+            id: true,
+            nama: true,
+            pembinaId: true,
+          },
+        },
+      },
     });
 
     if (!santri) {

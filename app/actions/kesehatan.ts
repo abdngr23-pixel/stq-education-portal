@@ -43,6 +43,7 @@ export async function catatKesehatanAction(formData: {
 
     const santri = await prisma.santri.findUnique({
       where: { id: formData.santriId },
+      select: { id: true, nama: true },
     });
 
     if (!santri) {
