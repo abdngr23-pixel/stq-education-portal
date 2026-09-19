@@ -18,9 +18,13 @@ import {
   APPROVED_UAT_TARGET_CAPABILITY_CODES,
   REQUIRED_STUDI_UMUM_TEACHER_CAPABILITIES,
   REQUIRED_KEPESANTRENAN_TEACHER_CAPABILITIES,
+  CANONICAL_UAT_TARGET_POLICIES,
 } from "../lib/server/pendidikan-v2-readiness";
 import { PendidikanV2Service } from "../lib/server/pendidikan-v2-service";
-import { createPrismaDataProvider } from "../lib/auth/canonical-evaluator";
+import {
+  createPrismaDataProvider,
+  authorizeCanonical,
+} from "../lib/auth/canonical-evaluator";
 import {
   matchStudiUmumSession,
   matchKepesantrenanSession,
@@ -229,6 +233,17 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
             pedagogicalLevel: t.pedagogicalLevel || null,
             isActive: true,
             validUntil: null,
+            educationSessions: [
+              {
+                id: `sess-slot-${idx}`,
+                educationTrack: t.track,
+                subjectId: `mp-${idx}`,
+                genderGroup: t.genderComplex || "CAMPUR",
+                programLevel: idx % 3 + 1,
+                scheduledStaffId: hasStaff ? `stf-${idx}` : null,
+                scheduledTeacherAssignmentId: `ta-slot-${idx}`,
+              },
+            ],
             staff: hasStaff
               ? {
                   id: `stf-${idx}`,
@@ -252,6 +267,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
                                     isActive: positionActive,
                                     capabilities: grantCapabilities.map((capCode) => ({
                                       capabilityCode: capCode,
+                                      scopeType: "GLOBAL",
                                       businessRuleState,
                                       capability: { code: capCode, isBlocked: false },
                                     })),
@@ -489,6 +505,16 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           pedagogicalLevel: t.pedagogicalLevel || null,
           isActive: true,
           validUntil: null,
+          educationSessions: [
+            {
+              id: `sess-tbd-${idx}`,
+              educationTrack: t.track,
+              subjectId: `mp-${idx}`,
+              genderGroup: t.genderComplex || "CAMPUR",
+              scheduledStaffId: `stf-${idx}`,
+              scheduledTeacherAssignmentId: `ta-slot-${idx}`,
+            },
+          ],
           staff: {
             id: `stf-${idx}`,
             status: "AKTIF",
@@ -514,6 +540,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
                         "academic.attendance.record",
                       ].map((capCode) => ({
                         capabilityCode: capCode,
+                        scopeType: "GLOBAL",
                         businessRuleState: "PROPOSED_TBD", // PROPOSED_TBD => NOT READY
                         capability: { code: capCode, isBlocked: false },
                       })),
@@ -549,6 +576,16 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           pedagogicalLevel: t.pedagogicalLevel || null,
           isActive: true,
           validUntil: null,
+          educationSessions: [
+            {
+              id: `sess-pending-${idx}`,
+              educationTrack: t.track,
+              subjectId: `mp-${idx}`,
+              genderGroup: t.genderComplex || "CAMPUR",
+              scheduledStaffId: `stf-${idx}`,
+              scheduledTeacherAssignmentId: `ta-slot-${idx}`,
+            },
+          ],
           staff: {
             id: `stf-${idx}`,
             status: "AKTIF",
@@ -574,6 +611,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
                         "academic.attendance.record",
                       ].map((capCode) => ({
                         capabilityCode: capCode,
+                        scopeType: "GLOBAL",
                         businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL", // Policy approved but NOT runtime authoritative
                         capability: { code: capCode, isBlocked: false },
                       })),
@@ -609,6 +647,16 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           pedagogicalLevel: t.pedagogicalLevel || null,
           isActive: true,
           validUntil: null,
+          educationSessions: [
+            {
+              id: `sess-verified-${idx}`,
+              educationTrack: t.track,
+              subjectId: `mp-${idx}`,
+              genderGroup: t.genderComplex || "CAMPUR",
+              scheduledStaffId: `stf-${idx}`,
+              scheduledTeacherAssignmentId: `ta-slot-${idx}`,
+            },
+          ],
           staff: {
             id: `stf-${idx}`,
             status: "AKTIF",
@@ -634,6 +682,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
                         "academic.attendance.record",
                       ].map((capCode) => ({
                         capabilityCode: capCode,
+                        scopeType: "GLOBAL",
                         businessRuleState: "VERIFIED_PRODUCTION",
                         capability: { code: capCode, isBlocked: false },
                       })),
@@ -668,6 +717,16 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           pedagogicalLevel: t.pedagogicalLevel || null,
           isActive: true,
           validUntil: null,
+          educationSessions: [
+            {
+              id: `sess-unrelated-${idx}`,
+              educationTrack: t.track,
+              subjectId: `mp-${idx}`,
+              genderGroup: t.genderComplex || "CAMPUR",
+              scheduledStaffId: `stf-${idx}`,
+              scheduledTeacherAssignmentId: `ta-slot-${idx}`,
+            },
+          ],
           staff: {
             id: `stf-${idx}`,
             status: "AKTIF",
@@ -691,6 +750,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
                         "keasramaan.permission.read",
                       ].map((capCode) => ({
                         capabilityCode: capCode,
+                        scopeType: "GLOBAL",
                         businessRuleState: "VERIFIED_PRODUCTION",
                         capability: { code: capCode, isBlocked: false },
                       })),
@@ -1221,6 +1281,595 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.ok(noTeacherSess);
       assert.strictEqual(noTeacherSess.mutationAvailable, false);
       assert.strictEqual(noTeacherSess.mutationDeniedReason, "SCHEDULED_TEACHER_NOT_RESOLVED");
+    });
+  });
+
+  // =========================================================================
+  // 4. SECTION 7 REAL POSTGRESQL EFFECTIVE GRANT & SCOPE AUTHORIZATION CLOSURE PROOFS
+  // =========================================================================
+  describe("4. Section 7 Real PostgreSQL Effective Grant & Scope Authorization Closure Proofs", () => {
+    const OU_AKADEMIK = "ou-c1-akd";
+    const USR_AHMAD = "usr-c1-ahmad";
+    const STF_AHMAD = "stf-c1-ahmad";
+
+    const createAllRequiredAssignments = (opts?: {
+      overridePosCode?: string;
+      overridePatch?: (base: any) => any;
+      defaultBusinessRuleState?: "PROPOSED_TBD" | "APPROVED_TARGET_PENDING_TECHNICAL" | "VERIFIED_PRODUCTION";
+      policyOverrides?: Map<string, { scope?: string; state?: string; remove?: boolean }>;
+    }) => {
+      const defaultState = opts?.defaultBusinessRuleState ?? "VERIFIED_PRODUCTION";
+
+      return CANONICAL_REQUIRED_POSITION_CODES.map((posCode, idx) => {
+        const targetPolicies = CANONICAL_UAT_TARGET_POLICIES.filter((p) => p.positionCode === posCode);
+
+        const capabilities = targetPolicies
+          .map((p) => {
+            const override = opts?.policyOverrides?.get(p.capabilityCode);
+            return {
+              capabilityCode: p.capabilityCode,
+              scopeType: override?.scope ?? p.expectedScope,
+              businessRuleState: override?.state ?? defaultState,
+              capability: { code: p.capabilityCode, isBlocked: false },
+            };
+          })
+          .filter((c) => {
+            const override = opts?.policyOverrides?.get(c.capabilityCode);
+            return !override?.remove;
+          });
+
+        if (capabilities.length === 0) {
+          capabilities.push({
+            capabilityCode: "academic.schedule.read",
+            scopeType: "GLOBAL",
+            businessRuleState: defaultState,
+            capability: { code: "academic.schedule.read", isBlocked: false },
+          });
+        }
+
+        const base = {
+          id: `asg-req-${idx}`,
+          userId: `usr-req-${idx}`,
+          positionId: `pos-req-${idx}`,
+          status: "ACTIVE",
+          validFrom: new Date(Date.now() - 86400000),
+          validUntil: null,
+          user: {
+            id: `usr-req-${idx}`,
+            username: `user.req.${idx}`,
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            staffId: `stf-req-${idx}`,
+            staff: { id: `stf-req-${idx}`, status: "AKTIF" },
+          },
+          position: {
+            id: `pos-req-${idx}`,
+            code: posCode,
+            name: posCode,
+            isActive: true,
+            requiresPersonalAccount: true,
+            domain: "AKADEMIK",
+            capabilities,
+          },
+        };
+
+        if (opts?.overridePosCode === posCode && opts.overridePatch) {
+          return opts.overridePatch(base);
+        }
+        return base;
+      });
+    };
+
+    it("4.1 Proof 1: academic.session.start configured with scopeType = HALAQOH against EducationSession => NOT_READY (SCOPE_MISMATCH) & authorizeCanonical DENY", async () => {
+      // 1. Direct authorizeCanonical evaluation
+      const halaqohIdentity = {
+        userId: "usr-halaqoh-teacher",
+        username: "guru.halaqoh",
+        accountType: "PERSONAL" as const,
+        staffId: "stf-halaqoh",
+        staffStatus: "AKTIF",
+        status: "AKTIF",
+        name: "Guru Halaqoh",
+      };
+      const halaqohAssignment = {
+        id: "asg-halaqoh-1",
+        userId: "usr-halaqoh-teacher",
+        positionId: "pos-halaqoh",
+        positionCode: "GURU_HALAQOH",
+        unitId: "ou-halaqoh-1",
+        status: "ACTIVE" as const,
+        validFrom: new Date(Date.now() - 86400000),
+        validUntil: null,
+        scopeUnits: [],
+        positionCapabilities: [
+          {
+            capabilityCode: "academic.session.start",
+            scopeType: "HALAQOH" as const,
+            businessRuleState: "VERIFIED_PRODUCTION" as const,
+          },
+        ],
+      };
+
+      const authRes = await authorizeCanonical({
+        identity: halaqohIdentity,
+        capability: "academic.session.start",
+        resourceContext: {
+          educationSessionId: "sess-col-date-1",
+        },
+        dataProvider: {
+          getIdentity: async () => halaqohIdentity,
+          getActiveAssignments: async () => [halaqohAssignment] as any,
+          getUnitAccountPlacement: async () => null,
+          resolveResourceContext: async () => ({
+            educationSessionId: "sess-col-date-1",
+            orgDomain: "AKADEMIK",
+            orgUnitIds: [OU_AKADEMIK],
+            genderComplex: "PUTRA",
+          }),
+          verifyHumanExecutor: async () => null,
+        },
+      });
+
+      assert.strictEqual(authRes.decision, "DENY");
+      assert.ok(
+        authRes.code === "SCOPE_MISMATCH" || authRes.code === "INVALID_RESOURCE_CONTEXT",
+        `Expected SCOPE_MISMATCH or INVALID_RESOURCE_CONTEXT, got ${authRes.code}`
+      );
+
+      // 2. Gate 9 check with HALAQOH scope
+      const mockSlots = CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.map((t, idx) => ({
+        id: `ta-slot-${idx}`,
+        mapel: { nama: t.subjectName },
+        staffId: `stf-${idx}`,
+        educationTrack: t.track,
+        genderComplex: t.genderComplex || "CAMPUR",
+        pedagogicalLevel: t.pedagogicalLevel || null,
+        isActive: true,
+        validUntil: null,
+        educationSessions: [
+          {
+            id: `sess-slot-${idx}`,
+            educationTrack: t.track,
+            subjectId: `mp-${idx}`,
+            genderGroup: t.genderComplex || "CAMPUR",
+            programLevel: (idx % 3) + 1,
+            scheduledStaffId: `stf-${idx}`,
+            scheduledTeacherAssignmentId: `ta-slot-${idx}`,
+          },
+        ],
+        staff: {
+          id: `stf-${idx}`,
+          status: "AKTIF",
+          users: [
+            {
+              id: `usr-${idx}`,
+              status: "AKTIF",
+              accountType: "PERSONAL",
+              assignments: [
+                {
+                  id: `asg-${idx}`,
+                  status: "ACTIVE",
+                  validFrom: new Date(Date.now() - 86400000),
+                  validUntil: null,
+                  unit: { id: OU_AKADEMIK, isActive: true },
+                  position: {
+                    id: `pos-${idx}`,
+                    isActive: true,
+                    capabilities: [
+                      "academic.schedule.read",
+                      "academic.session.start",
+                      "academic.material.record",
+                      "academic.attendance.record",
+                    ].map((capCode) => ({
+                      capabilityCode: capCode,
+                      // Incompatible academic scope HALAQOH
+                      scopeType: capCode === "academic.session.start" ? "HALAQOH" : "GLOBAL",
+                      businessRuleState: "VERIFIED_PRODUCTION",
+                      capability: { code: capCode, isBlocked: false },
+                    })),
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      }));
+
+      const report = await checkPendidikanV2ProductionReadiness({
+        teachingAssignment: { findMany: async () => mockSlots },
+      } as any);
+
+      const teachingGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
+      assert.ok(teachingGate);
+      assert.strictEqual(teachingGate.status, "NOT_READY");
+      assert.ok(
+        teachingGate.details.includes("SCOPE_MISMATCH"),
+        "Must flag SCOPE_MISMATCH for incompatible HALAQOH scope"
+      );
+    });
+
+    it("4.2 Proof 2: academic.session.start with runtime-compatible effective grant against real EducationSession => ALLOW: true & TEACHING_ASSIGNMENTS_READY can be READY", async () => {
+      // 1. Direct authorizeCanonical against real PostgreSQL database seeded in Section 3
+      const ahmadIdentity = {
+        userId: USR_AHMAD,
+        username: "guru.ahmad",
+        accountType: "PERSONAL" as const,
+        staffId: STF_AHMAD,
+        staffStatus: "AKTIF",
+        status: "AKTIF",
+        name: "Ust. Ahmad",
+      };
+
+      const authRes = await authorizeCanonical({
+        identity: ahmadIdentity,
+        capability: "academic.session.start",
+        resourceContext: {
+          educationSessionId: "sess-col-date-1",
+        },
+        dataProvider,
+      });
+
+      assert.strictEqual(authRes.decision, "ALLOW");
+      assert.strictEqual(authRes.code, "ALLOWED");
+      assert.strictEqual(authRes.scopeType, "GLOBAL");
+
+      // 2. Full coverage with GLOBAL scope + representative sessions => READY
+      const mockSlots = CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.map((t, idx) => ({
+        id: `ta-slot-${idx}`,
+        mapel: { nama: t.subjectName },
+        staffId: `stf-${idx}`,
+        educationTrack: t.track,
+        genderComplex: t.genderComplex || "CAMPUR",
+        pedagogicalLevel: t.pedagogicalLevel || null,
+        isActive: true,
+        validUntil: null,
+        educationSessions: [
+          {
+            id: `sess-slot-${idx}`,
+            educationTrack: t.track,
+            subjectId: `mp-${idx}`,
+            genderGroup: t.genderComplex || "CAMPUR",
+            programLevel: (idx % 3) + 1,
+            scheduledStaffId: `stf-${idx}`,
+            scheduledTeacherAssignmentId: `ta-slot-${idx}`,
+          },
+        ],
+        staff: {
+          id: `stf-${idx}`,
+          status: "AKTIF",
+          users: [
+            {
+              id: `usr-${idx}`,
+              status: "AKTIF",
+              accountType: "PERSONAL",
+              assignments: [
+                {
+                  id: `asg-${idx}`,
+                  status: "ACTIVE",
+                  validFrom: new Date(Date.now() - 86400000),
+                  validUntil: null,
+                  unit: { id: OU_AKADEMIK, isActive: true },
+                  position: {
+                    id: `pos-${idx}`,
+                    isActive: true,
+                    capabilities: [
+                      "academic.schedule.read",
+                      "academic.session.start",
+                      "academic.material.record",
+                      "academic.attendance.record",
+                    ].map((capCode) => ({
+                      capabilityCode: capCode,
+                      scopeType: "GLOBAL",
+                      businessRuleState: "VERIFIED_PRODUCTION",
+                      capability: { code: capCode, isBlocked: false },
+                    })),
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      }));
+
+      const report = await checkPendidikanV2ProductionReadiness({
+        teachingAssignment: { findMany: async () => mockSlots },
+      } as any);
+
+      const teachingGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
+      assert.ok(teachingGate);
+      assert.strictEqual(teachingGate.status, "READY");
+    });
+
+    it("4.3 Proof 3: Academic grant exists but scope cannot match resource (UNIT outside containment) => NOT_READY & SCOPE_MISMATCH", async () => {
+      const unitIdentity = {
+        userId: "usr-unit-mismatch",
+        username: "guru.unit.mismatch",
+        accountType: "PERSONAL" as const,
+        staffId: "stf-unit-mismatch",
+        staffStatus: "AKTIF",
+        status: "AKTIF",
+        name: "Guru Mismatched Unit",
+      };
+      const unitAssignment = {
+        id: "asg-unit-mismatch",
+        userId: "usr-unit-mismatch",
+        positionId: "pos-unit-mismatch",
+        positionCode: "GURU_UNIT",
+        unitId: "ou-different-campus",
+        status: "ACTIVE" as const,
+        validFrom: new Date(Date.now() - 86400000),
+        validUntil: null,
+        scopeUnits: [],
+        positionCapabilities: [
+          {
+            capabilityCode: "academic.session.start",
+            scopeType: "UNIT" as const,
+            anchorUnitId: "ou-different-campus",
+            businessRuleState: "VERIFIED_PRODUCTION" as const,
+          },
+        ],
+      };
+
+      const authRes = await authorizeCanonical({
+        identity: unitIdentity,
+        capability: "academic.session.start",
+        resourceContext: {
+          educationSessionId: "sess-col-date-1",
+        },
+        dataProvider: {
+          getIdentity: async () => unitIdentity,
+          getActiveAssignments: async () => [unitAssignment] as any,
+          getUnitAccountPlacement: async () => null,
+          resolveResourceContext: async () => ({
+            educationSessionId: "sess-col-date-1",
+            orgDomain: "AKADEMIK",
+            orgUnitIds: [OU_AKADEMIK], // sess-col-date-1 is in OU_AKADEMIK, not ou-different-campus
+            genderComplex: "PUTRA",
+          }),
+          verifyHumanExecutor: async () => null,
+        },
+      });
+
+      assert.strictEqual(authRes.decision, "DENY");
+      assert.strictEqual(authRes.code, "SCOPE_MISMATCH");
+
+      // Gate 9 should report SCOPE_MISMATCH
+      const mockSlots = CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.map((t, idx) => ({
+        id: `ta-slot-${idx}`,
+        mapel: { nama: t.subjectName },
+        staffId: `stf-${idx}`,
+        educationTrack: t.track,
+        genderComplex: t.genderComplex || "CAMPUR",
+        pedagogicalLevel: t.pedagogicalLevel || null,
+        isActive: true,
+        validUntil: null,
+        educationSessions: [
+          {
+            id: `sess-slot-${idx}`,
+            educationTrack: t.track,
+            subjectId: `mp-${idx}`,
+            genderGroup: t.genderComplex || "CAMPUR",
+            programLevel: (idx % 3) + 1,
+            scheduledStaffId: `stf-${idx}`,
+            scheduledTeacherAssignmentId: `ta-slot-${idx}`,
+          },
+        ],
+        staff: {
+          id: `stf-${idx}`,
+          status: "AKTIF",
+          users: [
+            {
+              id: `usr-${idx}`,
+              status: "AKTIF",
+              accountType: "PERSONAL",
+              assignments: [
+                {
+                  id: `asg-${idx}`,
+                  status: "ACTIVE",
+                  validFrom: new Date(Date.now() - 86400000),
+                  validUntil: null,
+                  unit: { id: "ou-different-campus", isActive: true },
+                  position: {
+                    id: `pos-${idx}`,
+                    isActive: true,
+                    capabilities: [
+                      "academic.schedule.read",
+                      "academic.session.start",
+                      "academic.material.record",
+                      "academic.attendance.record",
+                    ].map((capCode) => ({
+                      capabilityCode: capCode,
+                      // UNIT scope with different anchorUnitId
+                      scopeType: "UNIT",
+                      anchorUnitId: "ou-different-campus",
+                      businessRuleState: "VERIFIED_PRODUCTION",
+                      capability: { code: capCode, isBlocked: false },
+                    })),
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      }));
+
+      const report = await checkPendidikanV2ProductionReadiness({
+        teachingAssignment: { findMany: async () => mockSlots },
+      } as any);
+
+      const teachingGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
+      assert.ok(teachingGate);
+      assert.strictEqual(teachingGate.status, "NOT_READY");
+      assert.ok(
+        teachingGate.details.includes("SCOPE_MISMATCH"),
+        "Gate 9 must fail closed with SCOPE_MISMATCH when UNIT is outside containment"
+      );
+    });
+
+    it("4.4 Proof 4: PETUGAS_OPERASIONAL_TAHFIZH assignment exists but tahfizh.reward.issue PositionCapability missing => USER_ASSIGNMENTS_READY = NOT_READY", async () => {
+      const assignments = createAllRequiredAssignments({
+        policyOverrides: new Map([["tahfizh.reward.issue", { remove: true }]]),
+      });
+
+      const mockDb = {
+        assignment: {
+          findMany: async () => assignments,
+        },
+        positionCapability: {
+          findMany: async () => [],
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(userGate);
+      assert.strictEqual(userGate.status, "NOT_READY");
+      assert.ok(
+        userGate.details.includes("tahfizh.reward.issue") && userGate.details.includes("missing"),
+        "Must flag missing tahfizh.reward.issue capability"
+      );
+    });
+
+    it("4.5 Proof 5: PositionCapability exists with wrong scope (GLOBAL instead of ASSIGNED_UNITS) => target policy mismatch / NOT_READY", async () => {
+      const assignments = createAllRequiredAssignments({
+        policyOverrides: new Map([["tahfizh.reward.issue", { scope: "GLOBAL" }]]),
+      });
+
+      const mockDb = {
+        assignment: {
+          findMany: async () => assignments,
+        },
+        positionCapability: {
+          findMany: async () => [],
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(userGate);
+      assert.strictEqual(userGate.status, "NOT_READY");
+      assert.ok(
+        userGate.details.includes("expected ASSIGNED_UNITS, found GLOBAL"),
+        "Must flag scope mismatch between ASSIGNED_UNITS and GLOBAL"
+      );
+    });
+
+    it("4.6 Proof 6: PositionCapability exists with correct target scope but APPROVED_TARGET_PENDING_TECHNICAL => TARGET_POLICY_READY, RUNTIME_NOT_READY (POLICY_APPROVED_NOT_RUNTIME_ACTIVE)", async () => {
+      const assignments = createAllRequiredAssignments({
+        defaultBusinessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+      });
+
+      const mockDb = {
+        assignment: {
+          findMany: async () => assignments,
+        },
+        positionCapability: {
+          findMany: async () => [],
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(userGate);
+      assert.strictEqual(userGate.status, "NOT_READY");
+      assert.ok(
+        userGate.details.includes("TARGET_POLICY_READY"),
+        "Must record TARGET_POLICY_READY in gate details"
+      );
+      assert.ok(
+        userGate.details.includes("POLICY_APPROVED_NOT_RUNTIME_ACTIVE"),
+        "Must report RUNTIME_NOT_READY: POLICY_APPROVED_NOT_RUNTIME_ACTIVE"
+      );
+    });
+
+    it("4.7 Proof 7: TEST-ONLY fixture with VERIFIED_PRODUCTION + correct scope/resource => runtime readiness proof succeeds (USER_ASSIGNMENTS_READY = READY)", async () => {
+      const assignments = createAllRequiredAssignments({
+        defaultBusinessRuleState: "VERIFIED_PRODUCTION",
+      });
+
+      const mockDb = {
+        assignment: {
+          findMany: async () => assignments,
+        },
+        positionCapability: {
+          findMany: async () => [],
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(userGate);
+      assert.strictEqual(userGate.status, "READY");
+      assert.ok(
+        userGate.details.includes(`All ${CANONICAL_REQUIRED_POSITION_CODES.length} required target positions have active user assignments`),
+        "Must verify all required target positions are ready"
+      );
+    });
+
+    it("4.8 Proof 8: Active personal Assignment with User.staffId = null => USER_ASSIGNMENTS_READY = NOT_READY", async () => {
+      const assignments = createAllRequiredAssignments({
+        overridePosCode: "MUDIR",
+        overridePatch: (base) => ({
+          ...base,
+          user: {
+            ...base.user,
+            staffId: null,
+            staff: null,
+          },
+        }),
+      });
+
+      const mockDb = {
+        assignment: {
+          findMany: async () => assignments,
+        },
+        positionCapability: {
+          findMany: async () => [],
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(userGate);
+      assert.strictEqual(userGate.status, "NOT_READY");
+      assert.ok(
+        userGate.details.includes("missing linked staff (staffId is null)"),
+        "Must fail closed when active personal assignment user has staffId = null"
+      );
+    });
+
+    it("4.9 Proof 9: staffId points to missing/inactive Staff => USER_ASSIGNMENTS_READY = NOT_READY", async () => {
+      const assignments = createAllRequiredAssignments({
+        overridePosCode: "MUDIR",
+        overridePatch: (base) => ({
+          ...base,
+          user: {
+            ...base.user,
+            staff: {
+              ...base.user.staff,
+              status: "NONAKTIF",
+            },
+          },
+        }),
+      });
+
+      const mockDb = {
+        assignment: {
+          findMany: async () => assignments,
+        },
+        positionCapability: {
+          findMany: async () => [],
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(userGate);
+      assert.strictEqual(userGate.status, "NOT_READY");
+      assert.ok(
+        userGate.details.includes("missing or inactive staff"),
+        "Must fail closed when staff is inactive or missing"
+      );
     });
   });
 });

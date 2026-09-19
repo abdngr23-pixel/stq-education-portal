@@ -14,8 +14,13 @@ import {
   TKS_STRUCTURE_CONTRACT,
   OSDA_PUTRI_UNIT_CONTRACT,
   UAT_ACTIVATION_TARGETS,
+  ResolvedResourceContext,
 } from "@/types/architecture-lock";
 import { CANONICAL_POSITION_CODES } from "@/lib/auth/compatibility";
+import {
+  authorizeCanonical,
+  CanonicalAssignmentWithDetails,
+} from "@/lib/auth/canonical-evaluator";
 
 export type ReadinessStatus = "READY" | "BLOCKED" | "NOT_READY";
 
@@ -126,6 +131,22 @@ export interface ReadinessDbClient {
       [key: string]: any;
     }>>;
   };
+  educationSession?: {
+    findMany: (args?: any) => Promise<Array<{
+      id: string;
+      educationTrack: string;
+      subjectId: string;
+      cohortId?: string | null;
+      programLevel?: number | null;
+      genderGroup?: string | null;
+      scheduledStaffId?: string | null;
+      actualTeacherUserId?: string | null;
+      scheduledTeacherAssignmentId?: string | null;
+      status?: string;
+      [key: string]: any;
+    }>>;
+    findFirst?: (args?: any) => Promise<any>;
+  };
   [key: string]: any;
 }
 
@@ -203,6 +224,57 @@ export const REQUIRED_KEPESANTRENAN_TEACHER_CAPABILITIES = [
   ACADEMIC_CAPABILITIES.SESSION_START,
   ACADEMIC_CAPABILITIES.MATERIAL_RECORD,
   ACADEMIC_CAPABILITIES.ATTENDANCE_RECORD,
+] as const;
+
+/**
+ * Approved UAT target effective grant policy definitions (M3.3C1).
+ * Declarative policy manifest for approved UAT targets.
+ * Note: businessRuleState remains APPROVED_TARGET_PENDING_TECHNICAL (ZERO runtime authority before M3.3C2).
+ */
+export interface UatTargetPolicySpec {
+  positionCode: string;
+  capabilityCode: string;
+  expectedScope: "GLOBAL" | "ASSIGNED_UNITS" | "HALAQOH";
+  expectedBusinessState: "APPROVED_TARGET_PENDING_TECHNICAL";
+}
+
+export const CANONICAL_UAT_TARGET_POLICIES: readonly UatTargetPolicySpec[] = [
+  {
+    positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.positionCode,
+    capabilityCode: "tahfizh.recap.read",
+    expectedScope: "GLOBAL",
+    expectedBusinessState: "APPROVED_TARGET_PENDING_TECHNICAL",
+  },
+  {
+    positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.positionCode,
+    capabilityCode: "tahfizh.reward.issue",
+    expectedScope: "ASSIGNED_UNITS",
+    expectedBusinessState: "APPROVED_TARGET_PENDING_TECHNICAL",
+  },
+  {
+    positionCode: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.positionCode,
+    capabilityCode: "tahfizh.target.manage",
+    expectedScope: "HALAQOH",
+    expectedBusinessState: "APPROVED_TARGET_PENDING_TECHNICAL",
+  },
+  {
+    positionCode: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.PEMBINA_HALAQOH.positionCode,
+    capabilityCode: "tahfizh.target.manage",
+    expectedScope: "HALAQOH",
+    expectedBusinessState: "APPROVED_TARGET_PENDING_TECHNICAL",
+  },
+  {
+    positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.positionCode,
+    capabilityCode: "keasramaan.permission.read",
+    expectedScope: "ASSIGNED_UNITS",
+    expectedBusinessState: "APPROVED_TARGET_PENDING_TECHNICAL",
+  },
+  {
+    positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.positionCode,
+    capabilityCode: "keasramaan.permission.create",
+    expectedScope: "ASSIGNED_UNITS",
+    expectedBusinessState: "APPROVED_TARGET_PENDING_TECHNICAL",
+  },
 ] as const;
 
 /**
@@ -487,7 +559,7 @@ export async function checkPendidikanV2ProductionReadiness(
     gates.push({ gate: "CAPABILITIES_REGISTERED", status: "NOT_READY", details: String(err) });
   }
 
-  // Gate 8: User Assignments Ready (Verifies active coverage of all approved target positions with active user/position/orgUnit/staff chains)
+  // Gate 8: User Assignments Ready (Verifies active coverage of all approved target positions with active user/position/orgUnit/staff chains and UAT target policy validation)
   try {
     const now = new Date();
     if (db.assignment) {
@@ -510,7 +582,7 @@ export async function checkPendidikanV2ProductionReadiness(
       }
 
       let positionsMap = new Map<string, any>();
-      if (db.position && asgs.some((a: any) => !a.position && a.positionId)) {
+      if (db.position) {
         const positions = await db.position.findMany().catch(() => []);
         positionsMap = new Map(positions.map((p: any) => [p.id, p]));
       }
@@ -528,6 +600,7 @@ export async function checkPendidikanV2ProductionReadiness(
       }
 
       const coveredCodes = new Set<string>();
+      const assignmentIssues: string[] = [];
       for (const a of asgs) {
         if (a.status !== "ACTIVE") continue;
         if (a.validFrom && new Date(a.validFrom) > now) continue;
@@ -540,15 +613,22 @@ export async function checkPendidikanV2ProductionReadiness(
         if (unit && unit.isActive === false) continue;
 
         const user = a.user || (a.userId ? usersMap.get(a.userId) : null);
-        if (user && !(user.status === "AKTIF" || user.status === "ACTIVE")) continue;
+        if (!user || !(user.status === "AKTIF" || user.status === "ACTIVE")) continue;
 
+        // Personal Staff Invariant: requires user.accountType=PERSONAL, user.staffId != null, and linked active Staff
         if (pos.requiresPersonalAccount !== false) {
-          if (user) {
-            if (user.accountType && user.accountType !== "PERSONAL") continue;
-            if (user.staffId) {
-              const staff = staffMap.get(user.staffId);
-              if (staff && !(staff.status === "AKTIF" || staff.status === "ACTIVE")) continue;
-            }
+          if (user.accountType && user.accountType !== "PERSONAL") {
+            assignmentIssues.push(`Assignment ${a.id} for ${pos.code}: user accountType is not PERSONAL (${user.accountType})`);
+            continue;
+          }
+          if (!user.staffId) {
+            assignmentIssues.push(`Assignment ${a.id} for ${pos.code}: user ${user.id} missing linked staff (staffId is null)`);
+            continue;
+          }
+          const staff = staffMap.get(user.staffId) || (user.staff ? user.staff : null) || (a.staff ? a.staff : null);
+          if (!staff || !(staff.status === "AKTIF" || staff.status === "ACTIVE")) {
+            assignmentIssues.push(`Assignment ${a.id} for ${pos.code}: user ${user.id} staffId ${user.staffId} has missing or inactive staff`);
+            continue;
           }
         }
 
@@ -556,23 +636,107 @@ export async function checkPendidikanV2ProductionReadiness(
         if (code) coveredCodes.add(code);
       }
 
-      const missing = CANONICAL_REQUIRED_POSITION_CODES.filter((c) => !coveredCodes.has(c));
-      if (missing.length === 0) {
+      const missingPositions = CANONICAL_REQUIRED_POSITION_CODES.filter((c) => !coveredCodes.has(c));
+
+      // Gather position capabilities for UAT target policies validation
+      const pcsByPosCode = new Map<string, any[]>();
+      if (db.positionCapability) {
+        const allPcs = await db.positionCapability.findMany().catch(() => []);
+        for (const pc of allPcs) {
+          const pos = positionsMap.get(pc.positionId) || Array.from(positionsMap.values()).find((p) => p.id === pc.positionId);
+          const pCode = pos?.code || pc.positionCode;
+          if (pCode) {
+            const list = pcsByPosCode.get(pCode) || [];
+            list.push(pc);
+            pcsByPosCode.set(pCode, list);
+          }
+        }
+      }
+      for (const pos of positionsMap.values()) {
+        if (pos.code && Array.isArray(pos.capabilities)) {
+          const list = pcsByPosCode.get(pos.code) || [];
+          for (const c of pos.capabilities) {
+            if (!list.some((existing) => (existing.capabilityCode || existing.code) === (c.capabilityCode || c.code))) {
+              list.push(c);
+            }
+          }
+          pcsByPosCode.set(pos.code, list);
+        }
+      }
+      for (const a of asgs) {
+        const pCode = a.position?.code || (a.positionId ? positionsMap.get(a.positionId)?.code : null) || a.positionCode;
+        if (pCode) {
+          const caps = a.position?.capabilities || a.capabilities || [];
+          if (Array.isArray(caps) && caps.length > 0) {
+            const list = pcsByPosCode.get(pCode) || [];
+            for (const c of caps) {
+              if (!list.some((existing) => (existing.capabilityCode || existing.code) === (c.capabilityCode || c.code))) {
+                list.push(c);
+              }
+            }
+            pcsByPosCode.set(pCode, list);
+          }
+        }
+      }
+
+      const policyIssues: string[] = [];
+      const pendingTechnicalIssues: string[] = [];
+
+      for (const target of CANONICAL_UAT_TARGET_POLICIES) {
+        const pcs = pcsByPosCode.get(target.positionCode) || [];
+        const matchPc = pcs.find((p: any) => (p.capabilityCode || p.code || p.capability?.code) === target.capabilityCode);
+
+        if (!matchPc) {
+          policyIssues.push(`${target.positionCode}: missing PositionCapability for ${target.capabilityCode}`);
+          continue;
+        }
+
+        const scope = matchPc.scopeType || matchPc.scope;
+        if (scope !== target.expectedScope) {
+          policyIssues.push(`${target.positionCode}: target policy scope mismatch for ${target.capabilityCode} (expected ${target.expectedScope}, found ${scope || "NONE"})`);
+          continue;
+        }
+
+        if (matchPc.businessRuleState !== "VERIFIED_PRODUCTION") {
+          if (matchPc.businessRuleState === target.expectedBusinessState) {
+            pendingTechnicalIssues.push(`${target.positionCode}: grant ${target.capabilityCode} is APPROVED_TARGET_PENDING_TECHNICAL (TARGET_POLICY_READY, RUNTIME_NOT_READY: POLICY_APPROVED_NOT_RUNTIME_ACTIVE)`);
+          } else {
+            policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} has invalid state ${matchPc.businessRuleState}`);
+          }
+        }
+      }
+
+      if (missingPositions.length > 0) {
+        const issuesSuffix = assignmentIssues.length > 0 ? ` (${assignmentIssues.join("; ")})` : "";
         gates.push({
           gate: "USER_ASSIGNMENTS_READY",
-          status: "READY",
-          details: `All ${CANONICAL_REQUIRED_POSITION_CODES.length} required target positions have active user assignments`,
+          status: "NOT_READY",
+          details: `Missing active user assignments for required positions: ${missingPositions.join(", ")}${issuesSuffix}`,
+          remediationAdvice: "Requires active assignments linking active Users and active Staff to approved positions in M3.3C2",
+        });
+      } else if (policyIssues.length > 0) {
+        gates.push({
+          gate: "USER_ASSIGNMENTS_READY",
+          status: "NOT_READY",
+          details: `Target policy definition mismatch: ${policyIssues.join("; ")}`,
+          remediationAdvice: "PositionCapability mappings must match approved UAT targets in scope and definition",
+        });
+      } else if (pendingTechnicalIssues.length > 0) {
+        gates.push({
+          gate: "USER_ASSIGNMENTS_READY",
+          status: "NOT_READY",
+          details: `TARGET_POLICY_READY, RUNTIME_NOT_READY: ${pendingTechnicalIssues.join("; ")}`,
+          remediationAdvice: "Requires formal promotion of APPROVED_TARGET_PENDING_TECHNICAL policies to VERIFIED_PRODUCTION in M3.3C2",
         });
       } else {
         gates.push({
           gate: "USER_ASSIGNMENTS_READY",
-          status: "NOT_READY",
-          details: `Missing active user assignments for required positions: ${missing.join(", ")}`,
-          remediationAdvice: "Requires active assignments linking active Users and active Staff to approved positions in M3.3C2",
+          status: "READY",
+          details: `All ${CANONICAL_REQUIRED_POSITION_CODES.length} required target positions have active user assignments with verified runtime authority`,
         });
       }
     } else if (typeof db.$queryRawUnsafe === "function") {
-      const rows = await db.$queryRawUnsafe<Array<{ code: string }>>(`
+      const asgRows = await db.$queryRawUnsafe<Array<{ code: string }>>(`
         SELECT DISTINCT p."code" 
         FROM "assignments" a
         JOIN "positions" p ON a."position_id" = p."id"
@@ -584,26 +748,90 @@ export async function checkPendidikanV2ProductionReadiness(
           AND (a."valid_until" IS NULL OR a."valid_until" >= NOW())
           AND p."is_active" = true
           AND (o."id" IS NULL OR o."is_active" = true)
-          AND (u."id" IS NULL OR u."status" IN ('AKTIF', 'ACTIVE'))
           AND (
             p."requires_personal_account" = false 
-            OR u."staff_id" IS NULL 
-            OR s."status" IN ('AKTIF', 'ACTIVE')
+            OR (
+              u."id" IS NOT NULL
+              AND u."status" IN ('AKTIF', 'ACTIVE')
+              AND (u."account_type" IS NULL OR u."account_type" = 'PERSONAL')
+              AND u."staff_id" IS NOT NULL
+              AND s."id" IS NOT NULL
+              AND s."status" IN ('AKTIF', 'ACTIVE')
+            )
           );
       `).catch(() => []);
-      const coveredCodes = new Set(rows.map((r) => r.code));
-      const missing = CANONICAL_REQUIRED_POSITION_CODES.filter((c) => !coveredCodes.has(c));
-      if (missing.length === 0) {
+      const coveredCodes = new Set(asgRows.map((r) => r.code));
+      const missingPositions = CANONICAL_REQUIRED_POSITION_CODES.filter((c) => !coveredCodes.has(c));
+
+      const pcRows = await db.$queryRawUnsafe<Array<{
+        position_code: string;
+        capability_code: string;
+        scope_type: string;
+        business_rule_state: string;
+      }>>(`
+        SELECT 
+          p."code" as position_code,
+          pc."capability_code",
+          pc."scope_type",
+          pc."business_rule_state"
+        FROM "positions" p
+        JOIN "position_capabilities" pc ON pc."position_id" = p."id"
+        WHERE p."code" IN ('PETUGAS_OPERASIONAL_TAHFIZH', 'MUSYRIF_TAHFIZH', 'PEMBINA_HALAQOH', 'PETUGAS_OPERASIONAL_KEASRAMAAN')
+          AND p."is_active" = true;
+      `).catch(() => []);
+
+      const policyIssues: string[] = [];
+      const pendingTechnicalIssues: string[] = [];
+
+      for (const target of CANONICAL_UAT_TARGET_POLICIES) {
+        const matchPc = pcRows.find(
+          (r) => r.position_code === target.positionCode && r.capability_code === target.capabilityCode
+        );
+
+        if (!matchPc) {
+          policyIssues.push(`${target.positionCode}: missing PositionCapability for ${target.capabilityCode}`);
+          continue;
+        }
+
+        if (matchPc.scope_type !== target.expectedScope) {
+          policyIssues.push(`${target.positionCode}: target policy scope mismatch for ${target.capabilityCode} (expected ${target.expectedScope}, found ${matchPc.scope_type || "NONE"})`);
+          continue;
+        }
+
+        if (matchPc.business_rule_state !== "VERIFIED_PRODUCTION") {
+          if (matchPc.business_rule_state === target.expectedBusinessState) {
+            pendingTechnicalIssues.push(`${target.positionCode}: grant ${target.capabilityCode} is APPROVED_TARGET_PENDING_TECHNICAL (TARGET_POLICY_READY, RUNTIME_NOT_READY: POLICY_APPROVED_NOT_RUNTIME_ACTIVE)`);
+          } else {
+            policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} has invalid state ${matchPc.business_rule_state}`);
+          }
+        }
+      }
+
+      if (missingPositions.length > 0) {
         gates.push({
           gate: "USER_ASSIGNMENTS_READY",
-          status: "READY",
-          details: `All ${CANONICAL_REQUIRED_POSITION_CODES.length} required target positions have active user assignments`,
+          status: "NOT_READY",
+          details: `Missing active user assignments for required positions: ${missingPositions.join(", ")}`,
+          remediationAdvice: "Requires active assignments linking active Users and active Staff to approved positions in M3.3C2",
+        });
+      } else if (policyIssues.length > 0) {
+        gates.push({
+          gate: "USER_ASSIGNMENTS_READY",
+          status: "NOT_READY",
+          details: `Target policy definition mismatch: ${policyIssues.join("; ")}`,
+        });
+      } else if (pendingTechnicalIssues.length > 0) {
+        gates.push({
+          gate: "USER_ASSIGNMENTS_READY",
+          status: "NOT_READY",
+          details: `TARGET_POLICY_READY, RUNTIME_NOT_READY: ${pendingTechnicalIssues.join("; ")}`,
+          remediationAdvice: "Requires formal promotion of APPROVED_TARGET_PENDING_TECHNICAL policies to VERIFIED_PRODUCTION in M3.3C2",
         });
       } else {
         gates.push({
           gate: "USER_ASSIGNMENTS_READY",
-          status: "NOT_READY",
-          details: `Missing active user assignments for required positions: ${missing.join(", ")}`,
+          status: "READY",
+          details: `All ${CANONICAL_REQUIRED_POSITION_CODES.length} required target positions have active user assignments with verified runtime authority`,
         });
       }
     } else {
@@ -613,7 +841,7 @@ export async function checkPendidikanV2ProductionReadiness(
     gates.push({ gate: "USER_ASSIGNMENTS_READY", status: "NOT_READY", details: String(err) });
   }
 
-  // Gate 9: Teaching Assignments Ready (Requires full coverage of 18 canonical slots AND verified runtime authorization path for scheduled teachers)
+  // Gate 9: Teaching Assignments Ready (Requires full coverage of 18 canonical slots AND verified runtime authorization path for scheduled teachers against authoritative EducationSession resources)
   try {
     const now = new Date();
     if (db.teachingAssignment) {
@@ -627,6 +855,11 @@ export async function checkPendidikanV2ProductionReadiness(
           staff: true,
         },
       });
+
+      let allSessions: any[] = [];
+      if (db.educationSession) {
+        allSessions = await db.educationSession.findMany().catch(() => []);
+      }
 
       let mapelIdToObj = new Map<string, { nama: string; kodeMapel?: string }>();
       if (db.mataPelajaran && tas.some((t: any) => !t.mapel && t.mapelId)) {
@@ -703,6 +936,7 @@ export async function checkPendidikanV2ProductionReadiness(
       const inactiveStaffTargets: string[] = [];
       const unlinkedUserTargets: string[] = [];
       const unassignedUserTargets: string[] = [];
+      const sessionIssues: string[] = [];
       const authIssues: string[] = [];
 
       for (const target of CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS) {
@@ -770,39 +1004,134 @@ export async function checkPendidikanV2ProductionReadiness(
             continue;
           }
 
-          // 4. PositionCapability check
+          // 4. Resolve Authoritative EducationSession Resource
+          const candidateSessions = (
+            Array.isArray(ta.educationSessions) ? ta.educationSessions : []
+          ).concat(
+            Array.isArray(ta.sessions) ? ta.sessions : []
+          ).concat(
+            ta.session ? [ta.session] : []
+          ).concat(
+            allSessions.filter((s: any) => {
+              if (s.scheduledTeacherAssignmentId && s.scheduledTeacherAssignmentId === ta.id) return true;
+              if (s.scheduledStaffId && s.scheduledStaffId === ta.staffId && s.educationTrack === target.track) {
+                if (target.genderComplex && s.genderGroup && s.genderGroup !== target.genderComplex) return false;
+                return true;
+              }
+              return false;
+            })
+          );
+
+          if (candidateSessions.length === 0) {
+            sessionIssues.push(`${target.key}: SESSION_AUTHORIZATION_RESOURCE_NOT_READY (no authoritative EducationSession resource found for scheduled teacher assignment)`);
+            continue;
+          }
+
+          const session = candidateSessions[0];
+
+          // 5. Authoritative Canonical Evaluation against representative session resource
           const requiredCaps = target.track === "KEPESANTRENAN"
             ? REQUIRED_KEPESANTRENAN_TEACHER_CAPABILITIES
             : REQUIRED_STUDI_UMUM_TEACHER_CAPABILITIES;
 
+          const mockAssignments: CanonicalAssignmentWithDetails[] = activeAsgs.map((a: any) => {
+            const posId = a.positionId || a.position?.id || "pos-default";
+            const posCode = a.position?.code || a.positionCode || "GURU";
+            const pcs = (a.position && Array.isArray(a.position.capabilities))
+              ? a.position.capabilities
+              : (pcsByPositionId.get(posId) || a.capabilities || []);
+            return {
+              id: a.id,
+              userId: user.id,
+              positionId: posId,
+              positionCode: posCode,
+              unitId: a.unitId || a.unit?.id || null,
+              status: "ACTIVE",
+              validFrom: a.validFrom ? new Date(a.validFrom) : new Date(0),
+              validUntil: a.validUntil ? new Date(a.validUntil) : null,
+              scopeUnits: (a.scopeUnits || []).map((su: any) => ({ unitId: su.unitId || su })),
+              positionCapabilities: pcs.map((pc: any) => ({
+                capabilityCode: pc.capabilityCode || pc.code || pc.capability?.code,
+                scopeType: pc.scopeType,
+                businessRuleState: pc.businessRuleState,
+              })),
+              unitGenderComplex: a.unit?.genderComplex || a.unitGenderComplex || null,
+              domain: a.unit?.domain || a.domain || "AKADEMIK",
+            };
+          });
+
+          const resolvedContext: ResolvedResourceContext = {
+            educationSessionId: session.id,
+            educationSession: {
+              id: session.id,
+              educationTrack: session.educationTrack,
+              subjectId: session.subjectId || session.mapelId || ta.mapelId || "mapel-1",
+              cohortId: session.cohortId || null,
+              programLevel: session.programLevel || null,
+              genderGroup: session.genderGroup || (target.genderComplex ? target.genderComplex : null),
+              scheduledStaffId: session.scheduledStaffId || staff.id,
+              actualTeacherUserId: session.actualTeacherUserId || user.id,
+              scheduledTeacherAssignmentId: session.scheduledTeacherAssignmentId || ta.id,
+            },
+            orgDomain: "AKADEMIK",
+            genderComplex: (session.genderGroup || target.genderComplex || undefined) as any,
+            orgUnitIds: session.orgUnitIds || [],
+          };
+
           let slotAuthOk = true;
           for (const cap of requiredCaps) {
-            let capGrantOk = false;
-            let lastState: string | null = null;
-
+            let matchPc: any = null;
             for (const asg of activeAsgs) {
               const posId = asg.positionId || asg.position?.id;
               const pcs = (asg.position && Array.isArray(asg.position.capabilities))
                 ? asg.position.capabilities
                 : (pcsByPositionId.get(posId) || asg.capabilities || []);
-              const matchPc = pcs.find((p: any) => p.capabilityCode === cap || p.code === cap || p.capability?.code === cap);
-              if (matchPc) {
-                lastState = matchPc.businessRuleState;
-                if (matchPc.businessRuleState === "VERIFIED_PRODUCTION") {
-                  capGrantOk = true;
-                  break;
-                }
+              const found = pcs.find((p: any) => (p.capabilityCode || p.code || p.capability?.code) === cap);
+              if (found) {
+                matchPc = found;
+                break;
               }
             }
 
-            if (!capGrantOk) {
+            if (!matchPc) {
               slotAuthOk = false;
-              if (lastState === "APPROVED_TARGET_PENDING_TECHNICAL") {
-                authIssues.push(`${target.key}: grant ${cap} is APPROVED_TARGET_PENDING_TECHNICAL (AUTHORIZATION_GRANT_NOT_RUNTIME_READY)`);
-              } else if (lastState === "PROPOSED_TBD") {
-                authIssues.push(`${target.key}: grant ${cap} is PROPOSED_TBD (AUTHORIZATION_GRANT_NOT_RUNTIME_READY)`);
+              authIssues.push(`${target.key}: grant ${cap} missing on active positions (ACADEMIC_TEACHER_AUTHORIZATION_POLICY_NOT_RUNTIME_READY)`);
+              break;
+            }
+
+            if (matchPc.businessRuleState === "APPROVED_TARGET_PENDING_TECHNICAL") {
+              slotAuthOk = false;
+              authIssues.push(`${target.key}: grant ${cap} is APPROVED_TARGET_PENDING_TECHNICAL (AUTHORIZATION_GRANT_NOT_RUNTIME_READY)`);
+              break;
+            }
+
+            if (matchPc.businessRuleState === "PROPOSED_TBD") {
+              slotAuthOk = false;
+              authIssues.push(`${target.key}: grant ${cap} is PROPOSED_TBD (AUTHORIZATION_GRANT_NOT_RUNTIME_READY)`);
+              break;
+            }
+
+            // Invoke canonical authorization evaluator with representative session context
+            const authDecision = await authorizeCanonical({
+              identity: {
+                userId: user.id,
+                username: user.username || `user-${user.id}`,
+                status: user.status || "AKTIF",
+                accountType: "PERSONAL",
+                staffId: user.staffId,
+                mockAssignments,
+              } as any,
+              capability: cap,
+              resourceContext: { educationSessionId: session.id },
+              resolvedContext,
+            });
+
+            if (authDecision.decision !== "ALLOW") {
+              slotAuthOk = false;
+              if (authDecision.code === "SCOPE_MISMATCH" || authDecision.reasonCode === "SCOPE_MISMATCH" || authDecision.reasonCode === "INVALID_RESOURCE_CONTEXT") {
+                authIssues.push(`${target.key}: grant ${cap} SCOPE_MISMATCH: ${authDecision.reason}`);
               } else {
-                authIssues.push(`${target.key}: grant ${cap} missing on active positions (ACADEMIC_TEACHER_AUTHORIZATION_POLICY_NOT_RUNTIME_READY)`);
+                authIssues.push(`${target.key}: grant ${cap} denied (${authDecision.code || "ACADEMIC_TEACHER_AUTHORIZATION_POLICY_NOT_RUNTIME_READY"}): ${authDecision.reason}`);
               }
               break;
             }
@@ -814,7 +1143,7 @@ export async function checkPendidikanV2ProductionReadiness(
           }
         }
 
-        if (!slotSatisfied && matchingTas.length > 0 && authIssues.length === 0 && unassignedUserTargets.length === 0 && unlinkedUserTargets.length === 0 && inactiveStaffTargets.length === 0) {
+        if (!slotSatisfied && matchingTas.length > 0 && authIssues.length === 0 && sessionIssues.length === 0 && unassignedUserTargets.length === 0 && unlinkedUserTargets.length === 0 && inactiveStaffTargets.length === 0) {
           missingTargets.push(target.key);
         }
       }
@@ -847,12 +1176,19 @@ export async function checkPendidikanV2ProductionReadiness(
           details: `Scheduled teachers lack active Assignment: ${unassignedUserTargets.join(", ")}`,
           remediationAdvice: "Scheduled teachers must have active Assignment to active Position and OrgUnit",
         });
+      } else if (sessionIssues.length > 0) {
+        gates.push({
+          gate: "TEACHING_ASSIGNMENTS_READY",
+          status: "NOT_READY",
+          details: `SESSION_AUTHORIZATION_RESOURCE_NOT_READY: ${sessionIssues.join("; ")}`,
+          remediationAdvice: "Requires authoritative EducationSession resources to prove runtime authorization for scheduled teachers",
+        });
       } else if (authIssues.length > 0) {
         gates.push({
           gate: "TEACHING_ASSIGNMENTS_READY",
           status: "NOT_READY",
           details: `ACADEMIC_TEACHER_AUTHORIZATION_POLICY_NOT_RUNTIME_READY: ${authIssues.join("; ")}`,
-          remediationAdvice: "AUTHORIZATION_GRANT_NOT_RUNTIME_READY: Requires Business Owner approved and verified production PositionCapability mappings in M3.3C2",
+          remediationAdvice: "AUTHORIZATION_GRANT_NOT_RUNTIME_READY: Requires Business Owner approved and verified production PositionCapability mappings with compatible scope in M3.3C2",
         });
       } else {
         gates.push({
@@ -878,7 +1214,9 @@ export async function checkPendidikanV2ProductionReadiness(
         position_id: string | null;
         position_is_active: boolean | null;
         capability_code: string | null;
+        scope_type: string | null;
         business_rule_state: string | null;
+        session_id: string | null;
       }>>(`
         SELECT 
           ta."id", 
@@ -896,7 +1234,9 @@ export async function checkPendidikanV2ProductionReadiness(
           p."id" as position_id,
           p."is_active" as position_is_active,
           pc."capability_code",
-          pc."business_rule_state"
+          pc."scope_type",
+          pc."business_rule_state",
+          es."id" as session_id
         FROM "teaching_assignments" ta
         JOIN "mata_pelajaran" m ON ta."mapel_id" = m."id"
         LEFT JOIN "staff" s ON ta."staff_id" = s."id"
@@ -908,6 +1248,10 @@ export async function checkPendidikanV2ProductionReadiness(
         LEFT JOIN "positions" p ON a."position_id" = p."id" AND p."is_active" = true
         LEFT JOIN "org_units" o ON a."unit_id" = o."id" AND o."is_active" = true
         LEFT JOIN "position_capabilities" pc ON pc."position_id" = p."id"
+        LEFT JOIN "education_sessions" es ON (
+          es."scheduled_teacher_assignment_id" = ta."id"
+          OR (es."scheduled_staff_id" = ta."staff_id" AND es."education_track"::text = ta."education_track"::text)
+        )
         WHERE ta."is_active" = true 
           AND (ta."valid_from" IS NULL OR ta."valid_from" <= NOW())
           AND (ta."valid_until" IS NULL OR ta."valid_until" >= NOW())
@@ -918,6 +1262,7 @@ export async function checkPendidikanV2ProductionReadiness(
       const inactiveStaffTargets: string[] = [];
       const unlinkedUserTargets: string[] = [];
       const unassignedUserTargets: string[] = [];
+      const sessionIssues: string[] = [];
       const authIssues: string[] = [];
 
       for (const target of CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS) {
@@ -957,6 +1302,11 @@ export async function checkPendidikanV2ProductionReadiness(
             continue;
           }
 
+          if (!first.session_id) {
+            sessionIssues.push(`${target.key}: SESSION_AUTHORIZATION_RESOURCE_NOT_READY (no authoritative EducationSession resource found for scheduled teacher assignment)`);
+            continue;
+          }
+
           const requiredCaps = target.track === "KEPESANTRENAN"
             ? REQUIRED_KEPESANTRENAN_TEACHER_CAPABILITIES
             : REQUIRED_STUDI_UMUM_TEACHER_CAPABILITIES;
@@ -964,15 +1314,29 @@ export async function checkPendidikanV2ProductionReadiness(
           let slotAuthOk = true;
           for (const cap of requiredCaps) {
             const matchPc = taRows.find((r) => r.capability_code === cap);
-            if (!matchPc || matchPc.business_rule_state !== 'VERIFIED_PRODUCTION') {
+            if (!matchPc) {
               slotAuthOk = false;
-              if (matchPc?.business_rule_state === 'APPROVED_TARGET_PENDING_TECHNICAL') {
+              authIssues.push(`${target.key}: grant ${cap} missing on active positions (ACADEMIC_TEACHER_AUTHORIZATION_POLICY_NOT_RUNTIME_READY)`);
+              break;
+            }
+
+            if (matchPc.business_rule_state !== 'VERIFIED_PRODUCTION') {
+              slotAuthOk = false;
+              if (matchPc.business_rule_state === 'APPROVED_TARGET_PENDING_TECHNICAL') {
                 authIssues.push(`${target.key}: grant ${cap} is APPROVED_TARGET_PENDING_TECHNICAL (AUTHORIZATION_GRANT_NOT_RUNTIME_READY)`);
-              } else if (matchPc?.business_rule_state === 'PROPOSED_TBD') {
+              } else if (matchPc.business_rule_state === 'PROPOSED_TBD') {
                 authIssues.push(`${target.key}: grant ${cap} is PROPOSED_TBD (AUTHORIZATION_GRANT_NOT_RUNTIME_READY)`);
               } else {
-                authIssues.push(`${target.key}: grant ${cap} missing on active positions (ACADEMIC_TEACHER_AUTHORIZATION_POLICY_NOT_RUNTIME_READY)`);
+                authIssues.push(`${target.key}: grant ${cap} invalid state ${matchPc.business_rule_state} (AUTHORIZATION_GRANT_NOT_RUNTIME_READY)`);
               }
+              break;
+            }
+
+            // Incompatible scope checks: reject scopes that cannot match EducationSession
+            const incompatibleScopes = ['HALAQOH', 'UNIT', 'ASSIGNED_UNITS', 'KAMAR', 'OWN_CHILD', 'SELF'];
+            if (incompatibleScopes.includes(matchPc.scope_type || '')) {
+              slotAuthOk = false;
+              authIssues.push(`${target.key}: grant ${cap} SCOPE_MISMATCH: Incompatible scope ${matchPc.scope_type} for EducationSession resource`);
               break;
             }
           }
@@ -983,7 +1347,7 @@ export async function checkPendidikanV2ProductionReadiness(
           }
         }
 
-        if (!slotSatisfied && matchingRows.length > 0 && authIssues.length === 0 && unassignedUserTargets.length === 0 && unlinkedUserTargets.length === 0 && inactiveStaffTargets.length === 0) {
+        if (!slotSatisfied && matchingRows.length > 0 && authIssues.length === 0 && sessionIssues.length === 0 && unassignedUserTargets.length === 0 && unlinkedUserTargets.length === 0 && inactiveStaffTargets.length === 0) {
           missingTargets.push(target.key);
         }
       }
@@ -1011,6 +1375,12 @@ export async function checkPendidikanV2ProductionReadiness(
           gate: "TEACHING_ASSIGNMENTS_READY",
           status: "NOT_READY",
           details: `Scheduled teachers lack active Assignment: ${unassignedUserTargets.join(", ")}`,
+        });
+      } else if (sessionIssues.length > 0) {
+        gates.push({
+          gate: "TEACHING_ASSIGNMENTS_READY",
+          status: "NOT_READY",
+          details: `SESSION_AUTHORIZATION_RESOURCE_NOT_READY: ${sessionIssues.join("; ")}`,
         });
       } else if (authIssues.length > 0) {
         gates.push({
