@@ -1,73 +1,96 @@
 # STQ EDUCATION PORTAL — BUSINESS OWNER DIRECTIVES REGISTRY
 
-**Document Path:** `docs/STQ_OWNER_DIRECTIVES.md`  
-**Purpose:** Canonical Persistent Business Owner Directive Registry  
-**Authority Level:** Level 0 — Newest Explicit Business Owner Decisions (per `STQ_PROJECT_CONTEXT.md`)  
-**Status:** ACTIVE CANONICAL REGISTRY  
-**Last Updated:** 2026-09-19  
+**Document Path:** `docs/STQ_OWNER_DIRECTIVES.md`
+**Purpose:** Canonical Persistent Registry for Newest Explicit Business Owner Decisions
+**Authority Level:** Level 0 — Newest Explicit Business Owner Decisions (per `STQ_PROJECT_CONTEXT.md`)
+**Status:** ACTIVE CANONICAL REGISTRY (RECONCILED SCOPE)
+**Last Updated:** 2026-09-19
+
+```markdown
+OWNER_DIRECTIVE_RECONCILIATION:
+- STRUCTURE_IDENTITY_AUTH = RECONCILED
+- TAHFIZH = RECONCILED
+- KEASRAMAAN = RECONCILED
+- PENDIDIKAN = RECONCILED
+- PORTAL_WALI_SANTRI = DEFERRED
+- ORANG_TUA_ASUH_SPONSOR = DEFERRED
+- MASTER_DATA_LANJUTAN = DEFERRED
+- INSTITUTIONAL_OTHER_DOMAINS = DEFERRED
+```
 
 ---
 
-## 1. Registry Purpose & Fundamental Governance Rules
+## 1. Registry Scope, Purpose & Fundamental Governance Rules
 
-This document serves as the sole persistent repository registry for authoritative Business Owner decisions and directives. 
+This document serves as the persistent repository registry for authoritative Business Owner decisions and directives.
 
-### Mandatory Governance Rules
+### Scope & Semantic Rules
 
-1. **Conversational Memory Is NOT a Source of Truth**:
-   The conversational memory of coding agents, AI assistants (ChatGPT, Antigravity, Claude, etc.), human chat threads, or ephemeral issue comments does NOT constitute project source of truth. All binding business requirements, rule adjustments, account identities, authorities, scopes, workflows, and acceptance criteria must be committed into this registry.
+1. **Registry Purpose**:
+   This registry captures the **NEWEST EXPLICIT BUSINESS OWNER DECISIONS** across the currently reconciled architectural domains:
+   - Structure / Identity / Authorization
+   - Tahfizh Program
+   - Keasramaan & Santri Life
+   - Pendidikan (Studi Umum & Kepesantrenan)
 
-2. **Immediate Registration Requirement**:
+   It is **NOT** a universal retrospective archive of all historical STQ requirements. Unreconciled or future domains (Portal Wali Santri, advanced Portal Santri, Orang Tua Asuh / Sponsor, advanced Master Data development, and expanded WhatsApp workflows) remain formally **DEFERRED**.
+
+2. **Non-Cancellation by Omission (Semantic Rule)**:
+   The **ABSENCE** of a historical requirement from `STQ_OWNER_DIRECTIVES.md` **DOES NOT** mean it is cancelled. Historical requirements continue to bind according to their foundational source documents (cataloged in [`docs/STQ_REQUIREMENT_SOURCE_MAP.md`](file:///d:/stq-education-portal-antigravity/stq-education-portal/docs/STQ_REQUIREMENT_SOURCE_MAP.md)). Only an explicit newer directive possessing:
+   - `SUPERSEDES: <target>` or
+   - `SUPERSEDED_BY: <target>`
+   may alter or replace an older decision.
+
+3. **Conversational Memory Is NOT a Source of Truth**:
+   Conversational agent memory (ChatGPT, Antigravity, Claude, etc.), chat logs, or ephemeral issue comments do NOT constitute project source of truth. All binding business requirements, rule adjustments, account identities, authorities, scopes, workflows, and acceptance criteria must be committed into this repository registry.
+
+4. **Immediate Registration Requirement**:
    Every new decision or clarification by the Business Owner that modifies a requirement, business rule, account identity, authority, scope, workflow, or acceptance criteria must be formally recorded in this file within the **same workstream** prior to implementation.
 
-3. **Supersedence Rule**:
-   A newer explicit decision from the Business Owner overrides an older decision. Older decisions are **never deleted**; instead, they are preserved with their historical context and explicitly marked with status `SUPERSEDED` and linked via `superseded-by`.
-
-4. **Required Directive Attributes**:
+5. **Ten Mandatory Directive Attributes**:
    Every directive entry in this registry MUST contain all of the following ten attributes:
    - **Directive ID**: Unique, permanent identifier (e.g. `DIR-2026-001`).
    - **Tanggal**: Date of the directive (YYYY-MM-DD).
-   - **Keputusan Business Owner**: Exact, verbatim or faithful formulation of the Business Owner's decision.
+   - **Keputusan Business Owner**: Faithful, unambiguous formulation of the Business Owner's decision.
    - **Canonical Interpretation**: Clear, unambiguous technical and institutional interpretation.
    - **Affected Domain**: Impacted operational and system domains (e.g., IDENTITY, TAHFIZH, PENDIDIKAN, KEASRAMAAN, AUDIT).
    - **Implementation Status**: Current codebase implementation state following the mandatory lifecycle progression.
    - **Production Status**: Current state of the live production environment.
-   - **Supersedes / Superseded-By**: Explicit cross-references to prior or subsequent directives.
+   - **Supersedes / Superseded-By**: Explicit cross-references to prior or subsequent directives or foundational sources.
    - **Acceptance Criteria**: Verifiable criteria required to satisfy the directive.
    - **Evidence / Reference**: Concrete file paths, tests, schemas, or documentation references.
 
-5. **Mandatory Implementation Lifecycle Progression**:
-   The status of an implementation progresses through these minimal stages:
-   $$\text{REQUIRED} \longrightarrow \text{CODE\_COMPLETE} \longrightarrow \text{BACKEND\_AUTHORIZED} \longrightarrow \text{UI\_COMPLETE} \longrightarrow \text{PRODUCTION\_VERIFIED}$$
-   - `REQUIRED`: Directive registered; awaiting or undergoing implementation.
-   - `CODE_COMPLETE`: Supporting domain logic, schemas, or types exist in codebase.
-   - `BACKEND_AUTHORIZED`: Server-side authorization, guards, and backend enforcement are active and verified by tests.
-   - `UI_COMPLETE`: User interfaces and client interactions reflect the directive.
-   - `PRODUCTION_VERIFIED`: Live production data, migrations, and runtime behavior are independently verified.
-
-6. **Completion Rule**:
-   A directive must **NEVER** be declared `COMPLETE` or `PRODUCTION_VERIFIED` merely because code, schemas, or PRs are merged. Production verification requires live deployment, data seeding/migration, and independent confirmation.
+6. **Honest Lifecycle State Modeling**:
+   Implementation status must reflect technical reality truthfully across granular stages:
+   $$\text{BUSINESS\_DECISION\_CONFIRMED} \longrightarrow \text{TARGET\_DESIGNED} \longrightarrow \text{CODE\_PARTIAL} \longrightarrow \text{CODE\_COMPLETE} \longrightarrow \text{BACKEND\_AUTHORIZED} \longrightarrow \text{UI\_COMPLETE} \longrightarrow \text{PRODUCTION\_VERIFIED}$$
+   - A directive must **NEVER** be declared `COMPLETE` or `PRODUCTION_VERIFIED` merely because types, schemas, or PRs are merged.
+   - If runtime logic differs from business source rules, it must be labeled `IMPLEMENTATION_DRIFT`, not silently softened.
 
 7. **Production Read-Only Default**:
    Production default is strictly **READ ONLY**. This documentation registry authorizes zero production mutations, writes, migrations, seeds, or account provisioning.
 
 8. **Strict Ban on Personal Identity in Authorization**:
-   Usernames, employee names, emails, or personal display labels must **NEVER** serve as authorization keys. Operational authorities are modeled strictly through generic Positions, Capabilities, and Scope assignments.
+   Usernames, employee names, emails, or personal display labels must **NEVER** serve as authorization keys. Operational authorities are modeled strictly through generic Positions, Capabilities, and Scope assignments. Legacy `Role` is compatibility metadata only.
+
+9. **UNIT Account Governance**:
+   UNIT accounts (`AccountType.UNIT`) represent shared functional kiosks or desks. Every mutation originating from a UNIT account requires:
+   $$\text{Technical Account Login} + \text{VERIFIED HUMAN EXECUTOR}$$
+   A manually typed executor name in a form is descriptive metadata only; it is **NOT** sufficient identity proof.
 
 ---
 
 ## 2. Active Business Owner Directives Registry
 
-### DIR-2026-001 | Canonical Target Username for Ustadzah Lisa Dwina Fitri
+### DIR-2026-001 | Canonical Target Username for Ustazah Lisa Dwina Fitri
 - **Directive ID:** `DIR-2026-001`
 - **Tanggal:** 2026-09-19
-- **Keputusan Business Owner:** Canonical target username Ustadzah Lisa Dwina Fitri = exact `musyirfah.putri`.
-- **Canonical Interpretation:** The authoritative production target username for Ustadzah Lisa Dwina Fitri is standardized to the exact spelling `musyirfah.putri` (with `-ir-`, not `-ri-`). This username represents an identity label and must never be used as an authorization key.
+- **Keputusan Business Owner:** Canonical target username Ustazah Lisa Dwina Fitri = exact `musyirfah.putri`.
+- **Canonical Interpretation:** The authoritative production target username for Ustazah Lisa Dwina Fitri is standardized to the exact spelling `musyirfah.putri` (with `-ir-`, not `-ri-`). This is a PERSONAL account. This username represents an identity label and must never be used as an authorization key.
 - **Affected Domain:** IDENTITY / AUTH
-- **Implementation Status:** `CODE_COMPLETE` (Target username specified in canonical documentation and release manifests; code models authority via generic positions)
-- **Production Status:** `NOT_EXECUTED` (Live production environment currently retains `lisa.mt`)
+- **Implementation Status:** `TARGET_DESIGNED` (Target username specified in canonical documentation and release manifests; authority modeled via generic positions)
+- **Production Status:** `NOT_EXECUTED` (Live production currently retains legacy `lisa.mt`)
 - **Supersedes / Superseded-By:** Supersedes informal references to `lisa.putri`; distinct from legacy placeholder `musyrifah.putri`
-- **Acceptance Criteria:** Target production user record for Ustadzah Lisa Dwina Fitri is named `musyirfah.putri` without duplicate identity creation.
+- **Acceptance Criteria:** Target production user record for Ustazah Lisa Dwina Fitri has username `musyirfah.putri` without duplicate identity creation.
 - **Evidence / Reference:** `docs/STQ_CURRENT_STATE.md`, `docs/STQ_M3_RELEASE_MANIFEST.md` REL-STF-02.
 
 ---
@@ -76,10 +99,10 @@ This document serves as the sole persistent repository registry for authoritativ
 - **Directive ID:** `DIR-2026-002`
 - **Tanggal:** 2026-09-19
 - **Keputusan Business Owner:** `lisa.mt` = legacy/deprecated rename source.
-- **Canonical Interpretation:** The username `lisa.mt` is classified as a legacy origin account destined for renaming to `musyirfah.putri`. It must not be treated as a permanent target identity or referenced in new feature contracts.
+- **Canonical Interpretation:** The username `lisa.mt` is classified as a deprecated legacy origin account destined for renaming to `musyirfah.putri`. The rename has **NOT BEEN EXECUTED** in production. `lisa.mt` must not be treated as a permanent target identity or referenced in new feature contracts.
 - **Affected Domain:** IDENTITY / MIGRATION
-- **Implementation Status:** `CODE_COMPLETE` (Classified as legacy origin in release manifests and test documentation)
-- **Production Status:** `NOT_EXECUTED` (Live production still uses `lisa.mt`)
+- **Implementation Status:** `CODE_COMPLETE` (Classified as legacy origin in release manifests, seed files, and test documentation)
+- **Production Status:** `NOT_EXECUTED` (Live production database still uses `lisa.mt`)
 - **Supersedes / Superseded-By:** None
 - **Acceptance Criteria:** `lisa.mt` is exclusively used as migration source data; all new capabilities and tests bind to generic roles/positions.
 - **Evidence / Reference:** `types/auth.ts:449`, `prisma/seed.ts:490`, `docs/STQ_M3_RELEASE_MANIFEST.md` REL-ACC-01.
@@ -92,7 +115,7 @@ This document serves as the sole persistent repository registry for authoritativ
 - **Keputusan Business Owner:** Existing similar reference `musyrifah.putri` harus diverifikasi sebagai identity/dependency terpisah; jangan diasumsikan sama.
 - **Canonical Interpretation:** The pre-existing username `musyrifah.putri` (spelled with `-ri-`) present in historical seed/preflight records is an independent identity/dependency. It must be audited separately and never conflated or assumed identical to the rename target `musyirfah.putri`.
 - **Affected Domain:** IDENTITY / PREFLIGHT AUDIT
-- **Implementation Status:** `REQUIRED` (Audit item REL-STF-02 registered in release manifest; preflight execution pending C2C)
+- **Implementation Status:** `REQUIRED` (Audit item REL-STF-02 registered in release manifest; preflight execution pending Gate C2C)
 - **Production Status:** `UNVERIFIED_PENDING_AUDIT` (Present in production without Staff linkage; modality must be audited before C2C execution)
 - **Supersedes / Superseded-By:** None
 - **Acceptance Criteria:** Preflight audit script executes against production DB, verifying account modality and preventing accidental overwrite or collision with `musyirfah.putri`.
@@ -106,7 +129,7 @@ This document serves as the sole persistent repository registry for authoritativ
 - **Keputusan Business Owner:** Rename production belum dilakukan.
 - **Canonical Interpretation:** The production database has NOT executed the account rename from `lisa.mt` to `musyirfah.putri`. No system component, test, or documentation may state or assume that production has completed this rename.
 - **Affected Domain:** DATABASE / PRODUCTION / RELEASE
-- **Implementation Status:** `REQUIRED` (Release control plane tracks this as a pending operational mutation under Gate C2C)
+- **Implementation Status:** `TARGET_DESIGNED` (Release control plane tracks this as a pending operational mutation under Gate C2C)
 - **Production Status:** `NOT_EXECUTED`
 - **Supersedes / Superseded-By:** None
 - **Acceptance Criteria:** Documentation and release manifests truthfully reflect `lisa.mt` as the live production account until Gate C2C execution.
@@ -118,27 +141,31 @@ This document serves as the sole persistent repository registry for authoritativ
 - **Directive ID:** `DIR-2026-005`
 - **Tanggal:** 2026-09-19
 - **Keputusan Business Owner:** Preserve Staff linkage, history, sessions/audit relationships according to controlled migration; jangan membuat duplicate Lisa identity.
-- **Canonical Interpretation:** The rename of `lisa.mt` to `musyirfah.putri` must be performed as an in-place transactional update on the existing `User` record (`staffId` linking to `STF-005`). No duplicate User or Staff records may be inserted. Historical records, setoran logs, and audit logs must remain attached to the same primary key ID.
+- **Canonical Interpretation:** The rename of `lisa.mt` to `musyirfah.putri` must be performed as an in-place transactional update on the existing `User` primary record. No duplicate User record for Lisa may be created. All foreign keys (`Staff` relationship via staffCode `STF-0005`, `Halaqoh`, `Setoran`, `AuditLog`, sessions) must be preserved transactionally. Do not state an exact Lisa Staff database ID unless independently proven from authoritative database evidence; do not mislabel `staffCode` (`STF-0005`) as `Staff.id`.
 - **Affected Domain:** IDENTITY / DATA INTEGRITY
-- **Implementation Status:** `REQUIRED` (Transactional update procedure specified in release manifest REL-ACC-01)
+- **Implementation Status:** `TARGET_DESIGNED` (Transactional update procedure specified in release manifest REL-ACC-01)
 - **Production Status:** `PENDING_C2C`
 - **Supersedes / Superseded-By:** None
-- **Acceptance Criteria:** Post-migration audit proves exactly one User record for Ustadzah Lisa Dwina Fitri exists, retaining `staffId: STF-005` and preserving all foreign key references.
-- **Evidence / Reference:** `docs/STQ_M3_RELEASE_MANIFEST.md` REL-STF-02, REL-ACC-01, `prisma/seed.ts:490`.
+- **Acceptance Criteria:** Post-migration audit proves exactly one User record for Ustazah Lisa Dwina Fitri exists, preserving `Staff` linkage (staffCode `STF-0005`) and all historical relations.
+- **Evidence / Reference:** `docs/STQ_M3_RELEASE_MANIFEST.md` REL-STF-02, REL-ACC-01, `prisma/seed.ts:102,490`.
 
 ---
 
-### DIR-2026-006 | Institutional Tahfizh Recap Read for `musyirfah.putri`
+### DIR-2026-006 | Ustazah Lisa Tahfizh Access (Recap Read vs Setoran & Target Scope)
 - **Directive ID:** `DIR-2026-006`
 - **Tanggal:** 2026-09-19
-- **Keputusan Business Owner:** `musyirfah.putri` harus dapat melihat rekap Tahfizh seluruh santri.
-- **Canonical Interpretation:** The operational role assigned to `musyirfah.putri` (`PETUGAS_OPERASIONAL_TAHFIZH`) is granted `tahfizh.recap.read` capability with scope `GLOBAL`, allowing institutional recap reads across all santri. This read breadth is orthogonal to mutations; setoran creation remains strictly scoped to assigned halaqoh.
+- **Keputusan Business Owner:** `musyirfah.putri` harus dapat melihat rekap Tahfizh seluruh santri; mutasi setoran dan target tetap dalam scope halaqoh; reward issuance sesuai scope PUTRI operasional.
+- **Canonical Interpretation:**
+  1. Tahfizh Recap: `GLOBAL` READ across all santri via canonical `tahfizh.recap.read`.
+  2. Setoran Mutations: strictly restricted to assigned Tahfizh halaqoh scope (`HALAQOH`).
+  3. Target Management: may manage assigned halaqoh santri only (`HALAQOH`).
+  4. Tasmi'/Sima'an Reward Issuance: authorized according to assigned PUTRI operational scope (`ASSIGNED_UNITS`), **NOT GLOBAL** merely because recap read is GLOBAL.
 - **Affected Domain:** TAHFIZH / AUTHORIZATION
-- **Implementation Status:** `CODE_COMPLETE` (Implemented in `types/architecture-lock.ts:599` and verified in `tests/milestone3-2-uat-business-rules.test.ts` Sec 2.1 & 10.3)
-- **Production Status:** `NOT_LIVE` (PositionCapability table unseeded in live production; pending C2B/C2C)
+- **Implementation Status:** `CODE_PARTIAL` (Canonical authorization contract models `tahfizh.recap.read` scope `GLOBAL` in `types/architecture-lock.ts:599` and tests; runtime action `app/actions/tahfizh.ts` still relies on legacy role checks; live production lacks `PositionCapability` seeding)
+- **Production Status:** `NOT_LIVE` (Pending Gate C2B migration and Gate C2C seeding)
 - **Supersedes / Superseded-By:** Supersedes halaqoh-only recap read restrictions for operational putri role
-- **Acceptance Criteria:** `musyirfah.putri` session can read recap data across all santri; setoran mutation attempts outside assigned halaqoh fail closed.
-- **Evidence / Reference:** `types/architecture-lock.ts:599`, `tests/milestone3-2-uat-business-rules.test.ts:425`, `docs/STQ_M3_RELEASE_TRACEABILITY.md` TR-TAHF-01.
+- **Acceptance Criteria:** Authenticated session for `musyirfah.putri` reads recap data across all santri; setoran mutations outside assigned halaqoh fail closed; reward issuance authorized for PUTRI scope only.
+- **Evidence / Reference:** `types/architecture-lock.ts:599`, `tests/milestone3-2-uat-business-rules.test.ts:425`, `docs/STQ_M3_RELEASE_TRACEABILITY.md` TR-TAHF-01, TR-TAHF-02.
 
 ---
 
@@ -146,9 +173,9 @@ This document serves as the sole persistent repository registry for authoritativ
 - **Directive ID:** `DIR-2026-007`
 - **Tanggal:** 2026-09-19
 - **Keputusan Business Owner:** Hasil pilihan/pencarian santri cukup Nama + Kelas; jangan NIS/halaqoh di display result kecuali screen lain memang membutuhkan.
-- **Canonical Interpretation:** In the Tahfizh santri picker and search dropdowns, each item display must show only `Nama` and `Kelas` (e.g. "Habiba Asri • Kelas 7B"). NIS and halaqoh name must not be appended to general search results unless a specific administrative view explicitly requires them.
+- **Canonical Interpretation:** In the Tahfizh santri picker and general search dropdowns, each result item must display only `Nama` and `Kelas` (e.g. "Habiba Asri • Kelas 7B"). NIS and halaqoh name must not be appended to general search results unless a specific administrative screen explicitly mandates NIS display.
 - **Affected Domain:** UI / TAHFIZH
-- **Implementation Status:** `REQUIRED` (Currently partial in code: `components/dashboard/dashboard-musyrif-tahfizh.tsx` lines 783 & 978 still display `({santri.nis})`)
+- **Implementation Status:** `CODE_PARTIAL` (`components/dashboard/dashboard-musyrif-tahfizh.tsx` lines 783 & 978 currently still display `({santri.nis})` in search result modals; UI cleanup required)
 - **Production Status:** `NOT_LIVE`
 - **Supersedes / Superseded-By:** Supersedes modal search result layouts appending `({santri.nis})`
 - **Acceptance Criteria:** Search dropdown and list items render `santri.nama` and `santri.kelas` only; `({santri.nis})` is omitted from general search list.
@@ -160,13 +187,13 @@ This document serves as the sole persistent repository registry for authoritativ
 - **Directive ID:** `DIR-2026-008`
 - **Tanggal:** 2026-09-19
 - **Keputusan Business Owner:** MT dan PH dapat update target hanya untuk santri dalam scope/halaqoh yang menjadi tanggung jawabnya.
-- **Canonical Interpretation:** Musyrif Tahfizh (MT) and Pembina Halaqoh (PH) hold `tahfizh.target.manage` authority scoped strictly to `HALAQOH`. Target modifications for santri outside the caller's assigned halaqoh are denied by backend authorization.
+- **Canonical Interpretation:** Musyrif Tahfizh (MT) and Pembina Halaqoh (PH) hold `tahfizh.target.manage` authority scoped strictly to `HALAQOH`. Target modifications for santri outside caller's assigned halaqoh are denied by backend authorization. The existing server action in codebase is `upsertTargetSantriAction` (`app/actions/laporan-bulanan.ts:558`).
 - **Affected Domain:** TAHFIZH / AUTHORIZATION
-- **Implementation Status:** `CODE_COMPLETE` (Defined in `types/architecture-lock.ts:600` and enforced in `tests/milestone3-2-uat-business-rules.test.ts` Sec 3.1 & 10.2)
+- **Implementation Status:** `CODE_PARTIAL` (Scope defined in `types/architecture-lock.ts:600` and verified in contract tests; legacy server action `upsertTargetSantriAction` lacks canonical ABAC boundary check)
 - **Production Status:** `NOT_LIVE` (PositionCapability and assignments not yet populated in live production)
 - **Supersedes / Superseded-By:** None
-- **Acceptance Criteria:** Server action `updateTargetHalaqoh` permits update for santri in caller's assigned halaqoh; rejects cross-halaqoh target updates with 403 FORBIDDEN.
-- **Evidence / Reference:** `types/architecture-lock.ts:600`, `tests/milestone3-2-uat-business-rules.test.ts` (Section 3.1 & 10.2).
+- **Acceptance Criteria:** Target update permits update for santri in caller's assigned halaqoh; rejects cross-halaqoh target updates with 403 FORBIDDEN.
+- **Evidence / Reference:** `types/architecture-lock.ts:600`, `app/actions/laporan-bulanan.ts:558`, `tests/milestone3-2-uat-business-rules.test.ts` (Section 3.1 & 10.2).
 
 ---
 
@@ -174,13 +201,13 @@ This document serves as the sole persistent repository registry for authoritativ
 - **Directive ID:** `DIR-2026-009`
 - **Tanggal:** 2026-09-19
 - **Keputusan Business Owner:** Studi Umum dan Kepesantrenan adalah dua track berbeda.
-- **Canonical Interpretation:** Formal academic education is structured into two distinct tracks: `STUDI_UMUM` and `KEPESANTREAN`. They operate with separate subject catalogs, curricula, schedule structures, and tracking logic under the `EducationTrack` domain enum.
+- **Canonical Interpretation:** Formal academic education is structured into two distinct tracks: `STUDI_UMUM` and `KEPESANTRENAN` (exact spelling). They operate with separate subject catalogs, curricula, schedule structures, and tracking logic under the `EducationTrack` domain enum. The database migration is `20260918140000_m3_3b_pendidikan_foundation`.
 - **Affected Domain:** PENDIDIKAN / ARCHITECTURE
-- **Implementation Status:** `CODE_COMPLETE` (Enum `EducationTrack` added in Prisma schema and `types/architecture-lock.ts:503`; service layer tested in `tests/pendidikan-v2-service.test.ts`)
-- **Production Status:** `NOT_LIVE` (Prisma migration `20260918000000_add_pendidikan_v2_foundation` pending deployment at Gate C2B)
+- **Implementation Status:** `CODE_COMPLETE` (Enum `EducationTrack` with values `STUDI_UMUM` and `KEPESANTRENAN` defined in `prisma/schema.prisma:198` and migration `20260918140000_m3_3b_pendidikan_foundation`; service layer tested in `tests/pendidikan-v2-service.test.ts`)
+- **Production Status:** `NOT_LIVE` (Prisma migration `20260918140000_m3_3b_pendidikan_foundation` pending deployment at Gate C2B)
 - **Supersedes / Superseded-By:** Supersedes unified single-track academic assumptions
-- **Acceptance Criteria:** System maintains clear boundary between `STUDI_UMUM` and `KEPESANTREAN` tracks in database and services.
-- **Evidence / Reference:** `prisma/schema.prisma:EducationTrack`, `types/architecture-lock.ts:503`, `lib/server/pendidikan-v2-service.ts`.
+- **Acceptance Criteria:** Database schema and services enforce strict boundary between `STUDI_UMUM` and `KEPESANTRENAN` tracks.
+- **Evidence / Reference:** `prisma/schema.prisma:198`, `prisma/migrations/20260918140000_m3_3b_pendidikan_foundation/migration.sql:2`, `lib/server/pendidikan-v2-service.ts`.
 
 ---
 
@@ -188,13 +215,13 @@ This document serves as the sole persistent repository registry for authoritativ
 - **Directive ID:** `DIR-2026-010`
 - **Tanggal:** 2026-09-19
 - **Keputusan Business Owner:** Kepesantrenan memiliki teacher attendance melalui authenticated Mulai Pembelajaran dan student attendance HADIR/IZIN/SAKIT/ALFA.
-- **Canonical Interpretation:** In the `KEPESANTREAN` track, teacher attendance is verified and recorded when the assigned teacher triggers the authenticated "Mulai Pembelajaran" action (`startEducationSession`). Student attendance is recorded under that active session, restricted strictly to `HADIR`, `IZIN`, `SAKIT`, and `ALFA`.
+- **Canonical Interpretation:** In the `KEPESANTRENAN` track, teacher attendance is verified and recorded when the assigned teacher triggers the authenticated "Mulai Pembelajaran" action (`startEducationSession`). Scheduled teacher and actual authenticated executor are stored separately. Student attendance is recorded under that active session, restricted strictly to `HADIR`, `IZIN`, `SAKIT`, and `ALFA` (NO MASBUK). Server activation is governed by server flag `PENDIDIKAN_V2_UAT_ENABLED`.
 - **Affected Domain:** PENDIDIKAN / PRESENSI
-- **Implementation Status:** `CODE_COMPLETE` (Implemented in `PendidikanV2Service` methods `startEducationSession` and `recordEducationAttendance`, verified in `tests/pendidikan-v2-service.test.ts`)
-- **Production Status:** `NOT_LIVE` (Feature flag `NEXT_PUBLIC_ENABLE_PENDIDIKAN_V2` inactive; schema pending C2B)
+- **Implementation Status:** `CODE_COMPLETE` (Implemented in `lib/server/pendidikan-v2-service.ts` methods `startEducationSession` and `recordSessionAttendance`, verified in `tests/pendidikan-v2-service.test.ts`)
+- **Production Status:** `NOT_LIVE` (Server flag `PENDIDIKAN_V2_UAT_ENABLED` unset/false; schema pending Gate C2B)
 - **Supersedes / Superseded-By:** None
-- **Acceptance Criteria:** Unauthenticated or unauthorized teacher cannot initiate session; teacher timestamp logged at start; student attendance rejects any status outside `HADIR`, `IZIN`, `SAKIT`, `ALFA`.
-- **Evidence / Reference:** `lib/server/pendidikan-v2-service.ts:316,368`, `tests/pendidikan-v2-service.test.ts`.
+- **Acceptance Criteria:** Unauthenticated/unauthorized teacher cannot initiate session; teacher timestamp logged at start; student attendance rejects any status outside `HADIR`, `IZIN`, `SAKIT`, `ALFA`.
+- **Evidence / Reference:** `lib/server/pendidikan-v2-service.ts:436,752`, `tests/milestone3-3c1-uat-activation-readiness.test.ts:223`.
 
 ---
 
@@ -205,10 +232,10 @@ This document serves as the sole persistent repository registry for authoritativ
 - **Canonical Interpretation:** Halaqoh attendance supports statuses `HADIR`, `IZIN`, `SAKIT`, and `ALFA`. The status `MASBUK` (late arrival) is strictly prohibited for new halaqoh attendance records and must fail validation.
 - **Affected Domain:** TAHFIZH / PRESENSI
 - **Implementation Status:** `CODE_COMPLETE` (Enforced in `tests/presensi.test.ts:122-137` with `FORBIDDEN_STATUSES: ["MASBUK"]`)
-- **Production Status:** `NOT_LIVE` (Pending production runtime rollout and verification)
+- **Production Status:** `NOT_LIVE` (Pending production runtime rollout and data verification)
 - **Supersedes / Superseded-By:** None
-- **Acceptance Criteria:** Halaqoh attendance submission rejects `MASBUK` with 400 Bad Request; form options do not render `MASBUK`.
-- **Evidence / Reference:** `tests/presensi.test.ts:122-137`, `prisma/schema.prisma:PresensiStatus`.
+- **Acceptance Criteria:** Halaqoh attendance submission rejects `MASBUK` with 400 Bad Request; UI form options do not present `MASBUK`.
+- **Evidence / Reference:** `tests/presensi.test.ts:122-137`, `prisma/schema.prisma:StatusAbsensi`.
 
 ---
 
@@ -216,27 +243,37 @@ This document serves as the sole persistent repository registry for authoritativ
 - **Directive ID:** `DIR-2026-012`
 - **Tanggal:** 2026-09-19
 - **Keputusan Business Owner:** Tahajjud hanya SHOLAT dan ALFA.
-- **Canonical Interpretation:** Daily night prayer (Tahajjud) attendance entries allow exactly two valid statuses: `SHOLAT` and `ALFA`. Statuses `HADIR`, `IZIN`, `SAKIT`, and `MASBUK` are invalid for Tahajjud recordings.
+- **Canonical Interpretation:** Daily night prayer (Tahajjud) attendance entries allow exactly two valid business choices: `SHOLAT` and `ALFA`. Statuses `HADIR`, `IZIN`, `SAKIT`, and `MASBUK` are invalid for Tahajjud recordings. Technical reality note: At the database persistence layer, the Prisma enum `StatusAbsensi` contains `HADIR`, `IZIN`, `SAKIT`, `ALFA` (it does **NOT** literally contain a `SHOLAT` enum value). The application maps business choice `SHOLAT` to database status `HADIR` with mutaba'ah message/notes indicating "Melaksanakan".
 - **Affected Domain:** KEASRAMAAN / IBADAH
-- **Implementation Status:** `CODE_COMPLETE` (Enforced in `tests/presensi.test.ts:105-121` with `TAHAJJUD_ATTENDANCE_NEW_ENTRY_OPTIONS: ["SHOLAT", "ALFA"]`)
-- **Production Status:** `NOT_LIVE` (Pending production migration and deployment)
+- **Implementation Status:** `CODE_COMPLETE` (Enforced in `tests/presensi.test.ts:105-121,134-151` with `TAHAJJUD_ATTENDANCE_NEW_ENTRY_OPTIONS: ["SHOLAT", "ALFA"]`)
+- **Production Status:** `NOT_LIVE` (Pending production runtime deployment and verification)
 - **Supersedes / Superseded-By:** Supersedes multi-status attendance options for Tahajjud
 - **Acceptance Criteria:** Tahajjud entry form and server validation reject all values other than `SHOLAT` and `ALFA`.
-- **Evidence / Reference:** `tests/presensi.test.ts:105-121`.
+- **Evidence / Reference:** `tests/presensi.test.ts:105-121`, `prisma/schema.prisma:StatusAbsensi:90`.
 
 ---
 
-### DIR-2026-013 | Operational Perizinan Putri Read/Create Authority
+### DIR-2026-013 | Operational Perizinan Putri Read/Create Authority & Final Workflow
 - **Directive ID:** `DIR-2026-013`
 - **Tanggal:** 2026-09-19
-- **Keputusan Business Owner:** `musyirfah.putri` mendapatkan read/create perizinan sesuai scope PUTRI; approval authority tidak otomatis diberikan.
-- **Canonical Interpretation:** Operational account `musyirfah.putri` receives `keasramaan.permission.read` and `keasramaan.permission.create` capabilities scoped to `ASSIGNED_UNITS` / `UNIT` (PUTRI). Approval authority (`keasramaan.permission.approve`, `approve_mk`, `approve_ks`) is NOT granted and remains unresolved/quarantined.
-- **Affected Domain:** KEASRAMAAN / AUTHORIZATION
-- **Implementation Status:** `CODE_COMPLETE` (Defined in `types/architecture-lock.ts:601-602` and verified in `tests/milestone3-2-uat-business-rules.test.ts` Sec 1)
-- **Production Status:** `NOT_LIVE` (Capabilities pending seeding in live production at C2B/C2C)
-- **Supersedes / Superseded-By:** None
-- **Acceptance Criteria:** `musyirfah.putri` can view and create permissions for santriwati; cannot approve tickets; approval mutations return 403 FORBIDDEN.
-- **Evidence / Reference:** `types/architecture-lock.ts:601-602`, `tests/milestone3-2-uat-business-rules.test.ts` (Section 1), `docs/STQ_MILESTONE3_2_UAT_BUSINESS_RULES.md:33`.
+- **Keputusan Business Owner:** `musyirfah.putri` mendapatkan read/create perizinan sesuai scope PUTRI; approval authority tidak otomatis diberikan. Alur perizinan PRD V2 dikonfirmasi FINAL (bukan PROPOSED_TBD).
+- **Canonical Interpretation:**
+  1. Authority Boundary: `musyirfah.putri` receives `keasramaan.permission.read` and `create` capabilities scoped to `ASSIGNED_UNITS` / `UNIT` (PUTRI). Approval authority (`keasramaan.permission.approve`, `approve_mk`, `approve_ks`) is NOT granted and remains quarantined.
+  2. Two Input Paths:
+     - Santri self-request: creates individual permit $\rightarrow$ status `MENUNGGU_MK` / pending decision.
+     - Mudabbir or Musyrif operational input: may select one or multiple santri $\rightarrow$ system creates one independent permit record PER santri. No group permit entity in UI. `batchId` is audit metadata only.
+  3. Approval Rules:
+     - Permit created by Musyrif: directly `APPROVED`.
+     - Same-day `Izin Keluar` recorded by Mudabbir: may be directly approved within Mudabbir authority.
+     - `Pulang` / `Menginap` / vehicle-related permit recorded by Mudabbir: escalated to Musyrif.
+     - Self-requested santri permit: remains pending until decision.
+  4. Return Confirmation & Cancellation: Return confirmed per santri. Late return sets automatic late indicator, but does **NOT** automatically generate a discipline violation. Cancellation is soft cancel with actor, timestamp, and reason.
+- **Affected Domain:** KEASRAMAAN / PERIZINAN / AUTHORIZATION
+- **Implementation Status:** `TARGET_DESIGNED` (Canonical permissions defined in `types/architecture-lock.ts:601-602` and verified in contract tests; legacy runtime `components/modules/perizinan-module.tsx` still uses legacy role switches and lacks multi-student expansion)
+- **Production Status:** `NOT_LIVE` (Pending Gate C2B migration and Gate C2C provisioning)
+- **Supersedes / Superseded-By:** Supersedes previous documentation regressions labeling permit approval as broadly `PROPOSED_TBD`
+- **Acceptance Criteria:** `musyirfah.putri` can view and create permissions for santriwati; cannot approve tickets; multi-santri inputs create independent records per santri; return confirmations tracked per santri.
+- **Evidence / Reference:** `types/architecture-lock.ts:601-602`, `tests/milestone3-2-uat-business-rules.test.ts` (Section 1), `SOURCE-KEA-001`.
 
 ---
 
@@ -244,9 +281,9 @@ This document serves as the sole persistent repository registry for authoritativ
 - **Directive ID:** `DIR-2026-014`
 - **Tanggal:** 2026-09-19
 - **Keputusan Business Owner:** Akun santriwati harus diprovisioning secara controlled, bukan seed production.
-- **Canonical Interpretation:** Accounts for santriwati (female students) must be created through an authoritative, controlled provisioning procedure with credential hashing and preflight verification, rather than running development `seed.ts` against production.
+- **Canonical Interpretation:** User accounts for santriwati (female students) must be created through an authoritative, controlled provisioning procedure with credential hashing and preflight verification, rather than running development `seed.ts` against production.
 - **Affected Domain:** PROVISIONING / SECURITY
-- **Implementation Status:** `REQUIRED` (Governed by Gate C2C and REL-ACC-03 in Release Manifest)
+- **Implementation Status:** `TARGET_DESIGNED` (Governed by Gate C2C and REL-ACC-03 in Release Manifest)
 - **Production Status:** `NOT_LIVE` (Production database contains zero seeded santriwati user accounts)
 - **Supersedes / Superseded-By:** None
 - **Acceptance Criteria:** Production provisioning runbook executes controlled batch script; raw `prisma db seed` is never run in production.
@@ -258,41 +295,50 @@ This document serves as the sole persistent repository registry for authoritativ
 - **Directive ID:** `DIR-2026-015`
 - **Tanggal:** 2026-09-19
 - **Keputusan Business Owner:** Penerbit reward Tasmi'/Sima'an target authority = Mudir + Kabid Tahfizh + `musyirfah.putri` sesuai canonical capability/scope.
-- **Canonical Interpretation:** Issuance of Tasmi' and Sima'an achievement rewards (`tahfizh.reward.issue`) is authorized only for `MUDIR` (`GLOBAL`), `KABID_TAHFIZH` (`DOMAIN`), and `musyirfah.putri` via `PETUGAS_OPERASIONAL_TAHFIZH` (`ASSIGNED_UNITS` / PUTRI). Standard halaqoh teachers do not possess reward issuance authority.
+- **Canonical Interpretation:** Issuance of Tasmi' and Sima'an achievement rewards (`tahfizh.reward.issue`) is authorized for:
+  - `MUDIR` (`GLOBAL`)
+  - `KABID_TAHFIZH` (`DOMAIN`)
+  - `musyirfah.putri` via `PETUGAS_OPERASIONAL_TAHFIZH` (`ASSIGNED_UNITS` / PUTRI)
+  Standard halaqoh musyrif do not hold reward issuance authority.
 - **Affected Domain:** TAHFIZH / REWARD / AUTHORIZATION
-- **Implementation Status:** `CODE_COMPLETE` (Canonical authorization contract verified in `tests/milestone3-2-uat-business-rules.test.ts:483`)
-- **Production Status:** `NOT_LIVE` (Pending capability seeding at C2B/C2C)
+- **Implementation Status:** `CODE_PARTIAL` (Canonical authorization contract verified in `tests/milestone3-2-uat-business-rules.test.ts:483`; legacy runtime in `app/actions/tahfizh.ts` authorizes Mudir/Kabid only; Lisa runtime authority not live)
+- **Production Status:** `NOT_LIVE` (Pending capability seeding at Gate C2B/C2C)
 - **Supersedes / Superseded-By:** None
 - **Acceptance Criteria:** Reward issuance allowed for Mudir, Kabid Tahfizh, and operational putri role; rejected for unassigned musyrif.
 - **Evidence / Reference:** `types/architecture-lock.ts:598`, `tests/milestone3-2-uat-business-rules.test.ts:483`, `docs/STQ_M3_RELEASE_TRACEABILITY.md` TR-TAHF-02.
 
 ---
 
-### DIR-2026-016 | Operational Scope Partitioning (No Leakage to PUTRA)
+### DIR-2026-016 | Cross-Domain Access Boundaries for Ustazah Lisa (PUTRI Scope, Zero PUTRA Leakage)
 - **Directive ID:** `DIR-2026-016`
 - **Tanggal:** 2026-09-19
-- **Keputusan Business Owner:** `musyirfah.putri` mendapatkan akses operasional Pendidikan + Keasramaan + fungsi OSDA PUTRI sesuai scope PUTRI; tidak boleh bocor ke PUTRA.
-- **Canonical Interpretation:** Operational capabilities granted to `musyirfah.putri` encompass Pendidikan, Keasramaan, and OSDA PUTRI functional desk, strictly scoped to unit `PUTRI`. Any data access or mutation affecting `PUTRA` units or male students is prevented by ABAC/scope evaluation.
+- **Keputusan Business Owner:** `musyirfah.putri` mendapatkan akses operasional Kepesantrenan PUTRI + approved Keasramaan PUTRI + Health detail read seluruh santriwati + monitor/supervise OSDA PUTRI; TIDAK otomatis memiliki otoritas Studi Umum; TIDAK boleh bocor ke PUTRA.
+- **Canonical Interpretation:**
+  1. Pendidikan: Operational access is strictly for **KEPESANTRENAN PUTRI**. Does **NOT** automatically grant Studi Umum authority.
+  2. Keasramaan: Operational access according to approved PUTRI capabilities.
+  3. OSDA PUTRI: May see, monitor, and supervise OSDA PUTRI; does **NOT** automatically become executor of every OSDA operational function.
+  4. Health: Special Business Owner decision permits reading detail Health cases for **ALL SANTRIWATI** (PUTRI only). Broader than default Mudabbir room responsibility, but must still be implemented via Position + Capability + Scope, never username hardcoding.
+  5. PUTRA Boundary: All queries and mutations targeting PUTRA halaqoh, kamar, and santri are denied fail-closed.
 - **Affected Domain:** CROSS-DOMAIN / AUTHORIZATION / SCOPE
-- **Implementation Status:** `CODE_COMPLETE` (Scope resolution verifies unit assignment; cross-gender data is filtered out)
-- **Production Status:** `NOT_LIVE` (Pending C2B/C2C assignment activation)
+- **Implementation Status:** `CODE_PARTIAL` (Scope boundaries defined in `types/architecture-lock.ts:144,601`; runtime services lack complete multi-domain integration for Lisa; live production lacks assignment seeding)
+- **Production Status:** `NOT_LIVE` (Pending Gate C2B/C2C assignment activation)
 - **Supersedes / Superseded-By:** None
-- **Acceptance Criteria:** Queries and mutations for `musyirfah.putri` allow access to PUTRI units and santriwati; strictly deny access to PUTRA halaqoh, kamar, and santri.
+- **Acceptance Criteria:** Access evaluator allows operations on santriwati / PUTRI halaqoh & kamar; strictly denies access to PUTRA halaqoh, kamar, and santri.
 - **Evidence / Reference:** `docs/STQ_M3_RELEASE_MANIFEST.md` REL-CAP-08, `docs/STQ_ARCHITECTURE_LOCK.md:144`.
 
 ---
 
-### DIR-2026-017 | Setoran Date Validation (Past Allowed, Future Denied)
+### DIR-2026-017 | Setoran Date Validation (Past Allowed, Future Denied, Default WITA)
 - **Directive ID:** `DIR-2026-017`
 - **Tanggal:** 2026-09-19
-- **Keputusan Business Owner:** Setoran Tahfizh SABAQ/SABQI/MANZIL/MUFAR dapat memilih tanggal lampau; masa depan ditolak.
-- **Canonical Interpretation:** Memorization entries (Sabaq, Sabqi, Manzil, Mufar) allow historical/backdated date selection with WITA timezone handling and audit trail. Dates in the future relative to today WITA are strictly rejected before database write. The immutable `createdAt` timestamp is always preserved.
+- **Keputusan Business Owner:** Setoran Tahfizh SABAQ/SABQI/MANZIL/MUFAR dapat memilih tanggal lampau; masa depan ditolak; default = tanggal hari ini WITA.
+- **Canonical Interpretation:** Memorization entries (Sabaq, Sabqi, Manzil, Mufar) allow historical/backdated date selection with WITA timezone handling and audit trail. Default date is today WITA (`getTodayWITADateString()`). Dates in the future relative to today WITA are strictly rejected before database write. The immutable `createdAt` timestamp is always preserved. Real action source is `app/actions/tahfizh.ts:42` (`createSetoranAction`).
 - **Affected Domain:** TAHFIZH / VALIDATION
-- **Implementation Status:** `CODE_COMPLETE` (Implemented in `lib/tahfizh-persistence.ts` and `app/actions/tahfizh-actions.ts`, verified in `tests/milestone3-2-uat-business-rules.test.ts` Sec 11)
+- **Implementation Status:** `CODE_COMPLETE` (Implemented in `app/actions/tahfizh.ts:42` and `lib/tahfizh-persistence.ts`, verified in `tests/milestone3-2-uat-business-rules.test.ts` Sec 11)
 - **Production Status:** `NOT_LIVE` (Awaiting production deployment and verification)
 - **Supersedes / Superseded-By:** Supersedes date restrictions that prevented past date entry
-- **Acceptance Criteria:** Submitting setoran with valid past date succeeds; submitting setoran with date > today WITA fails with validation message "masa depan".
-- **Evidence / Reference:** `tests/milestone3-2-uat-business-rules.test.ts:997-1021`, `docs/STQ_M3_RELEASE_TRACEABILITY.md` TR-OPER-02.
+- **Acceptance Criteria:** Submitting setoran with valid past date succeeds; submitting setoran with date > today WITA fails with validation message "masa depan"; default date is current WITA.
+- **Evidence / Reference:** `app/actions/tahfizh.ts:42`, `tests/milestone3-2-uat-business-rules.test.ts:997-1021`, `docs/STQ_M3_RELEASE_TRACEABILITY.md` TR-OPER-02.
 
 ---
 
@@ -302,7 +348,7 @@ This document serves as the sole persistent repository registry for authoritativ
 - **Keputusan Business Owner:** Abdullah Khairun Nizham = OUT dari STQ; tidak masuk roster aktif September; histori tidak boleh hard-delete.
 - **Canonical Interpretation:** Santri Abdullah Khairun Nizham (NIS: `SAN-0041`, formerly Halaqoh Ust. Alwan) has departed STQ. He must be excluded from active September 2026 rosters. His historical academic, tahfizh, and attendance records must NEVER be hard-deleted from the database.
 - **Affected Domain:** SANTRI / ROSTER / AUDIT
-- **Implementation Status:** `REQUIRED` (Documented in registry; database deactivation migration scheduled for Gate C2C)
+- **Implementation Status:** `TARGET_DESIGNED` (Documented in registry; database deactivation migration scheduled for Gate C2C)
 - **Production Status:** `NOT_EXECUTED` (Present in production database; status update pending C2C)
 - **Supersedes / Superseded-By:** Supersedes inclusion of Abdullah in active student roster counts
 - **Acceptance Criteria:** Active roster queries exclude Abdullah Khairun Nizham; historical setoran and presensi records remain intact in database.
@@ -316,7 +362,7 @@ This document serves as the sole persistent repository registry for authoritativ
 - **Keputusan Business Owner:** Roster September 2026 = 56 santri aktif setelah Abdullah OUT.
 - **Canonical Interpretation:** The authoritative active student headcount for September 2026 is exactly 56 santri (46 Putra + 10 Putri), reflecting the departure of Abdullah Khairun Nizham. All active halaqoh and academic rosters must reconcile to this count.
 - **Affected Domain:** SANTRI / ROSTER / RECONCILIATION
-- **Implementation Status:** `REQUIRED` (Target established in manifest REL-HLQ-01; live database reconciliation scheduled at Gate C2C)
+- **Implementation Status:** `TARGET_DESIGNED` (Target established in manifest REL-HLQ-01; live database reconciliation scheduled at Gate C2C)
 - **Production Status:** `NOT_LIVE` (Live production active count audit scheduled during C2C preflight)
 - **Supersedes / Superseded-By:** Supersedes historical 57-santri active headcount baseline
 - **Acceptance Criteria:** September 2026 active roster queries return exactly 56 santri; halaqoh distributions total 56 active students.
@@ -324,32 +370,244 @@ This document serves as the sole persistent repository registry for authoritativ
 
 ---
 
-## 3. 12-Point Owner Acceptance Matrix
-
-This matrix evaluates Points 2 through 13 of the Business Owner directives, stating current code and current production statuses truthfully and without false inflation.
-
-| Point | Subject / Directive | Current Code Status | Current Production Status | Canonical Technical Reality & Gap Analysis |
-| :--- | :--- | :--- | :--- | :--- |
-| **P02** | `lisa.mt` = legacy/deprecated rename source | `REFERENCED / DEPRECATED` | `NOT_EXECUTED` | Referenced as legacy origin account in `types/auth.ts`, `prisma/seed.ts`, and test fixtures. Production database still has `lisa.mt` active; rename to `musyirfah.putri` not yet performed. |
-| **P03** | `musyrifah.putri` verified as separate identity | `AUDITED / SPECIFIED` | `UNVERIFIED_PENDING_AUDIT` | Documented as separate dependency in release manifest REL-STF-02. Production has unlinked `musyrifah.putri` account whose modality must be audited before C2C execution. |
-| **P04** | Rename production not yet performed | `SPECIFIED` | `NOT_EXECUTED` | Release manifest and current state docs track rename as pending operational task. Zero production rename writes executed. |
-| **P05** | Preserve Staff linkage, history, zero duplicate Lisa | `SPECIFIED / PLANNED` | `PENDING_C2C` | Specified in release manifest REL-STF-02 and REL-ACC-01. Execution requires transactional migration script preserving `staffId: STF-005` without creating duplicate records. |
-| **P06** | `musyirfah.putri` reads Tahfizh recap for all santri | `CODE_COMPLETE` | `NOT_LIVE` | `tahfizh.recap.read` scope `GLOBAL` implemented and unit-tested (`tests/milestone3-2-uat-business-rules.test.ts` Sec 2.1). Live production database lacks `PositionCapability` seeding; pending C2B/C2C. |
-| **P07** | Santri search result: Nama + Kelas only | `PARTIAL / NOT_LIVE` | `NOT_LIVE` | Code currently displays `({santri.nis})` in `components/dashboard/dashboard-musyrif-tahfizh.tsx:783,978`. UI cleanup required to remove NIS from search item display. Production runs legacy UI. |
-| **P08** | MT & PH update target in assigned halaqoh only | `CODE_COMPLETE` | `NOT_LIVE` | `tahfizh.target.manage` scope `HALAQOH` defined and tested (`tests/milestone3-2-uat-business-rules.test.ts` Sec 3.1). Live production lacks capability table and assignments; pending C2B/C2C. |
-| **P09** | Studi Umum & Kepesantrenan two distinct tracks | `CODE_COMPLETE` | `NOT_LIVE` | `EducationTrack` enum (`STUDI_UMUM`, `KEPESANTREAN`) implemented in schema and tested in services. Prisma migration `20260918000000_add_pendidikan_v2_foundation` pending production deployment at Gate C2B. |
-| **P10** | Kepesantrenan teacher session start + HADIR/IZIN/SAKIT/ALFA | `CODE_COMPLETE` | `NOT_LIVE` | Implemented in `PendidikanV2Service` methods `startEducationSession` and `recordEducationAttendance` with tests. Production schema not applied; feature flag `NEXT_PUBLIC_ENABLE_PENDIDIKAN_V2` disabled. |
-| **P11** | Absensi halaqoh forbids MASBUK | `CODE_COMPLETE` | `NOT_LIVE` | `FORBIDDEN_STATUSES: ["MASBUK"]` enforced in `tests/presensi.test.ts:122-137`. Production runtime and data migration pending rollout. |
-| **P12** | Tahajjud attendance restricted to SHOLAT & ALFA | `CODE_COMPLETE` | `NOT_LIVE` | `TAHAJJUD_ATTENDANCE_NEW_ENTRY_OPTIONS: ["SHOLAT", "ALFA"]` enforced in `tests/presensi.test.ts:105-121`. Production runtime pending rollout. |
-| **P13** | `musyirfah.putri` perizinan PUTRI read/create only | `CODE_COMPLETE` | `NOT_LIVE` | `keasramaan.permission.read` and `create` scoped to PUTRI; approval authority excluded (`tests/milestone3-2-uat-business-rules.test.ts` Sec 1). Capabilities pending seeding in production DB at C2B/C2C. |
+### DIR-2026-020 | Deprecation and Decommission Target for `razan.mt`
+- **Directive ID:** `DIR-2026-020`
+- **Tanggal:** 2026-09-19
+- **Keputusan Business Owner:** `razan.mt` = DEPRECATED / DECOMMISSION TARGET; jangan hubungkan ke staffCode STF-0003; jangan berikan otoritas kanonikal baru.
+- **Canonical Interpretation:** Account `razan.mt` is designated for controlled decommissioning at Gate C2C. It must not be linked to active Staff record `STF-0003` (Ust. Razan Mufli) in canonical architecture, nor receive new canonical Positions or Capabilities. Post-decommission verification must prove server session resolver rejects non-AKTIF user.
+- **Affected Domain:** IDENTITY / GOVERNANCE / DECOMMISSION
+- **Implementation Status:** `CODE_COMPLETE` (Release manifest REL-ACC-02 and dependencies document decommission requirement; no new canonical grants configured)
+- **Production Status:** `NOT_LIVE` (Decommission mutation pending Gate C2C execution)
+- **Supersedes / Superseded-By:** None
+- **Acceptance Criteria:** `razan.mt` is deactivated during C2C; zero canonical assignments granted; sessions fail closed.
+- **Evidence / Reference:** `docs/STQ_M3_RELEASE_MANIFEST.md` REL-ACC-02, `docs/STQ_CURRENT_STATE.md:534`.
 
 ---
 
-## 4. Maintenance & Evolution Protocol
+### DIR-2026-021 | Canonical Kabid Tahfizh Username Designation
+- **Directive ID:** `DIR-2026-021`
+- **Tanggal:** 2026-09-19
+- **Keputusan Business Owner:** Business Owner designated canonical Kabid Tahfizh username: `musyrif.tahifzh` (exact spelling).
+- **Canonical Interpretation:** The authoritative account username designated by the Business Owner for the Kepala Bidang Tahfizh operational role is exact `musyrif.tahifzh` (note spelling with `-h-` before `-z-`). This exact spelling must be preserved without autocorrection.
+- **Affected Domain:** IDENTITY / TAHFIZH
+- **Implementation Status:** `TARGET_DESIGNED` (Registered in release manifest REL-ACC-02; operational linkage verified prior to Gate C2C)
+- **Production Status:** `NOT_LIVE` (Pending Gate C2C provisioning)
+- **Supersedes / Superseded-By:** Supersedes informal references to `musyrif.tahfizh` as Kabid account
+- **Acceptance Criteria:** Canonical Kabid Tahfizh account uses exact username `musyrif.tahifzh` linked to approved Kabid Position.
+- **Evidence / Reference:** `docs/STQ_M3_RELEASE_MANIFEST.md` REL-ACC-02, `docs/STQ_CURRENT_STATE.md:538`.
+
+---
+
+### DIR-2026-022 | Canonical Authorization Chain and UNIT Account Constraints
+- **Directive ID:** `DIR-2026-022`
+- **Tanggal:** 2026-09-19
+- **Keputusan Business Owner:** Otoritas wajib mengikuti rantai kanonikal; nama/username bukan kunci otorisasi; akun UNIT wajib memiliki human executor terverifikasi.
+- **Canonical Interpretation:**
+  1. Authoritative Chain:
+     $$\text{SESSION} \longrightarrow \text{IDENTITY} \longrightarrow \text{ACTIVE ASSIGNMENT} \longrightarrow \text{POSITION} \longrightarrow \text{CAPABILITY} \longrightarrow \text{SCOPE} \longrightarrow \text{SERVER RESOURCE CONTEXT} \longrightarrow \text{ALLOW / DENY}$$
+  2. Legacy `Role` is compatibility metadata only; UI hiding is not authorization.
+  3. UNIT accounts: Shared technical account + verified human executor. A manually typed executor name in client UI is descriptive metadata only and does **NOT** constitute sufficient proof of identity.
+- **Affected Domain:** ARCHITECTURE / AUTHORIZATION / SECURITY
+- **Implementation Status:** `CODE_COMPLETE` (Architectural contracts enforced in `types/architecture-lock.ts` and `lib/auth/canonical-evaluator.ts`)
+- **Production Status:** `NOT_LIVE` (Runtime shadow mode; production enforcement pending Gate C2D)
+- **Supersedes / Superseded-By:** Supersedes legacy role-based conditional logic
+- **Acceptance Criteria:** Server actions evaluate canonical capability and scope; UNIT mutations record immutable snapshots of verified human executor.
+- **Evidence / Reference:** `types/architecture-lock.ts:58-95`, `docs/STQ_ARCHITECTURE_LOCK.md:58-95`.
+
+---
+
+## 3. 12-Point Owner Acceptance Matrix
+
+This matrix evaluates Points 2 through 13 of the Business Owner directives, reporting current status across all dimensions truthfully and without false inflation.
+
+| Point | Directive / Subject | Business Rule Status | Code Status | Backend Auth Status | UI Status | Production Status | Canonical Evidence & Technical Reality |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **P02** | `musyirfah.putri` can see Tahfizh recap for ALL santri | `BUSINESS_DECISION_CONFIRMED` | `CODE_PARTIAL` | `BACKEND_NOT_AUTHORIZED` | `UI_NOT_COMPLETE` | `NOT_LIVE` | `tahfizh.recap.read` scope `GLOBAL` defined in `types/architecture-lock.ts:599` and contract tests; server action `app/actions/tahfizh.ts` still uses legacy role checks; live production lacks `PositionCapability` seeding. |
+| **P03** | Santri search/picker display = NAMA + KELAS only (no NIS/halaqoh) | `BUSINESS_DECISION_CONFIRMED` | `CODE_PARTIAL` | `N/A` | `UI_NOT_COMPLETE` | `NOT_LIVE` | Code in `components/dashboard/dashboard-musyrif-tahfizh.tsx:783,978` still renders `({santri.nis})` in search result modals. Client UI cleanup required. Production runs legacy UI. |
+| **P04** | MT & PH update target in assigned halaqoh/scope only | `BUSINESS_DECISION_CONFIRMED` | `CODE_PARTIAL` | `BACKEND_NOT_AUTHORIZED` | `UI_COMPLETE` | `NOT_LIVE` | `tahfizh.target.manage` scope `HALAQOH` defined in `types/architecture-lock.ts:600`; legacy action `upsertTargetSantriAction` (`app/actions/laporan-bulanan.ts:558`) lacks ABAC boundary enforcement. Production unseeded. |
+| **P05** | Studi Umum & Kepesantrenan two distinct tracks | `BUSINESS_DECISION_CONFIRMED` | `CODE_COMPLETE` | `BACKEND_AUTHORIZED` | `UI_COMPLETE` | `NOT_LIVE` | Enum `EducationTrack` (`STUDI_UMUM`, `KEPESANTRENAN`) defined in `prisma/schema.prisma:198` and tested. Prisma migration `20260918140000_m3_3b_pendidikan_foundation` pending deployment at Gate C2B. |
+| **P06** | Kepesantrenan teacher session start + HADIR/IZIN/SAKIT/ALFA | `BUSINESS_DECISION_CONFIRMED` | `CODE_COMPLETE` | `BACKEND_AUTHORIZED` | `UI_COMPLETE` | `NOT_LIVE` | Implemented in `PendidikanV2Service` methods `startEducationSession` and `recordSessionAttendance` with tests. Production schema unapplied; server flag `PENDIDIKAN_V2_UAT_ENABLED` unset/false. |
+| **P07** | Halaqoh attendance has NO MASBUK for new entries | `BUSINESS_DECISION_CONFIRMED` | `CODE_COMPLETE` | `BACKEND_AUTHORIZED` | `UI_COMPLETE` | `NOT_LIVE` | `FORBIDDEN_STATUSES: ["MASBUK"]` enforced in `tests/presensi.test.ts:122-137`. Production runtime and data migration pending rollout. |
+| **P08** | Tahajjud business choices: SHOLAT & ALFA | `BUSINESS_DECISION_CONFIRMED` | `CODE_COMPLETE` | `BACKEND_AUTHORIZED` | `UI_COMPLETE` | `NOT_LIVE` | Enforced in `tests/presensi.test.ts:105-121`. Database enum `StatusAbsensi` contains `HADIR, IZIN, SAKIT, ALFA` (does not literally contain `SHOLAT`); persistence maps `SHOLAT` to `HADIR` with report notes. |
+| **P09** | `musyirfah.putri` perizinan PUTRI access (final workflow) | `BUSINESS_DECISION_CONFIRMED` | `CODE_PARTIAL` | `BACKEND_NOT_AUTHORIZED` | `UI_NOT_COMPLETE` | `NOT_LIVE` | `keasramaan.permission.read` and `create` scoped to PUTRI; approval authority excluded (`types/architecture-lock.ts:601`). Legacy UI `perizinan-module.tsx` still uses legacy role switches and lacks multi-santri ticket expansion. |
+| **P10** | Santriwati accounts created through controlled provisioning | `BUSINESS_DECISION_CONFIRMED` | `TARGET_DESIGNED` | `N/A` | `N/A` | `NOT_LIVE` | Governed by Gate C2C runbook (REL-ACC-03 in Release Manifest). Zero seeded santriwati accounts in live production. |
+| **P11** | Tasmi'/Sima'an reward issuer: Mudir + Kabid + Lisa (PUTRI scope) | `BUSINESS_DECISION_CONFIRMED` | `CODE_PARTIAL` | `BACKEND_NOT_AUTHORIZED` | `UI_NOT_COMPLETE` | `NOT_LIVE` | Canonical contract models capability (`types/architecture-lock.ts:598`); runtime action `app/actions/tahfizh.ts` currently authorizes Mudir/Kabid only; Lisa runtime authority not live. |
+| **P12** | Lisa cross-domain: Kepesantrenan PUTRI, Keasramaan PUTRI, Health PUTRI detail, OSDA monitor; no Studi Umum; no PUTRA | `BUSINESS_DECISION_CONFIRMED` | `CODE_PARTIAL` | `BACKEND_NOT_AUTHORIZED` | `UI_NOT_COMPLETE` | `NOT_LIVE` | Scope boundaries modeled in architecture contracts; multi-domain services lack integrated runtime authorization for Lisa; live production lacks assignment seeding. |
+| **P13** | Tahfizh setoran past date allowed, future rejected, default WITA | `BUSINESS_DECISION_CONFIRMED` | `CODE_COMPLETE` | `BACKEND_AUTHORIZED` | `UI_COMPLETE` | `NOT_LIVE` | Implemented in `app/actions/tahfizh.ts:42` (`createSetoranAction`) and tested in `tests/milestone3-2-uat-business-rules.test.ts` Sec 11. Production deployment and verification pending. |
+
+---
+
+## 4. Tahfizh — Primary Business Source Lock (`SOURCE-TAH-001`)
+
+The Business Owner explicitly affirms that **`ACUAN PROGRAM TAHFIDZ STQ DUC 2026` (`SOURCE-TAH-001`)** is the primary business source for the Tahfizh program. Implementation must conform to it unless an explicit newer Business Owner decision supersedes it.
+
+### Core Program Structure
+1. **Program Objectives**: Mutqin memorization, muroja'ah habituation, quality evaluation, Qur'anic discipline and character.
+2. **Program Components**:
+   - `SABAQ`: Daily new memorization. Minimum 1/2 page or 1 page per day. Setoran conducted at Subuh halaqoh. Individual santri targets may differ.
+   - `SABAQI`: Weekly revision of newly memorized material:
+     - Monday: Monday's memorization
+     - Tuesday: Monday–Tuesday memorization
+     - Wednesday: Monday–Wednesday memorization
+     - Thursday: Monday–Thursday memorization
+     - Friday: Monday–Friday memorization
+   - `MANZIL`: Systematic long-term memorization retention (muroja'ah hafalan lama).
+   - `MUFAR`: Tiered volume repetition based on total memorization:
+     - 1–5 Juz: 1 juz/day
+     - 6–10 Juz: 2 juz/day
+     - 11–15 Juz: 3 juz/day
+     - 16–20 Juz: 4 juz/day
+     - 21–30 Juz: 5 juz/day
+   - `RUBU'`: Milestone evaluation per 1/4 juz.
+   - `TASMI'`: Full 1 juz recitation.
+   - `IKHTIBAR AWWAL`: First formal examination, administered by Musyrif Halaqoh.
+   - `IKHTIBAR TSANI`: Second formal examination, administered by **Kepala Sekolah** (do NOT automatically translate "Kepala Sekolah" into Mudir or another Position unless separately approved/mapped).
+   - `SIMA'AN`: Major milestone recitation conducted for every multiple of 5 juz, recited bil-ghaib in a single sitting.
+3. **Weekly Targets (`Target Pekanan`)**:
+   Determined according to each santri's assessment: 2 pages/week, 3 pages/week, 4 pages/week, or 5 pages/week.
+4. **Rewards & Incentives**:
+   - Tasmi' 1 Juz: 1 Bintang + Libur 1 Hari.
+   - Sima'an 5 Juz: 1 Bintang + Libur 1 Hari.
+   - Monthly Target Completion: governed by source rules.
+   - *Architecture Invariant*: Tahfizh reward ledger remains strictly independent from the Keasramaan reward ledger.
+5. **Sanctions for Non-Achievement**:
+   - Daily memorization target not achieved: **Jalan jongkok keliling lapangan pondok**.
+   - Monthly memorization target not achieved: **Kehilangan hak kunjungan bulanan orang tua**.
+   - *Governance Rule*: Do **NOT** silently soften, delete, or replace these sanctions merely because application code differs. Differences must be cataloged as `IMPLEMENTATION_DRIFT`.
+
+---
+
+## 5. Keasramaan & Santri Life Final Reconciliation (`SOURCE-KEA-001`)
+
+### Organizational Hierarchy
+$$\text{Mudir} \longrightarrow \text{Musyrif / Kepala Keasramaan} \longrightarrow \text{Mudabbir (Pembina Kamar)} \longrightarrow \text{OSDA \& TKS} \longrightarrow \text{Usroh / Santri}$$
+- **Kepala Keasramaan** = Musyrif Keasramaan.
+- **Musyrif $\neq$ Mudabbir**. Musyrif oversees the dormitories; Mudabbir serves as the room pembina (Pembina Kamar).
+- A Mudabbir may hold multiple room/unit assignments.
+- Takeover by a higher authority preserves the original assigned PIC in audit records.
+
+### OSDA Structure (Final)
+- **Pengurus Inti**: Ketua, Sekretaris, Bendahara, **Multimedia**.
+- **Divisi** (Standardized to 5 Divisi):
+  1. Keamanan & Kedisiplinan
+  2. Pendidikan & Ibadah
+  3. Kebersihan & Kerapihan
+  4. Kesehatan
+  5. Sarpras
+  *(This SUPERSEDES older PRD structures where Multimedia was modeled as a 6th division).*
+- **Pembina Divisi**: Appointed under Musyrif Keasramaan; outside formal OSDA student hierarchy; not subordinate to Ketua OSDA.
+- **Usroh**: Structurally under OSDA. Divisi Kebersihan supervises cleaning functions only.
+
+### TKS Units (Final)
+- Exactly 6 units: **Dapur dan Gizi**, **Masjid**, **Kantor Pendidikan**, **Kantor Yayasan**, **Air Minum**, **Air Sumur**.
+- No central "Ketua TKS".
+- Dapur and Masjid may have local Ketua + Anggota. Other units may use one designated active petugas.
+- Air Minum and Air Sumur remain strictly separate units.
+
+### Checklist & Finding System
+- Versioned checklist templates with scheduled runs (daily, multiple-times-per-day, weekly, monthly, incidental).
+- Execution states: One official verification, Needs Correction, Completed. Late tasks remain open.
+- Finding does **NOT** automatically become a discipline violation.
+- Takeover preserves initial PIC.
+- Offline flow uses `clientRequestId` for idempotency. Offline requirement belongs to checklist workflow; do not infer unrestricted offline storage for sensitive personal data.
+
+### Discipline System
+- **Baseline Source**: Pasal 7 Revisi 2 remains the immutable initial official baseline.
+- **Rule Evolution**: Future changes by Musyrif require: new effective version, effective date, actor, reason, before/after diff, historical preservation.
+- No automatic point multiplication for repeated violations unless source explicitly specifies it.
+- Finding, late return, property damage, or loss does **NOT** automatically become a violation.
+- **PJ Kategori 2**: Modeled as an Assignment, not a new Role or personal name permission.
+- **Point Whitewash**: Performed monthly according to Pasal 7.
+- **Surat Peringatan (ST)**: 3 active ST $\rightarrow$ SP1. Converted ST history is preserved. Unconverted active ST lifecycle/whitewash follows the agreed six-month/semester process.
+- *Point monthly whitewash and ST semester lifecycle are SEPARATE processes.*
+
+### Perizinan (Permit) Workflow (Final, NOT TBD)
+- **Two Input Paths**:
+  1. Santri self-request: individual permit ticket $\rightarrow$ status `MENUNGGU_MK` (pending decision).
+  2. Mudabbir or Musyrif operational input: may select one or multiple santri $\rightarrow$ system generates one independent permit record **PER SANTRI**. No group permit entity in UI. `batchId` is audit metadata only.
+- **Approval Authority**:
+  - Created by Musyrif: directly `APPROVED`.
+  - Same-day `Izin Keluar` recorded by Mudabbir: directly approved within Mudabbir authority.
+  - `Pulang` / `Menginap` / vehicle-related permit recorded by Mudabbir: escalated to Musyrif.
+  - Self-requested permit: remains pending until decision.
+- **Return Confirmation**: Confirmed per santri. Late return sets an automatic late indicator, but does **NOT** automatically generate a discipline violation. Soft cancellation preserves actor, timestamp, and reason.
+
+### Health (Poskestren)
+- **Statuses**: `DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`.
+- Diagnosis is optional; no fake diagnosis; error/empty states must **NEVER** be converted to fake "healthy".
+- **Detail Access**: Health authorized operator, responsible Mudabbir, Musyrif Keasramaan. Ketua/Sekretaris OSDA receive aggregate statistics only by default.
+- **Special Owner Decision**: `musyirfah.putri` may read detailed Health cases for **ALL SANTRIWATI** (PUTRI only).
+- **Notifications**: `DIRUJUK` and `DARURAT` trigger notifications to Wali Santri under authorized control.
+- **Inventory**: Health owns medical inventory. Sarpras handles repairs, but ownership remains with Health.
+
+### Sarpras
+- Main functions: Inventaris, Kerusakan & Perbaikan.
+- Procurement workflow: Sarpras $\rightarrow$ Musyrif Keasramaan. Bendahara OSDA is **NOT** an approval or processing stage for Sarpras procurement.
+- Kas Masjid belongs to TKS Masjid, not Bendahara OSDA.
+
+---
+
+## 6. Pendidikan Final Reconciliation (`SOURCE-PEND-001`, `SOURCE-PEND-002`)
+
+### Dual Track Separation
+Formal academic education is architecturally split into two distinct tracks: **STUDI UMUM** and **KEPESANTRENAN**.
+
+### Studi Umum (Final)
+1. **Session Schedule (Every Saturday)**:
+   - JP I: 08:00–09:50 WITA
+   - JP II: 10:00–11:50 WITA
+   - JP III: 13:30–15:20 WITA
+2. **Weekly Structure**:
+   Every Saturday, each pedagogical level receives: Matematika, Bahasa Inggris, and PBL (Project-Based Learning).
+3. **PBL Semester Sequence (20 Saturday Meetings, 4 Major Projects)**:
+   - Meetings 1–5: IPS (Meetings 1–4 theory/learning, Meeting 5 major project)
+   - Meetings 6–10: IPA (Meetings 6–9 theory/learning, Meeting 10 major project)
+   - Meetings 11–15: Bahasa Indonesia (Meetings 11–14 theory/learning, Meeting 15 major project)
+   - Meetings 16–20: TIK (Meetings 16–19 theory/learning, Meeting 20 major project)
+   *(This latest Business Owner decision SUPERSEDES any older interpretation reducing PBL to 18 meetings).*
+4. **Canonical Subjects**: Matematika, Bahasa Inggris, IPS, IPA, Bahasa Indonesia, TIK.
+5. **Pedagogical Level & Cohort Definitions**:
+   - `EducationCohort`: Permanent intake/year cohort (NOT gender, NOT SMP/SMA class, NOT age).
+   - `PedagogicalLevel`: 1, 2, or 3 represents current Studi Umum learning level (not equivalent to SMP class 7/8/9). Levels outside 1–3 fail closed.
+6. **Class Rotation Matrix**:
+   - JP I: Level 1 English, Level 2 Math, Level 3 PBL
+   - JP II: Level 1 Math, Level 2 PBL, Level 3 English
+   - JP III: Level 1 PBL, Level 2 English, Level 3 Math
+7. **Attendance Policy**: Studi Umum student attendance remains **DEFERRED** pending explicit policy.
+
+### Kepesantrenan (Final)
+1. **Schedule**: Monday through Friday, approximately 18:30–19:30 WITA (after Maghrib before Isya).
+2. **Putra Schedule**:
+   - **Monday**: Bahasa Arab (Tingkat I: Ust. Abi Hudzaifah; Tingkat II: Ust. Kamal Mukhtar; Tingkat III: Ust. Andi Quarzy Ayatullah; Book: *Durus al-Lughah*)
+   - **Tuesday**: Fikih (Ust. Razan; reference currently unspecified unless separate authoritative source exists)
+   - **Wednesday**: Tafsir (Ust. Mujaddid; Books: *Tafsir Terjemahan Per Kata*, *Tafsir Jalalain*)
+   - **Thursday**: Aqidah (Ust. Alwan; reference currently unspecified unless separate authoritative source exists)
+   - **Friday**: Tajwid (Ust. Mujaddid; Book: *Matan Tuhfatul Athfal*)
+   *(This ordering SUPERSEDES older text having Tuesday Tafsir and Wednesday Fikih).*
+3. **Putri Schedule**:
+   All five Kepesantrenan subjects are taught by **Ustazah Lisa Dwina Fitri** for santriwati (Bahasa Arab, Fikih, Tafsir, Aqidah, Tajwid). This does **NOT** grant Lisa Studi Umum authority.
+4. **Teacher Attendance**:
+   - No separate manual teacher Hadir/Alfa form.
+   - Canonical workflow: Authenticated assigned teacher sees scheduled session $\rightarrow$ clicks "Mulai Pembelajaran" $\rightarrow$ server evaluates canonical capability `academic.session.start` $\rightarrow$ session status becomes `STARTED` $\rightarrow$ teacher attendance proven.
+   - Scheduled teacher and actual authenticated executor are stored separately.
+   - Badal authorization matrix remains unresolved/quarantined.
+5. **Lesson Material**:
+   Only the actual authorized teacher of the active session may record lesson material (`academic.material.record`). No AI auto-completion of curriculum materials.
+6. **Student Attendance**:
+   Recorded under the active session; valid options are strictly: `HADIR`, `IZIN`, `SAKIT`, `ALFA` (NO MASBUK). Student must be an enrolled participant.
+7. **Grading & Assessment**:
+   Semester evaluations exist institutionally, but detailed grading contracts (TUGAS, UH, UTS, UAS weights, KKM, A/B/C/D, score formulas) are **NOT YET APPROVED**. Do not invent formulas in application logic.
+8. **Program Pengabdian**:
+   Institutional requirement of 1-year service following SMA completion is confirmed from education source, but application module for Pengabdian is **DEFERRED / NOT YET SPECIFIED**.
+
+---
+
+## 7. Maintenance & Evolution Protocol
 
 When a new Business Owner directive is communicated:
-1. Assign the next sequential Directive ID (`DIR-YYYY-NNN`).
-2. Record all ten mandatory attributes in Section 2 before writing application code.
-3. If the directive supersedes an earlier entry, mark the earlier entry as `SUPERSEDED` and update both entries' `supersedes`/`superseded-by` fields.
-4. Update affected technical contracts (`types/architecture-lock.ts`) and release manifests accordingly.
-5. Never treat code availability as proof of production completion; keep `Production Status` as `NOT_LIVE` or `NOT_EXECUTED` until live verification is performed.
+1. Verify whether the directive alters or supersedes an entry in this registry or [`docs/STQ_REQUIREMENT_SOURCE_MAP.md`](file:///d:/stq-education-portal-antigravity/stq-education-portal/docs/STQ_REQUIREMENT_SOURCE_MAP.md).
+2. Assign the next sequential Directive ID (`DIR-YYYY-NNN`).
+3. Record all ten mandatory attributes in Section 2 before writing application code.
+4. If the directive supersedes an earlier entry, mark the earlier entry as `SUPERSEDED` and link both entries' `supersedes`/`superseded-by` fields.
+5. Update affected technical contracts (`types/architecture-lock.ts`) and release manifests accordingly.
+6. Never treat code availability as proof of production completion; maintain honest lifecycle statuses.

@@ -37,15 +37,16 @@ Before implementation, refactoring, migration work, authorization changes, produ
 
 1. Read `STQ_PROJECT_CONTEXT.md`.
 2. Read `docs/STQ_OWNER_DIRECTIVES.md`.
-3. Read `docs/STQ_CURRENT_STATE.md`.
-4. Read `types/architecture-lock.ts`.
-5. Read `docs/STQ_ARCHITECTURE_LOCK.md`.
-6. Read the relevant domain/milestone document referenced by this file or `STQ_CURRENT_STATE.md`.
-7. Inspect the actual current code and database/migration state relevant to the task.
-8. Never infer a missing business rule. If a rule is `PROPOSED_TBD` or explicitly unresolved, keep it unresolved.
-9. Never treat UI hiding as authorization.
-10. Never treat a name, username, legacy role label, or current screen layout as proof of authority.
-11. Never mutate production unless the Business Owner has explicitly authorized that exact class of production write.
+3. Read `docs/STQ_REQUIREMENT_SOURCE_MAP.md`.
+4. Read `docs/STQ_CURRENT_STATE.md`.
+5. Read `types/architecture-lock.ts`.
+6. Read `docs/STQ_ARCHITECTURE_LOCK.md`.
+7. Read the relevant domain source/specification referenced by this file or `STQ_CURRENT_STATE.md`.
+8. Inspect the actual source code and database/migration state relevant to the task.
+9. Never infer a missing business rule. If a rule is `PROPOSED_TBD` or explicitly unresolved, keep it unresolved.
+10. Never treat UI hiding as authorization.
+11. Never treat a name, username, legacy role label, or current screen layout as proof of authority.
+12. Never mutate production unless the Business Owner has explicitly authorized that exact class of production write.
 
 If a task begins from a new chat/session, this bootstrap sequence still applies.
 
@@ -57,12 +58,13 @@ When information conflicts, use this precedence:
 
 ### Level 0 — Newest explicit Business Owner decision
 `docs/STQ_OWNER_DIRECTIVES.md`
+*(with foundational provenance mapped in `docs/STQ_REQUIREMENT_SOURCE_MAP.md`)*
 
 A newer explicit decision from the Business Owner overrides an older decision.
 
-`docs/STQ_OWNER_DIRECTIVES.md` is the canonical repository representation of Level 0 newest explicit Business Owner decisions. Conversational memory of coding agents (ChatGPT, Antigravity, Claude, etc.) is NOT a source of truth.
+`docs/STQ_OWNER_DIRECTIVES.md` is the canonical repository representation of Level 0 newest explicit Business Owner decisions. Conversational memory of coding agents (ChatGPT, Antigravity, Claude, etc.) is NOT a source of truth. Do NOT allow a newly-created Owner Directive to fabricate a business decision unsupported by Business Owner input.
 
-When such a decision changes a canonical rule, requirement, business rule, account identity, authority, scope, workflow, or acceptance criteria, it must be recorded in `docs/STQ_OWNER_DIRECTIVES.md` in the same workstream before implementation so repository context does not remain stale. Older decisions are never deleted, but marked as SUPERSEDED.
+When such a decision changes a canonical rule, requirement, business rule, account identity, authority, scope, workflow, or acceptance criteria, it must be recorded in `docs/STQ_OWNER_DIRECTIVES.md` in the same workstream before implementation so repository context does not remain stale. Older decisions are never deleted, but marked as SUPERSEDED. Absence of a historical requirement from `STQ_OWNER_DIRECTIVES.md` does NOT mean it is cancelled; foundational sources in `docs/STQ_REQUIREMENT_SOURCE_MAP.md` remain authoritative unless explicitly superseded.
 
 ### Level 1 — Machine-checked technical contract
 `types/architecture-lock.ts`

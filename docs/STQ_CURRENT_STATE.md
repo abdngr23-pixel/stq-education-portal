@@ -586,7 +586,7 @@ Therefore:
 
 ## 19. Owner Directive Registry & Acceptance Checkpoint
 
-- **Existence of Owner Directive Registry**: Canonical registry established at `docs/STQ_OWNER_DIRECTIVES.md` as the persistent repository source-of-truth for Level 0 Business Owner directives. Conversational memory of coding agents is not a source of truth.
+- **Existence of Owner Directive Registry & Source Map**: Canonical registry established at `docs/STQ_OWNER_DIRECTIVES.md` and foundational provenance map at `docs/STQ_REQUIREMENT_SOURCE_MAP.md` as the persistent repository source-of-truth for Level 0 Business Owner directives. Conversational memory of coding agents is not a source of truth. Current reconciliation covers Structure/Identity/Auth, Tahfizh, Keasramaan, and Pendidikan; other domains remain deferred.
 - **Identity Rename Status (`lisa.mt` $\rightarrow$ `musyirfah.putri`)**: `lisa.mt -> musyirfah.putri` = approved rename target, NOT EXECUTED. Live production database still contains `lisa.mt`; rename is planned for controlled execution at Gate C2C.
-- **12-Point Owner Acceptance Matrix**: The 12-point acceptance matrix remains partially incomplete (Code: partially complete across several areas, e.g. search UI display requires cleanup; Production: NOT_LIVE across all unmigrated/unseeded items).
+- **12-Point Owner Acceptance Matrix**: The 12-point acceptance matrix remains partially incomplete (Code: partially complete across several areas, e.g. search UI display requires cleanup, legacy server actions lack ABAC scope enforcement; Production: NOT_LIVE across all unmigrated/unseeded items).
 - **Zero Production Write**: Zero production write from this documentation work. Production remains strictly read-only.
