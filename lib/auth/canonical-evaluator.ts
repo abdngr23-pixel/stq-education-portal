@@ -768,7 +768,12 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
       // Check direct Santri table if executorId is a Santri ID without direct User relation
       const santri = await prisma.santri.findUnique({
         where: { id: executorId },
-        include: { user: true },
+        select: {
+          id: true,
+          nama: true,
+          status: true,
+          user: true,
+        },
       });
 
       if (santri) {
@@ -942,7 +947,12 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
       if (targetSantriId) {
         const targetSantri = await prisma.santri.findUnique({
           where: { id: targetSantriId },
-          include: { halaqoh: true },
+          select: {
+            id: true,
+            jenisKelamin: true,
+            halaqohId: true,
+            halaqoh: true,
+          },
         });
 
         if (!targetSantri) {

@@ -84,6 +84,22 @@ export async function updateBaselineModalSantriAction(input: {
         modalHafalanAwalHalaman: input.modalHafalanAwalHalaman,
         tanggalBaselineTahfizh: baselineDate,
       },
+      select: {
+        id: true,
+        nis: true,
+        nama: true,
+        kelas: true,
+        jenisKelamin: true,
+        status: true,
+        modalHafalanAwalHalaman: true,
+        tanggalBaselineTahfizh: true,
+        targetAkhirProgramJuz: true,
+        halaqohId: true,
+        namaWali: true,
+        noHpWali: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
     await recordAuditLog({
@@ -222,6 +238,7 @@ export async function createSantriAction(input: CreateSantriInput) {
     // Cek duplikasi NIS
     const existing = await prisma.santri.findUnique({
       where: { nis: input.nis.trim() },
+      select: { id: true },
     });
 
     if (existing) {
@@ -240,6 +257,21 @@ export async function createSantriAction(input: CreateSantriInput) {
         halaqohId: input.halaqohId || null,
         status: SantriStatus.AKTIF,
         createdBy: session.username,
+      },
+      select: {
+        id: true,
+        nis: true,
+        nama: true,
+        kelas: true,
+        jenisKelamin: true,
+        isYatimDhuafa: true,
+        namaWali: true,
+        noHpWali: true,
+        halaqohId: true,
+        status: true,
+        createdBy: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
 

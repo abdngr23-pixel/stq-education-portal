@@ -316,7 +316,11 @@ export async function pindahkanSantriHalaqohAction(santriId: string, newHalaqohI
       data: {
         halaqohId: newHalaqohId,
       },
-      include: {
+      select: {
+        id: true,
+        nama: true,
+        nis: true,
+        halaqohId: true,
         halaqoh: true,
       },
     });

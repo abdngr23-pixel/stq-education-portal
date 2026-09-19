@@ -145,7 +145,20 @@ export async function getRaporGabunganAction(santriId: string, semester: number 
   try {
     const santri = await prisma.santri.findUnique({
       where: { id: santriId },
-      include: {
+      select: {
+        id: true,
+        nis: true,
+        nama: true,
+        kelas: true,
+        jenisKelamin: true,
+        status: true,
+        namaWali: true,
+        noHpWali: true,
+        halaqohId: true,
+        modalHafalanAwalHalaman: true,
+        tanggalBaselineTahfizh: true,
+        createdAt: true,
+        updatedAt: true,
         halaqoh: { include: { pembina: true } },
         nilaiList: {
           where: { semester },
