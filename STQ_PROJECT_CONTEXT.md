@@ -230,6 +230,16 @@ Canonical mutation audit must preserve, where applicable:
 
 Never authorize based on username.
 
+### Stable account invariant: `razan.mt` deprecation & Kabid Tahfizh operational account designation
+
+- `razan.mt` is not the canonical Kabid Tahfizh account.
+- Never link or provision `razan.mt` as STF-0003.
+- Business Owner designated Kabid Tahfizh operational account: `musyrif.tahifzh`.
+- `razan.mt` decommissioning is a controlled production operation, not a documentation-time deletion.
+- Preserve historical/audit integrity; dependency audit precedes destructive deletion.
+
+Names/usernames still do NOT grant authority by themselves. Actual authority remains Assignment + Position + Capability + Scope + server-resolved resource context.
+
 ---
 
 ## 7. Organizational structure — Keasramaan lock

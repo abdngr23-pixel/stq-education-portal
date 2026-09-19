@@ -243,21 +243,34 @@ Do not fake readiness.
 
 ---
 
-## 9. Current staff-linkage findings
+## 9. Current staff-linkage findings & account decommission decision
 
-Production contains operational-style accounts without active Staff linkage including:
+### A. Historical / Read-Only Audit Observation
+Production contains operational-style accounts observed without active Staff linkage during the M3.3C2A read-only audit:
 
 - `musyrifah.putri`
 - `pembina.halaqoh`
 - `razan.mt`
 
-Known intended relation:
+### B. Current Business Owner Decision — `razan.mt` Deprecation & Kabid Tahfizh Operational Account
+A newer explicit Business Owner decision has SUPERSEDED the previous assumption that `razan.mt` should be linked to Staff `STF-0003` (Ust. Razan Mufli, S.Pd).
 
-`razan.mt` corresponds operationally to Ust. Razan Mufli, S.Pd / Staff `STF-0003`.
+- **`razan.mt` target state:** `DEPRECATED / DECOMMISSION TARGET`.
+- **Linkage to `STF-0003`:** `PROHIBITED / SUPERSEDED`. Do NOT link `razan.mt` to Staff `STF-0003`.
+- **Canonical grants to `razan.mt`:** Do NOT provision canonical Position, Assignment, Capability, scope, or new runtime authority to `razan.mt`. `razan.mt` must not become the canonical Kabid Tahfizh account.
+- **Canonical Kabid Tahfizh operational account:** Designated by Business Owner as `musyrif.tahifzh`.
+  *(Note: Exact username presence in production has not been independently verified in this checkpoint and is documented strictly as `BUSINESS OWNER DESIGNATED CANONICAL ACCOUNT = musyrif.tahifzh`. It must be confirmed read-only prior to provisioning. Spelling is preserved as designated.)*
+- **Decommission execution state:** `NOT YET EXECUTED`. Do not claim `razan.mt` has already been disabled or deleted. Existing production `razan.mt` must be handled later during controlled C2C account cleanup/decommissioning.
+- **Production account mutation:** Requires later explicit authorization. Zero production writes in this PR.
+- **Hard deletion guard:** Hard delete is PROHIBITED until a comprehensive read-only dependency and reference audit (historical records, Staff linkage, assignments, audit references, transactions, active sessions, and other foreign/reference dependencies) proves it safe.
 
-However, production linkage is a WRITE and requires explicit authorization.
+### Explicit Classifications:
+- `RAZAN_MT_TARGET_STATE = DECOMMISSION`
+- `RAZAN_MT_STAFF_LINKAGE = PROHIBITED`
+- `KABID_TAHFIZH_ACCOUNT_OWNER_DESIGNATION = musyrif.tahifzh`
+- `RAZAN_MT_DECOMMISSION_EXECUTION = NOT_STARTED`
 
-Do not silently repair.
+Production linkage or mutation is a WRITE and requires explicit authorization. Do not silently repair.
 
 Not every user without Staff linkage is an error: santri, wali, unit/function accounts, and other identities can legitimately use different linkage models.
 
@@ -505,6 +518,14 @@ Controlled production provisioning:
 - teaching assignments
 - OSDA Putri
 - approved account provisioning
+
+#### ACCOUNT CLEANUP / C2C (Planning / Context Only — Zero Production Writes in PR #24):
+- `razan.mt` dependency audit
+- prevent new canonical grants
+- determine safe disable/deactivate action
+- verify no duplicate Kabid authority
+- validate `musyrif.tahifzh` account identity/linkage before provisioning
+- hard delete only if separately authorized after dependency proof
 
 Then:
 
