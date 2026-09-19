@@ -50,6 +50,12 @@ Production database identity was verified using the production configuration in 
 - **Environment Source:** `.env.production.local` (`VERCEL_ENV="production"`)
 - **Query Timestamp:** `2026-09-19 01:34:23.776 UTC`
 
+### Production Environment Binding Status
+- **Verification Tooling:** Vercel CLI is unauthenticated in local shell without `VERCEL_TOKEN`.
+- **Evidence Level:** Connection parameters are derived from `.env.production.local` (`VERCEL_ENV="production"`, `accelerate.prisma-data.net`) matching the live production web app. However, direct Vercel API project environment introspection cannot be independently executed without auth tokens.
+- **Classification:**
+  $$\mathbf{PRODUCTION\_DB\_BINDING = PARTIAL\_EVIDENCE}$$
+
 ### Production Table Row Counts (Read-Only)
 
 | Table | Row Count | Operational State |
@@ -114,10 +120,11 @@ To apply these migrations, run prisma migrate deploy
 
 > [!CAUTION]
 > **CRITICAL MIGRATION DIVERGENCE CLASSIFICATION:**
-> - Migration `20260915100000_add_tahfizh_quality_engine` exists in production `_prisma_migrations` but is **ABSENT** on `main` because it belongs exclusively to immutable PR #8.
+> - Migration `20260915100000_add_tahfizh_quality_engine` (Checksum: `fc96b177d5219c5b2853c6c86a0fa3d28bce0944890bfde9de2e5d6fe7391467`) exists in production `_prisma_migrations` but is **ABSENT** on `main` because it belongs exclusively to immutable PR #8.
 > - Per Section 5 of the mandate:
 >   $$\mathbf{PRODUCTION\_MIGRATION\_HISTORY = BLOCKED}$$
-> - No migrations may be applied, resolved, or marked deployed until the migration history reconciliation strategy is explicitly reviewed and approved by Architecture / Business Owner.
+> - **Reconciliation Requirement:** Migration-ledger reconciliation requires separate Business Owner authorization.
+> - No migrations were repaired, merged from PR #8, cherry-picked, or resolved in C2A. Production `_prisma_migrations` was NOT altered. Execution is strictly stopped before C2B.
 
 ---
 
@@ -274,27 +281,38 @@ Readiness diagnostic evaluated in strict read-only mode against production:
 
 ---
 
-## 9. Backup Script Security Hardening & Preflight
+## 9. Backup Script Security Hardening & Direct Connection Contract
 
-The backup script `scripts/backup-db.ts` was audited and hardened to eliminate critical vulnerabilities:
+The backup script `scripts/backup-db.ts` was audited and hardened to eliminate critical vulnerabilities and establish strict protocol boundaries:
 
-### Security Vulnerabilities Remediated
-1. **Eliminated Synthetic SQL Placeholder:** If `pg_dump` fails or is missing, the script previously emitted a synthetic SQL placeholder file and claimed success. This is completely removed. Any failure causes an immediate non-zero exit code (`process.exit(1)`).
-2. **Mandatory DATABASE_URL:** Removed silent fallback to `localhost:5432/stq_education_db`. Missing `DATABASE_URL` causes immediate exit code 1.
-3. **Strict Verification Threshold:** Backup file must exist and have file size $\ge 500$ bytes.
-4. **Cryptographic Checksum:** SHA-256 checksum is computed from the dump file and saved alongside as `.sha256`.
-5. **Credential Redaction:** Passwords are completely redacted from all log output (`redactDatabaseUrl`).
-6. **Retention Cleanup Guard:** Expired backup cleanup runs **only** after a newly created backup is cryptographically verified. Existing backups are never deleted when a backup run fails.
-7. **Verification Modes:** `--dry-run` performs parameter simulation with zero file/database writes. Added `--verify-only` to validate prerequisites without generating a dump.
+### Security & Protocol Remediations
+1. **Explicit Direct Connection Contract:**
+   - Introduced strict contract: `BACKUP_DATABASE_URL` or `DIRECT_DATABASE_URL`.
+   - Never falls back to `DATABASE_URL` when `DATABASE_URL` uses Prisma Accelerate proxy (`prisma+postgres://` or `prisma://`).
+   - Fails closed immediately if only a Prisma Accelerate URL exists, as proxy connections are not wire-compatible with `pg_dump`.
+2. **Comprehensive Credential Redaction:**
+   - Both user passwords and sensitive query parameter values (`api_key`, `token`, `access_token`, `password`, `secret`, etc.) are strictly redacted to `***`.
+   - Only allowlisted non-secret parameters (`sslmode`, `schema`, `connect_timeout`, etc.) retain values in logs.
+3. **Eliminated Synthetic SQL Placeholder:** If `pg_dump` fails or is missing, zero synthetic SQL placeholder files are generated. Any failure causes an immediate non-zero exit code (`process.exit(1)`).
+4. **Mandatory URL Validation:** Removed silent fallback to `localhost:5432/stq_education_db`. Missing connection URL causes immediate exit code 1.
+5. **Strict Verification Threshold:** Backup file must exist and have file size $\ge 500$ bytes.
+6. **Cryptographic Checksum:** SHA-256 checksum is computed from the dump file and saved alongside as `.sha256`.
+7. **Retention Cleanup Guard:** Expired backup cleanup runs **only** after a newly created backup is cryptographically verified. Existing backups are never deleted when a backup run fails.
+8. **Verification & Simulation Modes:**
+   - `--dry-run` performs parameter simulation with zero file/database writes.
+   - `--verify-only` performs a real PostgreSQL read-only schema probe (`pg_dump --schema-only --no-owner --no-privileges`) to verify authentication and protocol readiness without writing any backup files.
 
 ### Unit Test Verification
 Hardened backup behavior is unit-tested in `tests/backup-db.test.ts`:
-- 14/14 tests pass across 7 suites covering URL parsing, redaction, file integrity, checksum calculation, and retention safety.
+- 19/19 tests pass across 7 suites covering direct URL resolution, Accelerate rejection, query secret redaction, file integrity, checksum calculation, retention safety, and fail-closed auth probes.
 
-### Environment Limitation & Restorable Backup Plan
+### Environment Status & Restorable Backup Plan
 - **pg_dump Binary Availability:** In the current Windows execution environment, `pg_dump` is not present in PATH.
+- **Execution Readiness Status:**
+  $$\mathbf{BACKUP\_EXECUTION\_READY = BLOCKED}$$
+  *(Blocked by absent `pg_dump` binary in host PATH and requirement for explicit direct PostgreSQL connection string).*
 - **Action Taken in C2A:** Real production backup was **NOT EXECUTED** in compliance with Section 12 instructions ("DO NOT run the real production backup yet in C2A unless explicitly authorized later.").
-- **Future C2B Execution Requirement:** Before initiating production migrations, a valid `pg_dump` binary must be provided (e.g., via a Linux container/runner or PostgreSQL client tools) to capture:
+- **Future C2B Execution Requirement:** Before initiating production migrations, a valid direct PostgreSQL connection string (`BACKUP_DATABASE_URL`) and `pg_dump` binary must be provided (e.g., via a Linux container/runner or PostgreSQL client tools) to capture:
   - Exact `.sql` dump
   - Accompanying `.sha256` checksum
   - Timestamped manifest with table row counts
@@ -306,10 +324,14 @@ Hardened backup behavior is unit-tested in `tests/backup-db.test.ts`:
 
 ### M3.3A Migration (`20260918120000_m3_3a_health_v2_backend`)
 - **Operations:**
-  - Create enum `HealthStatusV2`
+  - Create enum `HealthStatusV2` (`DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`)
   - Create table `health_cases_v2`
   - Create table `health_case_v2_events`
-  - Create indexes on `santri_id`, `status`, `case_id`, `event_type`, `created_at`
+  - Create exact indexes:
+    - `health_cases_v2_santri_id_status_v2_idx` on `health_cases_v2(santri_id, status_v2)`
+    - `health_cases_v2_santri_id_occurred_at_idx` on `health_cases_v2(santri_id, occurred_at)`
+    - `health_cases_v2_status_v2_occurred_at_idx` on `health_cases_v2(status_v2, occurred_at)`
+    - `health_case_v2_events_case_id_created_at_idx` on `health_case_v2_events(case_id, created_at)`
   - Add foreign keys referencing `santri(id)`, `users(id)`, `staff(id)`
 - **Safety Profile:**
   - Purely additive DDL.
@@ -336,11 +358,22 @@ Hardened backup behavior is unit-tested in `tests/backup-db.test.ts`:
 
 The following provisioning tasks are required for Milestone 3.3C2C (post-migration). **No provisioning was performed in C2A.**
 
-### A. Academic Structure
-1. **Education Cohorts:** 2 cohorts required:
-   - `COHORT-PUTRA` (Track: TAHFIZH / DINIYAH, Gender: PUTRA)
-   - `COHORT-PUTRI` (Track: TAHFIZH / DINIYAH, Gender: PUTRI)
-2. **Santri Cohort Assignment:** All 57 active santri need assignment to their respective cohort based on santri gender.
+### A. Academic Structure & Cohort Policy
+1. **Education Cohort Definition (Canonical Business Rule):**
+   - An `EducationCohort` represents a permanent **ANGKATAN / TAHUN AJARAN MASUK** (e.g., `2024/2025`, `2025/2026`, `2026/2027`).
+   - Gender (`PUTRA` / `PUTRI`) is completely separate and must **NEVER** define cohort identity.
+   - Current *Tingkat Studi Umum* (1 / 2 / 3, representing school grades 7, 8, 9) is a derived/current program position and must **NOT** replace or mutate permanent cohort identity.
+2. **Current Production Source Data Evaluation:**
+   - Active santri demographic distribution across current classes:
+     - Grade 7: `7A` (8), `7B` (16), `7C` (5) $\rightarrow$ Total: 29 santri
+     - Grade 8: `8A` (10), `8B` (6), `8C` (3) $\rightarrow$ Total: 19 santri
+     - Grade 9: `9A` (7), `9C` (2) $\rightarrow$ Total: 9 santri
+     - Total active santri: 57
+   - **Data Quality Gap:** The production `santri` table lacks an explicit `angkatan` or `tahun_masuk` column. Permanent entry cohort cannot be inferred merely from current class assignment without administrative verification.
+   - **Santri with Unresolved Permanent Cohort:** 57 (all active santri).
+   - **Status:**
+     $$\mathbf{COHORT\_MAPPING = NEEDS\_BUSINESS\_INPUT}$$
+   - **Zero cohort rows written in C2A.** Awaiting Business Owner confirmation of exact cohort codes and santri angkatan mapping.
 3. **Mata Pelajaran Provisioning:**
    - 5 missing Studi Umum subjects: Bahasa Inggris, IPS, IPA, Bahasa Indonesia, TIK.
    - Clarification / aliasing for `Matematika` vs `Matematika Terapan`.

@@ -141,7 +141,7 @@ A non-writing, read-only diagnostic engine (`checkPendidikanV2ProductionReadines
 4. `STAFF_LINKAGE_READY`: Operational personal accounts have active linked `Staff` records. Accounts lacking linkage (such as `razan.mt`) are reported as `BLOCKED_IDENTITY_LINKAGE`.
 5. `REQUIRED_ORG_UNITS_READY`: Required organizational units exist (`OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT` derived from canonical contract constants).
 6. `REQUIRED_POSITIONS_READY`: Required Position records exist (`MUDIR`, `KABID_TAHFIZH`, `KEPALA_KEASRAMAAN`, `PETUGAS_OPERASIONAL_TAHFIZH`, `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, `PETUGAS_OPERASIONAL_KEASRAMAAN` derived from approved UAT targets; strictly no invented `PEMBINA_ASRAMA`).
-7. `CAPABILITIES_REGISTERED`: All 12 academic capabilities registered.
+7. `CAPABILITIES_REGISTERED`: All 9 required UAT activation capabilities registered (`academic.schedule.read`, `academic.session.start`, `academic.material.record`, `academic.attendance.record`, `tahfizh.recap.read`, `tahfizh.reward.issue`, `tahfizh.target.manage`, `keasramaan.permission.read`, `keasramaan.permission.create`).
 8. `USER_ASSIGNMENTS_READY`: Active user assignments exist covering all approved target positions.
 9. `TEACHING_ASSIGNMENTS_READY`: Full active assignment coverage for all 18 canonical slots (6 Studi Umum, 7 Kps Putra, 5 Kps Putri).
 10. `COHORTS_ASSIGNED`: Relevant active santri population have explicit `cohort_id` assigned without deriving from school class or age (inactive historical santri do not block).
