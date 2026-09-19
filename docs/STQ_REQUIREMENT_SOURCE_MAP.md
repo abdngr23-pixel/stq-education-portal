@@ -35,12 +35,17 @@ This registry documents the authoritative institutional business documents and o
   - Target Pekanan: 2, 3, 4, or 5 pages/week based on individual santri assessment.
   - SABAQ: minimum 1/2 or 1 page/day; setoran at Subuh halaqoh.
   - SABAQI: cumulative weekly retention (Mon = today; Tue = Mon–Tue; Wed = Mon–Wed; Thu = Mon–Thu; Fri = Mon–Fri).
-  - MANZIL: systematic long-term memorization retention.
+  - MANZIL:
+    - murojaah seluruh hafalan baru dari halaman pertama sampai halaman terakhir yang dihafal sebelum masuk proses Tasmi'
+    - murojaah seluruh hafalan baru dari pekan pertama menghafal juz baru sampai pekan terakhir sebelum proses Tasmi'
   - MUFAR: tier-based revision volume (1–5 juz: 1 juz/day; 6–10 juz: 2 juz/day; 11–15 juz: 3 juz/day; 16–20 juz: 4 juz/day; 21–30 juz: 5 juz/day).
   - Kenaikan Juz: Rubu' (1/4 juz) $\rightarrow$ Tasmi' (1 juz) $\rightarrow$ Ikhtibar Awwal (Musyrif Halaqoh) $\rightarrow$ Ikhtibar Tsani (Kepala Sekolah).
   - SIMA'AN: bil-ghaib once sitting for every multiple of 5 juz.
-  - Rewards: Tasmi' 1 juz (1 bintang + libur 1 hari); Sima'an 5 juz (1 bintang + libur 1 hari).
-  - Sanctions: Daily target failure $\rightarrow$ jalan jongkok keliling lapangan; Monthly target failure $\rightarrow$ kehilangan hak kunjungan bulanan orang tua.
+  - Rewards:
+    - Tasmi' 1 juz: 1 bintang + libur 1 hari
+    - Sima'an 5 juz: 1 bintang + libur 1 hari
+    - Menyelesaikan target bulanan (Hafalan & keasamaan [sic; keasramaan]): libur di akhir bulan menyesuaikan variabel yang tercapai.
+  - Sanctions: Daily target failure $\rightarrow$ jalan jongkok keliling lapangan pondok; Monthly target failure $\rightarrow$ kehilangan hak kunjungan bulanan orang tua.
 
 ---
 
@@ -53,7 +58,9 @@ This registry documents the authoritative institutional business documents and o
 - **Rule:** Authoritative baseline for Keasramaan workflows, subject to explicitly documented newer Business Owner decisions and architecture/security hardening.
 - **Core Scope:**
   - Organizational Hierarchy: Mudir $\rightarrow$ Musyrif/Kepala Keasramaan $\rightarrow$ Mudabbir (Pembina Kamar) $\rightarrow$ OSDA & TKS $\rightarrow$ Usroh / Santri.
-  - OSDA Structure: Pengurus Inti (Ketua, Sekretaris, Bendahara, Multimedia) and 5 Divisi (Keamanan, Pendidikan/Ibadah, Kebersihan, Kesehatan, Sarpras).
+  - OSDA Structure in Original Source:
+    - **ORIGINAL SOURCE RULE**: Pengurus Inti consisted of Ketua, Sekretaris, and Bendahara; Multimedia was listed as an operational division (the 6th division).
+    - **SUPERSEDED BY NEWER DIRECTIVE**: Superseded by newer Business Owner directive (`DIR-2026-008`), which elevated Multimedia to Pengurus Inti (Ketua, Sekretaris, Bendahara, Multimedia) and standardized operational divisions to 5 (Keamanan & Kedisiplinan, Pendidikan & Ibadah, Kebersihan & Kerapihan, Kesehatan, Sarpras).
   - TKS Units: Dapur dan Gizi, Masjid, Kantor Pendidikan, Kantor Yayasan, Air Minum, Air Sumur.
   - Checklist System: Versioned checklist templates, scheduled runs (daily, multiple-times/day, weekly, monthly, incidental), Needs Correction, Completed, offline idempotency via clientRequestId.
   - Perizinan Workflow: Santri self-request (individual pending) vs Mudabbir/Musyrif operational input (individual tickets per santri). Musyrif approvals direct; Mudabbir same-day direct; Mudabbir pulang/menginap escalated to Musyrif.
@@ -81,7 +88,8 @@ This registry documents the authoritative institutional business documents and o
 - **Source ID:** `SOURCE-PEND-002`
 - **Title:** LATEST BUSINESS OWNER STUDI UMUM & KEPESANTRENAN DECISIONS
 - **Date:** 2026-09-19
-- **Physical File in Repo:** Yes (formally registered in `docs/STQ_OWNER_DIRECTIVES.md`).
+- **Physical Standalone Source File in Repo:** NO (Business Owner decision transcribed into repository documentation).
+- **Repository Representation:** `docs/STQ_OWNER_DIRECTIVES.md`
 - **Authority:** **SUPERSEDING EDUCATION DETAIL SOURCE**
 - **Rule:** Overrides `SOURCE-PEND-001` wherever conflict exists regarding session schedules, weekly PBL structure, and Kepesantrenan schedule ordering.
 - **Supersedences Over `SOURCE-PEND-001`:**
