@@ -241,39 +241,39 @@ export interface UatTargetPolicySpec {
 export const CANONICAL_UAT_TARGET_POLICIES: readonly UatTargetPolicySpec[] = [
   {
     positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.positionCode,
-    capabilityCode: "tahfizh.recap.read",
-    expectedScope: "GLOBAL",
-    expectedBusinessState: "APPROVED_TARGET_PENDING_TECHNICAL",
+    capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].capabilityCode,
+    expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].scopeType as "GLOBAL",
+    expectedBusinessState: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].businessRuleState as "APPROVED_TARGET_PENDING_TECHNICAL",
   },
   {
     positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.positionCode,
-    capabilityCode: "tahfizh.reward.issue",
-    expectedScope: "ASSIGNED_UNITS",
-    expectedBusinessState: "APPROVED_TARGET_PENDING_TECHNICAL",
+    capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[1].capabilityCode,
+    expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[1].scopeType as "ASSIGNED_UNITS",
+    expectedBusinessState: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[1].businessRuleState as "APPROVED_TARGET_PENDING_TECHNICAL",
   },
   {
     positionCode: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.positionCode,
-    capabilityCode: "tahfizh.target.manage",
-    expectedScope: "HALAQOH",
-    expectedBusinessState: "APPROVED_TARGET_PENDING_TECHNICAL",
+    capabilityCode: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.capabilityCode,
+    expectedScope: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.scopeType as "HALAQOH",
+    expectedBusinessState: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.businessRuleState as "APPROVED_TARGET_PENDING_TECHNICAL",
   },
   {
     positionCode: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.PEMBINA_HALAQOH.positionCode,
-    capabilityCode: "tahfizh.target.manage",
-    expectedScope: "HALAQOH",
-    expectedBusinessState: "APPROVED_TARGET_PENDING_TECHNICAL",
+    capabilityCode: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.PEMBINA_HALAQOH.capabilityCode,
+    expectedScope: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.PEMBINA_HALAQOH.scopeType as "HALAQOH",
+    expectedBusinessState: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.PEMBINA_HALAQOH.businessRuleState as "APPROVED_TARGET_PENDING_TECHNICAL",
   },
   {
     positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.positionCode,
-    capabilityCode: "keasramaan.permission.read",
-    expectedScope: "ASSIGNED_UNITS",
-    expectedBusinessState: "APPROVED_TARGET_PENDING_TECHNICAL",
+    capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].capabilityCode,
+    expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].scopeType as "ASSIGNED_UNITS",
+    expectedBusinessState: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].businessRuleState as "APPROVED_TARGET_PENDING_TECHNICAL",
   },
   {
     positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.positionCode,
-    capabilityCode: "keasramaan.permission.create",
-    expectedScope: "ASSIGNED_UNITS",
-    expectedBusinessState: "APPROVED_TARGET_PENDING_TECHNICAL",
+    capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[1].capabilityCode,
+    expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[1].scopeType as "ASSIGNED_UNITS",
+    expectedBusinessState: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[1].businessRuleState as "APPROVED_TARGET_PENDING_TECHNICAL",
   },
 ] as const;
 
@@ -702,6 +702,58 @@ export async function checkPendidikanV2ProductionReadiness(
             pendingTechnicalIssues.push(`${target.positionCode}: grant ${target.capabilityCode} is APPROVED_TARGET_PENDING_TECHNICAL (TARGET_POLICY_READY, RUNTIME_NOT_READY: POLICY_APPROVED_NOT_RUNTIME_ACTIVE)`);
           } else {
             policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} has invalid state ${matchPc.businessRuleState}`);
+          }
+        } else {
+          // matchPc is VERIFIED_PRODUCTION -> Validate Effective Resource-Scope Readiness
+          const matchingAsgs = asgs.filter((a: any) => {
+            const pCode = a.position?.code || (a.positionId ? positionsMap.get(a.positionId)?.code : null) || a.positionCode;
+            return pCode === target.positionCode;
+          });
+
+          for (const asg of matchingAsgs) {
+            if (target.expectedScope === "ASSIGNED_UNITS") {
+              const anchorUnit = asg.unitId || asg.unit?.id;
+              const scopedUnits = (asg.scopeUnits || asg.scopedUnits || []).map((su: any) => su.unitId || su.unit?.id || su);
+              const permittedUnits = [anchorUnit, ...scopedUnits].filter(Boolean);
+
+              if (asg.hasRepresentativeResource === false) {
+                policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_NOT_READY (no representative assigned resource exists)`);
+                continue;
+              }
+
+              if (permittedUnits.length === 0) {
+                policyIssues.push(`${target.positionCode}: assignment ${asg.id} has scope ASSIGNED_UNITS but zero anchor or scoped units configured (TARGET_RESOURCE_SCOPE_NOT_READY)`);
+                continue;
+              }
+
+              const resCtx = asg.representativeResourceContext;
+              const repUnitId = asg.representativeUnitId;
+              const resourceUnits: string[] = resCtx?.orgUnitIds || (repUnitId ? [repUnitId] : []);
+
+              if (resourceUnits.length > 0) {
+                const matches = resourceUnits.some((u: string) => permittedUnits.includes(u));
+                if (!matches) {
+                  policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} SCOPE_MISMATCH: resource units [${resourceUnits.join(", ")}] not in assigned units [${permittedUnits.join(", ")}] (runtime NOT_READY)`);
+                }
+              }
+            } else if (target.expectedScope === "HALAQOH") {
+              const anchorUnit = asg.unitId || asg.unit?.id;
+
+              if (asg.hasRepresentativeResource === false) {
+                policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_NOT_READY (no representative santri in assigned halaqoh)`);
+                continue;
+              }
+
+              if (!anchorUnit) {
+                policyIssues.push(`${target.positionCode}: assignment ${asg.id} has scope HALAQOH but no anchor halaqoh configured (TARGET_RESOURCE_SCOPE_NOT_READY)`);
+                continue;
+              }
+
+              const santriHalaqoh = asg.representativeSantri?.halaqohId || asg.representativeHalaqohId;
+              if (santriHalaqoh && santriHalaqoh !== anchorUnit) {
+                policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} SCOPE_MISMATCH: santri halaqoh ${santriHalaqoh} does not match assigned halaqoh ${anchorUnit} (runtime NOT_READY)`);
+              }
+            }
           }
         }
       }

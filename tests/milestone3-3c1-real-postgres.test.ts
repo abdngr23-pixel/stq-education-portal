@@ -29,6 +29,7 @@ import {
   matchStudiUmumSession,
   matchKepesantrenanSession,
 } from "../lib/pendidikan-v2";
+import { UAT_ACTIVATION_TARGETS } from "../types/architecture-lock";
 
 describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PROOF", () => {
   let prisma: PrismaClient;
@@ -1334,6 +1335,16 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           status: "ACTIVE",
           validFrom: new Date(Date.now() - 86400000),
           validUntil: null,
+          unitId: `ou-req-${idx}`,
+          scopeUnits: [{ unitId: `ou-req-${idx}` }],
+          representativeResourceContext: {
+            orgUnitIds: [`ou-req-${idx}`],
+            orgDomain: posCode.includes("KEASRAMAAN") ? "KEASRAMAAN" : "TAHFIZH",
+          },
+          representativeSantri: {
+            id: `san-req-${idx}`,
+            halaqohId: `ou-req-${idx}`,
+          },
           user: {
             id: `usr-req-${idx}`,
             username: `user.req.${idx}`,
@@ -1872,4 +1883,688 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       );
     });
   });
+
+  // =========================================================================
+  // 5. MILESTONE 3.3C1 FINAL UAT TARGET RESOURCE-SCOPE CLOSURE PROOFS
+  // =========================================================================
+  describe("5. Milestone 3.3C1 Final UAT Target Resource-Scope Closure Proofs", () => {
+    const createUatAssignments = (opts?: {
+      overridePosCode?: string;
+      overridePatch?: (base: any) => any;
+      defaultBusinessRuleState?: "PROPOSED_TBD" | "APPROVED_TARGET_PENDING_TECHNICAL" | "VERIFIED_PRODUCTION";
+      policyOverrides?: Map<string, { scope?: string; state?: string; remove?: boolean }>;
+    }) => {
+      const defaultState = opts?.defaultBusinessRuleState ?? "VERIFIED_PRODUCTION";
+
+      return CANONICAL_REQUIRED_POSITION_CODES.map((posCode, idx) => {
+        const targetPolicies = CANONICAL_UAT_TARGET_POLICIES.filter((p) => p.positionCode === posCode);
+
+        const capabilities = targetPolicies
+          .map((p) => {
+            const override = opts?.policyOverrides?.get(p.capabilityCode);
+            return {
+              capabilityCode: p.capabilityCode,
+              scopeType: override?.scope ?? p.expectedScope,
+              businessRuleState: override?.state ?? defaultState,
+              capability: { code: p.capabilityCode, isBlocked: false },
+            };
+          })
+          .filter((c) => {
+            const override = opts?.policyOverrides?.get(c.capabilityCode);
+            return !override?.remove;
+          });
+
+        if (capabilities.length === 0) {
+          capabilities.push({
+            capabilityCode: "academic.schedule.read",
+            scopeType: "GLOBAL",
+            businessRuleState: defaultState,
+            capability: { code: "academic.schedule.read", isBlocked: false },
+          });
+        }
+
+        const base = {
+          id: `asg-uat-${idx}`,
+          userId: `usr-uat-${idx}`,
+          positionId: `pos-uat-${idx}`,
+          status: "ACTIVE",
+          validFrom: new Date(Date.now() - 86400000),
+          validUntil: null,
+          unitId: `ou-uat-${idx}`,
+          scopeUnits: [{ unitId: `ou-uat-${idx}` }],
+          representativeResourceContext: {
+            orgUnitIds: [`ou-uat-${idx}`],
+            orgDomain: posCode.includes("KEASRAMAAN") ? "KEASRAMAAN" : "TAHFIZH",
+          },
+          representativeSantri: {
+            id: `san-uat-${idx}`,
+            halaqohId: `ou-uat-${idx}`,
+          },
+          user: {
+            id: `usr-uat-${idx}`,
+            username: `user.uat.${idx}`,
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            staffId: `stf-uat-${idx}`,
+            staff: { id: `stf-uat-${idx}`, status: "AKTIF" },
+          },
+          position: {
+            id: `pos-uat-${idx}`,
+            code: posCode,
+            name: posCode,
+            isActive: true,
+            requiresPersonalAccount: true,
+            domain: posCode.includes("KEASRAMAAN") ? "KEASRAMAAN" : "TAHFIZH",
+            capabilities,
+          },
+        };
+
+        if (opts?.overridePosCode === posCode && opts.overridePatch) {
+          return opts.overridePatch(base);
+        }
+        return base;
+      });
+    };
+
+    it("5.1 Proof 1: tahfizh.reward.issue (ASSIGNED_UNITS): resource outside assigned units => SCOPE_MISMATCH & Gate 8 NOT_READY", async () => {
+      // 1. Runtime authorizeCanonical evaluation
+      const lisaIdentity = {
+        userId: "usr-lisa",
+        username: "lisa.operasional",
+        accountType: "PERSONAL" as const,
+        staffId: "stf-lisa",
+        staffStatus: "AKTIF",
+        status: "AKTIF",
+        name: "Lisa Operasional",
+      };
+      const lisaAssignment = {
+        id: "asg-lisa-reward-1",
+        userId: "usr-lisa",
+        positionId: "pos-lisa",
+        positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+        unitId: "ou-tahfizh-unit-1",
+        status: "ACTIVE" as const,
+        validFrom: new Date(Date.now() - 86400000),
+        validUntil: null,
+        scopeUnits: [{ unitId: "ou-tahfizh-unit-1" }],
+        positionCapabilities: [
+          {
+            capabilityCode: "tahfizh.reward.issue",
+            scopeType: "ASSIGNED_UNITS" as const,
+            businessRuleState: "VERIFIED_PRODUCTION" as const,
+          },
+        ],
+      };
+
+      const authDeny = await authorizeCanonical({
+        identity: lisaIdentity,
+        capability: "tahfizh.reward.issue",
+        resolvedContext: {
+          resourceId: "rw-outside-1",
+          orgUnitIds: ["ou-tahfizh-unit-99"],
+          orgDomain: "TAHFIZH",
+        },
+        dataProvider: {
+          getIdentity: async () => lisaIdentity,
+          getActiveAssignments: async () => [lisaAssignment] as any,
+          getUnitAccountPlacement: async () => null,
+          resolveResourceContext: async () => null,
+          verifyHumanExecutor: async () => null,
+        },
+      });
+
+      assert.strictEqual(authDeny.decision, "DENY");
+      assert.strictEqual(authDeny.code, "SCOPE_MISMATCH");
+
+      // 2. Gate 8 Production Readiness Check
+      const assignments = createUatAssignments({
+        overridePosCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+        overridePatch: (base) => ({
+          ...base,
+          unitId: "ou-tahfizh-unit-1",
+          scopeUnits: [{ unitId: "ou-tahfizh-unit-1" }],
+          representativeResourceContext: {
+            orgUnitIds: ["ou-tahfizh-unit-99"], // Mismatched outside unit
+            orgDomain: "TAHFIZH",
+          },
+        }),
+      });
+
+      const mockDb = {
+        assignment: { findMany: async () => assignments },
+        positionCapability: { findMany: async () => [] },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(userGate);
+      assert.strictEqual(userGate.status, "NOT_READY");
+      assert.ok(
+        userGate.details.includes("SCOPE_MISMATCH") && userGate.details.includes("tahfizh.reward.issue"),
+        `Expected SCOPE_MISMATCH for tahfizh.reward.issue, got: ${userGate.details}`
+      );
+    });
+
+    it("5.2 Proof 2: tahfizh.reward.issue (ASSIGNED_UNITS): resource inside assigned units with VERIFIED_PRODUCTION => ALLOW & Gate 8 READY", async () => {
+      // 1. Runtime authorizeCanonical evaluation
+      const lisaIdentity = {
+        userId: "usr-lisa",
+        username: "lisa.operasional",
+        accountType: "PERSONAL" as const,
+        staffId: "stf-lisa",
+        staffStatus: "AKTIF",
+        status: "AKTIF",
+        name: "Lisa Operasional",
+      };
+      const lisaAssignment = {
+        id: "asg-lisa-reward-1",
+        userId: "usr-lisa",
+        positionId: "pos-lisa",
+        positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+        unitId: "ou-tahfizh-unit-1",
+        status: "ACTIVE" as const,
+        validFrom: new Date(Date.now() - 86400000),
+        validUntil: null,
+        scopeUnits: [{ unitId: "ou-tahfizh-unit-1" }],
+        positionCapabilities: [
+          {
+            capabilityCode: "tahfizh.reward.issue",
+            scopeType: "ASSIGNED_UNITS" as const,
+            businessRuleState: "VERIFIED_PRODUCTION" as const,
+          },
+        ],
+      };
+
+      const authAllow = await authorizeCanonical({
+        identity: lisaIdentity,
+        capability: "tahfizh.reward.issue",
+        resolvedContext: {
+          resourceId: "rw-inside-1",
+          orgUnitIds: ["ou-tahfizh-unit-1"],
+          orgDomain: "TAHFIZH",
+        },
+        dataProvider: {
+          getIdentity: async () => lisaIdentity,
+          getActiveAssignments: async () => [lisaAssignment] as any,
+          getUnitAccountPlacement: async () => null,
+          resolveResourceContext: async () => null,
+          verifyHumanExecutor: async () => null,
+        },
+      });
+
+      assert.strictEqual(authAllow.decision, "ALLOW");
+      assert.strictEqual(authAllow.code, "ALLOWED");
+
+      // 2. Gate 8 Production Readiness Check
+      const assignments = createUatAssignments({
+        overridePosCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+        overridePatch: (base) => ({
+          ...base,
+          unitId: "ou-tahfizh-unit-1",
+          scopeUnits: [{ unitId: "ou-tahfizh-unit-1" }],
+          representativeResourceContext: {
+            orgUnitIds: ["ou-tahfizh-unit-1"],
+            orgDomain: "TAHFIZH",
+          },
+        }),
+      });
+
+      const mockDb = {
+        assignment: { findMany: async () => assignments },
+        positionCapability: { findMany: async () => [] },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(userGate);
+      assert.strictEqual(userGate.status, "READY");
+    });
+
+    it("5.3 Proof 3: tahfizh.target.manage (HALAQOH): target santri in assigned halaqoh with VERIFIED_PRODUCTION => ALLOW & Gate 8 READY", async () => {
+      // 1. Runtime authorizeCanonical evaluation
+      const musyrifIdentity = {
+        userId: "usr-musyrif-1",
+        username: "musyrif.1",
+        accountType: "PERSONAL" as const,
+        staffId: "stf-musyrif-1",
+        staffStatus: "AKTIF",
+        status: "AKTIF",
+        name: "Musyrif Tahfizh 1",
+      };
+      const musyrifAssignment = {
+        id: "asg-mt-1",
+        userId: "usr-musyrif-1",
+        positionId: "pos-mt",
+        positionCode: "MUSYRIF_TAHFIZH",
+        unitId: "hlq-unit-1",
+        status: "ACTIVE" as const,
+        validFrom: new Date(Date.now() - 86400000),
+        validUntil: null,
+        scopeUnits: [],
+        positionCapabilities: [
+          {
+            capabilityCode: "tahfizh.target.manage",
+            scopeType: "HALAQOH" as const,
+            businessRuleState: "VERIFIED_PRODUCTION" as const,
+          },
+        ],
+      };
+
+      const authAllow = await authorizeCanonical({
+        identity: musyrifIdentity,
+        capability: "tahfizh.target.manage",
+        resolvedContext: {
+          santriId: "san-own-1",
+          halaqohId: "hlq-unit-1",
+          orgUnitIds: ["hlq-unit-1"],
+          orgDomain: "TAHFIZH",
+        },
+        dataProvider: {
+          getIdentity: async () => musyrifIdentity,
+          getActiveAssignments: async () => [musyrifAssignment] as any,
+          getUnitAccountPlacement: async () => null,
+          resolveResourceContext: async () => null,
+          verifyHumanExecutor: async () => null,
+        },
+      });
+
+      assert.strictEqual(authAllow.decision, "ALLOW");
+      assert.strictEqual(authAllow.code, "ALLOWED");
+
+      // 2. Gate 8 Production Readiness Check
+      const assignments = createUatAssignments({
+        overridePosCode: "MUSYRIF_TAHFIZH",
+        overridePatch: (base) => ({
+          ...base,
+          unitId: "hlq-unit-1",
+          representativeSantri: {
+            id: "san-own-1",
+            halaqohId: "hlq-unit-1",
+          },
+        }),
+      });
+
+      const mockDb = {
+        assignment: { findMany: async () => assignments },
+        positionCapability: { findMany: async () => [] },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(userGate);
+      assert.strictEqual(userGate.status, "READY");
+    });
+
+    it("5.4 Proof 4: tahfizh.target.manage (HALAQOH): target santri in different halaqoh => DENY (SCOPE_MISMATCH) & Gate 8 NOT_READY", async () => {
+      // 1. Runtime authorizeCanonical evaluation
+      const musyrifIdentity = {
+        userId: "usr-musyrif-1",
+        username: "musyrif.1",
+        accountType: "PERSONAL" as const,
+        staffId: "stf-musyrif-1",
+        staffStatus: "AKTIF",
+        status: "AKTIF",
+        name: "Musyrif Tahfizh 1",
+      };
+      const musyrifAssignment = {
+        id: "asg-mt-1",
+        userId: "usr-musyrif-1",
+        positionId: "pos-mt",
+        positionCode: "MUSYRIF_TAHFIZH",
+        unitId: "hlq-unit-1",
+        status: "ACTIVE" as const,
+        validFrom: new Date(Date.now() - 86400000),
+        validUntil: null,
+        scopeUnits: [],
+        positionCapabilities: [
+          {
+            capabilityCode: "tahfizh.target.manage",
+            scopeType: "HALAQOH" as const,
+            businessRuleState: "VERIFIED_PRODUCTION" as const,
+          },
+        ],
+      };
+
+      const authDeny = await authorizeCanonical({
+        identity: musyrifIdentity,
+        capability: "tahfizh.target.manage",
+        resolvedContext: {
+          santriId: "san-diff-2",
+          halaqohId: "hlq-different-99",
+          orgUnitIds: ["hlq-different-99"],
+          orgDomain: "TAHFIZH",
+        },
+        dataProvider: {
+          getIdentity: async () => musyrifIdentity,
+          getActiveAssignments: async () => [musyrifAssignment] as any,
+          getUnitAccountPlacement: async () => null,
+          resolveResourceContext: async () => null,
+          verifyHumanExecutor: async () => null,
+        },
+      });
+
+      assert.strictEqual(authDeny.decision, "DENY");
+      assert.strictEqual(authDeny.code, "SCOPE_MISMATCH");
+
+      // 2. Gate 8 Production Readiness Check
+      const assignments = createUatAssignments({
+        overridePosCode: "MUSYRIF_TAHFIZH",
+        overridePatch: (base) => ({
+          ...base,
+          unitId: "hlq-unit-1",
+          representativeSantri: {
+            id: "san-diff-2",
+            halaqohId: "hlq-different-99", // Mismatched halaqoh
+          },
+        }),
+      });
+
+      const mockDb = {
+        assignment: { findMany: async () => assignments },
+        positionCapability: { findMany: async () => [] },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(userGate);
+      assert.strictEqual(userGate.status, "NOT_READY");
+      assert.ok(
+        userGate.details.includes("SCOPE_MISMATCH") && userGate.details.includes("tahfizh.target.manage"),
+        `Expected SCOPE_MISMATCH for tahfizh.target.manage, got: ${userGate.details}`
+      );
+    });
+
+    it("5.5 Proof 5: keasramaan.permission.read (ASSIGNED_UNITS): resource outside assigned asrama unit => DENY (SCOPE_MISMATCH) & Gate 8 NOT_READY", async () => {
+      // 1. Runtime authorizeCanonical evaluation
+      const keasramaanIdentity = {
+        userId: "usr-asrama-op",
+        username: "asrama.op",
+        accountType: "PERSONAL" as const,
+        staffId: "stf-asrama-op",
+        staffStatus: "AKTIF",
+        status: "AKTIF",
+        name: "Petugas Asrama Putra",
+      };
+      const keasramaanAssignment = {
+        id: "asg-asr-1",
+        userId: "usr-asrama-op",
+        positionId: "pos-asr-op",
+        positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+        unitId: "asr-putra-1",
+        status: "ACTIVE" as const,
+        validFrom: new Date(Date.now() - 86400000),
+        validUntil: null,
+        scopeUnits: [{ unitId: "asr-putra-1" }],
+        positionCapabilities: [
+          {
+            capabilityCode: "keasramaan.permission.read",
+            scopeType: "ASSIGNED_UNITS" as const,
+            businessRuleState: "VERIFIED_PRODUCTION" as const,
+          },
+        ],
+      };
+
+      const authDeny = await authorizeCanonical({
+        identity: keasramaanIdentity,
+        capability: "keasramaan.permission.read",
+        resolvedContext: {
+          resourceId: "perm-outside-1",
+          orgUnitIds: ["asr-putri-2"], // Outside unit
+          orgDomain: "KEASRAMAAN",
+        },
+        dataProvider: {
+          getIdentity: async () => keasramaanIdentity,
+          getActiveAssignments: async () => [keasramaanAssignment] as any,
+          getUnitAccountPlacement: async () => null,
+          resolveResourceContext: async () => null,
+          verifyHumanExecutor: async () => null,
+        },
+      });
+
+      assert.strictEqual(authDeny.decision, "DENY");
+      assert.strictEqual(authDeny.code, "SCOPE_MISMATCH");
+
+      // 2. Gate 8 Production Readiness Check
+      const assignments = createUatAssignments({
+        overridePosCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+        overridePatch: (base) => ({
+          ...base,
+          unitId: "asr-putra-1",
+          scopeUnits: [{ unitId: "asr-putra-1" }],
+          representativeResourceContext: {
+            orgUnitIds: ["asr-putri-2"],
+            orgDomain: "KEASRAMAAN",
+          },
+        }),
+      });
+
+      const mockDb = {
+        assignment: { findMany: async () => assignments },
+        positionCapability: { findMany: async () => [] },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(userGate);
+      assert.strictEqual(userGate.status, "NOT_READY");
+      assert.ok(
+        userGate.details.includes("SCOPE_MISMATCH") && userGate.details.includes("keasramaan.permission.read"),
+        `Expected SCOPE_MISMATCH for keasramaan.permission.read, got: ${userGate.details}`
+      );
+    });
+
+    it("5.6 Proof 6: keasramaan.permission.read (ASSIGNED_UNITS): resource inside assigned asrama unit with VERIFIED_PRODUCTION => ALLOW & Gate 8 READY", async () => {
+      // 1. Runtime authorizeCanonical evaluation
+      const keasramaanIdentity = {
+        userId: "usr-asrama-op",
+        username: "asrama.op",
+        accountType: "PERSONAL" as const,
+        staffId: "stf-asrama-op",
+        staffStatus: "AKTIF",
+        status: "AKTIF",
+        name: "Petugas Asrama Putra",
+      };
+      const keasramaanAssignment = {
+        id: "asg-asr-1",
+        userId: "usr-asrama-op",
+        positionId: "pos-asr-op",
+        positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+        unitId: "asr-putra-1",
+        status: "ACTIVE" as const,
+        validFrom: new Date(Date.now() - 86400000),
+        validUntil: null,
+        scopeUnits: [{ unitId: "asr-putra-1" }],
+        positionCapabilities: [
+          {
+            capabilityCode: "keasramaan.permission.read",
+            scopeType: "ASSIGNED_UNITS" as const,
+            businessRuleState: "VERIFIED_PRODUCTION" as const,
+          },
+        ],
+      };
+
+      const authAllow = await authorizeCanonical({
+        identity: keasramaanIdentity,
+        capability: "keasramaan.permission.read",
+        resolvedContext: {
+          resourceId: "perm-inside-1",
+          orgUnitIds: ["asr-putra-1"],
+          orgDomain: "KEASRAMAAN",
+        },
+        dataProvider: {
+          getIdentity: async () => keasramaanIdentity,
+          getActiveAssignments: async () => [keasramaanAssignment] as any,
+          getUnitAccountPlacement: async () => null,
+          resolveResourceContext: async () => null,
+          verifyHumanExecutor: async () => null,
+        },
+      });
+
+      assert.strictEqual(authAllow.decision, "ALLOW");
+      assert.strictEqual(authAllow.code, "ALLOWED");
+
+      // 2. Gate 8 Production Readiness Check
+      const assignments = createUatAssignments({
+        overridePosCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+        overridePatch: (base) => ({
+          ...base,
+          unitId: "asr-putra-1",
+          scopeUnits: [{ unitId: "asr-putra-1" }],
+          representativeResourceContext: {
+            orgUnitIds: ["asr-putra-1"],
+            orgDomain: "KEASRAMAAN",
+          },
+        }),
+      });
+
+      const mockDb = {
+        assignment: { findMany: async () => assignments },
+        positionCapability: { findMany: async () => [] },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(userGate);
+      assert.strictEqual(userGate.status, "READY");
+    });
+
+    it("5.7 Proof 7: APPROVED_TARGET_PENDING_TECHNICAL confers zero runtime authority => TARGET_POLICY_READY: true, RUNTIME_NOT_READY: POLICY_APPROVED_NOT_RUNTIME_ACTIVE", async () => {
+      // 1. Production Readiness Check: target policy definition matches, but state is APPROVED_TARGET_PENDING_TECHNICAL
+      const assignments = createUatAssignments({
+        defaultBusinessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+      });
+
+      const mockDb = {
+        assignment: { findMany: async () => assignments },
+        positionCapability: { findMany: async () => [] },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(userGate);
+      assert.strictEqual(userGate.status, "NOT_READY");
+      assert.ok(
+        userGate.details.includes("TARGET_POLICY_READY, RUNTIME_NOT_READY"),
+        `Expected TARGET_POLICY_READY, RUNTIME_NOT_READY, got: ${userGate.details}`
+      );
+      assert.ok(
+        userGate.details.includes("POLICY_APPROVED_NOT_RUNTIME_ACTIVE"),
+        `Expected POLICY_APPROVED_NOT_RUNTIME_ACTIVE, got: ${userGate.details}`
+      );
+
+      // 2. Runtime authorizeCanonical evaluation strictly denies when grant is not VERIFIED_PRODUCTION
+      const targetIdentity = {
+        userId: "usr-pending-target",
+        username: "pending.target",
+        accountType: "PERSONAL" as const,
+        staffId: "stf-pending",
+        staffStatus: "AKTIF",
+        status: "AKTIF",
+        name: "Pending Target Staff",
+      };
+      const pendingAssignment = {
+        id: "asg-pending-1",
+        userId: "usr-pending-target",
+        positionId: "pos-pending",
+        positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+        unitId: "ou-tahfizh-1",
+        status: "ACTIVE" as const,
+        validFrom: new Date(Date.now() - 86400000),
+        validUntil: null,
+        scopeUnits: [{ unitId: "ou-tahfizh-1" }],
+        positionCapabilities: [
+          {
+            capabilityCode: "tahfizh.reward.issue",
+            scopeType: "ASSIGNED_UNITS" as const,
+            businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+          },
+        ],
+      };
+
+      const authRes = await authorizeCanonical({
+        identity: targetIdentity,
+        capability: "tahfizh.reward.issue",
+        resolvedContext: {
+          resourceId: "rw-inside-1",
+          orgUnitIds: ["ou-tahfizh-1"],
+          orgDomain: "TAHFIZH",
+        },
+        dataProvider: {
+          getIdentity: async () => targetIdentity,
+          getActiveAssignments: async () => [pendingAssignment] as any,
+          getUnitAccountPlacement: async () => null,
+          resolveResourceContext: async () => null,
+          verifyHumanExecutor: async () => null,
+        },
+      });
+
+      assert.strictEqual(authRes.decision, "DENY");
+      assert.strictEqual(
+        authRes.code,
+        "CAPABILITY_NOT_GRANTED",
+        "APPROVED_TARGET_PENDING_TECHNICAL must confer zero runtime authority"
+      );
+    });
+
+    it("5.8 Proof 8: exact CANONICAL_UAT_TARGET_POLICIES matches UAT_ACTIVATION_TARGETS definitions with no legacy aliases", () => {
+      // 1. Exact count is 6
+      assert.strictEqual(CANONICAL_UAT_TARGET_POLICIES.length, 6, "Must have exactly 6 canonical UAT target policies");
+
+      // 2. Build expected list directly from UAT_ACTIVATION_TARGETS
+      const expectedPolicies = [
+        {
+          positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.positionCode,
+          capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].capabilityCode,
+          expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].scopeType,
+          expectedBusinessState: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].businessRuleState,
+        },
+        {
+          positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.positionCode,
+          capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[1].capabilityCode,
+          expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[1].scopeType,
+          expectedBusinessState: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[1].businessRuleState,
+        },
+        {
+          positionCode: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.positionCode,
+          capabilityCode: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.capabilityCode,
+          expectedScope: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.scopeType,
+          expectedBusinessState: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.businessRuleState,
+        },
+        {
+          positionCode: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.PEMBINA_HALAQOH.positionCode,
+          capabilityCode: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.PEMBINA_HALAQOH.capabilityCode,
+          expectedScope: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.PEMBINA_HALAQOH.scopeType,
+          expectedBusinessState: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.PEMBINA_HALAQOH.businessRuleState,
+        },
+        {
+          positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.positionCode,
+          capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].capabilityCode,
+          expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].scopeType,
+          expectedBusinessState: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].businessRuleState,
+        },
+        {
+          positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.positionCode,
+          capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[1].capabilityCode,
+          expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[1].scopeType,
+          expectedBusinessState: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[1].businessRuleState,
+        },
+      ];
+
+      for (let i = 0; i < expectedPolicies.length; i++) {
+        const actual = CANONICAL_UAT_TARGET_POLICIES[i];
+        const exp = expectedPolicies[i];
+        assert.strictEqual(actual.positionCode, exp.positionCode);
+        assert.strictEqual(actual.capabilityCode, exp.capabilityCode);
+        assert.strictEqual(actual.expectedScope, exp.expectedScope);
+        assert.strictEqual(actual.expectedBusinessState, exp.expectedBusinessState);
+      }
+
+      // 3. Explicitly verify NO invalid/unapproved policy names are present
+      const allCapabilityCodes = CANONICAL_UAT_TARGET_POLICIES.map((p) => p.capabilityCode);
+      assert.ok(!allCapabilityCodes.includes("keasramaan.perizinan.approve" as any), "keasramaan.perizinan.approve must NOT be in canonical UAT targets");
+      assert.ok(!allCapabilityCodes.includes("health.record.write" as any), "health.record.write must NOT be in canonical UAT targets");
+      assert.ok(!allCapabilityCodes.includes("tahfizh.halaqoh.manage" as any), "tahfizh.halaqoh.manage must NOT be in canonical UAT targets");
+    });
+  });
 });
+
