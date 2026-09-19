@@ -74,7 +74,23 @@ export async function GET(req: Request) {
       where,
       skip: (page - 1) * perPage,
       take: perPage,
-      include: {
+      select: {
+        id: true,
+        nis: true,
+        nama: true,
+        kelas: true,
+        jenisKelamin: true,
+        status: true,
+        isYatimDhuafa: true,
+        targetAkhirProgramJuz: true,
+        modalHafalanAwalHalaman: true,
+        tanggalBaselineTahfizh: true,
+        namaWali: true,
+        noHpWali: true,
+        halaqohId: true,
+        createdAt: true,
+        updatedAt: true,
+        createdBy: true,
         halaqoh: {
           select: {
             id: true,
@@ -133,7 +149,7 @@ export async function POST(req: Request) {
 
     const { nis, nama, kelas, jenisKelamin, halaqohId, namaWali, noHpWali } = validation.data;
 
-    const existing = await prisma.santri.findUnique({ where: { nis } });
+    const existing = await prisma.santri.findUnique({ where: { nis }, select: { id: true } });
     if (existing) {
       return NextResponse.json(
         { success: false, error: { code: 'DUPLICATE', message: `Santri dengan NIS ${nis} sudah terdaftar.` } },
@@ -151,6 +167,24 @@ export async function POST(req: Request) {
         namaWali,
         noHpWali,
         createdBy: session.username,
+      },
+      select: {
+        id: true,
+        nis: true,
+        nama: true,
+        kelas: true,
+        jenisKelamin: true,
+        status: true,
+        isYatimDhuafa: true,
+        targetAkhirProgramJuz: true,
+        modalHafalanAwalHalaman: true,
+        tanggalBaselineTahfizh: true,
+        namaWali: true,
+        noHpWali: true,
+        halaqohId: true,
+        createdAt: true,
+        updatedAt: true,
+        createdBy: true,
       },
     });
 

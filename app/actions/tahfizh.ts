@@ -464,7 +464,23 @@ export async function getSantriProgresAction(santriId: string) {
   try {
     const santri = await prisma.santri.findUnique({
       where: { id: santriId },
-      include: {
+      select: {
+        id: true,
+        nis: true,
+        nama: true,
+        kelas: true,
+        jenisKelamin: true,
+        status: true,
+        isYatimDhuafa: true,
+        targetAkhirProgramJuz: true,
+        modalHafalanAwalHalaman: true,
+        tanggalBaselineTahfizh: true,
+        namaWali: true,
+        noHpWali: true,
+        halaqohId: true,
+        createdAt: true,
+        updatedAt: true,
+        createdBy: true,
         halaqoh: { include: { pembina: true } },
         setoranList: {
           where: { status: { not: "DIBATALKAN" } },

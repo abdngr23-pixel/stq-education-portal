@@ -132,7 +132,7 @@ export async function POST(req: Request) {
       }
     }
 
-    const santri = await prisma.santri.findUnique({ where: { id: santriId } });
+    const santri = await prisma.santri.findUnique({ where: { id: santriId }, select: { id: true, nama: true } });
     if (!santri) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Data santri tidak ditemukan.' } },

@@ -162,7 +162,14 @@ export async function getLaporanBulananHalaqohAction(
       // Mode Agregasi: Seluruh Halaqoh
       const allSantri = await prisma.santri.findMany({
         where: { status: "AKTIF" },
-        include: {
+        select: {
+          id: true,
+          nis: true,
+          nama: true,
+          kelas: true,
+          modalHafalanAwalHalaman: true,
+          tanggalBaselineTahfizh: true,
+          createdAt: true,
           halaqoh: { include: { pembina: true } },
         },
         orderBy: [{ halaqoh: { nama: "asc" } }, { nama: "asc" }],
