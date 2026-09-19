@@ -319,8 +319,27 @@ describe("P0 DATA SANTRI — PRE-M3.3B SCHEMA COMPATIBILITY REGRESSION TEST", ()
     assert.ok(brokenRes.error.includes("belum terhubung"));
   });
 
-  it("7. Verifies mutation compatibility on pre-M3.3B schema (update and create with explicit select)", async () => {
-    // A. Update santri with explicit select
+  it("7. Verifies mutation & response contract preservation on pre-M3.3B schema (update/create/read preserve all 16 PRE-M3.3B scalars)", async () => {
+    const CANONICAL_PRE_M33B_SCALARS = [
+      "id",
+      "nis",
+      "nama",
+      "kelas",
+      "jenisKelamin",
+      "status",
+      "isYatimDhuafa",
+      "targetAkhirProgramJuz",
+      "modalHafalanAwalHalaman",
+      "tanggalBaselineTahfizh",
+      "namaWali",
+      "noHpWali",
+      "halaqohId",
+      "createdAt",
+      "updatedAt",
+      "createdBy",
+    ];
+
+    // A. Update santri with full pre-M3.3B response contract
     const updated = await prisma.santri.update({
       where: { id: "SAN-PRE-001" },
       data: {
@@ -330,12 +349,28 @@ describe("P0 DATA SANTRI — PRE-M3.3B SCHEMA COMPATIBILITY REGRESSION TEST", ()
         id: true,
         nis: true,
         nama: true,
+        kelas: true,
+        jenisKelamin: true,
+        status: true,
+        isYatimDhuafa: true,
+        targetAkhirProgramJuz: true,
         modalHafalanAwalHalaman: true,
+        tanggalBaselineTahfizh: true,
+        namaWali: true,
+        noHpWali: true,
+        halaqohId: true,
+        createdAt: true,
+        updatedAt: true,
+        createdBy: true,
       },
     });
     assert.strictEqual(updated.modalHafalanAwalHalaman, 22);
+    for (const key of CANONICAL_PRE_M33B_SCALARS) {
+      assert.ok(key in updated, `Updated Santri contract must preserve scalar property '${key}'`);
+    }
+    assert.strictEqual("cohortId" in updated, false, "cohortId must NOT be present in pre-M3.3B select");
 
-    // B. Create santri with explicit select
+    // B. Create santri with full pre-M3.3B response contract
     const created = await prisma.santri.create({
       data: {
         id: "SAN-PRE-005",
@@ -345,6 +380,7 @@ describe("P0 DATA SANTRI — PRE-M3.3B SCHEMA COMPATIBILITY REGRESSION TEST", ()
         jenisKelamin: "L",
         status: SantriStatus.AKTIF,
         halaqohId: "HLQ-TEST-PRE-01",
+        createdBy: "admin.test",
       },
       select: {
         id: true,
@@ -353,10 +389,54 @@ describe("P0 DATA SANTRI — PRE-M3.3B SCHEMA COMPATIBILITY REGRESSION TEST", ()
         kelas: true,
         jenisKelamin: true,
         status: true,
+        isYatimDhuafa: true,
+        targetAkhirProgramJuz: true,
+        modalHafalanAwalHalaman: true,
+        tanggalBaselineTahfizh: true,
+        namaWali: true,
+        noHpWali: true,
+        halaqohId: true,
+        createdAt: true,
+        updatedAt: true,
+        createdBy: true,
       },
     });
     assert.strictEqual(created.id, "SAN-PRE-005");
     assert.strictEqual(created.nama, "Santri Baru Pre-M33B");
+    for (const key of CANONICAL_PRE_M33B_SCALARS) {
+      assert.ok(key in created, `Created Santri contract must preserve scalar property '${key}'`);
+    }
+    assert.strictEqual("cohortId" in created, false, "cohortId must NOT be present in pre-M3.3B select");
+
+    // C. Representative read query with full pre-M3.3B response contract + relation
+    const readItem = await prisma.santri.findUnique({
+      where: { id: "SAN-PRE-001" },
+      select: {
+        id: true,
+        nis: true,
+        nama: true,
+        kelas: true,
+        jenisKelamin: true,
+        status: true,
+        isYatimDhuafa: true,
+        targetAkhirProgramJuz: true,
+        modalHafalanAwalHalaman: true,
+        tanggalBaselineTahfizh: true,
+        namaWali: true,
+        noHpWali: true,
+        halaqohId: true,
+        createdAt: true,
+        updatedAt: true,
+        createdBy: true,
+        halaqoh: true,
+      },
+    });
+    assert.ok(readItem);
+    for (const key of CANONICAL_PRE_M33B_SCALARS) {
+      assert.ok(key in readItem, `Read Santri contract must preserve scalar property '${key}'`);
+    }
+    assert.ok("halaqoh" in readItem, "halaqoh relation must be preserved");
+    assert.strictEqual("cohortId" in readItem, false, "cohortId must NOT be present in pre-M3.3B select");
   });
 
   it("8. Verifies forward compatibility: continues to succeed after M3.3B cohort_id column is added", async () => {
