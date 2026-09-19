@@ -90,7 +90,17 @@ export interface ReadinessDbClient {
     findMany: (args?: any) => Promise<Array<{ code: string; [key: string]: any }>>;
   };
   santri?: {
-    findMany: (args?: any) => Promise<Array<{ id: string; nis: string; nama: string; status?: string; cohortId: string | null; [key: string]: any }>>;
+    findMany: (args?: any) => Promise<Array<{ id: string; nis?: string; nama?: string; status?: string; cohortId?: string | null; halaqohId?: string | null; [key: string]: any }>>;
+    findFirst?: (args?: any) => Promise<any>;
+    findUnique?: (args?: any) => Promise<any>;
+  };
+  santriKamarPlacement?: {
+    findMany?: (args?: any) => Promise<any>;
+    findFirst?: (args?: any) => Promise<any>;
+  };
+  assignmentScopeUnit?: {
+    findMany?: (args?: any) => Promise<any>;
+    findFirst?: (args?: any) => Promise<any>;
   };
   educationCohort?: {
     findMany: (args?: any) => Promise<Array<{ id: string; code: string; isActive: boolean; [key: string]: any }>>;
@@ -122,9 +132,9 @@ export interface ReadinessDbClient {
       userId?: string;
       user?: any;
       positionId?: string;
-      position?: { id?: string; code: string; isActive?: boolean; capabilities?: any[] };
+      position?: { id?: string; code: string; name?: string; domain?: string; isActive?: boolean; capabilities?: any[]; [key: string]: any };
       unitId?: string;
-      unit?: { id?: string; code: string; isActive?: boolean };
+      unit?: { id?: string; code: string; name?: string; isActive?: boolean; [key: string]: any };
       status: string;
       validFrom?: Date;
       validUntil: Date | null;
@@ -572,8 +582,25 @@ export async function checkPendidikanV2ProductionReadiness(
           position: true,
           user: true,
           unit: true,
+          scopedUnits: {
+            include: {
+              unit: true,
+            },
+          },
         },
       });
+
+      const asgScopeUnitsMap = new Map<string, any[]>();
+      if (db.assignmentScopeUnit?.findMany && asgs.some((a: any) => !a.scopedUnits)) {
+        const allScopeUnits = await db.assignmentScopeUnit.findMany({
+          include: { unit: true },
+        }).catch(() => []);
+        for (const su of allScopeUnits) {
+          const list = asgScopeUnitsMap.get(su.assignmentId) || [];
+          list.push(su);
+          asgScopeUnitsMap.set(su.assignmentId, list);
+        }
+      }
 
       let usersMap = new Map<string, any>();
       if (db.user && asgs.some((a: any) => !a.user && a.userId)) {
@@ -704,54 +731,310 @@ export async function checkPendidikanV2ProductionReadiness(
             policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} has invalid state ${matchPc.businessRuleState}`);
           }
         } else {
-          // matchPc is VERIFIED_PRODUCTION -> Validate Effective Resource-Scope Readiness
+          // matchPc is VERIFIED_PRODUCTION -> Validate Effective Resource-Scope Readiness from REAL Database
           const matchingAsgs = asgs.filter((a: any) => {
             const pCode = a.position?.code || (a.positionId ? positionsMap.get(a.positionId)?.code : null) || a.positionCode;
             return pCode === target.positionCode;
           });
 
           for (const asg of matchingAsgs) {
-            if (target.expectedScope === "ASSIGNED_UNITS") {
-              const anchorUnit = asg.unitId || asg.unit?.id;
-              const scopedUnits = (asg.scopeUnits || asg.scopedUnits || []).map((su: any) => su.unitId || su.unit?.id || su);
-              const permittedUnits = [anchorUnit, ...scopedUnits].filter(Boolean);
+            const user = asg.user || (asg.userId ? usersMap.get(asg.userId) : null);
+            if (!user) {
+              policyIssues.push(`${target.positionCode}: assignment ${asg.id} has no linked user`);
+              continue;
+            }
 
-              if (asg.hasRepresentativeResource === false) {
-                policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_NOT_READY (no representative assigned resource exists)`);
-                continue;
-              }
-
-              if (permittedUnits.length === 0) {
-                policyIssues.push(`${target.positionCode}: assignment ${asg.id} has scope ASSIGNED_UNITS but zero anchor or scoped units configured (TARGET_RESOURCE_SCOPE_NOT_READY)`);
-                continue;
-              }
-
-              const resCtx = asg.representativeResourceContext;
-              const repUnitId = asg.representativeUnitId;
-              const resourceUnits: string[] = resCtx?.orgUnitIds || (repUnitId ? [repUnitId] : []);
-
-              if (resourceUnits.length > 0) {
-                const matches = resourceUnits.some((u: string) => permittedUnits.includes(u));
-                if (!matches) {
-                  policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} SCOPE_MISMATCH: resource units [${resourceUnits.join(", ")}] not in assigned units [${permittedUnits.join(", ")}] (runtime NOT_READY)`);
-                }
-              }
-            } else if (target.expectedScope === "HALAQOH") {
-              const anchorUnit = asg.unitId || asg.unit?.id;
-
-              if (asg.hasRepresentativeResource === false) {
-                policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_NOT_READY (no representative santri in assigned halaqoh)`);
-                continue;
-              }
+            if (target.expectedScope === "HALAQOH") {
+              const anchorUnit = asg.unit?.isActive !== false ? (asg.unitId || asg.unit?.id) : null;
 
               if (!anchorUnit) {
-                policyIssues.push(`${target.positionCode}: assignment ${asg.id} has scope HALAQOH but no anchor halaqoh configured (TARGET_RESOURCE_SCOPE_NOT_READY)`);
+                policyIssues.push(`${target.positionCode}: assignment ${asg.id} has scope HALAQOH but no active anchor halaqoh configured (TARGET_RESOURCE_SCOPE_NOT_READY)`);
                 continue;
               }
 
-              const santriHalaqoh = asg.representativeSantri?.halaqohId || asg.representativeHalaqohId;
-              if (santriHalaqoh && santriHalaqoh !== anchorUnit) {
-                policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} SCOPE_MISMATCH: santri halaqoh ${santriHalaqoh} does not match assigned halaqoh ${anchorUnit} (runtime NOT_READY)`);
+              // Resolve ACTUAL active Santri from database
+              let repSantri: any = null;
+              if (db.santri?.findFirst) {
+                repSantri = await db.santri.findFirst({
+                  where: {
+                    status: "AKTIF",
+                    halaqohId: anchorUnit,
+                  },
+                  select: { id: true, halaqohId: true, status: true },
+                }).catch(() => null);
+              } else if (db.santri?.findMany) {
+                const santris = await db.santri.findMany().catch(() => []);
+                repSantri = santris.find((s: any) => (s.status === "AKTIF" || !s.status) && s.halaqohId === anchorUnit) || null;
+              }
+
+              if (!repSantri) {
+                // Check if any active santri exists outside this halaqoh to distinguish SCOPE_MISMATCH from TARGET_RESOURCE_SCOPE_NOT_READY
+                let outsideSantri: any = null;
+                if (db.santri?.findFirst) {
+                  outsideSantri = await db.santri.findFirst({
+                    where: {
+                      status: "AKTIF",
+                      halaqohId: { not: anchorUnit },
+                    },
+                    select: { id: true, halaqohId: true },
+                  }).catch(() => null);
+                } else if (db.santri?.findMany) {
+                  const santris = await db.santri.findMany().catch(() => []);
+                  outsideSantri = santris.find((s: any) => (s.status === "AKTIF" || !s.status) && s.halaqohId && s.halaqohId !== anchorUnit) || null;
+                }
+
+                if (outsideSantri && outsideSantri.halaqohId) {
+                  policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} SCOPE_MISMATCH: santri halaqoh ${outsideSantri.halaqohId} does not match assigned halaqoh ${anchorUnit} (runtime NOT_READY)`);
+                } else {
+                  policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_NOT_READY (no representative active santri found in assigned halaqoh ${anchorUnit})`);
+                }
+                continue;
+              }
+
+              // Perform canonical runtime evaluation against real representative santri
+              const mockAssignment: CanonicalAssignmentWithDetails = {
+                id: asg.id,
+                userId: user.id,
+                positionId: asg.positionId || asg.position?.id || "pos-id",
+                positionCode: target.positionCode,
+                positionName: asg.position?.name || target.positionCode,
+                domain: asg.position?.domain || "TAHFIZH",
+                unitId: anchorUnit,
+                unitCode: asg.unit?.code || "OU-HLQ",
+                unitName: asg.unit?.name || "Halaqoh",
+                status: "ACTIVE",
+                validFrom: asg.validFrom ? new Date(asg.validFrom) : new Date(0),
+                validUntil: asg.validUntil ? new Date(asg.validUntil) : null,
+                positionCapabilities: [
+                  {
+                    capabilityCode: target.capabilityCode,
+                    scopeType: "HALAQOH",
+                    businessRuleState: "VERIFIED_PRODUCTION",
+                  },
+                ],
+                scopeUnits: [],
+              };
+
+              const resolvedContext: ResolvedResourceContext = {
+                santriId: repSantri.id,
+                halaqohId: repSantri.halaqohId,
+                orgUnitIds: [repSantri.halaqohId],
+                orgDomain: "TAHFIZH",
+              };
+
+              const authRes = await authorizeCanonical({
+                identity: {
+                  userId: user.id,
+                  username: user.username || `user-${user.id}`,
+                  status: user.status || "AKTIF",
+                  accountType: "PERSONAL",
+                  staffId: user.staffId,
+                  mockAssignments: [mockAssignment],
+                } as any,
+                capability: target.capabilityCode,
+                resourceContext: { santriId: repSantri.id },
+                resolvedContext,
+              });
+
+              if (authRes.decision !== "ALLOW") {
+                policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} ${authRes.code}: ${authRes.reason} (runtime NOT_READY)`);
+              }
+            } else if (target.expectedScope === "ASSIGNED_UNITS") {
+              const anchorUnit = asg.unit?.isActive !== false ? (asg.unitId || asg.unit?.id) : null;
+              const suList = asg.scopedUnits || asgScopeUnitsMap.get(asg.id) || [];
+              const scopedUnits = suList
+                .filter((su: any) => (su.unit ? su.unit.isActive !== false : true))
+                .map((su: any) => su.unitId || su.unit?.id)
+                .filter(Boolean);
+              const permittedUnits = Array.from(new Set([anchorUnit, ...scopedUnits].filter(Boolean)));
+
+              if (permittedUnits.length === 0) {
+                policyIssues.push(`${target.positionCode}: assignment ${asg.id} has scope ASSIGNED_UNITS but zero active anchor or scoped units configured (TARGET_RESOURCE_SCOPE_NOT_READY)`);
+                continue;
+              }
+
+              if (target.positionCode === "PETUGAS_OPERASIONAL_TAHFIZH") {
+                // Real Tahfizh Representative Resource: find active santri whose halaqoh is in permittedUnits
+                let targetSantri: any = null;
+                if (db.santri?.findFirst) {
+                  targetSantri = await db.santri.findFirst({
+                    where: {
+                      status: "AKTIF",
+                      halaqohId: { in: permittedUnits },
+                    },
+                    select: { id: true, halaqohId: true, status: true },
+                  }).catch(() => null);
+                } else if (db.santri?.findMany) {
+                  const santris = await db.santri.findMany().catch(() => []);
+                  targetSantri = santris.find((s: any) => (s.status === "AKTIF" || !s.status) && s.halaqohId && permittedUnits.includes(s.halaqohId)) || null;
+                }
+
+                if (!targetSantri) {
+                  // Check if active santri exists outside permittedUnits
+                  let outsideSantri: any = null;
+                  if (db.santri?.findFirst) {
+                    outsideSantri = await db.santri.findFirst({
+                      where: {
+                        status: "AKTIF",
+                        halaqohId: { notIn: permittedUnits },
+                      },
+                      select: { id: true, halaqohId: true },
+                    }).catch(() => null);
+                  } else if (db.santri?.findMany) {
+                    const santris = await db.santri.findMany().catch(() => []);
+                    outsideSantri = santris.find((s: any) => (s.status === "AKTIF" || !s.status) && s.halaqohId && !permittedUnits.includes(s.halaqohId)) || null;
+                  }
+
+                  if (outsideSantri && outsideSantri.halaqohId) {
+                    policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} SCOPE_MISMATCH: resource units [${outsideSantri.halaqohId}] not in assigned units [${permittedUnits.join(", ")}] (runtime NOT_READY)`);
+                  } else {
+                    policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_NOT_READY (no representative active santri found in assigned units [${permittedUnits.join(", ")}])`);
+                  }
+                  continue;
+                }
+
+                // Canonical runtime check
+                const mockAssignment: CanonicalAssignmentWithDetails = {
+                  id: asg.id,
+                  userId: user.id,
+                  positionId: asg.positionId || asg.position?.id || "pos-id",
+                  positionCode: target.positionCode,
+                  positionName: asg.position?.name || target.positionCode,
+                  domain: asg.position?.domain || "TAHFIZH",
+                  unitId: anchorUnit || permittedUnits[0],
+                  unitCode: asg.unit?.code || "OU-TAF",
+                  unitName: asg.unit?.name || "Tahfizh",
+                  status: "ACTIVE",
+                  validFrom: asg.validFrom ? new Date(asg.validFrom) : new Date(0),
+                  validUntil: asg.validUntil ? new Date(asg.validUntil) : null,
+                  positionCapabilities: [
+                    {
+                      capabilityCode: target.capabilityCode,
+                      scopeType: "ASSIGNED_UNITS",
+                      businessRuleState: "VERIFIED_PRODUCTION",
+                    },
+                  ],
+                  scopeUnits: scopedUnits.map((u: string) => ({ unitId: u })),
+                };
+
+                const resolvedContext: ResolvedResourceContext = {
+                  santriId: targetSantri.id,
+                  halaqohId: targetSantri.halaqohId,
+                  orgUnitIds: [targetSantri.halaqohId],
+                  orgDomain: "TAHFIZH",
+                };
+
+                const authRes = await authorizeCanonical({
+                  identity: {
+                    userId: user.id,
+                    username: user.username || `user-${user.id}`,
+                    status: user.status || "AKTIF",
+                    accountType: "PERSONAL",
+                    staffId: user.staffId,
+                    mockAssignments: [mockAssignment],
+                  } as any,
+                  capability: target.capabilityCode,
+                  resourceContext: { santriId: targetSantri.id },
+                  resolvedContext,
+                });
+
+                if (authRes.decision !== "ALLOW") {
+                  policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} ${authRes.code}: ${authRes.reason} (runtime NOT_READY)`);
+                }
+              } else if (target.positionCode === "PETUGAS_OPERASIONAL_KEASRAMAAN") {
+                // Real Keasramaan Representative Resource: find active SantriKamarPlacement in permittedUnits
+                let activePlacement: any = null;
+                if (db.santriKamarPlacement?.findFirst) {
+                  activePlacement = await db.santriKamarPlacement.findFirst({
+                    where: {
+                      isActive: true,
+                      kamarId: { in: permittedUnits },
+                      santri: { status: "AKTIF" },
+                    },
+                    include: { kamar: true, santri: true },
+                  }).catch(() => null);
+                } else if (db.santriKamarPlacement?.findMany) {
+                  const placements = await db.santriKamarPlacement.findMany().catch(() => []);
+                  activePlacement = placements.find(
+                    (p: any) => p.isActive && permittedUnits.includes(p.kamarId) && (!p.santri?.status || p.santri.status === "AKTIF")
+                  ) || null;
+                }
+
+                if (!activePlacement) {
+                  // Check if active placement exists outside permittedUnits
+                  let outsidePlacement: any = null;
+                  if (db.santriKamarPlacement?.findFirst) {
+                    outsidePlacement = await db.santriKamarPlacement.findFirst({
+                      where: {
+                        isActive: true,
+                        kamarId: { notIn: permittedUnits },
+                        santri: { status: "AKTIF" },
+                      },
+                      include: { kamar: true },
+                    }).catch(() => null);
+                  } else if (db.santriKamarPlacement?.findMany) {
+                    const placements = await db.santriKamarPlacement.findMany().catch(() => []);
+                    outsidePlacement = placements.find(
+                      (p: any) => p.isActive && !permittedUnits.includes(p.kamarId) && (!p.santri?.status || p.santri.status === "AKTIF")
+                    ) || null;
+                  }
+
+                  if (outsidePlacement && outsidePlacement.kamarId) {
+                    policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} SCOPE_MISMATCH: resource units [${outsidePlacement.kamarId}] not in assigned units [${permittedUnits.join(", ")}] (runtime NOT_READY)`);
+                  } else {
+                    policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_NOT_READY (no representative active santri kamar placement found in assigned units [${permittedUnits.join(", ")}])`);
+                  }
+                  continue;
+                }
+
+                // Canonical runtime check
+                const mockAssignment: CanonicalAssignmentWithDetails = {
+                  id: asg.id,
+                  userId: user.id,
+                  positionId: asg.positionId || asg.position?.id || "pos-id",
+                  positionCode: target.positionCode,
+                  positionName: asg.position?.name || target.positionCode,
+                  domain: asg.position?.domain || "KEASRAMAAN",
+                  unitId: anchorUnit || permittedUnits[0],
+                  unitCode: asg.unit?.code || "OU-ASR",
+                  unitName: asg.unit?.name || "Keasramaan",
+                  status: "ACTIVE",
+                  validFrom: asg.validFrom ? new Date(asg.validFrom) : new Date(0),
+                  validUntil: asg.validUntil ? new Date(asg.validUntil) : null,
+                  positionCapabilities: [
+                    {
+                      capabilityCode: target.capabilityCode,
+                      scopeType: "ASSIGNED_UNITS",
+                      businessRuleState: "VERIFIED_PRODUCTION",
+                    },
+                  ],
+                  scopeUnits: scopedUnits.map((u: string) => ({ unitId: u })),
+                };
+
+                const resolvedContext: ResolvedResourceContext = {
+                  santriId: activePlacement.santriId,
+                  kamarId: activePlacement.kamarId,
+                  orgUnitIds: [activePlacement.kamarId],
+                  orgDomain: "KEASRAMAAN",
+                };
+
+                const authRes = await authorizeCanonical({
+                  identity: {
+                    userId: user.id,
+                    username: user.username || `user-${user.id}`,
+                    status: user.status || "AKTIF",
+                    accountType: "PERSONAL",
+                    staffId: user.staffId,
+                    mockAssignments: [mockAssignment],
+                  } as any,
+                  capability: target.capabilityCode,
+                  resourceContext: { santriId: activePlacement.santriId },
+                  resolvedContext,
+                });
+
+                if (authRes.decision !== "ALLOW") {
+                  policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} ${authRes.code}: ${authRes.reason} (runtime NOT_READY)`);
+                }
               }
             }
           }
@@ -856,6 +1139,8 @@ export async function checkPendidikanV2ProductionReadiness(
           } else {
             policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} has invalid state ${matchPc.business_rule_state}`);
           }
+        } else {
+          policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_VALIDATION_UNAVAILABLE (relational resource scope validation requires Prisma client)`);
         }
       }
 

@@ -1337,14 +1337,6 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           validUntil: null,
           unitId: `ou-req-${idx}`,
           scopeUnits: [{ unitId: `ou-req-${idx}` }],
-          representativeResourceContext: {
-            orgUnitIds: [`ou-req-${idx}`],
-            orgDomain: posCode.includes("KEASRAMAAN") ? "KEASRAMAAN" : "TAHFIZH",
-          },
-          representativeSantri: {
-            id: `san-req-${idx}`,
-            halaqohId: `ou-req-${idx}`,
-          },
           user: {
             id: `usr-req-${idx}`,
             username: `user.req.${idx}`,
@@ -1805,6 +1797,38 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         positionCapability: {
           findMany: async () => [],
         },
+        santri: {
+          findFirst: async (args: any) => {
+            const hId = args?.where?.halaqohId;
+            if (typeof hId === "string") {
+              return { id: `san-${hId}`, halaqohId: hId, status: "AKTIF" };
+            }
+            if (args?.where?.halaqohId?.in && Array.isArray(args.where.halaqohId.in)) {
+              const matched = args.where.halaqohId.in[0];
+              return { id: `san-${matched}`, halaqohId: matched, status: "AKTIF" };
+            }
+            return { id: "san-default", halaqohId: "ou-req-3", status: "AKTIF" };
+          },
+          findMany: async () => {
+            return CANONICAL_REQUIRED_POSITION_CODES.map((_, idx) => ({
+              id: `san-req-${idx}`,
+              halaqohId: `ou-req-${idx}`,
+              status: "AKTIF",
+            }));
+          },
+        },
+        santriKamarPlacement: {
+          findFirst: async (args: any) => {
+            if (args?.where?.kamarId?.in && Array.isArray(args.where.kamarId.in)) {
+              const kId = args.where.kamarId.in[0];
+              return { id: `skp-${kId}`, kamarId: kId, santriId: `san-${kId}`, isActive: true, santri: { status: "AKTIF" } };
+            }
+            return { id: "skp-default", kamarId: "ou-req-6", santriId: "san-req-6", isActive: true, santri: { status: "AKTIF" } };
+          },
+          findMany: async () => [
+            { id: "skp-6", kamarId: "ou-req-6", santriId: "san-req-6", isActive: true, santri: { status: "AKTIF" } },
+          ],
+        },
       };
 
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
@@ -1884,87 +1908,131 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     });
   });
 
+  const createUatAssignments = (opts?: {
+    overridePosCode?: string;
+    overridePatch?: (base: any) => any;
+    defaultBusinessRuleState?: "PROPOSED_TBD" | "APPROVED_TARGET_PENDING_TECHNICAL" | "VERIFIED_PRODUCTION";
+    policyOverrides?: Map<string, { scope?: string; state?: string; remove?: boolean }>;
+  }) => {
+    const defaultState = opts?.defaultBusinessRuleState ?? "VERIFIED_PRODUCTION";
+
+    return CANONICAL_REQUIRED_POSITION_CODES.map((posCode, idx) => {
+      const targetPolicies = CANONICAL_UAT_TARGET_POLICIES.filter((p) => p.positionCode === posCode);
+
+      const capabilities = targetPolicies
+        .map((p) => {
+          const override = opts?.policyOverrides?.get(p.capabilityCode);
+          return {
+            capabilityCode: p.capabilityCode,
+            scopeType: override?.scope ?? p.expectedScope,
+            businessRuleState: override?.state ?? defaultState,
+            capability: { code: p.capabilityCode, isBlocked: false },
+          };
+        })
+        .filter((c) => {
+          const override = opts?.policyOverrides?.get(c.capabilityCode);
+          return !override?.remove;
+        });
+
+      if (capabilities.length === 0) {
+        capabilities.push({
+          capabilityCode: "academic.schedule.read",
+          scopeType: "GLOBAL",
+          businessRuleState: defaultState,
+          capability: { code: "academic.schedule.read", isBlocked: false },
+        });
+      }
+
+      const base = {
+        id: `asg-uat-${idx}`,
+        userId: `usr-uat-${idx}`,
+        positionId: `pos-uat-${idx}`,
+        status: "ACTIVE",
+        validFrom: new Date(Date.now() - 86400000),
+        validUntil: null,
+        unitId: `ou-uat-${idx}`,
+        scopeUnits: [{ unitId: `ou-uat-${idx}` }],
+        scopedUnits: [{ unitId: `ou-uat-${idx}`, unit: { id: `ou-uat-${idx}`, isActive: true } }],
+        user: {
+          id: `usr-uat-${idx}`,
+          username: `user.uat.${idx}`,
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: `stf-uat-${idx}`,
+          staff: { id: `stf-uat-${idx}`, status: "AKTIF" },
+        },
+        position: {
+          id: `pos-uat-${idx}`,
+          code: posCode,
+          name: posCode,
+          isActive: true,
+          requiresPersonalAccount: true,
+          domain: posCode.includes("KEASRAMAAN") ? "KEASRAMAAN" : "TAHFIZH",
+          capabilities,
+        },
+      };
+
+      if (opts?.overridePosCode === posCode && opts.overridePatch) {
+        return opts.overridePatch(base);
+      }
+      return base;
+    });
+  };
+
   // =========================================================================
   // 5. MILESTONE 3.3C1 FINAL UAT TARGET RESOURCE-SCOPE CLOSURE PROOFS
   // =========================================================================
   describe("5. Milestone 3.3C1 Final UAT Target Resource-Scope Closure Proofs", () => {
-    const createUatAssignments = (opts?: {
-      overridePosCode?: string;
-      overridePatch?: (base: any) => any;
-      defaultBusinessRuleState?: "PROPOSED_TBD" | "APPROVED_TARGET_PENDING_TECHNICAL" | "VERIFIED_PRODUCTION";
-      policyOverrides?: Map<string, { scope?: string; state?: string; remove?: boolean }>;
-    }) => {
-      const defaultState = opts?.defaultBusinessRuleState ?? "VERIFIED_PRODUCTION";
 
-      return CANONICAL_REQUIRED_POSITION_CODES.map((posCode, idx) => {
-        const targetPolicies = CANONICAL_UAT_TARGET_POLICIES.filter((p) => p.positionCode === posCode);
-
-        const capabilities = targetPolicies
-          .map((p) => {
-            const override = opts?.policyOverrides?.get(p.capabilityCode);
-            return {
-              capabilityCode: p.capabilityCode,
-              scopeType: override?.scope ?? p.expectedScope,
-              businessRuleState: override?.state ?? defaultState,
-              capability: { code: p.capabilityCode, isBlocked: false },
-            };
-          })
-          .filter((c) => {
-            const override = opts?.policyOverrides?.get(c.capabilityCode);
-            return !override?.remove;
-          });
-
-        if (capabilities.length === 0) {
-          capabilities.push({
-            capabilityCode: "academic.schedule.read",
-            scopeType: "GLOBAL",
-            businessRuleState: defaultState,
-            capability: { code: "academic.schedule.read", isBlocked: false },
-          });
-        }
-
-        const base = {
-          id: `asg-uat-${idx}`,
-          userId: `usr-uat-${idx}`,
-          positionId: `pos-uat-${idx}`,
-          status: "ACTIVE",
-          validFrom: new Date(Date.now() - 86400000),
-          validUntil: null,
-          unitId: `ou-uat-${idx}`,
-          scopeUnits: [{ unitId: `ou-uat-${idx}` }],
-          representativeResourceContext: {
-            orgUnitIds: [`ou-uat-${idx}`],
-            orgDomain: posCode.includes("KEASRAMAAN") ? "KEASRAMAAN" : "TAHFIZH",
-          },
-          representativeSantri: {
-            id: `san-uat-${idx}`,
-            halaqohId: `ou-uat-${idx}`,
-          },
-          user: {
-            id: `usr-uat-${idx}`,
-            username: `user.uat.${idx}`,
-            status: "AKTIF",
-            accountType: "PERSONAL",
-            staffId: `stf-uat-${idx}`,
-            staff: { id: `stf-uat-${idx}`, status: "AKTIF" },
-          },
-          position: {
-            id: `pos-uat-${idx}`,
-            code: posCode,
-            name: posCode,
-            isActive: true,
-            requiresPersonalAccount: true,
-            domain: posCode.includes("KEASRAMAAN") ? "KEASRAMAAN" : "TAHFIZH",
-            capabilities,
-          },
-        };
-
-        if (opts?.overridePosCode === posCode && opts.overridePatch) {
-          return opts.overridePatch(base);
-        }
-        return base;
-      });
-    };
+    const createDefaultMockDb = (
+      assignments: any[],
+      overrides?: {
+        santriFindFirst?: (args: any) => Promise<any>;
+        santriFindMany?: (args: any) => Promise<any>;
+        placementFindFirst?: (args: any) => Promise<any>;
+        placementFindMany?: (args: any) => Promise<any>;
+      }
+    ) => ({
+      assignment: { findMany: async () => assignments },
+      positionCapability: { findMany: async () => [] },
+      santri: {
+        findFirst:
+          overrides?.santriFindFirst ??
+          (async (args: any) => {
+            const hId = args?.where?.halaqohId;
+            if (typeof hId === "string") {
+              return { id: `san-${hId}`, halaqohId: hId, status: "AKTIF" };
+            }
+            if (args?.where?.halaqohId?.in && Array.isArray(args.where.halaqohId.in)) {
+              const matched = args.where.halaqohId.in[0];
+              if (matched) return { id: `san-${matched}`, halaqohId: matched, status: "AKTIF" };
+            }
+            return { id: "san-uat-default", halaqohId: "ou-tahfizh-unit-1", status: "AKTIF" };
+          }),
+        findMany:
+          overrides?.santriFindMany ??
+          (async () => [
+            { id: "san-uat-1", halaqohId: "ou-tahfizh-unit-1", status: "AKTIF" },
+            { id: "san-own-1", halaqohId: "hlq-unit-1", status: "AKTIF" },
+          ]),
+      },
+      santriKamarPlacement: {
+        findFirst:
+          overrides?.placementFindFirst ??
+          (async (args: any) => {
+            if (args?.where?.kamarId?.in && Array.isArray(args.where.kamarId.in)) {
+              const kId = args.where.kamarId.in[0];
+              if (kId) return { id: `skp-${kId}`, kamarId: kId, santriId: `san-${kId}`, isActive: true, santri: { status: "AKTIF" } };
+            }
+            return { id: "skp-default", kamarId: "asr-putra-1", santriId: "san-asr-1", isActive: true, santri: { status: "AKTIF" } };
+          }),
+        findMany:
+          overrides?.placementFindMany ??
+          (async () => [
+            { id: "skp-1", kamarId: "asr-putra-1", santriId: "san-asr-1", isActive: true, santri: { status: "AKTIF" } },
+          ]),
+      },
+    });
 
     it("5.1 Proof 1: tahfizh.reward.issue (ASSIGNED_UNITS): resource outside assigned units => SCOPE_MISMATCH & Gate 8 NOT_READY", async () => {
       // 1. Runtime authorizeCanonical evaluation
@@ -1987,6 +2055,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         validFrom: new Date(Date.now() - 86400000),
         validUntil: null,
         scopeUnits: [{ unitId: "ou-tahfizh-unit-1" }],
+        scopedUnits: [{ unitId: "ou-tahfizh-unit-1", unit: { id: "ou-tahfizh-unit-1", isActive: true } }],
         positionCapabilities: [
           {
             capabilityCode: "tahfizh.reward.issue",
@@ -2022,18 +2091,21 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         overridePatch: (base) => ({
           ...base,
           unitId: "ou-tahfizh-unit-1",
-          scopeUnits: [{ unitId: "ou-tahfizh-unit-1" }],
-          representativeResourceContext: {
-            orgUnitIds: ["ou-tahfizh-unit-99"], // Mismatched outside unit
-            orgDomain: "TAHFIZH",
-          },
+          scopedUnits: [{ unitId: "ou-tahfizh-unit-1", unit: { id: "ou-tahfizh-unit-1", isActive: true } }],
         }),
       });
 
-      const mockDb = {
-        assignment: { findMany: async () => assignments },
-        positionCapability: { findMany: async () => [] },
-      };
+      const mockDb = createDefaultMockDb(assignments, {
+        santriFindFirst: async (args: any) => {
+          if (args?.where?.halaqohId?.in?.includes("ou-tahfizh-unit-1")) {
+            return null; // No active santri in permitted unit
+          }
+          return { id: "san-default", halaqohId: "ou-default", status: "AKTIF" };
+        },
+        santriFindMany: async () => [
+          { id: "san-outside", halaqohId: "ou-tahfizh-unit-99", status: "AKTIF" },
+        ],
+      });
 
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
@@ -2066,6 +2138,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         validFrom: new Date(Date.now() - 86400000),
         validUntil: null,
         scopeUnits: [{ unitId: "ou-tahfizh-unit-1" }],
+        scopedUnits: [{ unitId: "ou-tahfizh-unit-1", unit: { id: "ou-tahfizh-unit-1", isActive: true } }],
         positionCapabilities: [
           {
             capabilityCode: "tahfizh.reward.issue",
@@ -2101,18 +2174,11 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         overridePatch: (base) => ({
           ...base,
           unitId: "ou-tahfizh-unit-1",
-          scopeUnits: [{ unitId: "ou-tahfizh-unit-1" }],
-          representativeResourceContext: {
-            orgUnitIds: ["ou-tahfizh-unit-1"],
-            orgDomain: "TAHFIZH",
-          },
+          scopedUnits: [{ unitId: "ou-tahfizh-unit-1", unit: { id: "ou-tahfizh-unit-1", isActive: true } }],
         }),
       });
 
-      const mockDb = {
-        assignment: { findMany: async () => assignments },
-        positionCapability: { findMany: async () => [] },
-      };
+      const mockDb = createDefaultMockDb(assignments);
 
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
@@ -2141,6 +2207,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         validFrom: new Date(Date.now() - 86400000),
         validUntil: null,
         scopeUnits: [],
+        scopedUnits: [],
         positionCapabilities: [
           {
             capabilityCode: "tahfizh.target.manage",
@@ -2177,17 +2244,11 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         overridePatch: (base) => ({
           ...base,
           unitId: "hlq-unit-1",
-          representativeSantri: {
-            id: "san-own-1",
-            halaqohId: "hlq-unit-1",
-          },
+          scopedUnits: [],
         }),
       });
 
-      const mockDb = {
-        assignment: { findMany: async () => assignments },
-        positionCapability: { findMany: async () => [] },
-      };
+      const mockDb = createDefaultMockDb(assignments);
 
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
@@ -2216,6 +2277,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         validFrom: new Date(Date.now() - 86400000),
         validUntil: null,
         scopeUnits: [],
+        scopedUnits: [],
         positionCapabilities: [
           {
             capabilityCode: "tahfizh.target.manage",
@@ -2252,17 +2314,21 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         overridePatch: (base) => ({
           ...base,
           unitId: "hlq-unit-1",
-          representativeSantri: {
-            id: "san-diff-2",
-            halaqohId: "hlq-different-99", // Mismatched halaqoh
-          },
+          scopedUnits: [],
         }),
       });
 
-      const mockDb = {
-        assignment: { findMany: async () => assignments },
-        positionCapability: { findMany: async () => [] },
-      };
+      const mockDb = createDefaultMockDb(assignments, {
+        santriFindFirst: async (args: any) => {
+          if (args?.where?.halaqohId === "hlq-unit-1") {
+            return null; // Mismatched: no active santri in anchor unit hlq-unit-1
+          }
+          return { id: "san-default", halaqohId: "ou-default", status: "AKTIF" };
+        },
+        santriFindMany: async () => [
+          { id: "san-diff-2", halaqohId: "hlq-different-99", status: "AKTIF" },
+        ],
+      });
 
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
@@ -2295,6 +2361,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         validFrom: new Date(Date.now() - 86400000),
         validUntil: null,
         scopeUnits: [{ unitId: "asr-putra-1" }],
+        scopedUnits: [{ unitId: "asr-putra-1", unit: { id: "asr-putra-1", isActive: true } }],
         positionCapabilities: [
           {
             capabilityCode: "keasramaan.permission.read",
@@ -2330,18 +2397,21 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         overridePatch: (base) => ({
           ...base,
           unitId: "asr-putra-1",
-          scopeUnits: [{ unitId: "asr-putra-1" }],
-          representativeResourceContext: {
-            orgUnitIds: ["asr-putri-2"],
-            orgDomain: "KEASRAMAAN",
-          },
+          scopedUnits: [{ unitId: "asr-putra-1", unit: { id: "asr-putra-1", isActive: true } }],
         }),
       });
 
-      const mockDb = {
-        assignment: { findMany: async () => assignments },
-        positionCapability: { findMany: async () => [] },
-      };
+      const mockDb = createDefaultMockDb(assignments, {
+        placementFindFirst: async (args: any) => {
+          if (args?.where?.kamarId?.in?.includes("asr-putra-1")) {
+            return null; // No active placement in permitted unit
+          }
+          return { id: "skp-default", kamarId: "asr-putra-1", santriId: "san-1", isActive: true, santri: { status: "AKTIF" } };
+        },
+        placementFindMany: async () => [
+          { id: "skp-outside", kamarId: "asr-putri-2", santriId: "san-2", isActive: true, santri: { status: "AKTIF" } },
+        ],
+      });
 
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
@@ -2374,6 +2444,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         validFrom: new Date(Date.now() - 86400000),
         validUntil: null,
         scopeUnits: [{ unitId: "asr-putra-1" }],
+        scopedUnits: [{ unitId: "asr-putra-1", unit: { id: "asr-putra-1", isActive: true } }],
         positionCapabilities: [
           {
             capabilityCode: "keasramaan.permission.read",
@@ -2409,18 +2480,11 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         overridePatch: (base) => ({
           ...base,
           unitId: "asr-putra-1",
-          scopeUnits: [{ unitId: "asr-putra-1" }],
-          representativeResourceContext: {
-            orgUnitIds: ["asr-putra-1"],
-            orgDomain: "KEASRAMAAN",
-          },
+          scopedUnits: [{ unitId: "asr-putra-1", unit: { id: "asr-putra-1", isActive: true } }],
         }),
       });
 
-      const mockDb = {
-        assignment: { findMany: async () => assignments },
-        positionCapability: { findMany: async () => [] },
-      };
+      const mockDb = createDefaultMockDb(assignments);
 
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
@@ -2434,10 +2498,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         defaultBusinessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
       });
 
-      const mockDb = {
-        assignment: { findMany: async () => assignments },
-        positionCapability: { findMany: async () => [] },
-      };
+      const mockDb = createDefaultMockDb(assignments);
 
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
@@ -2472,6 +2533,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         validFrom: new Date(Date.now() - 86400000),
         validUntil: null,
         scopeUnits: [{ unitId: "ou-tahfizh-1" }],
+        scopedUnits: [{ unitId: "ou-tahfizh-1", unit: { id: "ou-tahfizh-1", isActive: true } }],
         positionCapabilities: [
           {
             capabilityCode: "tahfizh.reward.issue",
@@ -2564,6 +2626,309 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.ok(!allCapabilityCodes.includes("keasramaan.perizinan.approve" as any), "keasramaan.perizinan.approve must NOT be in canonical UAT targets");
       assert.ok(!allCapabilityCodes.includes("health.record.write" as any), "health.record.write must NOT be in canonical UAT targets");
       assert.ok(!allCapabilityCodes.includes("tahfizh.halaqoh.manage" as any), "tahfizh.halaqoh.manage must NOT be in canonical UAT targets");
+    });
+  });
+
+  // =========================================================================
+  // 6. REAL DATABASE RESOURCE SCOPE CLOSURE PROOFS (A THROUGH J)
+  // =========================================================================
+  describe("6. Real Database Resource Scope Closure Proofs", () => {
+    const OU_S6_HLQ_A = "ou-s6-hlq-a";
+    const OU_S6_HLQ_B = "ou-s6-hlq-b";
+    const OU_S6_HLQ_C = "ou-s6-hlq-c";
+    const OU_S6_HLQ_EMPTY = "ou-s6-hlq-empty";
+    const OU_S6_KMR_1 = "ou-s6-kmr-1";
+    const OU_S6_KMR_2 = "ou-s6-kmr-2";
+
+    const POS_S6_OP_TAHFIZH = "pos-s6-op-tahfizh";
+    const POS_S6_MUSYRIF = "pos-s6-musyrif";
+    const POS_S6_OP_ASR = "pos-s6-op-asr";
+
+    const STF_S6_OP_TAHFIZH = "stf-s6-op-tahfizh";
+    const USR_S6_OP_TAHFIZH = "usr-s6-op-tahfizh";
+
+    const STF_S6_MUSYRIF = "stf-s6-musyrif";
+    const USR_S6_MUSYRIF = "usr-s6-musyrif";
+
+    const STF_S6_SCOPED = "stf-s6-scoped";
+    const USR_S6_SCOPED = "usr-s6-scoped";
+
+    const STF_S6_EMPTY = "stf-s6-empty";
+    const USR_S6_EMPTY = "usr-s6-empty";
+
+    const STF_S6_OP_ASR = "stf-s6-op-asr";
+    const USR_S6_OP_ASR = "usr-s6-op-asr";
+
+    const SAN_S6_A = "san-s6-a";
+    const SAN_S6_B = "san-s6-b";
+    const SAN_S6_C = "san-s6-c";
+    const SAN_S6_KMR_1 = "san-s6-kmr-1";
+    const SAN_S6_KMR_2 = "san-s6-kmr-2";
+
+    before(async () => {
+      // 1. OrgUnits
+      await prisma.orgUnit.createMany({
+        data: [
+          { id: OU_S6_HLQ_A, code: "OU-S6-HLQ-A", name: "Halaqoh S6 A", type: "HALAQOH", domain: "TAHFIZH", genderComplex: "PUTRA", isActive: true },
+          { id: OU_S6_HLQ_B, code: "OU-S6-HLQ-B", name: "Halaqoh S6 B", type: "HALAQOH", domain: "TAHFIZH", genderComplex: "PUTRA", isActive: true },
+          { id: OU_S6_HLQ_C, code: "OU-S6-HLQ-C", name: "Halaqoh S6 C", type: "HALAQOH", domain: "TAHFIZH", genderComplex: "PUTRA", isActive: true },
+          { id: OU_S6_HLQ_EMPTY, code: "OU-S6-HLQ-EMPTY", name: "Halaqoh S6 Empty", type: "HALAQOH", domain: "TAHFIZH", genderComplex: "PUTRA", isActive: true },
+          { id: OU_S6_KMR_1, code: "OU-S6-KMR-1", name: "Kamar S6 1", type: "KAMAR", domain: "KEASRAMAAN", genderComplex: "PUTRA", isActive: true },
+          { id: OU_S6_KMR_2, code: "OU-S6-KMR-2", name: "Kamar S6 2", type: "KAMAR", domain: "KEASRAMAAN", genderComplex: "PUTRA", isActive: true },
+        ],
+      });
+
+      // 2. Positions
+      await prisma.position.upsert({
+        where: { code: "PETUGAS_OPERASIONAL_TAHFIZH" },
+        update: {},
+        create: { id: POS_S6_OP_TAHFIZH, code: "PETUGAS_OPERASIONAL_TAHFIZH", name: "Petugas Operasional Tahfizh", domain: "TAHFIZH" },
+      });
+      await prisma.position.upsert({
+        where: { code: "MUSYRIF_TAHFIZH" },
+        update: {},
+        create: { id: POS_S6_MUSYRIF, code: "MUSYRIF_TAHFIZH", name: "Musyrif Tahfizh", domain: "TAHFIZH" },
+      });
+      await prisma.position.upsert({
+        where: { code: "PETUGAS_OPERASIONAL_KEASRAMAAN" },
+        update: {},
+        create: { id: POS_S6_OP_ASR, code: "PETUGAS_OPERASIONAL_KEASRAMAAN", name: "Petugas Operasional Keasramaan", domain: "KEASRAMAAN" },
+      });
+
+      const posOpTahfizh = await prisma.position.findUniqueOrThrow({ where: { code: "PETUGAS_OPERASIONAL_TAHFIZH" } });
+      const posMusyrif = await prisma.position.findUniqueOrThrow({ where: { code: "MUSYRIF_TAHFIZH" } });
+      const posOpAsr = await prisma.position.findUniqueOrThrow({ where: { code: "PETUGAS_OPERASIONAL_KEASRAMAAN" } });
+
+      // 3. Capabilities & PositionCapabilities
+      const testCaps = [
+        { code: "tahfizh.reward.issue", posId: posOpTahfizh.id, scope: "ASSIGNED_UNITS", domain: "TAHFIZH" },
+        { code: "tahfizh.target.manage", posId: posMusyrif.id, scope: "HALAQOH", domain: "TAHFIZH" },
+        { code: "keasramaan.permission.read", posId: posOpAsr.id, scope: "ASSIGNED_UNITS", domain: "KEASRAMAAN" },
+        { code: "keasramaan.permission.create", posId: posOpAsr.id, scope: "ASSIGNED_UNITS", domain: "KEASRAMAAN" },
+      ];
+
+      for (const cap of testCaps) {
+        await prisma.capability.upsert({
+          where: { code: cap.code },
+          update: {},
+          create: { code: cap.code, name: cap.code, namespace: cap.domain as any, description: cap.code },
+        });
+        await prisma.positionCapability.upsert({
+          where: { positionId_capabilityCode: { positionId: cap.posId, capabilityCode: cap.code } },
+          update: { scopeType: cap.scope as any, businessRuleState: "VERIFIED_PRODUCTION" },
+          create: {
+            positionId: cap.posId,
+            capabilityCode: cap.code,
+            scopeType: cap.scope as any,
+            businessRuleState: "VERIFIED_PRODUCTION",
+          },
+        });
+      }
+
+      // 4. Staff
+      await prisma.staff.createMany({
+        data: [
+          { id: STF_S6_OP_TAHFIZH, staffCode: "STF-S6-01", nama: "Ust. S6 Tahfizh Op", noHp: "081200000001", roleStaff: "MT", status: "AKTIF" },
+          { id: STF_S6_MUSYRIF, staffCode: "STF-S6-02", nama: "Ust. S6 Musyrif", noHp: "081200000002", roleStaff: "MT", status: "AKTIF" },
+          { id: STF_S6_SCOPED, staffCode: "STF-S6-03", nama: "Ust. S6 Scoped", noHp: "081200000003", roleStaff: "MT", status: "AKTIF" },
+          { id: STF_S6_EMPTY, staffCode: "STF-S6-04", nama: "Ust. S6 Empty", noHp: "081200000004", roleStaff: "MT", status: "AKTIF" },
+          { id: STF_S6_OP_ASR, staffCode: "STF-S6-05", nama: "Ust. S6 Asrama Op", noHp: "081200000005", roleStaff: "MK", status: "AKTIF" },
+        ],
+      });
+
+      // 5. Users
+      await prisma.user.createMany({
+        data: [
+          { id: USR_S6_OP_TAHFIZH, username: "s6.op.tahfizh", staffId: STF_S6_OP_TAHFIZH, status: "AKTIF", role: "MT", passwordHash: "dummy" },
+          { id: USR_S6_MUSYRIF, username: "s6.musyrif", staffId: STF_S6_MUSYRIF, status: "AKTIF", role: "MT", passwordHash: "dummy" },
+          { id: USR_S6_SCOPED, username: "s6.scoped", staffId: STF_S6_SCOPED, status: "AKTIF", role: "MT", passwordHash: "dummy" },
+          { id: USR_S6_EMPTY, username: "s6.empty", staffId: STF_S6_EMPTY, status: "AKTIF", role: "MT", passwordHash: "dummy" },
+          { id: USR_S6_OP_ASR, username: "s6.op.asrama", staffId: STF_S6_OP_ASR, status: "AKTIF", role: "MK", passwordHash: "dummy" },
+        ],
+      });
+
+      // 6. Assignments
+      await prisma.assignment.createMany({
+        data: [
+          { id: "asg-s6-op-tahfizh", userId: USR_S6_OP_TAHFIZH, positionId: posOpTahfizh.id, unitId: OU_S6_HLQ_A, status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: USR_S6_OP_TAHFIZH },
+          { id: "asg-s6-musyrif", userId: USR_S6_MUSYRIF, positionId: posMusyrif.id, unitId: OU_S6_HLQ_A, status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: USR_S6_MUSYRIF },
+          { id: "asg-s6-scoped", userId: USR_S6_SCOPED, positionId: posOpTahfizh.id, unitId: OU_S6_HLQ_A, status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: USR_S6_SCOPED },
+          { id: "asg-s6-empty", userId: USR_S6_EMPTY, positionId: posMusyrif.id, unitId: OU_S6_HLQ_EMPTY, status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: USR_S6_EMPTY },
+          { id: "asg-s6-op-asr", userId: USR_S6_OP_ASR, positionId: posOpAsr.id, unitId: OU_S6_KMR_1, status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: USR_S6_OP_ASR },
+        ],
+      });
+
+      // 7. AssignmentScopeUnit (Real Prisma relation)
+      await prisma.assignmentScopeUnit.create({
+        data: {
+          assignmentId: "asg-s6-scoped",
+          unitId: OU_S6_HLQ_B,
+        },
+      });
+
+      // 7b. Halaqoh (Required for Santri foreign key)
+      await prisma.halaqoh.createMany({
+        data: [
+          { id: OU_S6_HLQ_A, halaqohCode: "HLQ-S6-A", nama: "Halaqoh S6 A", pembinaId: STF_S6_MUSYRIF, tahunAjaran: "2026/2027", status: "AKTIF" },
+          { id: OU_S6_HLQ_B, halaqohCode: "HLQ-S6-B", nama: "Halaqoh S6 B", pembinaId: STF_S6_MUSYRIF, tahunAjaran: "2026/2027", status: "AKTIF" },
+          { id: OU_S6_HLQ_C, halaqohCode: "HLQ-S6-C", nama: "Halaqoh S6 C", pembinaId: STF_S6_MUSYRIF, tahunAjaran: "2026/2027", status: "AKTIF" },
+          { id: OU_S6_HLQ_EMPTY, halaqohCode: "HLQ-S6-EMPTY", nama: "Halaqoh S6 Empty", pembinaId: STF_S6_MUSYRIF, tahunAjaran: "2026/2027", status: "AKTIF" },
+        ],
+      });
+
+      // 8. Santri
+      await prisma.santri.createMany({
+        data: [
+          { id: SAN_S6_A, nis: "SAN-S6-001", nama: "Santri S6 A", kelas: "7A", jenisKelamin: "L", status: "AKTIF", halaqohId: OU_S6_HLQ_A },
+          { id: SAN_S6_B, nis: "SAN-S6-002", nama: "Santri S6 B", kelas: "7A", jenisKelamin: "L", status: "AKTIF", halaqohId: OU_S6_HLQ_B },
+          { id: SAN_S6_C, nis: "SAN-S6-003", nama: "Santri S6 C", kelas: "7A", jenisKelamin: "L", status: "AKTIF", halaqohId: OU_S6_HLQ_C },
+          { id: SAN_S6_KMR_1, nis: "SAN-S6-004", nama: "Santri S6 Kamar 1", kelas: "7A", jenisKelamin: "L", status: "AKTIF" },
+          { id: SAN_S6_KMR_2, nis: "SAN-S6-005", nama: "Santri S6 Kamar 2", kelas: "7A", jenisKelamin: "L", status: "AKTIF" },
+        ],
+      });
+
+      // 9. SantriKamarPlacement (Real Prisma relation)
+      await prisma.santriKamarPlacement.createMany({
+        data: [
+          { id: "skp-s6-1", santriId: SAN_S6_KMR_1, kamarId: OU_S6_KMR_1, isActive: true },
+          { id: "skp-s6-2", santriId: SAN_S6_KMR_2, kamarId: OU_S6_KMR_2, isActive: true },
+        ],
+      });
+    });
+
+    it("6.1 Proof A: tahfizh.reward.issue ASSIGNED_UNITS: Assignment scope Halaqoh A, target santri in Halaqoh A => ALLOW", async () => {
+      const auth = await authorizeCanonical({
+        identity: { userId: USR_S6_OP_TAHFIZH, username: "s6.op.tahfizh", accountType: "PERSONAL", status: "AKTIF" },
+        capability: "tahfizh.reward.issue",
+        resourceContext: { santriId: SAN_S6_A },
+        dataProvider,
+      });
+      assert.strictEqual(auth.decision, "ALLOW");
+      assert.strictEqual(auth.code, "ALLOWED");
+      assert.strictEqual(auth.scopeType, "ASSIGNED_UNITS");
+    });
+
+    it("6.2 Proof B: Same assignment: target santri in Halaqoh B => DENY / SCOPE_MISMATCH", async () => {
+      const auth = await authorizeCanonical({
+        identity: { userId: USR_S6_OP_TAHFIZH, username: "s6.op.tahfizh", accountType: "PERSONAL", status: "AKTIF" },
+        capability: "tahfizh.reward.issue",
+        resourceContext: { santriId: SAN_S6_B },
+        dataProvider,
+      });
+      assert.strictEqual(auth.decision, "DENY");
+      assert.strictEqual(auth.code, "SCOPE_MISMATCH");
+    });
+
+    it("6.3 Proof C: tahfizh.target.manage HALAQOH: own Halaqoh A => ALLOW", async () => {
+      const auth = await authorizeCanonical({
+        identity: { userId: USR_S6_MUSYRIF, username: "s6.musyrif", accountType: "PERSONAL", status: "AKTIF" },
+        capability: "tahfizh.target.manage",
+        resourceContext: { santriId: SAN_S6_A },
+        dataProvider,
+      });
+      assert.strictEqual(auth.decision, "ALLOW");
+      assert.strictEqual(auth.code, "ALLOWED");
+      assert.strictEqual(auth.scopeType, "HALAQOH");
+    });
+
+    it("6.4 Proof D: tahfizh.target.manage HALAQOH: cross Halaqoh B => DENY / SCOPE_MISMATCH", async () => {
+      const auth = await authorizeCanonical({
+        identity: { userId: USR_S6_MUSYRIF, username: "s6.musyrif", accountType: "PERSONAL", status: "AKTIF" },
+        capability: "tahfizh.target.manage",
+        resourceContext: { santriId: SAN_S6_B },
+        dataProvider,
+      });
+      assert.strictEqual(auth.decision, "DENY");
+      assert.strictEqual(auth.code, "SCOPE_MISMATCH");
+    });
+
+    it("6.5 Proof E: tahfizh.reward.issue ASSIGNED_UNITS using AssignmentScopeUnit: anchor Halaqoh A, scoped Halaqoh B, target santri in B => ALLOW", async () => {
+      const auth = await authorizeCanonical({
+        identity: { userId: USR_S6_SCOPED, username: "s6.scoped", accountType: "PERSONAL", status: "AKTIF" },
+        capability: "tahfizh.reward.issue",
+        resourceContext: { santriId: SAN_S6_B },
+        dataProvider,
+      });
+      assert.strictEqual(auth.decision, "ALLOW");
+      assert.strictEqual(auth.code, "ALLOWED");
+      assert.strictEqual(auth.scopeType, "ASSIGNED_UNITS");
+    });
+
+    it("6.6 Proof F: Target santri in Halaqoh C (outside anchor + scoped set) => DENY / SCOPE_MISMATCH", async () => {
+      const auth = await authorizeCanonical({
+        identity: { userId: USR_S6_SCOPED, username: "s6.scoped", accountType: "PERSONAL", status: "AKTIF" },
+        capability: "tahfizh.reward.issue",
+        resourceContext: { santriId: SAN_S6_C },
+        dataProvider,
+      });
+      assert.strictEqual(auth.decision, "DENY");
+      assert.strictEqual(auth.code, "SCOPE_MISMATCH");
+    });
+
+    it("6.7 Proof G: Assignment with anchor unit having zero active santri => TARGET_RESOURCE_SCOPE_NOT_READY", async () => {
+      const count = await prisma.santri.count({ where: { halaqohId: OU_S6_HLQ_EMPTY } });
+      assert.strictEqual(count, 0, "Empty halaqoh must have zero santri");
+
+      // Full required position coverage where MUSYRIF_TAHFIZH is assigned to empty halaqoh
+      const assignments = createUatAssignments({
+        overridePosCode: "MUSYRIF_TAHFIZH",
+        overridePatch: (base) => ({
+          ...base,
+          unitId: OU_S6_HLQ_EMPTY,
+          scopedUnits: [],
+        }),
+      });
+
+      const report = await checkPendidikanV2ProductionReadiness({
+        assignment: { findMany: async () => assignments },
+        positionCapability: { findMany: async () => [] },
+        santri: prisma.santri,
+        santriKamarPlacement: prisma.santriKamarPlacement,
+      } as any);
+
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(
+        gate.details.includes("TARGET_RESOURCE_SCOPE_NOT_READY") || gate.details.includes("SCOPE_MISMATCH"),
+        `Expected TARGET_RESOURCE_SCOPE_NOT_READY or SCOPE_MISMATCH for empty anchor unit, got: ${gate.details}`
+      );
+    });
+
+    it("6.8 Proof H: Keasramaan target: actual active SantriKamarPlacement in permitted unit => ALLOW", async () => {
+      const auth = await authorizeCanonical({
+        identity: { userId: USR_S6_OP_ASR, username: "s6.op.asrama", accountType: "PERSONAL", status: "AKTIF" },
+        capability: "keasramaan.permission.read",
+        resourceContext: { santriId: SAN_S6_KMR_1 },
+        dataProvider,
+      });
+      assert.strictEqual(auth.decision, "ALLOW");
+      assert.strictEqual(auth.code, "ALLOWED");
+      assert.strictEqual(auth.scopeType, "ASSIGNED_UNITS");
+    });
+
+    it("6.9 Proof I: Keasramaan target: active SantriKamarPlacement outside assigned unit => DENY / SCOPE_MISMATCH", async () => {
+      const auth = await authorizeCanonical({
+        identity: { userId: USR_S6_OP_ASR, username: "s6.op.asrama", accountType: "PERSONAL", status: "AKTIF" },
+        capability: "keasramaan.permission.read",
+        resourceContext: { santriId: SAN_S6_KMR_2 },
+        dataProvider,
+      });
+      assert.strictEqual(auth.decision, "DENY");
+      assert.strictEqual(auth.code, "SCOPE_MISMATCH");
+    });
+
+    it("6.10 Proof J: Call checkPendidikanV2ProductionReadiness(prisma) on real PostgreSQL and assert Gate 8 fails closed", async () => {
+      const report = await checkPendidikanV2ProductionReadiness(prisma);
+      assert.ok(report);
+      assert.ok(Array.isArray(report.gates));
+      assert.strictEqual(report.gates.length, CANONICAL_READINESS_GATE_NAMES.length);
+
+      const gate8 = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate8);
+      assert.strictEqual(gate8.status, "NOT_READY");
+      assert.ok(gate8.details.length > 0);
+      assert.notStrictEqual(report.overallStatus, "READY", "Production readiness must not be READY when gates are NOT_READY or BLOCKED");
     });
   });
 });
