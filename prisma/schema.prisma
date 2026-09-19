@@ -413,6 +413,7 @@ model Staff {
 
   // Relasi Roadmap v2
   tasmiSimaanDiuji   TasmiSimaan[]    @relation("PengujiTasmiSimaan")
+  evaluasiRubuDiuji  EvaluasiRubuTahfizh[]
 
   // Health V2 Relations (Blocker E & D)
   healthCasesRecorded      HealthCaseV2[]      @relation("HealthCasesRecordedByStaff")
@@ -482,6 +483,7 @@ model Santri {
   targetList         TargetSantri[]
   capaianBulananList CapaianBulanan[]
   tasmiSimaanList    TasmiSimaan[]
+  evaluasiRubuList   EvaluasiRubuTahfizh[]
   mutabaahHarianList    CatatanMutabaahHarian[]
   hakLiburList          HakLiburSantri[]
   transaksiBintangList  TransaksiBintang[]
@@ -548,6 +550,10 @@ model SetoranTahfizh {
   jumlahHalaman  Float         @map("jumlah_halaman")
   jumlahJuzMufar Int?          @map("jumlah_juz_mufar")
   nilai          NilaiSetoran
+  nilaiTajwid    NilaiSetoran? @map("nilai_tajwid")
+  nilaiFashahah  NilaiSetoran? @map("nilai_fashahah")
+  nilaiKelancaran NilaiSetoran? @map("nilai_kelancaran")
+  rincianKesalahan Json?       @map("rincian_kesalahan")
   catatan        String?
   clientRequestId String?      @unique @map("client_request_id")
   status         String        @default("AKTIF")
@@ -856,12 +862,20 @@ model IkhtibarTahfizh {
   pengujiTahap1Id String?        @map("penguji_tahap_1_id")
   pengujiTahap1   Staff?         @relation("PengujiTahap1", fields: [pengujiTahap1Id], references: [id])
   nilaiTahap1     Float?         @map("nilai_tahap_1")
+  nilaiTajwidTahap1 NilaiSetoran? @map("nilai_tajwid_tahap_1")
+  nilaiFashahahTahap1 NilaiSetoran? @map("nilai_fashahah_tahap_1")
+  nilaiKelancaranTahap1 NilaiSetoran? @map("nilai_kelancaran_tahap_1")
+  rincianKesalahanTahap1 Json?   @map("rincian_kesalahan_tahap_1")
   catatanTahap1   String?        @map("catatan_tahap_1")
   tanggalTahap1   DateTime?      @map("tanggal_tahap_1")
 
   pengujiTahap2Id String?        @map("penguji_tahap_2_id")
   pengujiTahap2   Staff?         @relation("PengujiTahap2", fields: [pengujiTahap2Id], references: [id])
   nilaiTahap2     Float?         @map("nilai_tahap_2")
+  nilaiTajwidTahap2 NilaiSetoran? @map("nilai_tajwid_tahap_2")
+  nilaiFashahahTahap2 NilaiSetoran? @map("nilai_fashahah_tahap_2")
+  nilaiKelancaranTahap2 NilaiSetoran? @map("nilai_kelancaran_tahap_2")
+  rincianKesalahanTahap2 Json?   @map("rincian_kesalahan_tahap_2")
   catatanTahap2   String?        @map("catatan_tahap_2")
   tanggalTahap2   DateTime?      @map("tanggal_tahap_2")
 
@@ -1095,7 +1109,11 @@ model TasmiSimaan {
   juz         Int
   halaman     Int?
   nilai       Float            // 0 - 100
+  nilaiTajwid NilaiSetoran?    @map("nilai_tajwid")
+  nilaiFashahah NilaiSetoran?  @map("nilai_fashahah")
+  nilaiKelancaran NilaiSetoran? @map("nilai_kelancaran")
   predikat    NilaiSetoran
+  rincianKesalahan Json?       @map("rincian_kesalahan")
   catatan     String?
 
   hakLiburList         HakLiburSantri[]
@@ -1107,6 +1125,35 @@ model TasmiSimaan {
   @@index([santriId, tanggal])
   @@index([musyrifId])
   @@map("tasmi_simaan")
+}
+
+model EvaluasiRubuTahfizh {
+  id                 String        @id @default(cuid())
+  santriId           String        @map("santri_id")
+  santri             Santri        @relation(fields: [santriId], references: [id], onDelete: Cascade)
+  musyrifId          String        @map("musyrif_id")
+  musyrif            Staff         @relation(fields: [musyrifId], references: [id], onDelete: Restrict)
+  tanggal            DateTime      @default(now())
+
+  juz                Int
+  rubuKe             Int           @map("rubu_ke")
+
+  nilaiTajwid        NilaiSetoran  @map("nilai_tajwid")
+  nilaiFashahah      NilaiSetoran  @map("nilai_fashahah")
+  nilaiKelancaran    NilaiSetoran  @map("nilai_kelancaran")
+  nilai              NilaiSetoran
+
+  rincianKesalahan   Json?         @map("rincian_kesalahan")
+  catatan            String?
+
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+  createdBy          String?       @map("created_by")
+
+  @@index([santriId, tanggal])
+  @@index([santriId, juz, rubuKe])
+  @@index([musyrifId])
+  @@map("evaluasi_rubu_tahfizh")
 }
 
 // ----------------------------------------------------
