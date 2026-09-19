@@ -18,7 +18,7 @@ To guarantee verifiable data integrity, zero undocumented side-effects, and abso
 │                                                                                                  │
 │   CLASS A: REPOSITORY-SAFE EVIDENCE (Committed to Git after Sanitization)                       │
 │   • Cryptographic SHA-256 Checksums (MANIFEST.sha256)                                            │
-│   • Record counts and relation cardinalities (e.g. 57 santri, 10 staff)                          │
+│   • Record counts and relation cardinalities (e.g. dynamic T0 snapshot row counts)               │
 │   • Database schema names, table names, column names, enum labels                                │
 │   • Migration filenames and execution statuses                                                   │
 │   • PASS / FAIL gate diagnostic results                                                          │
@@ -33,7 +33,7 @@ To guarantee verifiable data integrity, zero undocumented side-effects, and abso
 │   • Full unredacted table dumps of `users` or `staff` containing PII / phone numbers             │
 │   • Raw unredacted audit-log dumps, raw Authorization headers                                    │
 │   • Personally sensitive `beforeState` / `afterState` payloads                                   │
-│   • Complete physical SQL database exports (`.dump`, `.tar`, `.sql`)                             │
+│   • Complete logical SQL database exports (`.sql`, `.sql.sha256`)                                │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -103,9 +103,16 @@ evidence/
 
 ### 3.1 C2B Migration Evidence Pack
 - **`00_PRE_BACKUP_VERIFICATION.json`**:
-  - File size in bytes and SHA-256 hash of the physical database dump (`.dump`).
-  - Scratch database restoration verification log confirming table count, row count checksums for `users`, `santri`, `halaqoh`, and `audit_events` without logging raw row contents.
-  - Confirmation that dump connection used least-privilege read access (`SELECT` on required objects) and restore used isolated scratch credentials.
+  - **Backup Tooling Contract**: Matches executable script [`scripts/backup-db.ts`](file:///d:/stq-education-portal-antigravity/stq-education-portal/scripts/backup-db.ts) producing plain SQL logical dump (`pg_dump -F p`) named `stq_backup_<timestamp>.sql` and SHA-256 file `stq_backup_<timestamp>.sql.sha256`.
+  - **pg_dump Version Compatibility Check**:
+    - Query production database read-only: `SELECT version(), current_setting('server_version_num');`.
+    - Detect client `pg_dump --version`.
+    - Fail closed if client major version is older than production server major version (`client_major < server_major => FAIL_CLOSED`).
+  - **Dynamic T0 Snapshot & Verification**:
+    - Pre-backup read-only query captures T0 row counts across all tables (`users`, `santri`, `halaqoh`, `staff`, `audit_events`, etc.).
+    - Dry-run restore executes `psql -f <backup.sql>` against an isolated scratch database.
+    - Post-restore verification checks `RESTORED_T0 == SOURCE_T0` (table counts, row counts, migration ledger). Historical C2A numbers (57 santri, 18 users, 10 staff) are historical references only.
+  - **Least Privilege Confirmation**: Verifies dump used least-privilege read access (`SELECT` on schemas, tables, sequences, views, types) and restore used isolated scratch credentials.
 - **`01_MIGRATION_DEPLOY_SUMMARY.log`**:
   - Sanitized stdout and stderr from `npx prisma migrate deploy` (connection strings and credentials redacted).
   - Exit code (must be `0`).
@@ -124,25 +131,33 @@ evidence/
 ### 3.2 C2C Provisioning Evidence Pack
 - **`00_PRE_PROVISIONING_IDENTITY_AUDIT.json`**:
   - Least-data identity verification: selected non-secret identifiers (`id`, `username`, `role`, `accountType`, `status`), staff linkage state (`staffId != null`), and table row counts. Zero password hashes, PINs, or personal phone numbers.
+  - Read-only effective-access inventory distinguishing `CANONICAL_ASSIGNMENT_AUTHORITY` (currently 0) from `LEGACY_RUNTIME_AUTHORITY` (must audit; may exist in production).
 - **`01_REFERENCE_CATALOG_SEED_OUTPUT.json`**:
   - Record IDs and codes for 6 canonical Studi Umum subjects (`MP-SU-01` to `MP-SU-06`) and 5 Kepesantrenan subjects.
-  - Record IDs for `EducationCohort` representing permanent admission year cohorts (e.g. `2024/2025`, `2025/2026`; strictly NEVER `Tingkat 1/2/3`). Note: Cohort creation remains `BLOCKED` until authoritative Business Owner admission data is provided.
-  - Record IDs for `OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`.
+  - Record IDs for `EducationCohort` representing permanent admission year cohorts (e.g. `2024/2025`, `2025/2026`; strictly NEVER `Tingkat 1/2/3`). Dynamic rule: 100% of authoritatively in-scope active santri captured at C2C preflight must have an approved permanent cohort mapping or the gate remains `BLOCKED`.
+  - Record IDs for required OrgUnits (`OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`). Extra org units (`OU-INSTITUTION`, `OU-TAHFIZH`, etc.) are `PROPOSED_TBD` and not part of minimum C2C gate.
 - **`02_POSITIONS_AND_CAPABILITIES_SEED_OUTPUT.json`**:
-  - Position records (`MUDIR`, `KABID_TAHFIZH`, `KEPALA_KEASRAMAAN`, `PETUGAS_OPERASIONAL_TAHFIZH`, `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, `PETUGAS_OPERASIONAL_KEASRAMAAN`, `GURU_AKADEMIK`, `GURU_KEPESANTRENAN`).
-  - 9 UAT capability records (`academic.*`, `tahfizh.*`, `keasramaan.*`).
-  - `PositionCapability` records with assigned canonical scopes (`GLOBAL`, `DOMAIN`, `ASSIGNED_UNITS`, `HALAQOH`).
+  - Position records strictly limited to approved gate set: `MUDIR`, `KABID_TAHFIZH`, `KEPALA_KEASRAMAAN`, `PETUGAS_OPERASIONAL_TAHFIZH`, `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, `PETUGAS_OPERASIONAL_KEASRAMAAN`.
+  - 9 UAT capability records registered in database (`academic.*`, `tahfizh.*`, `keasramaan.*`).
+  - `PositionCapability` records mapped strictly to approved target scopes (`PETUGAS_OPERASIONAL_TAHFIZH`: recap `GLOBAL`, reward `ASSIGNED_UNITS`; `MUSYRIF_TAHFIZH`/`PEMBINA_HALAQOH`: target `HALAQOH`; `PETUGAS_OPERASIONAL_KEASRAMAAN`: permission `ASSIGNED_UNITS`).
+  - Note: Academic position grant policy (`GURU_AKADEMIK` mapping) is `PROPOSED_TBD / BLOCKED` due to unresolved teacher account modality and unresolved unit containment (`orgUnitIds: []`).
 - **`03_STAFF_LINKAGE_VERIFICATION.json`**:
-  - Active staff records and user-to-staff linkages verified via read-only audit.
-  - Note: `musyrif.tahifzh` staff linkage is `UNKNOWN / MUST_VERIFY_READ_ONLY`. Do not invent specific Staff IDs (`STF-0001`, `STF-0002`, `STF-0003`, `STF-0004`).
+  - Active staff records and user-to-staff linkages verified via read-only audit without inventing unverified Staff ID assignments.
+  - `musyrif.tahifzh` staff linkage is `UNKNOWN / MUST_VERIFY_READ_ONLY`.
+  - `musyrifah.putri` and `pembina.halaqoh` account modality: `ACCOUNT_MODALITY = UNRESOLVED / MUST_VERIFY` (`PolicyDecisionState: PROPOSED_TBD`).
 - **`04_RAZAN_MT_ISOLATION_PROOF.json`**:
-  - Proof that `razan.mt` has `staffId: null`, 0 `assignments`, 0 `capabilities`, and is targeted for decommission via schema-supported deactivation (e.g. status `NONAKTIF` or `SUSPENDED`, login disabled).
+  - Proof that `razan.mt` has `staffId: null`, 0 `assignments`, 0 `capabilities`, and is targeted for decommission via schema-supported deactivation (`status = NONAKTIF` or `SUSPENDED`).
+  - Post-decommission verification proof:
+    1. New login denied.
+    2. Existing cookie/JWT fails server session resolution (`user.status != AKTIF`).
+    3. Server actions and API operations deny the account.
+    4. Zero canonical assignments/grants; no duplicate Kabid authority.
 - **`05_MUSYRIF_TAHIFZH_INSPECTION.json`**:
   - Read-only query proof of `musyrif.tahifzh` user record, role, and current linkage state. Classified as `BUSINESS_OWNER_DESIGNATED`, staff linkage `UNKNOWN / MUST_VERIFY_READ_ONLY`.
 - **`06_TEACHING_ASSIGNMENTS_18_SLOTS.json`**:
-  - Verification that all 18 canonical teaching slots (6 Studi Umum, 7 Kps Putra, 5 Kps Putri) are covered by active `TeachingAssignment` records.
+  - Verification of teaching assignments modeling subject + education track + gender complex + optional pedagogical level + validity period (Prisma fields: `mapelId`, `staffId`, `educationTrack`, `genderComplex`, `pedagogicalLevel`, `validFrom`, `validUntil`). Note: `TeachingAssignment` does NOT contain `cohortId`.
 - **`07_READINESS_DIAGNOSTIC_11_GATES.json`**:
-  - Full output of `checkPendidikanV2ProductionReadiness()` confirming all 11 canonical readiness gates return `READY: true`.
+  - Full output of `checkPendidikanV2ProductionReadiness()` evaluating canonical readiness gates.
 - **`08_C2C_STAGE_SIGN_OFF.md`**:
   - Formal sign-off record documenting completion of provisioning.
 
@@ -152,7 +167,7 @@ evidence/
 - **`01_FEATURE_FLAG_VERIFICATION.log`**:
   - Direct HTTP response confirming API endpoints acknowledge feature enablement without schema errors.
 - **`02_AUTHORIZATION_CANONICAL_PROBES.log`**:
-  - Authorization probe results for the 9 UAT capabilities with authorized credentials.
+  - Authorization probe results for approved capabilities with authorized credentials.
 - **`03_NEGATIVE_SECURITY_PROBES.log`**:
   - Verification that unauthorized requests, scope violations, and missing staff linkages return `403 Forbidden` / `SCOPE_MISMATCH`.
   - Substitute teacher probe verifying non-scheduled teacher is rejected with `SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED`.
@@ -164,6 +179,7 @@ evidence/
 ### 3.4 C2E Live UAT Evidence Pack
 - **`UAT_01` to `UAT_09` Artifacts**:
   - Sanitized request and response payloads for each scenario.
+  - **`UAT_04_ACADEMIC_ATTENDANCE_RECORD.json`**: Explicitly restricted to Kepesantrenan attendance flow (`HADIR`, `IZIN`, `SAKIT`, `ALFA`, `NO MASBUK`). Studi Umum student attendance mutation remains `DEFERRED / DENY / NOT ACTIVATED`.
   - Pre-state and post-state database diffs for affected non-sensitive fields.
   - UI interaction captures (sanitized DOM inspection or screenshots).
 - **`UAT_AUDIT_LOG_SANITIZED_EXTRACT.json`**:
@@ -173,16 +189,18 @@ evidence/
 
 ---
 
-## 4. Release Freeze Protocol & Safety Guidelines
+## 4. Release Freeze Protocol & Operational Safety Guidelines
 
 ### 4.1 Proposed Maintenance Window
 - **Proposed Execution Window**: `22:00 WITA to 04:00 WITA` (outside core school, tahfizh setoran, and academic session hours).
 - **Policy Decision State**: `PROPOSED_TBD / OWNER_APPROVAL_REQUIRED`
-- **Notice**: This window is an engineering proposal. No production deployment may rely on or execute during this window until the Business Owner explicitly authorizes the schedule. (Likewise, designated off-hours are proposals, not locked institutional policy).
+- **Notice**: This window is an engineering proposal. No production deployment may rely on or execute during this window until the Business Owner explicitly authorizes the schedule. (Designated off-hours are proposals, not locked institutional policy).
 
-### 4.2 Maintenance Freeze Procedures
+### 4.2 Maintenance Freeze & Rollback Procedures
 1. **Pre-Freeze Notice**: Post system maintenance notice on portal prior to agreed window.
-2. **Read-Only Lockout**: Enable maintenance mode banner to prevent concurrent user mutations during migration.
+2. **Maintenance Mode Lockout Status**:
+   - `MAINTENANCE_MODE = NOT_IMPLEMENTED / PROPOSED`.
+   - Critical Invariant: No server-side maintenance write-lock currently exists in the codebase. A UI banner alone is NOT a production write lock. Server-side mutation blocking must be verified or implemented before relying on maintenance mode during release execution.
 3. **Session Drain**: Allow active HTTP requests to complete; verify no long-running transactions exist in `pg_stat_activity`.
 4. **Execution Under Freeze**:
    - Gate 0 (Backup) $\rightarrow$ Gate 1 (Migration) $\rightarrow$ Gate 2 (Reconcile) $\rightarrow$ Gate 3 (Provision) $\rightarrow$ Gate 4 (Reconcile) $\rightarrow$ Gate 5 (Activate).
@@ -192,4 +210,7 @@ evidence/
      - Inspect migration and database connection state.
      - **DO NOT automatically restore production**. Database restore is itself a high-risk production mutation.
      - Restore from backup only if the actual failure state requires it and the recovery action is explicitly authorized according to the release incident procedure.
-6. **Post-Release Unfreeze**: Verify all 11 diagnostic gates pass, release maintenance banner, and re-enable active portal operations.
+6. **Non-Destructive Rollback Protocol**:
+   - Generic destructive rollback (e.g. automatic deletion of rows, blanket-nulling fields) is strictly prohibited.
+   - If an operation fails mid-way: `STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state.`
+7. **Post-Release Unfreeze**: Verify all 11 diagnostic gates pass, release maintenance banner, and re-enable active portal operations.

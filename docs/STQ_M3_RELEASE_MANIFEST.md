@@ -9,6 +9,7 @@
 - **Production Readiness:** BLOCKED (Pending Gate 0 prerequisites and Business Owner authorization)
 - **Execution Model:** PARALLEL PREPARATION | SERIAL PRODUCTION EXECUTION | FAIL-CLOSED GATES | MANDATORY EVIDENCE PACKS
 - **Current Production Mutation Authorization:** **ZERO PRODUCTION WRITES AUTHORIZED IN THIS PHASE**
+- **Field Semantics (`Production write required?`):** Classifies whether the operational target work item itself requires a database/environment write during its execution gate (`FUTURE_OPERATION_REQUIRES_PRODUCTION_WRITE`), NOT whether this documentation PR executes a write (`CURRENT_PR_EXECUTED_PRODUCTION_WRITE = 0`).
 
 ---
 
@@ -17,14 +18,14 @@
 | Stage / Scope | Total Items | PASS | READY | BLOCKED | NOT_READY |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **A. Git & Release Lineage** | 5 | 5 | 0 | 0 | 0 |
-| **B. Database & Migration** | 4 | 2 | 0 | 2 | 0 |
+| **B. Database & Migration** | 4 | 1 | 0 | 3 | 0 |
 | **C. Backup & Restore** | 4 | 0 | 0 | 4 | 0 |
 | **D. Staff Linkage** | 3 | 0 | 0 | 1 | 2 |
 | **E. Account Cleanup / Decommission** | 4 | 0 | 0 | 3 | 1 |
 | **F. Org Units** | 4 | 0 | 0 | 1 | 3 |
 | **G. Positions** | 4 | 0 | 0 | 1 | 3 |
 | **H. Capabilities** | 3 | 0 | 0 | 1 | 2 |
-| **I. Position Capabilities** | 4 | 0 | 0 | 1 | 3 |
+| **I. Position Capabilities** | 4 | 0 | 0 | 2 | 2 |
 | **J. Assignments** | 4 | 0 | 0 | 1 | 3 |
 | **K. Assignment Scope Units** | 3 | 0 | 0 | 1 | 2 |
 | **L. Account Modality** | 3 | 0 | 0 | 0 | 3 |
@@ -43,7 +44,7 @@
 | **Y. Production UAT** | 3 | 0 | 0 | 1 | 2 |
 | **Z. Recovery & Final Sign-Off** | 3 | 0 | 0 | 1 | 2 |
 | **AA. Unresolved Business Decisions** | 10 | 0 | 0 | 3 | 7 |
-| **TOTALS** | **100** | **12** | **0** | **32** | **56** |
+| **TOTALS** | **100** | **11** | **0** | **34** | **55** |
 
 ### Gate Status Overview:
 - **GATE-C2B (Production Migration):** `BLOCKED` (Pending verified backup execution and separate Business Owner C2B authorization).
@@ -213,7 +214,7 @@
   - **Positive test:** Catalog probe confirms `to_regclass('health_cases_v2') IS NOT NULL`.
   - **Negative test:** Lock contention or transaction failure triggers rollback.
   - **Reconciliation evidence:** Post-migration schema probe and row count fingerprinting.
-  - **Rollback/recovery consideration:** Restore from pre-C2B backup if DDL fails mid-way.
+  - **Rollback/recovery consideration:** STOP -> inspect database and migration lock state. Do NOT automatically restore production. Restore from backup only if failure state necessitates recovery and action is explicitly authorized according to the release incident procedure.
   - **Evidence Pack reference:** `EVID-MIG-C2B`
   - **Gate:** GATE-C2B
   - **Status:** `BLOCKED` (Zero production writes authorized currently)
@@ -233,7 +234,7 @@
   - **Positive test:** Catalog probe confirms `to_regclass('education_cohorts') IS NOT NULL`.
   - **Negative test:** Nullability constraint prevents santri record corruption.
   - **Reconciliation evidence:** Post-migration schema probe.
-  - **Rollback/recovery consideration:** Restore from pre-C2B backup if DDL fails mid-way.
+  - **Rollback/recovery consideration:** STOP -> inspect database and migration lock state. Do NOT automatically restore production. Restore from backup only if failure state necessitates recovery and action is explicitly authorized according to the release incident procedure.
   - **Evidence Pack reference:** `EVID-MIG-C2B`
   - **Gate:** GATE-C2B
   - **Status:** `BLOCKED` (Zero production writes authorized currently)
@@ -244,17 +245,17 @@
 ### C. BACKUP / RESTORE
 - **REL-BCK-01 | Backup Tooling & Binary Availability Audit**
   - **Domain:** BACKUP / TOOLING
-  - **Requirement:** Authoritative `pg_dump` binary present in execution PATH; minimum sensible version compatible with PostgreSQL 16+.
+  - **Requirement:** Verify `pg_dump` client binary availability and major version compatibility. Before Gate 0: query production PostgreSQL server version READ-ONLY (`SELECT version(), current_setting('server_version_num')`); record `server_version` and `server_version_num`; detect client `pg_dump` major version; require compatible client/server versions; fail closed if client `pg_dump` is older than production server major version (`client_major < server_major => FAIL_CLOSED`); prefer matching production major version (PostgreSQL 17 observed in C2A preflight). Do not hardcode `>= 16` as universally sufficient.
   - **Source of truth:** `scripts/backup-db.ts`, `tests/backup-db.test.ts`
   - **PolicyDecisionState:** `APPROVED`
   - **Current state:** `pg_dump` binary ABSENT in local Windows PATH.
-  - **Target state:** Valid binary available in execution environment (e.g. Linux CI runner, container, or client tools).
+  - **Target state:** Valid binary available in execution environment with client major version matching or exceeding production server major version.
   - **Dependency:** None
   - **Production write required?:** NO
   - **Owner authorization required?:** NO
-  - **Dry-run evidence:** CLI probe `pg_dump --version`.
-  - **Positive test:** Returns valid version string `>= 16.0`.
-  - **Negative test:** Fails closed with exit code 1 if missing.
+  - **Dry-run evidence:** CLI probe `pg_dump --version` and read-only production server version query.
+  - **Positive test:** Returns valid client version string with `client_major >= server_major`.
+  - **Negative test:** Fails closed if missing or if client `pg_dump` major version is older than production server major version.
   - **Reconciliation evidence:** CLI execution output recorded in Evidence Pack.
   - **Rollback/recovery consideration:** N/A
   - **Evidence Pack reference:** `EVID-BCK-TOOLING`
@@ -284,11 +285,11 @@
 
 - **REL-BCK-03 | Production Cryptographic Backup Execution**
   - **Domain:** BACKUP / EXECUTION
-  - **Requirement:** Execute `pg_dump` against production, generate `.sql` dump file, verify file size $\ge 500$ bytes, compute cryptographic `.sha256` checksum.
+  - **Requirement:** Execute PostgreSQL logical database dump matching executable script `scripts/backup-db.ts`: plain SQL format (`pg_dump -F p`) generating dump file named `stq_backup_<timestamp>.sql`, verify file size $\ge 500$ bytes, compute cryptographic checksum file `stq_backup_<timestamp>.sql.sha256`. Contract: BACKUP_TYPE = PostgreSQL logical dump, FORMAT = plain SQL, PG_DUMP_FORMAT = -F p, ARTIFACT = .sql, CHECKSUM = .sql.sha256. Use terms LOGICAL DATABASE BACKUP / DUMP (not physical PostgreSQL backup).
   - **Source of truth:** `scripts/backup-db.ts`
   - **PolicyDecisionState:** `APPROVED`
   - **Current state:** NOT EXECUTED. Zero production backups executed yet.
-  - **Target state:** Cryptographically verified dump artifact and `.sha256` file archived.
+  - **Target state:** Cryptographically verified plain SQL logical dump artifact (`.sql`) and checksum file (`.sql.sha256`) archived.
   - **Dependency:** REL-BCK-01, REL-BCK-02, Explicit Owner Authorization
   - **Production write required?:** NO (Read-only dump against production database)
   - **Owner authorization required?:** YES (Explicit authorization to execute production dump)
@@ -304,19 +305,19 @@
 
 - **REL-BCK-04 | Isolated Test Restore Verification**
   - **Domain:** BACKUP / RESTORE_TEST
-  - **Requirement:** Restore verified dump into an isolated staging/test PostgreSQL instance; verify row counts for `santri` (57), `users` (18), `staff` (10), `mata_pelajaran` (9).
-  - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 12)
+  - **Requirement:** Restore verified plain SQL logical dump into an isolated scratch PostgreSQL instance using plain SQL restore mechanism (`psql -f <backup.sql>` against isolated scratch DB, NOT pg_restore/custom-format semantics). Dynamic T0 verification: capture pre-backup T0 READ-ONLY snapshot immediately before backup (table row counts, schema/object inventory, migration ledger, selected integrity fingerprints). Compare restored state against T0 snapshot. Success condition: `RESTORED_T0 == SOURCE_T0`. Historical C2A values (santri = 57, users = 18, staff = 10, mata_pelajaran = 9) remain documented only as checkpoint references.
+  - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 12), `scripts/backup-db.ts`
   - **PolicyDecisionState:** `APPROVED`
   - **Current state:** NOT EXECUTED.
-  - **Target state:** Verified successful restore with 100% table and row count fidelity.
+  - **Target state:** Verified successful plain SQL restore with 100% dynamic parity (`RESTORED_T0 == SOURCE_T0`).
   - **Dependency:** REL-BCK-03
-  - **Production write required?:** NO (Target is isolated non-production instance; production is never restore target)
+  - **Production write required?:** NO (Target is isolated scratch instance; production is never restore target)
   - **Owner authorization required?:** YES
-  - **Dry-run evidence:** Restore command simulation.
-  - **Positive test:** `SELECT count(*) FROM santri` equals exactly 57 on restore target.
-  - **Negative test:** Schema validation failure if dump is corrupt.
-  - **Reconciliation evidence:** Query outputs from restored test database.
-  - **Rollback/recovery consideration:** Abort C2B if backup cannot be restored.
+  - **Dry-run evidence:** Plain SQL restore command simulation (`psql`) against scratch DB.
+  - **Positive test:** Database query verifies `RESTORED_T0 == SOURCE_T0` across all tables without data loss.
+  - **Negative test:** Schema validation failure or row count drift against T0 snapshot aborts Gate 0.
+  - **Reconciliation evidence:** Query outputs from restored scratch database compared against T0 snapshot.
+  - **Rollback/recovery consideration:** Abort C2B if backup cannot be restored into scratch instance.
   - **Evidence Pack reference:** `EVID-BCK-RESTORE`
   - **Gate:** GATE-C2B
   - **Status:** `BLOCKED` (Awaiting dump artifact and restore environment)
@@ -347,19 +348,19 @@
 
 - **REL-STF-02 | Operational Account Linkage Resolution (musyrifah.putri & pembina.halaqoh)**
   - **Domain:** IDENTITY / STAFF_LINKAGE
-  - **Requirement:** Resolve account modality for `musyrifah.putri` and `pembina.halaqoh` (link to valid active Staff profile or classify as UNIT account with verified executor).
+  - **Requirement:** ACCOUNT_MODALITY = UNRESOLVED / MUST_VERIFY. Resolve account modality for `musyrifah.putri` and `pembina.halaqoh`. The possibilities (PERSONAL linked Staff vs UNIT + verified human executor) remain subject to authoritative identity/business review. Do not silently choose UNIT merely because Staff linkage is absent.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 9)
-  - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** Unlinked operational accounts in production; zero runtime authority.
-  - **Target state:** Explicitly linked to Staff or assigned as UNIT accounts.
+  - **PolicyDecisionState:** `PROPOSED_TBD`
+  - **Current state:** CANONICAL_ASSIGNMENT_AUTHORITY = ZERO; LEGACY_RUNTIME_AUTHORITY = MUST_AUDIT / MAY_EXIST (legacy runtime authorization remains authoritative in production until explicit cutover; read-only effective-access inventory required prior to C2C).
+  - **Target state:** Formally resolved to approved modality based on authoritative Business Owner decision and production identity evidence.
   - **Dependency:** GATE-C2B, Explicit Owner Authorization
-  - **Production write required?:** YES (Update `users.staff_id` or `AccountType`)
+  - **Production write required?:** YES (Future operational stage requires update; CURRENT PR #25 EXECUTES ZERO PRODUCTION WRITES)
   - **Owner authorization required?:** YES
-  - **Dry-run evidence:** Dry-run SQL script logging target `userId` and `staffId`.
-  - **Positive test:** Active Staff linkage verified via foreign key.
-  - **Negative test:** Rejects linkage if target Staff status is not `AKTIF`.
+  - **Dry-run evidence:** Read-only effective access audit and dry-run SQL script logging target `userId` and proposed modality.
+  - **Positive test:** Active Staff linkage or verified UNIT placement adheres to approved modality policy.
+  - **Negative test:** Rejects linkage if target Staff status is not `AKTIF` or if human executor unverified.
   - **Reconciliation evidence:** Pre/post query diff of `users` table.
-  - **Rollback/recovery consideration:** Revert `staff_id` to null if invalid.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never blanket-null fields.
   - **Evidence Pack reference:** `EVID-STF-LINKAGE`
   - **Gate:** GATE-C2C
   - **Status:** `BLOCKED` (Zero production writes authorized currently)
@@ -390,17 +391,17 @@
 ### E. ACCOUNT CLEANUP / DECOMMISSION
 - **REL-ACC-01 | razan.mt Deprecation & Linkage Prohibition**
   - **Domain:** IDENTITY / ACCOUNT_DECOMMISSION
-  - **Requirement:** Enforce Business Owner decision: `razan.mt` is DEPRECATED / DECOMMISSION TARGET. Strictly PROHIBIT linking to Staff `STF-0003` (or any Staff profile). Strictly PROHIBIT granting Position, Assignment, Capability, or runtime authority. Target implementation is decommission via schema-supported deactivation/revocation (e.g. status = NONAKTIF or SUSPENDED, login disabled); hard delete remains prohibited pending read-only dependency audit.
+  - **Requirement:** Enforce Business Owner decision: `razan.mt` is DEPRECATED / DECOMMISSION TARGET. Strictly PROHIBIT linking to Staff `STF-0003` (or any Staff profile). Strictly PROHIBIT granting Position, Assignment, Capability, or runtime authority. Target implementation is decommission via schema-supported deactivation/revocation (`status = NONAKTIF` or `SUSPENDED`). Hard delete remains prohibited pending read-only dependency audit. Post-decommission evidence must prove: (1) new login denied; (2) existing cookie/JWT cannot obtain a valid server-resolved session (`user.status != AKTIF`); (3) server actions and API operations deny the account; (4) zero canonical assignments/grants; (5) no duplicate Kabid authority.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 9), `STQ_PROJECT_CONTEXT.md` (Section 6)
   - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** `RAZAN_MT_TARGET_STATE = DECOMMISSION`, `RAZAN_MT_STAFF_LINKAGE = PROHIBITED`, `RAZAN_MT_DECOMMISSION_EXECUTION = NOT_STARTED`.
-  - **Target state:** Decommissioned in controlled C2C operation via schema-supported deactivation after dependency audit.
+  - **Current state:** `RAZAN_MT_TARGET_STATE = DECOMMISSION`, `RAZAN_MT_STAFF_LINKAGE = PROHIBITED`, `RAZAN_MT_DECOMMISSION_EXECUTION = NOT_STARTED`. CANONICAL_ASSIGNMENT_AUTHORITY = ZERO; LEGACY_RUNTIME_AUTHORITY = MUST_AUDIT / MAY_EXIST (read-only effective-access inventory required prior to C2C).
+  - **Target state:** Decommissioned in controlled future C2C operation via schema-supported deactivation after dependency audit. Post-decommission verification proves server session resolver rejects non-AKTIF user.
   - **Dependency:** REL-ACC-02 (Pre-decommission dependency audit)
-  - **Production write required?:** NO in this stage (Enforced in policy/docs)
+  - **Production write required?:** YES (Future operational stage requires deactivation mutation; CURRENT PR #25 EXECUTES ZERO PRODUCTION WRITES)
   - **Owner authorization required?:** YES (Satisfied by owner decision)
-  - **Dry-run evidence:** Documentation lock in PR #24.
-  - **Positive test:** Automated audit verifies zero assignments granted to `razan.mt`.
-  - **Negative test:** Any attempt to link `razan.mt` to `STF-0003` throws fatal error.
+  - **Dry-run evidence:** Documentation lock in PR #24 and pre-decommission read-only effective access audit script.
+  - **Positive test:** Automated audit verifies zero canonical assignments granted to `razan.mt`, new login denied, and server session resolver rejects deactivated user.
+  - **Negative test:** Any attempt to link `razan.mt` to `STF-0003` or authenticate deactivated session throws fatal error.
   - **Reconciliation evidence:** Project context invariant inspection.
   - **Rollback/recovery consideration:** N/A
   - **Evidence Pack reference:** `EVID-ACC-RAZAN`
@@ -453,16 +454,16 @@
   - **Requirement:** Verify that exactly ONE active operational account holds the canonical `KABID_TAHFIZH` position; ensure zero duplicate authority between `razan.mt` and `musyrif.tahifzh`.
   - **Source of truth:** `STQ_PROJECT_CONTEXT.md` (Section 8)
   - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** Neither holds canonical Assignment in production (zero assignments currently).
-  - **Target state:** Exactly one active Assignment for `KABID_TAHFIZH`.
+  - **Current state:** Both accounts have CANONICAL_ASSIGNMENT_AUTHORITY = ZERO. Legacy runtime authorization remains authoritative in production until explicit cutover (LEGACY_RUNTIME_AUTHORITY = MUST_AUDIT / MAY_EXIST). Read-only effective-access inventory required prior to C2C.
+  - **Target state:** Exactly one active canonical Assignment for `KABID_TAHFIZH`; zero duplicate authority across legacy and canonical layers.
   - **Dependency:** REL-ACC-01, REL-ACC-03
   - **Production write required?:** NO (Validation rule)
   - **Owner authorization required?:** YES
-  - **Dry-run evidence:** Assignment uniqueness validation query.
+  - **Dry-run evidence:** Assignment uniqueness validation query and effective access audit.
   - **Positive test:** Exactly 1 active assignment for position code `KABID_TAHFIZH`.
   - **Negative test:** Multiple active assignments trigger fail-closed error.
-  - **Reconciliation evidence:** Audit query of `assignments` table.
-  - **Rollback/recovery consideration:** Revoke rogue assignment if duplicate detected.
+  - **Reconciliation evidence:** Audit query of `assignments` table and legacy session inspection.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-ACC-KABID-DUP`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
@@ -473,19 +474,19 @@
 ### F. ORG UNITS
 - **REL-OU-01 | Institutional Root & Domain Unit Provisioning**
   - **Domain:** ORG_UNITS / FOUNDATION
-  - **Requirement:** Provision canonical root `OU-INSTITUTION` and domain units: `OU-TAHFIZH`, `OU-KEASRAMAAN`, `OU-AKADEMIK`, `OU-MANAJEMEN`.
-  - **Source of truth:** `types/architecture-lock.ts`, `docs/STQ_ARCHITECTURE_LOCK.md` (Section 4)
-  - **PolicyDecisionState:** `APPROVED`
+  - **Requirement:** Provision exact minimum approved OrgUnits gate set (`REQUIRED_ORG_UNITS_READY`): `OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`. Additional organizational units (`OU-INSTITUTION`, `OU-TAHFIZH`, `OU-KEASRAMAAN`, `OU-AKADEMIK`, `OU-MANAJEMEN`) are classified as `PolicyDecisionState: PROPOSED_TBD` and are NOT approved for C2C production provisioning unless an authoritative canonical source explicitly requires those exact codes.
+  - **Source of truth:** `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`
+  - **PolicyDecisionState:** `APPROVED` (for approved gate set: `OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`; `PROPOSED_TBD` for additional hierarchy)
   - **Current state:** Unseeded in production (`org_units = 0`).
-  - **Target state:** Provisioned idempotently in C2C.
+  - **Target state:** Exact approved gate set (`OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`) provisioned idempotently in C2C.
   - **Dependency:** GATE-C2B
-  - **Production write required?:** YES (INSERT)
+  - **Production write required?:** YES (INSERT in C2C; CURRENT PR #25 EXECUTES ZERO PRODUCTION WRITES)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** C2C dry-run SQL classifying as `CREATE`.
-  - **Positive test:** Query verifies 5 top-level units exist with correct `domain` and `type`.
+  - **Positive test:** Query verifies exact approved gate set exists with correct `domain` and `type`.
   - **Negative test:** Unique constraint prevents duplicate `code`.
   - **Reconciliation evidence:** Pre/post table row counts.
-  - **Rollback/recovery consideration:** Delete created units if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows.
   - **Evidence Pack reference:** `EVID-OU-ROOT`
   - **Gate:** GATE-C2C
   - **Status:** `BLOCKED` (Awaiting C2B completion)
@@ -505,7 +506,7 @@
   - **Positive test:** Relational hierarchy verifies `parentId = OU-OSDA-ROOT.id`.
   - **Negative test:** Rejects creation if parent unit missing.
   - **Reconciliation evidence:** OrgUnit tree query.
-  - **Rollback/recovery consideration:** Delete created units if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-OU-OSDA`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
@@ -525,7 +526,7 @@
   - **Positive test:** Service units correctly map to `SERVICE_UNIT` type.
   - **Negative test:** `hasCentralKetua = false` constraint verified.
   - **Reconciliation evidence:** OrgUnit tree query.
-  - **Rollback/recovery consideration:** Delete created units if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-OU-TKS`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
@@ -545,7 +546,7 @@
   - **Positive test:** All 57 santri assigned halaqohs have corresponding OrgUnits.
   - **Negative test:** Zero orphaned halaqohs.
   - **Reconciliation evidence:** Row count match between `halaqoh` and `org_units WHERE type = 'HALAQOH'`.
-  - **Rollback/recovery consideration:** Delete created halaqoh units if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-OU-HALAQOH`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
@@ -556,19 +557,19 @@
 ### G. POSITIONS
 - **REL-POS-01 | Institutional Leadership Positions Provisioning**
   - **Domain:** POSITIONS / LEADERSHIP
-  - **Requirement:** Provision positions: `MUDIR`, `KEPALA_SEKOLAH`, `KEPALA_BIDANG_TAHFIZH` / `KABID_TAHFIZH`, `KEPALA_KEASRAMAAN` / `MUSYRIF_KEASRAMAAN`.
-  - **Source of truth:** `types/architecture-lock.ts`, `docs/STQ_ARCHITECTURE_LOCK.md`
-  - **PolicyDecisionState:** `APPROVED`
+  - **Requirement:** Provision leadership positions strictly limited to approved gate set (`REQUIRED_POSITIONS_READY`): `MUDIR`, `KABID_TAHFIZH`, `KEPALA_KEASRAMAAN`. Do NOT create duplicate/synonym position codes such as `KEPALA_BIDANG_TAHFIZH`, `MUSYRIF_KEASRAMAAN`, `KEPALA_SEKOLAH` as independent canonical positions. ("Kepala Keasramaan = Musyrif Keasramaan" is terminology equivalence, not permission to seed two duplicate canonical positions; `KEPALA_SEKOLAH` is `PROPOSED_TBD / DEFERRED`).
+  - **Source of truth:** `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`
+  - **PolicyDecisionState:** `APPROVED` (for approved gate set)
   - **Current state:** Unseeded in production (`positions = 0`).
-  - **Target state:** Provisioned with `isLeadership = true`, `requiresPersonalAccount = true`.
+  - **Target state:** Exact approved leadership positions provisioned with `isLeadership = true`, `requiresPersonalAccount = true`.
   - **Dependency:** REL-OU-01
-  - **Production write required?:** YES (INSERT)
+  - **Production write required?:** YES (INSERT in C2C; CURRENT PR #25 EXECUTES ZERO PRODUCTION WRITES)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** C2C dry-run SQL.
-  - **Positive test:** Position query confirms correct allowed unit types and domain.
+  - **Positive test:** Position query confirms exact approved leadership positions exist with correct allowed unit types and domain.
   - **Negative test:** Duplicate code constraint blocks collision.
   - **Reconciliation evidence:** Position table audit.
-  - **Rollback/recovery consideration:** Delete positions if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows.
   - **Evidence Pack reference:** `EVID-POS-LEAD`
   - **Gate:** GATE-C2C
   - **Status:** `BLOCKED` (Awaiting C2B completion)
@@ -576,19 +577,19 @@
 
 - **REL-POS-02 | Operational Staff Positions Provisioning**
   - **Domain:** POSITIONS / OPERATIONAL
-  - **Requirement:** Provision operational positions: `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, `MUDABBIR`, `GURU_AKADEMIK`, `PETUGAS_OPERASIONAL_TAHFIZH`, `PETUGAS_OPERASIONAL_KEASRAMAAN`.
-  - **Source of truth:** `types/architecture-lock.ts`
-  - **PolicyDecisionState:** `APPROVED`
+  - **Requirement:** Provision operational positions strictly limited to approved gate set (`REQUIRED_POSITIONS_READY`): `PETUGAS_OPERASIONAL_TAHFIZH`, `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, `PETUGAS_OPERASIONAL_KEASRAMAAN`. Additional operational positions (`MUDABBIR`, `GURU_AKADEMIK`) are `PROPOSED_TBD / DEFERRED`. Strictly remove/avoid invented position `GURU_KEPESANTRENAN`.
+  - **Source of truth:** `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`
+  - **PolicyDecisionState:** `APPROVED` (for approved operational gate set; `PROPOSED_TBD` for `GURU_AKADEMIK` and `MUDABBIR`)
   - **Current state:** Unseeded in production.
-  - **Target state:** Provisioned with correct domain and unit type constraints.
+  - **Target state:** Exact approved operational positions provisioned with correct domain and unit type constraints.
   - **Dependency:** REL-POS-01
-  - **Production write required?:** YES (INSERT)
+  - **Production write required?:** YES (INSERT in C2C; CURRENT PR #25 EXECUTES ZERO PRODUCTION WRITES)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** C2C dry-run SQL.
-  - **Positive test:** `MUSYRIF_TAHFIZH` allows unit type `HALAQOH`; `MUDABBIR` allows `KAMAR`.
+  - **Positive test:** `MUSYRIF_TAHFIZH` and `PEMBINA_HALAQOH` allow unit type `HALAQOH`; `PETUGAS_OPERASIONAL_KEASRAMAAN` allows `ORGANIZATION` / `DIVISION`.
   - **Negative test:** Disallowed unit type rejected.
   - **Reconciliation evidence:** Position table audit.
-  - **Rollback/recovery consideration:** Delete positions if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows.
   - **Evidence Pack reference:** `EVID-POS-OPS`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
@@ -608,7 +609,7 @@
   - **Positive test:** Positions allow `ORGANIZATION` and `DIVISION` unit types.
   - **Negative test:** Rejects invalid domain binding.
   - **Reconciliation evidence:** Position table audit.
-  - **Rollback/recovery consideration:** Delete positions if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-POS-STUDENT`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
@@ -628,7 +629,7 @@
   - **Positive test:** `requiresPersonalAccount` is false.
   - **Negative test:** Rejects personal account assignment if position restricted.
   - **Reconciliation evidence:** Position table audit.
-  - **Rollback/recovery consideration:** Delete positions if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-POS-UNIT`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
@@ -660,7 +661,7 @@
   - **Positive test:** `SELECT count(*) FROM capabilities` returns 9.
   - **Negative test:** Disallowed arbitrary capability codes rejected.
   - **Reconciliation evidence:** Pre/post capabilities query.
-  - **Rollback/recovery consideration:** Delete capabilities if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-CAP-9UAT`
   - **Gate:** GATE-C2C
   - **Status:** `BLOCKED` (Awaiting C2B completion)
@@ -700,7 +701,7 @@
   - **Positive test:** Authorization engine denies approval capabilities for operational staff.
   - **Negative test:** Any attempt to map approval capability to operational position fails closed.
   - **Reconciliation evidence:** Audit query of `position_capabilities`.
-  - **Rollback/recovery consideration:** Delete invalid mapping immediately.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-CAP-EXCLUDE`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
@@ -723,7 +724,7 @@
   - **Positive test:** Query verifies `scopeType = GLOBAL` for recap and `ASSIGNED_UNITS` for reward.
   - **Negative test:** Engine denies reward issuance outside assigned units.
   - **Reconciliation evidence:** PositionCapability table audit.
-  - **Rollback/recovery consideration:** Delete mappings if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-PC-OP-TAH`
   - **Gate:** GATE-C2C
   - **Status:** `BLOCKED` (Awaiting C2B completion)
@@ -743,7 +744,7 @@
   - **Positive test:** Query confirms `scopeType = HALAQOH`.
   - **Negative test:** Engine denies cross-halaqoh target edits.
   - **Reconciliation evidence:** PositionCapability table audit.
-  - **Rollback/recovery consideration:** Delete mappings if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-PC-TGT-MGT`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
@@ -763,31 +764,38 @@
   - **Positive test:** Query confirms `scopeType = ASSIGNED_UNITS`.
   - **Negative test:** Engine denies create/read outside assigned scope units.
   - **Reconciliation evidence:** PositionCapability table audit.
-  - **Rollback/recovery consideration:** Delete mappings if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-PC-OP-KEA`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
   - **Notes / unresolved decision:** Read/create only; zero approval authority.
 
-- **REL-PC-04 | GURU_AKADEMIK Academic Capabilities Mapping**
+- **REL-PC-04 | Academic Capabilities Policy & Grant Mapping Blocker**
   - **Domain:** POSITION_CAPABILITIES / AKADEMIK
-  - **Requirement:** Map `academic.schedule.read`, `academic.session.start`, `academic.material.record`, `academic.attendance.record` with `scopeType: ASSIGNED_UNITS` for `GURU_AKADEMIK`.
-  - **Source of truth:** `types/architecture-lock.ts`
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
-  - **Current state:** Unmapped in production.
-  - **Target state:** Mapped with `businessRuleState = APPROVED_TARGET_PENDING_TECHNICAL`.
+  - **Requirement:** Evaluate academic capabilities (`academic.schedule.read`, `academic.session.start`, `academic.material.record`, `academic.attendance.record`). Canonical classification:
+    - `ACADEMIC_CAPABILITY_REGISTRATION = REQUIRED` (The four capabilities must be registered in the `capabilities` table as part of the exact 9 UAT set).
+    - `ACADEMIC_POSITION_GRANT_POLICY = PROPOSED_TBD / BLOCKED` (`GURU_AKADEMIK` PositionCapability grants are NOT currently approved by canonical `UAT_ACTIVATION_TARGETS`).
+    - `ACADEMIC_SCOPE_POLICY = BLOCKED`
+    - `ACADEMIC_ACCOUNT_MODALITY = PROPOSED_TBD` (Teacher account modality: PERSONAL linked Staff vs UNIT + verified human executor remains unresolved).
+    - `ACADEMIC_UNIT_CONTAINMENT = BLOCKED_TECHNICAL` (`EducationSession` / `TeachingAssignment` have no authoritative `OrgUnit` relation for unit containment; failing closed without borrowing halaqoh/kamar into academic `orgUnitIds`).
+    - Strictly avoid/remove invented canonical position `GURU_KEPESANTRENAN`.
+    Do NOT activate academic PositionCapabilities until policy and technical containment are explicitly resolved. Grant mapping is an explicit release blocker.
+  - **Source of truth:** `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`
+  - **BusinessRuleState:** `PROPOSED_TBD`
+  - **Current state:** Unmapped in production; grant mapping policy and unit containment unresolved.
+  - **Target state:** Capability codes registered in DB; PositionCapability grant mapping remains BLOCKED pending Business Owner policy decision and technical containment resolution.
   - **Dependency:** REL-POS-02, REL-CAP-01
-  - **Production write required?:** YES (INSERT)
+  - **Production write required?:** YES (Future operational stage requires insert after resolution; CURRENT PR #25 EXECUTES ZERO PRODUCTION WRITES)
   - **Owner authorization required?:** YES
-  - **Dry-run evidence:** C2C dry-run SQL.
-  - **Positive test:** Query confirms assigned academic capability set.
-  - **Negative test:** Engine denies session start for non-assigned subject/cohort.
-  - **Reconciliation evidence:** PositionCapability table audit.
-  - **Rollback/recovery consideration:** Delete mappings if batch fails.
+  - **Dry-run evidence:** Capability registration script verification.
+  - **Positive test:** Registration query confirms 4 academic capabilities exist in `capabilities` table.
+  - **Negative test:** Fail closed if unapproved PositionCapability grant is attempted without resolved modality and containment.
+  - **Reconciliation evidence:** PositionCapability and Capability catalog table audit.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state.
   - **Evidence Pack reference:** `EVID-PC-GURU-AKAD`
   - **Gate:** GATE-C2C
-  - **Status:** `NOT_READY`
-  - **Notes / unresolved decision:** Tied to teaching assignment ownership.
+  - **Status:** `BLOCKED` (Unresolved teacher account modality and academic unit containment)
+  - **Notes / unresolved decision:** Explicit release blocker. Retains 4 capabilities in the exact 9 UAT set without inventing grant approval.
 
 ---
 
@@ -806,7 +814,7 @@
   - **Positive test:** Mudir assignment active in DB query.
   - **Negative test:** Expired window fails closed.
   - **Reconciliation evidence:** Assignment query.
-  - **Rollback/recovery consideration:** Set `status = REVOKED` if invalid.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-ASN-LEAD`
   - **Gate:** GATE-C2C
   - **Status:** `BLOCKED` (Awaiting C2B completion)
@@ -826,7 +834,7 @@
   - **Positive test:** Each active musyrif has assignment matching their halaqoh.
   - **Negative test:** Mismatched halaqoh access denied.
   - **Reconciliation evidence:** Pre/post assignment audit.
-  - **Rollback/recovery consideration:** Revoke assignment if misallocated.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-ASN-MT`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
@@ -846,7 +854,7 @@
   - **Positive test:** Exactly 1 active assignment for `KABID_TAHFIZH`.
   - **Negative test:** Rejects if target user not confirmed or duplicate exists.
   - **Reconciliation evidence:** Assignment table query.
-  - **Rollback/recovery consideration:** Revoke assignment if misconfigured.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-ASN-KABID`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
@@ -866,7 +874,7 @@
   - **Positive test:** Teacher assignments active in query.
   - **Negative test:** Unassigned teacher denied session start.
   - **Reconciliation evidence:** Assignment table query.
-  - **Rollback/recovery consideration:** Revoke assignment if misconfigured.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-ASN-TEACHER`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
@@ -889,7 +897,7 @@
   - **Positive test:** Bound unit IDs match approved target units.
   - **Negative test:** Unbound unit ID fails closed.
   - **Reconciliation evidence:** Scope units table query.
-  - **Rollback/recovery consideration:** Delete scope unit rows if invalid.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-ASU-TAH`
   - **Gate:** GATE-C2C
   - **Status:** `BLOCKED` (Awaiting C2B completion)
@@ -909,7 +917,7 @@
   - **Positive test:** Bound unit IDs match approved dormitories.
   - **Negative test:** Cross-unit permission creation denied.
   - **Reconciliation evidence:** Scope units table query.
-  - **Rollback/recovery consideration:** Delete scope unit rows if invalid.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-ASU-KEA`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
@@ -929,7 +937,7 @@
   - **Positive test:** Scope units match authorized cohorts.
   - **Negative test:** Access denied to unassigned cohorts.
   - **Reconciliation evidence:** Scope units table query.
-  - **Rollback/recovery consideration:** Delete scope unit rows if invalid.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-ASU-AKAD`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
@@ -1015,7 +1023,7 @@
   - **Positive test:** Unit account placement strictly equals 1.
   - **Negative test:** Second simultaneous placement rejected.
   - **Reconciliation evidence:** UnitAccountPlacement table query.
-  - **Rollback/recovery consideration:** Delete placement if invalid.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-OPU-CONTRACT`
   - **Gate:** GATE-C2C
   - **Status:** `BLOCKED` (Awaiting C2B completion)
@@ -1201,7 +1209,7 @@
   - **Positive test:** Usroh units bound under `OU-OSDA-ROOT`.
   - **Negative test:** Invalid parent rejected.
   - **Reconciliation evidence:** OrgUnit table audit.
-  - **Rollback/recovery consideration:** Delete usroh units if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-KEA-USROH`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
@@ -1221,7 +1229,7 @@
   - **Positive test:** Rooms bound to `OU-KEASRAMAAN`.
   - **Negative test:** Rejects invalid gender complex binding.
   - **Reconciliation evidence:** OrgUnit table audit.
-  - **Rollback/recovery consideration:** Delete kamar units if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-KEA-KAMAR`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
@@ -1264,7 +1272,7 @@
   - **Positive test:** Parent unit verified as `OU-KEASRAMAAN`.
   - **Negative test:** Top-level health domain rejected.
   - **Reconciliation evidence:** OrgUnit query.
-  - **Rollback/recovery consideration:** Delete unit if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-HLT-TOPOLOGY`
   - **Gate:** GATE-C2C
   - **Status:** `BLOCKED` (Awaiting C2B completion)
@@ -1307,7 +1315,7 @@
   - **Positive test:** Query verifies 6 canonical subjects present.
   - **Negative test:** Duplicate code constraint prevents collision.
   - **Reconciliation evidence:** `mata_pelajaran` table query.
-  - **Rollback/recovery consideration:** Revert subject mutations if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-STU-SUBJECTS`
   - **Gate:** GATE-C2C
   - **Status:** `BLOCKED` (Awaiting C2B completion and owner decision)
@@ -1433,7 +1441,7 @@
   - **Positive test:** Historical grades retain FK integrity.
   - **Negative test:** Rejects hard delete if referencing grades exist.
   - **Reconciliation evidence:** Pre/post subject audit.
-  - **Rollback/recovery consideration:** Revert subject renames if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-SBJ-DEDUP`
   - **Gate:** GATE-C2C
   - **Status:** `BLOCKED` (Awaiting C2B completion and owner authorization)
@@ -1473,7 +1481,7 @@
   - **Positive test:** Running seed twice results in 0 duplicate rows (`EXISTS_MATCH`).
   - **Negative test:** Unique `kode_mapel` prevents duplicate insertion.
   - **Reconciliation evidence:** Seed execution log.
-  - **Rollback/recovery consideration:** Delete created rows if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-SBJ-IDEM`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
@@ -1514,9 +1522,9 @@
   - **Owner authorization required?:** YES (Admission cohort data sign-off)
   - **Dry-run evidence:** C2C dry-run SQL.
   - **Positive test:** Cohort records queryable via Prisma with admission year labels.
-  - **Negative test:** Unique name constraint blocks duplicate cohorts.
+  - **Negative test:** EducationCohort.code unique constraint blocks duplicate cohort codes (and verify tahunAjaranMasuk/startYear consistency separately).
   - **Reconciliation evidence:** Cohorts table audit.
-  - **Rollback/recovery consideration:** Delete cohorts if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows.
   - **Evidence Pack reference:** `EVID-COH-PROVISION`
   - **Gate:** GATE-C2C
   - **Status:** `BLOCKED` (Awaiting authoritative admission cohort data)
@@ -1524,19 +1532,19 @@
 
 - **REL-COH-03 | santri.cohort_id Nullable Backfill Guard**
   - **Domain:** COHORTS / BACKFILL
-  - **Requirement:** Backfill `santri.cohort_id` ONLY after authoritative mapping is approved; preserve nullability until 100% verified.
+  - **Requirement:** Backfill `santri.cohort_id` ONLY after authoritative mapping is approved; preserve nullability until 100% verified. Dynamic rule: 100% of the authoritatively in-scope active santri population captured at C2C preflight must either (A) have an approved permanent cohort mapping, or (B) cause the cohort gate to remain BLOCKED. Do not infer or silently exclude unmatched active santri.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 11)
   - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Column absent in prod; backfill not started.
   - **Target state:** Backfilled in C2C after owner decision.
   - **Dependency:** REL-COH-01, REL-COH-02
-  - **Production write required?:** YES (UPDATE in C2C)
+  - **Production write required?:** YES (Future C2C UPDATE; CURRENT PR #25 EXECUTES ZERO PRODUCTION WRITES)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** Backfill script `--dry-run` output.
-  - **Positive test:** Exactly 57 santri linked to valid cohorts.
-  - **Negative test:** Abort if unmapped santri detected.
+  - **Positive test:** 100% of authoritatively in-scope active santri captured at C2C preflight linked to approved permanent cohorts (historical C2A count: 57).
+  - **Negative test:** Abort if unmapped or unmatched active santri detected.
   - **Reconciliation evidence:** Pre/post santri table diff.
-  - **Rollback/recovery consideration:** Set `cohort_id = NULL` to revert.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never blanket-null fields.
   - **Evidence Pack reference:** `EVID-COH-BACKFILL`
   - **Gate:** GATE-C2C
   - **Status:** `NOT_READY`
@@ -1547,19 +1555,19 @@
 ### U. TEACHING ASSIGNMENTS
 - **REL-TEA-01 | TeachingAssignment Table Provisioning**
   - **Domain:** TEACHING_ASSIGNMENTS / DDL_PROVISION
-  - **Requirement:** Table `teaching_assignments` created via migration M3.3B to model teacher ownership of subject + cohort.
+  - **Requirement:** Table `teaching_assignments` created via migration M3.3B to model teacher ownership/assignment for subject + education track + gender complex + optional pedagogical level + validity period (Prisma fields: `mapelId`, `staffId`, `educationTrack`, `genderComplex`, `pedagogicalLevel`, `validFrom`, `validUntil`). Note: `TeachingAssignment` does NOT contain `cohortId` (`EducationSession` holds `cohortId` independently). Do not invent a TeachingAssignment -> cohort relation.
   - **Source of truth:** `prisma/migrations/20260918140000_m3_3b_pendidikan_foundation/migration.sql`
   - **PolicyDecisionState:** `APPROVED`
   - **Current state:** Pending C2B.
-  - **Target state:** Seeded in C2C.
+  - **Target state:** Table created via C2B DDL; seeded in C2C.
   - **Dependency:** REL-MIG-04
-  - **Production write required?:** YES (in C2C)
+  - **Production write required?:** YES (Future C2C operation; CURRENT PR #25 EXECUTES ZERO PRODUCTION WRITES)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** C2C dry-run SQL.
-  - **Positive test:** Table queryable via Prisma.
-  - **Negative test:** Invalid foreign keys rejected.
+  - **Positive test:** Table queryable via Prisma with valid field bindings.
+  - **Negative test:** Invalid foreign keys or schema violations rejected.
   - **Reconciliation evidence:** Pre/post table row counts.
-  - **Rollback/recovery consideration:** Delete teaching assignments if batch fails.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows.
   - **Evidence Pack reference:** `EVID-TEA-PROVISION`
   - **Gate:** GATE-C2C
   - **Status:** `BLOCKED` (Awaiting C2B completion)
@@ -1857,7 +1865,7 @@
   - **Positive test:** All 6 scenarios succeed as expected.
   - **Negative test:** N/A
   - **Reconciliation evidence:** UAT evidence log with timestamps and session IDs.
-  - **Rollback/recovery consideration:** Clean up test data after UAT.
+  - **Rollback/recovery consideration:** Preserve test execution evidence and audit logs. Zero production data modified.
   - **Evidence Pack reference:** `EVID-UAT-POS`
   - **Gate:** GATE-C2E
   - **Status:** `NOT_READY`

@@ -39,7 +39,7 @@ The STQ Education Portal Release Train enforces a strictly linear, fail-closed e
 
 ```mermaid
 flowchart TD
-    G0[Gate 0: Pre-Release Freeze & Physical Database Backup] -->|VERIFIED_RESTORE_PASS| G1[Gate 1: C2B Production Migration Execution]
+    G0[Gate 0: Pre-Release Freeze & Logical Database Backup] -->|VERIFIED_RESTORE_PASS| G1[Gate 1: C2B Production Migration Execution]
     G1 -->|MIGRATION_DEPLOY_SUCCESS| G2[Gate 2: Post-Migration Schema Reconciliation]
     G2 -->|SCHEMA_PARITY_VERIFIED| G3[Gate 3: C2C Foundation & Account Provisioning]
     G3 -->|PROVISIONING_COMPLETE| G4[Gate 4: Post-Provisioning Reconciliation]
@@ -58,14 +58,14 @@ flowchart TD
 
 | Gate ID | Stage Name | Upstream Prerequisite | Core Execution Scope | Automated Exit Criteria | Downstream Unlocked | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Gate 0** | **Pre-Release Freeze & Real Backup** | Business Owner Authorization | Physical PostgreSQL dump (`pg_dump -Fc`) using least privilege + SHA-256 checksum + dry-run restore into scratch DB | Restore verification log matches original table counts and row checksums without logging raw data | Gate 1 (C2B Migration) | **BLOCKED** *(Awaiting tooling & connection)* |
+| **Gate 0** | **Pre-Release Freeze & Logical Backup** | Business Owner Authorization | PostgreSQL logical dump (`pg_dump -F p`, plain SQL) + SHA-256 checksum + dry-run plain SQL restore (`psql`) into scratch DB. Client `pg_dump` major version $\ge$ server major version. Dynamic verification: `RESTORED_T0 == SOURCE_T0`. | Restore verification log confirms restored table row counts, schema catalog, and migration ledger match T0 snapshot | Gate 1 (C2B Migration) | **BLOCKED** *(Awaiting tooling & connection)* |
 | **Gate 1** | **C2B Production Migration** | Gate 0 signed off | Re-verify historical migration checksum/readiness; execute pending authorized migrations (`20260918120000_m3_3a_health_v2_backend`, `20260918140000_m3_3b_pendidikan_foundation`). PR #8 reconciliation was completed in PR #23. | Migration deploy returns exit code 0; `_prisma_migrations` contains all applied records | Gate 2 (Schema Reconciliation) | **NOT_READY** *(Gated by Gate 0)* |
 | **Gate 2** | **Post-Migration Reconciliation** | Gate 1 successful | Introspect production database information schema; verify existence of all required tables, columns, indexes, and enums | 0 missing tables; 0 column mismatches; Prisma validation passes cleanly | Gate 3 (C2C Provisioning) | **NOT_READY** *(Gated by Gate 1)* |
-| **Gate 3** | **C2C Foundation & Provisioning** | Gate 2 verified | Seed canonical subjects, org units, positions, 9 UAT capabilities, verified staff profiles, and user assignments. Cohort creation remains blocked pending owner admission data. | Database insert logs show expected row count; zero identity linkage violations | Gate 4 (Provisioning Reconciliation) | **NOT_READY** *(Gated by Gate 2)* |
+| **Gate 3** | **C2C Foundation & Provisioning** | Gate 2 verified | Seed canonical subjects, minimum approved org units (`OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`), approved positions, 9 UAT capabilities, verified staff profiles, and user assignments. Cohort creation remains blocked pending owner admission data. | Database insert logs show expected row count; zero identity linkage violations | Gate 4 (Provisioning Reconciliation) | **NOT_READY** *(Gated by Gate 2)* |
 | **Gate 4** | **Post-Provisioning Reconciliation** | Gate 3 completed | Verify staff-to-account linkages, teaching assignment coverage (18 slots), and `razan.mt` decommission/isolation state | Linkage audit shows `razan.mt` has 0 staff links; all 18 teaching slots filled with valid staff IDs | Gate 5 (C2D Activation) | **NOT_READY** *(Gated by Gate 3)* |
 | **Gate 5** | **C2D Runtime Activation** | Gate 4 verified | Set `PENDIDIKAN_V2_UAT_ENABLED=true` in production environment | Server config inspection verifies flag is active; endpoint responds with authoritative DTO | Gate 6 (Auth Diagnostic) | **NOT_READY** *(Gated by Gate 4)* |
 | **Gate 6** | **Authorization & Diagnostic Verification** | Gate 5 active | Run `checkPendidikanV2ProductionReadiness` against live production instance | All 11 canonical readiness gates evaluate to `READY: true`; zero deny errors on valid tokens | Gate 7 (Live UAT) | **NOT_READY** *(Gated by Gate 5)* |
-| **Gate 7** | **C2E Live Production UAT** | Gate 6 passed | Execute live scenarios UAT-01 through UAT-09 with designated test accounts | 100% scenario test passes; sanitized audit logs capture all session transitions and mutations | Gate 8 (Final Audit) | **NOT_READY** *(Gated by Gate 6)* |
+| **Gate 7** | **C2E Live Production UAT** | Gate 6 passed | Execute live scenarios UAT-01 through UAT-09 with designated test accounts (UAT-04 restricted strictly to Kepesantrenan attendance) | 100% scenario test passes; sanitized audit logs capture all session transitions and mutations | Gate 8 (Final Audit) | **NOT_READY** *(Gated by Gate 6)* |
 | **Gate 8** | **Final Gap Audit & Decommissioning** | Gate 7 passed | Verify decommission of `razan.mt` via schema-supported deactivation; audit all logs for unintended side-effects | `razan.mt` decommissioned/deactivated; zero anomalous audit log entries | Gate 9 (Stable Baseline) | **NOT_READY** *(Gated by Gate 7)* |
 | **Gate 9** | **Release Sign-Off & Stable Baseline** | Gate 8 passed | Compile Master Evidence Pack; produce walkthrough; Business Owner signs off | Formal signed document; baseline tagged in Git | **STABLE BASELINE** | **NOT_READY** *(Gated by Gate 8)* |
 
@@ -84,16 +84,16 @@ graph TD
     subgraph Step 2: Reference Catalogs & Organizational Units
         S2A[2.1 Canonical Subjects<br/>6 Studi Umum + 5 Kepesantrenan]
         S2B[2.2 Education Cohorts<br/>Admission Year e.g. 2024/2025<br/>BLOCKED Pending Owner Input]
-        S2C[2.3 Required Org Units<br/>OU-OSDA-ROOT, OU-OSDA-PUTRI, OU-TKS-ROOT]
+        S2C[2.3 Minimum Approved Org Units<br/>OU-OSDA-ROOT, OU-OSDA-PUTRI, OU-TKS-ROOT]
     end
 
     subgraph Step 3: Authorization Primitives
-        S3A[3.1 Canonical Positions<br/>MUDIR, KABID_TAHFIZH, GURU_AKADEMIK, etc.]
+        S3A[3.1 Minimum Approved Positions<br/>MUDIR, KABID_TAHFIZH, KEPALA_KEASRAMAAN, etc.]
         S3B[3.2 9 Canonical Capabilities<br/>academic.*, tahfizh.*, keasramaan.*]
     end
 
     subgraph Step 4: Capability Mapping
-        S4[4.1 PositionCapability Records<br/>Map Positions to Capabilities with Approved Scopes]
+        S4[4.1 PositionCapability Records<br/>Approved Scopes Only; Academic Grants BLOCKED]
     end
 
     subgraph Step 5: Staff & User Linkages
@@ -143,26 +143,24 @@ graph TD
 ### Granular Step Details & Invariants
 1. **Step 1.1 (Schema Verification)**: Verify presence of C2B tables and enums before executing any seed scripts.
 2. **Step 2.1 (Subjects Catalog)**: Insert/Verify 6 canonical Studi Umum subjects (`MP-SU-01` to `MP-SU-06`) and 5 Kepesantrenan subjects.
-3. **Step 2.2 (Cohorts Catalog)**: `EducationCohort` represents permanent admission year cohorts (e.g. `2024/2025`, `2025/2026`). School class attribute, gender, age, and Tingkat Studi Umum (1/2/3 - current program position) must NEVER define EducationCohort. Creation and backfill remain strictly `BLOCKED` until authoritative Business Owner admission data is provided.
-4. **Step 2.3 (OrgUnits Catalog)**: Insert/Verify `OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`.
-5. **Step 3.1 & 3.2 (Positions & Capabilities)**: Ensure the 9 required UAT capabilities and target positions are present.
+3. **Step 2.2 (Cohorts Catalog)**: `EducationCohort` represents permanent admission year cohorts (e.g. `2024/2025`, `2025/2026`). School class attribute, gender, age, and Tingkat Studi Umum (1/2/3 - current program position) must NEVER define EducationCohort. Dynamic rule: 100% of the authoritatively in-scope active santri captured at C2C preflight must have an approved permanent cohort mapping, or the cohort gate remains `BLOCKED`. EducationCohort enforces `code @unique`. Creation and backfill remain strictly `BLOCKED` until authoritative Business Owner admission data is provided.
+4. **Step 2.3 (OrgUnits Catalog)**: Insert/Verify exact minimum approved gate set: `OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`. Additional organizational units (`OU-INSTITUTION`, `OU-TAHFIZH`, `OU-KEASRAMAAN`, `OU-AKADEMIK`, `OU-MANAJEMEN`) remain `PROPOSED_TBD` and are not approved for C2C production seeding without explicit canonical authority.
+5. **Step 3.1 & 3.2 (Positions & Capabilities)**: Ensure the 9 required UAT capabilities are registered in database. Minimum approved position templates are strictly limited to the canonical gate set: `MUDIR`, `KABID_TAHFIZH`, `KEPALA_KEASRAMAAN`, `PETUGAS_OPERASIONAL_TAHFIZH`, `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, `PETUGAS_OPERASIONAL_KEASRAMAAN`. Do not create synonym or duplicate position codes (`KEPALA_BIDANG_TAHFIZH`, `MUSYRIF_KEASRAMAAN`, `KEPALA_SEKOLAH`, `GURU_KEPESANTRENAN`). Additional positions are `PROPOSED_TBD / DEFERRED`.
 6. **Step 4.1 (PositionCapabilities)**: Map capabilities strictly to approved target scopes:
-   - `academic.schedule.read`: `ASSIGNED_UNITS` for teachers.
-   - `academic.session.start`: `ASSIGNED_UNITS`.
-   - `academic.material.record`: `ASSIGNED_UNITS`.
-   - `academic.attendance.record`: `ASSIGNED_UNITS`.
    - `tahfizh.recap.read`: `GLOBAL` for `PETUGAS_OPERASIONAL_TAHFIZH` (read-only); `DOMAIN` for `KABID_TAHFIZH`; `GLOBAL` for `MUDIR`.
    - `tahfizh.reward.issue`: `ASSIGNED_UNITS` for `PETUGAS_OPERASIONAL_TAHFIZH`; `DOMAIN` for `KABID_TAHFIZH`; `GLOBAL` for `MUDIR`.
    - `tahfizh.target.manage`: `HALAQOH` for `MUSYRIF_TAHFIZH` and `PEMBINA_HALAQOH`.
    - `keasramaan.permission.read`: `ASSIGNED_UNITS` for `PETUGAS_OPERASIONAL_KEASRAMAAN`.
    - `keasramaan.permission.create`: `ASSIGNED_UNITS` for `PETUGAS_OPERASIONAL_KEASRAMAAN`.
+   - **Academic PositionCapabilities Policy (`REL-PC-04`)**: The four academic capabilities (`academic.schedule.read`, `academic.session.start`, `academic.material.record`, `academic.attendance.record`) are REQUIRED in capability registration, BUT their grant mapping to `GURU_AKADEMIK` is `PROPOSED_TBD / BLOCKED`. Scope policy is `BLOCKED` because teacher account modality remains unresolved (`PROPOSED_TBD`) and academic unit containment is unresolved (`BLOCKED_TECHNICAL`: `EducationSession`/`TeachingAssignment` have no authoritative `OrgUnit` relation for unit containment). Do not activate academic PositionCapabilities until policy and containment are explicitly resolved.
    *(No unapproved scopes, no invented UNIT scope for Keasramaan, no KAMAR grants, no speculative GLOBAL academic grants).*
 7. **Step 5.1 to 5.3 (Staff & User Linkage)**:
    - Verify staff profiles based on read-only production audit without inventing unverified Staff ID assignments.
    - `musyrif.tahifzh` staff linkage is `UNKNOWN / MUST_VERIFY_READ_ONLY`.
-   - **Critical Guard**: `razan.mt` must NEVER be linked to Staff `STF-0003` or any Staff profile. Target state is decommission via schema-supported deactivation/revocation.
+   - `musyrifah.putri` and `pembina.halaqoh`: `ACCOUNT_MODALITY = UNRESOLVED / MUST_VERIFY` (`PolicyDecisionState: PROPOSED_TBD`). Canonical Assignment authority = 0; legacy runtime authority must be audited and may exist in production until explicit cutover. Read-only effective access audit required prior to C2C.
+   - **Critical Guard**: `razan.mt` must NEVER be linked to Staff `STF-0003` or any Staff profile. Target state is decommission via schema-supported deactivation/revocation (`status = NONAKTIF` or `SUSPENDED`).
 8. **Step 6.1 & 6.2 (Assignments & Scope Units)**: Create user assignments with active Staff profile enforcement for personal accounts, and human executor attribution for unit accounts. Attach unit containment where applicable.
-9. **Step 7.1 (Teaching Assignments)**: Configure exact teaching assignments for all 18 canonical slots.
+9. **Step 7.1 (Teaching Assignments)**: Configure teaching assignments modeling subject + education track + gender complex + optional pedagogical level + validity period (Prisma fields: `mapelId`, `staffId`, `educationTrack`, `genderComplex`, `pedagogicalLevel`, `validFrom`, `validUntil`). Note: `TeachingAssignment` does NOT contain `cohortId` (cohort assignment is held independently on `EducationSession`). All 18 canonical slots covered.
 10. **Step 8.1 (Diagnostic Execution)**: Run `checkPendidikanV2ProductionReadiness()`. All 11 gates must evaluate to `READY: true`.
 
 ---
@@ -177,9 +175,10 @@ graph TD
 - **Specification**: No task may execute on the assumption that an upstream task will succeed.
 - **Enforcement**: Automated pre-check guards query database catalog and configuration state before initiating mutations.
 
-### Rule 3: Strict Backup Prerequisites
-- **Specification**: Production writes are strictly prohibited until a physical PostgreSQL backup is verified via automated restore into a temporary scratch instance.
-- **Enforcement**: Deployment scripts require valid `BACKUP_VERIFICATION_PASS` token containing backup file SHA-256 and restore row-count checksums.
+### Rule 3: Strict Backup Prerequisites & Tooling Parity
+- **Specification**: Production writes are strictly prohibited until a logical PostgreSQL backup (`pg_dump -F p`, plain SQL) is verified via automated restore (`psql`) into a temporary scratch instance, confirming `RESTORED_T0 == SOURCE_T0`.
+- **Version Compatibility**: Client `pg_dump` major version must match or be newer than production PostgreSQL server major version (`client_major < server_major => FAIL_CLOSED`).
+- **Enforcement**: Deployment scripts require valid `BACKUP_VERIFICATION_PASS` token containing backup file SHA-256, server version parity record, and restore row-count checksums matching T0 snapshot.
 
 ### Rule 4: Zero Manual Overrides
 - **Specification**: Engineers cannot bypass failing gates or missing requirements using manual flags, ad-hoc SQL, or temporary environment overrides.
@@ -195,3 +194,7 @@ graph TD
 
 ### Rule 7: Abort & Assess Trigger on Migration Stalls
 - **Specification**: Any unexpected migration delay, transaction freeze, or lock contention acts as an ABORT/ASSESS trigger: stop further release stages, inspect database state. Do NOT automatically restore production. Restore from backup only when failure state necessitates recovery and action is explicitly authorized according to the release incident procedure.
+
+### Rule 8: Non-Destructive Rollback Protocol
+- **Specification**: Generic destructive rollback (e.g. automatic deletion of rows, blanket-nulling fields) is strictly prohibited.
+- **Enforcement**: If an operation fails mid-way: `STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state.` Never run corrective production writes from a validation step alone.
