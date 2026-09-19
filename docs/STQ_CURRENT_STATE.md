@@ -40,6 +40,16 @@ All commit SHAs recorded below are verified historical checkpoints, not self-upd
   - Vercel `stq-education-portal-app`: SUCCESS
   - Classification: `M3.3C2A.1 = MERGED_AND_POSTMERGE_VERIFIED`
 
+- **PR #24 Project Context Lock verified checkpoint:**
+  `8e670491d1ed0c88a480ed90186153e96ca1dea3`
+  (Merge commit for PR #24: `PR #24: Project Context Lock`)
+  - PR #24 state: MERGED
+  - Merge commit: `8e670491d1ed0c88a480ed90186153e96ca1dea3`
+  - Post-merge CI run: `35422712316` (SUCCESS)
+  - Vercel `stq-education-portal`: SUCCESS
+  - Vercel `stq-education-portal-app`: SUCCESS
+  - Classification: `PROJECT_CONTEXT_LOCK_MERGED_AND_POSTMERGE_VERIFIED`
+
 ---
 
 ## 2. PR #8 immutable guard
@@ -476,6 +486,7 @@ Completed:
 - M3.3C1 ✅
 - M3.3C2A ✅
 - M3.3C2A.1 (PR #8 migration ledger + Prisma schema parity reconciliation — PR #23) ✅
+- Project Context Lock (PR #24) ✅
 
 Current next step:
 
