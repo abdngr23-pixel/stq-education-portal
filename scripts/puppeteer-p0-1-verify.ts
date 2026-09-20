@@ -555,25 +555,25 @@ export async function runIsolatedE2EVerification() {
     console.log("   ✓ Skenario 1 & 1B Lolos: Otentikasi, Beranda MT, dan navigasi per santri terbukti sah.");
 
     // =========================================================================
-    // SKENARIO 2: SETORAN MULTI-HALAMAN (422–423, VOLUME 2) & VERIFIKASI PERSISTENSI
+    // SKENARIO 2: SETORAN 1 HALAMAN PENUH (422, VOLUME 1) & VERIFIKASI PERSISTENSI
     // =========================================================================
-    console.log("\n[SKENARIO 2] Pengujian Setoran Multi-Halaman Nyata (422–423, Volume 2)...");
+    console.log("\n[SKENARIO 2] Pengujian Setoran 1 Halaman Nyata (422, Volume 1)...");
     // Pilih santri Multi
     await page.select('#santri-selector', FIXTURES.SANTRI_MULTI);
     await new Promise((r) => setTimeout(r, 600));
 
-    // Klik tombol quick add +2 Hlm
-    const btnPlus2 = await page.waitForSelector('[data-testid="btn-quick-add-2"]');
-    if (!btnPlus2) fail("Tombol +2 Hlm tidak ditemukan");
-    await btnPlus2.click();
+    // Klik tombol quick add +1 Hlm (karena Sabaq dibatasi maksimal <= 1.0 halaman per hari WITA)
+    const btnPlus1 = await page.waitForSelector('[data-testid="btn-quick-add-1"]');
+    if (!btnPlus1) fail("Tombol +1 Hlm tidak ditemukan");
+    await btnPlus1.click();
     await new Promise((r) => setTimeout(r, 400));
 
     // Verifikasi rentang di form via data-testid
     const halMulaiMulti = await page.$eval('[data-testid="input-halaman-mulai"]', (el) => (el as HTMLInputElement).value);
     const halSelesaiMulti = await page.$eval('[data-testid="input-halaman-selesai"]', (el) => (el as HTMLInputElement).value);
     console.log(`   Rentang form terisi: Halaman ${halMulaiMulti} s.d. ${halSelesaiMulti}`);
-    if (halMulaiMulti !== "422" || halSelesaiMulti !== "423") {
-      fail(`Rentang multi-halaman salah. Diharapkan 422–423, didapat ${halMulaiMulti}–${halSelesaiMulti}`);
+    if (halMulaiMulti !== "422" || halSelesaiMulti !== "422") {
+      fail(`Rentang halaman salah. Diharapkan 422–422, didapat ${halMulaiMulti}–${halSelesaiMulti}`);
     }
 
     // Klik tombol Simpan Setoran Santri yang sesungguhnya
@@ -589,7 +589,7 @@ export async function runIsolatedE2EVerification() {
       fail("Pesan feedback tidak memuat nama santri yang tersimpan");
     }
 
-    // Tangkap screenshot bukti sukses multi-halaman
+    // Tangkap screenshot bukti sukses
     await captureScreenshot(page, "p0_1_real_multipage_success.png");
 
     // Reload halaman dan verifikasi persistensi riwayat di database riil
@@ -601,9 +601,9 @@ export async function runIsolatedE2EVerification() {
     // Verifikasi recent-setoran-item di UI setelah reload
     await page.waitForSelector('[data-testid="recent-setoran-item"]');
     const recentItems = await page.$$eval('[data-testid="recent-setoran-item"]', (els) => els.map((e) => e.textContent || ""));
-    const foundInRecent = recentItems.some((text) => text.includes("422") && text.includes("423") && text.includes("Muhammad Test Multi"));
+    const foundInRecent = recentItems.some((text) => text.includes("422") && text.includes("Muhammad Test Multi"));
     if (!foundInRecent) {
-      fail("Setoran 422–423 tidak muncul di recent-setoran-item setelah reload.");
+      fail("Setoran 422 tidak muncul di recent-setoran-item setelah reload.");
     }
 
     // Verifikasi langsung di database test
@@ -611,15 +611,15 @@ export async function runIsolatedE2EVerification() {
       where: {
         santriId: FIXTURES.SANTRI_MULTI,
         halamanMulai: 422,
-        halamanSelesai: 423,
-        jumlahHalaman: 2,
+        halamanSelesai: 422,
+        jumlahHalaman: 1,
         status: "AKTIF",
       },
     });
     if (!recordDbMulti) {
-      fail("Record setoran 422–423 tidak ditemukan di database test!");
+      fail("Record setoran 422 tidak ditemukan di database test!");
     }
-    console.log(`   ✓ Skenario 2 Lolos: Setoran multi-halaman tersimpan di database (${recordDbMulti.setoranCode}) dan persisten.`);
+    console.log(`   ✓ Skenario 2 Lolos: Setoran 1 halaman tersimpan di database (${recordDbMulti.setoranCode}) dan persisten.`);
 
     // =========================================================================
     // SKENARIO 3: SIKLUS PENUH SETENGAH HALAMAN (1ST 0.5, RELOAD, 2ND 0.5, RELOAD, 3RD 0.5 REJECTED)
