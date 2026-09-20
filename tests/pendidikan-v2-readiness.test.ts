@@ -13,6 +13,8 @@ import {
   CANONICAL_UAT_TARGET_POLICIES,
   REQUIRED_UAT_ACTIVATION_CAPABILITIES,
   KEPESANTRENAN_REQUIRED_ACADEMIC_AUTH_CAPABILITIES,
+  KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES,
+  evaluateKepesantrenanAcademicAuthPolicies,
 } from "../lib/server/pendidikan-v2-readiness";
 import { authorizeCanonical } from "../lib/auth/canonical-evaluator";
 
@@ -568,9 +570,9 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
         },
         positionCapability: {
           findMany: async () => [
-            { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
-            { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
-            { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+            { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "MUDIR", isActive: true } },
+            { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "MUDIR", isActive: true } },
+            { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "MUDIR", isActive: true } },
           ],
         },
         santriKamarPlacement: {
@@ -619,7 +621,13 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
       const prevEnv = process.env.PENDIDIKAN_V2_UAT_ENABLED;
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "true"; // Gate 11 is READY
       try {
-        const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+        const report = await checkPendidikanV2ProductionReadiness(mockDb as any, {
+          approvedKepesantrenanAuthPolicies: [
+            { positionCode: "MUDIR", capabilityCode: "academic.session.start", scopeType: "GLOBAL" },
+            { positionCode: "MUDIR", capabilityCode: "academic.material.record", scopeType: "GLOBAL" },
+            { positionCode: "MUDIR", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" },
+          ],
+        });
         const cohortGate = report.gates.find((g) => g.gate === "COHORTS_ASSIGNED");
         assert.ok(cohortGate);
         assert.strictEqual(cohortGate.status, "NOT_READY");
@@ -707,6 +715,7 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
       assert.ok(authPolicyGate, "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY gate must exist");
       assert.strictEqual(authPolicyGate.status, "NOT_READY", "Auth policy gate must be NOT_READY when no policy provisioned");
       assert.strictEqual(authPolicyGate.blocking, true, "Auth policy gate must be blocking");
+      assert.ok(authPolicyGate.details.includes("OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED"));
       assert.ok(authPolicyGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
 
       assert.notStrictEqual(report.overallStatus, "READY", "overallStatus must NOT be READY when auth policy is NOT_READY");
@@ -751,17 +760,24 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
 
     // D. APPROVED_TARGET_PENDING_TECHNICAL academic grant => AUTH POLICY gate NOT_READY
     it("D. APPROVED_TARGET_PENDING_TECHNICAL academic grant => AUTH POLICY gate NOT_READY", async () => {
+      const syntheticApprovedPolicies = [
+        { positionCode: "GURU_KEPESANTRENAN", capabilityCode: "academic.session.start", scopeType: "GLOBAL" as const },
+        { positionCode: "GURU_KEPESANTRENAN", capabilityCode: "academic.material.record", scopeType: "GLOBAL" as const },
+        { positionCode: "GURU_KEPESANTRENAN", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" as const },
+      ];
       const mockDb = {
         positionCapability: {
           findMany: async () => [
-            { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" },
-            { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" },
-            { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" },
+            { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL", position: { code: "GURU_KEPESANTRENAN", isActive: true } },
+            { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL", position: { code: "GURU_KEPESANTRENAN", isActive: true } },
+            { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL", position: { code: "GURU_KEPESANTRENAN", isActive: true } },
           ],
         },
       };
 
-      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any, {
+        approvedKepesantrenanAuthPolicies: syntheticApprovedPolicies,
+      });
       const authPolicyGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(authPolicyGate);
       assert.strictEqual(authPolicyGate.status, "NOT_READY");
@@ -771,17 +787,24 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
 
     // E. PROPOSED_TBD academic grant => AUTH POLICY gate NOT_READY
     it("E. PROPOSED_TBD academic grant => AUTH POLICY gate NOT_READY", async () => {
+      const syntheticApprovedPolicies = [
+        { positionCode: "GURU_KEPESANTRENAN", capabilityCode: "academic.session.start", scopeType: "GLOBAL" as const },
+        { positionCode: "GURU_KEPESANTRENAN", capabilityCode: "academic.material.record", scopeType: "GLOBAL" as const },
+        { positionCode: "GURU_KEPESANTRENAN", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" as const },
+      ];
       const mockDb = {
         positionCapability: {
           findMany: async () => [
-            { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD" },
-            { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD" },
-            { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD" },
+            { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD", position: { code: "GURU_KEPESANTRENAN", isActive: true } },
+            { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD", position: { code: "GURU_KEPESANTRENAN", isActive: true } },
+            { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD", position: { code: "GURU_KEPESANTRENAN", isActive: true } },
           ],
         },
       };
 
-      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any, {
+        approvedKepesantrenanAuthPolicies: syntheticApprovedPolicies,
+      });
       const authPolicyGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(authPolicyGate);
       assert.strictEqual(authPolicyGate.status, "NOT_READY");
@@ -799,22 +822,30 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
       const authPolicyGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(authPolicyGate);
       assert.strictEqual(authPolicyGate.status, "NOT_READY");
+      assert.ok(authPolicyGate.details.includes("OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED"));
       assert.ok(authPolicyGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
     });
 
     // G. Synthetic test-only explicitly VERIFIED_PRODUCTION policy with compatible scope => policy gate may become READY
     it("G. Synthetic test-only explicitly VERIFIED_PRODUCTION policy with compatible scope => policy gate READY", async () => {
+      const syntheticApprovedPolicies = [
+        { positionCode: "GURU_KEPESANTRENAN", capabilityCode: "academic.session.start", scopeType: "GLOBAL" as const },
+        { positionCode: "GURU_KEPESANTRENAN", capabilityCode: "academic.material.record", scopeType: "GLOBAL" as const },
+        { positionCode: "GURU_KEPESANTRENAN", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" as const },
+      ];
       const mockDb = {
         positionCapability: {
           findMany: async () => [
-            { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
-            { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
-            { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+            { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_KEPESANTRENAN", isActive: true } },
+            { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_KEPESANTRENAN", isActive: true } },
+            { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_KEPESANTRENAN", isActive: true } },
           ],
         },
       };
 
-      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any, {
+        approvedKepesantrenanAuthPolicies: syntheticApprovedPolicies,
+      });
       const authPolicyGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(authPolicyGate);
       assert.strictEqual(authPolicyGate.status, "READY");
@@ -842,6 +873,191 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
         );
         assert.strictEqual(found, undefined, `Studi Umum subject ${sub} must not be in TeachingAssignment coverage targets`);
       }
+    });
+  });
+
+  // =========================================================================
+  // SECTION 14: OWNER-APPROVED POLICY FAIL-CLOSED REQUIREMENTS (A-G)
+  // =========================================================================
+  describe("14. Owner-Approved Policy Gate Fail-Closed Verification (A-G)", () => {
+    const syntheticApprovedPolicy = [
+      {
+        positionCode: "GURU_APPROVED",
+        capabilityCode: "academic.session.start",
+        scopeType: "GLOBAL" as const,
+      },
+    ];
+
+    // A. Arbitrary Position + VERIFIED_PRODUCTION academic capabilities
+    //    => NOT_READY when Position/policy is not owner-approved
+    it("A. Arbitrary Position + VERIFIED_PRODUCTION academic capabilities => NOT_READY when Position is not owner-approved", () => {
+      const activePcs = [
+        {
+          capabilityCode: "academic.session.start",
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+          position: { code: "ARBITRARY_UNAPPROVED_POSITION", isActive: true },
+        },
+      ];
+
+      const res = evaluateKepesantrenanAcademicAuthPolicies(activePcs, {
+        approvedPolicies: syntheticApprovedPolicy,
+      });
+
+      assert.strictEqual(res.status, "NOT_READY");
+      assert.ok(res.details.includes("Missing owner-approved Kepesantrenan academic authorization policies"));
+      assert.ok(res.details.includes("GURU_APPROVED:academic.session.start:GLOBAL"));
+    });
+
+    // B. VERIFIED_PRODUCTION capabilities with scopeType undefined/null => NOT_READY
+    it("B. VERIFIED_PRODUCTION capabilities with scopeType undefined/null => NOT_READY", () => {
+      const activePcsUndefined = [
+        {
+          capabilityCode: "academic.session.start",
+          scopeType: undefined,
+          businessRuleState: "VERIFIED_PRODUCTION",
+          position: { code: "GURU_APPROVED", isActive: true },
+        },
+      ];
+
+      const resUndefined = evaluateKepesantrenanAcademicAuthPolicies(activePcsUndefined, {
+        approvedPolicies: syntheticApprovedPolicy,
+      });
+      assert.strictEqual(resUndefined.status, "NOT_READY");
+      assert.ok(resUndefined.details.includes("invalid/undefined scopeType"));
+
+      const activePcsNull = [
+        {
+          capabilityCode: "academic.session.start",
+          scopeType: null,
+          businessRuleState: "VERIFIED_PRODUCTION",
+          position: { code: "GURU_APPROVED", isActive: true },
+        },
+      ];
+
+      const resNull = evaluateKepesantrenanAcademicAuthPolicies(activePcsNull, {
+        approvedPolicies: syntheticApprovedPolicy,
+      });
+      assert.strictEqual(resNull.status, "NOT_READY");
+      assert.ok(resNull.details.includes("invalid/undefined scopeType"));
+    });
+
+    // C. VERIFIED_PRODUCTION capabilities with arbitrary wrong scope => NOT_READY
+    it("C. VERIFIED_PRODUCTION capabilities with arbitrary wrong scope => NOT_READY", () => {
+      const activePcsWrongScope = [
+        {
+          capabilityCode: "academic.session.start",
+          scopeType: "ARBITRARY_WRONG_SCOPE",
+          businessRuleState: "VERIFIED_PRODUCTION",
+          position: { code: "GURU_APPROVED", isActive: true },
+        },
+      ];
+
+      const res = evaluateKepesantrenanAcademicAuthPolicies(activePcsWrongScope, {
+        approvedPolicies: syntheticApprovedPolicy,
+      });
+      assert.strictEqual(res.status, "NOT_READY");
+      assert.ok(res.details.includes("scope mismatch against approved manifest"));
+      assert.ok(res.details.includes("actual scope: [ARBITRARY_WRONG_SCOPE]"));
+    });
+
+    // D. Capability-code match alone => NOT sufficient
+    it("D. Capability-code match alone => NOT sufficient", () => {
+      const activePcsNoPosition = [
+        {
+          capabilityCode: "academic.session.start",
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+          position: null,
+        },
+      ];
+
+      const res = evaluateKepesantrenanAcademicAuthPolicies(activePcsNoPosition, {
+        approvedPolicies: syntheticApprovedPolicy,
+      });
+      assert.strictEqual(res.status, "NOT_READY");
+      assert.ok(res.details.includes("Missing owner-approved Kepesantrenan academic authorization policies"));
+    });
+
+    // E. Legacy role match => NOT sufficient
+    it("E. Legacy role match => NOT sufficient", () => {
+      const activePcsLegacyRole = [
+        {
+          capabilityCode: "academic.session.start",
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+          legacyRole: "GURU",
+          role: "ADMIN",
+          username: "ustadz.ahmad",
+          displayName: "Ustadz Ahmad",
+          position: { code: "LEGACY_ROLE_HOLDER", isActive: true },
+        },
+      ];
+
+      const res = evaluateKepesantrenanAcademicAuthPolicies(activePcsLegacyRole as any, {
+        approvedPolicies: syntheticApprovedPolicy,
+      });
+      assert.strictEqual(res.status, "NOT_READY");
+      assert.ok(res.details.includes("Missing owner-approved Kepesantrenan academic authorization policies"));
+    });
+
+    // F. Current EMPTY owner policy manifest => policy gate NOT_READY
+    it("F. Current EMPTY owner policy manifest => policy gate NOT_READY", async () => {
+      assert.strictEqual(KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES.length, 0);
+
+      const activePcs = [
+        {
+          capabilityCode: "academic.session.start",
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+          position: { code: "MUDIR", isActive: true },
+        },
+      ];
+
+      // Pure evaluator with default (empty) manifest
+      const res = evaluateKepesantrenanAcademicAuthPolicies(activePcs);
+      assert.strictEqual(res.status, "NOT_READY");
+      assert.strictEqual(res.blocking, true);
+      assert.ok(res.details.includes("OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED"));
+      assert.ok(res.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
+
+      // Full readiness diagnostic with default options
+      const mockDb = {
+        positionCapability: { findMany: async () => activePcs },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(gate.details.includes("OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED"));
+      assert.ok(gate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
+    });
+
+    // G. Synthetic test-only owner-approved policy manifest proves mechanics, but MUST NOT modify production manifest
+    it("G. Synthetic test-only owner-approved policy manifest proves mechanics without modifying production manifest", () => {
+      const syntheticManifest = [
+        { positionCode: "GURU_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" as const },
+      ];
+
+      const activePcs = [
+        {
+          capabilityCode: "academic.session.start",
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+          position: { code: "GURU_TEST", isActive: true },
+        },
+      ];
+
+      // Evaluator with synthetic manifest passes
+      const res = evaluateKepesantrenanAcademicAuthPolicies(activePcs, {
+        approvedPolicies: syntheticManifest,
+      });
+      assert.strictEqual(res.status, "READY");
+      assert.ok(res.details.includes("VERIFIED_PRODUCTION"));
+
+      // Production manifest remains strictly EMPTY
+      assert.strictEqual(KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES.length, 0);
+      assert.deepStrictEqual(KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES, []);
     });
   });
 });

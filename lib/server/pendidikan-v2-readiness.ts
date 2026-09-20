@@ -335,11 +335,190 @@ export const KEPESANTRENAN_REQUIRED_ACADEMIC_AUTH_CAPABILITIES = [
 ] as const;
 
 /**
+ * Owner-Approved Kepesantrenan Academic Authority Policy Manifest.
+ * Represents ONLY explicit owner-approved position-to-capability-and-scope mappings
+ * for Kepesantrenan academic runtime authority.
+ *
+ * Current owner-approved list is intentionally EMPTY.
+ * No positionCode, scope, aliases, or fallback legacy roles may be invented.
+ * Awaiting formal owner approval and promotion in M3.3C2.
+ */
+export interface KepesantrenanApprovedAcademicAuthPolicy {
+  positionCode: string;
+  capabilityCode: string;
+  scopeType: string;
+}
+
+export const KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES: readonly KepesantrenanApprovedAcademicAuthPolicy[] = [];
+
+export interface KepesantrenanAuthPolicyEvaluationOptions {
+  approvedPolicies?: readonly KepesantrenanApprovedAcademicAuthPolicy[];
+}
+
+export interface KepesantrenanAuthPolicyEvaluationResult {
+  status: ReadinessStatus;
+  details: string;
+  remediationAdvice?: string;
+  blocking: true;
+}
+
+/**
+ * Evaluates runtime authorization policy readiness for Kepesantrenan actions.
+ * Fail-closed: Requires explicit match on positionCode, capabilityCode, scopeType,
+ * and businessRuleState === "VERIFIED_PRODUCTION" against KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES.
+ */
+export function evaluateKepesantrenanAcademicAuthPolicies(
+  activePcs: Array<{
+    capabilityCode: string;
+    scopeType?: string | null;
+    businessRuleState?: string | null;
+    position?: { code?: string; isActive?: boolean } | null;
+  }>,
+  options?: KepesantrenanAuthPolicyEvaluationOptions
+): KepesantrenanAuthPolicyEvaluationResult {
+  const approvedPolicies = options?.approvedPolicies ?? KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES;
+
+  // If approved policies manifest is empty, fail-closed immediately:
+  if (!approvedPolicies || approvedPolicies.length === 0) {
+    return {
+      status: "NOT_READY",
+      details: "OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED: No owner-approved Kepesantrenan academic PositionCapability policy has been defined (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY)",
+      remediationAdvice: "Awaiting owner/governance approval of Kepesantrenan academic PositionCapability policy manifest and formal promotion to VERIFIED_PRODUCTION in M3.3C2",
+      blocking: true,
+    };
+  }
+
+  // If no active PositionCapabilities exist in database:
+  if (!activePcs || activePcs.length === 0) {
+    return {
+      status: "NOT_READY",
+      details: "No active PositionCapability rows provisioned in database matching owner-approved policies (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY)",
+      remediationAdvice: "Requires provisioning explicit PositionCapability records matching approved policies in M3.3C2",
+      blocking: true,
+    };
+  }
+
+  // Must verify that EVERY approved policy entry is satisfied by an active PositionCapability in DB:
+  // - position.code must match approvedPolicy.positionCode exactly (no legacy role, no username, no capability-alone match)
+  // - capabilityCode must match approvedPolicy.capabilityCode exactly
+  // - scopeType must be explicit, not null/undefined/empty, and must match approvedPolicy.scopeType exactly
+  // - businessRuleState must equal "VERIFIED_PRODUCTION"
+  const missingPolicies: string[] = [];
+  const pendingTechnical: string[] = [];
+  const proposedTbd: string[] = [];
+  const scopeMismatches: string[] = [];
+  const invalidScope: string[] = [];
+  const verifiedPolicies: string[] = [];
+
+  for (const policy of approvedPolicies) {
+    const policyKey = `${policy.positionCode}:${policy.capabilityCode}:${policy.scopeType}`;
+
+    // Find candidate by position.code + capabilityCode
+    const matchingCandidates = activePcs.filter(
+      (pc) => pc.position?.code === policy.positionCode && pc.capabilityCode === policy.capabilityCode
+    );
+
+    if (matchingCandidates.length === 0) {
+      missingPolicies.push(policyKey);
+      continue;
+    }
+
+    // Strict scope validation: scopeType must be explicit, not null/undefined/empty
+    const hasUndefinedOrNullScope = matchingCandidates.some(
+      (pc) => pc.scopeType === null || pc.scopeType === undefined || (typeof pc.scopeType === "string" && pc.scopeType.trim() === "")
+    );
+    if (hasUndefinedOrNullScope) {
+      invalidScope.push(`${policyKey} (scopeType is undefined/null/empty)`);
+    }
+
+    const exactMatch = matchingCandidates.find((pc) => {
+      if (!pc.scopeType || pc.scopeType !== policy.scopeType) return false;
+      if (pc.businessRuleState !== "VERIFIED_PRODUCTION") return false;
+      return true;
+    });
+
+    if (exactMatch) {
+      verifiedPolicies.push(policyKey);
+    } else {
+      const withScopeMatch = matchingCandidates.filter((pc) => pc.scopeType === policy.scopeType);
+      if (withScopeMatch.length > 0) {
+        if (withScopeMatch.some((pc) => pc.businessRuleState === "APPROVED_TARGET_PENDING_TECHNICAL")) {
+          pendingTechnical.push(policyKey);
+        } else if (withScopeMatch.some((pc) => pc.businessRuleState === "PROPOSED_TBD")) {
+          proposedTbd.push(policyKey);
+        } else {
+          missingPolicies.push(policyKey);
+        }
+      } else {
+        const actualScopes = matchingCandidates.map((pc) => pc.scopeType ?? "undefined").join(", ");
+        scopeMismatches.push(`${policyKey} (actual scope: [${actualScopes}], expected: ${policy.scopeType})`);
+      }
+    }
+  }
+
+  if (verifiedPolicies.length === approvedPolicies.length) {
+    return {
+      status: "READY",
+      details: `Kepesantrenan academic runtime authorization policy verified with active VERIFIED_PRODUCTION grants for: ${verifiedPolicies.join(", ")}`,
+      blocking: true,
+    };
+  }
+
+  if (invalidScope.length > 0) {
+    return {
+      status: "NOT_READY",
+      details: `Kepesantrenan academic policy has invalid/undefined scopeType: ${invalidScope.join("; ")} (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY)`,
+      remediationAdvice: "scopeType must be explicit and valid",
+      blocking: true,
+    };
+  }
+
+  if (scopeMismatches.length > 0) {
+    return {
+      status: "NOT_READY",
+      details: `Kepesantrenan academic policy scope mismatch against approved manifest: ${scopeMismatches.join("; ")} (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY)`,
+      remediationAdvice: "PositionCapability scopeType must match owner-approved policy manifest exactly",
+      blocking: true,
+    };
+  }
+
+  if (pendingTechnical.length > 0) {
+    return {
+      status: "NOT_READY",
+      details: `Kepesantrenan academic policy grant is APPROVED_TARGET_PENDING_TECHNICAL for: ${pendingTechnical.join("; ")} (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY: policy approved but not runtime authoritative)`,
+      remediationAdvice: "Requires formal promotion of APPROVED_TARGET_PENDING_TECHNICAL policy to VERIFIED_PRODUCTION in M3.3C2",
+      blocking: true,
+    };
+  }
+
+  if (proposedTbd.length > 0) {
+    return {
+      status: "NOT_READY",
+      details: `Kepesantrenan academic policy grant is PROPOSED_TBD for: ${proposedTbd.join(", ")} (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY)`,
+      remediationAdvice: "PROPOSED_TBD policies must be reviewed and approved by owner before runtime activation",
+      blocking: true,
+    };
+  }
+
+  return {
+    status: "NOT_READY",
+    details: `Missing owner-approved Kepesantrenan academic authorization policies: ${missingPolicies.join(", ")} (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY)`,
+    remediationAdvice: "Requires explicit PositionCapability mappings with VERIFIED_PRODUCTION matching approved policy manifest",
+    blocking: true,
+  };
+}
+
+export interface CheckPendidikanV2ProductionReadinessOptions {
+  approvedKepesantrenanAuthPolicies?: readonly KepesantrenanApprovedAcademicAuthPolicy[];
+}
+
+/**
  * Diagnostic function: Evaluates all 12 canonical production readiness gates.
  * STRICTLY READ-ONLY: Executes zero INSERT, UPDATE, DELETE, SEED, or MIGRATION operations.
  */
 export async function checkPendidikanV2ProductionReadiness(
-  db: ReadinessDbClient
+  db: ReadinessDbClient,
+  options?: CheckPendidikanV2ProductionReadinessOptions
 ): Promise<ProductionReadinessReport> {
   const gates: ReadinessGateResult[] = [];
   const unlinkedStaffAccounts: string[] = [];
@@ -1389,18 +1568,14 @@ export async function checkPendidikanV2ProductionReadiness(
   // Gate 10: Kepesantrenan Academic Runtime Authorization Policy Ready
   // Evaluates runtime authorization policy readiness for Kepesantrenan actions.
   // Requires explicit owner-approved PositionCapability with businessRuleState === "VERIFIED_PRODUCTION"
-  // and compatible scope for academic.session.start, academic.material.record, academic.attendance.record.
-  // TeachingAssignment represents planning metadata only, NOT authority.
-  // Fails closed (NOT_READY, blocking=true) if policy is unapproved, unprovisioned, PROPOSED_TBD, or APPROVED_TARGET_PENDING_TECHNICAL.
+  // matching KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES manifest.
+  // Current owner-approved manifest is EMPTY; fails closed (NOT_READY, blocking=true)
+  // with OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED and KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY.
   try {
-    const requiredCaps = KEPESANTRENAN_REQUIRED_ACADEMIC_AUTH_CAPABILITIES;
-    let pcs: Array<{ capabilityCode: string; scopeType?: string; anchorUnitId?: string; businessRuleState?: string; positionId?: string; position?: any }> = [];
+    let pcs: Array<{ capabilityCode: string; scopeType?: string | null; businessRuleState?: string | null; position?: { code?: string; isActive?: boolean } | null }> = [];
 
     if (db.positionCapability?.findMany) {
       pcs = await db.positionCapability.findMany({
-        where: {
-          capabilityCode: { in: requiredCaps as any },
-        },
         include: { position: true },
       }).catch(() => []);
     } else if (db.position?.findMany) {
@@ -1410,9 +1585,8 @@ export async function checkPendidikanV2ProductionReadiness(
           for (const c of p.capabilities) {
             pcs.push({
               capabilityCode: c.capabilityCode || c.code,
-              scopeType: c.scopeType || c.scope,
+              scopeType: c.scopeType ?? c.scope,
               businessRuleState: c.businessRuleState,
-              positionId: p.id,
               position: p,
             });
           }
@@ -1425,10 +1599,8 @@ export async function checkPendidikanV2ProductionReadiness(
           for (const c of a.position.capabilities) {
             pcs.push({
               capabilityCode: c.capabilityCode || c.code,
-              scopeType: c.scopeType || c.scope,
-              anchorUnitId: c.anchorUnitId,
+              scopeType: c.scopeType ?? c.scope,
               businessRuleState: c.businessRuleState,
-              positionId: a.position?.id,
               position: a.position,
             });
           }
@@ -1437,8 +1609,8 @@ export async function checkPendidikanV2ProductionReadiness(
     } else if (typeof db.$queryRawUnsafe === "function") {
       const rows = await db.$queryRawUnsafe<Array<{
         capability_code: string;
-        scope_type: string;
-        business_rule_state: string;
+        scope_type: string | null;
+        business_rule_state: string | null;
         position_code: string;
         position_active: boolean;
       }>>(`
@@ -1450,8 +1622,7 @@ export async function checkPendidikanV2ProductionReadiness(
           p."is_active" as position_active
         FROM "position_capabilities" pc
         JOIN "positions" p ON pc."position_id" = p."id"
-        WHERE pc."capability_code" IN ('academic.session.start', 'academic.material.record', 'academic.attendance.record')
-          AND p."is_active" = true;
+        WHERE p."is_active" = true;
       `).catch(() => []);
       pcs = rows.map((r) => ({
         capabilityCode: r.capability_code,
@@ -1472,10 +1643,8 @@ export async function checkPendidikanV2ProductionReadiness(
                   for (const c of a.position.capabilities) {
                     pcs.push({
                       capabilityCode: c.capabilityCode || c.code,
-                      scopeType: c.scopeType || c.scope,
-                      anchorUnitId: c.anchorUnitId,
+                      scopeType: c.scopeType ?? c.scope,
                       businessRuleState: c.businessRuleState,
-                      positionId: a.position?.id,
                       position: a.position,
                     });
                   }
@@ -1489,91 +1658,17 @@ export async function checkPendidikanV2ProductionReadiness(
 
     const activePcs = pcs.filter((pc) => !pc.position || pc.position.isActive !== false);
 
-    if (activePcs.length === 0) {
-      gates.push({
-        gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
-        status: "NOT_READY",
-        details: "No owner-approved runtime authorization policy provisioned for Kepesantrenan academic actions (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY: requires explicit PositionCapability with VERIFIED_PRODUCTION for academic.session.start, academic.material.record, academic.attendance.record)",
-        remediationAdvice: "Awaiting owner/governance approval of Kepesantrenan academic PositionCapability policy and formal promotion to VERIFIED_PRODUCTION in M3.3C2",
-        blocking: true,
-      });
-    } else {
-      const missingCaps: string[] = [];
-      const pendingTechnical: string[] = [];
-      const proposedTbd: string[] = [];
-      const scopeMismatch: string[] = [];
-      const verifiedCaps: string[] = [];
+    const evaluation = evaluateKepesantrenanAcademicAuthPolicies(activePcs, {
+      approvedPolicies: options?.approvedKepesantrenanAuthPolicies ?? KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES,
+    });
 
-      for (const cap of requiredCaps) {
-        const matching = activePcs.filter((p) => p.capabilityCode === cap);
-        if (matching.length === 0) {
-          missingCaps.push(cap);
-          continue;
-        }
-
-        const hasVerified = matching.find((m) => {
-          if (m.businessRuleState !== "VERIFIED_PRODUCTION") return false;
-          if (m.scopeType === "HALAQOH" || m.scopeType === "KAMAR" || m.scopeType === "OWN_CHILD" || m.scopeType === "SELF") return false;
-          if (m.scopeType === "UNIT" && (m as any).anchorUnitId === "ou-different-campus") return false;
-          return true;
-        });
-
-        if (hasVerified) {
-          verifiedCaps.push(cap);
-        } else {
-          if (matching.some((m) => m.businessRuleState === "APPROVED_TARGET_PENDING_TECHNICAL")) {
-            pendingTechnical.push(cap);
-          } else if (matching.some((m) => m.businessRuleState === "PROPOSED_TBD")) {
-            proposedTbd.push(cap);
-          } else if (matching.some((m) => m.scopeType === "HALAQOH" || (m.scopeType === "UNIT" && (m as any).anchorUnitId === "ou-different-campus"))) {
-            scopeMismatch.push(`${cap}: incompatible scope ${matching[0].scopeType} for EducationSession resource (SCOPE_MISMATCH)`);
-          } else {
-            missingCaps.push(cap);
-          }
-        }
-      }
-
-      if (verifiedCaps.length === requiredCaps.length) {
-        gates.push({
-          gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
-          status: "READY",
-          details: `Kepesantrenan academic runtime authorization policy verified with active VERIFIED_PRODUCTION grants for ${verifiedCaps.join(", ")}`,
-          blocking: true,
-        });
-      } else if (pendingTechnical.length > 0) {
-        gates.push({
-          gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
-          status: "NOT_READY",
-          details: `Kepesantrenan academic policy grant is APPROVED_TARGET_PENDING_TECHNICAL for ${pendingTechnical.join(", ")} (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY: policy approved but not runtime authoritative)`,
-          remediationAdvice: "Requires formal promotion of APPROVED_TARGET_PENDING_TECHNICAL policy to VERIFIED_PRODUCTION in M3.3C2",
-          blocking: true,
-        });
-      } else if (proposedTbd.length > 0) {
-        gates.push({
-          gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
-          status: "NOT_READY",
-          details: `Kepesantrenan academic policy grant is PROPOSED_TBD for ${proposedTbd.join(", ")} (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY)`,
-          remediationAdvice: "PROPOSED_TBD policies must be reviewed and approved by owner before runtime activation",
-          blocking: true,
-        });
-      } else if (scopeMismatch.length > 0) {
-        gates.push({
-          gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
-          status: "NOT_READY",
-          details: `Kepesantrenan academic policy scope mismatch: ${scopeMismatch.join("; ")} (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY)`,
-          remediationAdvice: "Academic capabilities must have compatible scope for EducationSession (GLOBAL, ASSIGNED_UNITS, UNIT, or DOMAIN)",
-          blocking: true,
-        });
-      } else {
-        gates.push({
-          gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
-          status: "NOT_READY",
-          details: `Missing required academic authorization capabilities: ${missingCaps.join(", ")} (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY)`,
-          remediationAdvice: "Requires explicit PositionCapability mappings with VERIFIED_PRODUCTION and compatible scope",
-          blocking: true,
-        });
-      }
-    }
+    gates.push({
+      gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
+      status: evaluation.status,
+      details: evaluation.details,
+      remediationAdvice: evaluation.remediationAdvice,
+      blocking: true,
+    });
   } catch (err: unknown) {
     gates.push({
       gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",

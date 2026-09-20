@@ -535,6 +535,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
                     unit: { id: "ou-1", isActive: true },
                     position: {
                       id: `pos-${idx}`,
+                      code: "POS_KEPESANTRENAN_TEST",
                       isActive: true,
                       capabilities: [
                         "academic.schedule.read",
@@ -560,7 +561,14 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           findMany: async () => createSlotsWithProposedTbd(),
         },
       };
-      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const syntheticApprovedPolicies = [
+        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" as const },
+        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" as const },
+        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" as const },
+      ];
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any, {
+        approvedKepesantrenanAuthPolicies: syntheticApprovedPolicies,
+      });
       const planningGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(planningGate);
       assert.strictEqual(planningGate.status, "READY"); // PLANNING_READY
@@ -611,6 +619,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
                     unit: { id: "ou-1", isActive: true },
                     position: {
                       id: `pos-${idx}`,
+                      code: "POS_KEPESANTRENAN_TEST",
                       isActive: true,
                       capabilities: [
                         "academic.schedule.read",
@@ -636,7 +645,14 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           findMany: async () => createSlotsWithPendingTechnical(),
         },
       };
-      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const syntheticApprovedPolicies = [
+        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" as const },
+        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" as const },
+        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" as const },
+      ];
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any, {
+        approvedKepesantrenanAuthPolicies: syntheticApprovedPolicies,
+      });
       const planningGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(planningGate);
       assert.strictEqual(planningGate.status, "READY"); // PLANNING_READY
@@ -687,6 +703,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
                     unit: { id: "ou-1", isActive: true },
                     position: {
                       id: `pos-${idx}`,
+                      code: "POS_KEPESANTRENAN_TEST",
                       isActive: true,
                       capabilities: [
                         "academic.schedule.read",
@@ -712,7 +729,14 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           findMany: async () => createVerifiedSlots(),
         },
       };
-      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const syntheticApprovedPolicies = [
+        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" as const },
+        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" as const },
+        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" as const },
+      ];
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any, {
+        approvedKepesantrenanAuthPolicies: syntheticApprovedPolicies,
+      });
       const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(gate);
       assert.strictEqual(gate.status, "READY");
@@ -1658,6 +1682,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
                   unit: { id: OU_AKADEMIK, isActive: true },
                   position: {
                     id: `pos-${idx}`,
+                    code: "POS_KEPESANTRENAN_TEST",
                     isActive: true,
                     capabilities: [
                       "academic.schedule.read",
@@ -1678,9 +1703,16 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         },
       }));
 
+      const syntheticApprovedPolicies = [
+        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" as const },
+        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" as const },
+        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" as const },
+      ];
       const report = await checkPendidikanV2ProductionReadiness({
         teachingAssignment: { findMany: async () => mockSlots },
-      } as any);
+      } as any, {
+        approvedKepesantrenanAuthPolicies: syntheticApprovedPolicies,
+      });
 
       const teachingGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(teachingGate);
