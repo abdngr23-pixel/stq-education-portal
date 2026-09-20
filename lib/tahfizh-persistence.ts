@@ -5,7 +5,7 @@ import {
   validateProposedSabaqAllocation,
   calculateLatestSabaqPosition,
 } from "./tahfizh-page-allocation";
-import { getStartOfWeekWITA, getEndOfWeekWITA } from "./sabaqi";
+import { getStartOfWeekWITA } from "./sabaqi";
 import { parseWITADate, getTodayWITADateString, getWITADayRange, getWitaDateString } from "./wita-date";
 
 export interface CreateSetoranCoreInput {
@@ -213,7 +213,6 @@ export async function saveSetoranTahfizhCore(
   if (input.jenis === "SABQI") {
     const refDate = effectiveOccurredAt;
     const startOfWeek = getStartOfWeekWITA(refDate);
-    const endOfWeek = getEndOfWeekWITA(refDate);
     const activeSabaqThisWeek = await prismaClient.setoranTahfizh.findMany({
       where: {
         santriId: input.santriId,
@@ -221,7 +220,7 @@ export async function saveSetoranTahfizhCore(
         status: { not: "DIBATALKAN" },
         tanggal: {
           gte: startOfWeek,
-          lte: endOfWeek,
+          lte: effectiveOccurredAt,
         },
       },
       select: {
@@ -249,13 +248,10 @@ export async function saveSetoranTahfizhCore(
           Number(sabaq.jumlahHalaman)
         );
       } catch {
-        // Fallback for legacy / mock data where halMulai-halSelesai range does not match jumlahHalaman
-        sabaqAlloc = {};
-        const minP = Math.min(sabaq.halamanMulai, sabaq.halamanSelesai);
-        const maxP = Math.max(sabaq.halamanMulai, sabaq.halamanSelesai);
-        for (let p = minP; p <= maxP; p++) {
-          sabaqAlloc[p] = 1.0;
-        }
+        return {
+          success: false,
+          message: "DATA_INTEGRITY_ERROR: Alokasi halaman setoran Sabaq tersimpan tidak dapat direkonstruksi secara aman.",
+        };
       }
       for (const [pageStr, vol] of Object.entries(sabaqAlloc)) {
         const page = Number(pageStr);

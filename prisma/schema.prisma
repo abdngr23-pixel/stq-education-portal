@@ -336,14 +336,14 @@ model User {
   passwordHash String      @map("password_hash")
   role         Role
   status       UserStatus  @default(AKTIF)
-  
+
   // Canonical Architecture Lock: Additive AccountType
   accountType  AccountType @default(PERSONAL) @map("account_type")
 
   // Relasi ke master data spesifik
   staffId      String?     @unique @map("staff_id")
   staff        Staff?      @relation(fields: [staffId], references: [id])
-  
+
   santriId     String?     @unique @map("santri_id")
   santri       Santri?     @relation(fields: [santriId], references: [id])
 
@@ -398,7 +398,7 @@ model Staff {
   roleStaff          Role             @map("role_staff")
   status             UserStatus       @default(AKTIF)
   isKepalaBidangTahfidz Boolean        @default(false) @map("is_kepala_bidang_tahfidz")
-  
+
   user               User?
   halaqohDipimpin    Halaqoh[]        @relation("PembinaHalaqoh")
   setoranDiampu      SetoranTahfizh[]
@@ -451,7 +451,7 @@ model Santri {
   targetAkhirProgramJuz Int      @default(30) @map("target_akhir_program_juz")
   modalHafalanAwalHalaman Float  @default(0) @map("modal_hafalan_awal_halaman")
   tanggalBaselineTahfizh DateTime? @map("tanggal_baseline_tahfizh")
-  
+
   namaWali      String?          @map("nama_wali")
   noHpWali      String?          @map("no_hp_wali")
 
@@ -459,7 +459,7 @@ model Santri {
 
   halaqohId     String?          @map("halaqoh_id")
   halaqoh       Halaqoh?         @relation(fields: [halaqohId], references: [id])
-  
+
   setoranList   SetoranTahfizh[]
 
   // Relasi Fase 2
@@ -524,7 +524,7 @@ model Halaqoh {
   pembina     Staff          @relation("PembinaHalaqoh", fields: [pembinaId], references: [id])
   tahunAjaran String         @map("tahun_ajaran")
   status      UserStatus     @default(AKTIF)
-  
+
   santriList  Santri[]
 
   createdAt   DateTime       @default(now()) @map("created_at")
@@ -587,7 +587,7 @@ model MataPelajaran {
   kategori    KategoriMapel
   guruId      String?        @map("guru_id")
   guru        Staff?         @relation(fields: [guruId], references: [id])
-  
+
   nilaiList   NilaiAkademik[]
 
   // Relasi Milestone 3.3B: Pendidikan Foundation
@@ -612,7 +612,7 @@ model NilaiAkademik {
   namaPengajarSnapshot String?       @map("nama_pengajar_snapshot")
   dicatatOlehUserId    String?       @map("dicatat_oleh_user_id")
   dicatatOlehUser      User?         @relation("NilaiDicatatOlehUser", fields: [dicatatOlehUserId], references: [id])
-  
+
   semester             Int           // 1 atau 2
   tahunAjaran          String        @map("tahun_ajaran") // e.g. "2026/2027"
   jenis                JenisNilai
@@ -640,7 +640,7 @@ model PerizinanSantri {
   batchId            String?     @map("batch_id")
   santriId           String      @map("santri_id")
   santri             Santri      @relation(fields: [santriId], references: [id], onDelete: Restrict)
-  
+
   jenis              JenisIzin
   tanggalMulai       DateTime    @map("tanggal_mulai")
   tanggalSelesai     DateTime    @map("tanggal_selesai")
@@ -652,10 +652,10 @@ model PerizinanSantri {
 
   disetujuiMKId      String?     @map("disetujui_mk_id")
   disetujuiMK        Staff?      @relation("IzinDisetujuiMK", fields: [disetujuiMKId], references: [id])
-  
+
   disetujuiKSId      String?     @map("disetujui_ks_id")
   disetujuiKS        Staff?      @relation("IzinDisetujuiKS", fields: [disetujuiKSId], references: [id])
-  
+
   returnedAt         DateTime?   @map("returned_at")
   returnedBy         String?     @map("returned_by")
   isLate             Boolean     @default(false) @map("is_late")
@@ -702,7 +702,7 @@ model KategoriPelanggaran {
   tingkat         TingkatPelanggaran
   poinDasar       Int?               @map("poin_dasar") // Null jika belum ditetapkan
   sanksi          String?            // Sanksi standar (misal rotan 3x, push-up)
-  
+
   pelanggaranList PelanggaranSantri[]
   createdAt       DateTime           @default(now()) @map("created_at")
 
@@ -717,7 +717,7 @@ model PelanggaranSantri {
   santri                  Santri              @relation(fields: [santriId], references: [id], onDelete: Cascade)
   kategoriId              String              @map("kategori_id")
   kategori                KategoriPelanggaran @relation(fields: [kategoriId], references: [id])
-  
+
   // Snapshot data pelanggaran saat kejadian
   namaPelanggaranSnapshot String?             @map("nama_pelanggaran_snapshot")
   kategoriSnapshot        TingkatPelanggaran? @map("kategori_snapshot")
@@ -727,7 +727,7 @@ model PelanggaranSantri {
   poinFinal               Int                 @default(0) @map("poin_final") // 0 jika Kategori 1 atau sanksi fisik
   isPengulangan           Boolean             @default(false) @map("is_pengulangan")
   kronologi               String
-  
+
   pencatatId              String              @map("pencatat_id")
   pencatat                Staff               @relation("PelanggaranDicatat", fields: [pencatatId], references: [id])
 
@@ -762,7 +762,7 @@ model BintangSantri {
   periode   String          // e.g. "Agustus 2026"
   kategori  KategoriBintang
   prestasi  String          // e.g. "Nol Pelanggaran & Setoran 2 Juz dalam Sebulan"
-  
+
   createdAt DateTime        @default(now()) @map("created_at")
 
   @@index([santriId, periode])
@@ -781,11 +781,11 @@ model PengajuanBulanan {
   nominal       Float
   keterangan    String
   status        StatusPengajuan @default(DIAJUKAN)
-  
+
   diajukanOleh  String          @map("diajukan_oleh") // username Admin
   disetujuiOleh String?         @map("disetujui_oleh") // username Mudir/KS
   catatanKS     String?         @map("catatan_ks")
-  
+
   createdAt     DateTime        @default(now()) @map("created_at")
   updatedAt     DateTime        @updatedAt @map("updated_at")
 
@@ -823,7 +823,7 @@ model OrangTuaAsuh {
 
   santriId       String?        @map("santri_id")
   santri         Santri?        @relation(fields: [santriId], references: [id])
-  
+
   laporanList    LaporanBulananSponsor[]
 
   createdAt      DateTime       @default(now()) @map("created_at")
@@ -843,7 +843,7 @@ model LaporanBulananSponsor {
   bulan           String        // e.g. "Agustus 2026"
   snapshotTahfizh Json          @map("snapshot_tahfizh")
   catatanMusyrif  String?       @map("catatan_musyrif")
-  
+
   statusKirimWA   StatusKirimWA @default(BELUM_KIRIM) @map("status_kirim_wa")
   tanggalKirimWA  DateTime?     @map("tanggal_kirim_wa")
 
@@ -861,7 +861,7 @@ model SuratResmi {
   tujuan        String
   isiSurat      String      @map("isi_surat")
   status        StatusSurat @default(DRAFT)
-  
+
   dibuatOleh    String      @map("dibuat_oleh")
   penandatangan String      @map("penandatangan")
 
@@ -879,10 +879,10 @@ model IkhtibarTahfizh {
   id              String         @id @default(cuid())
   santriId        String         @map("santri_id")
   santri          Santri         @relation(fields: [santriId], references: [id])
-  
+
   juz             Int            // Juz yang diujikan (1-30)
   status          StatusIkhtibar @default(PENGAJUAN)
-  
+
   pengujiTahap1Id String?        @map("penguji_tahap_1_id")
   pengujiTahap1   Staff?         @relation("PengujiTahap1", fields: [pengujiTahap1Id], references: [id])
   nilaiTahap1     Float?         @map("nilai_tahap_1")
@@ -915,7 +915,7 @@ model CatatanKesehatan {
   id          String          @id @default(cuid())
   santriId    String          @map("santri_id")
   santri      Santri          @relation(fields: [santriId], references: [id])
-  
+
   keluhan     String          // Gejala/keluhan fisik
   diagnosa    String?         // Dugaan awal penyakit
   tindakan    String          // Obat/tindakan medis yang diberikan
@@ -986,7 +986,7 @@ model StokLogistik {
   satuan      String           // e.g. "Kg", "Dus", "Botol", "Pcs"
   lokasi      String           // e.g. "Gudang Dapur", "Ruang UKS", "Kantor TU"
   keterangan  String?
-  
+
   mutasiList  MutasiLogistik[]
 
   updatedAt   DateTime         @updatedAt @map("updated_at")
@@ -999,7 +999,7 @@ model MutasiLogistik {
   id              String              @id @default(cuid())
   logistikId      String              @map("logistik_id")
   logistik        StokLogistik        @relation(fields: [logistikId], references: [id])
-  
+
   jenis           JenisMutasiLogistik
   jumlah          Float
   keterangan      String              // Donasi Sembako, Pemasakan Dapur, dll.
@@ -1059,14 +1059,14 @@ model AuditLog {
   id        String    @id @default(cuid())
   userId    String?   @map("user_id")
   user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  
+
   action    String    // "LOGIN", "CREATE_SETORAN", "KIRIM_WA", "GENERATE_SURAT_AI", dll.
   entity    String    // "SetoranTahfizh", "LaporanBulananSponsor", "SuratResmi", dll.
   entityId  String?   @map("entity_id")
   details   Json?     // Snapshot perubahan
   ipAddress String?   @map("ip_address")
   userAgent String?   @map("user_agent")
-  
+
   createdAt DateTime  @default(now()) @map("created_at")
 
   @@index([userId])
@@ -1089,7 +1089,7 @@ model TargetSantri {
   ambangKepatuhan Float         @default(90.0) @map("ambang_kepatuhan") // Minimal persentase kepatuhan bulanan (e.g. 90%)
   bulan           Int           // 1 - 12
   tahunAjaran     String        @map("tahun_ajaran") // e.g. "2026/2027"
-  
+
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
@@ -1104,7 +1104,7 @@ model CapaianBulanan {
   kategori    KategoriCapaian
   bulan       Int             // 1 - 12
   tahunAjaran String          @map("tahun_ajaran") // e.g. "2026/2027"
-  
+
   hbl         Int             @default(0) // Hafalan Bulan Lalu (carry-over kumulatif)
   pekan1      Int             @default(0)
   pekan2      Int             @default(0)
@@ -1413,6 +1413,8 @@ model CanonicalAuditLog {
   positionCode             String     @map("position_code")
   scopeType                ScopeType? @map("scope_type")
   unitId                   String?    @map("unit_id")
+  authorizationModel       String?    @map("authorization_model")
+  subjectId                String?    @map("subject_id")
   beforeState              Json?     @map("before_state")
   afterState               Json?     @map("after_state")
   resourceContext          Json?     @map("resource_context")
@@ -1589,6 +1591,3 @@ model AcademicSubjectAccountBinding {
 
   @@map("academic_subject_account_bindings")
 }
-
-
-

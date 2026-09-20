@@ -28,8 +28,10 @@ export interface CreateAuditRecordParams {
   capabilityCode: string;
   assignmentId?: string | null;
   positionCode: string;
-  scopeType: ScopeType;
-  unitId: string;
+  scopeType?: ScopeType | null;
+  unitId?: string | null;
+  authorizationModel?: string | null;
+  subjectId?: string | null;
   beforeState?: Record<string, unknown> | null;
   afterState?: Record<string, unknown> | null;
   resourceContext?: Record<string, unknown> | null;
@@ -125,8 +127,10 @@ export class PrismaAuditSink implements IAuditSink {
         capabilityCode: entry.capabilityCode,
         assignmentId: entry.assignmentId || null,
         positionCode: entry.positionCode,
-        scopeType: entry.scopeType,
-        unitId: entry.unitId,
+        scopeType: entry.scopeType || null,
+        unitId: entry.unitId || null,
+        ...(entry.authorizationModel ? { authorizationModel: entry.authorizationModel } : {}),
+        ...(entry.subjectId ? { subjectId: entry.subjectId } : {}),
         beforeState: (entry.beforeState as unknown as object) || undefined,
         afterState: (entry.afterState as unknown as object) || undefined,
         resourceContext: (entry.resourceContext as unknown as object) || undefined,
@@ -136,6 +140,7 @@ export class PrismaAuditSink implements IAuditSink {
         userAgent: entry.userAgent || null,
         createdAt: entry.timestamp,
       },
+      select: { id: true },
     });
   }
 
@@ -159,6 +164,8 @@ export class PrismaAuditSink implements IAuditSink {
       positionCode: r.positionCode,
       scopeType: r.scopeType as ScopeType,
       unitId: r.unitId,
+      authorizationModel: r.authorizationModel || null,
+      subjectId: r.subjectId || null,
       beforeState: r.beforeState as Record<string, unknown> | null,
       afterState: r.afterState as Record<string, unknown> | null,
       resourceContext: r.resourceContext as Record<string, unknown> | null,
@@ -202,6 +209,8 @@ export class PrismaAuditPersistence implements IAuditPersistence {
           positionCode: record.positionCode,
           scopeType: record.scopeType || null,
           unitId: record.unitId || null,
+          ...(record.authorizationModel ? { authorizationModel: record.authorizationModel } : {}),
+          ...(record.subjectId ? { subjectId: record.subjectId } : {}),
           beforeState: (record.beforeState as unknown as object) || undefined,
           afterState: (record.afterState as unknown as object) || undefined,
           resourceContext: (record.resourceContext as unknown as object) || undefined,
@@ -211,6 +220,7 @@ export class PrismaAuditPersistence implements IAuditPersistence {
           userAgent: record.userAgent || null,
           createdAt: record.timestamp,
         },
+        select: { id: true },
       });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -248,8 +258,10 @@ export async function logCanonicalAudit(
     capabilityCode: params.capabilityCode,
     assignmentId: params.assignmentId || null,
     positionCode: params.positionCode,
-    scopeType: params.scopeType,
-    unitId: params.unitId,
+    scopeType: params.scopeType || null,
+    unitId: params.unitId || null,
+    authorizationModel: params.authorizationModel || null,
+    subjectId: params.subjectId || null,
     beforeState: params.beforeState || null,
     afterState: params.afterState || null,
     resourceContext: params.resourceContext || null,
@@ -266,4 +278,3 @@ export async function logCanonicalAudit(
 
 export const setAuditSink = setActiveAuditSink;
 export const recordCanonicalAudit = logCanonicalAudit;
-

@@ -470,7 +470,7 @@ export async function getMudabbirAssignedUnitIds(userId?: string | null): Promis
 
 /**
  * Resolves whether a Mudabbir (PEMBINA_HALAQOH) has the required 'keasramaan.permission.create' capability.
- * Pipeline: IDENTITY -> ACTIVE Assignment -> Position PEMBINA_HALAQOH -> keasramaan.permission.create capability -> APPROVED/VERIFIED_PRODUCTION.
+ * Pipeline: IDENTITY -> ACTIVE Assignment -> Position PEMBINA_HALAQOH -> keasramaan.permission.create capability -> VERIFIED_PRODUCTION ONLY.
  */
 export async function resolveMudabbirPermissionCapability(userId?: string | null): Promise<{
   authorized: boolean;
@@ -522,19 +522,14 @@ export async function resolveMudabbirPermissionCapability(userId?: string | null
         reason: "Pengguna tidak memiliki assignment aktif untuk posisi PEMBINA_HALAQOH.",
       };
     }
-
-    for (const asg of assignments) {
+    for (const asg of assignments) {
       const caps = asg.position.capabilities;
       const permCap = caps.find(
         (c: { capabilityCode: string }) => c.capabilityCode === "keasramaan.permission.create"
       );
       if (permCap) {
         const stateStr = String(permCap.businessRuleState);
-        if (
-          stateStr === "APPROVED" ||
-          stateStr === "VERIFIED_PRODUCTION" ||
-          stateStr === "APPROVED_TARGET_PENDING_TECHNICAL"
-        ) {
+        if (stateStr === "VERIFIED_PRODUCTION") {
           return {
             authorized: true,
             assignmentId: asg.id,
@@ -544,7 +539,7 @@ export async function resolveMudabbirPermissionCapability(userId?: string | null
         } else {
           return {
             authorized: false,
-            reason: `Kapabilitas 'keasramaan.permission.create' berstatus '${permCap.businessRuleState}' (harus APPROVED atau VERIFIED_PRODUCTION).`,
+            reason: `Kapabilitas 'keasramaan.permission.create' berstatus '${permCap.businessRuleState}' (harus VERIFIED_PRODUCTION).`,
           };
         }
       }

@@ -102,8 +102,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
 
     it("1.3 Real enum values: MASBUK is rejected by PostgreSQL EducationAttendanceStatus enum", async () => {
       const enumValues = await prisma.$queryRawUnsafe<Array<{ enumlabel: string }>>(`
-        SELECT enumlabel FROM pg_enum 
-        JOIN pg_type ON pg_enum.enumtypid = pg_type.oid 
+        SELECT enumlabel FROM pg_enum
+        JOIN pg_type ON pg_enum.enumtypid = pg_type.oid
         WHERE pg_type.typname = 'EducationAttendanceStatus';
       `);
       const labels = enumValues.map((v) => v.enumlabel);
@@ -1262,26 +1262,111 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(leakCheck, undefined);
     });
 
-    it("3.9 Authorization proof: Scheduled teacher => mutationAvailable true; wrong/missing teacher => false", async () => {
-      // 1. Correct authorized scheduled teacher (Ust. Ahmad for sess-col-date-1)
+    it("3.9 Authorization proof: Subject account with active binding => mutationAvailable true; non-subject/unbound => false", async () => {
+      const STF_TECH_MAT = "stf-c1-tech-mat";
+      const USR_TECH_MAT = "usr-c1-tech-mat";
+      await prisma.staff.create({
+        data: {
+          id: STF_TECH_MAT,
+          staffCode: "STF-C1-MAT",
+          nama: "Staff Mapel Matematika",
+          noHp: "081100000099",
+          roleStaff: "GA",
+          status: "AKTIF",
+        },
+      });
+      await prisma.user.create({
+        data: {
+          id: USR_TECH_MAT,
+          username: "tech.mapel.mat",
+          staffId: STF_TECH_MAT,
+          status: "AKTIF",
+          accountType: "SUBJECT",
+          role: "GA",
+          passwordHash: "dummy",
+        },
+      });
+      await prisma.assignment.create({
+        data: {
+          userId: USR_TECH_MAT,
+          positionId: POS_GURU,
+          unitId: OU_AKADEMIK,
+          status: "ACTIVE",
+          validFrom: new Date(Date.now() - 86400000),
+          createdById: USR_TECH_MAT,
+        },
+      });
+      await prisma.academicSubjectAccountBinding.create({
+        data: {
+          userId: USR_TECH_MAT,
+          subjectId: MAT_MAPEL_ID,
+          isActive: true,
+        },
+      });
+
+      // 1. Correct authorized subject account (tech.mapel.mat for sess-col-date-1)
+      const dtosMat = await service.getEducationSessions(undefined, { actorUserId: USR_TECH_MAT });
+      const matSess = dtosMat.find((d) => d.sessionId === "sess-col-date-1");
+      assert.ok(matSess);
+      assert.strictEqual(matSess.mutationAvailable, true);
+      assert.strictEqual(matSess.mutationDeniedReason, null);
+      // Studi Umum attendance is deferred
+      assert.strictEqual(matSess.attendanceAvailable, false);
+      assert.strictEqual(matSess.attendanceDeniedReason, "STUDI_UMUM_ATTENDANCE_POLICY_DEFERRED");
+
+      // 2. Non-subject user (Ust. Ahmad calling sess-col-date-1) => DENY
       const dtosAhmad = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
       const ahmadSess = dtosAhmad.find((d) => d.sessionId === "sess-col-date-1");
       assert.ok(ahmadSess);
-      assert.strictEqual(ahmadSess.mutationAvailable, true);
-      assert.strictEqual(ahmadSess.mutationDeniedReason, null);
+      assert.strictEqual(ahmadSess.mutationAvailable, false);
+      assert.strictEqual(ahmadSess.mutationDeniedReason, "SUBJECT_ACCOUNT_REQUIRED");
 
-      // 2. Wrong teacher (Ust. Zaid calling sess-col-date-1 where scheduled teacher is Ust. Ahmad)
-      const dtosZaid = await service.getEducationSessions(undefined, { actorUserId: USR_ZAID });
-      const zaidSess = dtosZaid.find((d) => d.sessionId === "sess-col-date-1");
-      assert.ok(zaidSess);
-      assert.strictEqual(zaidSess.mutationAvailable, false);
-      assert.strictEqual(zaidSess.mutationDeniedReason, "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED");
-
-      // 3. Missing scheduled teacher (sess-no-teacher)
-      const noTeacherSess = dtosAhmad.find((d) => d.sessionId === "sess-no-teacher");
-      assert.ok(noTeacherSess);
-      assert.strictEqual(noTeacherSess.mutationAvailable, false);
-      assert.strictEqual(noTeacherSess.mutationDeniedReason, "SCHEDULED_TEACHER_NOT_RESOLVED");
+      // 3. Subject account calling a different subject session
+      const STF_TECH_OTHER = "stf-c1-tech-other";
+      const USR_TECH_OTHER = "usr-c1-tech-other";
+      await prisma.staff.create({
+        data: {
+          id: STF_TECH_OTHER,
+          staffCode: "STF-C1-OTH",
+          nama: "Staff Mapel Other",
+          noHp: "081100000098",
+          roleStaff: "GA",
+          status: "AKTIF",
+        },
+      });
+      await prisma.user.create({
+        data: {
+          id: USR_TECH_OTHER,
+          username: "tech.mapel.other",
+          staffId: STF_TECH_OTHER,
+          status: "AKTIF",
+          accountType: "SUBJECT",
+          role: "GA",
+          passwordHash: "dummy",
+        },
+      });
+      await prisma.assignment.create({
+        data: {
+          userId: USR_TECH_OTHER,
+          positionId: POS_GURU,
+          unitId: OU_AKADEMIK,
+          status: "ACTIVE",
+          validFrom: new Date(Date.now() - 86400000),
+          createdById: USR_TECH_OTHER,
+        },
+      });
+      await prisma.academicSubjectAccountBinding.create({
+        data: {
+          userId: USR_TECH_OTHER,
+          subjectId: FQH_MAPEL_ID,
+          isActive: true,
+        },
+      });
+      const dtosOther = await service.getEducationSessions(undefined, { actorUserId: USR_TECH_OTHER });
+      const otherSess = dtosOther.find((d) => d.sessionId === "sess-col-date-1");
+      assert.ok(otherSess);
+      assert.strictEqual(otherSess.mutationAvailable, false);
+      assert.strictEqual(otherSess.mutationDeniedReason, "SUBJECT_BINDING_MISMATCH");
     });
   });
 
@@ -2932,4 +3017,3 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     });
   });
 });
-

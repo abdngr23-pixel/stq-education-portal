@@ -27,7 +27,9 @@ ADD COLUMN "cancel_reason" TEXT;
 
 -- AlterTable
 ALTER TABLE "canonical_audit_logs" ALTER COLUMN "scope_type" DROP NOT NULL,
-ALTER COLUMN "unit_id" DROP NOT NULL;
+ALTER COLUMN "unit_id" DROP NOT NULL,
+ADD COLUMN "authorization_model" TEXT,
+ADD COLUMN "subject_id" TEXT;
 
 -- AlterTable
 ALTER TABLE "education_sessions" ADD COLUMN "actual_teacher_name" TEXT,

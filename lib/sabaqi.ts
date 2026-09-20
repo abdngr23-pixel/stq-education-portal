@@ -8,7 +8,7 @@
  * 3. Rentang Sabaqi berasal dari data SABAQ tersebut (min halamanMulai s.d. max halamanSelesai).
  * 4. Jika tidak ada Sabaq baru hari ini/pekan ini, rentang tidak bertambah.
  * 5. Jika belum ada Sabaq pekan berjalan, tampilkan "Belum ada Sabaq tersimpan pada pekan ini."
- *    dan izinkan Musyrif menginput manual dengan catatan wajib.
+ *    (manual fallback dilarang / fail-closed).
  */
 
 import { getJuzByPage } from "@/lib/quran-metadata";
@@ -82,7 +82,7 @@ export function hitungRekomendasiSabaqiPekan(
       juzSelesai: 1,
       sumberKeterangan: "Belum ada Sabaq tersimpan pada pekan ini.",
       labelLengkap: "Belum ada Sabaq tersimpan pada pekan ini.",
-      isManualAllowed: true,
+      isManualAllowed: false,
     };
   }
 
@@ -120,6 +120,6 @@ export function hitungRekomendasiSabaqiPekan(
     juzSelesai,
     sumberKeterangan: "Berdasarkan setoran Sabaq yang tersimpan pada pekan ini.",
     labelLengkap: `${labelRentang} (${totalHalaman} Hlm) — Berdasarkan setoran Sabaq yang tersimpan pada pekan ini.`,
-    isManualAllowed: true,
+    isManualAllowed: false,
   };
 }

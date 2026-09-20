@@ -123,9 +123,9 @@ export class PendidikanV2Service {
       }
 
       const tables = (await (this.db as any).$queryRawUnsafe(`
-        SELECT table_name 
-        FROM information_schema.tables 
-        WHERE table_schema IN ('public', CURRENT_SCHEMA) 
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema IN ('public', CURRENT_SCHEMA)
           AND table_name IN ('education_cohorts', 'teaching_assignments', 'education_sessions', 'education_session_participants', 'education_session_attendances');
       `)) as Array<{ table_name: string }>;
 
@@ -141,8 +141,8 @@ export class PendidikanV2Service {
       }
 
       const enums = (await (this.db as any).$queryRawUnsafe(`
-        SELECT typname 
-        FROM pg_type 
+        SELECT typname
+        FROM pg_type
         WHERE typname IN ('EducationTrack', 'PedagogicalLevel', 'EducationSessionStatus', 'EducationAttendanceStatus');
       `)) as Array<{ typname: string }>;
 
@@ -274,39 +274,19 @@ export class PendidikanV2Service {
       } else if (s.status !== "SCHEDULED") {
         mutationDeniedReason = "SESSION_NOT_SCHEDULED";
       } else if (s.educationTrack === "STUDI_UMUM") {
-        const binding = await (this.db as any).academicSubjectAccountBinding?.findUnique({
-          where: { userId: context.actorUserId },
-        });
-        if (binding) {
-          if (binding.isActive && binding.subjectId === s.subjectId) {
+        if (actorIdentity.status !== "AKTIF" || actorIdentity.accountType !== "SUBJECT") {
+          mutationAvailable = false;
+          mutationDeniedReason = "SUBJECT_ACCOUNT_REQUIRED";
+        } else {
+          const binding = await (this.db as any).academicSubjectAccountBinding?.findUnique({
+            where: { userId: context.actorUserId },
+          });
+          if (binding && binding.isActive && binding.subjectId === s.subjectId) {
             mutationAvailable = true;
             mutationDeniedReason = null;
           } else {
             mutationAvailable = false;
             mutationDeniedReason = "SUBJECT_BINDING_MISMATCH";
-          }
-        } else if (!scheduledStaffId) {
-          mutationAvailable = false;
-          mutationDeniedReason = "SCHEDULED_TEACHER_NOT_RESOLVED";
-        } else if (actorIdentity.staffId && scheduledStaffId && actorIdentity.staffId !== scheduledStaffId) {
-          mutationAvailable = false;
-          mutationDeniedReason = "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED";
-        } else {
-          const startDecision = await authorizeCanonical({
-            identity: actorIdentity,
-            capability: "academic.session.start",
-            resourceContext: {
-              educationSessionId: s.id,
-            },
-            dataProvider: this.dataProvider,
-            isMutation: true,
-          });
-
-          if (startDecision.decision !== "ALLOW") {
-            mutationDeniedReason = "CANONICAL_AUTH_DENIED";
-          } else {
-            mutationAvailable = true;
-            mutationDeniedReason = null;
           }
         }
       } else {
@@ -354,7 +334,7 @@ export class PendidikanV2Service {
             binding.isActive &&
             binding.userId === context.actorUserId &&
             binding.subjectId === s.subjectId &&
-            (s.startedByUserId === context.actorUserId || (!s.startedByUserId && s.actualTeacherUserId === context.actorUserId))
+            s.startedByUserId === context.actorUserId
           ) {
             materialAvailable = true;
             materialDeniedReason = null;
@@ -388,36 +368,11 @@ export class PendidikanV2Service {
 
       if (!isUatEnabled) {
         attendanceDeniedReason = "UAT_NOT_ENABLED";
+      } else if (s.educationTrack === "STUDI_UMUM") {
+        attendanceAvailable = false;
+        attendanceDeniedReason = "STUDI_UMUM_ATTENDANCE_POLICY_DEFERRED";
       } else if (s.status !== "STARTED") {
         attendanceDeniedReason = "SESSION_NOT_STARTED";
-      } else if (s.educationTrack === "STUDI_UMUM") {
-        const binding = await (this.db as any).academicSubjectAccountBinding?.findUnique({
-          where: { userId: context.actorUserId },
-        });
-        if (binding && binding.isActive && binding.subjectId === s.subjectId) {
-          attendanceAvailable = true;
-          attendanceDeniedReason = null;
-        } else if (s.actualTeacherUserId === context.actorUserId) {
-          attendanceAvailable = true;
-          attendanceDeniedReason = null;
-        } else {
-          const attDecision = await authorizeCanonical({
-            identity: actorIdentity,
-            capability: "academic.attendance.record",
-            resourceContext: {
-              educationSessionId: s.id,
-            },
-            dataProvider: this.dataProvider,
-            isMutation: true,
-          });
-
-          if (attDecision.decision !== "ALLOW") {
-            attendanceDeniedReason = "CANONICAL_AUTH_DENIED";
-          } else {
-            attendanceAvailable = true;
-            attendanceDeniedReason = null;
-          }
-        }
       } else {
         const attDecision = await authorizeCanonical({
           identity: actorIdentity,
@@ -504,7 +459,7 @@ export class PendidikanV2Service {
    * "MULAI PEMBELAJARAN"
    * Teacher attendance evidence is the authenticated teacher clicking "Mulai Pembelajaran".
    * For Studi Umum: 1 technical account = 1 subject. Actual teacher name is entered manually.
-   * For Kepesantrenan: Operational account (KS, MK, MT, PH, ADM). Actual teacher name is entered manually.
+   * For Kepesantrenan: Operational account (KS, MK, MT, PH; ADM strictly denied). Actual teacher name is entered manually.
    * Enforces transactional compare-and-swap (CAS) to prevent concurrent double-starts.
    */
   async startEducationSession(

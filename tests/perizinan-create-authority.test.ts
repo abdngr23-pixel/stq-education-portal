@@ -789,7 +789,7 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
       });
 
       assert.strictEqual(res.success, false, "Proposed capability must be DENIED");
-      assert.match(res.message, /harus APPROVED atau VERIFIED_PRODUCTION/i);
+      assert.match(res.message, /harus VERIFIED_PRODUCTION/i);
     } finally {
       // Restore capability to VERIFIED_PRODUCTION
       await prisma.positionCapability.updateMany({
