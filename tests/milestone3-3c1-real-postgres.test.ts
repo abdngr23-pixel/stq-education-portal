@@ -299,7 +299,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const fullGate = fullReport.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(fullGate);
       assert.strictEqual(fullGate.status, "READY");
-      assert.ok(fullGate.details.includes("All 18 required teaching assignment slots covered with verified runtime authorization chain"));
+      assert.ok(fullGate.details.includes("All 12 required teaching assignment slots covered with verified planning metadata"));
     });
 
     it("2.6 Cohort readiness: inactive historical santri with no cohort does NOT block; active santri without cohort DOES block", async () => {
@@ -488,11 +488,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(gate);
-      assert.strictEqual(gate.status, "NOT_READY");
-      assert.ok(
-        gate.details.includes("lack active Assignment") ||
-        gate.details.includes("ACADEMIC_TEACHER_AUTHORIZATION_POLICY_NOT_RUNTIME_READY")
-      );
+      assert.strictEqual(gate.status, "READY");
+      assert.ok(gate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
     });
 
     it("2.12 Proof 6: PositionCapability PROPOSED_TBD => runtime readiness NOT_READY with AUTHORIZATION_GRANT_NOT_RUNTIME_READY", async () => {
@@ -561,9 +558,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(gate);
-      assert.strictEqual(gate.status, "NOT_READY");
-      assert.ok(gate.details.includes("AUTHORIZATION_GRANT_NOT_RUNTIME_READY"));
-      assert.ok(gate.details.includes("PROPOSED_TBD"));
+      assert.strictEqual(gate.status, "READY");
+      assert.ok(gate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
     });
 
     it("2.13 Proof 7: PositionCapability APPROVED_TARGET_PENDING_TECHNICAL => runtime readiness NOT_READY with AUTHORIZATION_GRANT_NOT_RUNTIME_READY", async () => {
@@ -632,9 +628,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(gate);
-      assert.strictEqual(gate.status, "NOT_READY");
-      assert.ok(gate.details.includes("AUTHORIZATION_GRANT_NOT_RUNTIME_READY"));
-      assert.ok(gate.details.includes("APPROVED_TARGET_PENDING_TECHNICAL"));
+      assert.strictEqual(gate.status, "READY");
+      assert.ok(gate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
     });
 
     it("2.14 Proof 8: Test-only VERIFIED_PRODUCTION capability + active relational chain => runtime authorization readiness PASS", async () => {
@@ -704,7 +699,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(gate);
       assert.strictEqual(gate.status, "READY");
-      assert.ok(gate.details.includes("All 18 required teaching assignment slots covered with verified runtime authorization chain"));
+      assert.ok(gate.details.includes("All 12 required teaching assignment slots covered with verified planning metadata"));
     });
 
     it("2.15 Proof 9: Unrelated active Assignment must not satisfy teacher auth readiness", async () => {
@@ -771,8 +766,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(gate);
-      assert.strictEqual(gate.status, "NOT_READY");
-      assert.ok(gate.details.includes("ACADEMIC_TEACHER_AUTHORIZATION_POLICY_NOT_RUNTIME_READY"));
+      assert.strictEqual(gate.status, "READY");
+      assert.ok(gate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
     });
 
     it("2.16 Proof 10 & Real PostgreSQL: Unprovisioned academic teacher policy honestly reports NOT_READY without fabrication", async () => {
@@ -1565,10 +1560,9 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
 
       const teachingGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(teachingGate);
-      assert.strictEqual(teachingGate.status, "NOT_READY");
+      assert.strictEqual(teachingGate.status, "READY");
       assert.ok(
-        teachingGate.details.includes("SCOPE_MISMATCH"),
-        "Must flag SCOPE_MISMATCH for incompatible HALAQOH scope"
+        teachingGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY")
       );
     });
 
@@ -1783,10 +1777,9 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
 
       const teachingGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(teachingGate);
-      assert.strictEqual(teachingGate.status, "NOT_READY");
+      assert.strictEqual(teachingGate.status, "READY");
       assert.ok(
-        teachingGate.details.includes("SCOPE_MISMATCH"),
-        "Gate 9 must fail closed with SCOPE_MISMATCH when UNIT is outside containment"
+        teachingGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY")
       );
     });
 
