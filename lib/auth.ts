@@ -416,3 +416,55 @@ export async function recordAuditLog(
   }
 }
 
+/**
+ * Canonical Mudhabbir Authorization Resolver (PEMBINA_HALAQOH)
+ * Derived strictly from SESSION -> IDENTITY -> ACTIVE ASSIGNMENT -> Position PEMBINA_HALAQOH.
+ * Session boolean (session.isMudabbir) may exist as derived metadata, but confers ZERO authority.
+ */
+export async function resolveUserIsMudabbir(userId?: string | null): Promise<boolean> {
+  if (!userId) return false;
+  try {
+    const asg = await prisma.assignment.findFirst({
+      where: {
+        userId,
+        status: "ACTIVE",
+        position: { code: "PEMBINA_HALAQOH" },
+      },
+    });
+    return Boolean(asg);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolves permitted unit IDs assigned to a Mudabbir (PEMBINA_HALAQOH)
+ */
+export async function getMudabbirAssignedUnitIds(userId?: string | null): Promise<string[]> {
+  if (!userId) return [];
+  try {
+    const assignments = await prisma.assignment.findMany({
+      where: {
+        userId,
+        status: "ACTIVE",
+        position: { code: "PEMBINA_HALAQOH" },
+      },
+      include: {
+        scopedUnits: true,
+      },
+    });
+    const unitIds = new Set<string>();
+    for (const asg of assignments) {
+      if (asg.unitId) unitIds.add(asg.unitId);
+      if (asg.scopedUnits) {
+        for (const su of asg.scopedUnits) {
+          if (su.unitId) unitIds.add(su.unitId);
+        }
+      }
+    }
+    return Array.from(unitIds);
+  } catch {
+    return [];
+  }
+}
+

@@ -199,8 +199,13 @@ export function AkademikModule({
   }, []);
 
   const handleStartSession = async (sessionId: string) => {
+    const enteredName = typeof window !== "undefined" ? window.prompt("Masukkan nama guru/ustadz aktual yang mengajar sesi ini:") : null;
+    if (!enteredName || !enteredName.trim()) {
+      setFeedback({ type: "error", message: "Nama guru aktual wajib diisi untuk memulai pembelajaran." });
+      return;
+    }
     startTransition(async () => {
-      const res = await startEducationSessionAction({ sessionId });
+      const res = await startEducationSessionAction({ sessionId, actualTeacherName: enteredName.trim() });
       if (res.success) {
         setFeedback({ type: "success", message: res.message || "Sesi pembelajaran berhasil dimulai." });
         const refetch = await getEducationSessionsAction();
@@ -609,13 +614,6 @@ export function AkademikModule({
                               <span className="text-slate-600 font-medium">
                                 Blok {schedule.pblBlockNumber} • Minggu {schedule.pblWeekInBlock}/5
                               </span>
-                              <Badge
-                                variant={schedule.isProjectWeek ? "orange" : "neutral"}
-                                size="sm"
-                                className="font-semibold text-[10px]"
-                              >
-                                {schedule.pblPhase === "PROJECT" ? "★ PEKAN PROYEK" : "TEORI"}
-                              </Badge>
                             </div>
                           )}
                         </div>

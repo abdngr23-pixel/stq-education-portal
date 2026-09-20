@@ -22,8 +22,9 @@ describe("Milestone 3.3C2A.1 — PR #8 Migration Ledger + Schema Parity Reconcil
     });
 
     it("restored migration SHA-256 matches production checksum exactly", () => {
-      const content = fs.readFileSync(migrationPath);
-      const hash = crypto.createHash("sha256").update(content).digest("hex");
+      const raw = fs.readFileSync(migrationPath, "utf-8");
+      const normalized = raw.replace(/\r\n/g, "\n");
+      const hash = crypto.createHash("sha256").update(Buffer.from(normalized, "utf-8")).digest("hex");
       const expectedChecksum = "fc96b177d5219c5b2853c6c86a0fa3d28bce0944890bfde9de2e5d6fe7391467";
 
       assert.equal(
@@ -131,8 +132,8 @@ describe("Milestone 3.3C2A.1 — PR #8 Migration Ledger + Schema Parity Reconcil
     it("full migration chain deploys cleanly from scratch including restored migration", { timeout: 90000 }, async () => {
       const res = await runIsolatedMigrationChainVerification();
 
-      assert.equal(res.migrationCount, 10, "Total 10 migrations must exist in prisma/migrations");
-      assert.equal(res.migrationsApplied, 10, "All 10 migrations must apply successfully");
+      assert.equal(res.migrationCount, 11, "Total 11 migrations must exist in prisma/migrations");
+      assert.equal(res.migrationsApplied, 11, "All 11 migrations must apply successfully");
       assert.equal(res.failedCount, 0, "Zero migrations failed");
       assert.equal(res.isUpToDate, true, "Database schema is up to date");
       assert.match(res.migrateStatusOutput, /Database schema is up to date/i);

@@ -106,7 +106,7 @@ export async function GET(
           kategori: n.mapel.kategori,
           nilaiAngka: n.angka,
           predikat: n.huruf,
-          guru: n.guru.nama,
+          guru: n.guru?.nama ?? n.namaPengajarSnapshot ?? 'Pengajar',
         })),
         riwayatTahfizh: santri.setoranList.map((s) => ({
           juz: s.juz,

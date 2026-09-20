@@ -129,8 +129,6 @@ export function TahfizhModule({
   const [nilai, setNilai] = useState<"MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "DHOIF">("MUMTAZ");
   const [catatan, setCatatan] = useState("");
   const [tanggalSetoran, setTanggalSetoran] = useState<string>(() => getTodayWITADateString());
-  const [isManualSabaqi, setIsManualSabaqi] = useState(false);
-  const [alasanManualSabaqi, setAlasanManualSabaqi] = useState("");
 
   // Synchronous submit lock & Idempotency Key Ref & Tracking Saran Posisi
   const submitLockRef = useRef(false);
@@ -277,8 +275,6 @@ export function TahfizhModule({
   // Handler saat santri dipilih: sinkronkan ke posisi lanjutan hafalan santri
   const handleSelectSantri = (id: string) => {
     setSelectedSantriId(id);
-    setIsManualSabaqi(false);
-    setAlasanManualSabaqi("");
     const targetSantri = santriList.find((s) => s.id === id);
     if (targetSantri && inputJenis === "SABAQ") {
       applySuggestedSabaqPosition(targetSantri);
@@ -308,8 +304,6 @@ export function TahfizhModule({
       if (targetSantri) {
         const timer = setTimeout(() => {
           setSelectedSantriId(initialSelectedSantriId);
-          setIsManualSabaqi(false);
-          setAlasanManualSabaqi("");
           if (inputJenis === "SABAQ") {
             applySuggestedSabaqPosition(targetSantri);
           }
@@ -580,14 +574,12 @@ export function TahfizhModule({
     }
 
     if (inputJenis === "SABQI" && sabaqiPekan && !sabaqiPekan.adaSabaqPekanIni) {
-      if (!isManualSabaqi || !alasanManualSabaqi.trim() || alasanManualSabaqi.trim().length < 5) {
-        setFeedback({
-          type: "error",
-          message:
-            "Belum ada Sabaq tersimpan pada pekan ini. Jika menggunakan input manual Sabaqi, centang opsi dan wajib masukkan alasan tertulis minimal 5 karakter.",
-        });
-        return;
-      }
+      setFeedback({
+        type: "error",
+        message:
+          "Belum ada Sabaq tersimpan pada pekan ini. Setoran Sabaqi tidak dapat dicatat sebelum santri memiliki setoran Sabaq resmi pada pekan berjalan.",
+      });
+      return;
     }
 
     const hlmMulaiNum = parseInt(halamanMulai, 10);
@@ -662,8 +654,7 @@ export function TahfizhModule({
         if (inputJenis === "SABAQ") {
           catatanRincian = `[Sabaq: ${jmlHlmNum} Hlm (Hlm ${hlmMulaiNum}–${hlmSelesaiNum}) | Akumulasi: ${akumulasiHalamanBaru} Hlm (${smartKonversiAkumulasi.label})]`;
         } else if (inputJenis === "SABQI") {
-          const manualTag = isManualSabaqi ? `[Manual Sabaqi: ${alasanManualSabaqi}] ` : "";
-          catatanRincian = `${manualTag}[Sabqi: Hlm ${hlmMulaiNum}–${hlmSelesaiNum} (${jmlHlmNum} Hlm, Juz ${juzNum})]`;
+          catatanRincian = `[Sabqi: Hlm ${hlmMulaiNum}–${hlmSelesaiNum} (${jmlHlmNum} Hlm, Juz ${juzNum})]`;
         } else if (inputJenis === "MANZIL") {
           catatanRincian = `[Manzil: 1 Juz Penuh (Juz ${juzNum}, 20 Halaman)]`;
         } else {
@@ -685,8 +676,6 @@ export function TahfizhModule({
           clientRequestId,
           tanggalSetoran: tanggalSetoran || undefined,
           alasanLompatanHalaman: extra?.alasanLompatanHalaman,
-          isManualSabaqi: inputJenis === "SABQI" ? isManualSabaqi : undefined,
-          alasanManualSabaqi: inputJenis === "SABQI" && isManualSabaqi ? alasanManualSabaqi.trim() : undefined,
         });
 
         if (res.success) {
@@ -1404,32 +1393,6 @@ export function TahfizhModule({
                               Santri belum memiliki catatan setoran jenis SABAQ sejak hari Senin 00:00 WITA pekan berjalan.
                             </p>
                           </div>
-                        </div>
-
-                        <div className="pt-2 border-t border-slate-100">
-                          <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={isManualSabaqi}
-                              onChange={(e) => setIsManualSabaqi(e.target.checked)}
-                              className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                            />
-                            Gunakan Input Manual Sabaqi (Wajib isi alasan tertulis untuk dicatat ke audit log)
-                          </label>
-
-                          {isManualSabaqi && (
-                            <div className="mt-2.5">
-                              <label className="text-[10px] font-bold text-slate-600 block mb-1">
-                                Alasan Tertulis Input Manual Sabaqi:
-                              </label>
-                              <textarea
-                                className="w-full border rounded-lg p-2 text-xs h-16 bg-amber-50/40 border-amber-200 focus:bg-white"
-                                placeholder="Contoh: Mengulang sabaq pekan lalu karena izin sakit panjang."
-                                value={alasanManualSabaqi}
-                                onChange={(e) => setAlasanManualSabaqi(e.target.value)}
-                              />
-                            </div>
-                          )}
                         </div>
                       </div>
                     )}

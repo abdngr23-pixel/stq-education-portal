@@ -13,6 +13,8 @@ export interface UserSession {
   halaqohName?: string | null;
   isKepalaBidangTahfidz?: boolean;
   isPetugasPresensiPutri?: boolean;
+  isMudabbir?: boolean;
+  isMusyrifahPutri?: boolean;
 }
 
 export interface AuthTokenPayload {
@@ -26,6 +28,8 @@ export interface AuthTokenPayload {
   halaqohName?: string | null;
   isKepalaBidangTahfidz?: boolean;
   isPetugasPresensiPutri?: boolean;
+  isMudabbir?: boolean;
+  isMusyrifahPutri?: boolean;
   iat?: number;
   exp?: number;
 }

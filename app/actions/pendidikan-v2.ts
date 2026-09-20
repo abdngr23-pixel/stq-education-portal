@@ -15,6 +15,7 @@ export interface GetEducationSessionsFilter {
 
 export interface StartEducationSessionActionInput {
   sessionId: string;
+  actualTeacherName: string;
 }
 
 export interface RecordEducationSessionMaterialActionInput {
@@ -97,10 +98,18 @@ export async function startEducationSessionAction(
     };
   }
 
+  if (!input?.actualTeacherName || typeof input.actualTeacherName !== "string" || !input.actualTeacherName.trim()) {
+    return {
+      success: false,
+      error: "INVALID_INPUT: Nama guru pengajar aktual wajib disertakan",
+      message: "INVALID_INPUT: Nama guru pengajar aktual wajib disertakan",
+    };
+  }
+
   try {
     const service = new PendidikanV2Service({ db: prisma });
     const res = await service.startEducationSession(
-      { sessionId: input.sessionId },
+      { sessionId: input.sessionId, actualTeacherName: input.actualTeacherName.trim() },
       { actorUserId: session.userId }
     );
     return {

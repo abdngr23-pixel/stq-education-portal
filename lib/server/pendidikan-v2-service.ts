@@ -36,6 +36,7 @@ export interface PendidikanV2RequestContext {
 
 export interface StartEducationSessionInput {
   sessionId: string;
+  actualTeacherName: string;
 }
 
 export interface RecordSessionMaterialInput {
@@ -272,28 +273,63 @@ export class PendidikanV2Service {
         mutationDeniedReason = "UAT_NOT_ENABLED";
       } else if (s.status !== "SCHEDULED") {
         mutationDeniedReason = "SESSION_NOT_SCHEDULED";
-      } else if (!actorIdentity.staffId) {
-        mutationDeniedReason = "STAFF_NOT_LINKED";
-      } else if (!scheduledStaffId) {
-        mutationDeniedReason = "SCHEDULED_TEACHER_NOT_RESOLVED";
-      } else if (actorIdentity.staffId !== scheduledStaffId) {
-        mutationDeniedReason = "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED";
-      } else {
-        const startDecision = await authorizeCanonical({
-          identity: actorIdentity,
-          capability: "academic.session.start",
-          resourceContext: {
-            educationSessionId: s.id,
-          },
-          dataProvider: this.dataProvider,
-          isMutation: true,
+      } else if (s.educationTrack === "STUDI_UMUM") {
+        const binding = await (this.db as any).academicSubjectAccountBinding?.findUnique({
+          where: { userId: context.actorUserId },
         });
-
-        if (startDecision.decision !== "ALLOW") {
-          mutationDeniedReason = "CANONICAL_AUTH_DENIED";
+        if (binding) {
+          if (binding.isActive && binding.subjectId === s.subjectId) {
+            mutationAvailable = true;
+            mutationDeniedReason = null;
+          } else {
+            mutationAvailable = false;
+            mutationDeniedReason = "SUBJECT_BINDING_MISMATCH";
+          }
+        } else if (!scheduledStaffId) {
+          mutationAvailable = false;
+          mutationDeniedReason = "SCHEDULED_TEACHER_NOT_RESOLVED";
+        } else if (actorIdentity.staffId && scheduledStaffId && actorIdentity.staffId !== scheduledStaffId) {
+          mutationAvailable = false;
+          mutationDeniedReason = "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED";
         } else {
-          mutationAvailable = true;
-          mutationDeniedReason = null;
+          const startDecision = await authorizeCanonical({
+            identity: actorIdentity,
+            capability: "academic.session.start",
+            resourceContext: {
+              educationSessionId: s.id,
+            },
+            dataProvider: this.dataProvider,
+            isMutation: true,
+          });
+
+          if (startDecision.decision !== "ALLOW") {
+            mutationDeniedReason = "CANONICAL_AUTH_DENIED";
+          } else {
+            mutationAvailable = true;
+            mutationDeniedReason = null;
+          }
+        }
+      } else {
+        // KEPESANTRENAN: Operational identities only (Mudir, MT, MK, PH, approved Musyrifah). ADM is strictly denied.
+        if (actorIdentity.role === "ADM") {
+          mutationDeniedReason = "KEPESANTRENAN_AUTHORIZATION_DENIED";
+        } else {
+          const startDecision = await authorizeCanonical({
+            identity: actorIdentity,
+            capability: "academic.session.start",
+            resourceContext: {
+              educationSessionId: s.id,
+            },
+            dataProvider: this.dataProvider,
+            isMutation: true,
+          });
+
+          if (startDecision.decision !== "ALLOW") {
+            mutationDeniedReason = "CANONICAL_AUTH_DENIED";
+          } else {
+            mutationAvailable = true;
+            mutationDeniedReason = null;
+          }
         }
       }
 
@@ -305,8 +341,34 @@ export class PendidikanV2Service {
         materialDeniedReason = "UAT_NOT_ENABLED";
       } else if (s.status !== "STARTED") {
         materialDeniedReason = "SESSION_NOT_STARTED";
-      } else if (!s.actualTeacherUserId || s.actualTeacherUserId !== context.actorUserId) {
-        materialDeniedReason = "ACTOR_NOT_ACTUAL_TEACHER";
+      } else if (s.educationTrack === "STUDI_UMUM") {
+        const binding = await (this.db as any).academicSubjectAccountBinding?.findUnique({
+          where: { userId: context.actorUserId },
+        });
+        if (binding && binding.isActive && binding.subjectId === s.subjectId) {
+          materialAvailable = true;
+          materialDeniedReason = null;
+        } else if (s.actualTeacherUserId === context.actorUserId) {
+          materialAvailable = true;
+          materialDeniedReason = null;
+        } else {
+          const matDecision = await authorizeCanonical({
+            identity: actorIdentity,
+            capability: "academic.material.record",
+            resourceContext: {
+              educationSessionId: s.id,
+            },
+            dataProvider: this.dataProvider,
+            isMutation: true,
+          });
+
+          if (matDecision.decision !== "ALLOW") {
+            materialDeniedReason = "CANONICAL_AUTH_DENIED";
+          } else {
+            materialAvailable = true;
+            materialDeniedReason = null;
+          }
+        }
       } else {
         const matDecision = await authorizeCanonical({
           identity: actorIdentity,
@@ -332,12 +394,36 @@ export class PendidikanV2Service {
 
       if (!isUatEnabled) {
         attendanceDeniedReason = "UAT_NOT_ENABLED";
-      } else if (s.educationTrack !== "KEPESANTRENAN") {
-        attendanceDeniedReason = "STUDI_UMUM_ATTENDANCE_POLICY_DEFERRED";
       } else if (s.status !== "STARTED") {
         attendanceDeniedReason = "SESSION_NOT_STARTED";
-      } else if (!s.actualTeacherUserId || s.actualTeacherUserId !== context.actorUserId) {
-        attendanceDeniedReason = "ACTOR_NOT_ACTUAL_TEACHER";
+      } else if (s.educationTrack === "STUDI_UMUM") {
+        const binding = await (this.db as any).academicSubjectAccountBinding?.findUnique({
+          where: { userId: context.actorUserId },
+        });
+        if (binding && binding.isActive && binding.subjectId === s.subjectId) {
+          attendanceAvailable = true;
+          attendanceDeniedReason = null;
+        } else if (s.actualTeacherUserId === context.actorUserId) {
+          attendanceAvailable = true;
+          attendanceDeniedReason = null;
+        } else {
+          const attDecision = await authorizeCanonical({
+            identity: actorIdentity,
+            capability: "academic.attendance.record",
+            resourceContext: {
+              educationSessionId: s.id,
+            },
+            dataProvider: this.dataProvider,
+            isMutation: true,
+          });
+
+          if (attDecision.decision !== "ALLOW") {
+            attendanceDeniedReason = "CANONICAL_AUTH_DENIED";
+          } else {
+            attendanceAvailable = true;
+            attendanceDeniedReason = null;
+          }
+        }
       } else {
         const attDecision = await authorizeCanonical({
           identity: actorIdentity,
@@ -365,8 +451,7 @@ export class PendidikanV2Service {
               return {
                 blockNumber: p.blockNumber,
                 weekInBlock: p.weekInBlock,
-                phase: p.pblPhase,
-                isProjectWeek: p.isProjectWeek,
+                subject: p.subject,
               };
             } catch {
               return null;
@@ -394,7 +479,7 @@ export class PendidikanV2Service {
         genderGroup: s.genderGroup || null,
         jp: s.jp || null,
         semesterMeetingNumber: s.semesterMeetingNumber || null,
-        pblPhase: s.pblPhase || pblMetadata?.phase || null,
+        pblPhase: s.pblPhase || null,
         pblBlockNumber: s.pblBlockNumber || pblMetadata?.blockNumber || null,
         pblMetadata,
         pedagogicalLevel: s.scheduledTeacherAssignment?.pedagogicalLevel || null,
@@ -422,14 +507,15 @@ export class PendidikanV2Service {
   /**
    * "MULAI PEMBELAJARAN"
    * Teacher attendance evidence is the authenticated teacher clicking "Mulai Pembelajaran".
-   * Derives actual teacher from authenticated identity; preserves scheduled teacher separately.
+   * For Studi Umum: 1 technical account = 1 subject. Actual teacher name is entered manually.
+   * For Kepesantrenan: Operational account (KS, MK, MT, PH, ADM). Actual teacher name is entered manually.
    * Enforces transactional compare-and-swap (CAS) to prevent concurrent double-starts.
    */
   async startEducationSession(
     input: StartEducationSessionInput,
     context: PendidikanV2RequestContext
   ) {
-    const { sessionId } = input;
+    const { sessionId, actualTeacherName: rawActualTeacherName } = input;
     const { actorUserId, clientRequestId, ipAddress, userAgent } = context;
 
     // Server-side activation gate
@@ -446,82 +532,115 @@ export class PendidikanV2Service {
       throw new Error("ACTOR_USER_ID_REQUIRED: Identitas pengguna autentikasi wajib disertakan");
     }
 
-    // 1. Resolve human executor and verify canonical User.id
-    const executor = await this.dataProvider.verifyHumanExecutor(actorUserId);
-    if (!executor || !executor.isActive || !executor.userId) {
-      throw new Error(
-        "HUMAN_EXECUTOR_VERIFICATION_FAILED: Identitas pelaksana manusia tidak sah atau tidak aktif"
-      );
+    const actualTeacherName = (rawActualTeacherName || "").trim();
+    if (actualTeacherName.length < 2) {
+      throw new Error("ACTUAL_TEACHER_NAME_REQUIRED / INVALID_ACTUAL_TEACHER_NAME: Nama guru aktual wajib diisi (minimal 2 karakter) saat memulai sesi pembelajaran");
     }
 
-    // 2. Resolve identity and ensure staff link
+    // Resolve technical identity
     const technicalIdentity = await this.dataProvider.getIdentity(actorUserId);
     if (!technicalIdentity || technicalIdentity.status !== "AKTIF") {
       throw new Error("AUTHENTICATION_REQUIRED: Pengguna tidak terdaftar atau tidak aktif");
     }
 
-    if (!technicalIdentity.staffId) {
-      throw new Error(
-        "TEACHER_STAFF_RECORD_REQUIRED: Pengguna wajib memiliki profil staf pendidik aktif untuk memulai pembelajaran"
-      );
-    }
-
-    // 3. Authorize via canonical evaluator (Pass explicit educationSessionId, never generic resourceId)
-    const authDecision = await authorizeCanonical({
-      identity: technicalIdentity,
-      capability: "academic.session.start",
-      resourceContext: { educationSessionId: sessionId },
-      dataProvider: this.dataProvider,
-      isMutation: true,
+    const currentSession = await this.db.educationSession.findUnique({
+      where: { id: sessionId },
     });
 
-    if (authDecision.decision !== "ALLOW") {
+    if (!currentSession) {
+      throw new Error(`SESSION_NOT_FOUND: Sesi pembelajaran dengan ID '${sessionId}' tidak ditemukan`);
+    }
+
+    if (currentSession.status !== "SCHEDULED") {
       throw new Error(
-        `CANONICAL_AUTHORIZATION_DENIED: Pengguna tidak memiliki wewenang untuk memulai sesi pembelajaran (${authDecision.reason || authDecision.reasonCode})`
+        `INVALID_SESSION_STATUS: Sesi pembelajaran tidak dapat dimulai karena berstatus '${currentSession.status}'`
       );
     }
 
-    // 4. Audit provenance verification (Fail-closed: No fallback fabrication)
-    const provenance = validateAuditProvenance(authDecision);
-    const staffId = technicalIdentity.staffId;
+    let provenance: {
+      assignmentId?: string | null;
+      positionCode: string;
+      capabilityCode: string;
+      scopeType: ScopeType;
+      unitId: string;
+    };
+    let humanExecutorId: string | null = null;
+    const humanExecutorName: string = actualTeacherName;
 
-    // 5. Transactional Compare-And-Swap (CAS) state transition & audit
+    if (currentSession.educationTrack === "STUDI_UMUM") {
+      const binding = await (this.db as any).academicSubjectAccountBinding?.findUnique({
+        where: { userId: actorUserId },
+      });
+
+      if (binding && binding.isActive) {
+        if (binding.subjectId !== currentSession.subjectId) {
+          throw new Error(
+            "SUBJECT_BINDING_MISMATCH: Akun mata pelajaran tidak berwenang memulai sesi untuk mata pelajaran lain"
+          );
+        }
+        provenance = {
+          assignmentId: null,
+          positionCode: "SUBJECT_ACCOUNT",
+          capabilityCode: "academic.session.start",
+          scopeType: "GLOBAL",
+          unitId: currentSession.subjectId,
+        };
+      } else {
+        // Fallback: evaluate canonical authority for administrative or leadership users
+        const authDecision = await authorizeCanonical({
+          identity: technicalIdentity,
+          capability: "academic.session.start",
+          resourceContext: { educationSessionId: sessionId },
+          dataProvider: this.dataProvider,
+          isMutation: true,
+        });
+
+        if (authDecision.decision !== "ALLOW") {
+          throw new Error(
+            `CANONICAL_AUTHORIZATION_DENIED: Pengguna tidak memiliki wewenang untuk memulai sesi pembelajaran (${authDecision.reason || authDecision.reasonCode})`
+          );
+        }
+        provenance = validateAuditProvenance(authDecision);
+        humanExecutorId = technicalIdentity.userId;
+      }
+    } else {
+      // KEPESANTRENAN: Operational identities only (Mudir, MT, MK, PH, approved Musyrifah). ADM is strictly denied.
+      if (technicalIdentity.role === "ADM") {
+        throw new Error(
+          "KEPESANTRENAN_AUTHORIZATION_DENIED: Akun ADM tidak memiliki wewenang operasional untuk memulai sesi pembelajaran Kepesantrenan"
+        );
+      }
+
+      const authDecision = await authorizeCanonical({
+        identity: technicalIdentity,
+        capability: "academic.session.start",
+        resourceContext: { educationSessionId: sessionId },
+        dataProvider: this.dataProvider,
+        isMutation: true,
+      });
+
+      if (authDecision.decision !== "ALLOW") {
+        throw new Error(
+          `CANONICAL_AUTHORIZATION_DENIED: Pengguna tidak memiliki wewenang untuk memulai sesi kepesantrenan (${authDecision.reason || authDecision.reasonCode})`
+        );
+      }
+      provenance = validateAuditProvenance(authDecision);
+      humanExecutorId = technicalIdentity.userId;
+    }
+
+    // Transactional Compare-And-Swap (CAS) state transition & audit
     return await this.db.$transaction(async (tx) => {
-      const currentSession = await tx.educationSession.findUnique({
+      const currentSessionInTx = await tx.educationSession.findUnique({
         where: { id: sessionId },
       });
 
-      if (!currentSession) {
+      if (!currentSessionInTx) {
         throw new Error(`SESSION_NOT_FOUND: Sesi pembelajaran dengan ID '${sessionId}' tidak ditemukan`);
       }
 
-      if (currentSession.status !== "SCHEDULED") {
+      if (currentSessionInTx.status !== "SCHEDULED") {
         throw new Error(
-          `INVALID_SESSION_STATUS: Sesi pembelajaran tidak dapat dimulai karena berstatus '${currentSession.status}'`
-        );
-      }
-
-      // Substitute / Badal Policy Check (Fail Closed)
-      // Resolve authoritative scheduled teacher from session or scheduled assignment
-      let authoritativeScheduledStaffId = currentSession.scheduledStaffId;
-      if (!authoritativeScheduledStaffId && currentSession.scheduledTeacherAssignmentId) {
-        const ta = await (tx as any).teachingAssignment?.findUnique({
-          where: { id: currentSession.scheduledTeacherAssignmentId },
-        });
-        if (ta?.staffId) {
-          authoritativeScheduledStaffId = ta.staffId;
-        }
-      }
-
-      if (!authoritativeScheduledStaffId) {
-        throw new Error(
-          "SCHEDULED_TEACHER_NOT_RESOLVED: Sesi pembelajaran tidak memiliki guru terjadwal resmi yang valid."
-        );
-      }
-
-      if (authoritativeScheduledStaffId !== staffId) {
-        throw new Error(
-          "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED: Kebijakan guru pengganti (badal) belum disahkan. Sesi hanya dapat dimulai oleh guru terjadwal resmi."
+          `INVALID_SESSION_STATUS: Sesi pembelajaran tidak dapat dimulai karena berstatus '${currentSessionInTx.status}'`
         );
       }
 
@@ -537,7 +656,8 @@ export class PendidikanV2Service {
           status: "STARTED",
           startedAt,
           actualTeacherUserId: actorUserId,
-          actualTeacherStaffId: staffId,
+          actualTeacherStaffId: technicalIdentity.staffId || null,
+          actualTeacherName,
           updatedAt: startedAt,
         },
       });
@@ -552,18 +672,18 @@ export class PendidikanV2Service {
         where: { id: sessionId },
       });
 
-      // 6. Atomic persistent audit log
+      // Atomic persistent audit log
       const auditRecord: CanonicalAuditRecord = {
         id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         technicalAccountId: actorUserId,
         technicalAccountUsername: technicalIdentity.username,
-        humanExecutorId: executor.userId,
-        humanExecutorName: executor.name,
+        humanExecutorId,
+        humanExecutorName,
         action: "academic.session.start",
         entity: "EducationSession",
         entityId: sessionId,
         capabilityCode: provenance.capabilityCode,
-        assignmentId: provenance.assignmentId,
+        assignmentId: provenance.assignmentId || null,
         positionCode: provenance.positionCode,
         scopeType: provenance.scopeType,
         unitId: provenance.unitId,
@@ -572,6 +692,7 @@ export class PendidikanV2Service {
           startedAt: null,
           actualTeacherUserId: null,
           actualTeacherStaffId: null,
+          actualTeacherName: null,
           scheduledStaffId: currentSession.scheduledStaffId,
         },
         afterState: {
@@ -579,9 +700,15 @@ export class PendidikanV2Service {
           startedAt: updatedSession.startedAt,
           actualTeacherUserId: updatedSession.actualTeacherUserId,
           actualTeacherStaffId: updatedSession.actualTeacherStaffId,
+          actualTeacherName: updatedSession.actualTeacherName,
           scheduledStaffId: updatedSession.scheduledStaffId,
         },
-        resourceContext: { educationSessionId: sessionId, educationTrack: currentSession.educationTrack },
+        resourceContext: {
+          educationSessionId: sessionId,
+          educationTrack: currentSession.educationTrack,
+          subjectId: currentSession.subjectId,
+          actualTeacherName,
+        },
         clientRequestId: clientRequestId || null,
         ipAddress: ipAddress || null,
         userAgent: userAgent || null,
@@ -635,53 +762,106 @@ export class PendidikanV2Service {
       throw new Error("AUTHENTICATION_REQUIRED: Pengguna tidak terdaftar atau tidak aktif");
     }
 
-    const executor = await this.dataProvider.verifyHumanExecutor(actorUserId);
-    if (!executor || !executor.isActive || !executor.userId) {
-      throw new Error(
-        "HUMAN_EXECUTOR_VERIFICATION_FAILED: Identitas pelaksana manusia tidak sah atau tidak aktif"
-      );
-    }
-
-    // 2. Authorize actor with canonical capability 'academic.material.record'
-    const authDecision = await authorizeCanonical({
-      identity: technicalIdentity,
-      capability: "academic.material.record",
-      resourceContext: { educationSessionId: sessionId },
-      dataProvider: this.dataProvider,
-      isMutation: true,
+    const currentSession = await this.db.educationSession.findUnique({
+      where: { id: sessionId },
     });
 
-    if (authDecision.decision !== "ALLOW") {
+    if (!currentSession) {
+      throw new Error(`SESSION_NOT_FOUND: Sesi pembelajaran dengan ID '${sessionId}' tidak ditemukan`);
+    }
+
+    if (currentSession.status !== "STARTED") {
       throw new Error(
-        `CANONICAL_AUTHORIZATION_DENIED: Pengguna tidak berwenang mencatat materi pembelajaran (${authDecision.reason || authDecision.reasonCode})`
+        `SESSION_NOT_STARTED: Materi pembelajaran hanya dapat dicatat setelah sesi pembelajaran berstatus STARTED (Status saat ini: '${currentSession.status}')`
       );
     }
 
-    const provenance = validateAuditProvenance(authDecision);
+    if (currentSession.actualTeacherUserId && currentSession.actualTeacherUserId !== actorUserId) {
+      throw new Error(
+        `ACTOR_NOT_ACTUAL_TEACHER: Pengguna (${actorUserId}) bukan pengajar aktual yang memulai sesi ini (${currentSession.actualTeacherUserId})`
+      );
+    }
 
-    // 3. Atomic transaction: Gating + Actual teacher check + Update + Audit
-    return await this.db.$transaction(async (tx) => {
-      const currentSession = await tx.educationSession.findUnique({
-        where: { id: sessionId },
+    let provenance: {
+      assignmentId?: string | null;
+      positionCode: string;
+      capabilityCode: string;
+      scopeType: ScopeType;
+      unitId: string;
+    };
+    let humanExecutorId: string | null = null;
+    const humanExecutorName: string = currentSession.actualTeacherName || technicalIdentity.name || technicalIdentity.username;
+
+    if (currentSession.educationTrack === "STUDI_UMUM") {
+      const binding = await (this.db as any).academicSubjectAccountBinding?.findUnique({
+        where: { userId: actorUserId },
       });
 
-      if (!currentSession) {
-        throw new Error(`SESSION_NOT_FOUND: Sesi pembelajaran dengan ID '${sessionId}' tidak ditemukan`);
-      }
+      if (binding && binding.isActive) {
+        if (binding.subjectId !== currentSession.subjectId) {
+          throw new Error(
+            "SUBJECT_BINDING_MISMATCH: Akun mata pelajaran tidak berwenang mencatat materi untuk mata pelajaran lain"
+          );
+        }
+        provenance = {
+          assignmentId: null,
+          positionCode: "SUBJECT_ACCOUNT",
+          capabilityCode: "academic.material.record",
+          scopeType: "GLOBAL",
+          unitId: currentSession.subjectId,
+        };
+      } else if (currentSession.actualTeacherUserId === actorUserId) {
+        provenance = {
+          assignmentId: null,
+          positionCode: "SUBJECT_ACCOUNT",
+          capabilityCode: "academic.material.record",
+          scopeType: "GLOBAL",
+          unitId: currentSession.subjectId,
+        };
+      } else {
+        const authDecision = await authorizeCanonical({
+          identity: technicalIdentity,
+          capability: "academic.material.record",
+          resourceContext: { educationSessionId: sessionId },
+          dataProvider: this.dataProvider,
+          isMutation: true,
+        });
 
-      if (currentSession.status !== "STARTED") {
+        if (authDecision.decision !== "ALLOW") {
+          throw new Error(
+            `CANONICAL_AUTHORIZATION_DENIED: Pengguna tidak berwenang mencatat materi pembelajaran (${authDecision.reason || authDecision.reasonCode})`
+          );
+        }
+        provenance = validateAuditProvenance(authDecision);
+        humanExecutorId = technicalIdentity.userId;
+      }
+    } else {
+      // KEPESANTRENAN: ADM is strictly denied from recording Kepesantrenan materials
+      if (technicalIdentity.role === "ADM") {
         throw new Error(
-          `SESSION_NOT_STARTED: Materi pembelajaran hanya dapat dicatat setelah sesi pembelajaran berstatus STARTED (Status saat ini: '${currentSession.status}')`
+          "KEPESANTRENAN_AUTHORIZATION_DENIED: Akun ADM tidak memiliki wewenang operasional untuk mencatat materi Kepesantrenan"
         );
       }
 
-      // Actual Teacher Ownership Check
-      if (currentSession.actualTeacherUserId !== actorUserId) {
+      const authDecision = await authorizeCanonical({
+        identity: technicalIdentity,
+        capability: "academic.material.record",
+        resourceContext: { educationSessionId: sessionId },
+        dataProvider: this.dataProvider,
+        isMutation: true,
+      });
+
+      if (authDecision.decision !== "ALLOW") {
         throw new Error(
-          "ACTOR_NOT_ACTUAL_TEACHER: Hanya guru aktual yang memulai sesi ini yang berwenang mencatat materi pembelajaran"
+          `CANONICAL_AUTHORIZATION_DENIED: Pengguna tidak berwenang mencatat materi pembelajaran (${authDecision.reason || authDecision.reasonCode})`
         );
       }
+      provenance = validateAuditProvenance(authDecision);
+      humanExecutorId = technicalIdentity.userId;
+    }
 
+    // 3. Atomic transaction: Update + Audit
+    return await this.db.$transaction(async (tx) => {
       const recordedAt = new Date();
       const updated = await tx.educationSession.update({
         where: { id: sessionId },
@@ -697,13 +877,13 @@ export class PendidikanV2Service {
         id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         technicalAccountId: actorUserId,
         technicalAccountUsername: technicalIdentity.username,
-        humanExecutorId: executor.userId,
-        humanExecutorName: executor.name,
+        humanExecutorId,
+        humanExecutorName,
         action: "academic.material.record",
         entity: "EducationSession",
         entityId: sessionId,
         capabilityCode: provenance.capabilityCode,
-        assignmentId: provenance.assignmentId,
+        assignmentId: provenance.assignmentId || null,
         positionCode: provenance.positionCode,
         scopeType: provenance.scopeType,
         unitId: provenance.unitId,
@@ -736,8 +916,6 @@ export class PendidikanV2Service {
   /**
    * RECORD STUDENT ATTENDANCE
    * Gated: Only permitted after session status is STARTED.
-   * Track-Safe: Only KEPESANTRENAN attendance is enabled in M3.3B. STUDI_UMUM is strictly deferred.
-   * Actual Teacher Ownership: Only the actual teacher who started the session can record attendance.
    * Participant Integrity: Santri must be an enrolled participant in EducationSessionParticipant.
    * Valid statuses: HADIR, IZIN, SAKIT, ALFA (Strictly NO MASBUK).
    */
@@ -796,64 +974,100 @@ export class PendidikanV2Service {
       throw new Error("AUTHENTICATION_REQUIRED: Pengguna tidak terdaftar atau tidak aktif");
     }
 
-    const executor = await this.dataProvider.verifyHumanExecutor(actorUserId);
-    if (!executor || !executor.isActive || !executor.userId) {
+    const currentSession = await this.db.educationSession.findUnique({
+      where: { id: sessionId },
+    });
+
+    if (!currentSession) {
+      throw new Error(`SESSION_NOT_FOUND: Sesi pembelajaran dengan ID '${sessionId}' tidak ditemukan`);
+    }
+
+    if (currentSession.status !== "STARTED") {
       throw new Error(
-        "HUMAN_EXECUTOR_VERIFICATION_FAILED: Identitas pelaksana manusia tidak sah atau tidak aktif"
+        `SESSION_NOT_STARTED: Presensi santri hanya dapat dicatat setelah sesi pembelajaran berstatus STARTED (Status saat ini: '${currentSession.status}')`
       );
     }
 
-    // 3. Authorize actor for EVERY DISTINCT santriId in the batch
-    const distinctSantriIds = Array.from(new Set(recordsToProcess.map((r) => r.santriId)));
-    let sharedProvenance: {
-      assignmentId: string;
+    if (currentSession.actualTeacherUserId && currentSession.actualTeacherUserId !== actorUserId) {
+      throw new Error(
+        `ACTOR_NOT_ACTUAL_TEACHER: Pengguna (${actorUserId}) bukan pengajar aktual yang memulai sesi ini (${currentSession.actualTeacherUserId})`
+      );
+    }
+
+    let provenance: {
+      assignmentId?: string | null;
       positionCode: string;
       capabilityCode: string;
       scopeType: ScopeType;
       unitId: string;
-    } | null = null;
+    };
+    let humanExecutorId: string | null = null;
+    const humanExecutorName: string = currentSession.actualTeacherName || technicalIdentity.name || technicalIdentity.username;
 
-    for (const sId of distinctSantriIds) {
-      const authDecision = await authorizeCanonical({
-        identity: technicalIdentity,
-        capability: "academic.attendance.record",
-        resourceContext: { educationSessionId: sessionId, santriId: sId },
-        dataProvider: this.dataProvider,
-        isMutation: true,
-      });
-
-      if (authDecision.decision !== "ALLOW") {
+    if (currentSession.educationTrack === "STUDI_UMUM") {
+      throw new Error(
+        "STUDI_UMUM_ATTENDANCE_POLICY_DEFERRED: Kebijakan pencatatan presensi santri untuk sesi Studi Umum ditangguhkan"
+      );
+    } else {
+      // KEPESANTRENAN: ADM is strictly denied from recording Kepesantrenan attendance
+      if (technicalIdentity.role === "ADM") {
         throw new Error(
-          `CANONICAL_AUTHORIZATION_DENIED: Pengguna tidak berwenang mencatat presensi santri '${sId}' (${authDecision.reason || authDecision.reasonCode})`
+          "KEPESANTRENAN_AUTHORIZATION_DENIED: Akun ADM tidak memiliki wewenang operasional untuk mencatat presensi Kepesantrenan"
         );
       }
 
-      const provenance = validateAuditProvenance(authDecision);
-      if (!sharedProvenance) {
-        sharedProvenance = provenance;
-      } else {
-        // Enforce that all targets in one batch resolve to the SAME canonical provenance
-        const isIdentical =
-          sharedProvenance.assignmentId === provenance.assignmentId &&
-          sharedProvenance.positionCode === provenance.positionCode &&
-          sharedProvenance.capabilityCode === provenance.capabilityCode &&
-          sharedProvenance.scopeType === provenance.scopeType &&
-          sharedProvenance.unitId === provenance.unitId;
+      // Authorize actor for EVERY DISTINCT santriId in the batch
+      const distinctSantriIds = Array.from(new Set(recordsToProcess.map((r) => r.santriId)));
+      let sharedProvenance: {
+        assignmentId: string;
+        positionCode: string;
+        capabilityCode: string;
+        scopeType: ScopeType;
+        unitId: string;
+      } | null = null;
 
-        if (!isIdentical) {
+      for (const sId of distinctSantriIds) {
+        const authDecision = await authorizeCanonical({
+          identity: technicalIdentity,
+          capability: "academic.attendance.record",
+          resourceContext: { educationSessionId: sessionId, santriId: sId },
+          dataProvider: this.dataProvider,
+          isMutation: true,
+        });
+
+        if (authDecision.decision !== "ALLOW") {
           throw new Error(
-            "ATTENDANCE_BATCH_MIXED_AUTHORIZATION_PROVENANCE: Target presensi dalam batch memiliki provenance otorisasi yang berbeda. Seluruh batch ditolak."
+            `CANONICAL_AUTHORIZATION_DENIED: Pengguna tidak berwenang mencatat presensi santri '${sId}' (${authDecision.reason || authDecision.reasonCode})`
           );
         }
+
+        const prov = validateAuditProvenance(authDecision);
+        if (!sharedProvenance) {
+          sharedProvenance = prov;
+        } else {
+          const isIdentical =
+            sharedProvenance.assignmentId === prov.assignmentId &&
+            sharedProvenance.positionCode === prov.positionCode &&
+            sharedProvenance.capabilityCode === prov.capabilityCode &&
+            sharedProvenance.scopeType === prov.scopeType &&
+            sharedProvenance.unitId === prov.unitId;
+
+          if (!isIdentical) {
+            throw new Error(
+              "ATTENDANCE_BATCH_MIXED_AUTHORIZATION_PROVENANCE: Target presensi dalam batch memiliki provenance otorisasi yang berbeda. Seluruh batch ditolak."
+            );
+          }
+        }
       }
+
+      if (!sharedProvenance) {
+        throw new Error("CANONICAL_AUTHORIZATION_DENIED: Tidak ada target presensi yang dapat diotorisasi");
+      }
+      provenance = sharedProvenance;
+      humanExecutorId = technicalIdentity.userId;
     }
 
-    if (!sharedProvenance) {
-      throw new Error("CANONICAL_AUTHORIZATION_DENIED: Tidak ada target presensi yang dapat diotorisasi");
-    }
-    const provenance = sharedProvenance;
-
-    // 4. Atomic transaction: Track check + Gating + Actual teacher check + Participant integrity + Upsert + Audit
+    // 4. Atomic transaction: Participant integrity + Upsert + Audit
     return await this.db.$transaction(async (tx) => {
       const currentSession = await tx.educationSession.findUnique({
         where: { id: sessionId },
@@ -869,19 +1083,7 @@ export class PendidikanV2Service {
         );
       }
 
-      // Track-Safe Guard: Studi Umum student attendance workflow is strictly DEFERRED in M3.3B
-      if (currentSession.educationTrack === "STUDI_UMUM") {
-        throw new Error(
-          "STUDI_UMUM_ATTENDANCE_POLICY_DEFERRED: Alur presensi santri Studi Umum ditangguhkan pada Milestone 3.3B"
-        );
-      }
 
-      // Actual Teacher Ownership Check
-      if (currentSession.actualTeacherUserId !== actorUserId) {
-        throw new Error(
-          "ACTOR_NOT_ACTUAL_TEACHER: Hanya guru aktual yang memulai sesi ini yang berwenang mencatat presensi"
-        );
-      }
 
       // Participant Integrity Check
       for (const rec of recordsToProcess) {
@@ -958,13 +1160,13 @@ export class PendidikanV2Service {
         id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         technicalAccountId: actorUserId,
         technicalAccountUsername: technicalIdentity.username,
-        humanExecutorId: executor.userId,
-        humanExecutorName: executor.name,
+        humanExecutorId,
+        humanExecutorName,
         action: "academic.attendance.record",
         entity: "EducationSessionAttendance",
         entityId: sessionId,
         capabilityCode: provenance.capabilityCode,
-        assignmentId: provenance.assignmentId,
+        assignmentId: provenance.assignmentId || null,
         positionCode: provenance.positionCode,
         scopeType: provenance.scopeType,
         unitId: provenance.unitId,

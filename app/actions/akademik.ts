@@ -13,10 +13,11 @@ export interface InputNilaiData {
   jenis: JenisNilai;
   angka: number;
   catatan?: string;
+  namaPengajarSnapshot?: string;
 }
 
 /**
- * Server Action: Input Nilai Akademik (Khusus GA & KS)
+ * Server Action: Input Nilai Akademik (Khusus GA, KS, dan Akun Mata Pelajaran)
  */
 export async function inputNilaiAction(input: InputNilaiData) {
   const session = await getCurrentSession();
@@ -24,26 +25,37 @@ export async function inputNilaiAction(input: InputNilaiData) {
     return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
   }
 
-  // 1. Role validation: Hanya GA (Guru Akademik) dan KS (Kepala Sekolah)
-  if (session.role !== "GA" && session.role !== "KS") {
-    return {
-      success: false,
-      message: `Role ${session.role} tidak memiliki hak akses untuk menginput nilai akademik.`,
-    };
-  }
-
   try {
-    if (!session.staffId) {
+    let guruStaffId: string | null = null;
+    let namaPengajarSnapshot: string | null = input.namaPengajarSnapshot?.trim() || null;
+
+    // 1. Check if user is bound to subject account (1 technical account = 1 subject)
+    const binding = await prisma.academicSubjectAccountBinding.findUnique({
+      where: { userId: session.userId },
+    });
+
+    if (binding && binding.isActive) {
+      if (binding.subjectId !== input.mapelId) {
+        return {
+          success: false,
+          message: "Akses Ditolak: Akun mata pelajaran tidak berwenang menginput nilai untuk mata pelajaran lain.",
+        };
+      }
+    } else if (session.role !== "GA" && session.role !== "KS" && session.role !== "ADM") {
       return {
         success: false,
-        message: "Akses Ditolak: Akun Anda tidak terhubung ke data staf pengajar resmi.",
+        message: `Role ${session.role} tidak memiliki hak akses untuk menginput nilai akademik.`,
       };
-    }
-
-    const guruStaff = await prisma.staff.findUnique({ where: { id: session.staffId } });
-
-    if (!guruStaff) {
-      return { success: false, message: "Data staf pengajar tidak ditemukan." };
+    } else {
+      if (session.staffId) {
+        const guruStaff = await prisma.staff.findUnique({ where: { id: session.staffId } });
+        if (guruStaff) {
+          guruStaffId = guruStaff.id;
+          if (!namaPengajarSnapshot) {
+            namaPengajarSnapshot = guruStaff.nama;
+          }
+        }
+      }
     }
 
     // Konversi angka ke predikat huruf menggunakan single source of truth
@@ -53,7 +65,9 @@ export async function inputNilaiAction(input: InputNilaiData) {
       data: {
         santriId: input.santriId,
         mapelId: input.mapelId,
-        guruId: guruStaff.id,
+        guruId: guruStaffId,
+        namaPengajarSnapshot,
+        dicatatOlehUserId: session.userId,
         semester: Number(input.semester),
         tahunAjaran: input.tahunAjaran,
         jenis: input.jenis,
@@ -78,6 +92,7 @@ export async function inputNilaiAction(input: InputNilaiData) {
         mapel: nilaiRecord.mapel.nama,
         angka: input.angka,
         huruf,
+        namaPengajarSnapshot,
       },
     });
 
@@ -118,6 +133,13 @@ export async function getRaporGabunganAction(santriId: string, semester: number 
   }
 
   // Validasi Kepemilikan Data ABAC (Fail-closed)
+  const binding = await prisma.academicSubjectAccountBinding.findUnique({
+    where: { userId: session.userId },
+  });
+  if (binding && binding.isActive) {
+    return { success: false, message: "Akses Ditolak: Akun mata pelajaran hanya berwenang mengakses data mata pelajarannya sendiri." };
+  }
+
   if (session.role === "ST" && session.santriId !== santriId) {
     return { success: false, message: "Akses Ditolak: Anda hanya berhak melihat rapor Anda sendiri." };
   }
@@ -236,11 +258,28 @@ export async function getNilaiAkademikListAction(params?: {
     effectiveSantriId = session.santriId;
   }
 
+  // Validasi isolasi akun mata pelajaran (1 technical account = 1 subject)
+  const binding = await prisma.academicSubjectAccountBinding.findUnique({
+    where: { userId: session.userId },
+  });
+
+  if (binding && binding.isActive) {
+    if (params?.mapelId && params.mapelId !== binding.subjectId) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Akun mata pelajaran tidak berwenang melihat nilai untuk mata pelajaran lain.",
+        data: [],
+      };
+    }
+  }
+
+  const effectiveMapelId = binding && binding.isActive ? binding.subjectId : params?.mapelId;
+
   try {
     const list = await prisma.nilaiAkademik.findMany({
       where: {
         santriId: effectiveSantriId,
-        mapelId: params?.mapelId,
+        mapelId: effectiveMapelId,
         semester: params?.semester,
         jenis: params?.jenis,
         santri: params?.kelas ? { kelas: params.kelas } : undefined,

@@ -15,7 +15,7 @@ import {
  * DITOLAK: Guru Akademik umum (GA) yang tidak ditugaskan pada mapel kepesantrenan.
  */
 function canManageKepesantrenan(session: UserSession, mapelGuruId?: string | null): boolean {
-  if (["KS", "ADM", "MT", "PH"].includes(session.role)) {
+  if (["KS", "MT", "MK", "PH"].includes(session.role) || session.isMusyrifahPutri) {
     return true;
   }
   if (session.role === "GA" && session.staffId && mapelGuruId === session.staffId) {
@@ -224,7 +224,7 @@ export async function getNilaiKepesantrenanSantriAction(params: {
         mapelId: r.mapelId,
         mapelNama: r.mapel.nama,
         kodeMapel: r.mapel.kodeMapel,
-        guruNama: r.guru.nama,
+        guruNama: r.guru?.nama ?? r.namaPengajarSnapshot ?? "Pengajar",
         semester: r.semester,
         tahunAjaran: r.tahunAjaran,
         jenis: r.jenis,

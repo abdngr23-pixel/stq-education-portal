@@ -408,74 +408,48 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
   // SECTION D: STUDI UMUM — PBL 20-WEEK ROTATION
   // ====================================================
   describe("D. Studi Umum 20-Week Semester PBL Rotation", () => {
-    it("D1. Meetings 1–5 resolve to Block 1: IPS (Weeks 1–4 Theory, Week 5 Project)", () => {
-      for (let m = 1; m <= 4; m++) {
+    it("D1. Meetings 1–5 resolve to Block 1: IPS (Weeks 1–5)", () => {
+      for (let m = 1; m <= 5; m++) {
         const res = resolvePblMeeting(m);
         assert.strictEqual(res.subject, "IPS");
         assert.strictEqual(res.blockNumber, 1);
-        assert.strictEqual(res.phase, "TEORI");
-        assert.strictEqual(res.isProjectWeek, false);
+        assert.strictEqual(res.weekInBlock, m);
       }
-      const p5 = resolvePblMeeting(5);
-      assert.strictEqual(p5.subject, "IPS");
-      assert.strictEqual(p5.blockNumber, 1);
-      assert.strictEqual(p5.phase, "PROYEK");
-      assert.strictEqual(p5.isProjectWeek, true);
     });
 
-    it("D2. Meetings 6–10 resolve to Block 2: IPA (Weeks 6–9 Theory, Week 10 Project)", () => {
-      for (let m = 6; m <= 9; m++) {
+    it("D2. Meetings 6–10 resolve to Block 2: IPA (Weeks 1–5 of Block 2)", () => {
+      for (let m = 6; m <= 10; m++) {
         const res = resolvePblMeeting(m);
         assert.strictEqual(res.subject, "IPA");
         assert.strictEqual(res.blockNumber, 2);
-        assert.strictEqual(res.phase, "TEORI");
-        assert.strictEqual(res.isProjectWeek, false);
+        assert.strictEqual(res.weekInBlock, m - 5);
       }
-      const p10 = resolvePblMeeting(10);
-      assert.strictEqual(p10.subject, "IPA");
-      assert.strictEqual(p10.blockNumber, 2);
-      assert.strictEqual(p10.phase, "PROYEK");
-      assert.strictEqual(p10.isProjectWeek, true);
     });
 
-    it("D3. Meetings 11–15 resolve to Block 3: Bahasa Indonesia (Weeks 11–14 Theory, Week 15 Project)", () => {
-      for (let m = 11; m <= 14; m++) {
+    it("D3. Meetings 11–15 resolve to Block 3: Bahasa Indonesia (Weeks 1–5 of Block 3)", () => {
+      for (let m = 11; m <= 15; m++) {
         const res = resolvePblMeeting(m);
         assert.strictEqual(res.subject, "Bahasa Indonesia");
         assert.strictEqual(res.blockNumber, 3);
-        assert.strictEqual(res.phase, "TEORI");
-        assert.strictEqual(res.isProjectWeek, false);
+        assert.strictEqual(res.weekInBlock, m - 10);
       }
-      const p15 = resolvePblMeeting(15);
-      assert.strictEqual(p15.subject, "Bahasa Indonesia");
-      assert.strictEqual(p15.blockNumber, 3);
-      assert.strictEqual(p15.phase, "PROYEK");
-      assert.strictEqual(p15.isProjectWeek, true);
     });
 
-    it("D4. Meetings 16–20 resolve to Block 4: TIK (Weeks 16–19 Theory, Week 20 Project)", () => {
-      for (let m = 16; m <= 19; m++) {
+    it("D4. Meetings 16–20 resolve to Block 4: TIK (Weeks 1–5 of Block 4)", () => {
+      for (let m = 16; m <= 20; m++) {
         const res = resolvePblMeeting(m);
         assert.strictEqual(res.subject, "TIK");
         assert.strictEqual(res.blockNumber, 4);
-        assert.strictEqual(res.phase, "TEORI");
-        assert.strictEqual(res.isProjectWeek, false);
+        assert.strictEqual(res.weekInBlock, m - 15);
       }
-      const p20 = resolvePblMeeting(20);
-      assert.strictEqual(p20.subject, "TIK");
-      assert.strictEqual(p20.blockNumber, 4);
-      assert.strictEqual(p20.phase, "PROYEK");
-      assert.strictEqual(p20.isProjectWeek, true);
     });
 
-    it("D5. Exactly 4 major projects per semester (Meetings 5, 10, 15, 20)", () => {
-      const projectMeetings: number[] = [];
-      for (let m = 1; m <= 20; m++) {
-        if (resolvePblMeeting(m).isProjectWeek) {
-          projectMeetings.push(m);
-        }
+    it("D5. Exactly 4 canonical blocks across 20 weeks", () => {
+      const blocks: number[] = [];
+      for (let m = 1; m <= 20; m += 5) {
+        blocks.push(resolvePblMeeting(m).blockNumber);
       }
-      assert.deepStrictEqual(projectMeetings, [5, 10, 15, 20]);
+      assert.deepStrictEqual(blocks, [1, 2, 3, 4]);
     });
 
     it("D6. resolveStudiUmumSchedule resolves PBL slot dynamically while preserving CORE slots", () => {
@@ -485,12 +459,10 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
       assert.strictEqual(resT1JP1.subject, "Bahasa Inggris");
       assert.strictEqual(resT1JP1.timeSlot, "08:00–09:50 WITA");
 
-      // Tingkat 1, JP 3 = PBL -> meeting 5 = IPS (PROJECT)
+      // Tingkat 1, JP 3 = PBL -> meeting 5 = IPS
       const resT1JP3 = resolveStudiUmumSchedule({ programLevel: 1, jp: 3, semesterMeetingNumber: 5 });
       assert.strictEqual(resT1JP3.type, "PBL");
       assert.strictEqual(resT1JP3.subject, "IPS");
-      assert.strictEqual(resT1JP3.pblPhase, "PROJECT");
-      assert.strictEqual(resT1JP3.isProjectWeek, true);
       assert.strictEqual(resT1JP3.timeSlot, "13:30–15:20 WITA");
     });
   });
@@ -911,7 +883,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
       });
 
       await assert.rejects(
-        () => service.startEducationSession({ sessionId: "sess-01" }, { actorUserId: "usr-01" }),
+        () => service.startEducationSession({ sessionId: "sess-01", actualTeacherName: "Ustadz Ahmad" }, { actorUserId: "usr-01" }),
         /AUTH_DECISION_INCOMPLETE/
       );
     });
@@ -944,8 +916,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
       });
 
       await assert.rejects(
-        () => service.startEducationSession({ sessionId: "sess-01" }, { actorUserId: "usr-01" }),
-        /HUMAN_EXECUTOR_VERIFICATION_FAILED/
+        () => service.startEducationSession({ sessionId: "sess-01", actualTeacherName: "Ustadz Ahmad" }, { actorUserId: "usr-01" }),
+        /HUMAN_EXECUTOR_VERIFICATION_FAILED|CANONICAL_AUTHORIZATION_DENIED/
       );
     });
   });
@@ -967,7 +939,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
       });
 
       const res = await service.startEducationSession(
-        { sessionId: "sess-cas-01" },
+        { sessionId: "sess-cas-01", actualTeacherName: "Ustadz Guru" },
         { actorUserId: "usr-teacher-01" }
       );
 
@@ -994,7 +966,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
       await assert.rejects(
         () =>
           service.startEducationSession(
-            { sessionId: "sess-cas-02" },
+            { sessionId: "sess-cas-02", actualTeacherName: "Ustadz Pengganti" },
             { actorUserId: "usr-substitute-02" }
           ),
         /INVALID_SESSION_STATUS/

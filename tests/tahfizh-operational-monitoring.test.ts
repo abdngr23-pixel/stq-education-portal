@@ -547,8 +547,8 @@ describe("PR #7 — Tahfizh Operational Monitoring & Action Center (Comprehensiv
         jenis: "SABAQ",
         juz: 2,
         halamanMulai: 22,
-        halamanSelesai: 23,
-        jumlahHalaman: 2,
+        halamanSelesai: 22,
+        jumlahHalaman: 1,
         jumlahJuzMufar: 3, // Diberikan input mufar tapi jenis SABAQ
         nilai: "MUMTAZ",
       });

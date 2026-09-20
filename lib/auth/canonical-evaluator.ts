@@ -74,6 +74,7 @@ export interface CanonicalIdentity {
   username: string;
   status: "AKTIF" | "NONAKTIF" | "SUSPENDED" | string;
   accountType: AccountType;
+  role?: string | null;
   staffId?: string | null;
   staffStatus?: string | null;
   santriId?: string | null;
@@ -609,6 +610,7 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
         username: user.username,
         status: user.status,
         accountType: user.accountType,
+        role: user.role,
         staffId: user.staffId,
         staffStatus: user.staff?.status,
         santriId: user.santriId,

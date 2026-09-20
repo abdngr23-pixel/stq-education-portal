@@ -6,7 +6,7 @@ import {
   calculateLatestSabaqPosition,
 } from "./tahfizh-page-allocation";
 import { getStartOfWeekWITA } from "./laporan-bulanan";
-import { parseWITADate, getTodayWITADateString } from "./wita-date";
+import { parseWITADate, getTodayWITADateString, getWITADayRange, getWitaDateString } from "./wita-date";
 
 export interface CreateSetoranCoreInput {
   santriId: string;
@@ -20,8 +20,6 @@ export interface CreateSetoranCoreInput {
   catatan?: string | null;
   clientRequestId?: string | null;
   alasanLompatanHalaman?: string | null;
-  isManualSabaqi?: boolean;
-  alasanManualSabaqi?: string | null;
   occurredAt?: Date | string | null;
   tanggalSetoran?: string | null;
 }
@@ -108,8 +106,32 @@ export async function saveSetoranTahfizhCore(
   if (halSelesai < halMulai) {
     return { success: false, message: "Halaman selesai tidak boleh lebih kecil dari halaman mulai." };
   }
+
+  // Validasi batas Juz (Mushaf Madinah)
+  const juzInfo = JUZ_LIST.find((j) => j.juz === declaredJuz);
+  if (!juzInfo) {
+    return { success: false, message: `Data referensi batas Juz ${declaredJuz} tidak ditemukan.` };
+  }
+  if (halMulai < juzInfo.startPage || halSelesai > juzInfo.endPage) {
+    const juzMulai = getJuzByPage(halMulai);
+    const juzSelesai = getJuzByPage(halSelesai);
+    if (juzMulai !== juzSelesai) {
+      return {
+        success: false,
+        message: `Rentang halaman ${halMulai}–${halSelesai} melintasi batas Juz (Halaman ${halMulai} adalah Juz ${juzMulai}, sedangkan Halaman ${halSelesai} adalah Juz ${juzSelesai}). Satu transaksi setoran harus dalam satu juz.`,
+      };
+    }
+    return {
+      success: false,
+      message: `Rentang halaman ${halMulai}–${halSelesai} di luar rentang resmi Juz ${declaredJuz} (Halaman ${juzInfo.startPage}–${juzInfo.endPage}).`,
+    };
+  }
+
   if (isNaN(jmlHalaman) || !isFinite(jmlHalaman) || jmlHalaman < 0.5) {
     return { success: false, message: "Jumlah halaman tidak valid. Minimal setoran adalah 0.5 halaman." };
+  }
+  if (input.jenis === "SABAQ" && jmlHalaman > 1.0) {
+    return { success: false, message: "Volume setoran Sabaq tidak boleh melebihi 1.0 halaman per setoran." };
   }
 
   // 1b. Validasi Khusus MUFAR (Structured Data Contract: wajib integer 1–6)
@@ -161,26 +183,6 @@ export async function saveSetoranTahfizhCore(
     }
   }
 
-  // Validasi batas Juz (Mushaf Madinah)
-  const juzInfo = JUZ_LIST.find((j) => j.juz === declaredJuz);
-  if (!juzInfo) {
-    return { success: false, message: `Data referensi batas Juz ${declaredJuz} tidak ditemukan.` };
-  }
-  if (halMulai < juzInfo.startPage || halSelesai > juzInfo.endPage) {
-    const juzMulai = getJuzByPage(halMulai);
-    const juzSelesai = getJuzByPage(halSelesai);
-    if (juzMulai !== juzSelesai) {
-      return {
-        success: false,
-        message: `Rentang halaman ${halMulai}–${halSelesai} melintasi batas Juz (Halaman ${halMulai} adalah Juz ${juzMulai}, sedangkan Halaman ${halSelesai} adalah Juz ${juzSelesai}). Satu transaksi setoran harus dalam satu juz.`,
-      };
-    }
-    return {
-      success: false,
-      message: `Rentang halaman ${halMulai}–${halSelesai} di luar rentang resmi Juz ${declaredJuz} (Halaman ${juzInfo.startPage}–${juzInfo.endPage}).`,
-    };
-  }
-
   // 2. Pre-transaction Idempotency Check (dengan verifikasi kepemilikan santri)
   if (input.clientRequestId) {
     const existing = await prismaClient.setoranTahfizh.findUnique({
@@ -207,9 +209,9 @@ export async function saveSetoranTahfizhCore(
     }
   }
 
-  // 3. Validasi Sabaqi di Sisi Server
+  // 3. Validasi Sabaqi di Sisi Server (Fail-Closed: derived strictly from recorded Sabaq this week)
   if (input.jenis === "SABQI") {
-    const refDate = new Date();
+    const refDate = effectiveOccurredAt;
     const startOfWeek = getStartOfWeekWITA(refDate);
     const activeSabaqThisWeek = await prismaClient.setoranTahfizh.findMany({
       where: {
@@ -221,21 +223,31 @@ export async function saveSetoranTahfizhCore(
           lte: refDate,
         },
       },
+      select: {
+        halamanMulai: true,
+        halamanSelesai: true,
+      },
     });
 
     if (activeSabaqThisWeek.length === 0) {
-      if (!input.isManualSabaqi) {
-        return {
-          success: false,
-          message: "Belum ada Sabaq tersimpan pada pekan ini. Input manual Sabaqi memerlukan konfirmasi dan alasan tertulis.",
-        };
-      }
-      if (!input.alasanManualSabaqi || input.alasanManualSabaqi.trim().length < 5) {
-        return {
-          success: false,
-          message: "Alasan input manual Sabaqi wajib diisi minimal 5 karakter.",
-        };
-      }
+      return {
+        success: false,
+        message: "Belum ada setoran Sabaq tersimpan pada pekan berjalan ini. Setoran Sabaqi tidak dapat dicatat sebelum ada setoran Sabaq resmi pekan ini.",
+      };
+    }
+
+    let minHalaman = Infinity;
+    let maxHalaman = -Infinity;
+    for (const item of activeSabaqThisWeek) {
+      if (item.halamanMulai < minHalaman) minHalaman = item.halamanMulai;
+      if (item.halamanSelesai > maxHalaman) maxHalaman = item.halamanSelesai;
+    }
+
+    if (halMulai < minHalaman || halSelesai > maxHalaman) {
+      return {
+        success: false,
+        message: `Rentang halaman Sabaqi (${halMulai}–${halSelesai}) berada di luar batas Sabaq resmi pekan ini (Halaman ${minHalaman}–${maxHalaman}).`,
+      };
     }
   }
 
@@ -306,6 +318,30 @@ export async function saveSetoranTahfizhCore(
               }
             }
 
+            // TAHF-02: Validasi akumulasi harian Sabaq per hari kalender WITA (maksimal 1.0 halaman per hari)
+            const dateStrWita = getWitaDateString(effectiveOccurredAt);
+            const { startOfDayUTC, endOfDayUTC } = getWITADayRange(dateStrWita);
+            const dailySabaqList = await tx.setoranTahfizh.findMany({
+              where: {
+                santriId: input.santriId,
+                jenis: "SABAQ",
+                status: { not: "DIBATALKAN" },
+                tanggal: {
+                  gte: startOfDayUTC,
+                  lte: endOfDayUTC,
+                },
+              },
+              select: {
+                jumlahHalaman: true,
+              },
+            });
+            const dailyAggregate = dailySabaqList.reduce((acc, s) => acc + Number(s.jumlahHalaman), 0);
+            if (dailyAggregate + jmlHalaman > 1.0) {
+              throw new CapacityValidationError(
+                `Akumulasi setoran Sabaq pada hari yang sama (${(dailyAggregate + jmlHalaman).toFixed(1)} halaman) melebihi batas maksimal 1.0 halaman per hari kalender WITA.`
+              );
+            }
+
             // Validasi kapasitas halaman maksimal 1.0
             const validation = validateProposedSabaqAllocation(
               activeSabaqList,
@@ -370,7 +406,6 @@ export async function saveSetoranTahfizhCore(
                 nilai: input.nilai,
                 clientRequestId: input.clientRequestId || null,
                 alasanLompatanHalaman: input.alasanLompatanHalaman || null,
-                alasanManualSabaqi: input.alasanManualSabaqi || null,
                 catatan: input.catatan || null,
                 occurredAt: effectiveOccurredAt.toISOString(),
                 createdAt: created.createdAt.toISOString(),

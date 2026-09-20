@@ -72,7 +72,7 @@ export type OrgUnitType =
 /**
  * Technical credential account classification
  */
-export type AccountType = "PERSONAL" | "UNIT";
+export type AccountType = "PERSONAL" | "UNIT" | "SUBJECT";
 
 /**
  * Gender complex boundary enforcement for organizational units

@@ -1135,12 +1135,44 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
           },
           setoranTahfizh: {
             findUnique: async () => null,
-            findMany: async () => [],
+            findMany: async () => {
+              if (t.jenis === "SABQI") {
+                return [
+                  {
+                    id: "set-prev-sabaq",
+                    santriId: "san-multi-type",
+                    jenis: "SABAQ",
+                    halamanMulai: 1,
+                    halamanSelesai: 5,
+                    jumlahHalaman: 1.0,
+                    tanggal: new Date("2026-09-08T08:00:00.000Z"),
+                    status: "SELESAI",
+                  },
+                ];
+              }
+              return [];
+            },
           },
           $transaction: async (fn: any) => {
             const txMock: any = {
               setoranTahfizh: {
-                findMany: async () => [],
+                findMany: async () => {
+                  if (t.jenis === "SABQI") {
+                    return [
+                      {
+                        id: "set-prev-sabaq",
+                        santriId: "san-multi-type",
+                        jenis: "SABAQ",
+                        halamanMulai: 1,
+                        halamanSelesai: 5,
+                        jumlahHalaman: 1.0,
+                        tanggal: new Date("2026-09-08T08:00:00.000Z"),
+                        status: "SELESAI",
+                      },
+                    ];
+                  }
+                  return [];
+                },
                 create: async (args: any) => {
                   capturedTanggal = args.data.tanggal;
                   return {
@@ -1171,8 +1203,6 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
             halamanSelesai: t.halSelesai,
             jumlahHalaman: t.jml,
             jumlahJuzMufar: (t as any).juzMufar,
-            isManualSabaqi: (t as any).isManual,
-            alasanManualSabaqi: (t as any).alasan,
             nilai: "MUMTAZ",
             tanggalSetoran: "2026-09-12",
             clientRequestId: `req-${t.jenis}`,

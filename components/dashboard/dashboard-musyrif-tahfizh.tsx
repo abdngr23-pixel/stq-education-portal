@@ -779,9 +779,11 @@ export function DashboardMusyrifTahfizh({
                           <span className="font-semibold text-sm text-slate-900 truncate">
                             {santri.nama}
                           </span>
-                          <span className="text-xs text-slate-500 font-mono">
-                            ({santri.nis})
-                          </span>
+                          {santri.nis ? (
+                            <span className="text-xs text-slate-500 font-mono">
+                              ({santri.nis})
+                            </span>
+                          ) : null}
                           <span className="text-xs text-slate-400">• Kelas {santri.kelas}</span>
                         </div>
 
@@ -974,9 +976,11 @@ export function DashboardMusyrifTahfizh({
                           <span className="font-semibold text-sm text-slate-800 truncate">
                             {santri.nama}
                           </span>
-                          <span className="text-xs text-slate-400 font-mono">
-                            ({santri.nis})
-                          </span>
+                          {santri.nis ? (
+                            <span className="text-xs text-slate-400 font-mono">
+                              ({santri.nis})
+                            </span>
+                          ) : null}
                         </div>
                         <p className="text-xs text-slate-500 truncate mt-0.5">
                           Kelas {santri.kelas} • Terakhir: {santri.setoranTerakhir}
