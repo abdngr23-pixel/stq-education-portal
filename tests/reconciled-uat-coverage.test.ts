@@ -214,6 +214,28 @@ describe("STQ ARCHITECTURE LOCK — RECONCILED UAT & SERVICE INTEGRATION SUITE",
               { table_name: "education_sessions" },
               { table_name: "education_session_participants" },
               { table_name: "education_session_attendances" },
+              { table_name: "academic_subject_account_bindings" },
+              { table_name: "canonical_audit_logs" },
+            ];
+          }
+          if (sql.includes("information_schema.columns")) {
+            return [
+              { table_name: "education_sessions", column_name: "actual_teacher_name" },
+              { table_name: "education_sessions", column_name: "started_by_user_id" },
+              { table_name: "academic_subject_account_bindings", column_name: "user_id" },
+              { table_name: "academic_subject_account_bindings", column_name: "subject_id" },
+              { table_name: "academic_subject_account_bindings", column_name: "is_active" },
+              { table_name: "canonical_audit_logs", column_name: "authorization_model" },
+              { table_name: "canonical_audit_logs", column_name: "subject_id" },
+              { table_name: "canonical_audit_logs", column_name: "scope_type" },
+              { table_name: "canonical_audit_logs", column_name: "unit_id" },
+            ];
+          }
+          if (sql.includes("pg_enum")) {
+            return [
+              { enumlabel: "PERSONAL" },
+              { enumlabel: "UNIT" },
+              { enumlabel: "SUBJECT" },
             ];
           }
           if (sql.includes("pg_type")) {
@@ -222,6 +244,7 @@ describe("STQ ARCHITECTURE LOCK — RECONCILED UAT & SERVICE INTEGRATION SUITE",
               { typname: "PedagogicalLevel" },
               { typname: "EducationSessionStatus" },
               { typname: "EducationAttendanceStatus" },
+              { typname: "AccountType" },
             ];
           }
           return [];

@@ -122,15 +122,32 @@ export class PendidikanV2Service {
         return { ready: true };
       }
 
+      // 1. Required tables check
       const tables = (await (this.db as any).$queryRawUnsafe(`
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema IN ('public', CURRENT_SCHEMA)
-          AND table_name IN ('education_cohorts', 'teaching_assignments', 'education_sessions', 'education_session_participants', 'education_session_attendances');
+          AND table_name IN (
+            'education_cohorts',
+            'teaching_assignments',
+            'education_sessions',
+            'education_session_participants',
+            'education_session_attendances',
+            'academic_subject_account_bindings',
+            'canonical_audit_logs'
+          );
       `)) as Array<{ table_name: string }>;
 
       const tableNames = new Set(tables.map((t: { table_name: string }) => t.table_name));
-      const requiredTables = ['education_cohorts', 'teaching_assignments', 'education_sessions', 'education_session_participants', 'education_session_attendances'];
+      const requiredTables = [
+        'education_cohorts',
+        'teaching_assignments',
+        'education_sessions',
+        'education_session_participants',
+        'education_session_attendances',
+        'academic_subject_account_bindings',
+        'canonical_audit_logs',
+      ];
       const missingTables = requiredTables.filter((r) => !tableNames.has(r));
 
       if (missingTables.length > 0) {
@@ -140,20 +157,70 @@ export class PendidikanV2Service {
         };
       }
 
+      // 2. Required columns check
+      const columns = (await (this.db as any).$queryRawUnsafe(`
+        SELECT table_name, column_name
+        FROM information_schema.columns
+        WHERE table_schema IN ('public', CURRENT_SCHEMA)
+          AND (
+            (table_name = 'education_sessions' AND column_name IN ('actual_teacher_name', 'started_by_user_id'))
+            OR (table_name = 'academic_subject_account_bindings' AND column_name IN ('user_id', 'subject_id', 'is_active'))
+            OR (table_name = 'canonical_audit_logs' AND column_name IN ('authorization_model', 'subject_id', 'scope_type', 'unit_id'))
+          );
+      `)) as Array<{ table_name: string; column_name: string }>;
+
+      const foundColumns = new Set(columns.map((c) => `${c.table_name}.${c.column_name}`));
+      const requiredColumns = [
+        'education_sessions.actual_teacher_name',
+        'education_sessions.started_by_user_id',
+        'academic_subject_account_bindings.user_id',
+        'academic_subject_account_bindings.subject_id',
+        'academic_subject_account_bindings.is_active',
+        'canonical_audit_logs.authorization_model',
+        'canonical_audit_logs.subject_id',
+        'canonical_audit_logs.scope_type',
+        'canonical_audit_logs.unit_id',
+      ];
+      const missingColumns = requiredColumns.filter((c) => !foundColumns.has(c));
+
+      if (missingColumns.length > 0) {
+        return {
+          ready: false,
+          reason: `PENDIDIKAN_V2_SCHEMA_NOT_READY: Kolom berikut belum tersedia di database: ${missingColumns.join(", ")}`,
+        };
+      }
+
+      // 3. Required enums check
       const enums = (await (this.db as any).$queryRawUnsafe(`
         SELECT typname
         FROM pg_type
-        WHERE typname IN ('EducationTrack', 'PedagogicalLevel', 'EducationSessionStatus', 'EducationAttendanceStatus');
+        WHERE typname IN ('EducationTrack', 'PedagogicalLevel', 'EducationSessionStatus', 'EducationAttendanceStatus', 'AccountType');
       `)) as Array<{ typname: string }>;
 
       const enumNames = new Set(enums.map((e: { typname: string }) => e.typname));
-      const requiredEnums = ['EducationTrack', 'PedagogicalLevel', 'EducationSessionStatus', 'EducationAttendanceStatus'];
+      const requiredEnums = ['EducationTrack', 'PedagogicalLevel', 'EducationSessionStatus', 'EducationAttendanceStatus', 'AccountType'];
       const missingEnums = requiredEnums.filter((e) => !enumNames.has(e));
 
       if (missingEnums.length > 0) {
         return {
           ready: false,
           reason: `PENDIDIKAN_V2_SCHEMA_NOT_READY: Enum berikut belum tersedia di database: ${missingEnums.join(", ")}`,
+        };
+      }
+
+      // 4. Verify AccountType includes SUBJECT
+      const accountTypeLabels = (await (this.db as any).$queryRawUnsafe(`
+        SELECT e.enumlabel
+        FROM pg_enum e
+        JOIN pg_type t ON e.enumtypid = t.oid
+        WHERE t.typname = 'AccountType';
+      `)) as Array<{ enumlabel: string }>;
+
+      const labels = new Set(accountTypeLabels.map((l) => l.enumlabel));
+      if (!labels.has('SUBJECT')) {
+        return {
+          ready: false,
+          reason: 'PENDIDIKAN_V2_SCHEMA_NOT_READY: AccountType enum belum mencakup SUBJECT',
         };
       }
 
@@ -191,6 +258,22 @@ export class PendidikanV2Service {
       throw new Error("AUTHENTICATION_REQUIRED: Pengguna tidak terdaftar atau tidak aktif");
     }
 
+    // 3. Resolve subject binding directly if SUBJECT account (no Staff linkage or canonical assignment required)
+    let subjectAccountBinding: any = null;
+    if (actorIdentity.accountType === "SUBJECT") {
+      subjectAccountBinding = await (this.db as any).academicSubjectAccountBinding?.findUnique({
+        where: { userId: context.actorUserId },
+      });
+      if (
+        !subjectAccountBinding ||
+        !subjectAccountBinding.isActive ||
+        !subjectAccountBinding.subjectId ||
+        subjectAccountBinding.userId !== context.actorUserId
+      ) {
+        throw new Error("PERMISSION_DENIED: Akun subjek tidak memiliki binding mata pelajaran aktif yang valid");
+      }
+    }
+
     const isUatEnabled = process.env.PENDIDIKAN_V2_UAT_ENABLED === "true";
 
     const where: any = {};
@@ -225,19 +308,29 @@ export class PendidikanV2Service {
 
     // 4. Session list authorization: Evaluate resource-level schedule-read authority
     const authorizedSessions: any[] = [];
-    for (const s of sessions) {
-      const sessionReadAuth = await authorizeCanonical({
-        identity: actorIdentity,
-        capability: "academic.schedule.read",
-        resourceContext: {
-          educationSessionId: s.id,
-        },
-        dataProvider: this.dataProvider,
-        isMutation: false,
-      });
+    if (actorIdentity.accountType === "SUBJECT") {
+      // Direct subject binding model: ALLOW only STUDI_UMUM and matching subjectId. Exclude all others without canonical evaluator.
+      for (const s of sessions) {
+        if (s.educationTrack === "STUDI_UMUM" && s.subjectId === subjectAccountBinding.subjectId) {
+          authorizedSessions.push(s);
+        }
+      }
+    } else {
+      // Non-subject accounts: retain canonical academic.schedule.read logic
+      for (const s of sessions) {
+        const sessionReadAuth = await authorizeCanonical({
+          identity: actorIdentity,
+          capability: "academic.schedule.read",
+          resourceContext: {
+            educationSessionId: s.id,
+          },
+          dataProvider: this.dataProvider,
+          isMutation: false,
+        });
 
-      if (sessionReadAuth.decision === "ALLOW") {
-        authorizedSessions.push(s);
+        if (sessionReadAuth.decision === "ALLOW") {
+          authorizedSessions.push(s);
+        }
       }
     }
 
@@ -278,9 +371,9 @@ export class PendidikanV2Service {
           mutationAvailable = false;
           mutationDeniedReason = "SUBJECT_ACCOUNT_REQUIRED";
         } else {
-          const binding = await (this.db as any).academicSubjectAccountBinding?.findUnique({
+          const binding = subjectAccountBinding || (await (this.db as any).academicSubjectAccountBinding?.findUnique({
             where: { userId: context.actorUserId },
-          });
+          }));
           if (binding && binding.isActive && binding.subjectId === s.subjectId) {
             mutationAvailable = true;
             mutationDeniedReason = null;
@@ -326,9 +419,9 @@ export class PendidikanV2Service {
           materialAvailable = false;
           materialDeniedReason = "SUBJECT_ACCOUNT_REQUIRED";
         } else {
-          const binding: any = await (this.db as any).academicSubjectAccountBinding?.findUnique({
+          const binding: any = subjectAccountBinding || (await (this.db as any).academicSubjectAccountBinding?.findUnique({
             where: { userId: context.actorUserId },
-          });
+          }));
           if (
             binding &&
             binding.isActive &&

@@ -1262,38 +1262,17 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(leakCheck, undefined);
     });
 
-    it("3.9 Authorization proof: Subject account with active binding => mutationAvailable true; non-subject/unbound => false", async () => {
-      const STF_TECH_MAT = "stf-c1-tech-mat";
+    it("3.9 Authorization proof: Direct Subject account binding without Staff profile or assignment", async () => {
       const USR_TECH_MAT = "usr-c1-tech-mat";
-      await prisma.staff.create({
-        data: {
-          id: STF_TECH_MAT,
-          staffCode: "STF-C1-MAT",
-          nama: "Staff Mapel Matematika",
-          noHp: "081100000099",
-          roleStaff: "GA",
-          status: "AKTIF",
-        },
-      });
       await prisma.user.create({
         data: {
           id: USR_TECH_MAT,
           username: "tech.mapel.mat",
-          staffId: STF_TECH_MAT,
+          staffId: null,
           status: "AKTIF",
           accountType: "SUBJECT",
           role: "GA",
           passwordHash: "dummy",
-        },
-      });
-      await prisma.assignment.create({
-        data: {
-          userId: USR_TECH_MAT,
-          positionId: POS_GURU,
-          unitId: OU_AKADEMIK,
-          status: "ACTIVE",
-          validFrom: new Date(Date.now() - 86400000),
-          createdById: USR_TECH_MAT,
         },
       });
       await prisma.academicSubjectAccountBinding.create({
@@ -1304,69 +1283,86 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         },
       });
 
-      // 1. Correct authorized subject account (tech.mapel.mat for sess-col-date-1)
+      // 1. Correct authorized subject account without Staff/Assignment (tech.mapel.mat for sess-col-date-1)
       const dtosMat = await service.getEducationSessions(undefined, { actorUserId: USR_TECH_MAT });
       const matSess = dtosMat.find((d) => d.sessionId === "sess-col-date-1");
-      assert.ok(matSess);
+      assert.ok(matSess, "Must allow reading own-subject session");
       assert.strictEqual(matSess.mutationAvailable, true);
       assert.strictEqual(matSess.mutationDeniedReason, null);
       // Studi Umum attendance is deferred
       assert.strictEqual(matSess.attendanceAvailable, false);
       assert.strictEqual(matSess.attendanceDeniedReason, "STUDI_UMUM_ATTENDANCE_POLICY_DEFERRED");
+      // Must exclude other subject sessions
+      assert.strictEqual(dtosMat.find((d) => d.sessionId === "sess-col-ipa-1"), undefined, "Must exclude other subject sessions");
 
-      // 2. Non-subject user (Ust. Ahmad calling sess-col-date-1) => DENY
+      // 2. Non-subject user (Ust. Ahmad calling sess-col-date-1) => DENY mutation (requires SUBJECT account)
       const dtosAhmad = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
       const ahmadSess = dtosAhmad.find((d) => d.sessionId === "sess-col-date-1");
       assert.ok(ahmadSess);
       assert.strictEqual(ahmadSess.mutationAvailable, false);
       assert.strictEqual(ahmadSess.mutationDeniedReason, "SUBJECT_ACCOUNT_REQUIRED");
 
-      // 3. Subject account calling a different subject session
-      const STF_TECH_OTHER = "stf-c1-tech-other";
-      const USR_TECH_OTHER = "usr-c1-tech-other";
-      await prisma.staff.create({
+      // 3. Subject account bound to a different subject (IPA) has direct access to IPA but NOT Math
+      const IPA_MAPEL_ID = "mapel-c1-ipa";
+      await prisma.mataPelajaran.create({
+        data: { id: IPA_MAPEL_ID, nama: "Ilmu Pengetahuan Alam", kodeMapel: "IPA", kategori: "UMUM" },
+      });
+      await prisma.educationSession.create({
         data: {
-          id: STF_TECH_OTHER,
-          staffCode: "STF-C1-OTH",
-          nama: "Staff Mapel Other",
-          noHp: "081100000098",
-          roleStaff: "GA",
-          status: "AKTIF",
+          id: "sess-col-ipa-1",
+          educationTrack: "STUDI_UMUM",
+          subjectId: IPA_MAPEL_ID,
+          scheduledDate: new Date("2026-09-23T00:00:00Z"),
+          cohortId: COHORT_1_ID,
+          programLevel: 1,
+          jp: 1,
+          status: "SCHEDULED",
         },
       });
+
+      const USR_TECH_OTHER = "usr-c1-tech-other";
       await prisma.user.create({
         data: {
           id: USR_TECH_OTHER,
           username: "tech.mapel.other",
-          staffId: STF_TECH_OTHER,
+          staffId: null,
           status: "AKTIF",
           accountType: "SUBJECT",
           role: "GA",
           passwordHash: "dummy",
         },
       });
-      await prisma.assignment.create({
-        data: {
-          userId: USR_TECH_OTHER,
-          positionId: POS_GURU,
-          unitId: OU_AKADEMIK,
-          status: "ACTIVE",
-          validFrom: new Date(Date.now() - 86400000),
-          createdById: USR_TECH_OTHER,
-        },
-      });
       await prisma.academicSubjectAccountBinding.create({
         data: {
           userId: USR_TECH_OTHER,
-          subjectId: FQH_MAPEL_ID,
+          subjectId: IPA_MAPEL_ID,
           isActive: true,
         },
       });
       const dtosOther = await service.getEducationSessions(undefined, { actorUserId: USR_TECH_OTHER });
+      const ipaSess = dtosOther.find((d) => d.sessionId === "sess-col-ipa-1");
+      assert.ok(ipaSess, "Must allow reading own-subject IPA session");
       const otherSess = dtosOther.find((d) => d.sessionId === "sess-col-date-1");
-      assert.ok(otherSess);
-      assert.strictEqual(otherSess.mutationAvailable, false);
-      assert.strictEqual(otherSess.mutationDeniedReason, "SUBJECT_BINDING_MISMATCH");
+      assert.strictEqual(otherSess, undefined, "Must exclude cross-subject Math session from other subject account read");
+
+      // 4. Subject account with NO binding fails closed on schedule read
+      const USR_TECH_NO_BIND = "usr-c1-tech-nobind";
+      await prisma.user.create({
+        data: {
+          id: USR_TECH_NO_BIND,
+          username: "tech.mapel.nobind",
+          staffId: null,
+          status: "AKTIF",
+          accountType: "SUBJECT",
+          role: "GA",
+          passwordHash: "dummy",
+        },
+      });
+      await assert.rejects(
+        () => service.getEducationSessions(undefined, { actorUserId: USR_TECH_NO_BIND }),
+        /PERMISSION_DENIED/,
+        "Subject account without binding must fail closed"
+      );
     });
   });
 

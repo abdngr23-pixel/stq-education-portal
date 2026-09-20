@@ -251,12 +251,21 @@ export async function getRaporGabunganAction(santriId: string, semester: number 
     return { success: false, message: "Silakan login terlebih dahulu." };
   }
 
-  // Validasi Kepemilikan Data ABAC (Fail-closed)
-  const binding = await prisma.academicSubjectAccountBinding.findUnique({
-    where: { userId: session.userId },
+  const user = await prisma.user.findUnique({
+    where: { id: session.userId },
+    select: { id: true, status: true, accountType: true },
   });
-  if (binding && binding.isActive) {
-    return { success: false, message: "Akses Ditolak: Akun mata pelajaran hanya berwenang mengakses data mata pelajarannya sendiri." };
+
+  if (!user || user.status !== "AKTIF") {
+    return { success: false, message: "Akses Ditolak: Pengguna tidak ditemukan atau tidak aktif." };
+  }
+
+  // D. Consolidated report: SUBJECT account must NEVER access getRaporGabunganAction (regardless of binding, role, staffId)
+  if (user.accountType === "SUBJECT") {
+    return {
+      success: false,
+      message: "Akses Ditolak: Akun mata pelajaran hanya berwenang mengakses data mata pelajarannya sendiri.",
+    };
   }
 
   if (session.role === "ST" && session.santriId !== santriId) {
@@ -369,20 +378,43 @@ export async function getNilaiAkademikListAction(params?: {
     return { success: false, message: "Silakan login terlebih dahulu.", data: [] };
   }
 
-  let effectiveSantriId = params?.santriId;
-  if (session.role === "WS" || session.role === "ST") {
-    if (!session.santriId) {
-      return { success: false, message: "Akun belum terhubung dengan data santri.", data: [] };
-    }
-    effectiveSantriId = session.santriId;
-  }
-
-  // Validasi isolasi akun mata pelajaran (1 technical account = 1 subject)
-  const binding = await prisma.academicSubjectAccountBinding.findUnique({
-    where: { userId: session.userId },
+  // 1. Fetch user to inspect accountType and status
+  const user = await prisma.user.findUnique({
+    where: { id: session.userId },
+    select: { id: true, status: true, accountType: true },
   });
 
-  if (binding && binding.isActive) {
+  if (!user) {
+    return { success: false, message: "Pengguna tidak ditemukan.", data: [] };
+  }
+
+  let effectiveMapelId = params?.mapelId;
+
+  // 2. SUBJECT Account Authority Validation (Fail-closed)
+  if (user.accountType === "SUBJECT") {
+    // A. require User.status = AKTIF
+    if (user.status !== "AKTIF") {
+      return {
+        success: false,
+        message: "Akses Ditolak: Akun subjek tidak aktif.",
+        data: [],
+      };
+    }
+
+    // B. require active AcademicSubjectAccountBinding
+    const binding = await prisma.academicSubjectAccountBinding.findUnique({
+      where: { userId: session.userId },
+    });
+
+    if (!binding || !binding.isActive || !binding.subjectId || binding.userId !== session.userId) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Akun subjek tidak memiliki binding mata pelajaran aktif yang valid.",
+        data: [],
+      };
+    }
+
+    // C. Force mapelId = binding.subjectId. If caller requests another mapel: DENY.
     if (params?.mapelId && params.mapelId !== binding.subjectId) {
       return {
         success: false,
@@ -390,9 +422,21 @@ export async function getNilaiAkademikListAction(params?: {
         data: [],
       };
     }
+
+    effectiveMapelId = binding.subjectId;
+  } else {
+    // PERSONAL / UNIT account:
+    // Accidental or malicious subject binding does NOT grant SUBJECT authority.
+    effectiveMapelId = params?.mapelId;
   }
 
-  const effectiveMapelId = binding && binding.isActive ? binding.subjectId : params?.mapelId;
+  let effectiveSantriId = params?.santriId;
+  if (session.role === "WS" || session.role === "ST") {
+    if (!session.santriId) {
+      return { success: false, message: "Akun belum terhubung dengan data santri.", data: [] };
+    }
+    effectiveSantriId = session.santriId;
+  }
 
   try {
     const list = await prisma.nilaiAkademik.findMany({

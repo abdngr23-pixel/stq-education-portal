@@ -14,7 +14,11 @@ import { saveSetoranTahfizhCore } from "../lib/tahfizh-persistence";
 import { hitungRekomendasiSabaqiPekan } from "../lib/sabaqi";
 import { PendidikanV2Service } from "../lib/server/pendidikan-v2-service";
 import { PrismaAuditPersistence } from "../lib/auth/canonical-audit";
-import { inputNilaiAction } from "../app/actions/akademik";
+import {
+  inputNilaiAction,
+  getNilaiAkademikListAction,
+  getRaporGabunganAction,
+} from "../app/actions/akademik";
 import { JenisNilai } from "@prisma/client";
 import prisma from "../lib/prisma";
 
@@ -556,6 +560,7 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
         },
         educationSessionParticipant: {},
         educationSessionAttendance: {},
+        canonicalAuditLog: {},
         academicSubjectAccountBinding: {
           findUnique: async (args: any) => {
             if (args.where?.userId === "usr-tech-mat") {
@@ -725,6 +730,560 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
       assert.ok(
         !sabaqiFile.includes("izinkan Musyrif menginput manual"),
         "lib/sabaqi.ts must not contain stale manual allowance comment"
+      );
+    });
+  });
+
+  // =========================================================================
+  // 8. SUBJECT ACCOUNT READ PATHS FAIL-CLOSED (REQUIREMENT 2)
+  // =========================================================================
+  describe("8. Subject Account Read Paths Fail-Closed & Authority Lockdown", () => {
+    it("8.1. SUBJECT + no binding -> DENY grade read", async () => {
+      const savedUserFindUnique = prismaModule.user.findUnique;
+      const savedBindingFindUnique = prismaModule.academicSubjectAccountBinding.findUnique;
+
+      try {
+        setTestSession({
+          userId: "usr-subj-nobind",
+          username: "subj.nobind",
+          name: "Subj No Bind",
+          role: "GA",
+        });
+
+        prismaModule.user.findUnique = async () => ({
+          id: "usr-subj-nobind",
+          status: "AKTIF",
+          accountType: "SUBJECT",
+        });
+
+        prismaModule.academicSubjectAccountBinding.findUnique = async () => null;
+
+        const res = await getNilaiAkademikListAction();
+        assert.strictEqual(res.success, false);
+        assert.match(res.message || "", /Akses Ditolak: Akun subjek tidak memiliki binding mata pelajaran aktif/i);
+        assert.deepStrictEqual(res.data, []);
+      } finally {
+        prismaModule.user.findUnique = savedUserFindUnique;
+        prismaModule.academicSubjectAccountBinding.findUnique = savedBindingFindUnique;
+        setTestSession(null);
+      }
+    });
+
+    it("8.2. SUBJECT + inactive binding -> DENY grade read", async () => {
+      const savedUserFindUnique = prismaModule.user.findUnique;
+      const savedBindingFindUnique = prismaModule.academicSubjectAccountBinding.findUnique;
+
+      try {
+        setTestSession({
+          userId: "usr-subj-inactive",
+          username: "subj.inactive",
+          name: "Subj Inactive",
+          role: "GA",
+        });
+
+        prismaModule.user.findUnique = async () => ({
+          id: "usr-subj-inactive",
+          status: "AKTIF",
+          accountType: "SUBJECT",
+        });
+
+        prismaModule.academicSubjectAccountBinding.findUnique = async () => ({
+          id: "bind-01",
+          userId: "usr-subj-inactive",
+          subjectId: "mapel-mat",
+          isActive: false, // INACTIVE
+        });
+
+        const res = await getNilaiAkademikListAction();
+        assert.strictEqual(res.success, false);
+        assert.match(res.message || "", /Akses Ditolak: Akun subjek tidak memiliki binding mata pelajaran aktif/i);
+        assert.deepStrictEqual(res.data, []);
+      } finally {
+        prismaModule.user.findUnique = savedUserFindUnique;
+        prismaModule.academicSubjectAccountBinding.findUnique = savedBindingFindUnique;
+        setTestSession(null);
+      }
+    });
+
+    it("8.3. SUBJECT + active binding -> own subject only", async () => {
+      const savedUserFindUnique = prismaModule.user.findUnique;
+      const savedBindingFindUnique = prismaModule.academicSubjectAccountBinding.findUnique;
+      const savedNilaiFindMany = prismaModule.nilaiAkademik.findMany;
+
+      try {
+        setTestSession({
+          userId: "usr-subj-active",
+          username: "subj.active",
+          name: "Subj Active",
+          role: "GA",
+        });
+
+        prismaModule.user.findUnique = async () => ({
+          id: "usr-subj-active",
+          status: "AKTIF",
+          accountType: "SUBJECT",
+        });
+
+        prismaModule.academicSubjectAccountBinding.findUnique = async () => ({
+          id: "bind-01",
+          userId: "usr-subj-active",
+          subjectId: "mapel-mat",
+          isActive: true,
+        });
+
+        let queriedMapelId: any = null;
+        prismaModule.nilaiAkademik.findMany = async (args: any) => {
+          queriedMapelId = args?.where?.mapelId;
+          return [
+            {
+              id: "nil-01",
+              santriId: "san-01",
+              mapelId: "mapel-mat",
+              semester: 1,
+              tahunAjaran: "2026/2027",
+              jenis: "UH1",
+              angka: 90,
+              huruf: "A",
+              catatan: "",
+              createdAt: new Date(),
+              santri: { id: "san-01", nama: "Santri One", nis: "1001", kelas: "7A" },
+              mapel: { id: "mapel-mat", nama: "Matematika", kodeMapel: "MAT", kategori: "UMUM" },
+              guru: { id: "stf-01", nama: "Guru Pengajar" },
+            },
+          ];
+        };
+
+        const res = await getNilaiAkademikListAction();
+        assert.strictEqual(res.success, true);
+        assert.strictEqual(queriedMapelId, "mapel-mat", "Must force query to bound subjectId");
+        assert.strictEqual(res.data.length, 1);
+      } finally {
+        prismaModule.user.findUnique = savedUserFindUnique;
+        prismaModule.academicSubjectAccountBinding.findUnique = savedBindingFindUnique;
+        prismaModule.nilaiAkademik.findMany = savedNilaiFindMany;
+        setTestSession(null);
+      }
+    });
+
+    it("8.4. SUBJECT -> cross-subject -> DENY", async () => {
+      const savedUserFindUnique = prismaModule.user.findUnique;
+      const savedBindingFindUnique = prismaModule.academicSubjectAccountBinding.findUnique;
+
+      try {
+        setTestSession({
+          userId: "usr-subj-active",
+          username: "subj.active",
+          name: "Subj Active",
+          role: "GA",
+        });
+
+        prismaModule.user.findUnique = async () => ({
+          id: "usr-subj-active",
+          status: "AKTIF",
+          accountType: "SUBJECT",
+        });
+
+        prismaModule.academicSubjectAccountBinding.findUnique = async () => ({
+          id: "bind-01",
+          userId: "usr-subj-active",
+          subjectId: "mapel-mat",
+          isActive: true,
+        });
+
+        // Request another subject (mapel-ipa)
+        const res = await getNilaiAkademikListAction({ mapelId: "mapel-ipa" });
+        assert.strictEqual(res.success, false);
+        assert.match(res.message || "", /Akses Ditolak: Akun mata pelajaran tidak berwenang melihat nilai untuk mata pelajaran lain/i);
+        assert.deepStrictEqual(res.data, []);
+      } finally {
+        prismaModule.user.findUnique = savedUserFindUnique;
+        prismaModule.academicSubjectAccountBinding.findUnique = savedBindingFindUnique;
+        setTestSession(null);
+      }
+    });
+
+    it("8.5. SUBJECT -> consolidated rapor -> DENY", async () => {
+      const savedUserFindUnique = prismaModule.user.findUnique;
+
+      try {
+        setTestSession({
+          userId: "usr-subj-rapor",
+          username: "subj.rapor",
+          name: "Subj Rapor",
+          role: "GA",
+          staffId: "stf-01",
+        });
+
+        prismaModule.user.findUnique = async () => ({
+          id: "usr-subj-rapor",
+          status: "AKTIF",
+          accountType: "SUBJECT",
+        });
+
+        const res = await getRaporGabunganAction("san-01", 1);
+        assert.strictEqual(res.success, false);
+        assert.match(res.message || "", /Akses Ditolak: Akun mata pelajaran hanya berwenang mengakses data mata pelajarannya sendiri/i);
+      } finally {
+        prismaModule.user.findUnique = savedUserFindUnique;
+        setTestSession(null);
+      }
+    });
+
+    it("8.6. PERSONAL + malicious active binding -> no SUBJECT authority", async () => {
+      const savedUserFindUnique = prismaModule.user.findUnique;
+      const savedBindingFindUnique = prismaModule.academicSubjectAccountBinding.findUnique;
+      const savedNilaiFindMany = prismaModule.nilaiAkademik.findMany;
+      const savedMapelFindUnique = prismaModule.mataPelajaran.findUnique;
+
+      try {
+        setTestSession({
+          userId: "usr-personal-malicious",
+          username: "personal.malicious",
+          name: "Personal Malicious",
+          role: "GA",
+        });
+
+        // User is PERSONAL, but has an active binding row in DB
+        prismaModule.user.findUnique = async () => ({
+          id: "usr-personal-malicious",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+        });
+
+        prismaModule.academicSubjectAccountBinding.findUnique = async () => ({
+          id: "bind-malicious",
+          userId: "usr-personal-malicious",
+          subjectId: "mapel-mat",
+          isActive: true,
+        });
+
+        prismaModule.mataPelajaran.findUnique = async () => ({
+          id: "mapel-mat",
+          nama: "Matematika",
+          kodeMapel: "MAT",
+          kategori: "UMUM",
+        });
+
+        let queriedMapelId: any = null;
+        prismaModule.nilaiAkademik.findMany = async (args: any) => {
+          queriedMapelId = args?.where?.mapelId;
+          return [];
+        };
+
+        // 1. Grade list: Does NOT force mapelId = binding.subjectId. Uses requested params.mapelId!
+        const resList = await getNilaiAkademikListAction({ mapelId: "mapel-ipa" });
+        assert.strictEqual(resList.success, true);
+        assert.strictEqual(queriedMapelId, "mapel-ipa", "Must NOT force subject binding onto PERSONAL account");
+
+        // 2. Grade input for Studi Umum: Strictly rejects PERSONAL account
+        const resInput = await inputNilaiAction({
+          santriId: "san-01",
+          mapelId: "mapel-mat",
+          semester: 1,
+          tahunAjaran: "2026/2027",
+          jenis: JenisNilai.TUGAS,
+          angka: 85,
+          educationSessionId: "sess-01",
+        });
+        assert.strictEqual(resInput.success, false);
+        assert.match(resInput.message || "", /Penilaian Studi Umum hanya dapat dilakukan oleh akun teknikal mata pelajaran \(SUBJECT\)/i);
+      } finally {
+        prismaModule.user.findUnique = savedUserFindUnique;
+        prismaModule.academicSubjectAccountBinding.findUnique = savedBindingFindUnique;
+        prismaModule.nilaiAkademik.findMany = savedNilaiFindMany;
+        prismaModule.mataPelajaran.findUnique = savedMapelFindUnique;
+        setTestSession(null);
+      }
+    });
+  });
+
+  // =========================================================================
+  // 9. PENDIDIKAN SCHEMA READINESS PR-1 GATES (REQUIREMENT 4)
+  // =========================================================================
+  describe("9. Pendidikan Schema Readiness PR-1 Gates", () => {
+    const defaultMockTables = [
+      { table_name: "education_cohorts" },
+      { table_name: "teaching_assignments" },
+      { table_name: "education_sessions" },
+      { table_name: "education_session_participants" },
+      { table_name: "education_session_attendances" },
+      { table_name: "academic_subject_account_bindings" },
+      { table_name: "canonical_audit_logs" },
+    ];
+
+    const defaultMockColumns = [
+      { table_name: "education_sessions", column_name: "actual_teacher_name" },
+      { table_name: "education_sessions", column_name: "started_by_user_id" },
+      { table_name: "academic_subject_account_bindings", column_name: "user_id" },
+      { table_name: "academic_subject_account_bindings", column_name: "subject_id" },
+      { table_name: "academic_subject_account_bindings", column_name: "is_active" },
+      { table_name: "canonical_audit_logs", column_name: "authorization_model" },
+      { table_name: "canonical_audit_logs", column_name: "subject_id" },
+      { table_name: "canonical_audit_logs", column_name: "scope_type" },
+      { table_name: "canonical_audit_logs", column_name: "unit_id" },
+    ];
+
+    const defaultMockEnums = [
+      { typname: "EducationTrack" },
+      { typname: "PedagogicalLevel" },
+      { typname: "EducationSessionStatus" },
+      { typname: "EducationAttendanceStatus" },
+      { typname: "AccountType" },
+    ];
+
+    const defaultMockEnumLabels = [{ enumlabel: "SUBJECT" }];
+
+    it("9.1. old pre-PR1 schema (missing bindings and canonical audit tables) -> NOT READY", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes("information_schema.tables")) {
+            return [
+              { table_name: "education_cohorts" },
+              { table_name: "teaching_assignments" },
+              { table_name: "education_sessions" },
+              { table_name: "education_session_participants" },
+              { table_name: "education_session_attendances" },
+            ];
+          }
+          return [];
+        },
+      };
+
+      const service = new PendidikanV2Service({
+        db: mockDb as any,
+        dataProvider: {} as any,
+        auditPersistence: {} as any,
+      });
+
+      const res = await service.checkSchemaReadiness();
+      assert.strictEqual(res.ready, false);
+      assert.ok(res.reason?.includes("PENDIDIKAN_V2_SCHEMA_NOT_READY"));
+      assert.ok(res.reason?.includes("academic_subject_account_bindings"));
+      assert.ok(res.reason?.includes("canonical_audit_logs"));
+    });
+
+    it("9.2. missing subject binding table -> NOT READY", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes("information_schema.tables")) {
+            return defaultMockTables.filter((t) => t.table_name !== "academic_subject_account_bindings");
+          }
+          return [];
+        },
+      };
+
+      const service = new PendidikanV2Service({
+        db: mockDb as any,
+        dataProvider: {} as any,
+        auditPersistence: {} as any,
+      });
+
+      const res = await service.checkSchemaReadiness();
+      assert.strictEqual(res.ready, false);
+      assert.ok(res.reason?.includes("academic_subject_account_bindings"));
+    });
+
+    it("9.3. missing started_by_user_id -> NOT READY", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes("information_schema.tables")) {
+            return defaultMockTables;
+          }
+          if (sql.includes("information_schema.columns")) {
+            return defaultMockColumns.filter((c) => c.column_name !== "started_by_user_id");
+          }
+          return [];
+        },
+      };
+
+      const service = new PendidikanV2Service({
+        db: mockDb as any,
+        dataProvider: {} as any,
+        auditPersistence: {} as any,
+      });
+
+      const res = await service.checkSchemaReadiness();
+      assert.strictEqual(res.ready, false);
+      assert.ok(res.reason?.includes("education_sessions.started_by_user_id"));
+    });
+
+    it("9.4. missing audit provenance columns -> NOT READY", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes("information_schema.tables")) {
+            return defaultMockTables;
+          }
+          if (sql.includes("information_schema.columns")) {
+            return defaultMockColumns.filter((c) => c.column_name !== "authorization_model");
+          }
+          return [];
+        },
+      };
+
+      const service = new PendidikanV2Service({
+        db: mockDb as any,
+        dataProvider: {} as any,
+        auditPersistence: {} as any,
+      });
+
+      const res = await service.checkSchemaReadiness();
+      assert.strictEqual(res.ready, false);
+      assert.ok(res.reason?.includes("canonical_audit_logs.authorization_model"));
+    });
+
+    it("9.5. complete PR1 schema -> READY", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes("information_schema.tables")) {
+            return defaultMockTables;
+          }
+          if (sql.includes("information_schema.columns")) {
+            return defaultMockColumns;
+          }
+          if (sql.includes("pg_enum")) {
+            return defaultMockEnumLabels;
+          }
+          if (sql.includes("pg_type")) {
+            return defaultMockEnums;
+          }
+          return [];
+        },
+      };
+
+      const service = new PendidikanV2Service({
+        db: mockDb as any,
+        dataProvider: {} as any,
+        auditPersistence: {} as any,
+      });
+
+      const res = await service.checkSchemaReadiness();
+      assert.strictEqual(res.ready, true);
+    });
+  });
+
+  // =========================================================================
+  // 10. DIRECT SUBJECT SCHEDULE READ WITHOUT STAFF (REQUIREMENT 1 & 3)
+  // =========================================================================
+  describe("10. Direct Subject-Scoped Schedule Read Without Staff", () => {
+    it("10.1. Subject account schedule read with staffId = null and no assignment -> ALLOW own subject", async () => {
+      const mockSessions = [
+        {
+          id: "sess-mat-01",
+          educationTrack: "STUDI_UMUM",
+          subjectId: "mapel-mat",
+          status: "SCHEDULED",
+          scheduledDate: new Date("2026-09-21T00:00:00Z"),
+          subject: { id: "mapel-mat", nama: "Matematika", kodeMapel: "MAT" },
+        },
+        {
+          id: "sess-ipa-01",
+          educationTrack: "STUDI_UMUM",
+          subjectId: "mapel-ipa",
+          status: "SCHEDULED",
+          scheduledDate: new Date("2026-09-21T00:00:00Z"),
+          subject: { id: "mapel-ipa", nama: "IPA", kodeMapel: "IPA" },
+        },
+      ];
+
+      const mockDb = {
+        educationCohort: {},
+        teachingAssignment: {},
+        educationSession: {
+          findMany: async () => mockSessions,
+        },
+        educationSessionParticipant: {},
+        educationSessionAttendance: {},
+        canonicalAuditLog: {},
+        academicSubjectAccountBinding: {
+          findUnique: async () => ({
+            id: "bind-mat",
+            userId: "usr-tech-mat",
+            subjectId: "mapel-mat",
+            isActive: true,
+          }),
+        },
+      };
+
+      const mockDataProvider = {
+        getIdentity: async () => ({
+          userId: "usr-tech-mat",
+          username: "tech.mat",
+          status: "AKTIF",
+          accountType: "SUBJECT",
+          staffId: null, // NO STAFF ID
+        }),
+      };
+
+      const service = new PendidikanV2Service({
+        db: mockDb as any,
+        dataProvider: mockDataProvider as any,
+        auditPersistence: {} as any,
+      });
+
+      const dtos = await service.getEducationSessions(undefined, { actorUserId: "usr-tech-mat" });
+      assert.strictEqual(dtos.length, 1);
+      assert.strictEqual(dtos[0].sessionId, "sess-mat-01");
+      assert.strictEqual(dtos[0].subjectId, "mapel-mat");
+      assert.strictEqual(dtos[0].mutationAvailable, true);
+    });
+
+    it("10.2. Subject account schedule read -> cross-subject / other-track excluded", async () => {
+      const mockSessions = [
+        {
+          id: "sess-tahfizh-01",
+          educationTrack: "KEPESANTRENAN",
+          subjectId: "mapel-tahfizh",
+          status: "SCHEDULED",
+          scheduledDate: new Date("2026-09-21T00:00:00Z"),
+        },
+        {
+          id: "sess-ipa-01",
+          educationTrack: "STUDI_UMUM",
+          subjectId: "mapel-ipa",
+          status: "SCHEDULED",
+          scheduledDate: new Date("2026-09-21T00:00:00Z"),
+        },
+      ];
+
+      const mockDb = {
+        educationCohort: {},
+        teachingAssignment: {},
+        educationSession: {
+          findMany: async () => mockSessions,
+        },
+        educationSessionParticipant: {},
+        educationSessionAttendance: {},
+        canonicalAuditLog: {},
+        academicSubjectAccountBinding: {
+          findUnique: async () => ({
+            id: "bind-mat",
+            userId: "usr-tech-mat",
+            subjectId: "mapel-mat",
+            isActive: true,
+          }),
+        },
+      };
+
+      const mockDataProvider = {
+        getIdentity: async () => ({
+          userId: "usr-tech-mat",
+          username: "tech.mat",
+          status: "AKTIF",
+          accountType: "SUBJECT",
+          staffId: null,
+        }),
+      };
+
+      const service = new PendidikanV2Service({
+        db: mockDb as any,
+        dataProvider: mockDataProvider as any,
+        auditPersistence: {} as any,
+      });
+
+      // All sessions in DB are non-math -> must fail closed with PERMISSION_DENIED
+      await assert.rejects(
+        () => service.getEducationSessions(undefined, { actorUserId: "usr-tech-mat" }),
+        /PERMISSION_DENIED/
       );
     });
   });
