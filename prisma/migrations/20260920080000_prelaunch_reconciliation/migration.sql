@@ -26,7 +26,12 @@ ADD COLUMN "cancelled_by" TEXT,
 ADD COLUMN "cancel_reason" TEXT;
 
 -- AlterTable
-ALTER TABLE "education_sessions" ADD COLUMN "actual_teacher_name" TEXT;
+ALTER TABLE "canonical_audit_logs" ALTER COLUMN "scope_type" DROP NOT NULL,
+ALTER COLUMN "unit_id" DROP NOT NULL;
+
+-- AlterTable
+ALTER TABLE "education_sessions" ADD COLUMN "actual_teacher_name" TEXT,
+ADD COLUMN "started_by_user_id" TEXT;
 
 -- CreateTable
 CREATE TABLE "academic_subject_account_bindings" (
@@ -60,3 +65,9 @@ ALTER TABLE "academic_subject_account_bindings" ADD CONSTRAINT "academic_subject
 
 -- AddForeignKey
 ALTER TABLE "nilai_akademik" ADD CONSTRAINT "nilai_akademik_dicatat_oleh_user_id_fkey" FOREIGN KEY ("dicatat_oleh_user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- CreateIndex
+CREATE INDEX "education_sessions_started_by_user_id_idx" ON "education_sessions"("started_by_user_id");
+
+-- AddForeignKey
+ALTER TABLE "education_sessions" ADD CONSTRAINT "education_sessions_started_by_user_id_fkey" FOREIGN KEY ("started_by_user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;

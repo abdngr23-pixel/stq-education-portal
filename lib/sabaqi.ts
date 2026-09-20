@@ -50,6 +50,14 @@ export function getStartOfWeekWITA(refDate: Date = new Date()): Date {
 }
 
 /**
+ * Menentukan batas akhir pekan (Ahad pukul 23:59:59.999 WITA) dalam objek UTC Date.
+ */
+export function getEndOfWeekWITA(refDate: Date = new Date()): Date {
+  const startOfWeek = getStartOfWeekWITA(refDate);
+  return new Date(startOfWeek.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
+}
+
+/**
  * Menghitung rekomendasi Sabaqi murni dari setoran SABAQ nyata pekan berjalan.
  */
 export function hitungRekomendasiSabaqiPekan(

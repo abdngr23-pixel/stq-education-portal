@@ -52,10 +52,29 @@ describe("PRE-LAUNCH EXECUTION PR-1: CORE BUSINESS RULE & PENDIDIKAN RECONCILIAT
       );
     });
 
-    it("1.3. EducationSession includes actualTeacherName", () => {
+    it("1.3. EducationSession includes actualTeacherName and startedByUserId", () => {
       assert.ok(
         /actualTeacherName\s+String\?\s+@map\("actual_teacher_name"\)/.test(schemaContent),
         "EducationSession must include actualTeacherName mapped to actual_teacher_name"
+      );
+      assert.ok(
+        /startedByUserId\s+String\?\s+@map\("started_by_user_id"\)/.test(schemaContent),
+        "EducationSession must include startedByUserId mapped to started_by_user_id"
+      );
+      assert.ok(
+        schemaContent.includes("startedEducationSessions"),
+        "User model must have startedEducationSessions relation"
+      );
+    });
+
+    it("1.3b. CanonicalAuditLog has nullable scopeType and unitId", () => {
+      assert.ok(
+        /scopeType\s+ScopeType\?\s+@map\("scope_type"\)/.test(schemaContent),
+        "CanonicalAuditLog.scopeType must be nullable"
+      );
+      assert.ok(
+        /unitId\s+String\?\s+@map\("unit_id"\)/.test(schemaContent),
+        "CanonicalAuditLog.unitId must be nullable"
       );
     });
 
@@ -125,6 +144,8 @@ describe("PRE-LAUNCH EXECUTION PR-1: CORE BUSINESS RULE & PENDIDIKAN RECONCILIAT
       assert.ok(migrationSql.includes("ALTER TYPE \"StatusIzin\" ADD VALUE 'DIBATALKAN';"));
       assert.ok(migrationSql.includes("CREATE TABLE \"academic_subject_account_bindings\""));
       assert.ok(migrationSql.includes("ALTER TABLE \"education_sessions\" ADD COLUMN \"actual_teacher_name\""));
+      assert.ok(migrationSql.includes("\"started_by_user_id\" TEXT;"));
+      assert.ok(migrationSql.includes("ALTER TABLE \"canonical_audit_logs\" ALTER COLUMN \"scope_type\" DROP NOT NULL"));
     });
   });
 
@@ -142,6 +163,7 @@ describe("PRE-LAUNCH EXECUTION PR-1: CORE BUSINESS RULE & PENDIDIKAN RECONCILIAT
         scheduledDate: new Date("2026-09-19T08:00:00.000Z"),
         jp: 2,
         programLevel: 1,
+        startedByUserId: null,
         actualTeacherName: null,
         actualTeacherUserId: null,
         actualTeacherStaffId: null,
@@ -168,6 +190,7 @@ describe("PRE-LAUNCH EXECUTION PR-1: CORE BUSINESS RULE & PENDIDIKAN RECONCILIAT
               session.status = args.data.status;
               session.actualTeacherName = args.data.actualTeacherName;
               session.actualTeacherUserId = args.data.actualTeacherUserId;
+              session.startedByUserId = args.data.startedByUserId;
               session.startedAt = args.data.startedAt;
               return { count: 1 };
             }
@@ -275,11 +298,17 @@ describe("PRE-LAUNCH EXECUTION PR-1: CORE BUSINESS RULE & PENDIDIKAN RECONCILIAT
       assert.strictEqual(res.success, true);
       assert.strictEqual(res.session.status, "STARTED");
       assert.strictEqual(res.session.actualTeacherName, "Bpk. Hendra Gunawan, M.Pd");
-      assert.strictEqual(res.session.actualTeacherUserId, "usr-tech-mat");
+      assert.strictEqual(res.session.startedByUserId, "usr-tech-mat", "startedByUserId must record technical account");
+      assert.strictEqual(res.session.actualTeacherUserId, null, "actualTeacherUserId must NOT be populated with technical account");
       assert.strictEqual(mockAudit.records.length, 1);
       assert.strictEqual(mockAudit.records[0].action, "academic.session.start");
       assert.strictEqual(mockAudit.records[0].humanExecutorName, "Bpk. Hendra Gunawan, M.Pd");
       assert.strictEqual(mockAudit.records[0].positionCode, "SUBJECT_ACCOUNT");
+      assert.strictEqual(mockAudit.records[0].scopeType, null, "Audit scopeType must be null (not fake GLOBAL)");
+      assert.strictEqual(mockAudit.records[0].unitId, null, "Audit unitId must be null (not fake OrgUnit)");
+      assert.strictEqual(mockAudit.records[0].authorizationModel, "SUBJECT_ACCOUNT");
+      assert.strictEqual(mockAudit.records[0].subjectId, "sub-matematika");
+      assert.strictEqual(mockAudit.records[0].afterState.startedByUserId, "usr-tech-mat");
     });
 
     it("2.3. Denies subject account if attempting to start session for unbound subject", async () => {
@@ -308,7 +337,7 @@ describe("PRE-LAUNCH EXECUTION PR-1: CORE BUSINESS RULE & PENDIDIKAN RECONCILIAT
     it("2.4. Bound subject account can record session material", async () => {
       const mockDb = createMockDbForSession({
         status: "STARTED",
-        actualTeacherUserId: "usr-tech-mat",
+        startedByUserId: "usr-tech-mat",
         actualTeacherName: "Bpk. Hendra Gunawan, M.Pd",
       });
       const mockAudit = createMockAuditPersistence();
@@ -325,6 +354,70 @@ describe("PRE-LAUNCH EXECUTION PR-1: CORE BUSINESS RULE & PENDIDIKAN RECONCILIAT
 
       assert.strictEqual(res.success, true);
       assert.strictEqual(res.session.materi, "Persamaan Linear Dua Variabel (SPLDV)");
+    });
+
+    it("2.5. Negative test: PERSONAL user with active subject binding -> DENIED starting session", async () => {
+      const mockDb = createMockDbForSession();
+      const mockAudit = createMockAuditPersistence();
+      const personalDataProvider = {
+        getIdentity: async (userId: string) => ({
+          userId,
+          username: "personal.attacker",
+          status: "AKTIF" as const,
+          accountType: "PERSONAL" as const,
+          name: "Personal Attacker",
+        }),
+        verifyHumanExecutor: async () => null,
+        getActiveAssignments: async () => [],
+        getUnitAccountPlacement: async () => null,
+        resolveResourceContext: async () => null,
+      };
+      const service = new PendidikanV2Service({
+        db: mockDb as any,
+        dataProvider: personalDataProvider,
+        auditPersistence: mockAudit,
+      });
+
+      await assert.rejects(
+        () =>
+          service.startEducationSession(
+            { sessionId: "sess-su-01", actualTeacherName: "Bpk. Hendra Gunawan" },
+            { actorUserId: "usr-tech-mat" }
+          ),
+        /SUBJECT_ACCOUNT_TYPE_REQUIRED/
+      );
+    });
+
+    it("2.6. Negative test: Inactive SUBJECT account -> DENIED starting session", async () => {
+      const mockDb = createMockDbForSession();
+      const mockAudit = createMockAuditPersistence();
+      const inactiveDataProvider = {
+        getIdentity: async (userId: string) => ({
+          userId,
+          username: "tech.mat",
+          status: "NONAKTIF" as const,
+          accountType: "SUBJECT" as const,
+          name: "Akun Mapel Matematika",
+        }),
+        verifyHumanExecutor: async () => null,
+        getActiveAssignments: async () => [],
+        getUnitAccountPlacement: async () => null,
+        resolveResourceContext: async () => null,
+      };
+      const service = new PendidikanV2Service({
+        db: mockDb as any,
+        dataProvider: inactiveDataProvider,
+        auditPersistence: mockAudit,
+      });
+
+      await assert.rejects(
+        () =>
+          service.startEducationSession(
+            { sessionId: "sess-su-01", actualTeacherName: "Bpk. Hendra Gunawan" },
+            { actorUserId: "usr-tech-mat" }
+          ),
+        /AUTHENTICATION_REQUIRED/
+      );
     });
   });
 
@@ -756,6 +849,7 @@ describe("PRE-LAUNCH EXECUTION PR-1: CORE BUSINESS RULE & PENDIDIKAN RECONCILIAT
                   id: "set-sab-1",
                   halamanMulai: 20,
                   halamanSelesai: 25,
+                  jumlahHalaman: 6.0,
                   tanggal: mondayThisWeek,
                 },
               ];
@@ -786,7 +880,306 @@ describe("PRE-LAUNCH EXECUTION PR-1: CORE BUSINESS RULE & PENDIDIKAN RECONCILIAT
       });
 
       assert.strictEqual(res.success, false);
-      assert.match(res.message, /halaman sabaqi.*di luar batas sabaq/i);
+      assert.match(res.message, /tidak termasuk dalam materi Sabaq sah yang tersimpan pada pekan ini/i);
+    });
+
+    it("4.5. Gap between stored SABAQ ranges: weekly stored SABAQ (pages 10 and 12), requested SABAQI (page 11) -> DENY", async () => {
+      const mondayThisWeek = new Date();
+      const mockPrisma: any = {
+        santri: {
+          findUnique: async () => ({
+            id: "san-tahf-gap",
+            nama: "Santri Gap",
+            nis: "1002",
+            modalHafalanAwalHalaman: 0,
+            tanggalBaselineTahfizh: null,
+          }),
+        },
+        setoranTahfizh: {
+          findUnique: async () => null,
+          findMany: async (args: any) => {
+            // Stored Sabaq: page 10 and page 12 (page 11 was NEVER stored)
+            if (args.where?.jenis === "SABAQ") {
+              return [
+                {
+                  id: "set-sab-10",
+                  halamanMulai: 10,
+                  halamanSelesai: 10,
+                  jumlahHalaman: 1.0,
+                  tanggal: mondayThisWeek,
+                },
+                {
+                  id: "set-sab-12",
+                  halamanMulai: 12,
+                  halamanSelesai: 12,
+                  jumlahHalaman: 1.0,
+                  tanggal: mondayThisWeek,
+                },
+              ];
+            }
+            return [];
+          },
+        },
+        $transaction: async (fn: any) => fn(mockPrisma),
+      };
+
+      // Proposed Sabaqi: page 11 (lying in gap between 10 and 12)
+      const res = await saveSetoranTahfizhCore(mockPrisma, {
+        input: {
+          santriId: "san-tahf-gap",
+          jenis: "SABQI",
+          juz: 1,
+          halamanMulai: 11,
+          halamanSelesai: 11,
+          jumlahHalaman: 1.0,
+          nilai: "MUMTAZ",
+          clientRequestId: `req-sabqi-gap-${Date.now()}`,
+        },
+        context: {
+          userId: "usr-musyrif",
+          username: "musyrif.tahfizh",
+          musyrifStaffId: "stf-musyrif-01",
+        },
+      });
+
+      assert.strictEqual(res.success, false, "Gap between stored Sabaq must fail closed");
+      assert.match(res.message, /Halaman 11 tidak termasuk dalam materi Sabaq sah yang tersimpan pada pekan ini/i);
+    });
+
+    it("4.6. Exact stored range: weekly stored SABAQ (pages 10-11), requested SABAQI (pages 10-11) -> ALLOW", async () => {
+      const mondayThisWeek = new Date();
+      const mockPrisma: any = {
+        santri: {
+          findUnique: async () => ({
+            id: "san-tahf-exact",
+            nama: "Santri Exact",
+            nis: "1003",
+            modalHafalanAwalHalaman: 0,
+            tanggalBaselineTahfizh: null,
+          }),
+        },
+        setoranTahfizh: {
+          findUnique: async () => null,
+          findMany: async (args: any) => {
+            if (args.where?.jenis === "SABAQ") {
+              return [
+                {
+                  id: "set-sab-10-11",
+                  halamanMulai: 10,
+                  halamanSelesai: 11,
+                  jumlahHalaman: 2.0,
+                  tanggal: mondayThisWeek,
+                },
+              ];
+            }
+            return [];
+          },
+          create: async (args: any) => ({
+            id: "set-sabqi-created",
+            setoranCode: "SET-TEST-EXACT",
+            ...args.data,
+            santri: { nama: "Santri Exact" },
+            musyrif: { nama: "Musyrif Test" },
+            createdAt: new Date(),
+          }),
+        },
+        auditLog: {
+          create: async () => ({ id: "audit-1" }),
+        },
+        $transaction: async (fn: any) => fn(mockPrisma),
+      };
+
+      const res = await saveSetoranTahfizhCore(mockPrisma, {
+        input: {
+          santriId: "san-tahf-exact",
+          jenis: "SABQI",
+          juz: 1,
+          halamanMulai: 10,
+          halamanSelesai: 11,
+          jumlahHalaman: 2.0,
+          nilai: "MUMTAZ",
+          clientRequestId: `req-sabqi-exact-${Date.now()}`,
+        },
+        context: {
+          userId: "usr-musyrif",
+          username: "musyrif.tahfizh",
+          musyrifStaffId: "stf-musyrif-01",
+        },
+      });
+
+      assert.strictEqual(res.success, true, "Exact stored Sabaq range must be allowed for Sabaqi");
+    });
+
+    it("4.7. Partial/fractional boundary: stored 0.5 page on page 10, requested 1.0 page on page 10 -> DENY", async () => {
+      const mondayThisWeek = new Date();
+      const mockPrisma: any = {
+        santri: {
+          findUnique: async () => ({
+            id: "san-tahf-frac",
+            nama: "Santri Frac",
+            nis: "1004",
+            modalHafalanAwalHalaman: 0,
+            tanggalBaselineTahfizh: null,
+          }),
+        },
+        setoranTahfizh: {
+          findUnique: async () => null,
+          findMany: async (args: any) => {
+            if (args.where?.jenis === "SABAQ") {
+              return [
+                {
+                  id: "set-sab-frac",
+                  halamanMulai: 10,
+                  halamanSelesai: 10,
+                  jumlahHalaman: 0.5, // Only 0.5 page stored!
+                  tanggal: mondayThisWeek,
+                },
+              ];
+            }
+            return [];
+          },
+        },
+        $transaction: async (fn: any) => fn(mockPrisma),
+      };
+
+      const res = await saveSetoranTahfizhCore(mockPrisma, {
+        input: {
+          santriId: "san-tahf-frac",
+          jenis: "SABQI",
+          juz: 1,
+          halamanMulai: 10,
+          halamanSelesai: 10,
+          jumlahHalaman: 1.0, // Requested 1.0 page (> 0.5 stored)
+          nilai: "MUMTAZ",
+          clientRequestId: `req-sabqi-frac-${Date.now()}`,
+        },
+        context: {
+          userId: "usr-musyrif",
+          username: "musyrif.tahfizh",
+          musyrifStaffId: "stf-musyrif-01",
+        },
+      });
+
+      assert.strictEqual(res.success, false, "Requesting volume exceeding fractional stored Sabaq must fail");
+      assert.match(res.message, /melebihi batas Sabaq tersimpan pekan ini/i);
+    });
+
+    it("4.8. Cancelled SABAQ gives zero coverage -> DENY", async () => {
+      const mockPrisma: any = {
+        santri: {
+          findUnique: async () => ({
+            id: "san-tahf-cancel",
+            nama: "Santri Cancel",
+            nis: "1005",
+            modalHafalanAwalHalaman: 0,
+            tanggalBaselineTahfizh: null,
+          }),
+        },
+        setoranTahfizh: {
+          findUnique: async () => null,
+          findMany: async (args: any) => {
+            // Cancelled Sabaq is excluded by `status: { not: "DIBATALKAN" }`
+            if (args.where?.status?.not === "DIBATALKAN") {
+              return []; // Zero active Sabaq!
+            }
+            return [];
+          },
+        },
+        $transaction: async (fn: any) => fn(mockPrisma),
+      };
+
+      const res = await saveSetoranTahfizhCore(mockPrisma, {
+        input: {
+          santriId: "san-tahf-cancel",
+          jenis: "SABQI",
+          juz: 1,
+          halamanMulai: 10,
+          halamanSelesai: 10,
+          jumlahHalaman: 1.0,
+          nilai: "MUMTAZ",
+          clientRequestId: `req-sabqi-cancel-${Date.now()}`,
+        },
+        context: {
+          userId: "usr-musyrif",
+          username: "musyrif.tahfizh",
+          musyrifStaffId: "stf-musyrif-01",
+        },
+      });
+
+      assert.strictEqual(res.success, false);
+      assert.match(res.message, /belum ada.*sabaq.*pekan ini/i);
+    });
+
+    it("4.9. Backdated SABAQI uses target week's WITA SABAQ", async () => {
+      // Backdated to 2026-09-08 (Tuesday)
+      const targetDate = new Date("2026-09-08T09:00:00.000Z");
+      let queriedDateRange: { gte?: Date; lte?: Date } | undefined;
+
+      const mockPrisma: any = {
+        santri: {
+          findUnique: async () => ({
+            id: "san-tahf-backdate",
+            nama: "Santri Backdate",
+            nis: "1006",
+            modalHafalanAwalHalaman: 0,
+            tanggalBaselineTahfizh: null,
+          }),
+        },
+        setoranTahfizh: {
+          findUnique: async () => null,
+          findMany: async (args: any) => {
+            if (args.where?.jenis === "SABAQ") {
+              queriedDateRange = args.where.tanggal;
+              return [
+                {
+                  id: "set-sab-past",
+                  halamanMulai: 5,
+                  halamanSelesai: 5,
+                  jumlahHalaman: 1.0,
+                  tanggal: new Date("2026-09-07T08:00:00.000Z"),
+                },
+              ];
+            }
+            return [];
+          },
+          create: async (args: any) => ({
+            id: "set-sabqi-backdate-created",
+            setoranCode: "SET-TEST-BACKDATE",
+            ...args.data,
+            santri: { nama: "Santri Backdate" },
+            musyrif: { nama: "Musyrif Test" },
+            createdAt: new Date(),
+          }),
+        },
+        auditLog: {
+          create: async () => ({ id: "audit-1" }),
+        },
+        $transaction: async (fn: any) => fn(mockPrisma),
+      };
+
+      const res = await saveSetoranTahfizhCore(mockPrisma, {
+        input: {
+          santriId: "san-tahf-backdate",
+          jenis: "SABQI",
+          juz: 1,
+          halamanMulai: 5,
+          halamanSelesai: 5,
+          jumlahHalaman: 1.0,
+          occurredAt: targetDate,
+          nilai: "MUMTAZ",
+          clientRequestId: `req-sabqi-backdate-${Date.now()}`,
+        },
+        context: {
+          userId: "usr-musyrif",
+          username: "musyrif.tahfizh",
+          musyrifStaffId: "stf-musyrif-01",
+        },
+      });
+
+      assert.strictEqual(res.success, true);
+      assert.ok(queriedDateRange, "Date range must be queried based on occurredAt");
+      // Target week start for 2026-09-08 is Monday 2026-09-07 WITA
+      assert.ok(queriedDateRange.gte && queriedDateRange.gte.toISOString().startsWith("2026-09-06T16:00:00"));
     });
   });
 

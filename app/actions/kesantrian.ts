@@ -6,6 +6,7 @@ import {
   recordAuditLog,
   resolveUserIsMudabbir,
   getMudabbirAssignedUnitIds,
+  resolveMudabbirPermissionCapability,
 } from "@/lib/auth";
 import { JenisIzin, StatusIzin, StatusAbsensi, Prisma } from "@prisma/client";
 import { getWitaDateString } from "@/lib/wita-date";
@@ -18,9 +19,6 @@ export interface AjukanIzinData {
   tanggalSelesai: string; // ISO string
   alasan: string;
   usesVehicle?: boolean;
-  kendaraan?: boolean;
-  pakaiKendaraan?: boolean;
-  isKendaraan?: boolean;
   menginap?: boolean;
   isMenginap?: boolean;
 }
@@ -95,6 +93,15 @@ export async function ajukanIzinAction(input: AjukanIzinData) {
     submissionRole = "ST";
   } else if (isMudabbir) {
     // Mudabbir operasional input (Pembina Halaqoh / Mudabbir)
+    // Verify capability pipeline: IDENTITY -> ACTIVE Assignment -> Position PEMBINA_HALAQOH -> keasramaan.permission.create capability -> APPROVED
+    const capCheck = await resolveMudabbirPermissionCapability(session.userId);
+    if (!capCheck.authorized) {
+      return {
+        success: false,
+        message: `Akses Ditolak: ${capCheck.reason || "Kewenangan kapabilitas perizinan tidak terpenuhi."}`,
+      };
+    }
+
     // 1. Resolve permitted scope from active assignments & halaqoh
     const assignedUnits = await getMudabbirAssignedUnitIds(session.userId);
     const allowedUnitIds = new Set<string>(assignedUnits);
@@ -168,20 +175,13 @@ export async function ajukanIzinAction(input: AjukanIzinData) {
     // Pulang: -> MENUNGGU_MK
     // Menginap: -> MENUNGGU_MK
     // Any permit USING VEHICLE: -> MENUNGGU_MK (Vehicle rule overrides same-day auto-approval)
+    // Business day = WITA calendar day ONLY (remove UTC-date OR condition)
     const d1 = new Date(input.tanggalMulai);
     const d2 = new Date(input.tanggalSelesai);
-    const isSameDay =
-      d1.toISOString().slice(0, 10) === d2.toISOString().slice(0, 10) ||
-      getWitaDateString(d1) === getWitaDateString(d2);
+    const isSameDay = getWitaDateString(d1) === getWitaDateString(d2);
 
-    // Explicit structured vehicle input only (NO keyword/regex text parsing on alasan)
-    const usesVehicle = Boolean(
-      input.usesVehicle ??
-      input.kendaraan ??
-      input.pakaiKendaraan ??
-      input.isKendaraan ??
-      false
-    );
+    // Explicit structured vehicle input only: usesVehicle: boolean (no text heuristics, no aliases)
+    const usesVehicle = Boolean(input.usesVehicle);
 
     const isMultiDay = !isSameDay;
     const isMenginap = Boolean(input.menginap || input.isMenginap || isMultiDay || input.jenis === JenisIzin.PULANG);
@@ -240,13 +240,7 @@ export async function ajukanIzinAction(input: AjukanIzinData) {
           tanggalMulai: new Date(input.tanggalMulai),
           tanggalSelesai: new Date(input.tanggalSelesai),
           alasan: input.alasan,
-          usesVehicle: Boolean(
-            input.usesVehicle ??
-            input.kendaraan ??
-            input.pakaiKendaraan ??
-            input.isKendaraan ??
-            false
-          ),
+          usesVehicle: Boolean(input.usesVehicle),
           status: initialStatus,
           diajukanOlehRole: submissionRole,
           diajukanOlehUserId: session.userId,

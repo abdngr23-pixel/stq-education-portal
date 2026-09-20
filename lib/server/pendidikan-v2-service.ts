@@ -342,31 +342,25 @@ export class PendidikanV2Service {
       } else if (s.status !== "STARTED") {
         materialDeniedReason = "SESSION_NOT_STARTED";
       } else if (s.educationTrack === "STUDI_UMUM") {
-        const binding = await (this.db as any).academicSubjectAccountBinding?.findUnique({
-          where: { userId: context.actorUserId },
-        });
-        if (binding && binding.isActive && binding.subjectId === s.subjectId) {
-          materialAvailable = true;
-          materialDeniedReason = null;
-        } else if (s.actualTeacherUserId === context.actorUserId) {
-          materialAvailable = true;
-          materialDeniedReason = null;
+        if (actorIdentity.status !== "AKTIF" || actorIdentity.accountType !== "SUBJECT") {
+          materialAvailable = false;
+          materialDeniedReason = "SUBJECT_ACCOUNT_REQUIRED";
         } else {
-          const matDecision = await authorizeCanonical({
-            identity: actorIdentity,
-            capability: "academic.material.record",
-            resourceContext: {
-              educationSessionId: s.id,
-            },
-            dataProvider: this.dataProvider,
-            isMutation: true,
+          const binding: any = await (this.db as any).academicSubjectAccountBinding?.findUnique({
+            where: { userId: context.actorUserId },
           });
-
-          if (matDecision.decision !== "ALLOW") {
-            materialDeniedReason = "CANONICAL_AUTH_DENIED";
-          } else {
+          if (
+            binding &&
+            binding.isActive &&
+            binding.userId === context.actorUserId &&
+            binding.subjectId === s.subjectId &&
+            (s.startedByUserId === context.actorUserId || (!s.startedByUserId && s.actualTeacherUserId === context.actorUserId))
+          ) {
             materialAvailable = true;
             materialDeniedReason = null;
+          } else {
+            materialAvailable = false;
+            materialDeniedReason = "SUBJECT_BINDING_MISMATCH";
           }
         }
       } else {
@@ -488,6 +482,8 @@ export class PendidikanV2Service {
         scheduledTeacherDisplay,
         actualTeacherUserId: s.actualTeacherUserId || null,
         actualTeacherStaffId: s.actualTeacherStaffId || null,
+        startedByUserId: (s as any).startedByUserId || null,
+        actualTeacherName: (s as any).actualTeacherName || null,
         actualTeacherDisplay,
         status: s.status,
         startedAt: startedAtStr,
@@ -568,41 +564,39 @@ export class PendidikanV2Service {
     const humanExecutorName: string = actualTeacherName;
 
     if (currentSession.educationTrack === "STUDI_UMUM") {
+      if (technicalIdentity.status !== "AKTIF") {
+        throw new Error("SUBJECT_ACCOUNT_INACTIVE: Akun mata pelajaran tidak aktif");
+      }
+      if (technicalIdentity.accountType !== "SUBJECT") {
+        throw new Error(
+          "SUBJECT_ACCOUNT_TYPE_REQUIRED: Hanya akun teknikal mata pelajaran (AccountType.SUBJECT) yang berwenang untuk sesi Studi Umum"
+        );
+      }
+
       const binding = await (this.db as any).academicSubjectAccountBinding?.findUnique({
         where: { userId: actorUserId },
       });
 
-      if (binding && binding.isActive) {
-        if (binding.subjectId !== currentSession.subjectId) {
-          throw new Error(
-            "SUBJECT_BINDING_MISMATCH: Akun mata pelajaran tidak berwenang memulai sesi untuk mata pelajaran lain"
-          );
-        }
-        provenance = {
-          assignmentId: null,
-          positionCode: "SUBJECT_ACCOUNT",
-          capabilityCode: "academic.session.start",
-          scopeType: "GLOBAL",
-          unitId: currentSession.subjectId,
-        };
-      } else {
-        // Fallback: evaluate canonical authority for administrative or leadership users
-        const authDecision = await authorizeCanonical({
-          identity: technicalIdentity,
-          capability: "academic.session.start",
-          resourceContext: { educationSessionId: sessionId },
-          dataProvider: this.dataProvider,
-          isMutation: true,
-        });
-
-        if (authDecision.decision !== "ALLOW") {
-          throw new Error(
-            `CANONICAL_AUTHORIZATION_DENIED: Pengguna tidak memiliki wewenang untuk memulai sesi pembelajaran (${authDecision.reason || authDecision.reasonCode})`
-          );
-        }
-        provenance = validateAuditProvenance(authDecision);
-        humanExecutorId = technicalIdentity.userId;
+      if (!binding || !binding.isActive || binding.userId !== actorUserId) {
+        throw new Error(
+          "SUBJECT_BINDING_REQUIRED: Akun tidak memiliki binding aktif mata pelajaran akademik"
+        );
       }
+
+      if (binding.subjectId !== currentSession.subjectId) {
+        throw new Error(
+          "SUBJECT_BINDING_MISMATCH: Akun mata pelajaran tidak berwenang memulai sesi untuk mata pelajaran lain"
+        );
+      }
+
+      provenance = {
+        assignmentId: null,
+        positionCode: "SUBJECT_ACCOUNT",
+        capabilityCode: "academic.session.start",
+        scopeType: null as any,
+        unitId: null as any,
+      };
+      humanExecutorId = null;
     } else {
       // KEPESANTRENAN: Operational identities only (Mudir, MT, MK, PH, approved Musyrifah). ADM is strictly denied.
       if (technicalIdentity.role === "ADM") {
@@ -655,8 +649,9 @@ export class PendidikanV2Service {
         data: {
           status: "STARTED",
           startedAt,
-          actualTeacherUserId: actorUserId,
-          actualTeacherStaffId: technicalIdentity.staffId || null,
+          startedByUserId: actorUserId,
+          actualTeacherUserId: currentSession.educationTrack === "STUDI_UMUM" ? null : actorUserId,
+          actualTeacherStaffId: currentSession.educationTrack === "STUDI_UMUM" ? null : (technicalIdentity.staffId || null),
           actualTeacherName,
           updatedAt: startedAt,
         },
@@ -685,11 +680,14 @@ export class PendidikanV2Service {
         capabilityCode: provenance.capabilityCode,
         assignmentId: provenance.assignmentId || null,
         positionCode: provenance.positionCode,
-        scopeType: provenance.scopeType,
-        unitId: provenance.unitId,
+        scopeType: provenance.scopeType || null,
+        unitId: provenance.unitId || null,
+        authorizationModel: currentSession.educationTrack === "STUDI_UMUM" ? "SUBJECT_ACCOUNT" : "CANONICAL",
+        subjectId: currentSession.subjectId || null,
         beforeState: {
           status: currentSession.status,
           startedAt: null,
+          startedByUserId: null,
           actualTeacherUserId: null,
           actualTeacherStaffId: null,
           actualTeacherName: null,
@@ -698,16 +696,22 @@ export class PendidikanV2Service {
         afterState: {
           status: updatedSession.status,
           startedAt: updatedSession.startedAt,
+          startedByUserId: updatedSession.startedByUserId,
           actualTeacherUserId: updatedSession.actualTeacherUserId,
           actualTeacherStaffId: updatedSession.actualTeacherStaffId,
           actualTeacherName: updatedSession.actualTeacherName,
           scheduledStaffId: updatedSession.scheduledStaffId,
         },
         resourceContext: {
+          authorizationModel: currentSession.educationTrack === "STUDI_UMUM" ? "SUBJECT_ACCOUNT" : "CANONICAL",
+          technicalAccountId: actorUserId,
+          startedByUserId: actorUserId,
+          actualTeacherName,
+          subjectId: currentSession.subjectId,
+          sessionId,
           educationSessionId: sessionId,
           educationTrack: currentSession.educationTrack,
-          subjectId: currentSession.subjectId,
-          actualTeacherName,
+          startedAt,
         },
         clientRequestId: clientRequestId || null,
         ipAddress: ipAddress || null,
@@ -776,10 +780,18 @@ export class PendidikanV2Service {
       );
     }
 
-    if (currentSession.actualTeacherUserId && currentSession.actualTeacherUserId !== actorUserId) {
-      throw new Error(
-        `ACTOR_NOT_ACTUAL_TEACHER: Pengguna (${actorUserId}) bukan pengajar aktual yang memulai sesi ini (${currentSession.actualTeacherUserId})`
-      );
+    if (currentSession.educationTrack === "STUDI_UMUM") {
+      if (currentSession.startedByUserId && currentSession.startedByUserId !== actorUserId) {
+        throw new Error(
+          `ACTOR_NOT_SESSION_STARTER: Akun teknikal (${actorUserId}) bukan akun yang memulai sesi ini (${currentSession.startedByUserId})`
+        );
+      }
+    } else {
+      if (currentSession.actualTeacherUserId && currentSession.actualTeacherUserId !== actorUserId) {
+        throw new Error(
+          `ACTOR_NOT_ACTUAL_TEACHER: Pengguna (${actorUserId}) bukan pengajar aktual yang memulai sesi ini (${currentSession.actualTeacherUserId})`
+        );
+      }
     }
 
     let provenance: {
@@ -793,48 +805,39 @@ export class PendidikanV2Service {
     const humanExecutorName: string = currentSession.actualTeacherName || technicalIdentity.name || technicalIdentity.username;
 
     if (currentSession.educationTrack === "STUDI_UMUM") {
+      if (technicalIdentity.status !== "AKTIF") {
+        throw new Error("SUBJECT_ACCOUNT_INACTIVE: Akun mata pelajaran tidak aktif");
+      }
+      if (technicalIdentity.accountType !== "SUBJECT") {
+        throw new Error(
+          "SUBJECT_ACCOUNT_TYPE_REQUIRED: Hanya akun teknikal mata pelajaran (AccountType.SUBJECT) yang berwenang untuk sesi Studi Umum"
+        );
+      }
+
       const binding = await (this.db as any).academicSubjectAccountBinding?.findUnique({
         where: { userId: actorUserId },
       });
 
-      if (binding && binding.isActive) {
-        if (binding.subjectId !== currentSession.subjectId) {
-          throw new Error(
-            "SUBJECT_BINDING_MISMATCH: Akun mata pelajaran tidak berwenang mencatat materi untuk mata pelajaran lain"
-          );
-        }
-        provenance = {
-          assignmentId: null,
-          positionCode: "SUBJECT_ACCOUNT",
-          capabilityCode: "academic.material.record",
-          scopeType: "GLOBAL",
-          unitId: currentSession.subjectId,
-        };
-      } else if (currentSession.actualTeacherUserId === actorUserId) {
-        provenance = {
-          assignmentId: null,
-          positionCode: "SUBJECT_ACCOUNT",
-          capabilityCode: "academic.material.record",
-          scopeType: "GLOBAL",
-          unitId: currentSession.subjectId,
-        };
-      } else {
-        const authDecision = await authorizeCanonical({
-          identity: technicalIdentity,
-          capability: "academic.material.record",
-          resourceContext: { educationSessionId: sessionId },
-          dataProvider: this.dataProvider,
-          isMutation: true,
-        });
-
-        if (authDecision.decision !== "ALLOW") {
-          throw new Error(
-            `CANONICAL_AUTHORIZATION_DENIED: Pengguna tidak berwenang mencatat materi pembelajaran (${authDecision.reason || authDecision.reasonCode})`
-          );
-        }
-        provenance = validateAuditProvenance(authDecision);
-        humanExecutorId = technicalIdentity.userId;
+      if (!binding || !binding.isActive || binding.userId !== actorUserId) {
+        throw new Error(
+          "SUBJECT_BINDING_REQUIRED: Akun tidak memiliki binding aktif mata pelajaran akademik"
+        );
       }
+
+      if (binding.subjectId !== currentSession.subjectId) {
+        throw new Error(
+          "SUBJECT_BINDING_MISMATCH: Akun mata pelajaran tidak berwenang mencatat materi untuk mata pelajaran lain"
+        );
+      }
+
+      provenance = {
+        assignmentId: null,
+        positionCode: "SUBJECT_ACCOUNT",
+        capabilityCode: "academic.material.record",
+        scopeType: null as any,
+        unitId: null as any,
+      };
+      humanExecutorId = null;
     } else {
       // KEPESANTRENAN: ADM is strictly denied from recording Kepesantrenan materials
       if (technicalIdentity.role === "ADM") {
@@ -860,9 +863,10 @@ export class PendidikanV2Service {
       humanExecutorId = technicalIdentity.userId;
     }
 
-    // 3. Atomic transaction: Update + Audit
+    // Single transaction for state transition & audit log
     return await this.db.$transaction(async (tx) => {
       const recordedAt = new Date();
+
       const updated = await tx.educationSession.update({
         where: { id: sessionId },
         data: {
@@ -873,6 +877,7 @@ export class PendidikanV2Service {
         },
       });
 
+      // Atomic persistent audit log
       const auditRecord: CanonicalAuditRecord = {
         id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         technicalAccountId: actorUserId,
@@ -885,8 +890,10 @@ export class PendidikanV2Service {
         capabilityCode: provenance.capabilityCode,
         assignmentId: provenance.assignmentId || null,
         positionCode: provenance.positionCode,
-        scopeType: provenance.scopeType,
-        unitId: provenance.unitId,
+        scopeType: provenance.scopeType || null,
+        unitId: provenance.unitId || null,
+        authorizationModel: currentSession.educationTrack === "STUDI_UMUM" ? "SUBJECT_ACCOUNT" : "CANONICAL",
+        subjectId: currentSession.subjectId || null,
         beforeState: {
           materi: currentSession.materi,
           materiRecordedAt: currentSession.materiRecordedAt,
@@ -897,7 +904,15 @@ export class PendidikanV2Service {
           materiRecordedAt: updated.materiRecordedAt,
           materiRecordedByUserId: updated.materiRecordedByUserId,
         },
-        resourceContext: { educationSessionId: sessionId, educationTrack: currentSession.educationTrack },
+        resourceContext: {
+          authorizationModel: currentSession.educationTrack === "STUDI_UMUM" ? "SUBJECT_ACCOUNT" : "CANONICAL",
+          educationSessionId: sessionId,
+          educationTrack: currentSession.educationTrack,
+          subjectId: currentSession.subjectId,
+          technicalAccountId: actorUserId,
+          startedByUserId: currentSession.startedByUserId || null,
+          actualTeacherName: currentSession.actualTeacherName || null,
+        },
         clientRequestId: clientRequestId || null,
         ipAddress: ipAddress || null,
         userAgent: userAgent || null,

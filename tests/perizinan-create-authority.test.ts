@@ -40,6 +40,38 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
       },
     });
 
+    // 1b. Capability keasramaan.permission.create
+    await prisma.capability.upsert({
+      where: { code: "keasramaan.permission.create" },
+      update: {},
+      create: {
+        code: "keasramaan.permission.create",
+        namespace: "KEASRAMAAN",
+        name: "Create Permission",
+        description: "Kapabilitas membuat perizinan santri",
+      },
+    });
+
+    // 1c. PositionCapability for PEMBINA_HALAQOH
+    await prisma.positionCapability.upsert({
+      where: {
+        positionId_capabilityCode: {
+          positionId: posPembina.id,
+          capabilityCode: "keasramaan.permission.create",
+        },
+      },
+      update: {
+        businessRuleState: "VERIFIED_PRODUCTION",
+      },
+      create: {
+        id: "cap-pzn-perm-create",
+        positionId: posPembina.id,
+        capabilityCode: "keasramaan.permission.create",
+        scopeType: "UNIT",
+        businessRuleState: "VERIFIED_PRODUCTION",
+      },
+    });
+
     // 2. OrgUnits for Scope
     await prisma.orgUnit.createMany({
       data: [
@@ -426,8 +458,8 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
     const res = await ajukanIzinAction({
       santriId: SANTRI_1,
       jenis: JenisIzin.KELUAR_KOMPLEK,
-      tanggalMulai: "2026-09-28T08:00:00.000Z",
-      tanggalSelesai: "2026-09-28T16:00:00.000Z",
+      tanggalMulai: "2026-09-28T02:00:00.000Z",
+      tanggalSelesai: "2026-09-28T08:00:00.000Z",
       alasan: "Izin beli perlengkapan santri same-day",
     });
 
@@ -528,8 +560,8 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
     const res = await ajukanIzinAction({
       santriId: SANTRI_1,
       jenis: JenisIzin.KELUAR_KOMPLEK,
-      tanggalMulai: "2026-09-28T08:00:00.000Z",
-      tanggalSelesai: "2026-09-28T16:00:00.000Z",
+      tanggalMulai: "2026-09-28T02:00:00.000Z",
+      tanggalSelesai: "2026-09-28T08:00:00.000Z",
       alasan: "Izin keluar membeli kitab di sekitar pesantren jalan kaki",
       usesVehicle: false,
     });
@@ -551,8 +583,8 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
     const res1 = await ajukanIzinAction({
       santriId: SANTRI_1,
       jenis: JenisIzin.KELUAR_KOMPLEK,
-      tanggalMulai: "2026-09-28T08:00:00.000Z",
-      tanggalSelesai: "2026-09-28T16:00:00.000Z",
+      tanggalMulai: "2026-09-28T02:00:00.000Z",
+      tanggalSelesai: "2026-09-28T08:00:00.000Z",
       alasan: "Izin jalan kaki membawa perlengkapan kendaraan motor",
       usesVehicle: false,
     });
@@ -569,8 +601,8 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
     const res2 = await ajukanIzinAction({
       santriId: SANTRI_1,
       jenis: JenisIzin.KELUAR_KOMPLEK,
-      tanggalMulai: "2026-09-28T08:00:00.000Z",
-      tanggalSelesai: "2026-09-28T16:00:00.000Z",
+      tanggalMulai: "2026-09-28T02:00:00.000Z",
+      tanggalSelesai: "2026-09-28T08:00:00.000Z",
       alasan: "Beli kitab dan alat tulis di toko seberang",
       usesVehicle: true,
     });
@@ -611,19 +643,25 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
     assert.strictEqual(data4.status, "MENUNGGU_MK", "same-day with vehicle -> MENUNGGU_MK");
     assert.strictEqual(data4.usesVehicle, true);
 
-    // Backward compatibility alias: input.kendaraan: true -> MENUNGGU_MK
-    const res5 = await ajukanIzinAction({
+    // 5. Timezone boundary regression: same UTC date but DIFFERENT WITA date must NOT be treated as same-day
+    // UTC: 2026-09-28T15:30:00.000Z (23:30 WITA, 28 Sept)
+    // UTC: 2026-09-28T16:30:00.000Z (00:30 WITA, 29 Sept)
+    // Same UTC date '2026-09-28', but different WITA dates ('2026-09-28' vs '2026-09-29') -> isSameDay = false -> MENUNGGU_MK
+    const resTz = await ajukanIzinAction({
       santriId: SANTRI_1,
       jenis: JenisIzin.KELUAR_KOMPLEK,
-      tanggalMulai: "2026-09-28T08:00:00.000Z",
-      tanggalSelesai: "2026-09-28T16:00:00.000Z",
-      alasan: "Urusan dinas santri",
-      kendaraan: true,
+      tanggalMulai: "2026-09-28T15:30:00.000Z",
+      tanggalSelesai: "2026-09-28T16:30:00.000Z",
+      alasan: "Izin keluar menyeberang tengah malam WITA",
+      usesVehicle: false,
     });
-    assert.strictEqual(res5.success, true);
-    const data5 = res5.data as any;
-    assert.strictEqual(data5.status, "MENUNGGU_MK");
-    assert.strictEqual(data5.usesVehicle, true);
+    assert.strictEqual(resTz.success, true);
+    const dataTz = resTz.data as any;
+    assert.strictEqual(
+      dataTz.status,
+      "MENUNGGU_MK",
+      "Timestamps with same UTC date but different WITA dates must NOT be treated as same-day"
+    );
   });
 
   it("7. Pulang -> MENUNGGU_MK regardless of vehicle", async () => {
@@ -724,6 +762,83 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
 
     const postCount = await prisma.perizinanSantri.count();
     assert.strictEqual(postCount, initialCount, "Zero DB writes on cross-scope access attempt");
+  });
+
+  it("9b. Mudhabbir with ACTIVE PEMBINA_HALAQOH assignment but capability is PROPOSED -> DENY", async () => {
+    // Temporarily set capability state to PROPOSED_TBD
+    await prisma.positionCapability.updateMany({
+      where: { capabilityCode: "keasramaan.permission.create" },
+      data: { businessRuleState: "PROPOSED_TBD" },
+    });
+
+    try {
+      setTestSession({
+        userId: "usr-pzn-mudabbir",
+        username: "mudabbir.kamar",
+        role: "PH",
+        staffId: STAFF_MUDABBIR,
+      });
+
+      const res = await ajukanIzinAction({
+        santriId: SANTRI_1,
+        jenis: JenisIzin.KELUAR_KOMPLEK,
+        tanggalMulai: "2026-09-28T08:00:00.000Z",
+        tanggalSelesai: "2026-09-28T16:00:00.000Z",
+        alasan: "Izin dengan kapabilitas PROPOSED",
+        usesVehicle: false,
+      });
+
+      assert.strictEqual(res.success, false, "Proposed capability must be DENIED");
+      assert.match(res.message, /harus APPROVED atau VERIFIED_PRODUCTION/i);
+    } finally {
+      // Restore capability to VERIFIED_PRODUCTION
+      await prisma.positionCapability.updateMany({
+        where: { capabilityCode: "keasramaan.permission.create" },
+        data: { businessRuleState: "VERIFIED_PRODUCTION" },
+      });
+    }
+  });
+
+  it("9c. Mudhabbir with ACTIVE PEMBINA_HALAQOH assignment but NO permission.create capability -> DENY", async () => {
+    // Temporarily delete capability
+    await prisma.positionCapability.deleteMany({
+      where: { capabilityCode: "keasramaan.permission.create" },
+    });
+
+    try {
+      setTestSession({
+        userId: "usr-pzn-mudabbir",
+        username: "mudabbir.kamar",
+        role: "PH",
+        staffId: STAFF_MUDABBIR,
+      });
+
+      const res = await ajukanIzinAction({
+        santriId: SANTRI_1,
+        jenis: JenisIzin.KELUAR_KOMPLEK,
+        tanggalMulai: "2026-09-28T08:00:00.000Z",
+        tanggalSelesai: "2026-09-28T16:00:00.000Z",
+        alasan: "Izin tanpa kapabilitas di position",
+        usesVehicle: false,
+      });
+
+      assert.strictEqual(res.success, false, "Missing capability must be DENIED");
+      assert.match(res.message, /tidak memiliki kapabilitas 'keasramaan.permission.create'/i);
+    } finally {
+      // Restore capability
+      const pos = await prisma.position.findUnique({ where: { code: "PEMBINA_HALAQOH" } });
+      if (pos) {
+        await prisma.positionCapability.create({
+          data: {
+            id: "cap-pzn-perm-create-restored",
+            positionId: pos.id,
+            capabilityCode: "keasramaan.permission.create",
+            scopeType: "UNIT",
+            businessRuleState: "VERIFIED_PRODUCTION",
+          },
+        });
+      }
+    }
   });
 
   it("10. No duplicate MUDABBIR or KEPALA_SEKOLAH canonical Position is created", async () => {

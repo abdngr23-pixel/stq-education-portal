@@ -668,6 +668,7 @@ export interface EducationSessionReadDTO {
   scheduledTeacherDisplay: string | null;
   actualTeacherUserId?: string | null;
   actualTeacherStaffId?: string | null;
+  startedByUserId?: string | null;
   actualTeacherName?: string | null;
   actualTeacherDisplay?: string | null;
   status: "SCHEDULED" | "STARTED" | "COMPLETED" | "CANCELLED";

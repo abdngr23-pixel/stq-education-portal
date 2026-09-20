@@ -65,7 +65,7 @@ export interface HealthV2OperationAudit {
   humanExecutorUsername?: string | null;
   positionCode?: string | null;
   capability: string;
-  scope: string;
+  scope?: string | null;
   targetSantriId: string;
   previousStatus?: HealthStatusV2 | null;
   newStatus?: HealthStatusV2 | null;
@@ -336,7 +336,7 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
         humanExecutorUsername: canonicalAuditRecord.humanExecutorName,
         positionCode: canonicalAuditRecord.positionCode,
         capability: canonicalAuditRecord.capabilityCode,
-        scope: canonicalAuditRecord.scopeType,
+        scope: canonicalAuditRecord.scopeType || null,
         targetSantriId: santri.id,
         previousStatus: null,
         newStatus: statusV2,
@@ -609,7 +609,7 @@ export function createHealthV2Service(deps: HealthV2ServiceDependencies): Health
         humanExecutorUsername: canonicalAuditRecord.humanExecutorName,
         positionCode: canonicalAuditRecord.positionCode,
         capability: canonicalAuditRecord.capabilityCode,
-        scope: canonicalAuditRecord.scopeType,
+        scope: canonicalAuditRecord.scopeType || null,
         targetSantriId: preCase.santriId,
         previousStatus,
         newStatus,

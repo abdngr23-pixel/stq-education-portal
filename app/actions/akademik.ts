@@ -3,7 +3,7 @@
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
 import { JenisNilai } from "@prisma/client";
-import { konversiPredikatNilai } from "@/lib/educational-rules";
+import { konversiPredikatNilai, KEPESANTRENAN_KODE_MAPEL, canManageKepesantrenan } from "@/lib/educational-rules";
 
 export interface InputNilaiData {
   santriId: string;
@@ -14,6 +14,7 @@ export interface InputNilaiData {
   angka: number;
   catatan?: string;
   namaPengajarSnapshot?: string;
+  educationSessionId?: string;
 }
 
 /**
@@ -25,35 +26,159 @@ export async function inputNilaiAction(input: InputNilaiData) {
     return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
   }
 
-  try {
-    let guruStaffId: string | null = null;
-    let namaPengajarSnapshot: string | null = input.namaPengajarSnapshot?.trim() || null;
+  // ADM is strictly denied from academic and kepesantrenan grading
+  if (session.role === "ADM") {
+    return {
+      success: false,
+      message: "Akses Ditolak: Role ADM tidak memiliki hak akses untuk menginput nilai akademik.",
+    };
+  }
 
-    // 1. Check if user is bound to subject account (1 technical account = 1 subject)
+  try {
+    const mapel = await prisma.mataPelajaran.findUnique({
+      where: { id: input.mapelId },
+      select: { id: true, nama: true, kodeMapel: true, kategori: true },
+    });
+
+    if (!mapel) {
+      return { success: false, message: "Mata pelajaran tidak ditemukan." };
+    }
+
+    const isKepesantrenan =
+      mapel.kategori === "KEPESANTRENAN" ||
+      KEPESANTRENAN_KODE_MAPEL.includes(mapel.kodeMapel);
+
+    // Prevent generic endpoint bypass for Kepesantrenan subjects
+    if (isKepesantrenan && !canManageKepesantrenan(session)) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Anda tidak memiliki wewenang mengelola penilaian kepesantrenan.",
+      };
+    }
+
+    let guruStaffId: string | null = null;
+    let namaPengajarSnapshot: string | null = null;
+
+    // Check technical identity & subject binding
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { id: true, status: true, accountType: true },
+    });
+
     const binding = await prisma.academicSubjectAccountBinding.findUnique({
       where: { userId: session.userId },
     });
 
-    if (binding && binding.isActive) {
+    if (binding || user?.accountType === "SUBJECT") {
+      if (!user || user.status !== "AKTIF") {
+        return {
+          success: false,
+          message: "Akses Ditolak: Akun mata pelajaran tidak aktif.",
+        };
+      }
+
+      if (user.accountType !== "SUBJECT") {
+        return {
+          success: false,
+          message: "Akses Ditolak: Hanya akun teknikal mata pelajaran (SUBJECT) yang berwenang menggunakan binding mata pelajaran.",
+        };
+      }
+
+      if (!binding || !binding.isActive || binding.userId !== session.userId) {
+        return {
+          success: false,
+          message: "Akses Ditolak: Akun tidak memiliki binding aktif mata pelajaran.",
+        };
+      }
+
       if (binding.subjectId !== input.mapelId) {
         return {
           success: false,
           message: "Akses Ditolak: Akun mata pelajaran tidak berwenang menginput nilai untuk mata pelajaran lain.",
         };
       }
-    } else if (session.role !== "GA" && session.role !== "KS" && session.role !== "ADM") {
+
+      // Requirement 3: Grading MUST follow a valid started session
+      if (!input.educationSessionId || !input.educationSessionId.trim()) {
+        return {
+          success: false,
+          message: "Akses Ditolak: Penilaian mata pelajaran wajib menyertakan ID sesi pembelajaran (educationSessionId) yang valid dan telah dimulai.",
+        };
+      }
+
+      const educationSession = await prisma.educationSession.findUnique({
+        where: { id: input.educationSessionId.trim() },
+        include: {
+          participants: {
+            select: { santriId: true },
+          },
+        },
+      });
+
+      if (!educationSession) {
+        return {
+          success: false,
+          message: "Akses Ditolak: Sesi pembelajaran tidak ditemukan.",
+        };
+      }
+
+      if (educationSession.educationTrack !== "STUDI_UMUM") {
+        return {
+          success: false,
+          message: "Akses Ditolak: Sesi pembelajaran bukan sesi Studi Umum.",
+        };
+      }
+
+      if (educationSession.status !== "STARTED" && educationSession.status !== "COMPLETED") {
+        return {
+          success: false,
+          message: `Akses Ditolak: Sesi pembelajaran belum dimulai (status: ${educationSession.status}).`,
+        };
+      }
+
+      if (educationSession.startedByUserId !== session.userId) {
+        return {
+          success: false,
+          message: "Akses Ditolak: Sesi pembelajaran ini tidak dimulai oleh akun mata pelajaran Anda.",
+        };
+      }
+
+      if (binding.subjectId !== educationSession.subjectId || input.mapelId !== educationSession.subjectId) {
+        return {
+          success: false,
+          message: "Akses Ditolak: Mata pelajaran sesi tidak sesuai dengan binding akun Anda.",
+        };
+      }
+
+      // Target Santri belongs to valid session participant scope
+      const isParticipant = educationSession.participants.some((p) => p.santriId === input.santriId);
+      if (!isParticipant) {
+        return {
+          success: false,
+          message: "Akses Ditolak: Santri berada di luar cakupan peserta sesi pembelajaran ini.",
+        };
+      }
+
+      // namaPengajarSnapshot MUST be derived SERVER-SIDE from EducationSession.actualTeacherName
+      namaPengajarSnapshot = educationSession.actualTeacherName || null;
+      if (!namaPengajarSnapshot) {
+        return {
+          success: false,
+          message: "Akses Ditolak: Sesi pembelajaran tidak memiliki nama pengajar aktual yang valid.",
+        };
+      }
+    } else if (session.role !== "GA" && session.role !== "KS") {
       return {
         success: false,
         message: `Role ${session.role} tidak memiliki hak akses untuk menginput nilai akademik.`,
       };
     } else {
+      // For GA / KS:
       if (session.staffId) {
         const guruStaff = await prisma.staff.findUnique({ where: { id: session.staffId } });
         if (guruStaff) {
           guruStaffId = guruStaff.id;
-          if (!namaPengajarSnapshot) {
-            namaPengajarSnapshot = guruStaff.nama;
-          }
+          namaPengajarSnapshot = guruStaff.nama;
         }
       }
     }

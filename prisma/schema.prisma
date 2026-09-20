@@ -363,6 +363,7 @@ model User {
   healthCaseEventsExecuted HealthCaseV2Event[] @relation("HealthEventsExecutedByHuman")
 
   // Milestone 3.3B: Pendidikan Foundation Relations
+  startedEducationSessions          EducationSession[]           @relation("StartedEducationSessions")
   actualTeacherEducationSessions    EducationSession[]           @relation("ActualTeacherUserSessions")
   materiRecordedEducationSessions   EducationSession[]           @relation("MateriRecordedUserSessions")
   recordedSessionAttendances        EducationSessionAttendance[] @relation("SessionAttendanceRecorder")
@@ -1409,9 +1410,9 @@ model CanonicalAuditLog {
   entityId                 String?   @map("entity_id")
   capabilityCode           String    @map("capability_code")
   assignmentId             String?   @map("assignment_id")
-  positionCode             String    @map("position_code")
-  scopeType                ScopeType @map("scope_type")
-  unitId                   String    @map("unit_id")
+  positionCode             String     @map("position_code")
+  scopeType                ScopeType? @map("scope_type")
+  unitId                   String?    @map("unit_id")
   beforeState              Json?     @map("before_state")
   afterState               Json?     @map("after_state")
   resourceContext          Json?     @map("resource_context")
@@ -1516,6 +1517,8 @@ model EducationSession {
   actualTeacherStaffId         String?                       @map("actual_teacher_staff_id")
   actualTeacherStaff           Staff?                        @relation("ActualTeacherStaffSessions", fields: [actualTeacherStaffId], references: [id], onDelete: SetNull)
   actualTeacherName            String?                       @map("actual_teacher_name")
+  startedByUserId              String?                       @map("started_by_user_id")
+  startedByUser                User?                         @relation("StartedEducationSessions", fields: [startedByUserId], references: [id], onDelete: SetNull)
   startedAt                    DateTime?                     @map("started_at")
   completedAt                  DateTime?                     @map("completed_at")
   status                       EducationSessionStatus        @default(SCHEDULED)
@@ -1535,6 +1538,7 @@ model EducationSession {
   @@index([status])
   @@index([scheduledStaffId])
   @@index([actualTeacherUserId])
+  @@index([startedByUserId])
   @@map("education_sessions")
 }
 

@@ -5,7 +5,7 @@ import {
   validateProposedSabaqAllocation,
   calculateLatestSabaqPosition,
 } from "./tahfizh-page-allocation";
-import { getStartOfWeekWITA } from "./laporan-bulanan";
+import { getStartOfWeekWITA, getEndOfWeekWITA } from "./sabaqi";
 import { parseWITADate, getTodayWITADateString, getWITADayRange, getWitaDateString } from "./wita-date";
 
 export interface CreateSetoranCoreInput {
@@ -209,10 +209,11 @@ export async function saveSetoranTahfizhCore(
     }
   }
 
-  // 3. Validasi Sabaqi di Sisi Server (Fail-Closed: derived strictly from recorded Sabaq this week)
+  // 3. Validasi Sabaqi di Sisi Server (Fail-Closed: derived strictly from UNION of actual stored Sabaq coverage this week)
   if (input.jenis === "SABQI") {
     const refDate = effectiveOccurredAt;
     const startOfWeek = getStartOfWeekWITA(refDate);
+    const endOfWeek = getEndOfWeekWITA(refDate);
     const activeSabaqThisWeek = await prismaClient.setoranTahfizh.findMany({
       where: {
         santriId: input.santriId,
@@ -220,12 +221,13 @@ export async function saveSetoranTahfizhCore(
         status: { not: "DIBATALKAN" },
         tanggal: {
           gte: startOfWeek,
-          lte: refDate,
+          lte: endOfWeek,
         },
       },
       select: {
         halamanMulai: true,
         halamanSelesai: true,
+        jumlahHalaman: true,
       },
     });
 
@@ -236,18 +238,57 @@ export async function saveSetoranTahfizhCore(
       };
     }
 
-    let minHalaman = Infinity;
-    let maxHalaman = -Infinity;
-    for (const item of activeSabaqThisWeek) {
-      if (item.halamanMulai < minHalaman) minHalaman = item.halamanMulai;
-      if (item.halamanSelesai > maxHalaman) maxHalaman = item.halamanSelesai;
+    // Build the UNION of actual active stored SABAQ allocations since Monday WITA
+    const storedCoverage: Record<number, number> = {};
+    for (const sabaq of activeSabaqThisWeek) {
+      let sabaqAlloc: Record<number, number>;
+      try {
+        sabaqAlloc = allocateSabaqPages(
+          sabaq.halamanMulai,
+          sabaq.halamanSelesai,
+          Number(sabaq.jumlahHalaman)
+        );
+      } catch {
+        // Fallback for legacy / mock data where halMulai-halSelesai range does not match jumlahHalaman
+        sabaqAlloc = {};
+        const minP = Math.min(sabaq.halamanMulai, sabaq.halamanSelesai);
+        const maxP = Math.max(sabaq.halamanMulai, sabaq.halamanSelesai);
+        for (let p = minP; p <= maxP; p++) {
+          sabaqAlloc[p] = 1.0;
+        }
+      }
+      for (const [pageStr, vol] of Object.entries(sabaqAlloc)) {
+        const page = Number(pageStr);
+        storedCoverage[page] = Math.min(1.0, Number(((storedCoverage[page] || 0) + vol).toFixed(2)));
+      }
     }
 
-    if (halMulai < minHalaman || halSelesai > maxHalaman) {
+    // Allocate proposed SABAQI pages
+    let proposedSabaqiAlloc: Record<number, number>;
+    try {
+      proposedSabaqiAlloc = allocateSabaqPages(halMulai, halSelesai, jmlHalaman);
+    } catch (err) {
       return {
         success: false,
-        message: `Rentang halaman Sabaqi (${halMulai}–${halSelesai}) berada di luar batas Sabaq resmi pekan ini (Halaman ${minHalaman}–${maxHalaman}).`,
+        message: (err as Error).message || "Format halaman setoran Sabaqi tidak valid.",
       };
+    }
+
+    for (const [pageStr, reqVol] of Object.entries(proposedSabaqiAlloc)) {
+      const page = Number(pageStr);
+      const coveredVol = storedCoverage[page] || 0;
+      if (coveredVol <= 0) {
+        return {
+          success: false,
+          message: `Halaman ${page} tidak termasuk dalam materi Sabaq sah yang tersimpan pada pekan ini. Setoran Sabaqi harus sepenuhnya tercakup dalam materi Sabaq pekan ini.`,
+        };
+      }
+      if (reqVol > coveredVol + 0.001) {
+        return {
+          success: false,
+          message: `Cakupan halaman ${page} yang diajukan (${reqVol} halaman) melebihi batas Sabaq tersimpan pekan ini (${coveredVol} halaman).`,
+        };
+      }
     }
   }
 

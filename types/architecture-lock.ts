@@ -356,8 +356,10 @@ export interface CanonicalAuditRecord {
   capabilityCode: string;
   assignmentId?: string | null;
   positionCode: string; // Snapshot at time of execution
-  scopeType: ScopeType;  // Snapshot at time of execution
-  unitId: string;        // Snapshot at time of execution
+  scopeType?: ScopeType | null;  // Snapshot at time of execution (nullable for SUBJECT_ACCOUNT)
+  unitId?: string | null;        // Snapshot at time of execution (nullable for SUBJECT_ACCOUNT)
+  authorizationModel?: string | null;
+  subjectId?: string | null;
   resourceContext?: Record<string, unknown> | null;
   reason?: string | null;
   clientRequestId?: string | null;
