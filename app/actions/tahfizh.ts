@@ -30,8 +30,6 @@ export interface CreateSetoranInput {
   catatan?: string;
   clientRequestId?: string;
   alasanLompatanHalaman?: string;
-  isManualSabaqi?: boolean;
-  alasanManualSabaqi?: string;
   tanggalSetoran?: string; // Format YYYY-MM-DD (WITA calendar date)
   occurredAt?: Date | string | null;
 }
@@ -120,6 +118,12 @@ export async function createSetoranAction(input: CreateSetoranInput) {
 
   // Hubungan volume dan rentang halaman secara konsisten
   if (input.jenis === "SABAQ") {
+    if (jmlHalaman > 1.0) {
+      return {
+        success: false,
+        message: "Volume setoran Sabaq tidak boleh melebihi 1.0 halaman per setoran.",
+      };
+    }
     try {
       allocateSabaqPages(halMulai, halSelesai, jmlHalaman);
     } catch (err) {

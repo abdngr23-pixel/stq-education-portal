@@ -3444,6 +3444,13 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
     await executeSqlStatementsOnClient(client, m33bSql);
     const m33bMigrationApplied = true;
 
+    // 9b. Terapkan migrasi Prelaunch Reconciliation jika ada
+    const prelaunchSqlPath = path.join(projectRoot, "prisma/migrations/20260920080000_prelaunch_reconciliation/migration.sql");
+    if (fs.existsSync(prelaunchSqlPath)) {
+      const prelaunchSql = fs.readFileSync(prelaunchSqlPath, "utf-8");
+      await executeSqlStatementsOnClient(client, prelaunchSql);
+    }
+
     // 10. Verifikasi data representatif SETELAH M3.3B
     const postUser = await client.$queryRawUnsafe<Array<{ id: string; email: string; role: string; status: string }>>(
       `SELECT "id", "email", "role"::text, "status"::text FROM "users" WHERE "id" = 'usr-pre-m33b';`
@@ -3882,11 +3889,11 @@ export async function simulateM33bMigrationChain(): Promise<M33bMigrationVerific
     const serviceA = new PendidikanV2Service({ db: clientForTxA as any, dataProvider: serviceDataProvider });
     const serviceB = new PendidikanV2Service({ db: client, dataProvider: serviceDataProvider });
 
-    const promiseA = serviceA.startEducationSession({ sessionId: "sess-svc-real" }, { actorUserId: "usr-substitute" });
+    const promiseA = serviceA.startEducationSession({ sessionId: "sess-svc-real", actualTeacherName: "Ustadz Pengganti" }, { actorUserId: "usr-substitute" });
     await txAEnteredPromise;
 
     // Tx B berjalan saat Tx A sedang berada di tengah transaksi (status masih SCHEDULED)
-    const resultB = await serviceB.startEducationSession({ sessionId: "sess-svc-real" }, { actorUserId: "usr-substitute" });
+    const resultB = await serviceB.startEducationSession({ sessionId: "sess-svc-real", actualTeacherName: "Ustadz Pengganti" }, { actorUserId: "usr-substitute" });
     txBCommitted = true;
 
     // Tx A melanjutkan update CAS: updateMany({ where: { id, status: 'SCHEDULED' } })

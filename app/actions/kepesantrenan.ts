@@ -2,27 +2,12 @@
 
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
-import { UserSession } from "@/types/auth";
 import { KategoriMapel, JenisNilai } from "@prisma/client";
 import {
   KEPESANTRENAN_KODE_MAPEL,
   konversiAngkaKeHurufKepesantrenan as konversiAngkaKeHuruf,
+  canManageKepesantrenan,
 } from "@/lib/educational-rules";
-
-/**
- * Verifikasi apakah sesi pengguna berhak mengelola materi Kepesantrenan
- * Wewenang: KS (Mudir), ADM, MT (Musyrif Tahfizh), PH (Pembina Halaqoh), atau guru mapel terkait.
- * DITOLAK: Guru Akademik umum (GA) yang tidak ditugaskan pada mapel kepesantrenan.
- */
-function canManageKepesantrenan(session: UserSession, mapelGuruId?: string | null): boolean {
-  if (["KS", "ADM", "MT", "PH"].includes(session.role)) {
-    return true;
-  }
-  if (session.role === "GA" && session.staffId && mapelGuruId === session.staffId) {
-    return true;
-  }
-  return false;
-}
 
 /**
  * Server Action: Mengambil daftar 5 Mata Pelajaran Kepesantrenan
@@ -89,8 +74,8 @@ export async function inputNilaiKepesantrenanAction(params: {
       return { success: false, message: "Mata pelajaran ini bukan materi kepesantrenan resmi." };
     }
 
-    // 3. Hak akses: Mudir, MT, PH, atau guru yang ditugaskan
-    if (!canManageKepesantrenan(session, mapel.guruId)) {
+    // 3. Hak akses: Mudir, MT, MK, PH, atau approved Musyrifah Putri
+    if (!canManageKepesantrenan(session)) {
       return {
         success: false,
         message: "Akses Ditolak: Anda tidak memiliki wewenang mengelola penilaian kepesantrenan.",
@@ -224,7 +209,7 @@ export async function getNilaiKepesantrenanSantriAction(params: {
         mapelId: r.mapelId,
         mapelNama: r.mapel.nama,
         kodeMapel: r.mapel.kodeMapel,
-        guruNama: r.guru.nama,
+        guruNama: r.guru?.nama ?? r.namaPengajarSnapshot ?? "Pengajar",
         semester: r.semester,
         tahunAjaran: r.tahunAjaran,
         jenis: r.jenis,

@@ -416,3 +416,143 @@ export async function recordAuditLog(
   }
 }
 
+/**
+ * Canonical Mudhabbir Authorization Resolver (PEMBINA_HALAQOH)
+ * Derived strictly from SESSION -> IDENTITY -> ACTIVE ASSIGNMENT -> Position PEMBINA_HALAQOH.
+ * Session boolean (session.isMudabbir) may exist as derived metadata, but confers ZERO authority.
+ */
+export async function resolveUserIsMudabbir(userId?: string | null): Promise<boolean> {
+  if (!userId) return false;
+  try {
+    const asg = await prisma.assignment.findFirst({
+      where: {
+        userId,
+        status: "ACTIVE",
+        position: { code: "PEMBINA_HALAQOH" },
+      },
+    });
+    return Boolean(asg);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolves permitted unit IDs assigned to a Mudabbir (PEMBINA_HALAQOH)
+ */
+export async function getMudabbirAssignedUnitIds(userId?: string | null): Promise<string[]> {
+  if (!userId) return [];
+  try {
+    const assignments = await prisma.assignment.findMany({
+      where: {
+        userId,
+        status: "ACTIVE",
+        position: { code: "PEMBINA_HALAQOH" },
+      },
+      include: {
+        scopedUnits: true,
+      },
+    });
+    const unitIds = new Set<string>();
+    for (const asg of assignments) {
+      if (asg.unitId) unitIds.add(asg.unitId);
+      if (asg.scopedUnits) {
+        for (const su of asg.scopedUnits) {
+          if (su.unitId) unitIds.add(su.unitId);
+        }
+      }
+    }
+    return Array.from(unitIds);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Resolves whether a Mudabbir (PEMBINA_HALAQOH) has the required 'keasramaan.permission.create' capability.
+ * Pipeline: IDENTITY -> ACTIVE Assignment -> Position PEMBINA_HALAQOH -> keasramaan.permission.create capability -> VERIFIED_PRODUCTION ONLY.
+ */
+export async function resolveMudabbirPermissionCapability(userId?: string | null): Promise<{
+  authorized: boolean;
+  reason?: string;
+  assignmentId?: string;
+  positionId?: string;
+  scopeType?: string;
+}> {
+  if (!userId) {
+    return { authorized: false, reason: "Identitas pengguna tidak ditemukan." };
+  }
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, status: true },
+    });
+    if (!user || user.status !== "AKTIF") {
+      return { authorized: false, reason: "Akun pengguna tidak aktif atau tidak terdaftar." };
+    }
+
+    const now = new Date();
+    const assignments = await prisma.assignment.findMany({
+      where: {
+        userId,
+        status: "ACTIVE",
+        validFrom: { lte: now },
+        OR: [{ validUntil: null }, { validUntil: { gt: now } }],
+        position: {
+          code: "PEMBINA_HALAQOH",
+          isActive: true,
+        },
+      },
+      include: {
+        position: {
+          include: {
+            capabilities: {
+              where: {
+                capabilityCode: "keasramaan.permission.create",
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (assignments.length === 0) {
+      return {
+        authorized: false,
+        reason: "Pengguna tidak memiliki assignment aktif untuk posisi PEMBINA_HALAQOH.",
+      };
+    }
+    for (const asg of assignments) {
+      const caps = asg.position.capabilities;
+      const permCap = caps.find(
+        (c: { capabilityCode: string }) => c.capabilityCode === "keasramaan.permission.create"
+      );
+      if (permCap) {
+        const stateStr = String(permCap.businessRuleState);
+        if (stateStr === "VERIFIED_PRODUCTION") {
+          return {
+            authorized: true,
+            assignmentId: asg.id,
+            positionId: asg.positionId,
+            scopeType: permCap.scopeType,
+          };
+        } else {
+          return {
+            authorized: false,
+            reason: `Kapabilitas 'keasramaan.permission.create' berstatus '${permCap.businessRuleState}' (harus VERIFIED_PRODUCTION).`,
+          };
+        }
+      }
+    }
+
+    return {
+      authorized: false,
+      reason: "Posisi PEMBINA_HALAQOH tidak memiliki kapabilitas 'keasramaan.permission.create'.",
+    };
+  } catch (err) {
+    return {
+      authorized: false,
+      reason: `Gagal memverifikasi kapabilitas: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}

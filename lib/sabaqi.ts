@@ -8,7 +8,7 @@
  * 3. Rentang Sabaqi berasal dari data SABAQ tersebut (min halamanMulai s.d. max halamanSelesai).
  * 4. Jika tidak ada Sabaq baru hari ini/pekan ini, rentang tidak bertambah.
  * 5. Jika belum ada Sabaq pekan berjalan, tampilkan "Belum ada Sabaq tersimpan pada pekan ini."
- *    dan izinkan Musyrif menginput manual dengan catatan wajib.
+ *    (manual fallback dilarang / fail-closed).
  */
 
 import { getJuzByPage } from "@/lib/quran-metadata";
@@ -50,6 +50,14 @@ export function getStartOfWeekWITA(refDate: Date = new Date()): Date {
 }
 
 /**
+ * Menentukan batas akhir pekan (Ahad pukul 23:59:59.999 WITA) dalam objek UTC Date.
+ */
+export function getEndOfWeekWITA(refDate: Date = new Date()): Date {
+  const startOfWeek = getStartOfWeekWITA(refDate);
+  return new Date(startOfWeek.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
+}
+
+/**
  * Menghitung rekomendasi Sabaqi murni dari setoran SABAQ nyata pekan berjalan.
  */
 export function hitungRekomendasiSabaqiPekan(
@@ -74,7 +82,7 @@ export function hitungRekomendasiSabaqiPekan(
       juzSelesai: 1,
       sumberKeterangan: "Belum ada Sabaq tersimpan pada pekan ini.",
       labelLengkap: "Belum ada Sabaq tersimpan pada pekan ini.",
-      isManualAllowed: true,
+      isManualAllowed: false,
     };
   }
 
@@ -112,6 +120,6 @@ export function hitungRekomendasiSabaqiPekan(
     juzSelesai,
     sumberKeterangan: "Berdasarkan setoran Sabaq yang tersimpan pada pekan ini.",
     labelLengkap: `${labelRentang} (${totalHalaman} Hlm) — Berdasarkan setoran Sabaq yang tersimpan pada pekan ini.`,
-    isManualAllowed: true,
+    isManualAllowed: false,
   };
 }

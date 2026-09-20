@@ -83,7 +83,7 @@ describe("Uji Kelayakan Operasional STQ DUC (Fase Finalisasi & Quality Gates)", 
       const res = hitungRekomendasiSabaqiPekan(emptySabaq, new Date());
       assert.equal(res.hasSabaq, false);
       assert.equal(res.sumberKeterangan, "Belum ada Sabaq tersimpan pada pekan ini.");
-      assert.equal(res.isManualAllowed, true);
+      assert.equal(res.isManualAllowed, false);
     });
 
     it("harus menghitung rentang Sabaqi murni dari setoran Sabaq yang tersimpan sejak Senin", () => {

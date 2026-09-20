@@ -26,9 +26,9 @@ export async function getKebijakanRewardSanksiAction() {
           minNilaiTasmi: 80.0,
           minNilaiSimaan: 85.0,
           bintangTasmi: 1,
-          bintangSimaan: 2,
+          bintangSimaan: 1,
           hakLiburTasmiHari: 1,
-          hakLiburSimaanHari: 2,
+          hakLiburSimaanHari: 1,
           minPersenTargetBulanan: 100.0,
           durasiKehilanganKunjunganHari: 30,
           isActive: true,
@@ -201,11 +201,11 @@ export async function prosesRewardTasmiSimaanAction(tasmiSimaanId: string) {
 
     const jlhBintang = tasmi.jenis === "TASMI"
       ? (kebijakan?.bintangTasmi ?? 1)
-      : (kebijakan?.bintangSimaan ?? 2);
+      : (kebijakan?.bintangSimaan ?? 1);
 
     const jlhHariLibur = tasmi.jenis === "TASMI"
       ? (kebijakan?.hakLiburTasmiHari ?? 1)
-      : (kebijakan?.hakLiburSimaanHari ?? 2);
+      : (kebijakan?.hakLiburSimaanHari ?? 1);
 
     // 1. Buat Hak Libur
     const hakLibur = await prisma.hakLiburSantri.create({

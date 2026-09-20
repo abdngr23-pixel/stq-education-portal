@@ -1,3 +1,7 @@
+(process.env as Record<string, string | undefined>).NODE_ENV = "test";
+process.env.IS_TEST_RUN = "true";
+process.env.ALLOW_ISOLATED_TEST_DB = "true";
+
 import test, { describe, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
@@ -167,8 +171,8 @@ describe("INTEGRASI P0.1: Concurrency, Idempotensi, & Persistensi Nyata (Postgre
         jenis: "SABAQ",
         juz: 22,
         halamanMulai: 422,
-        halamanSelesai: 423,
-        jumlahHalaman: 2,
+        halamanSelesai: 422,
+        jumlahHalaman: 1,
         nilai: "MUMTAZ",
         clientRequestId,
       },
@@ -184,8 +188,8 @@ describe("INTEGRASI P0.1: Concurrency, Idempotensi, & Persistensi Nyata (Postgre
         jenis: "SABAQ",
         juz: 22,
         halamanMulai: 422,
-        halamanSelesai: 423,
-        jumlahHalaman: 2,
+        halamanSelesai: 422,
+        jumlahHalaman: 1,
         nilai: "MUMTAZ",
         clientRequestId,
       },
@@ -261,9 +265,9 @@ describe("INTEGRASI P0.1: Concurrency, Idempotensi, & Persistensi Nyata (Postgre
     assert.equal(details?.alasanLompatanHalaman, "Pengulangan maqra khusus sesuai instruksi musyrif");
   });
 
-  test("4. Validasi Server Sabaqi Nyata Tanpa Data Palsu (Poin 5)", async () => {
+  test("4. Validasi Server Sabaqi Fail-Closed Tanpa Rekaman Sabaq (TAHF-06)", async () => {
     // Santri Sabaqi Clean (TEST_SAN_SABAQI) belum memiliki setoran Sabaq pada pekan berjalan.
-    // Jika mencoba input Sabaqi tanpa konfirmasi manual, server wajib menolak dengan pesan informatif
+    // Server wajib menolak tegas tanpa override manual
     const resSabaqiTanpaManual = await saveSetoranTahfizhCore(prisma, {
       input: {
         santriId: FIXTURES.SANTRI_SABAQI,
@@ -278,45 +282,7 @@ describe("INTEGRASI P0.1: Concurrency, Idempotensi, & Persistensi Nyata (Postgre
       context: testContext,
     });
     assert.equal(resSabaqiTanpaManual.success, false);
-    assert.match(resSabaqiTanpaManual.message, /belum ada sabaq tersimpan pada pekan ini/i);
-
-    // Jika dicentang manual tetapi alasan < 5 karakter: Wajib ditolak
-    const resSabaqiShortReason = await saveSetoranTahfizhCore(prisma, {
-      input: {
-        santriId: FIXTURES.SANTRI_SABAQI,
-        jenis: "SABQI",
-        juz: 5,
-        halamanMulai: 96,
-        halamanSelesai: 100,
-        jumlahHalaman: 5,
-        nilai: "MUMTAZ",
-        isManualSabaqi: true,
-        alasanManualSabaqi: "abc",
-        clientRequestId: `SABAQI-SHORT-${Date.now()}`,
-      },
-      context: testContext,
-    });
-    assert.equal(resSabaqiShortReason.success, false);
-    assert.match(resSabaqiShortReason.message, /minimal 5 karakter/i);
-
-    // Jika manual dengan alasan valid >= 5 karakter: Diterima
-    const resSabaqiValid = await saveSetoranTahfizhCore(prisma, {
-      input: {
-        santriId: FIXTURES.SANTRI_SABAQI,
-        jenis: "SABQI",
-        juz: 5,
-        halamanMulai: 96,
-        halamanSelesai: 100,
-        jumlahHalaman: 5,
-        nilai: "MUMTAZ",
-        isManualSabaqi: true,
-        alasanManualSabaqi: "Santri baru pindah halaqoh dan mengulang materi pekan lalu",
-        clientRequestId: `SABAQI-VALID-${Date.now()}`,
-      },
-      context: testContext,
-    });
-    assert.equal(resSabaqiValid.success, true);
-    assert.ok(resSabaqiValid.data);
+    assert.match(resSabaqiTanpaManual.message, /belum ada setoran sabaq tersimpan pada pekan berjalan/i);
   });
 
   test("5. Santri Khatam 30 Juz (Halaman 604 Selesai) Dinonaktifkan dari Sabaq Baru", async () => {
@@ -362,8 +328,8 @@ describe("INTEGRASI P0.1: Concurrency, Idempotensi, & Persistensi Nyata (Postgre
         jenis: "SABAQ",
         juz: 22,
         halamanMulai: 422,
-        halamanSelesai: 423,
-        jumlahHalaman: 2,
+        halamanSelesai: 422,
+        jumlahHalaman: 1,
         nilai: "MUMTAZ",
         clientRequestId: `NO-WA-PAYLOAD-${Date.now()}`,
       },

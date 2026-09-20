@@ -7,7 +7,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { ajukanIzinAction, verifikasiIzinAction, getPerizinanListAction } from "@/app/actions/kesantrian";
+import {
+  ajukanIzinAction,
+  verifikasiIzinAction,
+  getPerizinanListAction,
+  konfirmasiKembaliIzinAction,
+  batalkanIzinAction,
+} from "@/app/actions/kesantrian";
 import { WhatsAppDialog } from "@/components/ui/whatsapp-dialog";
 import { buildIzinSantriWAMessage } from "@/lib/whatsapp";
 import {
@@ -22,14 +28,21 @@ import {
 export interface IzinItem {
   id: string;
   kodeIzin: string;
+  batchId?: string | null;
   santriNama: string;
   santriNis?: string;
   kelas: string;
   jenis: "PULANG" | "KELUAR_KOMPLEK" | "SAKIT";
   durasi: string;
   alasan: string;
-  status: "MENUNGGU_MK" | "MENUNGGU_KS" | "DISETUJUI" | "DITOLAK";
+  status: "MENUNGGU_MK" | "MENUNGGU_KS" | "DISETUJUI" | "DITOLAK" | "KEMBALI_TERKONFIRMASI" | "DIBATALKAN";
   diverifikasiOleh?: string;
+  returnedAt?: string | null;
+  returnedBy?: string | null;
+  isLate?: boolean | null;
+  cancelledAt?: string | null;
+  cancelledBy?: string | null;
+  cancelReason?: string | null;
 }
 
 export interface PerizinanModuleProps {
@@ -74,18 +87,25 @@ export function PerizinanModule({
               return {
                 id: item.id,
                 kodeIzin: item.kodeIzin,
+                batchId: item.batchId,
                 santriNama: item.santri.nama,
                 santriNis: item.santri.nis,
                 kelas: item.santri.kelas,
                 jenis: item.jenis as "PULANG" | "KELUAR_KOMPLEK" | "SAKIT",
                 durasi: `${diffDays} Hari`,
                 alasan: item.alasan,
-                status: item.status as "MENUNGGU_MK" | "MENUNGGU_KS" | "DISETUJUI" | "DITOLAK",
+                status: item.status as IzinItem["status"],
                 diverifikasiOleh: item.disetujuiKS
                   ? `Disetujui KS: ${item.disetujuiKS.nama}`
                   : item.disetujuiMK
                   ? `Diverifikasi MK: ${item.disetujuiMK.nama}`
                   : undefined,
+                returnedAt: item.returnedAt ? new Date(item.returnedAt).toISOString() : null,
+                returnedBy: item.returnedBy,
+                isLate: item.isLate,
+                cancelledAt: item.cancelledAt ? new Date(item.cancelledAt).toISOString() : null,
+                cancelledBy: item.cancelledBy,
+                cancelReason: item.cancelReason,
               };
             })
           );
@@ -147,7 +167,7 @@ export function PerizinanModule({
   // Handler Submit Pengajuan Izin
   const handleAjukanIzin = () => {
     setFeedback(null);
-    if (userRole !== "KS" && userRole !== "MK") {
+    if (!["KS", "MK", "ADM", "OSDA", "WS", "ST"].includes(userRole)) {
       setFeedback({
         type: "error",
         message: "Akses ditolak: Anda tidak memiliki kewenangan mencatat perizinan santri.",
@@ -178,16 +198,25 @@ export function PerizinanModule({
       });
 
       if (res.success && res.data) {
+        // Handle single or array return from batch action
+        const dataItem = (Array.isArray(res.data) ? res.data[0] : res.data) as {
+          id: string;
+          kodeIzin: string;
+          status: string;
+          batchId?: string | null;
+        };
+
         const newIzin: IzinItem = {
-          id: res.data.id,
-          kodeIzin: res.data.kodeIzin,
+          id: dataItem.id,
+          kodeIzin: dataItem.kodeIzin,
+          batchId: dataItem.batchId || (res as { batchId?: string }).batchId || null,
           santriNama: targetSantri.nama,
           santriNis: targetSantri.nis,
           kelas: targetSantri.kelas,
           jenis: jenisIzin,
           durasi: `${durasiHari} Hari`,
           alasan: alasanIzin,
-          status: "MENUNGGU_MK",
+          status: (dataItem.status || "MENUNGGU_MK") as IzinItem["status"],
           diverifikasiOleh: `Diajukan oleh ${currentUserName}`,
         };
 
@@ -196,7 +225,7 @@ export function PerizinanModule({
         setAlasanIzin("");
         setFeedback({
           type: "success",
-          message: `Permohonan izin untuk ${targetSantri.nama} (${res.data.kodeIzin}) berhasil diajukan dan masuk ke antrean verifikasi MK.`,
+          message: res.message || `Permohonan izin untuk ${targetSantri.nama} (${dataItem.kodeIzin}) berhasil diajukan.`,
         });
 
         // WhatsApp notification ready
@@ -204,11 +233,11 @@ export function PerizinanModule({
           santriNama: targetSantri.nama,
           santriNis: targetSantri.nis,
           kelas: targetSantri.kelas,
-          kodeIzin: res.data.kodeIzin,
+          kodeIzin: dataItem.kodeIzin,
           jenisIzin,
           durasi: `${durasiHari} Hari`,
           alasan: alasanIzin,
-          status: "MENUNGGU_MK",
+          status: (dataItem.status || "MENUNGGU_MK") as "MENUNGGU_MK" | "MENUNGGU_KS" | "DISETUJUI" | "DITOLAK",
           diverifikasiOleh: currentUserName,
           batasKembali: returnDate.toLocaleDateString("id-ID"),
         });
@@ -225,7 +254,7 @@ export function PerizinanModule({
         } else {
           setFeedback({
             type: "success",
-            message: "Izin berhasil diajukan. Nomor WhatsApp wali belum tersedia.",
+            message: res.message || "Izin berhasil diajukan. Nomor WhatsApp wali belum tersedia.",
           });
         }
 
@@ -281,6 +310,96 @@ export function PerizinanModule({
     });
   };
 
+  // Handler Konfirmasi Santri Kembali
+  const handleKonfirmasiKembali = () => {
+    if (!selectedDetailIzin) return;
+    startTransition(async () => {
+      const res = await konfirmasiKembaliIzinAction({ izinId: selectedDetailIzin.id });
+      if (res.success && res.data) {
+        const now = new Date().toISOString();
+        setList((prev) =>
+          prev.map((iz) =>
+            iz.id === selectedDetailIzin.id
+              ? {
+                  ...iz,
+                  status: "KEMBALI_TERKONFIRMASI",
+                  returnedAt: now,
+                  returnedBy: currentUserName,
+                  isLate: res.data.isLate,
+                }
+              : iz
+          )
+        );
+        setSelectedDetailIzin((prev) =>
+          prev
+            ? {
+                ...prev,
+                status: "KEMBALI_TERKONFIRMASI",
+                returnedAt: now,
+                returnedBy: currentUserName,
+                isLate: res.data.isLate,
+              }
+            : null
+        );
+        setFeedback({ type: "success", message: res.message });
+        if (onIzinUpdated) onIzinUpdated();
+      } else {
+        setFeedback({ type: "error", message: res.message || "Gagal mengonfirmasi kepulangan santri." });
+      }
+    });
+  };
+
+  // State & Handler Batalkan Izin (Soft Cancellation)
+  const [showCancelPrompt, setShowCancelPrompt] = useState(false);
+  const [alasanPembatalan, setAlasanPembatalan] = useState("");
+
+  const handleBatalkanIzin = () => {
+    if (!selectedDetailIzin) return;
+    if (alasanPembatalan.trim().length < 3) {
+      setFeedback({ type: "error", message: "Alasan pembatalan minimal 3 karakter." });
+      return;
+    }
+    startTransition(async () => {
+      const res = await batalkanIzinAction({
+        izinId: selectedDetailIzin.id,
+        alasan: alasanPembatalan.trim(),
+      });
+      if (res.success && res.data) {
+        const now = new Date().toISOString();
+        setList((prev) =>
+          prev.map((iz) =>
+            iz.id === selectedDetailIzin.id
+              ? {
+                  ...iz,
+                  status: "DIBATALKAN",
+                  cancelledAt: now,
+                  cancelledBy: currentUserName,
+                  cancelReason: alasanPembatalan.trim(),
+                }
+              : iz
+          )
+        );
+        setSelectedDetailIzin((prev) =>
+          prev
+            ? {
+                ...prev,
+                status: "DIBATALKAN",
+                cancelledAt: now,
+                cancelledBy: currentUserName,
+                cancelReason: alasanPembatalan.trim(),
+              }
+            : null
+        );
+        setShowCancelPrompt(false);
+        setAlasanPembatalan("");
+        setFeedback({ type: "success", message: res.message });
+        if (onIzinUpdated) onIzinUpdated();
+      } else {
+        setFeedback({ type: "error", message: res.message || "Gagal membatalkan izin." });
+      }
+    });
+  };
+
   return (
     <div className="space-y-5">
       {/* 1. Header Operasional & Tombol Tindakan Utama */}
@@ -295,7 +414,7 @@ export function PerizinanModule({
           </p>
         </div>
 
-        {(userRole === "KS" || userRole === "MK") && (
+        {["KS", "MK", "ADM", "OSDA", "WS", "ST"].includes(userRole) && (
           <Button
             variant="primary"
             onClick={() => setShowAddDialog(true)}
@@ -354,7 +473,9 @@ export function PerizinanModule({
             { id: "MENUNGGU_MK", label: "Menunggu MK" },
             { id: "MENUNGGU_KS", label: "Menunggu KS" },
             { id: "DISETUJUI", label: "Disetujui" },
+            { id: "KEMBALI_TERKONFIRMASI", label: "Kembali" },
             { id: "DITOLAK", label: "Ditolak" },
+            { id: "DIBATALKAN", label: "Dibatalkan" },
           ].map((pill) => (
             <button
               key={pill.id}
@@ -388,6 +509,11 @@ export function PerizinanModule({
                       <span className="text-xs font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
                         {item.kodeIzin}
                       </span>
+                      {item.batchId && (
+                        <span className="text-[10px] font-mono font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">
+                          Batch: {item.batchId}
+                        </span>
+                      )}
                       <h4 className="text-sm font-bold text-slate-900">
                         {item.santriNama}
                       </h4>
@@ -417,19 +543,30 @@ export function PerizinanModule({
                   </div>
 
                   <div className="flex sm:flex-col items-center sm:items-end justify-between gap-2 shrink-0">
-                    <Badge
-                      variant={
-                        item.status === "DISETUJUI"
-                          ? "green"
-                          : item.status === "DITOLAK"
-                          ? "ditolak"
-                          : "orange"
-                      }
-                      size="sm"
-                      className="font-bold"
-                    >
-                      {item.status.replace(/_/g, " ")}
-                    </Badge>
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge
+                        variant={
+                          item.status === "DISETUJUI"
+                            ? "green"
+                            : item.status === "KEMBALI_TERKONFIRMASI"
+                            ? "sky"
+                            : item.status === "DITOLAK"
+                            ? "ditolak"
+                            : item.status === "DIBATALKAN"
+                            ? "neutral"
+                            : "orange"
+                        }
+                        size="sm"
+                        className="font-bold"
+                      >
+                        {item.status === "KEMBALI_TERKONFIRMASI" ? "KEMBALI" : item.status.replace(/_/g, " ")}
+                      </Badge>
+                      {item.isLate && item.status === "KEMBALI_TERKONFIRMASI" && (
+                        <span className="text-[10px] text-amber-600 font-bold">
+                          ⚠️ Terlambat
+                        </span>
+                      )}
+                    </div>
                     <span className="text-[11px] text-[#0E7C3A] font-bold hover:underline">
                       Lihat Rincian &rarr;
                     </span>
@@ -608,12 +745,83 @@ export function PerizinanModule({
                   <span className="text-slate-500">Durasi:</span>
                   <span className="font-semibold">{selectedDetailIzin.durasi}</span>
                 </div>
+                {selectedDetailIzin.batchId && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Batch ID:</span>
+                    <span className="font-mono text-xs font-semibold text-slate-700">
+                      {selectedDetailIzin.batchId}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center pt-1 border-t border-slate-200/60">
                   <span className="text-slate-500">Status Saat Ini:</span>
-                  <Badge variant={selectedDetailIzin.status === "DISETUJUI" ? "green" : "orange"} size="sm">
-                    {selectedDetailIzin.status}
+                  <Badge
+                    variant={
+                      selectedDetailIzin.status === "DISETUJUI"
+                        ? "green"
+                        : selectedDetailIzin.status === "KEMBALI_TERKONFIRMASI"
+                        ? "sky"
+                        : selectedDetailIzin.status === "DITOLAK"
+                        ? "ditolak"
+                        : selectedDetailIzin.status === "DIBATALKAN"
+                        ? "neutral"
+                        : "orange"
+                    }
+                    size="sm"
+                  >
+                    {selectedDetailIzin.status === "KEMBALI_TERKONFIRMASI"
+                      ? "KEMBALI"
+                      : selectedDetailIzin.status.replace(/_/g, " ")}
                   </Badge>
                 </div>
+                {selectedDetailIzin.status === "KEMBALI_TERKONFIRMASI" && (
+                  <div className="pt-2 border-t border-slate-200/60 space-y-1">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500">Waktu Kembali:</span>
+                      <span className="font-semibold text-emerald-700">
+                        {selectedDetailIzin.returnedAt
+                          ? new Date(selectedDetailIzin.returnedAt).toLocaleDateString("id-ID", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "Terkonfirmasi"}
+                      </span>
+                    </div>
+                    {selectedDetailIzin.returnedBy && (
+                      <div className="flex justify-between items-center text-[11px] text-slate-500">
+                        <span>Dikonfirmasi oleh:</span>
+                        <span>{selectedDetailIzin.returnedBy}</span>
+                      </div>
+                    )}
+                    {selectedDetailIzin.isLate && (
+                      <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs font-semibold">
+                        ⚠️ Terlambat Kembali (Informasional)
+                      </div>
+                    )}
+                  </div>
+                )}
+                {selectedDetailIzin.status === "DIBATALKAN" && (
+                  <div className="pt-2 border-t border-slate-200/60 space-y-1">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500">Status Pembatalan:</span>
+                      <span className="font-semibold text-rose-700">Dibatalkan</span>
+                    </div>
+                    {selectedDetailIzin.cancelledBy && (
+                      <div className="flex justify-between items-center text-[11px] text-slate-500">
+                        <span>Dibatalkan oleh:</span>
+                        <span>{selectedDetailIzin.cancelledBy}</span>
+                      </div>
+                    )}
+                    {selectedDetailIzin.cancelReason && (
+                      <div className="p-2 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 text-xs">
+                        <strong>Alasan:</strong> {selectedDetailIzin.cancelReason}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -657,6 +865,71 @@ export function PerizinanModule({
                   </div>
                 </div>
               )}
+
+              {/* Kontrol Konfirmasi Kepulangan Santri (MK, KS, ADM, OSDA) */}
+              {selectedDetailIzin.status === "DISETUJUI" &&
+                ["MK", "KS", "ADM", "OSDA"].includes(userRole) && (
+                  <div className="pt-2 border-t border-slate-100">
+                    <Button
+                      variant="primary"
+                      onClick={handleKonfirmasiKembali}
+                      disabled={isPending}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold min-h-[40px]"
+                    >
+                      {isPending ? "Memproses..." : "✓ Konfirmasi Santri Kembali"}
+                    </Button>
+                  </div>
+                )}
+
+              {/* Kontrol Pembatalan Izin (Soft Cancellation) */}
+              {selectedDetailIzin.status !== "KEMBALI_TERKONFIRMASI" &&
+                selectedDetailIzin.status !== "DIBATALKAN" &&
+                (["MK", "KS", "ADM", "OSDA"].includes(userRole) ||
+                  (["ST", "WS"].includes(userRole) && selectedDetailIzin.status === "MENUNGGU_MK")) && (
+                  <div className="pt-2 border-t border-slate-100">
+                    {!showCancelPrompt ? (
+                      <Button
+                        variant="secondary"
+                        onClick={() => setShowCancelPrompt(true)}
+                        className="w-full border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-semibold min-h-[38px]"
+                      >
+                        Batalkan Izin Ini
+                      </Button>
+                    ) : (
+                      <div className="space-y-2 p-3 bg-rose-50/60 rounded-xl border border-rose-200">
+                        <label className="text-xs font-bold text-rose-900 block">
+                          Alasan Pembatalan:
+                        </label>
+                        <Input
+                          value={alasanPembatalan}
+                          onChange={(e) => setAlasanPembatalan(e.target.value)}
+                          placeholder="Masukkan alasan pembatalan..."
+                          className="min-h-[36px] text-xs bg-white"
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              setShowCancelPrompt(false);
+                              setAlasanPembatalan("");
+                            }}
+                            className="flex-1 text-xs min-h-[36px]"
+                          >
+                            Tutup
+                          </Button>
+                          <Button
+                            variant="primary"
+                            onClick={handleBatalkanIzin}
+                            disabled={isPending || alasanPembatalan.trim().length < 3}
+                            className="flex-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold min-h-[36px]"
+                          >
+                            {isPending ? "Membatalkan..." : "Konfirmasi Batal"}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
             </div>
           </div>
         </div>

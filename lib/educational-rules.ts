@@ -1,12 +1,20 @@
+import type { UserSession } from "@/types/auth";
+
 /**
- * Centralized Educational Business Rules
- * STQ Education Portal
- *
- * Sesuai temuan A17 Audit STQ 2026-09-08:
- * Ambang batas Surat Peringatan (SP), predikat nilai akademik,
- * aturan doubling sanksi pelanggaran, perizinan, dan ikhtibar
- * diekstrak ke satu modul bersama yang dipakai oleh produksi dan diuji oleh automated tests.
+ * Verifikasi apakah sesi pengguna berhak mengelola materi/nilai Kepesantrenan
+ * Wewenang operasional final: MUDIR / KS, MT, MK, PH (Mudhabbir), atau approved Musyrifah Putri.
+ * DITOLAK: ADM (selalu DENY), GA (selalu DENY, fallback mapel.guruId dihapus).
  */
+export function canManageKepesantrenan(session: UserSession): boolean {
+  if (session.role === "ADM") {
+    return false;
+  }
+  if (["KS", "MT", "MK", "PH"].includes(session.role) || session.isMusyrifahPutri) {
+    return true;
+  }
+  return false;
+}
+
 
 /**
  * Status Formal Konsolidasi Aturan Pendidikan:

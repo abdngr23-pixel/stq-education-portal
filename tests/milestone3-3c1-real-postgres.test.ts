@@ -10,6 +10,7 @@ import { PrismaClient } from "@prisma/client";
 import { startTestDatabase, stopTestDatabase } from "./test-db-manager";
 import {
   checkPendidikanV2ProductionReadiness,
+  evaluateKepesantrenanAcademicAuthPolicies,
   CANONICAL_READINESS_GATE_NAMES,
   CANONICAL_REQUIRED_POSITION_CODES,
   CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS,
@@ -102,8 +103,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
 
     it("1.3 Real enum values: MASBUK is rejected by PostgreSQL EducationAttendanceStatus enum", async () => {
       const enumValues = await prisma.$queryRawUnsafe<Array<{ enumlabel: string }>>(`
-        SELECT enumlabel FROM pg_enum 
-        JOIN pg_type ON pg_enum.enumtypid = pg_type.oid 
+        SELECT enumlabel FROM pg_enum
+        JOIN pg_type ON pg_enum.enumtypid = pg_type.oid
         WHERE pg_type.typname = 'EducationAttendanceStatus';
       `);
       const labels = enumValues.map((v) => v.enumlabel);
@@ -157,7 +158,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const report = await checkPendidikanV2ProductionReadiness(prisma as any);
       const gateNames = report.gates.map((g) => g.gate);
       assert.deepStrictEqual(gateNames, Array.from(CANONICAL_READINESS_GATE_NAMES));
-      assert.strictEqual(gateNames.length, 11);
+      assert.strictEqual(gateNames.length, 12);
     });
 
     it("2.4 Required positions gate: missing target positions => NOT_READY, PEMBINA_ASRAMA not required", async () => {
@@ -299,7 +300,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const fullGate = fullReport.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(fullGate);
       assert.strictEqual(fullGate.status, "READY");
-      assert.ok(fullGate.details.includes("All 18 required teaching assignment slots covered with verified runtime authorization chain"));
+      assert.ok(fullGate.details.includes("All 12 required teaching assignment slots covered with verified planning metadata"));
     });
 
     it("2.6 Cohort readiness: inactive historical santri with no cohort does NOT block; active santri without cohort DOES block", async () => {
@@ -455,7 +456,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.ok(gate.details.includes("inactive or missing Staff"));
     });
 
-    it("2.11 Proof 5: Active scheduled Staff but no canonical Assignment/PositionCapability => authorization readiness NOT_READY", async () => {
+    it("2.11 Proof 5: Active scheduled Staff with valid planning slots => PLANNING_READY, but unprovisioned academic PositionCapability => AUTH_POLICY_NOT_READY", async () => {
       const createSlotsWithoutAssignment = () =>
         CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.map((t, idx) => ({
           id: `ta-slot-${idx}`,
@@ -486,16 +487,18 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         },
       };
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
-      const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
-      assert.ok(gate);
-      assert.strictEqual(gate.status, "NOT_READY");
-      assert.ok(
-        gate.details.includes("lack active Assignment") ||
-        gate.details.includes("ACADEMIC_TEACHER_AUTHORIZATION_POLICY_NOT_RUNTIME_READY")
-      );
+      const planningGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
+      assert.ok(planningGate);
+      assert.strictEqual(planningGate.status, "READY"); // PLANNING_READY
+      assert.ok(planningGate.details.includes("All 12 required teaching assignment slots covered"));
+
+      const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
+      assert.ok(authGate);
+      assert.strictEqual(authGate.status, "NOT_READY"); // AUTH_POLICY_NOT_READY
+      assert.ok(authGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
     });
 
-    it("2.12 Proof 6: PositionCapability PROPOSED_TBD => runtime readiness NOT_READY with AUTHORIZATION_GRANT_NOT_RUNTIME_READY", async () => {
+    it("2.12 Proof 6: Valid planning slots => PLANNING_READY, but PositionCapability PROPOSED_TBD => AUTH_POLICY_NOT_READY", async () => {
       const createSlotsWithProposedTbd = () =>
         CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.map((t, idx) => ({
           id: `ta-slot-${idx}`,
@@ -533,6 +536,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
                     unit: { id: "ou-1", isActive: true },
                     position: {
                       id: `pos-${idx}`,
+                      code: "POS_KEPESANTRENAN_TEST",
                       isActive: true,
                       capabilities: [
                         "academic.schedule.read",
@@ -559,14 +563,37 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         },
       };
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
-      const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
-      assert.ok(gate);
-      assert.strictEqual(gate.status, "NOT_READY");
-      assert.ok(gate.details.includes("AUTHORIZATION_GRANT_NOT_RUNTIME_READY"));
-      assert.ok(gate.details.includes("PROPOSED_TBD"));
+      const planningGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
+      assert.ok(planningGate);
+      assert.strictEqual(planningGate.status, "READY"); // PLANNING_READY
+      assert.ok(planningGate.details.includes("All 12 required teaching assignment slots covered"));
+
+      const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
+      assert.ok(authGate);
+      assert.strictEqual(authGate.status, "NOT_READY"); // AUTH_POLICY_NOT_READY
+      assert.ok(authGate.details.includes("OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED"));
+      assert.ok(authGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
+
+      // Pure evaluator proves PROPOSED_TBD causes NOT_READY with PROPOSED_TBD
+      const evalResult = evaluateKepesantrenanAcademicAuthPolicies(
+        [
+          { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD", position: { code: "GURU_TEST", isActive: true } },
+          { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD", position: { code: "GURU_TEST", isActive: true } },
+          { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD", position: { code: "GURU_TEST", isActive: true } },
+        ],
+        {
+          approvedPolicies: [
+            { positionCode: "GURU_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" },
+            { positionCode: "GURU_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" },
+            { positionCode: "GURU_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" },
+          ],
+        }
+      );
+      assert.strictEqual(evalResult.status, "NOT_READY");
+      assert.ok(evalResult.details.includes("PROPOSED_TBD"));
     });
 
-    it("2.13 Proof 7: PositionCapability APPROVED_TARGET_PENDING_TECHNICAL => runtime readiness NOT_READY with AUTHORIZATION_GRANT_NOT_RUNTIME_READY", async () => {
+    it("2.13 Proof 7: Valid planning slots => PLANNING_READY, but PositionCapability APPROVED_TARGET_PENDING_TECHNICAL => AUTH_POLICY_NOT_READY", async () => {
       const createSlotsWithPendingTechnical = () =>
         CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.map((t, idx) => ({
           id: `ta-slot-${idx}`,
@@ -604,6 +631,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
                     unit: { id: "ou-1", isActive: true },
                     position: {
                       id: `pos-${idx}`,
+                      code: "POS_KEPESANTRENAN_TEST",
                       isActive: true,
                       capabilities: [
                         "academic.schedule.read",
@@ -630,11 +658,34 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         },
       };
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
-      const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
-      assert.ok(gate);
-      assert.strictEqual(gate.status, "NOT_READY");
-      assert.ok(gate.details.includes("AUTHORIZATION_GRANT_NOT_RUNTIME_READY"));
-      assert.ok(gate.details.includes("APPROVED_TARGET_PENDING_TECHNICAL"));
+      const planningGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
+      assert.ok(planningGate);
+      assert.strictEqual(planningGate.status, "READY"); // PLANNING_READY
+      assert.ok(planningGate.details.includes("All 12 required teaching assignment slots covered"));
+
+      const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
+      assert.ok(authGate);
+      assert.strictEqual(authGate.status, "NOT_READY"); // AUTH_POLICY_NOT_READY
+      assert.ok(authGate.details.includes("OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED"));
+      assert.ok(authGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
+
+      // Pure evaluator proves APPROVED_TARGET_PENDING_TECHNICAL causes NOT_READY with APPROVED_TARGET_PENDING_TECHNICAL
+      const evalResult = evaluateKepesantrenanAcademicAuthPolicies(
+        [
+          { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL", position: { code: "GURU_TEST", isActive: true } },
+          { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL", position: { code: "GURU_TEST", isActive: true } },
+          { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL", position: { code: "GURU_TEST", isActive: true } },
+        ],
+        {
+          approvedPolicies: [
+            { positionCode: "GURU_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" },
+            { positionCode: "GURU_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" },
+            { positionCode: "GURU_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" },
+          ],
+        }
+      );
+      assert.strictEqual(evalResult.status, "NOT_READY");
+      assert.ok(evalResult.details.includes("APPROVED_TARGET_PENDING_TECHNICAL"));
     });
 
     it("2.14 Proof 8: Test-only VERIFIED_PRODUCTION capability + active relational chain => runtime authorization readiness PASS", async () => {
@@ -675,6 +726,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
                     unit: { id: "ou-1", isActive: true },
                     position: {
                       id: `pos-${idx}`,
+                      code: "POS_KEPESANTRENAN_TEST",
                       isActive: true,
                       capabilities: [
                         "academic.schedule.read",
@@ -704,7 +756,30 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(gate);
       assert.strictEqual(gate.status, "READY");
-      assert.ok(gate.details.includes("All 18 required teaching assignment slots covered with verified runtime authorization chain"));
+      assert.ok(gate.details.includes("All 12 required teaching assignment slots covered with verified planning metadata"));
+
+      // Production diagnostic has no override: fails closed with NOT_READY
+      const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
+      assert.ok(authGate);
+      assert.strictEqual(authGate.status, "NOT_READY");
+      assert.ok(authGate.details.includes("OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED"));
+
+      // Pure evaluator proves complete synthetic manifest with VERIFIED_PRODUCTION grants is READY
+      const evalResult = evaluateKepesantrenanAcademicAuthPolicies(
+        [
+          { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
+          { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
+          { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
+        ],
+        {
+          approvedPolicies: [
+            { positionCode: "GURU_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" },
+            { positionCode: "GURU_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" },
+            { positionCode: "GURU_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" },
+          ],
+        }
+      );
+      assert.strictEqual(evalResult.status, "READY");
     });
 
     it("2.15 Proof 9: Unrelated active Assignment must not satisfy teacher auth readiness", async () => {
@@ -771,8 +846,11 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(gate);
-      assert.strictEqual(gate.status, "NOT_READY");
-      assert.ok(gate.details.includes("ACADEMIC_TEACHER_AUTHORIZATION_POLICY_NOT_RUNTIME_READY"));
+      assert.strictEqual(gate.status, "READY"); // PLANNING_READY
+      const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
+      assert.ok(authGate);
+      assert.strictEqual(authGate.status, "NOT_READY"); // AUTH_POLICY_NOT_READY
+      assert.ok(authGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
     });
 
     it("2.16 Proof 10 & Real PostgreSQL: Unprovisioned academic teacher policy honestly reports NOT_READY without fabrication", async () => {
@@ -781,11 +859,12 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(gate);
       assert.strictEqual(gate.status, "NOT_READY");
-      // Must not fabricate any unapproved policy
-      assert.ok(
-        gate.details.includes("Missing teaching assignment coverage") ||
-        gate.details.includes("ACADEMIC_TEACHER_AUTHORIZATION_POLICY_NOT_RUNTIME_READY")
-      );
+      assert.ok(gate.details.includes("Missing teaching assignment coverage"));
+
+      const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
+      assert.ok(authGate);
+      assert.strictEqual(authGate.status, "NOT_READY");
+      assert.ok(authGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
     });
 
     it("2.17 USER_ASSIGNMENTS_READY: Stale/inactive assignment chains are not counted as READY", async () => {
@@ -1262,26 +1341,107 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(leakCheck, undefined);
     });
 
-    it("3.9 Authorization proof: Scheduled teacher => mutationAvailable true; wrong/missing teacher => false", async () => {
-      // 1. Correct authorized scheduled teacher (Ust. Ahmad for sess-col-date-1)
+    it("3.9 Authorization proof: Direct Subject account binding without Staff profile or assignment", async () => {
+      const USR_TECH_MAT = "usr-c1-tech-mat";
+      await prisma.user.create({
+        data: {
+          id: USR_TECH_MAT,
+          username: "tech.mapel.mat",
+          staffId: null,
+          status: "AKTIF",
+          accountType: "SUBJECT",
+          role: "GA",
+          passwordHash: "dummy",
+        },
+      });
+      await prisma.academicSubjectAccountBinding.create({
+        data: {
+          userId: USR_TECH_MAT,
+          subjectId: MAT_MAPEL_ID,
+          isActive: true,
+        },
+      });
+
+      // 1. Correct authorized subject account without Staff/Assignment (tech.mapel.mat for sess-col-date-1)
+      const dtosMat = await service.getEducationSessions(undefined, { actorUserId: USR_TECH_MAT });
+      const matSess = dtosMat.find((d) => d.sessionId === "sess-col-date-1");
+      assert.ok(matSess, "Must allow reading own-subject session");
+      assert.strictEqual(matSess.mutationAvailable, true);
+      assert.strictEqual(matSess.mutationDeniedReason, null);
+      // Studi Umum attendance is deferred
+      assert.strictEqual(matSess.attendanceAvailable, false);
+      assert.strictEqual(matSess.attendanceDeniedReason, "STUDI_UMUM_ATTENDANCE_POLICY_DEFERRED");
+      // Must exclude other subject sessions
+      assert.strictEqual(dtosMat.find((d) => d.sessionId === "sess-col-ipa-1"), undefined, "Must exclude other subject sessions");
+
+      // 2. Non-subject user (Ust. Ahmad calling sess-col-date-1) => DENY mutation (requires SUBJECT account)
       const dtosAhmad = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
       const ahmadSess = dtosAhmad.find((d) => d.sessionId === "sess-col-date-1");
       assert.ok(ahmadSess);
-      assert.strictEqual(ahmadSess.mutationAvailable, true);
-      assert.strictEqual(ahmadSess.mutationDeniedReason, null);
+      assert.strictEqual(ahmadSess.mutationAvailable, false);
+      assert.strictEqual(ahmadSess.mutationDeniedReason, "SUBJECT_ACCOUNT_REQUIRED");
 
-      // 2. Wrong teacher (Ust. Zaid calling sess-col-date-1 where scheduled teacher is Ust. Ahmad)
-      const dtosZaid = await service.getEducationSessions(undefined, { actorUserId: USR_ZAID });
-      const zaidSess = dtosZaid.find((d) => d.sessionId === "sess-col-date-1");
-      assert.ok(zaidSess);
-      assert.strictEqual(zaidSess.mutationAvailable, false);
-      assert.strictEqual(zaidSess.mutationDeniedReason, "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED");
+      // 3. Subject account bound to a different subject (IPA) has direct access to IPA but NOT Math
+      const IPA_MAPEL_ID = "mapel-c1-ipa";
+      await prisma.mataPelajaran.create({
+        data: { id: IPA_MAPEL_ID, nama: "Ilmu Pengetahuan Alam", kodeMapel: "IPA", kategori: "UMUM" },
+      });
+      await prisma.educationSession.create({
+        data: {
+          id: "sess-col-ipa-1",
+          educationTrack: "STUDI_UMUM",
+          subjectId: IPA_MAPEL_ID,
+          scheduledDate: new Date("2026-09-23T00:00:00Z"),
+          cohortId: COHORT_1_ID,
+          programLevel: 1,
+          jp: 1,
+          status: "SCHEDULED",
+        },
+      });
 
-      // 3. Missing scheduled teacher (sess-no-teacher)
-      const noTeacherSess = dtosAhmad.find((d) => d.sessionId === "sess-no-teacher");
-      assert.ok(noTeacherSess);
-      assert.strictEqual(noTeacherSess.mutationAvailable, false);
-      assert.strictEqual(noTeacherSess.mutationDeniedReason, "SCHEDULED_TEACHER_NOT_RESOLVED");
+      const USR_TECH_OTHER = "usr-c1-tech-other";
+      await prisma.user.create({
+        data: {
+          id: USR_TECH_OTHER,
+          username: "tech.mapel.other",
+          staffId: null,
+          status: "AKTIF",
+          accountType: "SUBJECT",
+          role: "GA",
+          passwordHash: "dummy",
+        },
+      });
+      await prisma.academicSubjectAccountBinding.create({
+        data: {
+          userId: USR_TECH_OTHER,
+          subjectId: IPA_MAPEL_ID,
+          isActive: true,
+        },
+      });
+      const dtosOther = await service.getEducationSessions(undefined, { actorUserId: USR_TECH_OTHER });
+      const ipaSess = dtosOther.find((d) => d.sessionId === "sess-col-ipa-1");
+      assert.ok(ipaSess, "Must allow reading own-subject IPA session");
+      const otherSess = dtosOther.find((d) => d.sessionId === "sess-col-date-1");
+      assert.strictEqual(otherSess, undefined, "Must exclude cross-subject Math session from other subject account read");
+
+      // 4. Subject account with NO binding fails closed on schedule read
+      const USR_TECH_NO_BIND = "usr-c1-tech-nobind";
+      await prisma.user.create({
+        data: {
+          id: USR_TECH_NO_BIND,
+          username: "tech.mapel.nobind",
+          staffId: null,
+          status: "AKTIF",
+          accountType: "SUBJECT",
+          role: "GA",
+          passwordHash: "dummy",
+        },
+      });
+      await assert.rejects(
+        () => service.getEducationSessions(undefined, { actorUserId: USR_TECH_NO_BIND }),
+        /PERMISSION_DENIED/,
+        "Subject account without binding must fail closed"
+      );
     });
   });
 
@@ -1484,10 +1644,13 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
 
       const teachingGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(teachingGate);
-      assert.strictEqual(teachingGate.status, "NOT_READY");
+      assert.strictEqual(teachingGate.status, "READY");
+
+      const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
+      assert.ok(authGate);
+      assert.strictEqual(authGate.status, "NOT_READY");
       assert.ok(
-        teachingGate.details.includes("SCOPE_MISMATCH"),
-        "Must flag SCOPE_MISMATCH for incompatible HALAQOH scope"
+        authGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY")
       );
     });
 
@@ -1554,6 +1717,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
                   unit: { id: OU_AKADEMIK, isActive: true },
                   position: {
                     id: `pos-${idx}`,
+                    code: "POS_KEPESANTRENAN_TEST",
                     isActive: true,
                     capabilities: [
                       "academic.schedule.read",
@@ -1581,6 +1745,29 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const teachingGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(teachingGate);
       assert.strictEqual(teachingGate.status, "READY");
+
+      // Production diagnostic has no override: fails closed with NOT_READY
+      const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
+      assert.ok(authGate);
+      assert.strictEqual(authGate.status, "NOT_READY");
+      assert.ok(authGate.details.includes("OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED"));
+
+      // Pure evaluator proves runtime-compatible effective grant evaluates to READY
+      const evalResult = evaluateKepesantrenanAcademicAuthPolicies(
+        [
+          { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
+          { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
+          { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
+        ],
+        {
+          approvedPolicies: [
+            { positionCode: "GURU_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" },
+            { positionCode: "GURU_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" },
+            { positionCode: "GURU_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" },
+          ],
+        }
+      );
+      assert.strictEqual(evalResult.status, "READY");
     });
 
     it("4.3 Proof 3: Academic grant exists but scope cannot match resource (UNIT outside containment) => NOT_READY & SCOPE_MISMATCH", async () => {
@@ -1702,10 +1889,13 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
 
       const teachingGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(teachingGate);
-      assert.strictEqual(teachingGate.status, "NOT_READY");
+      assert.strictEqual(teachingGate.status, "READY");
+
+      const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
+      assert.ok(authGate);
+      assert.strictEqual(authGate.status, "NOT_READY");
       assert.ok(
-        teachingGate.details.includes("SCOPE_MISMATCH"),
-        "Gate 9 must fail closed with SCOPE_MISMATCH when UNIT is outside containment"
+        authGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY")
       );
     });
 
@@ -2932,4 +3122,3 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     });
   });
 });
-

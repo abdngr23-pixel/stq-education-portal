@@ -331,9 +331,6 @@ export interface PblMeetingResolution {
   subject: StudiUmumPblSubject;
   blockNumber: 1 | 2 | 3 | 4;
   weekInBlock: 1 | 2 | 3 | 4 | 5;
-  pblPhase: "THEORY" | "PROJECT";
-  phase: "TEORI" | "PROYEK";
-  isProjectWeek: boolean;
 }
 
 export function resolvePblMeeting(meetingNumber: number): PblMeetingResolution {
@@ -366,17 +363,11 @@ export function resolvePblMeeting(meetingNumber: number): PblMeetingResolution {
   }
 
   const weekInBlock = (((meetingNumber - 1) % 5) + 1) as 1 | 2 | 3 | 4 | 5;
-  const isProjectWeek = weekInBlock === 5;
-  const pblPhase = isProjectWeek ? "PROJECT" : "THEORY";
-  const phase = isProjectWeek ? "PROYEK" : "TEORI";
 
   return {
     subject,
     blockNumber,
     weekInBlock,
-    pblPhase,
-    phase,
-    isProjectWeek,
   };
 }
 
@@ -390,10 +381,8 @@ export interface StudiUmumScheduleResult {
   endTime: string;
   type: "CORE" | "PBL";
   subject: StudiUmumSubject;
-  pblPhase?: "THEORY" | "PROJECT";
   pblBlockNumber?: 1 | 2 | 3 | 4;
   pblWeekInBlock?: 1 | 2 | 3 | 4 | 5;
-  isProjectWeek?: boolean;
 }
 
 export function resolveStudiUmumSchedule(level: number, jp: number): StudiUmumSlotSubject;
@@ -459,10 +448,8 @@ export function resolveStudiUmumSchedule(
       endTime: jpInfo.endTime,
       type: "PBL",
       subject: pbl.subject,
-      pblPhase: pbl.pblPhase,
       pblBlockNumber: pbl.blockNumber,
       pblWeekInBlock: pbl.weekInBlock,
-      isProjectWeek: pbl.isProjectWeek,
     };
   }
 
@@ -674,8 +661,6 @@ export interface EducationSessionReadDTO {
   pblMetadata?: {
     blockNumber: number;
     weekInBlock: number;
-    phase: "THEORY" | "PROJECT";
-    isProjectWeek: boolean;
   } | null;
   pedagogicalLevel?: "TINGKAT_1" | "TINGKAT_2" | "TINGKAT_3" | null;
   scheduledTeacherAssignmentId?: string | null;
@@ -683,6 +668,8 @@ export interface EducationSessionReadDTO {
   scheduledTeacherDisplay: string | null;
   actualTeacherUserId?: string | null;
   actualTeacherStaffId?: string | null;
+  startedByUserId?: string | null;
+  actualTeacherName?: string | null;
   actualTeacherDisplay?: string | null;
   status: "SCHEDULED" | "STARTED" | "COMPLETED" | "CANCELLED";
   startedAt?: string | null;

@@ -172,11 +172,21 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
             placementUnitId: null,
           };
         }
+        if (userId === "usr-unauthorized") {
+          return {
+            userId: "usr-unauthorized",
+            username: "santri.unauthorized",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            name: "Santri Tanpa Wewenang",
+            placementUnitId: null,
+          };
+        }
         return null;
       },
       verifyHumanExecutor: async (userId: string) => {
-        if (userId === teacherId || userId === "usr-substitute") {
-          return { userId, name: "Verified Human Teacher", isActive: true };
+        if (userId === teacherId || userId === "usr-substitute" || userId === "usr-unauthorized") {
+          return { userId, name: "Verified Human", isActive: true };
         }
         return null;
       },
@@ -190,29 +200,53 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
         };
       },
       getUnitAccountPlacement: async () => null,
-      getActiveAssignments: async (userId: string) => [
-        {
-          id: `asg-${userId}`,
-          userId,
-          positionId: "pos-guru-akademik",
-          positionCode: "GURU_AKADEMIK",
-          positionName: "Guru Akademik",
-          domain: "AKADEMIK",
-          unitId: "ou-akademik",
-          unitCode: "OU-AKADEMIK",
-          unitName: "Unit Akademik",
-          status: "ACTIVE",
-          validFrom: new Date(Date.now() - 86400000),
-          validUntil: null,
-          positionCapabilities: [
-            { capabilityCode: "academic.schedule.read", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
-            { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
-            { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
-            { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
-          ],
-          scopeUnits: [],
-        },
-      ],
+      getActiveAssignments: async (userId: string) => {
+        if (userId === "usr-unauthorized") {
+          return [
+            {
+              id: `asg-${userId}`,
+              userId,
+              positionId: "pos-guru-viewer",
+              positionCode: "GURU_VIEWER",
+              positionName: "Guru Viewer",
+              domain: "AKADEMIK",
+              unitId: "ou-akademik",
+              unitCode: "OU-AKADEMIK",
+              unitName: "Unit Akademik",
+              status: "ACTIVE",
+              validFrom: new Date(Date.now() - 86400000),
+              validUntil: null,
+              positionCapabilities: [
+                { capabilityCode: "academic.schedule.read", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+              ],
+              scopeUnits: [],
+            },
+          ];
+        }
+        return [
+          {
+            id: `asg-${userId}`,
+            userId,
+            positionId: "pos-guru-akademik",
+            positionCode: "GURU_AKADEMIK",
+            positionName: "Guru Akademik",
+            domain: "AKADEMIK",
+            unitId: "ou-akademik",
+            unitCode: "OU-AKADEMIK",
+            unitName: "Unit Akademik",
+            status: "ACTIVE",
+            validFrom: new Date(Date.now() - 86400000),
+            validUntil: null,
+            positionCapabilities: [
+              { capabilityCode: "academic.schedule.read", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+              { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+              { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+              { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+            ],
+            scopeUnits: [],
+          },
+        ];
+      },
     };
   };
 
@@ -226,7 +260,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
       const service = new PendidikanV2Service({ db: db as any, dataProvider: createMockDataProvider(), auditPersistence: createMockAuditPersistence() });
 
       await assert.rejects(
-        () => service.startEducationSession({ sessionId: "sess-01" }, { actorUserId: "usr-teacher-01" }),
+        () => service.startEducationSession({ sessionId: "sess-01", actualTeacherName: "Ustadz Ahmad" }, { actorUserId: "usr-teacher-01" }),
         (err: Error) => err.message.includes("PENDIDIKAN_V2_UAT_NOT_ENABLED")
       );
     });
@@ -275,19 +309,19 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
       const db = createMockEducationDb([{ id: "sess-01", status: "SCHEDULED", scheduledStaffId: "stf-teacher-01", educationTrack: "KEPESANTRENAN" }]);
       const service = new PendidikanV2Service({ db: db as any, dataProvider: createMockDataProvider(), auditPersistence: createMockAuditPersistence() });
 
-      const res = await service.startEducationSession({ sessionId: "sess-01" }, { actorUserId: "usr-teacher-01" });
+      const res = await service.startEducationSession({ sessionId: "sess-01", actualTeacherName: "Ustadz Ahmad" }, { actorUserId: "usr-teacher-01" });
       assert.strictEqual(res.success, true);
       assert.strictEqual(res.session.status, "STARTED");
     });
 
-    it("7. Non-scheduled teacher denied SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED", async () => {
+    it("7. Invalid actualTeacherName (< 2 chars) rejected", async () => {
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
       const db = createMockEducationDb([{ id: "sess-01", status: "SCHEDULED", scheduledStaffId: "stf-teacher-01", educationTrack: "KEPESANTRENAN" }]);
       const service = new PendidikanV2Service({ db: db as any, dataProvider: createMockDataProvider(), auditPersistence: createMockAuditPersistence() });
 
       await assert.rejects(
-        () => service.startEducationSession({ sessionId: "sess-01" }, { actorUserId: "usr-substitute" }),
-        (err: Error) => err.message.includes("SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED")
+        () => service.startEducationSession({ sessionId: "sess-01", actualTeacherName: "X" }, { actorUserId: "usr-substitute" }),
+        (err: Error) => err.message.includes("INVALID_ACTUAL_TEACHER_NAME")
       );
     });
 
@@ -296,7 +330,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
       const db = createMockEducationDb([{ id: "sess-01", status: "SCHEDULED", scheduledStaffId: "stf-teacher-01", educationTrack: "KEPESANTRENAN" }]);
       const service = new PendidikanV2Service({ db: db as any, dataProvider: createMockDataProvider(), auditPersistence: createMockAuditPersistence() });
 
-      const res = await service.startEducationSession({ sessionId: "sess-01" }, { actorUserId: "usr-teacher-01" });
+      const res = await service.startEducationSession({ sessionId: "sess-01", actualTeacherName: "Ustadz Ahmad" }, { actorUserId: "usr-teacher-01" });
       assert.strictEqual(res.session.scheduledStaffId, "stf-teacher-01");
     });
 
@@ -305,7 +339,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
       const db = createMockEducationDb([{ id: "sess-01", status: "SCHEDULED", scheduledStaffId: "stf-teacher-01", educationTrack: "KEPESANTRENAN" }]);
       const service = new PendidikanV2Service({ db: db as any, dataProvider: createMockDataProvider(), auditPersistence: createMockAuditPersistence() });
 
-      const res = await service.startEducationSession({ sessionId: "sess-01" }, { actorUserId: "usr-teacher-01" });
+      const res = await service.startEducationSession({ sessionId: "sess-01", actualTeacherName: "Ustadz Ahmad" }, { actorUserId: "usr-teacher-01" });
       assert.strictEqual(res.session.actualTeacherUserId, "usr-teacher-01");
       assert.strictEqual(res.session.actualTeacherStaffId, "stf-teacher-01");
     });
@@ -315,7 +349,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
       const db = createMockEducationDb([{ id: "sess-01", status: "SCHEDULED", scheduledStaffId: "stf-teacher-01", educationTrack: "KEPESANTRENAN" }]);
       const service = new PendidikanV2Service({ db: db as any, dataProvider: createMockDataProvider(), auditPersistence: createMockAuditPersistence() });
 
-      const res = await service.startEducationSession({ sessionId: "sess-01" }, { actorUserId: "usr-teacher-01" });
+      const res = await service.startEducationSession({ sessionId: "sess-01", actualTeacherName: "Ustadz Ahmad" }, { actorUserId: "usr-teacher-01" });
       assert.ok(res.session.startedAt instanceof Date);
     });
 
@@ -324,9 +358,9 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
       const db = createMockEducationDb([{ id: "sess-01", status: "SCHEDULED", scheduledStaffId: "stf-teacher-01", educationTrack: "KEPESANTRENAN" }]);
       const service = new PendidikanV2Service({ db: db as any, dataProvider: createMockDataProvider(), auditPersistence: createMockAuditPersistence() });
 
-      await service.startEducationSession({ sessionId: "sess-01" }, { actorUserId: "usr-teacher-01" });
+      await service.startEducationSession({ sessionId: "sess-01", actualTeacherName: "Ustadz Ahmad" }, { actorUserId: "usr-teacher-01" });
       await assert.rejects(
-        () => service.startEducationSession({ sessionId: "sess-01" }, { actorUserId: "usr-teacher-01" }),
+        () => service.startEducationSession({ sessionId: "sess-01", actualTeacherName: "Ustadz Ahmad" }, { actorUserId: "usr-teacher-01" }),
         (err: Error) => err.message.includes("INVALID_SESSION_STATUS") || err.message.includes("CONCURRENT_START")
       );
     });
@@ -555,10 +589,10 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
       const sessions = await service.getEducationSessions(undefined, { actorUserId: "usr-teacher-01" });
       assert.strictEqual(sessions[0].mutationAvailable, true);
 
-      // Wrong teacher (substitute not approved) => mutationAvailable: false
-      const sessionsWrong = await service.getEducationSessions(undefined, { actorUserId: "usr-substitute" });
+      // Unauthorized actor (without academic.session.start grant) => mutationAvailable: false
+      const sessionsWrong = await service.getEducationSessions(undefined, { actorUserId: "usr-unauthorized" });
       assert.strictEqual(sessionsWrong[0].mutationAvailable, false);
-      assert.strictEqual(sessionsWrong[0].mutationDeniedReason, "SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED");
+      assert.strictEqual(sessionsWrong[0].mutationDeniedReason, "CANONICAL_AUTH_DENIED");
 
       // UAT disabled => mutationAvailable: false
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "false";
@@ -624,14 +658,16 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
       assert.ok(CANONICAL_KEPESANTRENAN_SUBJECTS.includes("Tajwid"));
     });
 
-    it("34. Studi Umum theory vs project week calculation valid", () => {
+    it("34. Studi Umum canonical PBL blocks valid", () => {
       const meeting1 = resolvePblMeeting(1);
-      assert.strictEqual(meeting1.phase, "TEORI");
-      assert.strictEqual(meeting1.isProjectWeek, false);
+      assert.strictEqual(meeting1.subject, "IPS");
+      assert.strictEqual(meeting1.blockNumber, 1);
+      assert.strictEqual(meeting1.weekInBlock, 1);
 
       const meeting5 = resolvePblMeeting(5);
-      assert.strictEqual(meeting5.phase, "PROYEK");
-      assert.strictEqual(meeting5.isProjectWeek, true);
+      assert.strictEqual(meeting5.subject, "IPS");
+      assert.strictEqual(meeting5.blockNumber, 1);
+      assert.strictEqual(meeting5.weekInBlock, 5);
     });
 
     it("35. Saturday JP matrix intact", () => {
@@ -740,7 +776,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
       assert.ok(report.unlinkedStaffAccounts.includes("razan.mt"));
     });
 
-    it("50. Production readiness check reports all 11 gates without writes", async () => {
+    it("50. Production readiness check reports all 12 gates without writes", async () => {
       const mockDiagnosticDb = {
         user: { findMany: async () => [] },
         orgUnit: { findMany: async () => [] },
@@ -749,7 +785,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
         santri: { findMany: async () => [] },
       };
       const report = await checkPendidikanV2ProductionReadiness(mockDiagnosticDb as any);
-      assert.strictEqual(report.gates.length, 11);
+      assert.strictEqual(report.gates.length, 12);
       assert.ok(report.timestamp);
       assert.ok(["READY", "BLOCKED", "NOT_READY"].includes(report.overallStatus));
     });
