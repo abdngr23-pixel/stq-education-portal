@@ -10,6 +10,7 @@ import { PrismaClient } from "@prisma/client";
 import { startTestDatabase, stopTestDatabase } from "./test-db-manager";
 import {
   checkPendidikanV2ProductionReadiness,
+  evaluateKepesantrenanAcademicAuthPolicies,
   CANONICAL_READINESS_GATE_NAMES,
   CANONICAL_REQUIRED_POSITION_CODES,
   CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS,
@@ -561,14 +562,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           findMany: async () => createSlotsWithProposedTbd(),
         },
       };
-      const syntheticApprovedPolicies = [
-        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" as const },
-        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" as const },
-        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" as const },
-      ];
-      const report = await checkPendidikanV2ProductionReadiness(mockDb as any, {
-        approvedKepesantrenanAuthPolicies: syntheticApprovedPolicies,
-      });
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const planningGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(planningGate);
       assert.strictEqual(planningGate.status, "READY"); // PLANNING_READY
@@ -577,8 +571,26 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(authGate);
       assert.strictEqual(authGate.status, "NOT_READY"); // AUTH_POLICY_NOT_READY
-      assert.ok(authGate.details.includes("PROPOSED_TBD"));
+      assert.ok(authGate.details.includes("OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED"));
       assert.ok(authGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
+
+      // Pure evaluator proves PROPOSED_TBD causes NOT_READY with PROPOSED_TBD
+      const evalResult = evaluateKepesantrenanAcademicAuthPolicies(
+        [
+          { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD", position: { code: "GURU_TEST", isActive: true } },
+          { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD", position: { code: "GURU_TEST", isActive: true } },
+          { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD", position: { code: "GURU_TEST", isActive: true } },
+        ],
+        {
+          approvedPolicies: [
+            { positionCode: "GURU_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" },
+            { positionCode: "GURU_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" },
+            { positionCode: "GURU_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" },
+          ],
+        }
+      );
+      assert.strictEqual(evalResult.status, "NOT_READY");
+      assert.ok(evalResult.details.includes("PROPOSED_TBD"));
     });
 
     it("2.13 Proof 7: Valid planning slots => PLANNING_READY, but PositionCapability APPROVED_TARGET_PENDING_TECHNICAL => AUTH_POLICY_NOT_READY", async () => {
@@ -645,14 +657,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           findMany: async () => createSlotsWithPendingTechnical(),
         },
       };
-      const syntheticApprovedPolicies = [
-        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" as const },
-        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" as const },
-        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" as const },
-      ];
-      const report = await checkPendidikanV2ProductionReadiness(mockDb as any, {
-        approvedKepesantrenanAuthPolicies: syntheticApprovedPolicies,
-      });
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const planningGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(planningGate);
       assert.strictEqual(planningGate.status, "READY"); // PLANNING_READY
@@ -661,8 +666,26 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(authGate);
       assert.strictEqual(authGate.status, "NOT_READY"); // AUTH_POLICY_NOT_READY
-      assert.ok(authGate.details.includes("APPROVED_TARGET_PENDING_TECHNICAL"));
+      assert.ok(authGate.details.includes("OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED"));
       assert.ok(authGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
+
+      // Pure evaluator proves APPROVED_TARGET_PENDING_TECHNICAL causes NOT_READY with APPROVED_TARGET_PENDING_TECHNICAL
+      const evalResult = evaluateKepesantrenanAcademicAuthPolicies(
+        [
+          { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL", position: { code: "GURU_TEST", isActive: true } },
+          { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL", position: { code: "GURU_TEST", isActive: true } },
+          { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL", position: { code: "GURU_TEST", isActive: true } },
+        ],
+        {
+          approvedPolicies: [
+            { positionCode: "GURU_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" },
+            { positionCode: "GURU_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" },
+            { positionCode: "GURU_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" },
+          ],
+        }
+      );
+      assert.strictEqual(evalResult.status, "NOT_READY");
+      assert.ok(evalResult.details.includes("APPROVED_TARGET_PENDING_TECHNICAL"));
     });
 
     it("2.14 Proof 8: Test-only VERIFIED_PRODUCTION capability + active relational chain => runtime authorization readiness PASS", async () => {
@@ -729,22 +752,34 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           findMany: async () => createVerifiedSlots(),
         },
       };
-      const syntheticApprovedPolicies = [
-        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" as const },
-        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" as const },
-        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" as const },
-      ];
-      const report = await checkPendidikanV2ProductionReadiness(mockDb as any, {
-        approvedKepesantrenanAuthPolicies: syntheticApprovedPolicies,
-      });
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const gate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(gate);
       assert.strictEqual(gate.status, "READY");
       assert.ok(gate.details.includes("All 12 required teaching assignment slots covered with verified planning metadata"));
 
+      // Production diagnostic has no override: fails closed with NOT_READY
       const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(authGate);
-      assert.strictEqual(authGate.status, "READY");
+      assert.strictEqual(authGate.status, "NOT_READY");
+      assert.ok(authGate.details.includes("OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED"));
+
+      // Pure evaluator proves complete synthetic manifest with VERIFIED_PRODUCTION grants is READY
+      const evalResult = evaluateKepesantrenanAcademicAuthPolicies(
+        [
+          { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
+          { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
+          { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
+        ],
+        {
+          approvedPolicies: [
+            { positionCode: "GURU_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" },
+            { positionCode: "GURU_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" },
+            { positionCode: "GURU_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" },
+          ],
+        }
+      );
+      assert.strictEqual(evalResult.status, "READY");
     });
 
     it("2.15 Proof 9: Unrelated active Assignment must not satisfy teacher auth readiness", async () => {
@@ -1703,24 +1738,36 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         },
       }));
 
-      const syntheticApprovedPolicies = [
-        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" as const },
-        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" as const },
-        { positionCode: "POS_KEPESANTRENAN_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" as const },
-      ];
       const report = await checkPendidikanV2ProductionReadiness({
         teachingAssignment: { findMany: async () => mockSlots },
-      } as any, {
-        approvedKepesantrenanAuthPolicies: syntheticApprovedPolicies,
-      });
+      } as any);
 
       const teachingGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
       assert.ok(teachingGate);
       assert.strictEqual(teachingGate.status, "READY");
 
+      // Production diagnostic has no override: fails closed with NOT_READY
       const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(authGate);
-      assert.strictEqual(authGate.status, "READY");
+      assert.strictEqual(authGate.status, "NOT_READY");
+      assert.ok(authGate.details.includes("OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED"));
+
+      // Pure evaluator proves runtime-compatible effective grant evaluates to READY
+      const evalResult = evaluateKepesantrenanAcademicAuthPolicies(
+        [
+          { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
+          { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
+          { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
+        ],
+        {
+          approvedPolicies: [
+            { positionCode: "GURU_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" },
+            { positionCode: "GURU_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" },
+            { positionCode: "GURU_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" },
+          ],
+        }
+      );
+      assert.strictEqual(evalResult.status, "READY");
     });
 
     it("4.3 Proof 3: Academic grant exists but scope cannot match resource (UNIT outside containment) => NOT_READY & SCOPE_MISMATCH", async () => {

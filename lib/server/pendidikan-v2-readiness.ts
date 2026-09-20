@@ -388,6 +388,21 @@ export function evaluateKepesantrenanAcademicAuthPolicies(
     };
   }
 
+  // Required capability coverage:
+  // Validate that approvedPolicies contains at least one explicit owner-approved policy entry for EACH required capability.
+  const coveredCapabilities = new Set(approvedPolicies.map((p) => p.capabilityCode));
+  const missingRequiredCaps = KEPESANTRENAN_REQUIRED_ACADEMIC_AUTH_CAPABILITIES.filter(
+    (cap) => !coveredCapabilities.has(cap)
+  );
+  if (missingRequiredCaps.length > 0) {
+    return {
+      status: "NOT_READY",
+      details: `OWNER_APPROVED_KEPESANTRENAN_POLICY_INCOMPLETE: Missing owner-approved policy definitions for required capabilities: ${missingRequiredCaps.join(", ")} (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY)`,
+      remediationAdvice: `Owner-approved manifest must define explicit policy mappings for all required capabilities: ${KEPESANTRENAN_REQUIRED_ACADEMIC_AUTH_CAPABILITIES.join(", ")}`,
+      blocking: true,
+    };
+  }
+
   // If no active PositionCapabilities exist in database:
   if (!activePcs || activePcs.length === 0) {
     return {
@@ -508,17 +523,12 @@ export function evaluateKepesantrenanAcademicAuthPolicies(
   };
 }
 
-export interface CheckPendidikanV2ProductionReadinessOptions {
-  approvedKepesantrenanAuthPolicies?: readonly KepesantrenanApprovedAcademicAuthPolicy[];
-}
-
 /**
  * Diagnostic function: Evaluates all 12 canonical production readiness gates.
  * STRICTLY READ-ONLY: Executes zero INSERT, UPDATE, DELETE, SEED, or MIGRATION operations.
  */
 export async function checkPendidikanV2ProductionReadiness(
-  db: ReadinessDbClient,
-  options?: CheckPendidikanV2ProductionReadinessOptions
+  db: ReadinessDbClient
 ): Promise<ProductionReadinessReport> {
   const gates: ReadinessGateResult[] = [];
   const unlinkedStaffAccounts: string[] = [];
@@ -1659,7 +1669,7 @@ export async function checkPendidikanV2ProductionReadiness(
     const activePcs = pcs.filter((pc) => !pc.position || pc.position.isActive !== false);
 
     const evaluation = evaluateKepesantrenanAcademicAuthPolicies(activePcs, {
-      approvedPolicies: options?.approvedKepesantrenanAuthPolicies ?? KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES,
+      approvedPolicies: KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES,
     });
 
     gates.push({
