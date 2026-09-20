@@ -7,10 +7,12 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   checkPendidikanV2ProductionReadiness,
+  CANONICAL_READINESS_GATE_NAMES,
   CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS,
   CANONICAL_REQUIRED_POSITION_CODES,
   CANONICAL_UAT_TARGET_POLICIES,
   REQUIRED_UAT_ACTIVATION_CAPABILITIES,
+  KEPESANTRENAN_REQUIRED_ACADEMIC_AUTH_CAPABILITIES,
 } from "../lib/server/pendidikan-v2-readiness";
 import { authorizeCanonical } from "../lib/auth/canonical-evaluator";
 
@@ -565,7 +567,11 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
           findMany: async () => reqAssignments,
         },
         positionCapability: {
-          findMany: async () => [],
+          findMany: async () => [
+            { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+            { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+            { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+          ],
         },
         santriKamarPlacement: {
           findFirst: async (args: any) => {
@@ -659,6 +665,183 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
       assert.strictEqual(staffGate.status, "BLOCKED");
 
       assert.strictEqual(report.overallStatus, "BLOCKED");
+    });
+  });
+
+  // =========================================================================
+  // SECTION 13: KEPESANTRENAN ACADEMIC AUTHORIZATION POLICY GATE TESTS (A-I)
+  // =========================================================================
+  describe("13. Kepesantrenan Academic Authorization Policy Gate (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY)", () => {
+    const valid12Slots = CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.map((t, idx) => ({
+      id: `ta-${idx}`,
+      educationTrack: t.track,
+      genderComplex: t.genderComplex,
+      pedagogicalLevel: t.pedagogicalLevel || null,
+      staffId: `stf-${idx}`,
+      staff: { id: `stf-${idx}`, status: "AKTIF" },
+      mapel: { nama: t.subjectName },
+      isActive: true,
+    }));
+
+    // A. 12 valid Kepesantrenan TeachingAssignments + active Staff + NO academic PositionCapability policy
+    // => TEACHING_ASSIGNMENTS_READY = READY
+    // => KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY = NOT_READY
+    // => overallStatus != READY
+    it("A. 12 valid Kepesantrenan TeachingAssignments + active Staff + NO academic policy => PLANNING_READY but AUTH_POLICY_NOT_READY and overallStatus != READY", async () => {
+      const mockDb = {
+        teachingAssignment: { findMany: async () => valid12Slots },
+        staff: { findMany: async () => valid12Slots.map((s) => s.staff) },
+        positionCapability: { findMany: async () => [] },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const planningGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
+      const authPolicyGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
+
+      assert.strictEqual(report.gates.length, CANONICAL_READINESS_GATE_NAMES.length);
+      assert.ok(KEPESANTRENAN_REQUIRED_ACADEMIC_AUTH_CAPABILITIES.includes("academic.session.start" as any));
+      assert.ok(planningGate, "TEACHING_ASSIGNMENTS_READY gate must exist");
+      assert.strictEqual(planningGate.status, "READY", "Planning coverage alone must be READY");
+      assert.strictEqual(planningGate.blocking, true);
+
+      assert.ok(authPolicyGate, "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY gate must exist");
+      assert.strictEqual(authPolicyGate.status, "NOT_READY", "Auth policy gate must be NOT_READY when no policy provisioned");
+      assert.strictEqual(authPolicyGate.blocking, true, "Auth policy gate must be blocking");
+      assert.ok(authPolicyGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
+
+      assert.notStrictEqual(report.overallStatus, "READY", "overallStatus must NOT be READY when auth policy is NOT_READY");
+    });
+
+    // B. Missing one planning slot => TEACHING_ASSIGNMENTS_READY = NOT_READY
+    it("B. Missing one planning slot => TEACHING_ASSIGNMENTS_READY = NOT_READY", async () => {
+      const elevenSlots = valid12Slots.filter((_, idx) => idx !== 0);
+      const mockDb = {
+        teachingAssignment: { findMany: async () => elevenSlots },
+        staff: { findMany: async () => elevenSlots.map((s) => s.staff) },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const planningGate = report.gates.find((g) => g.gate === "TEACHING_ASSIGNMENTS_READY");
+      assert.ok(planningGate);
+      assert.strictEqual(planningGate.status, "NOT_READY");
+      assert.ok(planningGate.details.includes("Missing teaching assignment coverage"));
+    });
+
+    // C. TeachingAssignment existence alone => never grants runtime authorization
+    it("C. TeachingAssignment existence alone never grants runtime authorization", async () => {
+      const teacherIdentity = {
+        userId: "usr-sched-only",
+        username: "guru.kepesantrenan",
+        status: "AKTIF",
+        accountType: "PERSONAL" as const,
+        staffId: "stf-sched-only",
+        mockAssignments: [], // Zero assignments
+      };
+
+      const authDecision = await authorizeCanonical({
+        identity: teacherIdentity as any,
+        capability: "academic.session.start",
+        resourceContext: { educationSessionId: "sess-kepesantrenan-1" },
+        isMutation: true,
+      });
+
+      assert.strictEqual(authDecision.decision, "DENY");
+      assert.ok(["CAPABILITY_NOT_GRANTED", "NO_ASSIGNMENT", "NO_EXPLICIT_GRANT", "DENIED"].includes(authDecision.code || "DENIED"));
+    });
+
+    // D. APPROVED_TARGET_PENDING_TECHNICAL academic grant => AUTH POLICY gate NOT_READY
+    it("D. APPROVED_TARGET_PENDING_TECHNICAL academic grant => AUTH POLICY gate NOT_READY", async () => {
+      const mockDb = {
+        positionCapability: {
+          findMany: async () => [
+            { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" },
+            { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" },
+            { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" },
+          ],
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const authPolicyGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
+      assert.ok(authPolicyGate);
+      assert.strictEqual(authPolicyGate.status, "NOT_READY");
+      assert.ok(authPolicyGate.details.includes("APPROVED_TARGET_PENDING_TECHNICAL"));
+      assert.ok(authPolicyGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
+    });
+
+    // E. PROPOSED_TBD academic grant => AUTH POLICY gate NOT_READY
+    it("E. PROPOSED_TBD academic grant => AUTH POLICY gate NOT_READY", async () => {
+      const mockDb = {
+        positionCapability: {
+          findMany: async () => [
+            { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD" },
+            { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD" },
+            { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD" },
+          ],
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const authPolicyGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
+      assert.ok(authPolicyGate);
+      assert.strictEqual(authPolicyGate.status, "NOT_READY");
+      assert.ok(authPolicyGate.details.includes("PROPOSED_TBD"));
+      assert.ok(authPolicyGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
+    });
+
+    // F. No explicit academic policy => NOT_READY
+    it("F. No explicit academic policy => NOT_READY with KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY", async () => {
+      const mockDb = {
+        positionCapability: { findMany: async () => [] },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const authPolicyGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
+      assert.ok(authPolicyGate);
+      assert.strictEqual(authPolicyGate.status, "NOT_READY");
+      assert.ok(authPolicyGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
+    });
+
+    // G. Synthetic test-only explicitly VERIFIED_PRODUCTION policy with compatible scope => policy gate may become READY
+    it("G. Synthetic test-only explicitly VERIFIED_PRODUCTION policy with compatible scope => policy gate READY", async () => {
+      const mockDb = {
+        positionCapability: {
+          findMany: async () => [
+            { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+            { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+            { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+          ],
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const authPolicyGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
+      assert.ok(authPolicyGate);
+      assert.strictEqual(authPolicyGate.status, "READY");
+      assert.ok(authPolicyGate.details.includes("VERIFIED_PRODUCTION"));
+    });
+
+    // H. Cohort remains informational and non-blocking
+    it("H. Cohort remains informational and non-blocking (blocking=false)", async () => {
+      const mockDb = {
+        santri: { findMany: async () => [{ id: "san-1", status: "AKTIF", cohortId: null }] },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const cohortGate = report.gates.find((g) => g.gate === "COHORTS_ASSIGNED");
+      assert.ok(cohortGate);
+      assert.strictEqual(cohortGate.blocking, false);
+    });
+
+    // I. SUBJECT Studi Umum authorization behavior remains unchanged
+    it("I. SUBJECT Studi Umum authorization behavior remains unchanged (binding-based, independent of TeachingAssignment)", async () => {
+      const studiUmumSubjects = ["Matematika", "Bahasa Inggris", "IPS", "IPA", "Bahasa Indonesia", "TIK"];
+      for (const sub of studiUmumSubjects) {
+        const found = CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.find(
+          (t) => t.track === "STUDI_UMUM" || t.subjectName === sub
+        );
+        assert.strictEqual(found, undefined, `Studi Umum subject ${sub} must not be in TeachingAssignment coverage targets`);
+      }
     });
   });
 });

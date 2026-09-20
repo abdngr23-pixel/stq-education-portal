@@ -776,7 +776,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
       assert.ok(report.unlinkedStaffAccounts.includes("razan.mt"));
     });
 
-    it("50. Production readiness check reports all 11 gates without writes", async () => {
+    it("50. Production readiness check reports all 12 gates without writes", async () => {
       const mockDiagnosticDb = {
         user: { findMany: async () => [] },
         orgUnit: { findMany: async () => [] },
@@ -785,7 +785,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
         santri: { findMany: async () => [] },
       };
       const report = await checkPendidikanV2ProductionReadiness(mockDiagnosticDb as any);
-      assert.strictEqual(report.gates.length, 11);
+      assert.strictEqual(report.gates.length, 12);
       assert.ok(report.timestamp);
       assert.ok(["READY", "BLOCKED", "NOT_READY"].includes(report.overallStatus));
     });

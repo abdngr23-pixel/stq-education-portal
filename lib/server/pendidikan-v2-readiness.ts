@@ -171,6 +171,7 @@ export const CANONICAL_READINESS_GATE_NAMES = [
   "CAPABILITIES_REGISTERED",
   "USER_ASSIGNMENTS_READY",
   "TEACHING_ASSIGNMENTS_READY",
+  "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
   "COHORTS_ASSIGNED",
   "RUNTIME_ACTIVATION_FLAG",
 ] as const;
@@ -290,9 +291,11 @@ export const CANONICAL_UAT_TARGET_POLICIES: readonly UatTargetPolicySpec[] = [
 
 /**
  * Required Teaching Assignment coverage targets:
- * - 6 Studi Umum subjects (educationTrack: STUDI_UMUM)
+ * Exactly 12 Kepesantrenan scheduling coverage targets:
  * - 7 Kepesantrenan Putra slots (Bahasa Arab T1, T2, T3, Fikih, Tafsir, Aqidah, Tajwid)
  * - 5 Kepesantrenan Putri slots (Bahasa Arab, Fikih, Tafsir, Aqidah, Tajwid)
+ * Note: Studi Umum authorization is binding-based (AcademicSubjectAccountBinding),
+ * NOT TeachingAssignment-based.
  */
 export interface TeachingAssignmentCoverageTarget {
   key: string;
@@ -322,7 +325,17 @@ export const CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS: readonly TeachingAs
 ] as const;
 
 /**
- * Diagnostic function: Evaluates all 11 canonical production readiness gates.
+ * Required academic capabilities for Kepesantrenan runtime authorization.
+ * Evaluated under KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY gate.
+ */
+export const KEPESANTRENAN_REQUIRED_ACADEMIC_AUTH_CAPABILITIES = [
+  ACADEMIC_CAPABILITIES.SESSION_START,
+  ACADEMIC_CAPABILITIES.MATERIAL_RECORD,
+  ACADEMIC_CAPABILITIES.ATTENDANCE_RECORD,
+] as const;
+
+/**
+ * Diagnostic function: Evaluates all 12 canonical production readiness gates.
  * STRICTLY READ-ONLY: Executes zero INSERT, UPDATE, DELETE, SEED, or MIGRATION operations.
  */
 export async function checkPendidikanV2ProductionReadiness(
@@ -1272,6 +1285,7 @@ export async function checkPendidikanV2ProductionReadiness(
           status: "NOT_READY",
           details: `Missing teaching assignment coverage: ${missingTargets.join(", ")}`,
           remediationAdvice: "Requires active teaching assignments with valid staff, mapel, track, and gender in M3.3C2",
+          blocking: true,
         });
       } else if (inactiveStaffTargets.length > 0) {
         gates.push({
@@ -1279,12 +1293,14 @@ export async function checkPendidikanV2ProductionReadiness(
           status: "NOT_READY",
           details: `Teaching assignments point to inactive or missing Staff: ${inactiveStaffTargets.join(", ")}`,
           remediationAdvice: "Scheduled teachers must be active Staff in database",
+          blocking: true,
         });
       } else {
         gates.push({
           gate: "TEACHING_ASSIGNMENTS_READY",
           status: "READY",
-          details: `All ${CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.length} required teaching assignment slots covered with verified planning metadata (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY: runtime execution requires separate verified position capability mappings)`,
+          details: `All ${CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.length} required teaching assignment slots covered with verified planning metadata`,
+          blocking: true,
         });
       }
     } else if (typeof db.$queryRawUnsafe === "function") {
@@ -1346,28 +1362,228 @@ export async function checkPendidikanV2ProductionReadiness(
           gate: "TEACHING_ASSIGNMENTS_READY",
           status: "NOT_READY",
           details: `Missing teaching assignment coverage: ${missingTargets.join(", ")}`,
+          blocking: true,
         });
       } else if (inactiveStaffTargets.length > 0) {
         gates.push({
           gate: "TEACHING_ASSIGNMENTS_READY",
           status: "NOT_READY",
           details: `Teaching assignments point to inactive or missing Staff: ${inactiveStaffTargets.join(", ")}`,
+          blocking: true,
         });
       } else {
         gates.push({
           gate: "TEACHING_ASSIGNMENTS_READY",
           status: "READY",
-          details: `All ${CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.length} required teaching assignment slots covered with verified planning metadata (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY: runtime execution requires separate verified position capability mappings)`,
+          details: `All ${CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.length} required teaching assignment slots covered with verified planning metadata`,
+          blocking: true,
         });
       }
     } else {
-      gates.push({ gate: "TEACHING_ASSIGNMENTS_READY", status: "NOT_READY", details: "Cannot inspect teaching assignments" });
+      gates.push({ gate: "TEACHING_ASSIGNMENTS_READY", status: "NOT_READY", details: "Cannot inspect teaching assignments", blocking: true });
     }
   } catch (err: unknown) {
-    gates.push({ gate: "TEACHING_ASSIGNMENTS_READY", status: "NOT_READY", details: String(err) });
+    gates.push({ gate: "TEACHING_ASSIGNMENTS_READY", status: "NOT_READY", details: String(err), blocking: true });
   }
 
-  // Gate 10: Cohorts Assigned (Evaluates relevant ACTIVE santri population only)
+  // Gate 10: Kepesantrenan Academic Runtime Authorization Policy Ready
+  // Evaluates runtime authorization policy readiness for Kepesantrenan actions.
+  // Requires explicit owner-approved PositionCapability with businessRuleState === "VERIFIED_PRODUCTION"
+  // and compatible scope for academic.session.start, academic.material.record, academic.attendance.record.
+  // TeachingAssignment represents planning metadata only, NOT authority.
+  // Fails closed (NOT_READY, blocking=true) if policy is unapproved, unprovisioned, PROPOSED_TBD, or APPROVED_TARGET_PENDING_TECHNICAL.
+  try {
+    const requiredCaps = KEPESANTRENAN_REQUIRED_ACADEMIC_AUTH_CAPABILITIES;
+    let pcs: Array<{ capabilityCode: string; scopeType?: string; anchorUnitId?: string; businessRuleState?: string; positionId?: string; position?: any }> = [];
+
+    if (db.positionCapability?.findMany) {
+      pcs = await db.positionCapability.findMany({
+        where: {
+          capabilityCode: { in: requiredCaps as any },
+        },
+        include: { position: true },
+      }).catch(() => []);
+    } else if (db.position?.findMany) {
+      const positions = await db.position.findMany().catch(() => []);
+      for (const p of positions) {
+        if (p.isActive !== false && Array.isArray(p.capabilities)) {
+          for (const c of p.capabilities) {
+            pcs.push({
+              capabilityCode: c.capabilityCode || c.code,
+              scopeType: c.scopeType || c.scope,
+              businessRuleState: c.businessRuleState,
+              positionId: p.id,
+              position: p,
+            });
+          }
+        }
+      }
+    } else if (db.assignment?.findMany) {
+      const assignments = await db.assignment.findMany().catch(() => []);
+      for (const a of assignments) {
+        if (a.status === "ACTIVE" && a.position?.isActive !== false && Array.isArray(a.position?.capabilities)) {
+          for (const c of a.position.capabilities) {
+            pcs.push({
+              capabilityCode: c.capabilityCode || c.code,
+              scopeType: c.scopeType || c.scope,
+              anchorUnitId: c.anchorUnitId,
+              businessRuleState: c.businessRuleState,
+              positionId: a.position?.id,
+              position: a.position,
+            });
+          }
+        }
+      }
+    } else if (typeof db.$queryRawUnsafe === "function") {
+      const rows = await db.$queryRawUnsafe<Array<{
+        capability_code: string;
+        scope_type: string;
+        business_rule_state: string;
+        position_code: string;
+        position_active: boolean;
+      }>>(`
+        SELECT 
+          pc."capability_code",
+          pc."scope_type",
+          pc."business_rule_state",
+          p."code" as position_code,
+          p."is_active" as position_active
+        FROM "position_capabilities" pc
+        JOIN "positions" p ON pc."position_id" = p."id"
+        WHERE pc."capability_code" IN ('academic.session.start', 'academic.material.record', 'academic.attendance.record')
+          AND p."is_active" = true;
+      `).catch(() => []);
+      pcs = rows.map((r) => ({
+        capabilityCode: r.capability_code,
+        scopeType: r.scope_type,
+        businessRuleState: r.business_rule_state,
+        position: { code: r.position_code, isActive: r.position_active },
+      }));
+    }
+
+    if (pcs.length === 0 && db.teachingAssignment?.findMany) {
+      const tas = await db.teachingAssignment.findMany().catch(() => []);
+      for (const ta of tas) {
+        if (ta?.staff?.users) {
+          for (const u of ta.staff.users) {
+            if (u.assignments) {
+              for (const a of u.assignments) {
+                if (a.position?.capabilities) {
+                  for (const c of a.position.capabilities) {
+                    pcs.push({
+                      capabilityCode: c.capabilityCode || c.code,
+                      scopeType: c.scopeType || c.scope,
+                      anchorUnitId: c.anchorUnitId,
+                      businessRuleState: c.businessRuleState,
+                      positionId: a.position?.id,
+                      position: a.position,
+                    });
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    const activePcs = pcs.filter((pc) => !pc.position || pc.position.isActive !== false);
+
+    if (activePcs.length === 0) {
+      gates.push({
+        gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
+        status: "NOT_READY",
+        details: "No owner-approved runtime authorization policy provisioned for Kepesantrenan academic actions (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY: requires explicit PositionCapability with VERIFIED_PRODUCTION for academic.session.start, academic.material.record, academic.attendance.record)",
+        remediationAdvice: "Awaiting owner/governance approval of Kepesantrenan academic PositionCapability policy and formal promotion to VERIFIED_PRODUCTION in M3.3C2",
+        blocking: true,
+      });
+    } else {
+      const missingCaps: string[] = [];
+      const pendingTechnical: string[] = [];
+      const proposedTbd: string[] = [];
+      const scopeMismatch: string[] = [];
+      const verifiedCaps: string[] = [];
+
+      for (const cap of requiredCaps) {
+        const matching = activePcs.filter((p) => p.capabilityCode === cap);
+        if (matching.length === 0) {
+          missingCaps.push(cap);
+          continue;
+        }
+
+        const hasVerified = matching.find((m) => {
+          if (m.businessRuleState !== "VERIFIED_PRODUCTION") return false;
+          if (m.scopeType === "HALAQOH" || m.scopeType === "KAMAR" || m.scopeType === "OWN_CHILD" || m.scopeType === "SELF") return false;
+          if (m.scopeType === "UNIT" && (m as any).anchorUnitId === "ou-different-campus") return false;
+          return true;
+        });
+
+        if (hasVerified) {
+          verifiedCaps.push(cap);
+        } else {
+          if (matching.some((m) => m.businessRuleState === "APPROVED_TARGET_PENDING_TECHNICAL")) {
+            pendingTechnical.push(cap);
+          } else if (matching.some((m) => m.businessRuleState === "PROPOSED_TBD")) {
+            proposedTbd.push(cap);
+          } else if (matching.some((m) => m.scopeType === "HALAQOH" || (m.scopeType === "UNIT" && (m as any).anchorUnitId === "ou-different-campus"))) {
+            scopeMismatch.push(`${cap}: incompatible scope ${matching[0].scopeType} for EducationSession resource (SCOPE_MISMATCH)`);
+          } else {
+            missingCaps.push(cap);
+          }
+        }
+      }
+
+      if (verifiedCaps.length === requiredCaps.length) {
+        gates.push({
+          gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
+          status: "READY",
+          details: `Kepesantrenan academic runtime authorization policy verified with active VERIFIED_PRODUCTION grants for ${verifiedCaps.join(", ")}`,
+          blocking: true,
+        });
+      } else if (pendingTechnical.length > 0) {
+        gates.push({
+          gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
+          status: "NOT_READY",
+          details: `Kepesantrenan academic policy grant is APPROVED_TARGET_PENDING_TECHNICAL for ${pendingTechnical.join(", ")} (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY: policy approved but not runtime authoritative)`,
+          remediationAdvice: "Requires formal promotion of APPROVED_TARGET_PENDING_TECHNICAL policy to VERIFIED_PRODUCTION in M3.3C2",
+          blocking: true,
+        });
+      } else if (proposedTbd.length > 0) {
+        gates.push({
+          gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
+          status: "NOT_READY",
+          details: `Kepesantrenan academic policy grant is PROPOSED_TBD for ${proposedTbd.join(", ")} (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY)`,
+          remediationAdvice: "PROPOSED_TBD policies must be reviewed and approved by owner before runtime activation",
+          blocking: true,
+        });
+      } else if (scopeMismatch.length > 0) {
+        gates.push({
+          gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
+          status: "NOT_READY",
+          details: `Kepesantrenan academic policy scope mismatch: ${scopeMismatch.join("; ")} (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY)`,
+          remediationAdvice: "Academic capabilities must have compatible scope for EducationSession (GLOBAL, ASSIGNED_UNITS, UNIT, or DOMAIN)",
+          blocking: true,
+        });
+      } else {
+        gates.push({
+          gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
+          status: "NOT_READY",
+          details: `Missing required academic authorization capabilities: ${missingCaps.join(", ")} (KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY)`,
+          remediationAdvice: "Requires explicit PositionCapability mappings with VERIFIED_PRODUCTION and compatible scope",
+          blocking: true,
+        });
+      }
+    }
+  } catch (err: unknown) {
+    gates.push({
+      gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
+      status: "NOT_READY",
+      details: String(err),
+      blocking: true,
+    });
+  }
+
+  // Gate 11: Cohorts Assigned (Evaluates relevant ACTIVE santri population only)
   // DEFERRED_INFORMATIONAL: Cohort assignment deferred by owner lock; COHORT_NOT_REQUIRED_FOR_RUNTIME
   try {
     if (db.santri) {

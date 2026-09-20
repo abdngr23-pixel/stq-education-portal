@@ -283,7 +283,7 @@ describe("STQ ARCHITECTURE LOCK — RECONCILED UAT & SERVICE INTEGRATION SUITE",
       assert.ok(res.reason?.includes("education_cohorts"));
     });
 
-    it("3.3 checkPendidikanV2ProductionReadiness validates 11 safety gates without writes", async () => {
+    it("3.3 checkPendidikanV2ProductionReadiness validates 12 safety gates without writes", async () => {
       const mockDb = {
         $queryRawUnsafe: async () => [
           { table_name: "health_cases_v2" },
@@ -306,9 +306,10 @@ describe("STQ ARCHITECTURE LOCK — RECONCILED UAT & SERVICE INTEGRATION SUITE",
       };
 
       const res = await checkPendidikanV2ProductionReadiness(mockDb as any);
-      assert.strictEqual(res.gates.length, 11);
-      assert.strictEqual(CANONICAL_READINESS_GATE_NAMES.length, 11);
+      assert.strictEqual(res.gates.length, 12);
+      assert.strictEqual(CANONICAL_READINESS_GATE_NAMES.length, 12);
       assert.ok(res.gates.some((g) => g.gate === "M3_3B_SCHEMA_READY"));
+      assert.ok(res.gates.some((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY"));
       assert.ok(res.gates.some((g) => g.gate === "RUNTIME_ACTIVATION_FLAG"));
     });
   });
