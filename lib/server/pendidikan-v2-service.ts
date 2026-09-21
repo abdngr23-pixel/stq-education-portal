@@ -73,7 +73,7 @@ function validateAuditProvenance(authDecision: CanonicalAuthorizationDecision): 
   const positionCode = authDecision.positionCode;
   const capabilityCode = authDecision.capabilityCode;
   const scopeType = authDecision.scopeType as ScopeType | undefined;
-  const unitId = authDecision.grantUsed?.anchorUnitId || authDecision.evaluatedUnitIds?.[0];
+  const unitId = authDecision.grantUsed?.anchorUnitId || authDecision.evaluatedUnitIds?.[0] || (authDecision as any).unitId;
 
   if (!assignmentId || !positionCode || !capabilityCode || !scopeType || !unitId) {
     throw new Error(
@@ -114,11 +114,44 @@ export function validateKepesantrenanTeacherGrant(
 
   const prov = validateAuditProvenance(authDecision);
 
-  if (
-    prov.positionCode !== "GURU_KEPESANTRENAN" ||
-    authDecision.positionCode !== "GURU_KEPESANTRENAN" ||
-    (authDecision.grantUsed && authDecision.grantUsed.positionCode !== "GURU_KEPESANTRENAN")
-  ) {
+  const grant = authDecision.grantUsed;
+  if (!grant) {
+    throw new Error(
+      "KEPESANTRENAN_VERIFIED_GRANT_REQUIRED: Keputusan otorisasi tidak menyertakan rincian grantUsed kanonikal yang terverifikasi"
+    );
+  }
+
+  if (grant.positionCode !== "GURU_KEPESANTRENAN") {
+    throw new Error(
+      `KEPESANTRENAN_GURU_POSITION_REQUIRED: Wewenang operasional Kepesantrenan hanya berlaku untuk posisi GURU_KEPESANTRENAN (diberikan: ${grant.positionCode || "UNKNOWN"})`
+    );
+  }
+
+  if (grant.capabilityCode !== expectedCapability) {
+    throw new Error(
+      `KEPESANTRENAN_CAPABILITY_MISMATCH: Kapabilitas otorisasi (${grant.capabilityCode}) tidak sesuai dengan yang diminta (${expectedCapability})`
+    );
+  }
+
+  if (grant.scopeType !== "GLOBAL") {
+    throw new Error(
+      `KEPESANTRENAN_SCOPE_MISMATCH: Scope wewenang Kepesantrenan harus GLOBAL (diberikan: ${grant.scopeType})`
+    );
+  }
+
+  if (grant.businessRuleState !== "VERIFIED_PRODUCTION") {
+    throw new Error(
+      `KEPESANTRENAN_GRANT_NOT_PRODUCTION_VERIFIED: Status aturan bisnis wewenang bukan VERIFIED_PRODUCTION (${grant.businessRuleState})`
+    );
+  }
+
+  if (!authDecision.assignmentId || grant.assignmentId !== authDecision.assignmentId) {
+    throw new Error(
+      `KEPESANTRENAN_ASSIGNMENT_MISMATCH: assignmentId pada grantUsed (${grant.assignmentId}) tidak sesuai dengan assignmentId keputusan (${authDecision.assignmentId || "NULL"})`
+    );
+  }
+
+  if (prov.positionCode !== "GURU_KEPESANTRENAN" || authDecision.positionCode !== "GURU_KEPESANTRENAN") {
     throw new Error(
       `KEPESANTRENAN_GURU_POSITION_REQUIRED: Wewenang operasional Kepesantrenan hanya berlaku untuk posisi GURU_KEPESANTRENAN (diberikan: ${prov.positionCode || "UNKNOWN"})`
     );
@@ -133,12 +166,6 @@ export function validateKepesantrenanTeacherGrant(
   if (prov.scopeType !== "GLOBAL" || authDecision.scopeType !== "GLOBAL") {
     throw new Error(
       `KEPESANTRENAN_SCOPE_MISMATCH: Scope wewenang Kepesantrenan harus GLOBAL (diberikan: ${prov.scopeType})`
-    );
-  }
-
-  if (authDecision.grantUsed && authDecision.grantUsed.businessRuleState !== "VERIFIED_PRODUCTION") {
-    throw new Error(
-      `KEPESANTRENAN_GRANT_NOT_PRODUCTION_VERIFIED: Status aturan bisnis wewenang bukan VERIFIED_PRODUCTION (${authDecision.grantUsed.businessRuleState})`
     );
   }
 

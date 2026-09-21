@@ -1670,9 +1670,9 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
 
       const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(authGate);
-      assert.strictEqual(authGate.status, "NOT_READY");
+      assert.strictEqual(authGate.status, "BLOCKED");
       assert.ok(
-        authGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY")
+        authGate.details.includes("UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY")
       );
     });
 
@@ -1916,9 +1916,9 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
 
       const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(authGate);
-      assert.strictEqual(authGate.status, "NOT_READY");
+      assert.strictEqual(authGate.status, "BLOCKED");
       assert.ok(
-        authGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY")
+        authGate.details.includes("UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY")
       );
     });
 

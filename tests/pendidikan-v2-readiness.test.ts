@@ -796,7 +796,11 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
       const authPolicyGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(authPolicyGate);
       assert.strictEqual(authPolicyGate.status, "NOT_READY");
-      assert.ok(authPolicyGate.details.includes("Missing owner-approved Kepesantrenan academic authorization policies") || authPolicyGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
+      assert.ok(
+        authPolicyGate.details.includes("UNAPPROVED_KEPESANTRENAN_ACADEMIC_POLICY_PRESENT") ||
+        authPolicyGate.details.includes("Missing owner-approved Kepesantrenan academic authorization policies") ||
+        authPolicyGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY")
+      );
     });
 
     // E. PROPOSED_TBD academic grant => AUTH POLICY gate NOT_READY
@@ -865,8 +869,8 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const gate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(gate);
-      assert.strictEqual(gate.status, "NOT_READY");
-      assert.ok(gate.details.includes("Missing owner-approved Kepesantrenan academic authorization policies"));
+      assert.strictEqual(gate.status, "BLOCKED");
+      assert.ok(gate.details.includes("UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY"));
     });
 
     // H. Cohort remains informational and non-blocking
@@ -921,9 +925,8 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const authPolicyGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(authPolicyGate);
-      assert.strictEqual(authPolicyGate.status, "NOT_READY");
-      assert.ok(authPolicyGate.details.includes("Missing owner-approved Kepesantrenan academic authorization policies"));
-      assert.ok(authPolicyGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
+      assert.strictEqual(authPolicyGate.status, "BLOCKED");
+      assert.ok(authPolicyGate.details.includes("UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY"));
     });
 
     // B. Synthetic pure-evaluator manifest containing ONLY academic.session.start with exact VERIFIED_PRODUCTION DB grant
@@ -1053,9 +1056,8 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
       const res = evaluateKepesantrenanAcademicAuthPolicies(activePcs, {
         approvedPolicies: completeSyntheticManifest,
       });
-      assert.strictEqual(res.status, "NOT_READY");
-      assert.ok(res.details.includes("invalid/undefined scopeType"));
-      assert.ok(res.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
+      assert.strictEqual(res.status, "BLOCKED");
+      assert.ok(res.details.includes("UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY"));
     });
 
     // F. Complete manifest but one position differs => NOT_READY
@@ -1090,9 +1092,9 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
       const res = evaluateKepesantrenanAcademicAuthPolicies(activePcs, {
         approvedPolicies: completeSyntheticManifest,
       });
-      assert.strictEqual(res.status, "NOT_READY");
-      assert.ok(res.details.includes("Missing owner-approved Kepesantrenan academic authorization policies"));
-      assert.ok(res.details.includes("GURU_TEST:academic.material.record:GLOBAL"));
+      assert.strictEqual(res.status, "BLOCKED");
+      assert.ok(res.details.includes("UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY"));
+      assert.ok(res.details.includes("GURU_DIFFERENT:academic.material.record:GLOBAL"));
     });
 
     // G. Complete manifest but one state = APPROVED_TARGET_PENDING_TECHNICAL => NOT_READY
@@ -1154,8 +1156,8 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
           position: { code: "GURU_TEST", isActive: true },
         },
       ]);
-      assert.strictEqual(res.status, "NOT_READY");
-      assert.ok(res.details.includes("Missing owner-approved Kepesantrenan academic authorization policies"));
+      assert.strictEqual(res.status, "BLOCKED");
+      assert.ok(res.details.includes("UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY"));
       assert.strictEqual(KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES.length, 4);
     });
   });

@@ -28,6 +28,7 @@ export interface ReadinessGateResult {
   gate: string;
   status: ReadinessStatus;
   details: string;
+  reason?: string;
   remediationAdvice?: string;
   blocking?: boolean;
 }
@@ -463,6 +464,28 @@ export function evaluateKepesantrenanAcademicAuthPolicies(
     }
   }
 
+  // Priority 1: Unauthorized VERIFIED authority has highest severity (immediately BLOCKED)
+  if (unapprovedVerified.length > 0) {
+    return {
+      status: "BLOCKED",
+      blocking: true,
+      reason: "UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY",
+      details: `UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY: Unapproved PositionCapability rows with VERIFIED_PRODUCTION status detected for Kepesantrenan academic capabilities: ${unapprovedVerified.join(", ")}`,
+      remediationAdvice: "Revoke and remove unauthorized VERIFIED_PRODUCTION PositionCapability rows immediately",
+    };
+  }
+
+  // Priority 2: Unapproved pending authority prevents readiness (immediately NOT_READY)
+  if (unapprovedPending.length > 0) {
+    return {
+      status: "NOT_READY",
+      blocking: true,
+      reason: "UNAPPROVED_KEPESANTRENAN_ACADEMIC_POLICY_PRESENT",
+      details: `UNAPPROVED_KEPESANTRENAN_ACADEMIC_POLICY_PRESENT: Unapproved PositionCapability rows detected for Kepesantrenan academic capabilities: ${unapprovedPending.join(", ")}`,
+      remediationAdvice: "Remove unapproved PositionCapability records from database",
+    };
+  }
+
   for (const policy of approvedPolicies) {
     const policyKey = `${policy.positionCode}:${policy.capabilityCode}:${policy.scopeType}`;
 
@@ -510,26 +533,6 @@ export function evaluateKepesantrenanAcademicAuthPolicies(
   }
 
   if (verifiedPolicies.length === approvedPolicies.length) {
-    if (unapprovedVerified.length > 0) {
-      return {
-        status: "BLOCKED",
-        blocking: true,
-        reason: "UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY",
-        details: `UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY: Unapproved PositionCapability rows with VERIFIED_PRODUCTION status detected for Kepesantrenan academic capabilities: ${unapprovedVerified.join(", ")}`,
-        remediationAdvice: "Revoke and remove unauthorized VERIFIED_PRODUCTION PositionCapability rows immediately",
-      };
-    }
-
-    if (unapprovedPending.length > 0) {
-      return {
-        status: "NOT_READY",
-        blocking: true,
-        reason: "UNAPPROVED_KEPESANTRENAN_ACADEMIC_POLICY_PRESENT",
-        details: `UNAPPROVED_KEPESANTRENAN_ACADEMIC_POLICY_PRESENT: Unapproved PositionCapability rows detected for Kepesantrenan academic capabilities: ${unapprovedPending.join(", ")}`,
-        remediationAdvice: "Remove unapproved PositionCapability records from database",
-      };
-    }
-
     return {
       status: "READY",
       details: `Kepesantrenan academic runtime authorization policy verified with active VERIFIED_PRODUCTION grants for: ${verifiedPolicies.join(", ")}`,
@@ -1688,13 +1691,16 @@ export async function checkPendidikanV2ProductionReadiness(
   // with OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED and KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY.
   try {
     let pcs: Array<{ capabilityCode: string; scopeType?: string | null; businessRuleState?: string | null; position?: { code?: string; isActive?: boolean } | null }> = [];
+    let queryExecuted = false;
 
     if (db.positionCapability?.findMany) {
+      queryExecuted = true;
       pcs = await db.positionCapability.findMany({
         include: { position: true },
-      }).catch(() => []);
+      });
     } else if (db.position?.findMany) {
-      const positions = await db.position.findMany().catch(() => []);
+      queryExecuted = true;
+      const positions = await db.position.findMany();
       for (const p of positions) {
         if (p.isActive !== false && Array.isArray(p.capabilities)) {
           for (const c of p.capabilities) {
@@ -1708,7 +1714,8 @@ export async function checkPendidikanV2ProductionReadiness(
         }
       }
     } else if (db.assignment?.findMany) {
-      const assignments = await db.assignment.findMany().catch(() => []);
+      queryExecuted = true;
+      const assignments = await db.assignment.findMany();
       for (const a of assignments) {
         if (a.status === "ACTIVE" && a.position?.isActive !== false && Array.isArray(a.position?.capabilities)) {
           for (const c of a.position.capabilities) {
@@ -1722,6 +1729,7 @@ export async function checkPendidikanV2ProductionReadiness(
         }
       }
     } else if (typeof db.$queryRawUnsafe === "function") {
+      queryExecuted = true;
       const rows = await db.$queryRawUnsafe<Array<{
         capability_code: string;
         scope_type: string | null;
@@ -1738,7 +1746,7 @@ export async function checkPendidikanV2ProductionReadiness(
         FROM "position_capabilities" pc
         JOIN "positions" p ON pc."position_id" = p."id"
         WHERE p."is_active" = true;
-      `).catch(() => []);
+      `);
       pcs = rows.map((r) => ({
         capabilityCode: r.capability_code,
         scopeType: r.scope_type,
@@ -1747,8 +1755,9 @@ export async function checkPendidikanV2ProductionReadiness(
       }));
     }
 
-    if (pcs.length === 0 && db.teachingAssignment?.findMany) {
-      const tas = await db.teachingAssignment.findMany().catch(() => []);
+    if (!queryExecuted && db.teachingAssignment?.findMany) {
+      queryExecuted = true;
+      const tas = await db.teachingAssignment.findMany();
       for (const ta of tas) {
         if (ta?.staff?.users) {
           for (const u of ta.staff.users) {
@@ -1771,24 +1780,38 @@ export async function checkPendidikanV2ProductionReadiness(
       }
     }
 
-    const activePcs = pcs.filter((pc) => !pc.position || pc.position.isActive !== false);
+    if (!queryExecuted) {
+      gates.push({
+        gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
+        status: "NOT_READY",
+        reason: "DATABASE_UNAVAILABLE",
+        details: "DATABASE_UNAVAILABLE: Interface database tidak tersedia untuk memverifikasi kebijakan otorisasi akademik Kepesantrenan",
+        remediationAdvice: "Database connection must provide positionCapability or query interface",
+        blocking: true,
+      });
+    } else {
+      const activePcs = pcs.filter((pc) => !pc.position || pc.position.isActive !== false);
 
-    const evaluation = evaluateKepesantrenanAcademicAuthPolicies(activePcs, {
-      approvedPolicies: KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES,
-    });
+      const evaluation = evaluateKepesantrenanAcademicAuthPolicies(activePcs, {
+        approvedPolicies: KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES,
+      });
 
-    gates.push({
-      gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
-      status: evaluation.status,
-      details: evaluation.details,
-      remediationAdvice: evaluation.remediationAdvice,
-      blocking: true,
-    });
+      gates.push({
+        gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
+        status: evaluation.status,
+        details: evaluation.details,
+        reason: evaluation.reason,
+        remediationAdvice: evaluation.remediationAdvice,
+        blocking: true,
+      });
+    }
   } catch (err: unknown) {
     gates.push({
       gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
       status: "NOT_READY",
-      details: String(err),
+      reason: "DATABASE_QUERY_FAILED",
+      details: `DATABASE_QUERY_FAILED: Gagal memverifikasi kebijakan otorisasi akademik Kepesantrenan (${err instanceof Error ? err.message : String(err)})`,
+      remediationAdvice: "Periksa koneksi database dan skema tabel position_capabilities",
       blocking: true,
     });
   }

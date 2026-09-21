@@ -2042,4 +2042,163 @@ describe("GATE 5 — ROUND 2 STRICT RUNTIME HARDENING TESTS (SCENARIOS A - L)", 
     assert.strictEqual(updateCallCount, 0, "Zero updateMany calls must occur on TOCTOU failure");
     assert.strictEqual(auditRecordCount, 0, "Zero audit records must be written on TOCTOU failure");
   });
+
+  // =========================================================================
+  // ROUND 3 BLOCKING REMEDIATION TESTS
+  // =========================================================================
+  describe("ROUND 3 — FINAL HARDENING (SECTIONS 1, 2, 3)", () => {
+    it("Round 3 - Test A: 3 valid GURU policies + 1 missing GURU policy + VERIFIED MUDIR academic.session.start => BLOCKED", () => {
+      const activePcs = [
+        {
+          capabilityCode: "academic.schedule.read",
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+          position: { code: "GURU_KEPESANTRENAN", isActive: true },
+        },
+        {
+          capabilityCode: "academic.session.start",
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+          position: { code: "GURU_KEPESANTRENAN", isActive: true },
+        },
+        {
+          capabilityCode: "academic.material.record",
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+          position: { code: "GURU_KEPESANTRENAN", isActive: true },
+        },
+        // missing academic.attendance.record for GURU_KEPESANTRENAN
+        // Unapproved VERIFIED MUDIR academic.session.start:
+        {
+          capabilityCode: "academic.session.start",
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+          position: { code: "MUDIR", isActive: true },
+        },
+      ];
+
+      const res = evaluateKepesantrenanAcademicAuthPolicies(activePcs);
+      assert.strictEqual(res.status, "BLOCKED");
+      assert.strictEqual(res.blocking, true);
+      assert.strictEqual(res.reason, "UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY");
+      assert.ok(res.details.includes("MUDIR:academic.session.start:GLOBAL"));
+    });
+
+    it("Round 3 - Test B: 0 valid GURU policies + VERIFIED non-GURU academic.schedule.read => BLOCKED", () => {
+      const activePcs = [
+        {
+          capabilityCode: "academic.schedule.read",
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+          position: { code: "MUSYRIF_TAHFIZH", isActive: true },
+        },
+      ];
+
+      const res = evaluateKepesantrenanAcademicAuthPolicies(activePcs);
+      assert.strictEqual(res.status, "BLOCKED");
+      assert.strictEqual(res.blocking, true);
+      assert.strictEqual(res.reason, "UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY");
+      assert.ok(res.details.includes("MUSYRIF_TAHFIZH:academic.schedule.read:GLOBAL"));
+    });
+
+    it("Round 3 - Test C: partial approved policies + pending non-GURU academic grant => NOT_READY with UNAPPROVED_KEPESANTRENAN_ACADEMIC_POLICY_PRESENT", () => {
+      const activePcs = [
+        {
+          capabilityCode: "academic.schedule.read",
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+          position: { code: "GURU_KEPESANTRENAN", isActive: true },
+        },
+        // pending unapproved non-GURU academic grant:
+        {
+          capabilityCode: "academic.attendance.record",
+          scopeType: "GLOBAL",
+          businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+          position: { code: "KEPALA_KEASRAMAAN", isActive: true },
+        },
+      ];
+
+      const res = evaluateKepesantrenanAcademicAuthPolicies(activePcs);
+      assert.strictEqual(res.status, "NOT_READY");
+      assert.strictEqual(res.blocking, true);
+      assert.strictEqual(res.reason, "UNAPPROVED_KEPESANTRENAN_ACADEMIC_POLICY_PRESENT");
+      assert.ok(res.details.includes("KEPALA_KEASRAMAAN:academic.attendance.record:GLOBAL"));
+    });
+
+    it("Round 3 - Section 2: synthetic ALLOW containing flattened fields but grantUsed = undefined => DENY with KEPESANTRENAN_VERIFIED_GRANT_REQUIRED", () => {
+      const syntheticDecision: any = {
+        decision: "ALLOW",
+        assignmentId: "asg-synth-1",
+        positionCode: "GURU_KEPESANTRENAN",
+        capabilityCode: "academic.session.start",
+        scopeType: "GLOBAL",
+        unitId: "ou-root",
+        grantUsed: undefined, // Missing grantUsed!
+      };
+
+      assert.throws(
+        () => validateKepesantrenanTeacherGrant(syntheticDecision, "academic.session.start"),
+        /KEPESANTRENAN_VERIFIED_GRANT_REQUIRED/
+      );
+    });
+
+    it("Round 3 - Section 2: ALLOW with grantUsed having mismatched assignmentId => DENY with KEPESANTRENAN_ASSIGNMENT_MISMATCH", () => {
+      const decision: any = {
+        decision: "ALLOW",
+        assignmentId: "asg-real-1",
+        positionCode: "GURU_KEPESANTRENAN",
+        capabilityCode: "academic.session.start",
+        scopeType: "GLOBAL",
+        unitId: "ou-root",
+        grantUsed: {
+          assignmentId: "asg-tampered-2", // Mismatched!
+          positionCode: "GURU_KEPESANTRENAN",
+          capabilityCode: "academic.session.start",
+          scopeType: "GLOBAL",
+          businessRuleState: "VERIFIED_PRODUCTION",
+        },
+      };
+
+      assert.throws(
+        () => validateKepesantrenanTeacherGrant(decision, "academic.session.start"),
+        /KEPESANTRENAN_ASSIGNMENT_MISMATCH/
+      );
+    });
+
+    it("Round 3 - Section 3: PositionCapability query throws => KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY != READY with DATABASE_QUERY_FAILED", async () => {
+      const mockFailingDb: any = {
+        positionCapability: {
+          findMany: async () => {
+            throw new Error("Connection reset by peer");
+          },
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockFailingDb);
+      const academicGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
+      assert.ok(academicGate, "Gate must be present in report");
+      assert.notStrictEqual(academicGate.status, "READY");
+      assert.strictEqual(academicGate.status, "NOT_READY");
+      assert.strictEqual(academicGate.blocking, true);
+      assert.ok(
+        academicGate.details.includes("DATABASE_QUERY_FAILED"),
+        `Details should contain DATABASE_QUERY_FAILED, got: ${academicGate.details}`
+      );
+    });
+
+    it("Round 3 - Section 3: Database without query interface => KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY != READY with DATABASE_UNAVAILABLE", async () => {
+      const mockEmptyDb: any = {};
+
+      const report = await checkPendidikanV2ProductionReadiness(mockEmptyDb);
+      const academicGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
+      assert.ok(academicGate, "Gate must be present in report");
+      assert.notStrictEqual(academicGate.status, "READY");
+      assert.strictEqual(academicGate.status, "NOT_READY");
+      assert.strictEqual(academicGate.blocking, true);
+      assert.ok(
+        academicGate.details.includes("DATABASE_UNAVAILABLE"),
+        `Details should contain DATABASE_UNAVAILABLE, got: ${academicGate.details}`
+      );
+    });
+  });
 });
