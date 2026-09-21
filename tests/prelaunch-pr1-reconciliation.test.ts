@@ -431,6 +431,7 @@ describe("PRE-LAUNCH EXECUTION PR-1: CORE BUSINESS RULE & PENDIDIKAN RECONCILIAT
         educationTrack: "KEPESANTRENAN",
         subjectId: "sub-fikih",
         subject: { id: "sub-fikih", kodeMapel: "FKH", nama: "Fikih" },
+        scheduledStaffId: "stf-mk-01",
         status: "SCHEDULED",
         scheduledDate: new Date("2026-09-20T18:30:00.000Z"),
         actualTeacherName: null,
@@ -542,7 +543,7 @@ describe("PRE-LAUNCH EXECUTION PR-1: CORE BUSINESS RULE & PENDIDIKAN RECONCILIAT
 
       assert.strictEqual(res.success, true);
       assert.strictEqual(res.session.status, "STARTED");
-      assert.strictEqual(res.session.actualTeacherName, "Ustadz Abdullah Al-Hafizh");
+      assert.strictEqual(res.session.actualTeacherName, "Musyrif Keasramaan");
       assert.strictEqual(res.session.actualTeacherUserId, "usr-op-mk");
     });
 

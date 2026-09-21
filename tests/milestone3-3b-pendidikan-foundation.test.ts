@@ -826,7 +826,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
     });
 
     it("I2. Incomplete audit decision throws AUTH_DECISION_INCOMPLETE (No fallback fabrication)", async () => {
-      const mockDb = createMockEducationDb([{ id: "sess-01", status: "SCHEDULED" }]);
+      const mockDb = createMockEducationDb([{ id: "sess-01", status: "SCHEDULED", scheduledStaffId: "stf-01" }]);
       // Data provider returning an assignment without positionCode
       const incompleteProvider: ICanonicalDataProvider = {
         getIdentity: async () => ({
@@ -889,7 +889,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
     });
 
     it("I3. Human executor verification fails closed if userId is empty, null, or inactive", async () => {
-      const mockDb = createMockEducationDb([{ id: "sess-01", status: "SCHEDULED" }]);
+      const mockDb = createMockEducationDb([{ id: "sess-01", status: "SCHEDULED", scheduledStaffId: "stf-01" }]);
       const failingExecutorProvider: ICanonicalDataProvider = {
         getIdentity: async () => ({
           userId: "usr-01",

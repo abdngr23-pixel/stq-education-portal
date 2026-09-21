@@ -317,20 +317,20 @@ export class PendidikanV2Service {
       }
     } else {
       // Non-subject accounts: retain canonical academic.schedule.read logic with strict Kepesantrenan teacher session ownership
+      const actorAssignments = (await this.dataProvider.getActiveAssignments(context.actorUserId, new Date())) || [];
+      const isGuruKepesantrenan = actorAssignments.some((a: any) => a.positionCode === "GURU_KEPESANTRENAN");
       for (const s of sessions) {
-        if (s.educationTrack === "KEPESANTRENAN") {
+        if (s.educationTrack === "KEPESANTRENAN" && isGuruKepesantrenan && actorIdentity.staffId) {
           // Strict self-service ownership for Kepesantrenan:
-          // If actor is a personal teacher account (has staffId), filter to their scheduled/actual sessions
-          if (actorIdentity.staffId) {
-            const effectiveScheduledStaffId = s.scheduledStaffId || s.scheduledTeacherAssignment?.staffId || null;
-            const effectiveActualStaffId = s.actualTeacherStaffId || null;
-            const isAssigned =
-              (effectiveScheduledStaffId && effectiveScheduledStaffId === actorIdentity.staffId) ||
-              (effectiveActualStaffId && effectiveActualStaffId === actorIdentity.staffId);
-            if (!isAssigned) {
-              // Cross-teacher or unscheduled session: filter out
-              continue;
-            }
+          // If actor is a personal teacher account (GURU_KEPESANTRENAN), filter to their scheduled/actual sessions
+          const effectiveScheduledStaffId = s.scheduledStaffId || s.scheduledTeacherAssignment?.staffId || null;
+          const effectiveActualStaffId = s.actualTeacherStaffId || null;
+          const isAssigned =
+            (effectiveScheduledStaffId && effectiveScheduledStaffId === actorIdentity.staffId) ||
+            (effectiveActualStaffId && effectiveActualStaffId === actorIdentity.staffId);
+          if (!isAssigned) {
+            // Cross-teacher or unscheduled session: filter out
+            continue;
           }
         }
 
