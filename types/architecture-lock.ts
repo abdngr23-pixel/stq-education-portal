@@ -709,6 +709,28 @@ export function formatSantriSearchResult(santri: { nama: string; kelas?: string 
 }
 
 /**
+ * Canonical Position Contract for Kepesantrenan Teacher (GURU_KEPESANTRENAN)
+ * Defines canonical code contract for teacher self-service.
+ * Strictly non-production-writing — architecture contract only.
+ */
+export const GURU_KEPESANTRENAN_POSITION_CONTRACT = {
+  code: "GURU_KEPESANTRENAN" as const,
+  name: "Guru Kepesantrenan" as const,
+  domain: "AKADEMIK" as const,
+  requiresPersonalAccount: true as const,
+  isLeadership: false as const,
+  allowedUnitTypes: ["INSTITUTION"] as const,
+  futureAssignmentAnchor: "OU-STQ-ROOT" as const,
+  targetCapabilities: [
+    "academic.schedule.read",
+    "academic.session.start",
+    "academic.material.record",
+    "academic.attendance.record",
+  ] as const,
+  scopeType: "GLOBAL" as const,
+} as const;
+
+/**
  * Declarative UAT Activation Target Policy Manifest (M3.3C1)
  * Declarative target truth only — strictly NON-PRODUCTION-WRITING.
  * All target policies remain APPROVED_TARGET_PENDING_TECHNICAL.
@@ -723,12 +745,6 @@ export const UAT_ACTIVATION_TARGETS = {
         scopeType: "GLOBAL",
         businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
         notes: "GLOBAL read of Tahfizh recap across all santri. Does not widen setoran write or reward issuance.",
-      },
-      {
-        capabilityCode: "tahfizh.reward.issue",
-        scopeType: "ASSIGNED_UNITS",
-        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
-        notes: "Restricted to assigned units only. NEVER GLOBAL reward issuance for operational staff.",
       },
     ],
   },

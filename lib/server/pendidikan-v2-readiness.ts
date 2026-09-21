@@ -28,6 +28,7 @@ export interface ReadinessGateResult {
   gate: string;
   status: ReadinessStatus;
   details: string;
+  reason?: string;
   remediationAdvice?: string;
   blocking?: boolean;
 }
@@ -172,6 +173,7 @@ export const CANONICAL_READINESS_GATE_NAMES = [
   "USER_ASSIGNMENTS_READY",
   "TEACHING_ASSIGNMENTS_READY",
   "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
+  "STALE_POSITION_CAPABILITY_POLICY_READY",
   "COHORTS_ASSIGNED",
   "RUNTIME_ACTIVATION_FLAG",
 ] as const;
@@ -197,12 +199,13 @@ export const CANONICAL_REQUIRED_POSITION_CODES = [
   UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.positionCode,
   UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.PEMBINA_HALAQOH.positionCode,
   UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.positionCode,
+  CANONICAL_POSITION_CODES.GURU_KEPESANTRENAN,
 ] as const;
 
 /**
  * Programmatically derived UAT activation capability targets:
  * 1. Education session activation capabilities (4 items)
- * 2. Approved UAT target capabilities from UAT_ACTIVATION_TARGETS manifest (5 items)
+ * 2. Approved UAT target capabilities from UAT_ACTIVATION_TARGETS manifest (4 items)
  * Deferred capabilities (academic.score.input, academic.rapor.print, etc.) are excluded.
  */
 export const EDUCATION_SESSION_ACTIVATION_CAPABILITIES = [
@@ -214,7 +217,6 @@ export const EDUCATION_SESSION_ACTIVATION_CAPABILITIES = [
 
 export const APPROVED_UAT_TARGET_CAPABILITY_CODES = [
   UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].capabilityCode,
-  UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[1].capabilityCode,
   UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.capabilityCode,
   UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].capabilityCode,
   UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[1].capabilityCode,
@@ -256,12 +258,6 @@ export const CANONICAL_UAT_TARGET_POLICIES: readonly UatTargetPolicySpec[] = [
     capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].capabilityCode,
     expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].scopeType as "GLOBAL",
     expectedBusinessState: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].businessRuleState as "APPROVED_TARGET_PENDING_TECHNICAL",
-  },
-  {
-    positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.positionCode,
-    capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[1].capabilityCode,
-    expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[1].scopeType as "ASSIGNED_UNITS",
-    expectedBusinessState: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[1].businessRuleState as "APPROVED_TARGET_PENDING_TECHNICAL",
   },
   {
     positionCode: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.positionCode,
@@ -329,6 +325,7 @@ export const CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS: readonly TeachingAs
  * Evaluated under KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY gate.
  */
 export const KEPESANTRENAN_REQUIRED_ACADEMIC_AUTH_CAPABILITIES = [
+  ACADEMIC_CAPABILITIES.SCHEDULE_READ,
   ACADEMIC_CAPABILITIES.SESSION_START,
   ACADEMIC_CAPABILITIES.MATERIAL_RECORD,
   ACADEMIC_CAPABILITIES.ATTENDANCE_RECORD,
@@ -339,9 +336,7 @@ export const KEPESANTRENAN_REQUIRED_ACADEMIC_AUTH_CAPABILITIES = [
  * Represents ONLY explicit owner-approved position-to-capability-and-scope mappings
  * for Kepesantrenan academic runtime authority.
  *
- * Current owner-approved list is intentionally EMPTY.
- * No positionCode, scope, aliases, or fallback legacy roles may be invented.
- * Awaiting formal owner approval and promotion in M3.3C2.
+ * Owner policy defined for GURU_KEPESANTRENAN teacher self-service.
  */
 export interface KepesantrenanApprovedAcademicAuthPolicy {
   positionCode: string;
@@ -349,7 +344,28 @@ export interface KepesantrenanApprovedAcademicAuthPolicy {
   scopeType: string;
 }
 
-export const KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES: readonly KepesantrenanApprovedAcademicAuthPolicy[] = [];
+export const KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES: readonly KepesantrenanApprovedAcademicAuthPolicy[] = [
+  {
+    positionCode: "GURU_KEPESANTRENAN",
+    capabilityCode: "academic.schedule.read",
+    scopeType: "GLOBAL",
+  },
+  {
+    positionCode: "GURU_KEPESANTRENAN",
+    capabilityCode: "academic.session.start",
+    scopeType: "GLOBAL",
+  },
+  {
+    positionCode: "GURU_KEPESANTRENAN",
+    capabilityCode: "academic.material.record",
+    scopeType: "GLOBAL",
+  },
+  {
+    positionCode: "GURU_KEPESANTRENAN",
+    capabilityCode: "academic.attendance.record",
+    scopeType: "GLOBAL",
+  },
+];
 
 export interface KepesantrenanAuthPolicyEvaluationOptions {
   approvedPolicies?: readonly KepesantrenanApprovedAcademicAuthPolicy[];
@@ -358,6 +374,7 @@ export interface KepesantrenanAuthPolicyEvaluationOptions {
 export interface KepesantrenanAuthPolicyEvaluationResult {
   status: ReadinessStatus;
   details: string;
+  reason?: string;
   remediationAdvice?: string;
   blocking: true;
 }
@@ -424,6 +441,50 @@ export function evaluateKepesantrenanAcademicAuthPolicies(
   const scopeMismatches: string[] = [];
   const invalidScope: string[] = [];
   const verifiedPolicies: string[] = [];
+
+  // Detect any unapproved PositionCapability rows for the 4 Kepesantrenan academic capabilities
+  const kepesantrenanCapSet = new Set<string>(KEPESANTRENAN_REQUIRED_ACADEMIC_AUTH_CAPABILITIES);
+  const unapprovedVerified: string[] = [];
+  const unapprovedPending: string[] = [];
+
+  for (const pc of activePcs) {
+    if (!kepesantrenanCapSet.has(pc.capabilityCode)) continue;
+    const posCode = pc.position?.code;
+    const isApproved = approvedPolicies.some(
+      (ap) => ap.positionCode === posCode && ap.capabilityCode === pc.capabilityCode && ap.scopeType === pc.scopeType
+    );
+
+    if (!isApproved) {
+      const desc = `${posCode || "UNKNOWN"}:${pc.capabilityCode}:${pc.scopeType || "NONE"}`;
+      if (pc.businessRuleState === "VERIFIED_PRODUCTION") {
+        unapprovedVerified.push(desc);
+      } else {
+        unapprovedPending.push(desc);
+      }
+    }
+  }
+
+  // Priority 1: Unauthorized VERIFIED authority has highest severity (immediately BLOCKED)
+  if (unapprovedVerified.length > 0) {
+    return {
+      status: "BLOCKED",
+      blocking: true,
+      reason: "UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY",
+      details: `UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY: Unapproved PositionCapability rows with VERIFIED_PRODUCTION status detected for Kepesantrenan academic capabilities: ${unapprovedVerified.join(", ")}`,
+      remediationAdvice: "Revoke and remove unauthorized VERIFIED_PRODUCTION PositionCapability rows immediately",
+    };
+  }
+
+  // Priority 2: Unapproved pending authority prevents readiness (immediately NOT_READY)
+  if (unapprovedPending.length > 0) {
+    return {
+      status: "NOT_READY",
+      blocking: true,
+      reason: "UNAPPROVED_KEPESANTRENAN_ACADEMIC_POLICY_PRESENT",
+      details: `UNAPPROVED_KEPESANTRENAN_ACADEMIC_POLICY_PRESENT: Unapproved PositionCapability rows detected for Kepesantrenan academic capabilities: ${unapprovedPending.join(", ")}`,
+      remediationAdvice: "Remove unapproved PositionCapability records from database",
+    };
+  }
 
   for (const policy of approvedPolicies) {
     const policyKey = `${policy.positionCode}:${policy.capabilityCode}:${policy.scopeType}`;
@@ -523,8 +584,55 @@ export function evaluateKepesantrenanAcademicAuthPolicies(
   };
 }
 
+export interface StalePositionCapabilityPolicyEvaluationResult {
+  status: ReadinessStatus;
+  details: string;
+  blocking: true;
+  remediationAdvice?: string;
+}
+
 /**
- * Diagnostic function: Evaluates all 12 canonical production readiness gates.
+ * Evaluates stale PositionCapability policy cleanup (M3.3C2 gate).
+ * Explicitly rejects stale PETUGAS_OPERASIONAL_TAHFIZH -> tahfizh.reward.issue policy.
+ * - If absent: READY
+ * - If APPROVED_TARGET_PENDING_TECHNICAL or PROPOSED_TBD: NOT_READY, blocking=true
+ * - If VERIFIED_PRODUCTION: BLOCKED, blocking=true
+ */
+export function evaluateStalePositionCapabilityPolicy(
+  staleRows: Array<{
+    positionCode?: string;
+    capabilityCode?: string;
+    businessRuleState?: string | null;
+  }>
+): StalePositionCapabilityPolicyEvaluationResult {
+  if (!staleRows || staleRows.length === 0) {
+    return {
+      status: "READY",
+      details: "No stale PETUGAS_OPERASIONAL_TAHFIZH / tahfizh.reward.issue policy rows found",
+      blocking: true,
+    };
+  }
+
+  const verified = staleRows.filter((r) => r.businessRuleState === "VERIFIED_PRODUCTION");
+  if (verified.length > 0) {
+    return {
+      status: "BLOCKED",
+      details: "UNAUTHORIZED_STALE_RUNTIME_AUTHORITY: Stale PETUGAS_OPERASIONAL_TAHFIZH / tahfizh.reward.issue row exists with VERIFIED_PRODUCTION status",
+      remediationAdvice: "Revoke and remove unauthorized VERIFIED_PRODUCTION stale authority immediately",
+      blocking: true,
+    };
+  }
+
+  return {
+    status: "NOT_READY",
+    details: "STALE_POSITION_CAPABILITY_POLICY_REQUIRES_CLEANUP: Stale PETUGAS_OPERASIONAL_TAHFIZH / tahfizh.reward.issue row exists and requires cleanup before activation",
+    remediationAdvice: "Remove stale PETUGAS_OPERASIONAL_TAHFIZH / tahfizh.reward.issue target row in database",
+    blocking: true,
+  };
+}
+
+/**
+ * Diagnostic function: Evaluates all canonical production readiness gates.
  * STRICTLY READ-ONLY: Executes zero INSERT, UPDATE, DELETE, SEED, or MIGRATION operations.
  */
 export async function checkPendidikanV2ProductionReadiness(
@@ -1583,13 +1691,16 @@ export async function checkPendidikanV2ProductionReadiness(
   // with OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED and KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY.
   try {
     let pcs: Array<{ capabilityCode: string; scopeType?: string | null; businessRuleState?: string | null; position?: { code?: string; isActive?: boolean } | null }> = [];
+    let queryExecuted = false;
 
     if (db.positionCapability?.findMany) {
+      queryExecuted = true;
       pcs = await db.positionCapability.findMany({
         include: { position: true },
-      }).catch(() => []);
+      });
     } else if (db.position?.findMany) {
-      const positions = await db.position.findMany().catch(() => []);
+      queryExecuted = true;
+      const positions = await db.position.findMany();
       for (const p of positions) {
         if (p.isActive !== false && Array.isArray(p.capabilities)) {
           for (const c of p.capabilities) {
@@ -1603,7 +1714,8 @@ export async function checkPendidikanV2ProductionReadiness(
         }
       }
     } else if (db.assignment?.findMany) {
-      const assignments = await db.assignment.findMany().catch(() => []);
+      queryExecuted = true;
+      const assignments = await db.assignment.findMany();
       for (const a of assignments) {
         if (a.status === "ACTIVE" && a.position?.isActive !== false && Array.isArray(a.position?.capabilities)) {
           for (const c of a.position.capabilities) {
@@ -1617,6 +1729,7 @@ export async function checkPendidikanV2ProductionReadiness(
         }
       }
     } else if (typeof db.$queryRawUnsafe === "function") {
+      queryExecuted = true;
       const rows = await db.$queryRawUnsafe<Array<{
         capability_code: string;
         scope_type: string | null;
@@ -1633,7 +1746,7 @@ export async function checkPendidikanV2ProductionReadiness(
         FROM "position_capabilities" pc
         JOIN "positions" p ON pc."position_id" = p."id"
         WHERE p."is_active" = true;
-      `).catch(() => []);
+      `);
       pcs = rows.map((r) => ({
         capabilityCode: r.capability_code,
         scopeType: r.scope_type,
@@ -1642,8 +1755,9 @@ export async function checkPendidikanV2ProductionReadiness(
       }));
     }
 
-    if (pcs.length === 0 && db.teachingAssignment?.findMany) {
-      const tas = await db.teachingAssignment.findMany().catch(() => []);
+    if (!queryExecuted && db.teachingAssignment?.findMany) {
+      queryExecuted = true;
+      const tas = await db.teachingAssignment.findMany();
       for (const ta of tas) {
         if (ta?.staff?.users) {
           for (const u of ta.staff.users) {
@@ -1666,29 +1780,106 @@ export async function checkPendidikanV2ProductionReadiness(
       }
     }
 
-    const activePcs = pcs.filter((pc) => !pc.position || pc.position.isActive !== false);
+    if (!queryExecuted) {
+      gates.push({
+        gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
+        status: "NOT_READY",
+        reason: "DATABASE_UNAVAILABLE",
+        details: "DATABASE_UNAVAILABLE: Interface database tidak tersedia untuk memverifikasi kebijakan otorisasi akademik Kepesantrenan",
+        remediationAdvice: "Database connection must provide positionCapability or query interface",
+        blocking: true,
+      });
+    } else {
+      const activePcs = pcs.filter((pc) => !pc.position || pc.position.isActive !== false);
 
-    const evaluation = evaluateKepesantrenanAcademicAuthPolicies(activePcs, {
-      approvedPolicies: KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES,
-    });
+      const evaluation = evaluateKepesantrenanAcademicAuthPolicies(activePcs, {
+        approvedPolicies: KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES,
+      });
 
-    gates.push({
-      gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
-      status: evaluation.status,
-      details: evaluation.details,
-      remediationAdvice: evaluation.remediationAdvice,
-      blocking: true,
-    });
+      gates.push({
+        gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
+        status: evaluation.status,
+        details: evaluation.details,
+        reason: evaluation.reason,
+        remediationAdvice: evaluation.remediationAdvice,
+        blocking: true,
+      });
+    }
   } catch (err: unknown) {
     gates.push({
       gate: "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
       status: "NOT_READY",
-      details: String(err),
+      reason: "DATABASE_QUERY_FAILED",
+      details: `DATABASE_QUERY_FAILED: Gagal memverifikasi kebijakan otorisasi akademik Kepesantrenan (${err instanceof Error ? err.message : String(err)})`,
+      remediationAdvice: "Periksa koneksi database dan skema tabel position_capabilities",
       blocking: true,
     });
   }
 
-  // Gate 11: Cohorts Assigned (Evaluates relevant ACTIVE santri population only)
+  // Gate 11: Stale Position Capability Policy Ready (Rejects stale PETUGAS_OPERASIONAL_TAHFIZH -> tahfizh.reward.issue)
+  try {
+    let staleRows: Array<{ positionCode?: string; capabilityCode?: string; businessRuleState?: string | null }> = [];
+    if (db.positionCapability) {
+      const rows = await db.positionCapability.findMany({
+        where: {
+          capabilityCode: "tahfizh.reward.issue",
+          position: {
+            code: "PETUGAS_OPERASIONAL_TAHFIZH",
+          },
+        },
+        include: {
+          position: true,
+        },
+      });
+      staleRows = rows.map((r: any) => ({
+        positionCode: r.position?.code || "PETUGAS_OPERASIONAL_TAHFIZH",
+        capabilityCode: r.capabilityCode,
+        businessRuleState: r.businessRuleState,
+      }));
+    } else if (typeof db.$queryRawUnsafe === "function") {
+      const rows = await db.$queryRawUnsafe<Array<{ capability_code: string; business_rule_state: string; position_code: string }>>(`
+        SELECT pc.capability_code, pc.business_rule_state::text, p.code as position_code
+        FROM position_capabilities pc
+        JOIN positions p ON p.id = pc.position_id
+        WHERE p.code = 'PETUGAS_OPERASIONAL_TAHFIZH' AND pc.capability_code = 'tahfizh.reward.issue';
+      `);
+      staleRows = rows.map((r: any) => ({
+        positionCode: r.position_code,
+        capabilityCode: r.capability_code,
+        businessRuleState: r.business_rule_state,
+      }));
+    } else {
+      gates.push({
+        gate: "STALE_POSITION_CAPABILITY_POLICY_READY",
+        status: "NOT_READY",
+        details: "DATABASE_UNAVAILABLE: PositionCapability repository unavailable to verify stale policies",
+        remediationAdvice: "Database connection must provide PositionCapability repository or query interface",
+        blocking: true,
+      });
+      staleRows = null as any;
+    }
+
+    if (staleRows !== null) {
+      const staleGateResult = evaluateStalePositionCapabilityPolicy(staleRows);
+      gates.push({
+        gate: "STALE_POSITION_CAPABILITY_POLICY_READY",
+        status: staleGateResult.status,
+        details: staleGateResult.details,
+        remediationAdvice: staleGateResult.remediationAdvice,
+        blocking: true,
+      });
+    }
+  } catch (err: unknown) {
+    gates.push({
+      gate: "STALE_POSITION_CAPABILITY_POLICY_READY",
+      status: "NOT_READY",
+      details: `DATABASE_QUERY_FAILED: Gagal memverifikasi kebijakan basi (${err instanceof Error ? err.message : String(err)})`,
+      remediationAdvice: "Periksa koneksi database dan skema tabel position_capabilities",
+      blocking: true,
+    });
+  }
+
+  // Gate 12: Cohorts Assigned (Evaluates relevant ACTIVE santri population only)
   // DEFERRED_INFORMATIONAL: Cohort assignment deferred by owner lock; COHORT_NOT_REQUIRED_FOR_RUNTIME
   try {
     if (db.santri) {

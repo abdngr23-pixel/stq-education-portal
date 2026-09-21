@@ -158,7 +158,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const report = await checkPendidikanV2ProductionReadiness(prisma as any);
       const gateNames = report.gates.map((g) => g.gate);
       assert.deepStrictEqual(gateNames, Array.from(CANONICAL_READINESS_GATE_NAMES));
-      assert.strictEqual(gateNames.length, 12);
+      assert.strictEqual(gateNames.length, 13);
     });
 
     it("2.4 Required positions gate: missing target positions => NOT_READY, PEMBINA_ASRAMA not required", async () => {
@@ -360,7 +360,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     });
 
     it("2.8 Proof 2: Deferred unrelated academic capability missing (e.g. academic.score.input) => must NOT block C1 live-UAT capability registration gate", async () => {
-      // Exactly the 9 required capabilities; deferred capabilities (score.input, rapor.print, etc.) are absent
+      // Exactly the 8 required capabilities; deferred capabilities (score.input, rapor.print, etc.) are absent
       const mockDb = {
         capability: {
           findMany: async () => REQUIRED_UAT_ACTIVATION_CAPABILITIES.map((c) => ({ code: c })),
@@ -370,16 +370,16 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const capGate = report.gates.find((g) => g.gate === "CAPABILITIES_REGISTERED");
       assert.ok(capGate);
       assert.strictEqual(capGate.status, "READY");
-      assert.ok(capGate.details.includes("All 9 required activation capabilities registered"));
+      assert.ok(capGate.details.includes("All 8 required activation capabilities registered"));
     });
 
     it("2.9 Proof 3: All required activation capability rows present => registration gate READY", async () => {
       // Programmatic verification of capability subsets derived from UAT_ACTIVATION_TARGETS
       assert.strictEqual(EDUCATION_SESSION_ACTIVATION_CAPABILITIES.length, 4);
-      assert.strictEqual(APPROVED_UAT_TARGET_CAPABILITY_CODES.length, 5);
+      assert.strictEqual(APPROVED_UAT_TARGET_CAPABILITY_CODES.length, 4);
       assert.strictEqual(REQUIRED_STUDI_UMUM_TEACHER_CAPABILITIES.length, 3);
       assert.strictEqual(REQUIRED_KEPESANTRENAN_TEACHER_CAPABILITIES.length, 4);
-      assert.strictEqual(REQUIRED_UAT_ACTIVATION_CAPABILITIES.length, 9);
+      assert.strictEqual(REQUIRED_UAT_ACTIVATION_CAPABILITIES.length, 8);
 
       const mockDb = {
         capability: {
@@ -536,7 +536,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
                     unit: { id: "ou-1", isActive: true },
                     position: {
                       id: `pos-${idx}`,
-                      code: "POS_KEPESANTRENAN_TEST",
+                      code: "GURU_KEPESANTRENAN",
                       isActive: true,
                       capabilities: [
                         "academic.schedule.read",
@@ -571,18 +571,20 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(authGate);
       assert.strictEqual(authGate.status, "NOT_READY"); // AUTH_POLICY_NOT_READY
-      assert.ok(authGate.details.includes("OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED"));
+      assert.ok(authGate.details.includes("PROPOSED_TBD"));
       assert.ok(authGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
 
       // Pure evaluator proves PROPOSED_TBD causes NOT_READY with PROPOSED_TBD
       const evalResult = evaluateKepesantrenanAcademicAuthPolicies(
         [
+          { capabilityCode: "academic.schedule.read", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD", position: { code: "GURU_TEST", isActive: true } },
           { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD", position: { code: "GURU_TEST", isActive: true } },
           { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD", position: { code: "GURU_TEST", isActive: true } },
           { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "PROPOSED_TBD", position: { code: "GURU_TEST", isActive: true } },
         ],
         {
           approvedPolicies: [
+            { positionCode: "GURU_TEST", capabilityCode: "academic.schedule.read", scopeType: "GLOBAL" },
             { positionCode: "GURU_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" },
             { positionCode: "GURU_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" },
             { positionCode: "GURU_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" },
@@ -631,7 +633,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
                     unit: { id: "ou-1", isActive: true },
                     position: {
                       id: `pos-${idx}`,
-                      code: "POS_KEPESANTRENAN_TEST",
+                      code: "GURU_KEPESANTRENAN",
                       isActive: true,
                       capabilities: [
                         "academic.schedule.read",
@@ -666,18 +668,20 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(authGate);
       assert.strictEqual(authGate.status, "NOT_READY"); // AUTH_POLICY_NOT_READY
-      assert.ok(authGate.details.includes("OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED"));
+      assert.ok(authGate.details.includes("APPROVED_TARGET_PENDING_TECHNICAL"));
       assert.ok(authGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY"));
 
       // Pure evaluator proves APPROVED_TARGET_PENDING_TECHNICAL causes NOT_READY with APPROVED_TARGET_PENDING_TECHNICAL
       const evalResult = evaluateKepesantrenanAcademicAuthPolicies(
         [
+          { capabilityCode: "academic.schedule.read", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL", position: { code: "GURU_TEST", isActive: true } },
           { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL", position: { code: "GURU_TEST", isActive: true } },
           { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL", position: { code: "GURU_TEST", isActive: true } },
           { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL", position: { code: "GURU_TEST", isActive: true } },
         ],
         {
           approvedPolicies: [
+            { positionCode: "GURU_TEST", capabilityCode: "academic.schedule.read", scopeType: "GLOBAL" },
             { positionCode: "GURU_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" },
             { positionCode: "GURU_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" },
             { positionCode: "GURU_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" },
@@ -726,7 +730,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
                     unit: { id: "ou-1", isActive: true },
                     position: {
                       id: `pos-${idx}`,
-                      code: "POS_KEPESANTRENAN_TEST",
+                      code: "GURU_KEPESANTRENAN",
                       isActive: true,
                       capabilities: [
                         "academic.schedule.read",
@@ -758,21 +762,23 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(gate.status, "READY");
       assert.ok(gate.details.includes("All 12 required teaching assignment slots covered with verified planning metadata"));
 
-      // Production diagnostic has no override: fails closed with NOT_READY
+      // With canonical GURU_KEPESANTRENAN policy and VERIFIED_PRODUCTION grants => READY
       const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(authGate);
-      assert.strictEqual(authGate.status, "NOT_READY");
-      assert.ok(authGate.details.includes("OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED"));
+      assert.strictEqual(authGate.status, "READY");
+      assert.ok(authGate.details.includes("verified with active VERIFIED_PRODUCTION grants"));
 
       // Pure evaluator proves complete synthetic manifest with VERIFIED_PRODUCTION grants is READY
       const evalResult = evaluateKepesantrenanAcademicAuthPolicies(
         [
+          { capabilityCode: "academic.schedule.read", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
           { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
           { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
           { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
         ],
         {
           approvedPolicies: [
+            { positionCode: "GURU_TEST", capabilityCode: "academic.schedule.read", scopeType: "GLOBAL" },
             { positionCode: "GURU_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" },
             { positionCode: "GURU_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" },
             { positionCode: "GURU_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" },
@@ -912,6 +918,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     const USR_AHMAD = "usr-c1-ahmad";
     const USR_ZAID = "usr-c1-zaid";
     const USR_ABI = "usr-c1-abi";
+    const USR_KAMAL = "usr-c1-kamal";
+    const USR_ANDI = "usr-c1-andi";
     const USR_LISA = "usr-c1-lisa";
 
     const POS_GURU = "pos-c1-guru";
@@ -953,6 +961,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           { id: USR_AHMAD, username: "guru.ahmad", staffId: STF_AHMAD, status: "AKTIF", role: "GA", passwordHash: "dummy" },
           { id: USR_ZAID, username: "guru.zaid", staffId: STF_ZAID, status: "AKTIF", role: "GA", passwordHash: "dummy" },
           { id: USR_ABI, username: "guru.abi", staffId: STF_ABI, status: "AKTIF", role: "GA", passwordHash: "dummy" },
+          { id: USR_KAMAL, username: "guru.kamal", staffId: STF_KAMAL, status: "AKTIF", role: "GA", passwordHash: "dummy" },
+          { id: USR_ANDI, username: "guru.andi", staffId: STF_ANDI, status: "AKTIF", role: "GA", passwordHash: "dummy" },
           { id: USR_LISA, username: "guru.lisa", staffId: STF_LISA, status: "AKTIF", role: "GA", passwordHash: "dummy" },
         ],
       });
@@ -962,7 +972,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         data: { id: OU_AKADEMIK, code: "OU-AKADEMIK", name: "Unit Akademik", type: "SERVICE_UNIT", domain: "AKADEMIK", genderComplex: "PUTRA" },
       });
       await prisma.position.create({
-        data: { id: POS_GURU, code: "GURU_AKADEMIK", name: "Guru Akademik", domain: "AKADEMIK" },
+        data: { id: POS_GURU, code: "GURU_KEPESANTRENAN", name: "Guru Kepesantrenan", domain: "AKADEMIK" },
       });
 
       // Capabilities
@@ -991,7 +1001,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       }
 
       // User assignments
-      for (const uid of [USR_AHMAD, USR_ZAID, USR_ABI, USR_LISA]) {
+      for (const uid of [USR_AHMAD, USR_ZAID, USR_ABI, USR_KAMAL, USR_ANDI, USR_LISA]) {
         await prisma.assignment.create({
           data: {
             userId: uid,
@@ -1189,7 +1199,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
 
     it("3.2 Authenticated read returns real relational subject name, code, and teacher display", async () => {
       const dtos = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
-      assert.ok(dtos.length >= 8);
+      assert.ok(dtos.length >= 7);
 
       const matSession = dtos.find((d) => d.sessionId === "sess-col-date-1");
       assert.ok(matSession);
@@ -1274,10 +1284,11 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     });
 
     it("3.7 Collision Cases 4, 5, 6 & Date Disambiguation: Bahasa Arab PUTRA T1 on 2026-09-21 vs 2026-09-28 resolves exact requested date without aliasing", async () => {
-      const dtos = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
+      // Under strict Kepesantrenan schedule read, Ust. Abi views his scheduled sessions
+      const dtosAbi = await service.getEducationSessions(undefined, { actorUserId: USR_ABI });
 
       // Selecting 2026-09-28 must return ONLY the second session
-      const matchWeek2 = matchKepesantrenanSession(dtos, {
+      const matchWeek2 = matchKepesantrenanSession(dtosAbi, {
         scheduledDate: "2026-09-28",
         subjectName: "Bahasa Arab",
         genderGroup: "PUTRA",
@@ -1289,7 +1300,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(matchWeek2.scheduledTeacherDisplay, "Ust. Abi Hudzaifah");
 
       // Selecting 2026-09-21 returns ONLY the first session
-      const matchWeek1 = matchKepesantrenanSession(dtos, {
+      const matchWeek1 = matchKepesantrenanSession(dtosAbi, {
         scheduledDate: "2026-09-21",
         subjectName: "Bahasa Arab",
         genderGroup: "PUTRA",
@@ -1299,8 +1310,9 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(matchWeek1.sessionId, "sess-kps-arb-t1");
       assert.strictEqual(matchWeek1.scheduledDate, "2026-09-21");
 
-      // Distinct levels on same date: T2 & T3
-      const matchT2 = matchKepesantrenanSession(dtos, {
+      // Distinct levels on same date: T2 (Ust. Kamal) & T3 (Ust. Andi)
+      const dtosKamal = await service.getEducationSessions(undefined, { actorUserId: USR_KAMAL });
+      const matchT2 = matchKepesantrenanSession(dtosKamal, {
         scheduledDate: "2026-09-21",
         subjectName: "Bahasa Arab",
         genderGroup: "PUTRA",
@@ -1310,7 +1322,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(matchT2.sessionId, "sess-kps-arb-t2");
       assert.strictEqual(matchT2.scheduledTeacherDisplay, "Ust. Kamal Mukhtar");
 
-      const matchT3 = matchKepesantrenanSession(dtos, {
+      const dtosAndi = await service.getEducationSessions(undefined, { actorUserId: USR_ANDI });
+      const matchT3 = matchKepesantrenanSession(dtosAndi, {
         scheduledDate: "2026-09-21",
         subjectName: "Bahasa Arab",
         genderGroup: "PUTRA",
@@ -1319,12 +1332,17 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.ok(matchT3);
       assert.strictEqual(matchT3.sessionId, "sess-kps-arb-t3");
       assert.strictEqual(matchT3.scheduledTeacherDisplay, "Ust. Andi Quarzy Ayatullah");
+
+      // Non-scheduled actor (Ust. Ahmad) must NOT see any of these Kepesantrenan sessions
+      const dtosAhmad = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
+      assert.strictEqual(dtosAhmad.some((d) => d.educationTrack === "KEPESANTRENAN"), false);
     });
 
     it("3.8 Collision Case 7: PUTRI session and strict gender isolation (No gender aliasing)", async () => {
-      const dtos = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
+      // Under strict Kepesantrenan schedule read, Ustazah Lisa views her scheduled session
+      const dtosLisa = await service.getEducationSessions(undefined, { actorUserId: USR_LISA });
 
-      const matchPutri = matchKepesantrenanSession(dtos, {
+      const matchPutri = matchKepesantrenanSession(dtosLisa, {
         subjectName: "Bahasa Arab",
         genderGroup: "PUTRI",
       });
@@ -1335,10 +1353,14 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
 
       // Searching for PUTRI must NEVER return PUTRA
       const leakCheck = matchKepesantrenanSession(
-        dtos.filter((d) => d.genderGroup === "PUTRI"),
+        dtosLisa.filter((d) => d.genderGroup === "PUTRI"),
         { subjectName: "Bahasa Arab", genderGroup: "PUTRA" }
       );
       assert.strictEqual(leakCheck, undefined);
+
+      // Non-scheduled actor (Ust. Ahmad) must NOT see Lisa's session
+      const dtosAhmad = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
+      assert.strictEqual(dtosAhmad.find((d) => d.sessionId === "sess-kps-putri"), undefined);
     });
 
     it("3.9 Authorization proof: Direct Subject account binding without Staff profile or assignment", async () => {
@@ -1648,9 +1670,9 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
 
       const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(authGate);
-      assert.strictEqual(authGate.status, "NOT_READY");
+      assert.strictEqual(authGate.status, "BLOCKED");
       assert.ok(
-        authGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY")
+        authGate.details.includes("UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY")
       );
     });
 
@@ -1717,7 +1739,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
                   unit: { id: OU_AKADEMIK, isActive: true },
                   position: {
                     id: `pos-${idx}`,
-                    code: "POS_KEPESANTRENAN_TEST",
+                    code: "GURU_KEPESANTRENAN",
                     isActive: true,
                     capabilities: [
                       "academic.schedule.read",
@@ -1746,21 +1768,22 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.ok(teachingGate);
       assert.strictEqual(teachingGate.status, "READY");
 
-      // Production diagnostic has no override: fails closed with NOT_READY
+      // With canonical GURU_KEPESANTRENAN policy and VERIFIED_PRODUCTION grants => READY
       const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(authGate);
-      assert.strictEqual(authGate.status, "NOT_READY");
-      assert.ok(authGate.details.includes("OWNER_APPROVED_KEPESANTRENAN_ACADEMIC_POLICY_NOT_DEFINED"));
+      assert.strictEqual(authGate.status, "READY");
 
       // Pure evaluator proves runtime-compatible effective grant evaluates to READY
       const evalResult = evaluateKepesantrenanAcademicAuthPolicies(
         [
+          { capabilityCode: "academic.schedule.read", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
           { capabilityCode: "academic.session.start", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
           { capabilityCode: "academic.material.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
           { capabilityCode: "academic.attendance.record", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "GURU_TEST", isActive: true } },
         ],
         {
           approvedPolicies: [
+            { positionCode: "GURU_TEST", capabilityCode: "academic.schedule.read", scopeType: "GLOBAL" },
             { positionCode: "GURU_TEST", capabilityCode: "academic.session.start", scopeType: "GLOBAL" },
             { positionCode: "GURU_TEST", capabilityCode: "academic.material.record", scopeType: "GLOBAL" },
             { positionCode: "GURU_TEST", capabilityCode: "academic.attendance.record", scopeType: "GLOBAL" },
@@ -1893,15 +1916,15 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
 
       const authGate = report.gates.find((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY");
       assert.ok(authGate);
-      assert.strictEqual(authGate.status, "NOT_READY");
+      assert.strictEqual(authGate.status, "BLOCKED");
       assert.ok(
-        authGate.details.includes("KEPESANTRENAN_ACADEMIC_AUTH_POLICY_NOT_RUNTIME_READY")
+        authGate.details.includes("UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY")
       );
     });
 
-    it("4.4 Proof 4: PETUGAS_OPERASIONAL_TAHFIZH assignment exists but tahfizh.reward.issue PositionCapability missing => USER_ASSIGNMENTS_READY = NOT_READY", async () => {
+    it("4.4 Proof 4: PETUGAS_OPERASIONAL_TAHFIZH assignment exists but tahfizh.recap.read PositionCapability missing => USER_ASSIGNMENTS_READY = NOT_READY", async () => {
       const assignments = createAllRequiredAssignments({
-        policyOverrides: new Map([["tahfizh.reward.issue", { remove: true }]]),
+        policyOverrides: new Map([["tahfizh.recap.read", { remove: true }]]),
       });
 
       const mockDb = {
@@ -1918,14 +1941,14 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.ok(userGate);
       assert.strictEqual(userGate.status, "NOT_READY");
       assert.ok(
-        userGate.details.includes("tahfizh.reward.issue") && userGate.details.includes("missing"),
-        "Must flag missing tahfizh.reward.issue capability"
+        userGate.details.includes("tahfizh.recap.read") && userGate.details.includes("missing"),
+        "Must flag missing tahfizh.recap.read capability"
       );
     });
 
-    it("4.5 Proof 5: PositionCapability exists with wrong scope (GLOBAL instead of ASSIGNED_UNITS) => target policy mismatch / NOT_READY", async () => {
+    it("4.5 Proof 5: PositionCapability exists with wrong scope (ASSIGNED_UNITS instead of GLOBAL) => target policy mismatch / NOT_READY", async () => {
       const assignments = createAllRequiredAssignments({
-        policyOverrides: new Map([["tahfizh.reward.issue", { scope: "GLOBAL" }]]),
+        policyOverrides: new Map([["tahfizh.recap.read", { scope: "ASSIGNED_UNITS" }]]),
       });
 
       const mockDb = {
@@ -1942,8 +1965,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.ok(userGate);
       assert.strictEqual(userGate.status, "NOT_READY");
       assert.ok(
-        userGate.details.includes("expected ASSIGNED_UNITS, found GLOBAL"),
-        "Must flag scope mismatch between ASSIGNED_UNITS and GLOBAL"
+        userGate.details.includes("expected GLOBAL, found ASSIGNED_UNITS"),
+        "Must flag scope mismatch between GLOBAL and ASSIGNED_UNITS"
       );
     });
 
@@ -2275,25 +2298,25 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(authDeny.decision, "DENY");
       assert.strictEqual(authDeny.code, "SCOPE_MISMATCH");
 
-      // 2. Gate 8 Production Readiness Check
+      // 2. Gate 8 Production Readiness Check (tested via ASSIGNED_UNITS policy santri.kamar.manage)
       const assignments = createUatAssignments({
-        overridePosCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+        overridePosCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
         overridePatch: (base) => ({
           ...base,
-          unitId: "ou-tahfizh-unit-1",
-          scopedUnits: [{ unitId: "ou-tahfizh-unit-1", unit: { id: "ou-tahfizh-unit-1", isActive: true } }],
+          unitId: "ou-asr-unit-1",
+          scopedUnits: [{ unitId: "ou-asr-unit-1", unit: { id: "ou-asr-unit-1", isActive: true } }],
         }),
       });
 
       const mockDb = createDefaultMockDb(assignments, {
-        santriFindFirst: async (args: any) => {
-          if (args?.where?.halaqohId?.in?.includes("ou-tahfizh-unit-1")) {
-            return null; // No active santri in permitted unit
+        placementFindFirst: async (args: any) => {
+          if (args?.where?.kamarId?.in?.includes("ou-asr-unit-1")) {
+            return null; // No active santri placement in permitted unit
           }
-          return { id: "san-default", halaqohId: "ou-default", status: "AKTIF" };
+          return { id: "skp-default", kamarId: "ou-default", santriId: "san-default", isActive: true, santri: { status: "AKTIF" } };
         },
-        santriFindMany: async () => [
-          { id: "san-outside", halaqohId: "ou-tahfizh-unit-99", status: "AKTIF" },
+        placementFindMany: async () => [
+          { id: "skp-outside", kamarId: "ou-asr-unit-99", santriId: "san-outside", isActive: true, santri: { status: "AKTIF" } },
         ],
       });
 
@@ -2302,8 +2325,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.ok(userGate);
       assert.strictEqual(userGate.status, "NOT_READY");
       assert.ok(
-        userGate.details.includes("SCOPE_MISMATCH") && userGate.details.includes("tahfizh.reward.issue"),
-        `Expected SCOPE_MISMATCH for tahfizh.reward.issue, got: ${userGate.details}`
+        userGate.details.includes("SCOPE_MISMATCH") && userGate.details.includes("PETUGAS_OPERASIONAL_KEASRAMAAN"),
+        `Expected SCOPE_MISMATCH failure, got: ${userGate.details}`
       );
     });
 
@@ -2759,8 +2782,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     });
 
     it("5.8 Proof 8: exact CANONICAL_UAT_TARGET_POLICIES matches UAT_ACTIVATION_TARGETS definitions with no legacy aliases", () => {
-      // 1. Exact count is 6
-      assert.strictEqual(CANONICAL_UAT_TARGET_POLICIES.length, 6, "Must have exactly 6 canonical UAT target policies");
+      // 1. Exact count is 5 (POT tahfizh.reward.issue removed per Gate 5 owner mandate)
+      assert.strictEqual(CANONICAL_UAT_TARGET_POLICIES.length, 5, "Must have exactly 5 canonical UAT target policies");
 
       // 2. Build expected list directly from UAT_ACTIVATION_TARGETS
       const expectedPolicies = [
@@ -2769,12 +2792,6 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].capabilityCode,
           expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].scopeType,
           expectedBusinessState: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].businessRuleState,
-        },
-        {
-          positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.positionCode,
-          capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[1].capabilityCode,
-          expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[1].scopeType,
-          expectedBusinessState: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[1].businessRuleState,
         },
         {
           positionCode: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.positionCode,
@@ -2816,6 +2833,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.ok(!allCapabilityCodes.includes("keasramaan.perizinan.approve" as any), "keasramaan.perizinan.approve must NOT be in canonical UAT targets");
       assert.ok(!allCapabilityCodes.includes("health.record.write" as any), "health.record.write must NOT be in canonical UAT targets");
       assert.ok(!allCapabilityCodes.includes("tahfizh.halaqoh.manage" as any), "tahfizh.halaqoh.manage must NOT be in canonical UAT targets");
+      assert.ok(!allCapabilityCodes.includes("tahfizh.reward.issue" as any), "tahfizh.reward.issue must NOT be in canonical UAT targets");
     });
   });
 
