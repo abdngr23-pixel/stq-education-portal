@@ -228,8 +228,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
             id: `asg-${userId}`,
             userId,
             positionId: "pos-guru-akademik",
-            positionCode: "GURU_AKADEMIK",
-            positionName: "Guru Akademik",
+            positionCode: "GURU_KEPESANTRENAN",
+            positionName: "Guru Kepesantrenan",
             domain: "AKADEMIK",
             unitId: "ou-akademik",
             unitCode: "OU-AKADEMIK",
@@ -389,7 +389,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
 
     it("14. Material save succeeds when actor is actual teacher", async () => {
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
-      const db = createMockEducationDb([{ id: "sess-01", status: "STARTED", scheduledStaffId: "stf-teacher-01", actualTeacherUserId: "usr-teacher-01" }]);
+      const db = createMockEducationDb([{ id: "sess-01", status: "STARTED", scheduledStaffId: "stf-teacher-01", actualTeacherUserId: "usr-teacher-01", actualTeacherStaffId: "stf-teacher-01" }]);
       const service = new PendidikanV2Service({ db: db as any, dataProvider: createMockDataProvider(), auditPersistence: createMockAuditPersistence() });
 
       const res = await service.recordSessionMaterial({ sessionId: "sess-01", materi: "Bab Sholat Berjamaah" }, { actorUserId: "usr-teacher-01" });
@@ -399,7 +399,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
 
     it("15. Material rollback on audit persistence failure", async () => {
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
-      const db = createMockEducationDb([{ id: "sess-01", status: "STARTED", scheduledStaffId: "stf-teacher-01", actualTeacherUserId: "usr-teacher-01" }]);
+      const db = createMockEducationDb([{ id: "sess-01", status: "STARTED", scheduledStaffId: "stf-teacher-01", actualTeacherUserId: "usr-teacher-01", actualTeacherStaffId: "stf-teacher-01" }]);
       const failingAudit = createMockAuditPersistence(true);
       const service = new PendidikanV2Service({ db: db as any, dataProvider: createMockDataProvider(), auditPersistence: failingAudit });
 
@@ -440,7 +440,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
     it("18. Santri participant roster enforced on attendance save", async () => {
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
       const db = createMockEducationDb(
-        [{ id: "sess-01", status: "STARTED", scheduledStaffId: "stf-teacher-01", actualTeacherUserId: "usr-teacher-01", educationTrack: "KEPESANTRENAN" }],
+        [{ id: "sess-01", status: "STARTED", scheduledStaffId: "stf-teacher-01", actualTeacherUserId: "usr-teacher-01", actualTeacherStaffId: "stf-teacher-01", educationTrack: "KEPESANTRENAN" }],
         [{ sessionId: "sess-01", santriId: "san-01" }]
       );
       const service = new PendidikanV2Service({ db: db as any, dataProvider: createMockDataProvider(), auditPersistence: createMockAuditPersistence() });
@@ -453,7 +453,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
     it("19. Non-participant santri attendance rejected", async () => {
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
       const db = createMockEducationDb(
-        [{ id: "sess-01", status: "STARTED", scheduledStaffId: "stf-teacher-01", actualTeacherUserId: "usr-teacher-01", educationTrack: "KEPESANTRENAN" }],
+        [{ id: "sess-01", status: "STARTED", scheduledStaffId: "stf-teacher-01", actualTeacherUserId: "usr-teacher-01", actualTeacherStaffId: "stf-teacher-01", educationTrack: "KEPESANTRENAN" }],
         [{ sessionId: "sess-01", santriId: "san-01" }]
       );
       const service = new PendidikanV2Service({ db: db as any, dataProvider: createMockDataProvider(), auditPersistence: createMockAuditPersistence() });
@@ -467,7 +467,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
     it("20. MASBUK status rejected for Kepesantrenan session attendance", async () => {
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
       const db = createMockEducationDb(
-        [{ id: "sess-01", status: "STARTED", scheduledStaffId: "stf-teacher-01", actualTeacherUserId: "usr-teacher-01", educationTrack: "KEPESANTRENAN" }],
+        [{ id: "sess-01", status: "STARTED", scheduledStaffId: "stf-teacher-01", actualTeacherUserId: "usr-teacher-01", actualTeacherStaffId: "stf-teacher-01", educationTrack: "KEPESANTRENAN" }],
         [{ sessionId: "sess-01", santriId: "san-01" }]
       );
       const service = new PendidikanV2Service({ db: db as any, dataProvider: createMockDataProvider(), auditPersistence: createMockAuditPersistence() });
@@ -481,7 +481,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
     it("21. Valid attendance statuses HADIR, IZIN, SAKIT, ALFA accepted", async () => {
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
       const db = createMockEducationDb(
-        [{ id: "sess-01", status: "STARTED", scheduledStaffId: "stf-teacher-01", actualTeacherUserId: "usr-teacher-01", educationTrack: "KEPESANTRENAN" }],
+        [{ id: "sess-01", status: "STARTED", scheduledStaffId: "stf-teacher-01", actualTeacherUserId: "usr-teacher-01", actualTeacherStaffId: "stf-teacher-01", educationTrack: "KEPESANTRENAN" }],
         [
           { sessionId: "sess-01", santriId: "san-01" },
           { sessionId: "sess-01", santriId: "san-02" },
@@ -507,7 +507,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
     it("22. Attendance audit before/after state diff recorded", async () => {
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
       const db = createMockEducationDb(
-        [{ id: "sess-01", status: "STARTED", scheduledStaffId: "stf-teacher-01", actualTeacherUserId: "usr-teacher-01", educationTrack: "KEPESANTRENAN" }],
+        [{ id: "sess-01", status: "STARTED", scheduledStaffId: "stf-teacher-01", actualTeacherUserId: "usr-teacher-01", actualTeacherStaffId: "stf-teacher-01", educationTrack: "KEPESANTRENAN" }],
         [{ sessionId: "sess-01", santriId: "san-01" }],
         [{ sessionId: "sess-01", santriId: "san-01", status: "HADIR" }]
       );
@@ -527,7 +527,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
     it("23. Attendance rollback on audit persistence failure", async () => {
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
       const db = createMockEducationDb(
-        [{ id: "sess-01", status: "STARTED", scheduledStaffId: "stf-teacher-01", actualTeacherUserId: "usr-teacher-01", educationTrack: "KEPESANTRENAN" }],
+        [{ id: "sess-01", status: "STARTED", scheduledStaffId: "stf-teacher-01", actualTeacherUserId: "usr-teacher-01", actualTeacherStaffId: "stf-teacher-01", educationTrack: "KEPESANTRENAN" }],
         [{ sessionId: "sess-01", santriId: "san-01" }]
       );
       const failingAudit = createMockAuditPersistence(true);
@@ -589,10 +589,11 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
       const sessions = await service.getEducationSessions(undefined, { actorUserId: "usr-teacher-01" });
       assert.strictEqual(sessions[0].mutationAvailable, true);
 
-      // Unauthorized actor (without academic.session.start grant) => mutationAvailable: false
-      const sessionsWrong = await service.getEducationSessions(undefined, { actorUserId: "usr-unauthorized" });
-      assert.strictEqual(sessionsWrong[0].mutationAvailable, false);
-      assert.strictEqual(sessionsWrong[0].mutationDeniedReason, "CANONICAL_AUTH_DENIED");
+      // Unauthorized actor (without academic.session.start/schedule.read grant or scheduled match) => denied access
+      await assert.rejects(
+        () => service.getEducationSessions(undefined, { actorUserId: "usr-unauthorized" }),
+        /PERMISSION_DENIED/
+      );
 
       // UAT disabled => mutationAvailable: false
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "false";

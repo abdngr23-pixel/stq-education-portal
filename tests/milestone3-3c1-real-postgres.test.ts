@@ -918,6 +918,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     const USR_AHMAD = "usr-c1-ahmad";
     const USR_ZAID = "usr-c1-zaid";
     const USR_ABI = "usr-c1-abi";
+    const USR_KAMAL = "usr-c1-kamal";
+    const USR_ANDI = "usr-c1-andi";
     const USR_LISA = "usr-c1-lisa";
 
     const POS_GURU = "pos-c1-guru";
@@ -959,6 +961,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           { id: USR_AHMAD, username: "guru.ahmad", staffId: STF_AHMAD, status: "AKTIF", role: "GA", passwordHash: "dummy" },
           { id: USR_ZAID, username: "guru.zaid", staffId: STF_ZAID, status: "AKTIF", role: "GA", passwordHash: "dummy" },
           { id: USR_ABI, username: "guru.abi", staffId: STF_ABI, status: "AKTIF", role: "GA", passwordHash: "dummy" },
+          { id: USR_KAMAL, username: "guru.kamal", staffId: STF_KAMAL, status: "AKTIF", role: "GA", passwordHash: "dummy" },
+          { id: USR_ANDI, username: "guru.andi", staffId: STF_ANDI, status: "AKTIF", role: "GA", passwordHash: "dummy" },
           { id: USR_LISA, username: "guru.lisa", staffId: STF_LISA, status: "AKTIF", role: "GA", passwordHash: "dummy" },
         ],
       });
@@ -968,7 +972,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         data: { id: OU_AKADEMIK, code: "OU-AKADEMIK", name: "Unit Akademik", type: "SERVICE_UNIT", domain: "AKADEMIK", genderComplex: "PUTRA" },
       });
       await prisma.position.create({
-        data: { id: POS_GURU, code: "GURU_AKADEMIK", name: "Guru Akademik", domain: "AKADEMIK" },
+        data: { id: POS_GURU, code: "GURU_KEPESANTRENAN", name: "Guru Kepesantrenan", domain: "AKADEMIK" },
       });
 
       // Capabilities
@@ -997,7 +1001,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       }
 
       // User assignments
-      for (const uid of [USR_AHMAD, USR_ZAID, USR_ABI, USR_LISA]) {
+      for (const uid of [USR_AHMAD, USR_ZAID, USR_ABI, USR_KAMAL, USR_ANDI, USR_LISA]) {
         await prisma.assignment.create({
           data: {
             userId: uid,
@@ -1195,7 +1199,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
 
     it("3.2 Authenticated read returns real relational subject name, code, and teacher display", async () => {
       const dtos = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
-      assert.ok(dtos.length >= 8);
+      assert.ok(dtos.length >= 7);
 
       const matSession = dtos.find((d) => d.sessionId === "sess-col-date-1");
       assert.ok(matSession);
@@ -1280,10 +1284,11 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     });
 
     it("3.7 Collision Cases 4, 5, 6 & Date Disambiguation: Bahasa Arab PUTRA T1 on 2026-09-21 vs 2026-09-28 resolves exact requested date without aliasing", async () => {
-      const dtos = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
+      // Under strict Kepesantrenan schedule read, Ust. Abi views his scheduled sessions
+      const dtosAbi = await service.getEducationSessions(undefined, { actorUserId: USR_ABI });
 
       // Selecting 2026-09-28 must return ONLY the second session
-      const matchWeek2 = matchKepesantrenanSession(dtos, {
+      const matchWeek2 = matchKepesantrenanSession(dtosAbi, {
         scheduledDate: "2026-09-28",
         subjectName: "Bahasa Arab",
         genderGroup: "PUTRA",
@@ -1295,7 +1300,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(matchWeek2.scheduledTeacherDisplay, "Ust. Abi Hudzaifah");
 
       // Selecting 2026-09-21 returns ONLY the first session
-      const matchWeek1 = matchKepesantrenanSession(dtos, {
+      const matchWeek1 = matchKepesantrenanSession(dtosAbi, {
         scheduledDate: "2026-09-21",
         subjectName: "Bahasa Arab",
         genderGroup: "PUTRA",
@@ -1305,8 +1310,9 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(matchWeek1.sessionId, "sess-kps-arb-t1");
       assert.strictEqual(matchWeek1.scheduledDate, "2026-09-21");
 
-      // Distinct levels on same date: T2 & T3
-      const matchT2 = matchKepesantrenanSession(dtos, {
+      // Distinct levels on same date: T2 (Ust. Kamal) & T3 (Ust. Andi)
+      const dtosKamal = await service.getEducationSessions(undefined, { actorUserId: USR_KAMAL });
+      const matchT2 = matchKepesantrenanSession(dtosKamal, {
         scheduledDate: "2026-09-21",
         subjectName: "Bahasa Arab",
         genderGroup: "PUTRA",
@@ -1316,7 +1322,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(matchT2.sessionId, "sess-kps-arb-t2");
       assert.strictEqual(matchT2.scheduledTeacherDisplay, "Ust. Kamal Mukhtar");
 
-      const matchT3 = matchKepesantrenanSession(dtos, {
+      const dtosAndi = await service.getEducationSessions(undefined, { actorUserId: USR_ANDI });
+      const matchT3 = matchKepesantrenanSession(dtosAndi, {
         scheduledDate: "2026-09-21",
         subjectName: "Bahasa Arab",
         genderGroup: "PUTRA",
@@ -1325,12 +1332,17 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.ok(matchT3);
       assert.strictEqual(matchT3.sessionId, "sess-kps-arb-t3");
       assert.strictEqual(matchT3.scheduledTeacherDisplay, "Ust. Andi Quarzy Ayatullah");
+
+      // Non-scheduled actor (Ust. Ahmad) must NOT see any of these Kepesantrenan sessions
+      const dtosAhmad = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
+      assert.strictEqual(dtosAhmad.some((d) => d.educationTrack === "KEPESANTRENAN"), false);
     });
 
     it("3.8 Collision Case 7: PUTRI session and strict gender isolation (No gender aliasing)", async () => {
-      const dtos = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
+      // Under strict Kepesantrenan schedule read, Ustazah Lisa views her scheduled session
+      const dtosLisa = await service.getEducationSessions(undefined, { actorUserId: USR_LISA });
 
-      const matchPutri = matchKepesantrenanSession(dtos, {
+      const matchPutri = matchKepesantrenanSession(dtosLisa, {
         subjectName: "Bahasa Arab",
         genderGroup: "PUTRI",
       });
@@ -1341,10 +1353,14 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
 
       // Searching for PUTRI must NEVER return PUTRA
       const leakCheck = matchKepesantrenanSession(
-        dtos.filter((d) => d.genderGroup === "PUTRI"),
+        dtosLisa.filter((d) => d.genderGroup === "PUTRI"),
         { subjectName: "Bahasa Arab", genderGroup: "PUTRA" }
       );
       assert.strictEqual(leakCheck, undefined);
+
+      // Non-scheduled actor (Ust. Ahmad) must NOT see Lisa's session
+      const dtosAhmad = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
+      assert.strictEqual(dtosAhmad.find((d) => d.sessionId === "sess-kps-putri"), undefined);
     });
 
     it("3.9 Authorization proof: Direct Subject account binding without Staff profile or assignment", async () => {

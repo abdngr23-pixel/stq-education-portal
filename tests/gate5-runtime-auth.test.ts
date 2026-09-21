@@ -22,8 +22,12 @@ import {
   KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES,
   CANONICAL_UAT_TARGET_POLICIES,
   APPROVED_UAT_TARGET_CAPABILITY_CODES,
+  checkPendidikanV2ProductionReadiness,
 } from "../lib/server/pendidikan-v2-readiness";
-import { PendidikanV2Service } from "../lib/server/pendidikan-v2-service";
+import {
+  PendidikanV2Service,
+  validateKepesantrenanTeacherGrant,
+} from "../lib/server/pendidikan-v2-service";
 import { generateCanonicalBaselineCapabilities } from "../lib/auth/backfill-dry-run";
 
 describe("GATE 5 — RUNTIME AUTHORIZATION REMEDIATION TEST SUITE (24 SCENARIOS)", () => {
@@ -1209,5 +1213,833 @@ describe("GATE 5 — RUNTIME AUTHORIZATION REMEDIATION TEST SUITE (24 SCENARIOS)
     assert.strictEqual(GURU_KEPESANTRENAN_POSITION_CONTRACT.code, "GURU_KEPESANTRENAN");
     assert.strictEqual(GURU_KEPESANTRENAN_POSITION_CONTRACT.requiresPersonalAccount, true);
     assert.strictEqual(GURU_KEPESANTRENAN_POSITION_CONTRACT.isLeadership, false);
+  });
+});
+
+describe("GATE 5 — ROUND 2 STRICT RUNTIME HARDENING TESTS (SCENARIOS A - L)", () => {
+  function createMockDataProvider(opts: {
+    identities?: Record<string, CanonicalIdentity>;
+    assignments?: Record<string, CanonicalAssignmentWithDetails[]>;
+  }): ICanonicalDataProvider {
+    const identities = opts.identities || {};
+    const assignments = opts.assignments || {};
+
+    return {
+      getIdentity: async (userId: string) => identities[userId] || null,
+      getActiveAssignments: async (userId: string) => assignments[userId] || [],
+      getUnitAccountPlacement: async () => null,
+      verifyHumanExecutor: async () => null,
+      resolveResourceContext: async (requested: any) => ({
+        orgUnitIds: ["ou-root"],
+        educationSessionId: requested.educationSessionId,
+      }),
+    };
+  }
+
+  // A. MUDIR with ACTIVE assignment + VERIFIED academic.session.start + scheduled Staff match => DENY because Position != GURU_KEPESANTRENAN
+  it("A. MUDIR with ACTIVE assignment + VERIFIED academic.session.start + scheduled Staff match => DENY because Position != GURU_KEPESANTRENAN", async () => {
+    const actorId = "user-mudir";
+    const dataProvider = createMockDataProvider({
+      identities: {
+        [actorId]: {
+          userId: actorId,
+          username: "mudir",
+          role: "KS",
+          accountType: "PERSONAL",
+          status: "AKTIF",
+          staffId: "stf-mudir",
+          staffStatus: "AKTIF",
+          name: "Kyai Mudir",
+        },
+      },
+      assignments: {
+        [actorId]: [
+          {
+            id: "asg-mudir",
+            userId: actorId,
+            positionId: "pos-mudir",
+            positionCode: "MUDIR",
+            positionName: "Mudir Pesantren",
+            domain: "PESANTREN",
+            unitId: "ou-root",
+            unitCode: "ROOT",
+            unitName: "Root",
+            status: "ACTIVE",
+            validFrom: new Date(2020, 1, 1),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: "academic.session.start",
+                scopeType: "GLOBAL",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [],
+          },
+        ],
+      },
+    });
+
+    const sessionRecord: any = {
+      id: "ses-kep-a",
+      educationTrack: "KEPESANTRENAN",
+      subjectId: "sub-fikih",
+      status: "SCHEDULED",
+      scheduledStaffId: "stf-mudir",
+    };
+
+    const mockDb: any = {
+      educationSession: {
+        findUnique: async () => sessionRecord,
+        updateMany: async () => ({ count: 1 }),
+      },
+      educationSessionParticipant: { findMany: async () => [] },
+      educationSessionAttendance: { findMany: async () => [] },
+      $transaction: async (fn: any) => fn(mockDb),
+    };
+
+    const service = new PendidikanV2Service({ db: mockDb, dataProvider });
+
+    await assert.rejects(
+      async () => {
+        await service.startEducationSession(
+          { sessionId: "ses-kep-a", actualTeacherName: "Ustadz Guru" },
+          { actorUserId: actorId }
+        );
+      },
+      (err: any) => {
+        assert.ok(
+          err.message.includes("KEPESANTRENAN_GURU_POSITION_REQUIRED"),
+          `Expected KEPESANTRENAN_GURU_POSITION_REQUIRED but got: ${err.message}`
+        );
+        return true;
+      }
+    );
+  });
+
+  // B. Other non-GURU Position with VERIFIED academic.schedule.read => cannot read Kepesantrenan session
+  it("B. Other non-GURU Position with VERIFIED academic.schedule.read => cannot read Kepesantrenan session", async () => {
+    const actorId = "user-musyrif-tahfizh";
+    const dataProvider = createMockDataProvider({
+      identities: {
+        [actorId]: {
+          userId: actorId,
+          username: "musyrif.tahfizh",
+          role: "MT",
+          accountType: "PERSONAL",
+          status: "AKTIF",
+          staffId: "stf-musyrif",
+          staffStatus: "AKTIF",
+          name: "Musyrif Tahfizh",
+        },
+      },
+      assignments: {
+        [actorId]: [
+          {
+            id: "asg-mt",
+            userId: actorId,
+            positionId: "pos-mt",
+            positionCode: "MUSYRIF_TAHFIZH",
+            positionName: "Musyrif Tahfizh",
+            domain: "TAHFIZH",
+            unitId: "ou-root",
+            unitCode: "ROOT",
+            unitName: "Root",
+            status: "ACTIVE",
+            validFrom: new Date(2020, 1, 1),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: "academic.schedule.read",
+                scopeType: "GLOBAL",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [],
+          },
+        ],
+      },
+    });
+
+    const sessionRecord: any = {
+      id: "ses-kep-b",
+      educationTrack: "KEPESANTRENAN",
+      subjectId: "sub-aqidah",
+      status: "SCHEDULED",
+      scheduledStaffId: "stf-musyrif", // even if scheduledStaffId happens to match
+      scheduledDate: new Date("2026-09-21T08:00:00Z"),
+    };
+
+    const mockDb: any = {
+      educationSession: {
+        findMany: async () => [sessionRecord],
+      },
+      educationSessionParticipant: { findMany: async () => [] },
+      educationSessionAttendance: { findMany: async () => [] },
+    };
+
+    const service = new PendidikanV2Service({ db: mockDb, dataProvider });
+
+    // Non-GURU position grant is rejected by validateKepesantrenanTeacherGrant
+    await assert.rejects(
+      async () => {
+        await service.getEducationSessions(undefined, { actorUserId: actorId });
+      },
+      (err: any) => {
+        assert.ok(
+          err.message.includes("PERMISSION_DENIED"),
+          `Expected PERMISSION_DENIED because row was filtered out, got: ${err.message}`
+        );
+        return true;
+      }
+    );
+  });
+
+  // C. Teacher schedule read: scheduledStaff = other teacher, actualTeacherStaff = actor => row remains hidden
+  it("C. Teacher schedule read: scheduledStaff = other teacher, actualTeacherStaff = actor => row remains hidden", async () => {
+    const actorId = "user-guru-c";
+    const dataProvider = createMockDataProvider({
+      identities: {
+        [actorId]: {
+          userId: actorId,
+          username: "ust.c",
+          role: "MT",
+          accountType: "PERSONAL",
+          status: "AKTIF",
+          staffId: "stf-c",
+          staffStatus: "AKTIF",
+          name: "Ustadz C",
+        },
+      },
+      assignments: {
+        [actorId]: [
+          {
+            id: "asg-c",
+            userId: actorId,
+            positionId: "pos-guru-kep",
+            positionCode: "GURU_KEPESANTRENAN",
+            positionName: "Guru Kepesantrenan",
+            domain: "AKADEMIK",
+            unitId: "ou-root",
+            unitCode: "ROOT",
+            unitName: "Root",
+            status: "ACTIVE",
+            validFrom: new Date(2020, 1, 1),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: "academic.schedule.read",
+                scopeType: "GLOBAL",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [],
+          },
+        ],
+      },
+    });
+
+    const sessionRecord: any = {
+      id: "ses-kep-c",
+      educationTrack: "KEPESANTRENAN",
+      subjectId: "sub-tafsir",
+      status: "STARTED",
+      scheduledStaffId: "stf-other-teacher", // Other teacher scheduled
+      actualTeacherStaffId: "stf-c",         // Actor is actualTeacherStaffId
+      actualTeacherUserId: actorId,
+      scheduledDate: new Date("2026-09-21T08:00:00Z"),
+    };
+
+    const mockDb: any = {
+      educationSession: {
+        findMany: async () => [sessionRecord],
+      },
+      educationSessionParticipant: { findMany: async () => [] },
+      educationSessionAttendance: { findMany: async () => [] },
+    };
+
+    const service = new PendidikanV2Service({ db: mockDb, dataProvider });
+
+    // Enforce scheduled match only — actualTeacherStaffId match is removed as alternative
+    await assert.rejects(
+      async () => {
+        await service.getEducationSessions(undefined, { actorUserId: actorId });
+      },
+      (err: any) => {
+        assert.ok(
+          err.message.includes("PERMISSION_DENIED"),
+          `Expected row to be hidden and throw PERMISSION_DENIED, got: ${err.message}`
+        );
+        return true;
+      }
+    );
+  });
+
+  // D. Material: actualTeacherUserId matches actor, actualTeacherStaffId = null => DENY
+  it("D. Material: actualTeacherUserId matches actor, actualTeacherStaffId = null => DENY", async () => {
+    const actorId = "user-guru-d";
+    const dataProvider = createMockDataProvider({
+      identities: {
+        [actorId]: {
+          userId: actorId,
+          username: "ust.d",
+          accountType: "PERSONAL",
+          status: "AKTIF",
+          staffId: "stf-d",
+          staffStatus: "AKTIF",
+          name: "Ustadz D",
+        },
+      },
+      assignments: {
+        [actorId]: [
+          {
+            id: "asg-d",
+            userId: actorId,
+            positionId: "pos-guru-kep",
+            positionCode: "GURU_KEPESANTRENAN",
+            positionName: "Guru Kepesantrenan",
+            domain: "AKADEMIK",
+            unitId: "ou-root",
+            unitCode: "ROOT",
+            unitName: "Root",
+            status: "ACTIVE",
+            validFrom: new Date(2020, 1, 1),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: "academic.material.record",
+                scopeType: "GLOBAL",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [],
+          },
+        ],
+      },
+    });
+
+    const sessionRecord: any = {
+      id: "ses-kep-d",
+      educationTrack: "KEPESANTRENAN",
+      status: "STARTED",
+      actualTeacherUserId: actorId,
+      actualTeacherStaffId: null, // Null staff id
+    };
+
+    const mockDb: any = {
+      educationSession: {
+        findUnique: async () => sessionRecord,
+      },
+      educationSessionParticipant: { findMany: async () => [] },
+      educationSessionAttendance: { findMany: async () => [] },
+      $transaction: async (fn: any) => fn(mockDb),
+    };
+
+    const service = new PendidikanV2Service({ db: mockDb, dataProvider });
+
+    await assert.rejects(
+      async () => {
+        await service.recordSessionMaterial(
+          { sessionId: "ses-kep-d", materi: "Bab 1: Fikih Thaharah" },
+          { actorUserId: actorId }
+        );
+      },
+      (err: any) => {
+        assert.ok(
+          err.message.includes("ACTOR_NOT_ACTUAL_TEACHER"),
+          `Expected ACTOR_NOT_ACTUAL_TEACHER due to null actualTeacherStaffId, got: ${err.message}`
+        );
+        return true;
+      }
+    );
+  });
+
+  // E. Attendance: actualTeacherUserId matches actor, actualTeacherStaffId = null => DENY
+  it("E. Attendance: actualTeacherUserId matches actor, actualTeacherStaffId = null => DENY", async () => {
+    const actorId = "user-guru-e";
+    const dataProvider = createMockDataProvider({
+      identities: {
+        [actorId]: {
+          userId: actorId,
+          username: "ust.e",
+          accountType: "PERSONAL",
+          status: "AKTIF",
+          staffId: "stf-e",
+          staffStatus: "AKTIF",
+          name: "Ustadz E",
+        },
+      },
+      assignments: {
+        [actorId]: [
+          {
+            id: "asg-e",
+            userId: actorId,
+            positionId: "pos-guru-kep",
+            positionCode: "GURU_KEPESANTRENAN",
+            positionName: "Guru Kepesantrenan",
+            domain: "AKADEMIK",
+            unitId: "ou-root",
+            unitCode: "ROOT",
+            unitName: "Root",
+            status: "ACTIVE",
+            validFrom: new Date(2020, 1, 1),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: "academic.attendance.record",
+                scopeType: "GLOBAL",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [],
+          },
+        ],
+      },
+    });
+
+    const sessionRecord: any = {
+      id: "ses-kep-e",
+      educationTrack: "KEPESANTRENAN",
+      status: "STARTED",
+      actualTeacherUserId: actorId,
+      actualTeacherStaffId: null, // Null staff id
+    };
+
+    const mockDb: any = {
+      educationSession: {
+        findUnique: async () => sessionRecord,
+      },
+      educationSessionParticipant: { findMany: async () => [] },
+      educationSessionAttendance: { findMany: async () => [] },
+      $transaction: async (fn: any) => fn(mockDb),
+    };
+
+    const service = new PendidikanV2Service({ db: mockDb, dataProvider });
+
+    await assert.rejects(
+      async () => {
+        await service.recordSessionAttendance(
+          { sessionId: "ses-kep-e", santriId: "san-1", status: "HADIR" },
+          { actorUserId: actorId }
+        );
+      },
+      (err: any) => {
+        assert.ok(
+          err.message.includes("ACTOR_NOT_ACTUAL_TEACHER"),
+          `Expected ACTOR_NOT_ACTUAL_TEACHER due to null actualTeacherStaffId, got: ${err.message}`
+        );
+        return true;
+      }
+    );
+  });
+
+  // F. DTO materialAvailable false when actualTeacherStaffId missing
+  it("F. DTO materialAvailable false when actualTeacherStaffId missing", async () => {
+    const actorId = "user-guru-f";
+    const dataProvider = createMockDataProvider({
+      identities: {
+        [actorId]: {
+          userId: actorId,
+          username: "ust.f",
+          accountType: "PERSONAL",
+          status: "AKTIF",
+          staffId: "stf-f",
+          staffStatus: "AKTIF",
+          name: "Ustadz F",
+        },
+      },
+      assignments: {
+        [actorId]: [
+          {
+            id: "asg-f",
+            userId: actorId,
+            positionId: "pos-guru-kep",
+            positionCode: "GURU_KEPESANTRENAN",
+            positionName: "Guru Kepesantrenan",
+            domain: "AKADEMIK",
+            unitId: "ou-root",
+            unitCode: "ROOT",
+            unitName: "Root",
+            status: "ACTIVE",
+            validFrom: new Date(2020, 1, 1),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: "academic.schedule.read",
+                scopeType: "GLOBAL",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+              {
+                capabilityCode: "academic.material.record",
+                scopeType: "GLOBAL",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [],
+          },
+        ],
+      },
+    });
+
+    const sessionRecord: any = {
+      id: "ses-kep-f",
+      educationTrack: "KEPESANTRENAN",
+      subjectId: "sub-fikih",
+      scheduledStaffId: "stf-f",
+      status: "STARTED",
+      actualTeacherUserId: actorId,
+      actualTeacherStaffId: null, // missing
+      scheduledDate: new Date("2026-09-21T08:00:00Z"),
+    };
+
+    const mockDb: any = {
+      educationSession: {
+        findMany: async () => [sessionRecord],
+      },
+      educationSessionParticipant: { findMany: async () => [] },
+      educationSessionAttendance: { findMany: async () => [] },
+    };
+
+    const service = new PendidikanV2Service({ db: mockDb, dataProvider });
+    const dtos = await service.getEducationSessions(undefined, { actorUserId: actorId });
+
+    assert.strictEqual(dtos.length, 1);
+    assert.strictEqual(dtos[0].materialAvailable, false);
+    assert.strictEqual(dtos[0].materialDeniedReason, "ACTOR_NOT_ACTUAL_TEACHER");
+  });
+
+  // G. DTO attendanceAvailable false when actualTeacherStaffId missing
+  it("G. DTO attendanceAvailable false when actualTeacherStaffId missing", async () => {
+    const actorId = "user-guru-g";
+    const dataProvider = createMockDataProvider({
+      identities: {
+        [actorId]: {
+          userId: actorId,
+          username: "ust.g",
+          accountType: "PERSONAL",
+          status: "AKTIF",
+          staffId: "stf-g",
+          staffStatus: "AKTIF",
+          name: "Ustadz G",
+        },
+      },
+      assignments: {
+        [actorId]: [
+          {
+            id: "asg-g",
+            userId: actorId,
+            positionId: "pos-guru-kep",
+            positionCode: "GURU_KEPESANTRENAN",
+            positionName: "Guru Kepesantrenan",
+            domain: "AKADEMIK",
+            unitId: "ou-root",
+            unitCode: "ROOT",
+            unitName: "Root",
+            status: "ACTIVE",
+            validFrom: new Date(2020, 1, 1),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: "academic.schedule.read",
+                scopeType: "GLOBAL",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+              {
+                capabilityCode: "academic.attendance.record",
+                scopeType: "GLOBAL",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [],
+          },
+        ],
+      },
+    });
+
+    const sessionRecord: any = {
+      id: "ses-kep-g",
+      educationTrack: "KEPESANTRENAN",
+      subjectId: "sub-fikih",
+      scheduledStaffId: "stf-g",
+      status: "STARTED",
+      actualTeacherUserId: actorId,
+      actualTeacherStaffId: null, // missing
+      scheduledDate: new Date("2026-09-21T08:00:00Z"),
+    };
+
+    const mockDb: any = {
+      educationSession: {
+        findMany: async () => [sessionRecord],
+      },
+      educationSessionParticipant: { findMany: async () => [] },
+      educationSessionAttendance: { findMany: async () => [] },
+    };
+
+    const service = new PendidikanV2Service({ db: mockDb, dataProvider });
+    const dtos = await service.getEducationSessions(undefined, { actorUserId: actorId });
+
+    assert.strictEqual(dtos.length, 1);
+    assert.strictEqual(dtos[0].attendanceAvailable, false);
+    assert.strictEqual(dtos[0].attendanceDeniedReason, "ACTOR_NOT_ACTUAL_TEACHER");
+  });
+
+  // H. Canonical ALLOW from wrong Position does not satisfy Kepesantrenan self-service
+  it("H. Canonical ALLOW from wrong Position does not satisfy Kepesantrenan self-service", () => {
+    const wrongDecision: any = {
+      decision: "ALLOW",
+      code: "SUCCESS",
+      assignmentId: "asg-pot",
+      positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+      capabilityCode: "academic.session.start",
+      scopeType: "GLOBAL",
+      grantUsed: {
+        assignmentId: "asg-pot",
+        positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+        capabilityCode: "academic.session.start",
+        scopeType: "GLOBAL",
+        anchorUnitId: "ou-root",
+        unitIds: ["ou-root"],
+        businessRuleState: "VERIFIED_PRODUCTION",
+      },
+    };
+
+    assert.throws(
+      () => {
+        validateKepesantrenanTeacherGrant(wrongDecision, "academic.session.start");
+      },
+      (err: any) => {
+        assert.ok(
+          err.message.includes("KEPESANTRENAN_GURU_POSITION_REQUIRED"),
+          `Expected KEPESANTRENAN_GURU_POSITION_REQUIRED, got: ${err.message}`
+        );
+        return true;
+      }
+    );
+  });
+
+  // I. Extra VERIFIED MUDIR academic policy + all four valid GURU policies => academic policy readiness BLOCKED
+  it("I. Extra VERIFIED MUDIR academic policy + all four valid GURU policies => academic policy readiness BLOCKED", () => {
+    const activePcs = [
+      {
+        capabilityCode: "academic.schedule.read",
+        scopeType: "GLOBAL",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        position: { code: "GURU_KEPESANTRENAN", isActive: true },
+      },
+      {
+        capabilityCode: "academic.session.start",
+        scopeType: "GLOBAL",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        position: { code: "GURU_KEPESANTRENAN", isActive: true },
+      },
+      {
+        capabilityCode: "academic.material.record",
+        scopeType: "GLOBAL",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        position: { code: "GURU_KEPESANTRENAN", isActive: true },
+      },
+      {
+        capabilityCode: "academic.attendance.record",
+        scopeType: "GLOBAL",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        position: { code: "GURU_KEPESANTRENAN", isActive: true },
+      },
+      // Extra unapproved row with VERIFIED_PRODUCTION
+      {
+        capabilityCode: "academic.session.start",
+        scopeType: "GLOBAL",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        position: { code: "MUDIR", isActive: true },
+      },
+    ];
+
+    const result = evaluateKepesantrenanAcademicAuthPolicies(activePcs);
+    assert.strictEqual(result.status, "BLOCKED");
+    assert.strictEqual(result.blocking, true);
+    assert.ok(result.details.includes("UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY"));
+    assert.ok(result.details.includes("MUDIR:academic.session.start:GLOBAL"));
+  });
+
+  // J. Extra pending unapproved academic policy => academic policy readiness NOT_READY
+  it("J. Extra pending unapproved academic policy => academic policy readiness NOT_READY", () => {
+    const activePcs = [
+      {
+        capabilityCode: "academic.schedule.read",
+        scopeType: "GLOBAL",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        position: { code: "GURU_KEPESANTRENAN", isActive: true },
+      },
+      {
+        capabilityCode: "academic.session.start",
+        scopeType: "GLOBAL",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        position: { code: "GURU_KEPESANTRENAN", isActive: true },
+      },
+      {
+        capabilityCode: "academic.material.record",
+        scopeType: "GLOBAL",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        position: { code: "GURU_KEPESANTRENAN", isActive: true },
+      },
+      {
+        capabilityCode: "academic.attendance.record",
+        scopeType: "GLOBAL",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        position: { code: "GURU_KEPESANTRENAN", isActive: true },
+      },
+      // Extra unapproved row with APPROVED_TARGET_PENDING_TECHNICAL
+      {
+        capabilityCode: "academic.schedule.read",
+        scopeType: "GLOBAL",
+        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+        position: { code: "MUSYRIF_TAHFIZH", isActive: true },
+      },
+    ];
+
+    const result = evaluateKepesantrenanAcademicAuthPolicies(activePcs);
+    assert.strictEqual(result.status, "NOT_READY");
+    assert.strictEqual(result.blocking, true);
+    assert.ok(result.details.includes("UNAPPROVED_KEPESANTRENAN_ACADEMIC_POLICY_PRESENT"));
+    assert.ok(result.details.includes("MUSYRIF_TAHFIZH:academic.schedule.read:GLOBAL"));
+  });
+
+  // K. Stale policy raw-query failure => never READY
+  it("K. Stale policy raw-query failure => never READY", async () => {
+    const mockDb: any = {
+      $queryRawUnsafe: async (query: string) => {
+        if (query.includes("tahfizh.reward.issue")) {
+          throw new Error("DB_CONNECTION_TIMEOUT: Query timed out");
+        }
+        return [];
+      },
+    };
+
+    const report = await checkPendidikanV2ProductionReadiness(mockDb);
+    const staleGate = report.gates.find((g) => g.gate === "STALE_POSITION_CAPABILITY_POLICY_READY");
+
+    assert.ok(staleGate, "Gate STALE_POSITION_CAPABILITY_POLICY_READY must be present");
+    assert.notStrictEqual(staleGate?.status, "READY", "Gate must NEVER be READY on query failure");
+    assert.strictEqual(staleGate?.status, "NOT_READY");
+    assert.strictEqual(staleGate?.blocking, true);
+    assert.ok(staleGate?.details.includes("DATABASE_QUERY_FAILED"));
+  });
+
+  // L. Schedule TOCTOU: pre-check A, transaction reload B => zero session mutation
+  it("L. Schedule TOCTOU: pre-check A, transaction reload B => zero session mutation", async () => {
+    const actorId = "user-guru-l";
+    const dataProvider = createMockDataProvider({
+      identities: {
+        [actorId]: {
+          userId: actorId,
+          username: "ust.l",
+          accountType: "PERSONAL",
+          status: "AKTIF",
+          staffId: "stf-l-a",
+          staffStatus: "AKTIF",
+          name: "Ustadz L",
+        },
+      },
+      assignments: {
+        [actorId]: [
+          {
+            id: "asg-l",
+            userId: actorId,
+            positionId: "pos-guru-kep",
+            positionCode: "GURU_KEPESANTRENAN",
+            positionName: "Guru Kepesantrenan",
+            domain: "AKADEMIK",
+            unitId: "ou-root",
+            unitCode: "ROOT",
+            unitName: "Root",
+            status: "ACTIVE",
+            validFrom: new Date(2020, 1, 1),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: "academic.session.start",
+                scopeType: "GLOBAL",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [],
+          },
+        ],
+      },
+    });
+
+    let updateCallCount = 0;
+    let auditRecordCount = 0;
+
+    // Initial read: Teacher A ("stf-l-a") is scheduled
+    const initialSession: any = {
+      id: "ses-kep-toctou",
+      educationTrack: "KEPESANTRENAN",
+      subjectId: "sub-hadits",
+      status: "SCHEDULED",
+      scheduledStaffId: "stf-l-a",
+    };
+
+    // Transaction reload: Teacher B ("stf-l-b") is scheduled (concurrent schedule change)
+    const inTxSession: any = {
+      id: "ses-kep-toctou",
+      educationTrack: "KEPESANTRENAN",
+      subjectId: "sub-hadits",
+      status: "SCHEDULED",
+      scheduledStaffId: "stf-l-b", // Changed behind the back!
+    };
+
+    const mockDb: any = {
+      educationSession: {
+        findUnique: async () => initialSession,
+      },
+      educationSessionParticipant: { findMany: async () => [] },
+      educationSessionAttendance: { findMany: async () => [] },
+      $transaction: async (fn: any) => {
+        const txDb: any = {
+          educationSession: {
+            findUnique: async () => inTxSession,
+            updateMany: async () => {
+              updateCallCount++;
+              return { count: 1 };
+            },
+          },
+          educationSessionParticipant: { findMany: async () => [] },
+          educationSessionAttendance: { findMany: async () => [] },
+        };
+        return fn(txDb);
+      },
+    };
+
+    const mockAuditPersistence = {
+      recordInTx: async () => {
+        auditRecordCount++;
+      },
+    };
+
+    const service = new PendidikanV2Service({
+      db: mockDb,
+      dataProvider,
+      auditPersistence: mockAuditPersistence as any,
+    });
+
+    await assert.rejects(
+      async () => {
+        await service.startEducationSession(
+          { sessionId: "ses-kep-toctou", actualTeacherName: "Ustadz Guru" },
+          { actorUserId: actorId }
+        );
+      },
+      (err: any) => {
+        assert.ok(
+          err.message.includes("KEPESANTRENAN_SCHEDULED_TEACHER_MISMATCH"),
+          `Expected KEPESANTRENAN_SCHEDULED_TEACHER_MISMATCH TOCTOU rejection, got: ${err.message}`
+        );
+        return true;
+      }
+    );
+
+    // Verify ZERO mutation and ZERO audit write occurred
+    assert.strictEqual(updateCallCount, 0, "Zero updateMany calls must occur on TOCTOU failure");
+    assert.strictEqual(auditRecordCount, 0, "Zero audit records must be written on TOCTOU failure");
   });
 });

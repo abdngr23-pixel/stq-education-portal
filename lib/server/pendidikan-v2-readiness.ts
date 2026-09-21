@@ -373,6 +373,7 @@ export interface KepesantrenanAuthPolicyEvaluationOptions {
 export interface KepesantrenanAuthPolicyEvaluationResult {
   status: ReadinessStatus;
   details: string;
+  reason?: string;
   remediationAdvice?: string;
   blocking: true;
 }
@@ -440,6 +441,28 @@ export function evaluateKepesantrenanAcademicAuthPolicies(
   const invalidScope: string[] = [];
   const verifiedPolicies: string[] = [];
 
+  // Detect any unapproved PositionCapability rows for the 4 Kepesantrenan academic capabilities
+  const kepesantrenanCapSet = new Set<string>(KEPESANTRENAN_REQUIRED_ACADEMIC_AUTH_CAPABILITIES);
+  const unapprovedVerified: string[] = [];
+  const unapprovedPending: string[] = [];
+
+  for (const pc of activePcs) {
+    if (!kepesantrenanCapSet.has(pc.capabilityCode)) continue;
+    const posCode = pc.position?.code;
+    const isApproved = approvedPolicies.some(
+      (ap) => ap.positionCode === posCode && ap.capabilityCode === pc.capabilityCode && ap.scopeType === pc.scopeType
+    );
+
+    if (!isApproved) {
+      const desc = `${posCode || "UNKNOWN"}:${pc.capabilityCode}:${pc.scopeType || "NONE"}`;
+      if (pc.businessRuleState === "VERIFIED_PRODUCTION") {
+        unapprovedVerified.push(desc);
+      } else {
+        unapprovedPending.push(desc);
+      }
+    }
+  }
+
   for (const policy of approvedPolicies) {
     const policyKey = `${policy.positionCode}:${policy.capabilityCode}:${policy.scopeType}`;
 
@@ -447,11 +470,6 @@ export function evaluateKepesantrenanAcademicAuthPolicies(
     const matchingCandidates = activePcs.filter(
       (pc) => pc.position?.code === policy.positionCode && pc.capabilityCode === policy.capabilityCode
     );
-
-    if (matchingCandidates.length === 0) {
-      missingPolicies.push(policyKey);
-      continue;
-    }
 
     if (matchingCandidates.length === 0) {
       missingPolicies.push(policyKey);
@@ -492,6 +510,26 @@ export function evaluateKepesantrenanAcademicAuthPolicies(
   }
 
   if (verifiedPolicies.length === approvedPolicies.length) {
+    if (unapprovedVerified.length > 0) {
+      return {
+        status: "BLOCKED",
+        blocking: true,
+        reason: "UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY",
+        details: `UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY: Unapproved PositionCapability rows with VERIFIED_PRODUCTION status detected for Kepesantrenan academic capabilities: ${unapprovedVerified.join(", ")}`,
+        remediationAdvice: "Revoke and remove unauthorized VERIFIED_PRODUCTION PositionCapability rows immediately",
+      };
+    }
+
+    if (unapprovedPending.length > 0) {
+      return {
+        status: "NOT_READY",
+        blocking: true,
+        reason: "UNAPPROVED_KEPESANTRENAN_ACADEMIC_POLICY_PRESENT",
+        details: `UNAPPROVED_KEPESANTRENAN_ACADEMIC_POLICY_PRESENT: Unapproved PositionCapability rows detected for Kepesantrenan academic capabilities: ${unapprovedPending.join(", ")}`,
+        remediationAdvice: "Remove unapproved PositionCapability records from database",
+      };
+    }
+
     return {
       status: "READY",
       details: `Kepesantrenan academic runtime authorization policy verified with active VERIFIED_PRODUCTION grants for: ${verifiedPolicies.join(", ")}`,
@@ -1781,27 +1819,39 @@ export async function checkPendidikanV2ProductionReadiness(
         FROM position_capabilities pc
         JOIN positions p ON p.id = pc.position_id
         WHERE p.code = 'PETUGAS_OPERASIONAL_TAHFIZH' AND pc.capability_code = 'tahfizh.reward.issue';
-      `).catch(() => []);
+      `);
       staleRows = rows.map((r: any) => ({
         positionCode: r.position_code,
         capabilityCode: r.capability_code,
         businessRuleState: r.business_rule_state,
       }));
+    } else {
+      gates.push({
+        gate: "STALE_POSITION_CAPABILITY_POLICY_READY",
+        status: "NOT_READY",
+        details: "DATABASE_UNAVAILABLE: PositionCapability repository unavailable to verify stale policies",
+        remediationAdvice: "Database connection must provide PositionCapability repository or query interface",
+        blocking: true,
+      });
+      staleRows = null as any;
     }
 
-    const staleGateResult = evaluateStalePositionCapabilityPolicy(staleRows);
-    gates.push({
-      gate: "STALE_POSITION_CAPABILITY_POLICY_READY",
-      status: staleGateResult.status,
-      details: staleGateResult.details,
-      remediationAdvice: staleGateResult.remediationAdvice,
-      blocking: true,
-    });
+    if (staleRows !== null) {
+      const staleGateResult = evaluateStalePositionCapabilityPolicy(staleRows);
+      gates.push({
+        gate: "STALE_POSITION_CAPABILITY_POLICY_READY",
+        status: staleGateResult.status,
+        details: staleGateResult.details,
+        remediationAdvice: staleGateResult.remediationAdvice,
+        blocking: true,
+      });
+    }
   } catch (err: unknown) {
     gates.push({
       gate: "STALE_POSITION_CAPABILITY_POLICY_READY",
       status: "NOT_READY",
-      details: String(err),
+      details: `DATABASE_QUERY_FAILED: Gagal memverifikasi kebijakan basi (${err instanceof Error ? err.message : String(err)})`,
+      remediationAdvice: "Periksa koneksi database dan skema tabel position_capabilities",
       blocking: true,
     });
   }

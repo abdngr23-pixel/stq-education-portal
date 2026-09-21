@@ -502,8 +502,8 @@ describe("PRE-LAUNCH EXECUTION PR-1: CORE BUSINESS RULE & PENDIDIKAN RECONCILIAT
             id: "asn-mk-01",
             userId,
             positionId: "pos-mk",
-            positionCode: "MUSYRIF_KEASRAMAAN",
-            positionName: "Musyrif Keasramaan",
+            positionCode: "GURU_KEPESANTRENAN",
+            positionName: "Guru Kepesantrenan",
             domain: "KESANTRIAN" as any,
             unitId: "ou-kesantrian",
             unitCode: "KESANTRIAN",
@@ -673,7 +673,7 @@ describe("PRE-LAUNCH EXECUTION PR-1: CORE BUSINESS RULE & PENDIDIKAN RECONCILIAT
             { sessionId: "sess-kp-adm-02", materi: "Bab Thaharah" },
             { actorUserId: "usr-legacy-adm" }
           ),
-        /KEPESANTRENAN_AUTHORIZATION_DENIED/
+        /KEPESANTRENAN_AUTHORIZATION_DENIED|TEACHER_STAFF_LINKAGE_REQUIRED|ACTOR_NOT_ACTUAL_TEACHER/
       );
 
       await assert.rejects(
@@ -685,7 +685,7 @@ describe("PRE-LAUNCH EXECUTION PR-1: CORE BUSINESS RULE & PENDIDIKAN RECONCILIAT
             },
             { actorUserId: "usr-legacy-adm" }
           ),
-        /KEPESANTRENAN_AUTHORIZATION_DENIED/
+        /KEPESANTRENAN_AUTHORIZATION_DENIED|TEACHER_STAFF_LINKAGE_REQUIRED|ACTOR_NOT_ACTUAL_TEACHER/
       );
     });
   });

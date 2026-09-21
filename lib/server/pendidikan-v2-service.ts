@@ -90,6 +90,61 @@ function validateAuditProvenance(authDecision: CanonicalAuthorizationDecision): 
   };
 }
 
+/**
+ * Validates that an authorization decision conferring authority for Kepesantrenan
+ * academic self-service has exact GURU_KEPESANTRENAN provenance.
+ * MUST fail closed: Reject decisions from MUDIR, KABID, MT, PH, POT, POK, legacy roles,
+ * or any non-GURU position, non-GLOBAL scope, or unverified rule state.
+ */
+export function validateKepesantrenanTeacherGrant(
+  authDecision: CanonicalAuthorizationDecision,
+  expectedCapability: string
+): {
+  assignmentId: string;
+  positionCode: string;
+  capabilityCode: string;
+  scopeType: ScopeType;
+  unitId: string;
+} {
+  if (authDecision.decision !== "ALLOW") {
+    throw new Error(
+      `CANONICAL_AUTHORIZATION_DENIED: ${authDecision.reason || authDecision.reasonCode || "Otorisasi ditolak"}`
+    );
+  }
+
+  const prov = validateAuditProvenance(authDecision);
+
+  if (
+    prov.positionCode !== "GURU_KEPESANTRENAN" ||
+    authDecision.positionCode !== "GURU_KEPESANTRENAN" ||
+    (authDecision.grantUsed && authDecision.grantUsed.positionCode !== "GURU_KEPESANTRENAN")
+  ) {
+    throw new Error(
+      `KEPESANTRENAN_GURU_POSITION_REQUIRED: Wewenang operasional Kepesantrenan hanya berlaku untuk posisi GURU_KEPESANTRENAN (diberikan: ${prov.positionCode || "UNKNOWN"})`
+    );
+  }
+
+  if (prov.capabilityCode !== expectedCapability || authDecision.capabilityCode !== expectedCapability) {
+    throw new Error(
+      `KEPESANTRENAN_CAPABILITY_MISMATCH: Kapabilitas otorisasi (${prov.capabilityCode}) tidak sesuai dengan yang diminta (${expectedCapability})`
+    );
+  }
+
+  if (prov.scopeType !== "GLOBAL" || authDecision.scopeType !== "GLOBAL") {
+    throw new Error(
+      `KEPESANTRENAN_SCOPE_MISMATCH: Scope wewenang Kepesantrenan harus GLOBAL (diberikan: ${prov.scopeType})`
+    );
+  }
+
+  if (authDecision.grantUsed && authDecision.grantUsed.businessRuleState !== "VERIFIED_PRODUCTION") {
+    throw new Error(
+      `KEPESANTRENAN_GRANT_NOT_PRODUCTION_VERIFIED: Status aturan bisnis wewenang bukan VERIFIED_PRODUCTION (${authDecision.grantUsed.businessRuleState})`
+    );
+  }
+
+  return prov;
+}
+
 export class PendidikanV2Service {
   private db: PrismaClient;
   private dataProvider: ICanonicalDataProvider;
@@ -317,35 +372,57 @@ export class PendidikanV2Service {
       }
     } else {
       // Non-subject accounts: retain canonical academic.schedule.read logic with strict Kepesantrenan teacher session ownership
-      const actorAssignments = (await this.dataProvider.getActiveAssignments(context.actorUserId, new Date())) || [];
-      const isGuruKepesantrenan = actorAssignments.some((a: any) => a.positionCode === "GURU_KEPESANTRENAN");
       for (const s of sessions) {
-        if (s.educationTrack === "KEPESANTRENAN" && isGuruKepesantrenan && actorIdentity.staffId) {
+        if (s.educationTrack === "KEPESANTRENAN") {
           // Strict self-service ownership for Kepesantrenan:
-          // If actor is a personal teacher account (GURU_KEPESANTRENAN), filter to their scheduled/actual sessions
-          const effectiveScheduledStaffId = s.scheduledStaffId || s.scheduledTeacherAssignment?.staffId || null;
-          const effectiveActualStaffId = s.actualTeacherStaffId || null;
-          const isAssigned =
-            (effectiveScheduledStaffId && effectiveScheduledStaffId === actorIdentity.staffId) ||
-            (effectiveActualStaffId && effectiveActualStaffId === actorIdentity.staffId);
-          if (!isAssigned) {
-            // Cross-teacher or unscheduled session: filter out
+          // Actor MUST resolve to AccountType.PERSONAL, active linked Staff, active GURU_KEPESANTRENAN Assignment,
+          // VERIFIED academic.schedule.read grant, AND effectiveScheduledStaffId === actor.staffId.
+          if (actorIdentity.accountType !== "PERSONAL" || !actorIdentity.staffId) {
             continue;
           }
-        }
 
-        const sessionReadAuth = await authorizeCanonical({
-          identity: actorIdentity,
-          capability: "academic.schedule.read",
-          resourceContext: {
-            educationSessionId: s.id,
-          },
-          dataProvider: this.dataProvider,
-          isMutation: false,
-        });
+          const effectiveScheduledStaffId = s.scheduledStaffId || s.scheduledTeacherAssignment?.staffId || null;
+          if (!effectiveScheduledStaffId || effectiveScheduledStaffId !== actorIdentity.staffId) {
+            // Strictly scheduled match only — DO NOT use actualTeacherStaffId as alternative
+            continue;
+          }
 
-        if (sessionReadAuth.decision === "ALLOW") {
-          authorizedSessions.push(s);
+          const sessionReadAuth = await authorizeCanonical({
+            identity: actorIdentity,
+            capability: "academic.schedule.read",
+            resourceContext: {
+              educationSessionId: s.id,
+            },
+            dataProvider: this.dataProvider,
+            isMutation: false,
+          });
+
+          if (sessionReadAuth.decision !== "ALLOW") {
+            continue;
+          }
+
+          try {
+            validateKepesantrenanTeacherGrant(sessionReadAuth, "academic.schedule.read");
+            authorizedSessions.push(s);
+          } catch {
+            // Non-GURU Position or non-GLOBAL scope: MUST NOT see the Kepesantrenan row
+            continue;
+          }
+        } else {
+          // Non-Kepesantrenan (e.g. Studi Umum for non-subject account)
+          const sessionReadAuth = await authorizeCanonical({
+            identity: actorIdentity,
+            capability: "academic.schedule.read",
+            resourceContext: {
+              educationSessionId: s.id,
+            },
+            dataProvider: this.dataProvider,
+            isMutation: false,
+          });
+
+          if (sessionReadAuth.decision === "ALLOW") {
+            authorizedSessions.push(s);
+          }
         }
       }
     }
@@ -402,7 +479,14 @@ export class PendidikanV2Service {
         // KEPESANTRENAN: Operational teacher self-service
         const effectiveScheduledStaffId = s.scheduledStaffId || s.scheduledTeacherAssignment?.staffId || null;
         if (actorIdentity.role === "ADM") {
+          mutationAvailable = false;
           mutationDeniedReason = "KEPESANTRENAN_AUTHORIZATION_DENIED";
+        } else if (actorIdentity.accountType !== "PERSONAL") {
+          mutationAvailable = false;
+          mutationDeniedReason = "PERSONAL_ACCOUNT_REQUIRED";
+        } else if (!actorIdentity.staffId || !effectiveScheduledStaffId || actorIdentity.staffId !== effectiveScheduledStaffId) {
+          mutationAvailable = false;
+          mutationDeniedReason = "KEPESANTRENAN_SCHEDULED_TEACHER_MISMATCH";
         } else {
           const startDecision = await authorizeCanonical({
             identity: actorIdentity,
@@ -417,12 +501,15 @@ export class PendidikanV2Service {
           if (startDecision.decision !== "ALLOW") {
             mutationAvailable = false;
             mutationDeniedReason = "CANONICAL_AUTH_DENIED";
-          } else if (!actorIdentity.staffId || !effectiveScheduledStaffId || actorIdentity.staffId !== effectiveScheduledStaffId) {
-            mutationAvailable = false;
-            mutationDeniedReason = "KEPESANTRENAN_SCHEDULED_TEACHER_MISMATCH";
           } else {
-            mutationAvailable = true;
-            mutationDeniedReason = null;
+            try {
+              validateKepesantrenanTeacherGrant(startDecision, "academic.session.start");
+              mutationAvailable = true;
+              mutationDeniedReason = null;
+            } catch {
+              mutationAvailable = false;
+              mutationDeniedReason = "KEPESANTRENAN_GURU_POSITION_REQUIRED";
+            }
           }
         }
       }
@@ -459,10 +546,13 @@ export class PendidikanV2Service {
         }
       } else {
         // KEPESANTRENAN: Operational teacher self-service
+        // Both actualTeacherUserId and actualTeacherStaffId must exist and match actor
         if (
           !s.actualTeacherUserId ||
           s.actualTeacherUserId !== actorIdentity.userId ||
-          (s.actualTeacherStaffId && actorIdentity.staffId && s.actualTeacherStaffId !== actorIdentity.staffId)
+          !s.actualTeacherStaffId ||
+          !actorIdentity.staffId ||
+          s.actualTeacherStaffId !== actorIdentity.staffId
         ) {
           materialAvailable = false;
           materialDeniedReason = "ACTOR_NOT_ACTUAL_TEACHER";
@@ -478,10 +568,17 @@ export class PendidikanV2Service {
           });
 
           if (matDecision.decision !== "ALLOW") {
+            materialAvailable = false;
             materialDeniedReason = "CANONICAL_AUTH_DENIED";
           } else {
-            materialAvailable = true;
-            materialDeniedReason = null;
+            try {
+              validateKepesantrenanTeacherGrant(matDecision, "academic.material.record");
+              materialAvailable = true;
+              materialDeniedReason = null;
+            } catch {
+              materialAvailable = false;
+              materialDeniedReason = "KEPESANTRENAN_GURU_POSITION_REQUIRED";
+            }
           }
         }
       }
@@ -499,10 +596,13 @@ export class PendidikanV2Service {
         attendanceDeniedReason = "SESSION_NOT_STARTED";
       } else {
         // KEPESANTRENAN: Operational teacher self-service
+        // Both actualTeacherUserId and actualTeacherStaffId must exist and match actor
         if (
           !s.actualTeacherUserId ||
           s.actualTeacherUserId !== actorIdentity.userId ||
-          (s.actualTeacherStaffId && actorIdentity.staffId && s.actualTeacherStaffId !== actorIdentity.staffId)
+          !s.actualTeacherStaffId ||
+          !actorIdentity.staffId ||
+          s.actualTeacherStaffId !== actorIdentity.staffId
         ) {
           attendanceAvailable = false;
           attendanceDeniedReason = "ACTOR_NOT_ACTUAL_TEACHER";
@@ -518,10 +618,17 @@ export class PendidikanV2Service {
           });
 
           if (attDecision.decision !== "ALLOW") {
+            attendanceAvailable = false;
             attendanceDeniedReason = "CANONICAL_AUTH_DENIED";
           } else {
-            attendanceAvailable = true;
-            attendanceDeniedReason = null;
+            try {
+              validateKepesantrenanTeacherGrant(attDecision, "academic.attendance.record");
+              attendanceAvailable = true;
+              attendanceDeniedReason = null;
+            } catch {
+              attendanceAvailable = false;
+              attendanceDeniedReason = "KEPESANTRENAN_GURU_POSITION_REQUIRED";
+            }
           }
         }
       }
@@ -744,10 +851,20 @@ export class PendidikanV2Service {
         );
       }
 
-      provenance = validateAuditProvenance(authDecision);
+      provenance = validateKepesantrenanTeacherGrant(authDecision, "academic.session.start");
 
-      // Server-authoritative teacher identity (ignore client-supplied string for Kepesantrenan)
-      actualTeacherName = technicalIdentity.name || technicalIdentity.username;
+      // Server-authoritative teacher identity (prefer Staff display name, fallback to hydrated identity.name / username)
+      let teacherDisplayName = technicalIdentity.name || technicalIdentity.username;
+      if (technicalIdentity.staffId && (this.db as any).staff?.findUnique) {
+        const staffRecord = await (this.db as any).staff.findUnique({
+          where: { id: technicalIdentity.staffId },
+          select: { nama: true },
+        }).catch(() => null);
+        if (staffRecord?.nama) {
+          teacherDisplayName = staffRecord.nama;
+        }
+      }
+      actualTeacherName = teacherDisplayName;
       humanExecutorId = technicalIdentity.userId;
       humanExecutorName = actualTeacherName;
     }
@@ -756,6 +873,9 @@ export class PendidikanV2Service {
     return await this.db.$transaction(async (tx) => {
       const currentSessionInTx = await tx.educationSession.findUnique({
         where: { id: sessionId },
+        include: {
+          scheduledTeacherAssignment: true,
+        },
       });
 
       if (!currentSessionInTx) {
@@ -768,14 +888,38 @@ export class PendidikanV2Service {
         );
       }
 
+      // TOCTOU GUARD FOR KEPESANTRENAN:
+      // Re-resolve effectiveScheduledStaffId inside transaction before CAS mutation
+      if (currentSessionInTx.educationTrack === "KEPESANTRENAN") {
+        const effectiveScheduledStaffIdInTx =
+          currentSessionInTx.scheduledStaffId ||
+          currentSessionInTx.scheduledTeacherAssignment?.staffId ||
+          null;
+
+        if (!effectiveScheduledStaffIdInTx || effectiveScheduledStaffIdInTx !== technicalIdentity.staffId) {
+          throw new Error(
+            "KEPESANTRENAN_SCHEDULED_TEACHER_MISMATCH: Jadwal pengajar telah berubah saat transaksi dijalankan (TOCTOU guard: zero mutation)"
+          );
+        }
+      }
+
       const startedAt = new Date();
 
-      // Real CAS update: condition on status = SCHEDULED
+      // Real CAS update: condition on status = SCHEDULED + bound scheduled staff snapshot
+      const casWhere: any = {
+        id: sessionId,
+        status: "SCHEDULED",
+      };
+      if (currentSession.educationTrack === "KEPESANTRENAN") {
+        if (currentSessionInTx.scheduledStaffId) {
+          casWhere.scheduledStaffId = currentSessionInTx.scheduledStaffId;
+        } else if (currentSessionInTx.scheduledTeacherAssignmentId) {
+          casWhere.scheduledTeacherAssignmentId = currentSessionInTx.scheduledTeacherAssignmentId;
+        }
+      }
+
       const casResult = await tx.educationSession.updateMany({
-        where: {
-          id: sessionId,
-          status: "SCHEDULED",
-        },
+        where: casWhere,
         data: {
           status: "STARTED",
           startedAt,
@@ -917,13 +1061,24 @@ export class PendidikanV2Service {
         );
       }
     } else {
-      if (
-        !currentSession.actualTeacherUserId ||
-        currentSession.actualTeacherUserId !== actorUserId ||
-        (currentSession.actualTeacherStaffId && technicalIdentity.staffId && currentSession.actualTeacherStaffId !== technicalIdentity.staffId)
-      ) {
+      if (!currentSession.actualTeacherUserId || currentSession.actualTeacherUserId !== actorUserId) {
         throw new Error(
-          `ACTOR_NOT_ACTUAL_TEACHER: Pengguna (${actorUserId}) bukan pengajar aktual yang memulai sesi ini (${currentSession.actualTeacherUserId})`
+          `ACTOR_NOT_ACTUAL_TEACHER: Pengguna (${actorUserId}) bukan pengajar aktual yang memulai sesi ini (${currentSession.actualTeacherUserId || "NULL"})`
+        );
+      }
+      if (!technicalIdentity.staffId) {
+        throw new Error(
+          "TEACHER_STAFF_LINKAGE_REQUIRED: Akun pengajar tidak memiliki profil Staff yang valid"
+        );
+      }
+      if (!currentSession.actualTeacherStaffId) {
+        throw new Error(
+          "ACTOR_NOT_ACTUAL_TEACHER: Sesi ini tidak memiliki actualTeacherStaffId yang tercatat"
+        );
+      }
+      if (currentSession.actualTeacherStaffId !== technicalIdentity.staffId) {
+        throw new Error(
+          `ACTOR_NOT_ACTUAL_TEACHER: Staff ID pengajar (${technicalIdentity.staffId}) tidak sesuai dengan Staff ID yang tercatat pada sesi (${currentSession.actualTeacherStaffId})`
         );
       }
     }
@@ -993,7 +1148,7 @@ export class PendidikanV2Service {
           `CANONICAL_AUTHORIZATION_DENIED: Pengguna tidak berwenang mencatat materi pembelajaran (${authDecision.reason || authDecision.reasonCode})`
         );
       }
-      provenance = validateAuditProvenance(authDecision);
+      provenance = validateKepesantrenanTeacherGrant(authDecision, "academic.material.record");
       humanExecutorId = technicalIdentity.userId;
     }
 
@@ -1137,13 +1292,30 @@ export class PendidikanV2Service {
       );
     }
 
-    if (
-      !currentSession.actualTeacherUserId ||
-      currentSession.actualTeacherUserId !== actorUserId ||
-      (currentSession.actualTeacherStaffId && technicalIdentity.staffId && currentSession.actualTeacherStaffId !== technicalIdentity.staffId)
-    ) {
+    if (currentSession.educationTrack === "STUDI_UMUM") {
       throw new Error(
-        `ACTOR_NOT_ACTUAL_TEACHER: Pengguna (${actorUserId}) bukan pengajar aktual yang memulai sesi ini (${currentSession.actualTeacherUserId})`
+        "STUDI_UMUM_ATTENDANCE_POLICY_DEFERRED: Kebijakan pencatatan presensi santri untuk sesi Studi Umum ditangguhkan"
+      );
+    }
+
+    if (!currentSession.actualTeacherUserId || currentSession.actualTeacherUserId !== actorUserId) {
+      throw new Error(
+        `ACTOR_NOT_ACTUAL_TEACHER: Pengguna (${actorUserId}) bukan pengajar aktual yang memulai sesi ini (${currentSession.actualTeacherUserId || "NULL"})`
+      );
+    }
+    if (!technicalIdentity.staffId) {
+      throw new Error(
+        "TEACHER_STAFF_LINKAGE_REQUIRED: Akun pengajar tidak memiliki profil Staff yang valid"
+      );
+    }
+    if (!currentSession.actualTeacherStaffId) {
+      throw new Error(
+        "ACTOR_NOT_ACTUAL_TEACHER: Sesi ini tidak memiliki actualTeacherStaffId yang tercatat"
+      );
+    }
+    if (currentSession.actualTeacherStaffId !== technicalIdentity.staffId) {
+      throw new Error(
+        `ACTOR_NOT_ACTUAL_TEACHER: Staff ID pengajar (${technicalIdentity.staffId}) tidak sesuai dengan Staff ID yang tercatat pada sesi (${currentSession.actualTeacherStaffId})`
       );
     }
 
@@ -1157,11 +1329,7 @@ export class PendidikanV2Service {
     let humanExecutorId: string | null = null;
     const humanExecutorName: string = currentSession.actualTeacherName || technicalIdentity.name || technicalIdentity.username;
 
-    if (currentSession.educationTrack === "STUDI_UMUM") {
-      throw new Error(
-        "STUDI_UMUM_ATTENDANCE_POLICY_DEFERRED: Kebijakan pencatatan presensi santri untuk sesi Studi Umum ditangguhkan"
-      );
-    } else {
+    {
       // KEPESANTRENAN: ADM is strictly denied from recording Kepesantrenan attendance
       if (technicalIdentity.role === "ADM") {
         throw new Error(
@@ -1194,7 +1362,7 @@ export class PendidikanV2Service {
           );
         }
 
-        const prov = validateAuditProvenance(authDecision);
+        const prov = validateKepesantrenanTeacherGrant(authDecision, "academic.attendance.record");
         if (!sharedProvenance) {
           sharedProvenance = prov;
         } else {
