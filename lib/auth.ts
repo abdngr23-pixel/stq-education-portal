@@ -4,7 +4,8 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { AuthTokenPayload, Role, UserSession } from "@/types/auth";
 import prisma from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { authorizeCanonical, createPrismaDataProvider, ICanonicalDataProvider } from "@/lib/auth/canonical-evaluator";
 
 export function getAuthSecretKey(): Uint8Array {
   const secret = process.env.AUTH_SECRET;
@@ -416,19 +417,60 @@ export async function recordAuditLog(
   }
 }
 
+export type MudhabbirPrismaClient = {
+  user: {
+    findUnique: (args: unknown) => Promise<unknown>;
+  };
+  assignment: {
+    findFirst: (args: unknown) => Promise<unknown>;
+    findMany?: (args: unknown) => Promise<unknown>;
+  };
+};
+
 /**
  * Canonical Mudhabbir Authorization Resolver (PEMBINA_HALAQOH)
- * Derived strictly from SESSION -> IDENTITY -> ACTIVE ASSIGNMENT -> Position PEMBINA_HALAQOH.
- * Session boolean (session.isMudabbir) may exist as derived metadata, but confers ZERO authority.
+ * Derived strictly from:
+ * PERSONAL User (status AKTIF) -> active linked Staff (status AKTIF) -> ACTIVE Assignment -> Position PEMBINA_HALAQOH -> anchor KAMAR OrgUnit.
+ * Mudhabbir must NOT be inferred from username, role alone, Tahfizh halaqoh, name, or session display metadata.
  */
-export async function resolveUserIsMudabbir(userId?: string | null): Promise<boolean> {
+export async function resolveUserIsMudabbir(
+  userId?: string | null,
+  prismaClient: MudhabbirPrismaClient = prisma as unknown as MudhabbirPrismaClient
+): Promise<boolean> {
   if (!userId) return false;
   try {
-    const asg = await prisma.assignment.findFirst({
+    const user = (await prismaClient.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        accountType: true,
+        status: true,
+        staff: { select: { id: true, status: true } },
+      },
+    })) as {
+      id: string;
+      accountType: string;
+      status: string;
+      staff?: { id: string; status: string } | null;
+    } | null;
+    if (!user || user.status !== "AKTIF" || user.accountType !== "PERSONAL") return false;
+    if (!user.staff || user.staff.status !== "AKTIF") return false;
+
+    const now = new Date();
+    const asg = await prismaClient.assignment.findFirst({
       where: {
         userId,
         status: "ACTIVE",
-        position: { code: "PEMBINA_HALAQOH" },
+        validFrom: { lte: now },
+        OR: [{ validUntil: null }, { validUntil: { gte: now } }],
+        position: { code: "PEMBINA_HALAQOH", isActive: true },
+        unit: {
+          isActive: true,
+          OR: [
+            { type: "KAMAR", domain: "KEASRAMAAN" },
+            { type: "HALAQOH" },
+          ],
+        },
       },
     });
     return Boolean(asg);
@@ -439,26 +481,52 @@ export async function resolveUserIsMudabbir(userId?: string | null): Promise<boo
 
 /**
  * Resolves permitted unit IDs assigned to a Mudabbir (PEMBINA_HALAQOH)
+ * Bounded strictly to own assigned Kamar OrgUnits.
  */
-export async function getMudabbirAssignedUnitIds(userId?: string | null): Promise<string[]> {
+export async function getMudabbirAssignedUnitIds(
+  userId?: string | null,
+  prismaClient: MudhabbirPrismaClient = prisma as unknown as MudhabbirPrismaClient
+): Promise<string[]> {
   if (!userId) return [];
   try {
-    const assignments = await prisma.assignment.findMany({
+    const isMudabbir = await resolveUserIsMudabbir(userId, prismaClient);
+    if (!isMudabbir) return [];
+
+    const now = new Date();
+    const assignments = (await prismaClient.assignment.findMany?.({
       where: {
         userId,
         status: "ACTIVE",
-        position: { code: "PEMBINA_HALAQOH" },
+        validFrom: { lte: now },
+        OR: [{ validUntil: null }, { validUntil: { gte: now } }],
+        position: { code: "PEMBINA_HALAQOH", isActive: true },
+        unit: {
+          isActive: true,
+          OR: [
+            { type: "KAMAR", domain: "KEASRAMAAN" },
+            { type: "HALAQOH" },
+          ],
+        },
       },
       include: {
-        scopedUnits: true,
+        scopedUnits: {
+          include: { unit: true },
+        },
       },
-    });
+    })) as Array<{
+      unitId?: string | null;
+      scopedUnits?: Array<{ unitId?: string | null; unit: { type?: string; isActive?: boolean } }>;
+    }> | undefined;
     const unitIds = new Set<string>();
-    for (const asg of assignments) {
-      if (asg.unitId) unitIds.add(asg.unitId);
-      if (asg.scopedUnits) {
-        for (const su of asg.scopedUnits) {
-          if (su.unitId) unitIds.add(su.unitId);
+    if (assignments) {
+      for (const asg of assignments) {
+        if (asg.unitId) unitIds.add(asg.unitId);
+        if (asg.scopedUnits) {
+          for (const su of asg.scopedUnits) {
+            if (su.unitId && (su.unit.type === "KAMAR" || su.unit.type === "HALAQOH") && su.unit.isActive) {
+              unitIds.add(su.unitId);
+            }
+          }
         }
       }
     }
@@ -470,9 +538,13 @@ export async function getMudabbirAssignedUnitIds(userId?: string | null): Promis
 
 /**
  * Resolves whether a Mudabbir (PEMBINA_HALAQOH) has the required 'keasramaan.permission.create' capability.
- * Pipeline: IDENTITY -> ACTIVE Assignment -> Position PEMBINA_HALAQOH -> keasramaan.permission.create capability -> VERIFIED_PRODUCTION ONLY.
+ * Thin canonical wrapper delegating directly to authorizeCanonical engine.
  */
-export async function resolveMudabbirPermissionCapability(userId?: string | null): Promise<{
+export async function resolveMudabbirPermissionCapability(
+  userId?: string | null,
+  dataProvider?: ICanonicalDataProvider,
+  prismaClient: MudhabbirPrismaClient = prisma as unknown as MudhabbirPrismaClient
+): Promise<{
   authorized: boolean;
   reason?: string;
   assignmentId?: string;
@@ -483,71 +555,105 @@ export async function resolveMudabbirPermissionCapability(userId?: string | null
     return { authorized: false, reason: "Identitas pengguna tidak ditemukan." };
   }
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, status: true },
-    });
-    if (!user || user.status !== "AKTIF") {
-      return { authorized: false, reason: "Akun pengguna tidak aktif atau tidak terdaftar." };
+    const isMudabbir = await resolveUserIsMudabbir(userId, prismaClient);
+    if (!isMudabbir) {
+      return {
+        authorized: false,
+        reason: "Pengguna bukan canonical Mudhabbir (memerlukan User AKTIF PERSONAL, Staff AKTIF, dan Assignment aktif PEMBINA_HALAQOH pada KAMAR).",
+      };
     }
 
+    const user = (await prismaClient.user.findUnique({
+      where: { id: userId },
+      select: { id: true, username: true, status: true, accountType: true, staffId: true },
+    })) as {
+      id: string;
+      username: string;
+      status: string;
+      accountType: "PERSONAL" | "UNIT" | "SUBJECT";
+      staffId?: string | null;
+    } | null;
+    if (!user) {
+      return { authorized: false, reason: "Identitas pengguna tidak ditemukan." };
+    }
+
+    const decision = await authorizeCanonical({
+      identity: {
+        userId: user.id,
+        username: user.username,
+        status: user.status,
+        accountType: user.accountType,
+        staffId: user.staffId,
+      },
+      capability: "keasramaan.permission.create",
+      dataProvider: dataProvider || createPrismaDataProvider(prismaClient as unknown as PrismaClient),
+    });
+
+    if (decision.decision === "ALLOW") {
+      return {
+        authorized: true,
+        assignmentId: decision.assignmentId,
+        positionId: decision.positionId,
+        scopeType: decision.scopeType,
+      };
+    }
+
+    // Inspect assignment capabilities to give detailed reason if non-verified or missing
     const now = new Date();
-    const assignments = await prisma.assignment.findMany({
+    const assignments = (await prismaClient.assignment.findMany?.({
       where: {
         userId,
         status: "ACTIVE",
         validFrom: { lte: now },
-        OR: [{ validUntil: null }, { validUntil: { gt: now } }],
-        position: {
-          code: "PEMBINA_HALAQOH",
-          isActive: true,
-        },
+        OR: [{ validUntil: null }, { validUntil: { gte: now } }],
+        position: { code: "PEMBINA_HALAQOH", isActive: true },
       },
       include: {
         position: {
           include: {
             capabilities: {
-              where: {
-                capabilityCode: "keasramaan.permission.create",
-              },
+              where: { capabilityCode: "keasramaan.permission.create" },
             },
           },
         },
       },
-    });
-
-    if (assignments.length === 0) {
-      return {
-        authorized: false,
-        reason: "Pengguna tidak memiliki assignment aktif untuk posisi PEMBINA_HALAQOH.",
+    })) as Array<{
+      id: string;
+      positionId: string;
+      position?: {
+        capabilities?: Array<{ capabilityCode: string; scopeType?: string; businessRuleState: string }>;
       };
-    }
-    for (const asg of assignments) {
-      const caps = asg.position.capabilities;
-      const permCap = caps.find(
-        (c: { capabilityCode: string }) => c.capabilityCode === "keasramaan.permission.create"
-      );
-      if (permCap) {
-        const stateStr = String(permCap.businessRuleState);
-        if (stateStr === "VERIFIED_PRODUCTION") {
-          return {
-            authorized: true,
-            assignmentId: asg.id,
-            positionId: asg.positionId,
-            scopeType: permCap.scopeType,
-          };
-        } else {
-          return {
-            authorized: false,
-            reason: `Kapabilitas 'keasramaan.permission.create' berstatus '${permCap.businessRuleState}' (harus VERIFIED_PRODUCTION).`,
-          };
+    }> | undefined;
+
+    if (assignments && assignments.length > 0) {
+      for (const asg of assignments) {
+        const caps = asg.position?.capabilities;
+        const permCap = caps?.find((c) => c.capabilityCode === "keasramaan.permission.create");
+        if (permCap) {
+          if (permCap.businessRuleState === "VERIFIED_PRODUCTION") {
+            return {
+              authorized: true,
+              assignmentId: asg.id,
+              positionId: asg.positionId,
+              scopeType: permCap.scopeType,
+            };
+          } else {
+            return {
+              authorized: false,
+              reason: `Kapabilitas 'keasramaan.permission.create' berstatus '${permCap.businessRuleState}' (harus VERIFIED_PRODUCTION).`,
+            };
+          }
         }
       }
+      return {
+        authorized: false,
+        reason: "Posisi PEMBINA_HALAQOH tidak memiliki kapabilitas 'keasramaan.permission.create'.",
+      };
     }
 
     return {
       authorized: false,
-      reason: "Posisi PEMBINA_HALAQOH tidak memiliki kapabilitas 'keasramaan.permission.create'.",
+      reason: decision.reason,
     };
   } catch (err) {
     return {
@@ -556,3 +662,4 @@ export async function resolveMudabbirPermissionCapability(userId?: string | null
     };
   }
 }
+

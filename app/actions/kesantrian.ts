@@ -657,8 +657,11 @@ export async function catatAbsensiAction(params: {
     return { success: false, message: "Silakan login terlebih dahulu." };
   }
 
-  // MK, OSDA, dan PH yang dapat mencatat absensi asrama
-  if (!["MK", "OSDA", "PH", "KS"].includes(session.role)) {
+  // MK, PH, dan KS yang dapat mencatat absensi asrama (OSDA generic role-only write denied pending canonical policy)
+  if (session.role === "OSDA") {
+    return { success: false, message: "Akses Ditolak: Generic OSDA role tidak memiliki kewenangan pencatatan absensi asrama." };
+  }
+  if (!["MK", "PH", "KS"].includes(session.role)) {
     return { success: false, message: `Role ${session.role} tidak berhak mencatat absensi asrama.` };
   }
 

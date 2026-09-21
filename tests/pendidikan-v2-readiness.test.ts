@@ -471,30 +471,39 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
             capability: { code: "academic.schedule.read", isBlocked: false },
           });
         }
+        const isUnit = posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN";
         return {
           id: `asg-req-${idx}`,
-          userId: `u-1`,
+          userId: isUnit ? `u-unit-${idx}` : `u-1`,
           positionId: `pos-req-${idx}`,
           status: "ACTIVE",
           validFrom: new Date(Date.now() - 86400000),
           validUntil: null,
           unitId: `ou-req-${idx}`,
           scopeUnits: [{ unitId: `ou-req-${idx}` }],
-          user: {
-            id: `u-1`,
-            username: `ust.ahmad`,
-            status: "AKTIF",
-            accountType: "PERSONAL",
-            staffId: `stf-1`,
-            staff: { id: `stf-1`, status: "AKTIF" },
-          },
+          user: isUnit
+            ? {
+                id: `u-unit-${idx}`,
+                username: `osda.putri`,
+                status: "AKTIF",
+                accountType: "UNIT",
+                unitPlacements: [{ unitId: `ou-req-${idx}` }],
+              }
+            : {
+                id: `u-1`,
+                username: `ust.ahmad`,
+                status: "AKTIF",
+                accountType: "PERSONAL",
+                staffId: `stf-1`,
+                staff: { id: `stf-1`, status: "AKTIF" },
+              },
           position: {
             id: `pos-req-${idx}`,
             code: posCode,
             name: posCode,
             isActive: true,
-            requiresPersonalAccount: true,
-            domain: "AKADEMIK",
+            requiresPersonalAccount: !isUnit,
+            domain: isUnit ? "KEASRAMAAN" : "AKADEMIK",
             capabilities,
           },
         };

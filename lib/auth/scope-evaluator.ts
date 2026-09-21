@@ -18,6 +18,7 @@
  */
 
 import {
+  AccountType,
   ScopeType,
   GenderComplex,
   EffectiveCapabilityGrant,
@@ -71,6 +72,9 @@ export function evaluateScopePredicate(
     userId: string;
     santriId?: string | null;
     staffId?: string | null;
+    accountType?: AccountType;
+    placementUnitId?: string | null;
+    genderComplex?: GenderComplex;
   }
 ): ScopeEvaluationResult {
   if (!grant || !grant.scopeType) {
@@ -104,22 +108,66 @@ export function evaluateScopePredicate(
     };
   }
 
-  // Gender boundary check
-  if (
-    context.genderComplex &&
-    grant.anchorUnitId &&
-    !evaluateGenderComplexBoundary(
-      (grant as unknown as { genderComplex?: GenderComplex }).genderComplex,
-      context.genderComplex
-    )
-  ) {
-    return {
-      matches: false,
-      code: "GENDER_COMPLEX_DENIED",
-      reason: `Access denied across gender boundary (${context.genderComplex}).`,
-      evaluatedScope: scopeType,
-      evaluatedAnchorUnitId: anchorUnitId,
-    };
+  // Operational UNIT Gender Boundary Hardening (Gate 5)
+  if (subjectIdentity.accountType === "UNIT") {
+    const actorGender =
+      (grant as unknown as { genderComplex?: GenderComplex }).genderComplex ||
+      subjectIdentity.genderComplex;
+
+    // If unit is gender-bound or evaluating gender-bound access:
+    if (actorGender === "PUTRA" || actorGender === "PUTRI") {
+      if (!context.genderComplex) {
+        return {
+          matches: false,
+          code: "GENDER_COMPLEX_DENIED",
+          reason: "Target resource is missing required gender context for gender-bound operational unit.",
+          evaluatedScope: scopeType,
+          evaluatedAnchorUnitId: anchorUnitId,
+        };
+      }
+      if (
+        actorGender !== context.genderComplex &&
+        context.genderComplex !== "CAMPUR" &&
+        context.genderComplex !== "TIDAK_TERIKAT"
+      ) {
+        return {
+          matches: false,
+          code: "GENDER_COMPLEX_DENIED",
+          reason: `Operational UNIT gender boundary violation (${actorGender} cannot access ${context.genderComplex}).`,
+          evaluatedScope: scopeType,
+          evaluatedAnchorUnitId: anchorUnitId,
+        };
+      }
+    } else {
+      // Missing actor gender where gender is required (e.g. Keasramaan operational access)
+      if (context.genderComplex && (context.genderComplex === "PUTRA" || context.genderComplex === "PUTRI")) {
+        return {
+          matches: false,
+          code: "GENDER_COMPLEX_DENIED",
+          reason: "Operational UNIT account is missing required gender context.",
+          evaluatedScope: scopeType,
+          evaluatedAnchorUnitId: anchorUnitId,
+        };
+      }
+    }
+  } else {
+    // Standard gender boundary check for PERSONAL / non-UNIT
+    if (
+      context.genderComplex &&
+      grant.anchorUnitId &&
+      !evaluateGenderComplexBoundary(
+        (grant as unknown as { genderComplex?: GenderComplex }).genderComplex,
+        context.genderComplex
+      )
+    ) {
+      return {
+        matches: false,
+        code: "GENDER_COMPLEX_DENIED",
+        reason: `Access denied across gender boundary (${context.genderComplex}).`,
+        evaluatedScope: scopeType,
+        evaluatedAnchorUnitId: anchorUnitId,
+      };
+    }
   }
 
   // 2. DOMAIN Scope: All units within the strategic domain (e.g. TAHFIZH, KEASRAMAAN)
@@ -195,6 +243,75 @@ export function evaluateScopePredicate(
 
   // 4. ASSIGNED_UNITS Scope: Relationally bound multi-unit set (via AssignmentScopeUnit)
   if (scopeType === "ASSIGNED_UNITS") {
+    if (subjectIdentity.accountType === "UNIT") {
+      // UNIT operational principal:
+      // If explicit scoped units (unitIds) are assigned, target resource must belong to one of them.
+      if (unitIds && unitIds.length > 0) {
+        const hasMatch = (context.orgUnitIds || []).some((u) => unitIds.includes(u));
+        if (hasMatch) {
+          return {
+            matches: true,
+            code: "ALLOWED",
+            reason: "Target resource matched relationally assigned scope units.",
+            evaluatedScope: "ASSIGNED_UNITS",
+            evaluatedAnchorUnitId: anchorUnitId,
+          };
+        }
+        return {
+          matches: false,
+          code: "SCOPE_MISMATCH",
+          reason: "Target resource does not match any relationally assigned units.",
+          evaluatedScope: "ASSIGNED_UNITS",
+          evaluatedAnchorUnitId: anchorUnitId,
+        };
+      }
+
+      // Direct anchor unit match
+      if (anchorUnitId && (context.orgUnitIds || []).includes(anchorUnitId)) {
+        return {
+          matches: true,
+          code: "ALLOWED",
+          reason: "Target resource matched relationally assigned anchor unit.",
+          evaluatedScope: "ASSIGNED_UNITS",
+          evaluatedAnchorUnitId: anchorUnitId,
+        };
+      }
+
+      // Operational UNIT principals with OSDA division anchor assignment operate across their authorized domain & gender boundary
+      // without falsely claiming that the target Santri belongs to an OSDA division
+      const isOsdaDivision = anchorUnitId && anchorUnitId.toLowerCase().includes("osda");
+      if (isOsdaDivision) {
+        const grantDomain =
+          (grant as unknown as { orgDomain?: string; domain?: string }).orgDomain ||
+          (grant as unknown as { orgDomain?: string; domain?: string }).domain;
+        if (grantDomain && context.orgDomain && grantDomain !== context.orgDomain) {
+          return {
+            matches: false,
+            code: "SCOPE_MISMATCH",
+            reason: `Target domain (${context.orgDomain}) does not match grant operational domain (${grantDomain}).`,
+            evaluatedScope: "ASSIGNED_UNITS",
+            evaluatedAnchorUnitId: anchorUnitId,
+          };
+        }
+
+        return {
+          matches: true,
+          code: "ALLOWED",
+          reason: "Target resource is within operational unit's authorized domain and gender boundary.",
+          evaluatedScope: "ASSIGNED_UNITS",
+          evaluatedAnchorUnitId: anchorUnitId,
+        };
+      }
+
+      return {
+        matches: false,
+        code: "SCOPE_MISMATCH",
+        reason: "Target resource does not match relationally assigned unit.",
+        evaluatedScope: "ASSIGNED_UNITS",
+        evaluatedAnchorUnitId: anchorUnitId,
+      };
+    }
+
     const permittedUnits = new Set<string>([
       ...(anchorUnitId ? [anchorUnitId] : []),
       ...(unitIds || []),

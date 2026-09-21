@@ -175,6 +175,7 @@ export const CANONICAL_READINESS_GATE_NAMES = [
   "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY",
   "STALE_POSITION_CAPABILITY_POLICY_READY",
   "COHORTS_ASSIGNED",
+  "KEASRAMAAN_KAMAR_CONFIGURATION_READY",
   "RUNTIME_ACTIVATION_FLAG",
 ] as const;
 
@@ -967,8 +968,17 @@ export async function checkPendidikanV2ProductionReadiness(
         const user = a.user || (a.userId ? usersMap.get(a.userId) : null);
         if (!user || !(user.status === "AKTIF" || user.status === "ACTIVE")) continue;
 
-        // Personal Staff Invariant: requires user.accountType=PERSONAL, user.staffId != null, and linked active Staff
-        if (pos.requiresPersonalAccount !== false) {
+        // Explicit Account Modality Validation (Gate 5 Hardening)
+        if (pos.code === "PETUGAS_OPERASIONAL_KEASRAMAAN") {
+          if (user.accountType && user.accountType !== "UNIT") {
+            assignmentIssues.push(`Assignment ${a.id} for ${pos.code}: user accountType is not UNIT (${user.accountType})`);
+            continue;
+          }
+          if (pos.requiresPersonalAccount === true) {
+            assignmentIssues.push(`Assignment ${a.id} for ${pos.code}: position requiresPersonalAccount=true is incompatible with UNIT modality`);
+            continue;
+          }
+        } else if (pos.requiresPersonalAccount !== false) {
           if (user.accountType && user.accountType !== "PERSONAL") {
             assignmentIssues.push(`Assignment ${a.id} for ${pos.code}: user accountType is not PERSONAL (${user.accountType})`);
             continue;
@@ -988,7 +998,17 @@ export async function checkPendidikanV2ProductionReadiness(
         if (code) coveredCodes.add(code);
       }
 
-      const missingPositions = CANONICAL_REQUIRED_POSITION_CODES.filter((c) => !coveredCodes.has(c));
+      // Check active Kamar units count
+      const activeKamars = Array.from(unitsMap.values()).filter((u) => u.type === "KAMAR" && u.isActive !== false);
+      const activeKamarCount = activeKamars.length;
+
+      let missingPositions = CANONICAL_REQUIRED_POSITION_CODES.filter((c) => !coveredCodes.has(c));
+      let deferredPembinaHalaqoh = false;
+      if (activeKamarCount === 0 && missingPositions.includes("PEMBINA_HALAQOH")) {
+        // Zero active kamar exists -> PEMBINA_HALAQOH room assignment is deferred
+        missingPositions = missingPositions.filter((c) => c !== "PEMBINA_HALAQOH");
+        deferredPembinaHalaqoh = true;
+      }
 
       // Gather position capabilities for UAT target policies validation
       const pcsByPosCode = new Map<string, any[]>();
@@ -1348,8 +1368,8 @@ export async function checkPendidikanV2ProductionReadiness(
                     userId: user.id,
                     username: user.username || `user-${user.id}`,
                     status: user.status || "AKTIF",
-                    accountType: "PERSONAL",
-                    staffId: user.staffId,
+                    accountType: "UNIT",
+                    placementUnitId: anchorUnit || permittedUnits[0],
                     mockAssignments: [mockAssignment],
                   } as any,
                   capability: target.capabilityCode,
@@ -1389,10 +1409,12 @@ export async function checkPendidikanV2ProductionReadiness(
           remediationAdvice: "Requires formal promotion of APPROVED_TARGET_PENDING_TECHNICAL policies to VERIFIED_PRODUCTION in M3.3C2",
         });
       } else {
+        const deferredNote = deferredPembinaHalaqoh ? " (PEMBINA_HALAQOH deferred: zero active Kamar)" : "";
+        const expectedCount = CANONICAL_REQUIRED_POSITION_CODES.length - (deferredPembinaHalaqoh ? 1 : 0);
         gates.push({
           gate: "USER_ASSIGNMENTS_READY",
           status: "READY",
-          details: `All ${CANONICAL_REQUIRED_POSITION_CODES.length} required target positions have active user assignments with verified runtime authority`,
+          details: `All ${expectedCount} required target positions have active user assignments with verified runtime authority${deferredNote}`,
         });
       }
     } else if (typeof db.$queryRawUnsafe === "function") {
@@ -1421,7 +1443,18 @@ export async function checkPendidikanV2ProductionReadiness(
           );
       `).catch(() => []);
       const coveredCodes = new Set(asgRows.map((r) => r.code));
-      const missingPositions = CANONICAL_REQUIRED_POSITION_CODES.filter((c) => !coveredCodes.has(c));
+
+      const kamarRows = await db.$queryRawUnsafe<Array<{ count: string }>>(`
+        SELECT COUNT(*)::text as count FROM "org_units" WHERE "type" = 'KAMAR' AND "is_active" = true;
+      `).catch(() => [{ count: "0" }]);
+      const activeKamarCount = parseInt(kamarRows[0]?.count || "0", 10);
+
+      let missingPositions = CANONICAL_REQUIRED_POSITION_CODES.filter((c) => !coveredCodes.has(c));
+      let deferredPembinaHalaqoh = false;
+      if (activeKamarCount === 0 && missingPositions.includes("PEMBINA_HALAQOH")) {
+        missingPositions = missingPositions.filter((c) => c !== "PEMBINA_HALAQOH");
+        deferredPembinaHalaqoh = true;
+      }
 
       const pcRows = await db.$queryRawUnsafe<Array<{
         position_code: string;
@@ -1490,10 +1523,12 @@ export async function checkPendidikanV2ProductionReadiness(
           remediationAdvice: "Requires formal promotion of APPROVED_TARGET_PENDING_TECHNICAL policies to VERIFIED_PRODUCTION in M3.3C2",
         });
       } else {
+        const deferredNote = deferredPembinaHalaqoh ? " (PEMBINA_HALAQOH deferred: zero active Kamar)" : "";
+        const expectedCount = CANONICAL_REQUIRED_POSITION_CODES.length - (deferredPembinaHalaqoh ? 1 : 0);
         gates.push({
           gate: "USER_ASSIGNMENTS_READY",
           status: "READY",
-          details: `All ${CANONICAL_REQUIRED_POSITION_CODES.length} required target positions have active user assignments with verified runtime authority`,
+          details: `All ${expectedCount} required target positions have active user assignments with verified runtime authority${deferredNote}`,
         });
       }
     } else {
@@ -1950,6 +1985,212 @@ export async function checkPendidikanV2ProductionReadiness(
     }
   } catch (err: unknown) {
     gates.push({ gate: "COHORTS_ASSIGNED", status: "NOT_READY", details: String(err), blocking: false });
+  }
+
+  // Gate: Keasramaan Kamar Configuration Ready (Gate 5 Remediation)
+  // Case A: active Kamar count = 0 => NOT_READY, CONFIGURATION_NOT_CREATED / DEFERRED, blocking = false
+  // Case B: active Kamar count > 0 => validate topology, placements, and Mudhabbir coverage
+  // Database / query failure => NOT_READY, DATABASE_UNAVAILABLE, blocking = true
+  try {
+    if (db.orgUnit) {
+      let kamars: any[];
+      try {
+        const rawKamars = await db.orgUnit.findMany({
+          where: { type: "KAMAR", isActive: true },
+        });
+        kamars = Array.isArray(rawKamars) ? rawKamars.filter((k: any) => k.type === "KAMAR") : [];
+      } catch (err: unknown) {
+        gates.push({
+          gate: "KEASRAMAAN_KAMAR_CONFIGURATION_READY",
+          status: "NOT_READY",
+          reason: "DATABASE_UNAVAILABLE",
+          details: `Database error querying Kamar configuration: ${err instanceof Error ? err.message : String(err)}`,
+          blocking: true,
+        });
+        throw err;
+      }
+
+      if (kamars.length === 0) {
+        gates.push({
+          gate: "KEASRAMAAN_KAMAR_CONFIGURATION_READY",
+          status: "NOT_READY",
+          reason: "CONFIGURATION_NOT_CREATED / DEFERRED",
+          details: "Zero active Kamar configured; kamar topology deferred.",
+          blocking: false,
+        });
+      } else {
+        const kamarIssues: string[] = [];
+
+        // 1. Check kamar domain and gender
+        for (const k of kamars) {
+          if (k.domain !== "KEASRAMAAN") {
+            kamarIssues.push(`Kamar ${k.id} (${k.code}) has invalid domain ${k.domain} (must be KEASRAMAAN)`);
+          }
+          if (!k.genderComplex || (k.genderComplex !== "PUTRA" && k.genderComplex !== "PUTRI" && k.genderComplex !== "CAMPUR")) {
+            kamarIssues.push(`Kamar ${k.id} (${k.code}) has invalid or missing genderComplex (${k.genderComplex})`);
+          }
+        }
+
+        // 2. Validate SantriKamarPlacement
+        if (db.santriKamarPlacement && typeof db.santriKamarPlacement.findMany === "function") {
+          try {
+            const placements = await db.santriKamarPlacement.findMany({
+              where: { isActive: true },
+              include: { santri: true, kamar: true },
+            }).catch(() => []);
+
+            const placementsBySantri = new Map<string, number>();
+            for (const p of placements) {
+              const count = (placementsBySantri.get(p.santriId) || 0) + 1;
+              placementsBySantri.set(p.santriId, count);
+              if (count > 1) {
+                kamarIssues.push(`Santri ${p.santriId} has multiple active kamar placements`);
+              }
+              if (p.kamar && p.santri) {
+                const sGender = p.santri.jenisKelamin === "L" ? "PUTRA" : p.santri.jenisKelamin === "P" ? "PUTRI" : "CAMPUR";
+                if (p.kamar.genderComplex !== "CAMPUR" && p.kamar.genderComplex !== "TIDAK_TERIKAT" && sGender !== p.kamar.genderComplex) {
+                  kamarIssues.push(`Placement ${p.id} violates gender boundary: santri ${sGender} in ${p.kamar.genderComplex} room`);
+                }
+              }
+            }
+          } catch (err: unknown) {
+            kamarIssues.push(`Error querying kamar placements: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+
+        // 3. Validate Mudhabbir coverage for each kamar
+        if (db.assignment) {
+          try {
+            const now = new Date();
+            const mudhabbirAssignments = await db.assignment.findMany({
+              where: {
+                status: "ACTIVE",
+                validFrom: { lte: now },
+                OR: [{ validUntil: null }, { validUntil: { gte: now } }],
+                position: { code: "PEMBINA_HALAQOH", isActive: true },
+              },
+              include: {
+                user: { include: { staff: true } },
+                unit: true,
+              },
+            }).catch(() => []);
+
+            const coveredKamarIds = new Set<string>();
+            for (const asg of mudhabbirAssignments) {
+              const u = asg.user;
+              if (!u || u.accountType !== "PERSONAL" || u.status !== "AKTIF") continue;
+              if (!u.staff || u.staff.status !== "AKTIF") continue;
+              if (asg.unitId) coveredKamarIds.add(asg.unitId);
+            }
+
+            for (const k of kamars) {
+              if (!coveredKamarIds.has(k.id)) {
+                kamarIssues.push(`Kamar ${k.name || k.id} lacks active PERSONAL PEMBINA_HALAQOH assignment`);
+              }
+            }
+          } catch (err: unknown) {
+            kamarIssues.push(`Error querying mudhabbir assignments: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+
+        if (kamarIssues.length > 0) {
+          gates.push({
+            gate: "KEASRAMAAN_KAMAR_CONFIGURATION_READY",
+            status: "NOT_READY",
+            details: `Kamar configuration incomplete: ${kamarIssues.join("; ")}`,
+            blocking: true,
+          });
+        } else {
+          gates.push({
+            gate: "KEASRAMAAN_KAMAR_CONFIGURATION_READY",
+            status: "READY",
+            details: `All ${kamars.length} active Kamar have valid topology, placement consistency, and coherent Mudhabbir assignments`,
+            blocking: true,
+          });
+        }
+      }
+    } else if (typeof db.$queryRawUnsafe === "function") {
+      let kamarRows: Array<{ id: string; code: string; domain: string; gender_complex: string }>;
+      try {
+        kamarRows = await db.$queryRawUnsafe<Array<{ id: string; code: string; domain: string; gender_complex: string }>>(`
+          SELECT "id", "code", "domain", "gender_complex"
+          FROM "org_units"
+          WHERE "type" = 'KAMAR' AND "is_active" = true;
+        `);
+      } catch (err: unknown) {
+        gates.push({
+          gate: "KEASRAMAAN_KAMAR_CONFIGURATION_READY",
+          status: "NOT_READY",
+          reason: "DATABASE_UNAVAILABLE",
+          details: `Database error querying Kamar: ${err instanceof Error ? err.message : String(err)}`,
+          blocking: true,
+        });
+        throw err;
+      }
+
+      if (kamarRows.length === 0) {
+        gates.push({
+          gate: "KEASRAMAAN_KAMAR_CONFIGURATION_READY",
+          status: "NOT_READY",
+          reason: "CONFIGURATION_NOT_CREATED / DEFERRED",
+          details: "Zero active Kamar configured; kamar topology deferred.",
+          blocking: false,
+        });
+      } else {
+        const coveredKamars = await db.$queryRawUnsafe<Array<{ unit_id: string }>>(`
+          SELECT DISTINCT a."unit_id"
+          FROM "assignments" a
+          JOIN "positions" p ON a."position_id" = p."id"
+          JOIN "users" u ON a."user_id" = u."id"
+          JOIN "staff" s ON u."staff_id" = s."id"
+          WHERE a."status" = 'ACTIVE'
+            AND (a."valid_from" IS NULL OR a."valid_from" <= NOW())
+            AND (a."valid_until" IS NULL OR a."valid_until" >= NOW())
+            AND p."code" = 'PEMBINA_HALAQOH'
+            AND p."is_active" = true
+            AND u."account_type" = 'PERSONAL'
+            AND u."status" IN ('AKTIF', 'ACTIVE')
+            AND s."status" IN ('AKTIF', 'ACTIVE');
+        `).catch(() => []);
+
+        const coveredSet = new Set(coveredKamars.map((r) => r.unit_id));
+        const missingCoverage = kamarRows.filter((k) => !coveredSet.has(k.id));
+
+        if (missingCoverage.length > 0) {
+          gates.push({
+            gate: "KEASRAMAAN_KAMAR_CONFIGURATION_READY",
+            status: "NOT_READY",
+            details: `${missingCoverage.length} of ${kamarRows.length} active Kamar lack active PEMBINA_HALAQOH assignment`,
+            blocking: true,
+          });
+        } else {
+          gates.push({
+            gate: "KEASRAMAAN_KAMAR_CONFIGURATION_READY",
+            status: "READY",
+            details: `All ${kamarRows.length} active Kamar have coherent Mudhabbir assignments`,
+            blocking: true,
+          });
+        }
+      }
+    } else {
+      gates.push({
+        gate: "KEASRAMAAN_KAMAR_CONFIGURATION_READY",
+        status: "NOT_READY",
+        reason: "CONFIGURATION_NOT_CREATED / DEFERRED",
+        details: "Zero active Kamar configured; kamar topology deferred.",
+        blocking: false,
+      });
+    }
+  } catch (err: unknown) {
+    if (!gates.some((g) => g.gate === "KEASRAMAAN_KAMAR_CONFIGURATION_READY")) {
+      gates.push({
+        gate: "KEASRAMAAN_KAMAR_CONFIGURATION_READY",
+        status: "NOT_READY",
+        reason: "DATABASE_UNAVAILABLE",
+        details: String(err),
+        blocking: true,
+      });
+    }
   }
 
   // Gate 11: Feature Flag Enabled

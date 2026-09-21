@@ -31,6 +31,7 @@ import {
   UnitAccountExecutorContext,
   GenderComplex,
   OrgDomain,
+  POSITION_ACCOUNT_MODALITY_CONTRACT,
 } from "@/types/architecture-lock";
 import { UserSession } from "@/types/auth";
 import { evaluateScopePredicate } from "./scope-evaluator";
@@ -82,6 +83,8 @@ export interface CanonicalIdentity {
   name?: string;
   genderComplex?: GenderComplex;
   placementUnitId?: string | null;
+  placementUnitCount?: number;
+  placementUnitIds?: string[];
 }
 
 /**
@@ -101,6 +104,7 @@ export interface CanonicalAssignmentWithDetails {
   status: AssignmentStatus;
   validFrom: Date;
   validUntil: Date | null;
+  requiresPersonalAccount?: boolean | null;
   positionCapabilities: Array<{
     capabilityCode: string;
     scopeType: ScopeType;
@@ -118,7 +122,7 @@ export interface CanonicalAssignmentWithDetails {
 export interface ICanonicalDataProvider {
   getIdentity(userId: string): Promise<CanonicalIdentity | null>;
   getActiveAssignments(userId: string, now: Date): Promise<CanonicalAssignmentWithDetails[]>;
-  getUnitAccountPlacement(userId: string): Promise<{ unitId: string } | null>;
+  getUnitAccountPlacement(userId: string): Promise<{ unitId: string; count?: number } | null>;
   verifyHumanExecutor(executorId: string): Promise<CanonicalExecutorIdentity | null>;
   resolveResourceContext(requested: RequestedResourceContext, subjectUserId?: string, capability?: string): Promise<ResolvedResourceContext | null>;
 }
@@ -127,11 +131,11 @@ export interface ICanonicalDataProvider {
  * Canonical Authorization Request Input
  */
 export interface AuthorizeCanonicalParams {
-  identity: CanonicalIdentity | UserSession | null;
+  identity: CanonicalIdentity | UserSession | { userId: string } | null;
   capability: string;
   resourceContext?: RequestedResourceContext;
   resolvedContext?: ResolvedResourceContext; // Optional pre-resolved context (e.g. for pure testing)
-  executorContext?: UnitAccountExecutorContext;
+  executorContext?: Partial<UnitAccountExecutorContext>;
   isMutation?: boolean;
   now?: Date;
   dataProvider?: ICanonicalDataProvider;
@@ -139,6 +143,7 @@ export interface AuthorizeCanonicalParams {
 
 /**
  * Positions that strictly require an active linked Staff profile
+ * NOTE (Gate 5): PETUGAS_OPERASIONAL_KEASRAMAAN removed (must be AccountType.UNIT, never fake Staff).
  */
 const STAFF_PROFILE_REQUIRED_POSITIONS = new Set([
   "MUDIR",
@@ -153,7 +158,6 @@ const STAFF_PROFILE_REQUIRED_POSITIONS = new Set([
   "PETUGAS_PRESENSI",
   "PETUGAS_KESEHATAN",
   "PETUGAS_OPERASIONAL_TAHFIZH",
-  "PETUGAS_OPERASIONAL_KEASRAMAAN",
   "MT",
   "KS",
   "MK",
@@ -214,20 +218,18 @@ export async function authorizeCanonical(
     }
   } else {
     // When no dataProvider is supplied (e.g. pure offline unit testing with pre-built mock identity)
+    const raw = params.identity as Record<string, unknown>;
     identity =
       "accountType" in params.identity
         ? (params.identity as CanonicalIdentity)
         : {
-            userId: params.identity.userId,
-            username: params.identity.username,
-            status:
-              "status" in params.identity && typeof params.identity.status === "string"
-                ? params.identity.status
-                : "AKTIF",
-            accountType: params.identity.role === "OSDA" ? "UNIT" : "PERSONAL",
-            staffId: params.identity.staffId,
-            santriId: params.identity.santriId,
-            name: params.identity.name,
+            userId: String(raw.userId),
+            username: typeof raw.username === "string" ? raw.username : String(raw.userId),
+            status: typeof raw.status === "string" ? raw.status : "AKTIF",
+            accountType: raw.role === "OSDA" ? "UNIT" : "PERSONAL",
+            staffId: typeof raw.staffId === "string" ? raw.staffId : undefined,
+            santriId: typeof raw.santriId === "string" ? raw.santriId : undefined,
+            name: typeof raw.name === "string" ? raw.name : undefined,
           };
   }
 
@@ -241,7 +243,7 @@ export async function authorizeCanonical(
     };
   }
 
-  // 2. Unit Account Placements and Invariants (AccountType.UNIT - Blocker 4)
+  // 2. Unit Account Placements and Invariants (AccountType.UNIT - Blocker 4 & Section 8)
   let placementUnitId: string | null = null;
   let verifiedExecutor: CanonicalExecutorIdentity | undefined = undefined;
   if (identity.accountType === "UNIT") {
@@ -256,6 +258,14 @@ export async function authorizeCanonical(
             reason: "Unit account has no active UnitAccountPlacement binding.",
           };
         }
+        if (placement.count !== undefined && placement.count > 1) {
+          return {
+            decision: "DENY",
+            code: "SYSTEM_FAIL_CLOSED",
+            reasonCode: "UNIT_PLACEMENT_MULTIPLE",
+            reason: `Unit account has multiple UnitAccountPlacements (${placement.count}), strictly failing closed.`,
+          };
+        }
         placementUnitId = placement.unitId;
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -267,6 +277,22 @@ export async function authorizeCanonical(
         };
       }
     } else {
+      if (identity.placementUnitCount && identity.placementUnitCount > 1) {
+        return {
+          decision: "DENY",
+          code: "SYSTEM_FAIL_CLOSED",
+          reasonCode: "UNIT_PLACEMENT_MULTIPLE",
+          reason: `Unit account has multiple UnitAccountPlacements (${identity.placementUnitCount}), strictly failing closed.`,
+        };
+      }
+      if (identity.placementUnitIds && identity.placementUnitIds.length > 1) {
+        return {
+          decision: "DENY",
+          code: "SYSTEM_FAIL_CLOSED",
+          reasonCode: "UNIT_PLACEMENT_MULTIPLE",
+          reason: `Unit account has multiple UnitAccountPlacements (${identity.placementUnitIds.length}), strictly failing closed.`,
+        };
+      }
       placementUnitId = identity.placementUnitId || null;
       if (!placementUnitId) {
         return {
@@ -448,16 +474,46 @@ export async function authorizeCanonical(
           continue;
         }
 
-        // Now that capability grant is verified in production, enforce linked profile requirements (Blocker 1 requirement 5)
-        if (STAFF_PROFILE_REQUIRED_POSITIONS.has(a.positionCode)) {
-          if (a.positionCode === "GURU_KEPESANTRENAN" && identity.accountType && identity.accountType !== "PERSONAL") {
+        // Account Modality Contract Enforcement (Section 7)
+        const expectedModality = POSITION_ACCOUNT_MODALITY_CONTRACT[a.positionCode];
+        if (expectedModality === "UNIT") {
+          if (identity.accountType !== "UNIT") {
             profileRejection = {
               code: "IDENTITY_NOT_LINKED",
               reasonCode: "ACCOUNT_TYPE_MISMATCH",
-              reason: `Position GURU_KEPESANTRENAN requires a PERSONAL account (found: ${identity.accountType}).`,
+              reason: `Position ${a.positionCode} requires a UNIT account (found: ${identity.accountType}).`,
             };
             continue;
           }
+          if (a.requiresPersonalAccount === true) {
+            profileRejection = {
+              code: "SYSTEM_FAIL_CLOSED",
+              reasonCode: "POSITION_MODALITY_INCOMPATIBLE",
+              reason: `Database position metadata for ${a.positionCode} has requiresPersonalAccount=true, incompatible with approved UNIT modality.`,
+            };
+            continue;
+          }
+        } else if (expectedModality === "PERSONAL") {
+          if (identity.accountType && identity.accountType !== "PERSONAL") {
+            profileRejection = {
+              code: "IDENTITY_NOT_LINKED",
+              reasonCode: "ACCOUNT_TYPE_MISMATCH",
+              reason: `Position ${a.positionCode} requires a PERSONAL account (found: ${identity.accountType}).`,
+            };
+            continue;
+          }
+          if (a.requiresPersonalAccount === false) {
+            profileRejection = {
+              code: "SYSTEM_FAIL_CLOSED",
+              reasonCode: "POSITION_MODALITY_INCOMPATIBLE",
+              reason: `Database position metadata for ${a.positionCode} has requiresPersonalAccount=false, incompatible with approved PERSONAL modality.`,
+            };
+            continue;
+          }
+        }
+
+        // Now that capability grant is verified in production, enforce linked profile requirements (Blocker 1 requirement 5)
+        if (STAFF_PROFILE_REQUIRED_POSITIONS.has(a.positionCode)) {
           if (!identity.staffId) {
             profileRejection = {
               code: "IDENTITY_NOT_LINKED",
@@ -569,6 +625,9 @@ export async function authorizeCanonical(
       userId: identity.userId,
       santriId: identity.santriId,
       staffId: identity.staffId,
+      accountType: identity.accountType,
+      placementUnitId,
+      genderComplex: identity.genderComplex,
     });
 
     if (scopeRes.matches) {
@@ -611,7 +670,13 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
     async getIdentity(userId: string): Promise<CanonicalIdentity | null> {
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        include: { staff: true, santri: true, unitPlacement: true },
+        include: {
+          staff: true,
+          santri: true,
+          unitPlacement: {
+            include: { unit: true },
+          },
+        },
       });
       if (!user) return null;
       return {
@@ -626,6 +691,7 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
         santriStatus: user.santri?.status,
         name: user.staff?.nama || user.santri?.nama || user.username,
         placementUnitId: user.unitPlacement?.unitId || null,
+        genderComplex: (user.unitPlacement?.unit?.genderComplex as GenderComplex) || undefined,
       };
     },
 
@@ -669,6 +735,7 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
         status: a.status,
         validFrom: a.validFrom,
         validUntil: a.validUntil,
+        requiresPersonalAccount: a.position.requiresPersonalAccount,
         positionCapabilities: a.position.capabilities.map((pc) => ({
           capabilityCode: pc.capabilityCode,
           scopeType: pc.scopeType,
@@ -681,11 +748,12 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
       }));
     },
 
-    async getUnitAccountPlacement(userId: string): Promise<{ unitId: string } | null> {
-      const placement = await prisma.unitAccountPlacement.findUnique({
+    async getUnitAccountPlacement(userId: string): Promise<{ unitId: string; count?: number } | null> {
+      const placements = await prisma.unitAccountPlacement.findMany({
         where: { userId },
       });
-      return placement ? { unitId: placement.unitId } : null;
+      if (placements.length === 0) return null;
+      return { unitId: placements[0].unitId, count: placements.length };
     },
 
     async verifyHumanExecutor(executorId: string): Promise<CanonicalExecutorIdentity | null> {

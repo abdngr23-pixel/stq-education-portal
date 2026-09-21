@@ -612,6 +612,11 @@ export const KEASRAMAAN_PERMISSION_CAPABILITIES = {
   APPROVE_KS: "keasramaan.permission.approve_ks",
 } as const;
 
+export const KEASRAMAAN_KAMAR_CAPABILITIES = {
+  INSPECT: "keasramaan.kamar.inspect",
+  MANAGE: "keasramaan.kamar.manage",
+} as const;
+
 /**
  * UAT Rule #7: Halaqoh attendance new-entry selectable options
  * MASBUK is strictly excluded from new entries (historical records remain readable).
@@ -796,6 +801,19 @@ export const UAT_ACTIVATION_TARGETS = {
   },
 } as const;
 
-
-
-
+/**
+ * Canonical Account Modality Contract (Gate 5 Hardening)
+ * Binds positions strictly to their approved account type modality.
+ * PETUGAS_OPERASIONAL_KEASRAMAAN -> UNIT only
+ * Institutional & managerial positions -> PERSONAL only
+ */
+export const POSITION_ACCOUNT_MODALITY_CONTRACT: Record<string, AccountType> = {
+  PETUGAS_OPERASIONAL_KEASRAMAAN: "UNIT",
+  GURU_KEPESANTRENAN: "PERSONAL",
+  PEMBINA_HALAQOH: "PERSONAL",
+  KEPALA_KEASRAMAAN: "PERSONAL",
+  MUDIR: "PERSONAL",
+  KABID_TAHFIZH: "PERSONAL",
+  MUSYRIF_TAHFIZH: "PERSONAL",
+  PETUGAS_OPERASIONAL_TAHFIZH: "PERSONAL",
+} as const;
