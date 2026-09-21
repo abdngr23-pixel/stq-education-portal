@@ -4,8 +4,8 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { AuthTokenPayload, Role, UserSession } from "@/types/auth";
 import prisma from "@/lib/prisma";
-import { Prisma, type PrismaClient } from "@prisma/client";
-import { authorizeCanonical, createPrismaDataProvider, ICanonicalDataProvider } from "@/lib/auth/canonical-evaluator";
+import { Prisma } from "@prisma/client";
+import type { ICanonicalDataProvider } from "@/lib/auth/canonical-evaluator";
 
 export function getAuthSecretKey(): Uint8Array {
   const secret = process.env.AUTH_SECRET;
@@ -538,7 +538,7 @@ export async function getMudabbirAssignedUnitIds(
 
 /**
  * Resolves whether a Mudabbir (PEMBINA_HALAQOH) has the required 'keasramaan.permission.create' capability.
- * Thin canonical wrapper delegating directly to authorizeCanonical engine.
+ * Pipeline: IDENTITY -> ACTIVE Assignment -> Position PEMBINA_HALAQOH -> keasramaan.permission.create capability -> VERIFIED_PRODUCTION ONLY.
  */
 export async function resolveMudabbirPermissionCapability(
   userId?: string | null,
@@ -555,50 +555,14 @@ export async function resolveMudabbirPermissionCapability(
     return { authorized: false, reason: "Identitas pengguna tidak ditemukan." };
   }
   try {
-    const isMudabbir = await resolveUserIsMudabbir(userId, prismaClient);
-    if (!isMudabbir) {
-      return {
-        authorized: false,
-        reason: "Pengguna bukan canonical Mudhabbir (memerlukan User AKTIF PERSONAL, Staff AKTIF, dan Assignment aktif PEMBINA_HALAQOH pada KAMAR).",
-      };
-    }
-
     const user = (await prismaClient.user.findUnique({
       where: { id: userId },
-      select: { id: true, username: true, status: true, accountType: true, staffId: true },
-    })) as {
-      id: string;
-      username: string;
-      status: string;
-      accountType: "PERSONAL" | "UNIT" | "SUBJECT";
-      staffId?: string | null;
-    } | null;
-    if (!user) {
-      return { authorized: false, reason: "Identitas pengguna tidak ditemukan." };
+      select: { id: true, status: true },
+    })) as { id: string; status: string } | null;
+    if (!user || user.status !== "AKTIF") {
+      return { authorized: false, reason: "Akun pengguna tidak aktif atau tidak terdaftar." };
     }
 
-    const decision = await authorizeCanonical({
-      identity: {
-        userId: user.id,
-        username: user.username,
-        status: user.status,
-        accountType: user.accountType,
-        staffId: user.staffId,
-      },
-      capability: "keasramaan.permission.create",
-      dataProvider: dataProvider || createPrismaDataProvider(prismaClient as unknown as PrismaClient),
-    });
-
-    if (decision.decision === "ALLOW") {
-      return {
-        authorized: true,
-        assignmentId: decision.assignmentId,
-        positionId: decision.positionId,
-        scopeType: decision.scopeType,
-      };
-    }
-
-    // Inspect assignment capabilities to give detailed reason if non-verified or missing
     const now = new Date();
     const assignments = (await prismaClient.assignment.findMany?.({
       where: {
@@ -606,13 +570,18 @@ export async function resolveMudabbirPermissionCapability(
         status: "ACTIVE",
         validFrom: { lte: now },
         OR: [{ validUntil: null }, { validUntil: { gte: now } }],
-        position: { code: "PEMBINA_HALAQOH", isActive: true },
+        position: {
+          code: "PEMBINA_HALAQOH",
+          isActive: true,
+        },
       },
       include: {
         position: {
           include: {
             capabilities: {
-              where: { capabilityCode: "keasramaan.permission.create" },
+              where: {
+                capabilityCode: "keasramaan.permission.create",
+              },
             },
           },
         },
@@ -621,45 +590,49 @@ export async function resolveMudabbirPermissionCapability(
       id: string;
       positionId: string;
       position?: {
+        code?: string;
         capabilities?: Array<{ capabilityCode: string; scopeType?: string; businessRuleState: string }>;
       };
     }> | undefined;
 
-    if (assignments && assignments.length > 0) {
-      for (const asg of assignments) {
-        const caps = asg.position?.capabilities;
-        const permCap = caps?.find((c) => c.capabilityCode === "keasramaan.permission.create");
-        if (permCap) {
-          if (permCap.businessRuleState === "VERIFIED_PRODUCTION") {
-            return {
-              authorized: true,
-              assignmentId: asg.id,
-              positionId: asg.positionId,
-              scopeType: permCap.scopeType,
-            };
-          } else {
-            return {
-              authorized: false,
-              reason: `Kapabilitas 'keasramaan.permission.create' berstatus '${permCap.businessRuleState}' (harus VERIFIED_PRODUCTION).`,
-            };
-          }
-        }
-      }
+    if (!assignments || assignments.length === 0) {
       return {
         authorized: false,
-        reason: "Posisi PEMBINA_HALAQOH tidak memiliki kapabilitas 'keasramaan.permission.create'.",
+        reason: "Pengguna tidak memiliki assignment aktif untuk posisi PEMBINA_HALAQOH.",
       };
+    }
+
+    for (const asg of assignments) {
+      const caps = asg.position?.capabilities;
+      const permCap = caps?.find(
+        (c: { capabilityCode: string }) => c.capabilityCode === "keasramaan.permission.create"
+      );
+      if (permCap) {
+        const stateStr = String(permCap.businessRuleState);
+        if (stateStr === "VERIFIED_PRODUCTION") {
+          return {
+            authorized: true,
+            assignmentId: asg.id,
+            positionId: asg.positionId,
+            scopeType: permCap.scopeType,
+          };
+        } else {
+          return {
+            authorized: false,
+            reason: `Kapabilitas 'keasramaan.permission.create' berstatus '${permCap.businessRuleState}' (harus VERIFIED_PRODUCTION).`,
+          };
+        }
+      }
     }
 
     return {
       authorized: false,
-      reason: decision.reason,
+      reason: "Posisi PEMBINA_HALAQOH tidak memiliki kapabilitas 'keasramaan.permission.create'.",
     };
   } catch (err) {
     return {
       authorized: false,
-      reason: `Gagal memverifikasi kapabilitas: ${err instanceof Error ? err.message : String(err)}`,
+      reason: `Gagal memverifikasi kapabilitas mudabbir: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 }
-

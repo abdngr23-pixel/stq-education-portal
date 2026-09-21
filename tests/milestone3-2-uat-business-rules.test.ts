@@ -55,24 +55,24 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
       const opAssignment: CanonicalAssignmentWithDetails = {
         id: "asg-op-orphan",
         userId: "usr-orphan-op",
-        positionId: "pos-op-keasramaan",
-        positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
-        positionName: "Petugas Operasional Keasramaan",
-        domain: "KEASRAMAAN",
-        unitId: "unit-asrama-01",
-        unitCode: "ASR-01",
-        unitName: "Asrama Putri 1",
+        positionId: "pos-op-tahfizh",
+        positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+        positionName: "Petugas Operasional Tahfizh",
+        domain: "TAHFIZH",
+        unitId: "unit-hlq-01",
+        unitCode: "HLQ-01",
+        unitName: "Halaqoh 1",
         status: "ACTIVE",
         validFrom: new Date(Date.now() - 3600000),
         validUntil: null,
         positionCapabilities: [
           {
-            capabilityCode: "keasramaan.permission.read",
-            scopeType: "ASSIGNED_UNITS",
+            capabilityCode: "tahfizh.recap.read",
+            scopeType: "GLOBAL",
             businessRuleState: "VERIFIED_PRODUCTION",
           },
         ],
-        scopeUnits: [{ unitId: "unit-asrama-01", unitCode: "ASR-01" }],
+        scopeUnits: [{ unitId: "unit-hlq-01", unitCode: "HLQ-01" }],
       };
 
       const mockProvider: ICanonicalDataProvider = {
@@ -95,7 +95,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
           return null;
         },
         async resolveResourceContext() {
-          return { orgUnitIds: ["unit-asrama-01"], orgDomain: "KEASRAMAAN" };
+          return { orgUnitIds: ["unit-hlq-01"], orgDomain: "TAHFIZH" };
         },
       };
 
@@ -106,8 +106,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
           status: "AKTIF",
           accountType: "PERSONAL",
         },
-        capability: "keasramaan.permission.read",
-        resourceContext: { unitId: "unit-asrama-01" },
+        capability: "tahfizh.recap.read",
+        resourceContext: { unitId: "unit-hlq-01" },
         dataProvider: mockProvider,
       });
 
@@ -120,24 +120,24 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
       const opAssignment: CanonicalAssignmentWithDetails = {
         id: "asg-op-inactive-staff",
         userId: "usr-op-inactive-staff",
-        positionId: "pos-op-keasramaan",
-        positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
-        positionName: "Petugas Operasional Keasramaan",
-        domain: "KEASRAMAAN",
-        unitId: "unit-asrama-01",
-        unitCode: "ASR-01",
-        unitName: "Asrama Putri 1",
+        positionId: "pos-op-tahfizh",
+        positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+        positionName: "Petugas Operasional Tahfizh",
+        domain: "TAHFIZH",
+        unitId: "unit-hlq-01",
+        unitCode: "HLQ-01",
+        unitName: "Halaqoh 1",
         status: "ACTIVE",
         validFrom: new Date(Date.now() - 3600000),
         validUntil: null,
         positionCapabilities: [
           {
-            capabilityCode: "keasramaan.permission.read",
-            scopeType: "ASSIGNED_UNITS",
+            capabilityCode: "tahfizh.recap.read",
+            scopeType: "GLOBAL",
             businessRuleState: "VERIFIED_PRODUCTION",
           },
         ],
-        scopeUnits: [{ unitId: "unit-asrama-01", unitCode: "ASR-01" }],
+        scopeUnits: [{ unitId: "unit-hlq-01", unitCode: "HLQ-01" }],
       };
 
       const mockProvider: ICanonicalDataProvider = {
@@ -161,7 +161,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
           return null;
         },
         async resolveResourceContext() {
-          return { orgUnitIds: ["unit-asrama-01"], orgDomain: "KEASRAMAAN" };
+          return { orgUnitIds: ["unit-hlq-01"], orgDomain: "TAHFIZH" };
         },
       };
 
@@ -172,8 +172,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
           status: "AKTIF",
           accountType: "PERSONAL",
         },
-        capability: "keasramaan.permission.read",
-        resourceContext: { unitId: "unit-asrama-01" },
+        capability: "tahfizh.recap.read",
+        resourceContext: { unitId: "unit-hlq-01" },
         dataProvider: mockProvider,
       });
 
@@ -186,24 +186,24 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
       const opAssignment: CanonicalAssignmentWithDetails = {
         id: "asg-op-valid",
         userId: "usr-op-valid",
-        positionId: "pos-op-keasramaan",
-        positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
-        positionName: "Petugas Operasional Keasramaan",
-        domain: "KEASRAMAAN",
-        unitId: "unit-asrama-01",
-        unitCode: "ASR-01",
-        unitName: "Asrama Putri 1",
+        positionId: "pos-op-tahfizh",
+        positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+        positionName: "Petugas Operasional Tahfizh",
+        domain: "TAHFIZH",
+        unitId: "unit-hlq-01",
+        unitCode: "HLQ-01",
+        unitName: "Halaqoh 1",
         status: "ACTIVE",
         validFrom: new Date(Date.now() - 3600000),
         validUntil: null,
         positionCapabilities: [
           {
-            capabilityCode: "keasramaan.permission.read",
-            scopeType: "ASSIGNED_UNITS",
+            capabilityCode: "tahfizh.recap.read",
+            scopeType: "GLOBAL",
             businessRuleState: "VERIFIED_PRODUCTION",
           },
         ],
-        scopeUnits: [{ unitId: "unit-asrama-01", unitCode: "ASR-01" }],
+        scopeUnits: [{ unitId: "unit-hlq-01", unitCode: "HLQ-01" }],
       };
 
       const mockProvider: ICanonicalDataProvider = {
@@ -227,7 +227,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
           return null;
         },
         async resolveResourceContext() {
-          return { orgUnitIds: ["unit-asrama-01"], orgDomain: "KEASRAMAAN" };
+          return { orgUnitIds: ["unit-hlq-01"], orgDomain: "TAHFIZH" };
         },
       };
 
@@ -238,8 +238,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
           status: "AKTIF",
           accountType: "PERSONAL",
         },
-        capability: "keasramaan.permission.read",
-        resourceContext: { unitId: "unit-asrama-01" },
+        capability: "tahfizh.recap.read",
+        resourceContext: { unitId: "unit-hlq-01" },
         dataProvider: mockProvider,
       });
 
@@ -259,6 +259,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
         unitId: "unit-asrama-01",
         unitCode: "ASR-01",
         unitName: "Asrama Putri 1",
+        unitGenderComplex: "PUTRI",
+        requiresPersonalAccount: false,
         status: "ACTIVE",
         validFrom: new Date(Date.now() - 3600000),
         validUntil: null,
@@ -283,16 +285,16 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
             userId: "usr-op-generic",
             username: "op.keasramaan.generic",
             status: "AKTIF",
-            accountType: "PERSONAL",
-            staffId: "stf-op-01",
-            staffStatus: "AKTIF",
+            accountType: "UNIT",
+            genderComplex: "PUTRI",
+            placementUnitId: "unit-asrama-01",
           };
         },
         async getActiveAssignments() {
           return [opAssignment];
         },
         async getUnitAccountPlacement() {
-          return null;
+          return { unitId: "unit-asrama-01", count: 1 };
         },
         async verifyHumanExecutor() {
           return null;
@@ -301,6 +303,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
           return {
             orgUnitIds: [rc?.unitId || "unit-asrama-01"],
             orgDomain: "KEASRAMAAN",
+            genderComplex: "PUTRI",
           };
         },
       };
@@ -311,7 +314,9 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
           userId: "usr-op-generic",
           username: "op.keasramaan.generic",
           status: "AKTIF",
-          accountType: "PERSONAL",
+          accountType: "UNIT",
+          genderComplex: "PUTRI",
+          placementUnitId: "unit-asrama-01",
         },
         capability: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
         resourceContext: { unitId: "unit-asrama-01" },
@@ -325,7 +330,9 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
           userId: "usr-op-generic",
           username: "op.keasramaan.generic",
           status: "AKTIF",
-          accountType: "PERSONAL",
+          accountType: "UNIT",
+          genderComplex: "PUTRI",
+          placementUnitId: "unit-asrama-01",
         },
         capability: KEASRAMAAN_PERMISSION_CAPABILITIES.APPROVE_MK,
         resourceContext: { unitId: "unit-asrama-01" },
@@ -339,7 +346,9 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
           userId: "usr-op-generic",
           username: "op.keasramaan.generic",
           status: "AKTIF",
-          accountType: "PERSONAL",
+          accountType: "UNIT",
+          genderComplex: "PUTRI",
+          placementUnitId: "unit-asrama-01",
         },
         capability: KEASRAMAAN_PERMISSION_CAPABILITIES.APPROVE_KS,
         resourceContext: { unitId: "unit-asrama-01" },
@@ -363,17 +372,19 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
           unitId: "unit-kmr-01",
           unitCode: "KMR-01",
           unitName: "Kamar 01",
+          unitGenderComplex: "PUTRI",
+          requiresPersonalAccount: false,
           status: "ACTIVE",
           validFrom: new Date(Date.now() - 3600000),
           validUntil: null,
           positionCapabilities: [
             {
               capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
-              scopeType: "UNIT",
+              scopeType: "ASSIGNED_UNITS",
               businessRuleState: "VERIFIED_PRODUCTION",
             },
           ],
-          scopeUnits: [],
+          scopeUnits: [{ unitId: "unit-kmr-01", unitCode: "KMR-01" }],
         };
 
         const mockProvider: ICanonicalDataProvider = {
@@ -382,22 +393,22 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
               userId: `usr-${uname}`,
               username: uname,
               status: "AKTIF",
-              accountType: "PERSONAL",
-              staffId: `stf-${uname}`,
-              staffStatus: "AKTIF",
+              accountType: "UNIT",
+              genderComplex: "PUTRI",
+              placementUnitId: "unit-kmr-01",
             };
           },
           async getActiveAssignments() {
             return [assignment];
           },
           async getUnitAccountPlacement() {
-            return null;
+            return { unitId: "unit-kmr-01", count: 1 };
           },
           async verifyHumanExecutor() {
             return null;
           },
           async resolveResourceContext(rc) {
-            return { orgUnitIds: [rc?.unitId || "unit-kmr-01"], orgDomain: "KEASRAMAAN" };
+            return { orgUnitIds: [rc?.unitId || "unit-kmr-01"], orgDomain: "KEASRAMAAN", genderComplex: "PUTRI" };
           },
         };
 
@@ -406,7 +417,9 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
             userId: `usr-${uname}`,
             username: uname,
             status: "AKTIF",
-            accountType: "PERSONAL",
+            accountType: "UNIT",
+            genderComplex: "PUTRI",
+            placementUnitId: "unit-kmr-01",
           },
           capability: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
           resourceContext: { unitId: "unit-kmr-01" },
