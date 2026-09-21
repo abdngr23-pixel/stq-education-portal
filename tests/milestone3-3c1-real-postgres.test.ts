@@ -2759,8 +2759,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     });
 
     it("5.8 Proof 8: exact CANONICAL_UAT_TARGET_POLICIES matches UAT_ACTIVATION_TARGETS definitions with no legacy aliases", () => {
-      // 1. Exact count is 6
-      assert.strictEqual(CANONICAL_UAT_TARGET_POLICIES.length, 6, "Must have exactly 6 canonical UAT target policies");
+      // 1. Exact count is 5 (POT tahfizh.reward.issue removed per Gate 5 owner mandate)
+      assert.strictEqual(CANONICAL_UAT_TARGET_POLICIES.length, 5, "Must have exactly 5 canonical UAT target policies");
 
       // 2. Build expected list directly from UAT_ACTIVATION_TARGETS
       const expectedPolicies = [
@@ -2769,12 +2769,6 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].capabilityCode,
           expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].scopeType,
           expectedBusinessState: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].businessRuleState,
-        },
-        {
-          positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.positionCode,
-          capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[1].capabilityCode,
-          expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[1].scopeType,
-          expectedBusinessState: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[1].businessRuleState,
         },
         {
           positionCode: UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.positionCode,
@@ -2816,6 +2810,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.ok(!allCapabilityCodes.includes("keasramaan.perizinan.approve" as any), "keasramaan.perizinan.approve must NOT be in canonical UAT targets");
       assert.ok(!allCapabilityCodes.includes("health.record.write" as any), "health.record.write must NOT be in canonical UAT targets");
       assert.ok(!allCapabilityCodes.includes("tahfizh.halaqoh.manage" as any), "tahfizh.halaqoh.manage must NOT be in canonical UAT targets");
+      assert.ok(!allCapabilityCodes.includes("tahfizh.reward.issue" as any), "tahfizh.reward.issue must NOT be in canonical UAT targets");
     });
   });
 

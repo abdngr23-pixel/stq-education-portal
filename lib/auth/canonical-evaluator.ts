@@ -148,6 +148,7 @@ const STAFF_PROFILE_REQUIRED_POSITIONS = new Set([
   "KEPALA_KEASRAMAAN",
   "PEMBINA_ASRAMA",
   "GURU_AKADEMIK",
+  "GURU_KEPESANTRENAN",
   "STAF_ADMIN_TU",
   "PETUGAS_PRESENSI",
   "PETUGAS_KESEHATAN",
@@ -449,6 +450,14 @@ export async function authorizeCanonical(
 
         // Now that capability grant is verified in production, enforce linked profile requirements (Blocker 1 requirement 5)
         if (STAFF_PROFILE_REQUIRED_POSITIONS.has(a.positionCode)) {
+          if (a.positionCode === "GURU_KEPESANTRENAN" && identity.accountType && identity.accountType !== "PERSONAL") {
+            profileRejection = {
+              code: "IDENTITY_NOT_LINKED",
+              reasonCode: "ACCOUNT_TYPE_MISMATCH",
+              reason: `Position GURU_KEPESANTRENAN requires a PERSONAL account (found: ${identity.accountType}).`,
+            };
+            continue;
+          }
           if (!identity.staffId) {
             profileRejection = {
               code: "IDENTITY_NOT_LINKED",

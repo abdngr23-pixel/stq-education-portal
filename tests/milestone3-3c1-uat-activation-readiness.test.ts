@@ -723,13 +723,11 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
       assert.strictEqual(recapPolicy.scopeType, "GLOBAL");
     });
 
-    it("43. Operational Tahfizh reward issuance is ASSIGNED_UNITS only", () => {
-      const rewardPolicy = UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies.find(
+    it("43. Operational Tahfizh reward issuance is NOT present in UAT_ACTIVATION_TARGETS", () => {
+      const rewardPolicy = (UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies as readonly any[]).find(
         (p) => p.capabilityCode === "tahfizh.reward.issue"
       );
-      assert.ok(rewardPolicy);
-      assert.strictEqual(rewardPolicy.scopeType, "ASSIGNED_UNITS");
-      assert.notStrictEqual(rewardPolicy.scopeType, "GLOBAL");
+      assert.strictEqual(rewardPolicy, undefined, "POT tahfizh.reward.issue must be absent from UAT_ACTIVATION_TARGETS");
     });
 
     it("44. Target management MT is HALAQOH scope only", () => {
@@ -776,7 +774,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
       assert.ok(report.unlinkedStaffAccounts.includes("razan.mt"));
     });
 
-    it("50. Production readiness check reports all 12 gates without writes", async () => {
+    it("50. Production readiness check reports all 13 gates without writes", async () => {
       const mockDiagnosticDb = {
         user: { findMany: async () => [] },
         orgUnit: { findMany: async () => [] },
@@ -785,7 +783,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
         santri: { findMany: async () => [] },
       };
       const report = await checkPendidikanV2ProductionReadiness(mockDiagnosticDb as any);
-      assert.strictEqual(report.gates.length, 12);
+      assert.strictEqual(report.gates.length, 13);
       assert.ok(report.timestamp);
       assert.ok(["READY", "BLOCKED", "NOT_READY"].includes(report.overallStatus));
     });
