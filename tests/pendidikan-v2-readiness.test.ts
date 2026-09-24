@@ -658,6 +658,9 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
 
     it("D. If another blocking gate is NOT_READY, overallStatus remains NOT_READY", async () => {
       const mockDb = {
+        orgUnit: {
+          findMany: async () => [],
+        },
         santri: {
           findMany: async () => [{ id: "san-1", status: "AKTIF", cohortId: null }],
         },

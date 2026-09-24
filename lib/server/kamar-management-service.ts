@@ -171,12 +171,12 @@ async function authorizeKamarManage(
   if (
     auth.positionCode !== KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.positionCode ||
     auth.capabilityCode !== KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.capabilityCode ||
-    (auth.scopeType !== "DOMAIN" && auth.scopeType !== "GLOBAL")
+    auth.scopeType !== "DOMAIN"
   ) {
     return {
       allowed: false,
       code: "CAPABILITY_NOT_GRANTED",
-      reason: `Only KEPALA_KEASRAMAAN is authorized to manage Kamar configuration (requires ${KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.positionCode} + ${KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.capabilityCode} @ DOMAIN or GLOBAL scope).`,
+      reason: `Only KEPALA_KEASRAMAAN is authorized to manage Kamar configuration (requires ${KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.positionCode} + ${KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.capabilityCode} @ DOMAIN scope).`,
       auth,
     };
   }

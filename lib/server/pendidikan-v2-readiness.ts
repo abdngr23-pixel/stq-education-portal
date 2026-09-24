@@ -2147,7 +2147,7 @@ export async function checkPendidikanV2ProductionReadiness(
       } catch (err: unknown) {
         gates.push({
           gate: "KEASRAMAAN_KAMAR_CONFIGURATION_READY",
-          status: "NOT_READY",
+          status: "BLOCKED",
           reason: "DATABASE_UNAVAILABLE",
           details: `Database error querying Kamar: ${err instanceof Error ? err.message : String(err)}`,
           blocking: true,
@@ -2253,10 +2253,10 @@ export async function checkPendidikanV2ProductionReadiness(
     } else {
       gates.push({
         gate: "KEASRAMAAN_KAMAR_CONFIGURATION_READY",
-        status: "NOT_READY",
-        reason: "CONFIGURATION_NOT_CREATED / DEFERRED",
-        details: "Zero active Kamar configured; kamar topology deferred.",
-        blocking: false,
+        status: "BLOCKED",
+        reason: "DATABASE_UNAVAILABLE",
+        details: "No authoritative Kamar repository or query mechanism (db.orgUnit or db.$queryRawUnsafe) is available.",
+        blocking: true,
       });
     }
   } catch (err: unknown) {

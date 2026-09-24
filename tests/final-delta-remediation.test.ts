@@ -35,6 +35,7 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
       const savedUserFindUnique = prismaModule.user.findUnique;
       const savedAssignmentFindMany = prismaModule.assignment.findMany;
       const savedOrgUnitFindUnique = prismaModule.orgUnit?.findUnique;
+      const savedOrgUnitFindFirst = prismaModule.orgUnit?.findFirst;
 
       try {
         prismaModule.user.findUnique = async () => ({
@@ -44,8 +45,7 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
           staffId: "stf-1",
           staff: { id: "stf-1", nama: "Ust Mudabbir", status: "AKTIF" },
         });
-        prismaModule.orgUnit = prismaModule.orgUnit || {};
-        prismaModule.orgUnit.findUnique = async () => ({
+        const mockKamarData = {
           id: "ou-kmr-1",
           code: "KMR-1",
           name: "Kamar 1",
@@ -54,7 +54,10 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
           genderComplex: "PUTRA",
           isActive: true,
           parentId: null,
-        });
+        };
+        prismaModule.orgUnit = prismaModule.orgUnit || {};
+        prismaModule.orgUnit.findUnique = async () => mockKamarData;
+        prismaModule.orgUnit.findFirst = async () => mockKamarData;
         prismaModule.assignment.findMany = async () => [
           {
             id: "asg-mudabbir-1",
@@ -73,7 +76,7 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
               capabilities: [
                 {
                   capabilityCode: "keasramaan.permission.create",
-                  scopeType: "ROOM_UNIT",
+                  scopeType: "UNIT",
                   businessRuleState: "VERIFIED_PRODUCTION",
                 },
               ],
@@ -91,15 +94,18 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
           },
         ];
 
-        const result = await resolveMudabbirPermissionCapability("usr-mudabbir-verified");
+        const result = await resolveMudabbirPermissionCapability("usr-mudabbir-verified", { kamarId: "ou-kmr-1" });
         assert.strictEqual(result.authorized, true, "VERIFIED_PRODUCTION must be ALLOWED");
         assert.strictEqual(result.assignmentId, "asg-mudabbir-1");
-        assert.strictEqual(result.scopeType, "ROOM_UNIT");
+        assert.strictEqual(result.scopeType, "UNIT");
       } finally {
         prismaModule.user.findUnique = savedUserFindUnique;
         prismaModule.assignment.findMany = savedAssignmentFindMany;
         if (savedOrgUnitFindUnique) {
           prismaModule.orgUnit.findUnique = savedOrgUnitFindUnique;
+        }
+        if (savedOrgUnitFindFirst) {
+          prismaModule.orgUnit.findFirst = savedOrgUnitFindFirst;
         }
       }
     });
@@ -108,6 +114,7 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
       const savedUserFindUnique = prismaModule.user.findUnique;
       const savedAssignmentFindMany = prismaModule.assignment.findMany;
       const savedOrgUnitFindUnique = prismaModule.orgUnit?.findUnique;
+      const savedOrgUnitFindFirst = prismaModule.orgUnit?.findFirst;
 
       try {
         prismaModule.user.findUnique = async () => ({
@@ -117,8 +124,7 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
           staffId: "stf-1",
           staff: { id: "stf-1", nama: "Ust Mudabbir", status: "AKTIF" },
         });
-        prismaModule.orgUnit = prismaModule.orgUnit || {};
-        prismaModule.orgUnit.findUnique = async () => ({
+        const mockKamarData = {
           id: "ou-kmr-1",
           code: "KMR-1",
           name: "Kamar 1",
@@ -127,7 +133,10 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
           genderComplex: "PUTRA",
           isActive: true,
           parentId: null,
-        });
+        };
+        prismaModule.orgUnit = prismaModule.orgUnit || {};
+        prismaModule.orgUnit.findUnique = async () => mockKamarData;
+        prismaModule.orgUnit.findFirst = async () => mockKamarData;
         prismaModule.assignment.findMany = async () => [
           {
             id: "asg-mudabbir-pending",
@@ -146,7 +155,7 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
               capabilities: [
                 {
                   capabilityCode: "keasramaan.permission.create",
-                  scopeType: "ROOM_UNIT",
+                  scopeType: "UNIT",
                   businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
                 },
               ],
@@ -164,7 +173,7 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
           },
         ];
 
-        const result = await resolveMudabbirPermissionCapability("usr-mudabbir-pending");
+        const result = await resolveMudabbirPermissionCapability("usr-mudabbir-pending", { kamarId: "ou-kmr-1" });
         assert.strictEqual(result.authorized, false, "APPROVED_TARGET_PENDING_TECHNICAL must be DENIED");
         assert.match(result.reason || "", /harus VERIFIED_PRODUCTION/);
       } finally {
@@ -173,6 +182,9 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
         if (savedOrgUnitFindUnique) {
           prismaModule.orgUnit.findUnique = savedOrgUnitFindUnique;
         }
+        if (savedOrgUnitFindFirst) {
+          prismaModule.orgUnit.findFirst = savedOrgUnitFindFirst;
+        }
       }
     });
 
@@ -180,6 +192,7 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
       const savedUserFindUnique = prismaModule.user.findUnique;
       const savedAssignmentFindMany = prismaModule.assignment.findMany;
       const savedOrgUnitFindUnique = prismaModule.orgUnit?.findUnique;
+      const savedOrgUnitFindFirst = prismaModule.orgUnit?.findFirst;
 
       try {
         prismaModule.user.findUnique = async () => ({
@@ -189,8 +202,7 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
           staffId: "stf-1",
           staff: { id: "stf-1", nama: "Ust Mudabbir", status: "AKTIF" },
         });
-        prismaModule.orgUnit = prismaModule.orgUnit || {};
-        prismaModule.orgUnit.findUnique = async () => ({
+        const mockKamarData = {
           id: "ou-kmr-1",
           code: "KMR-1",
           name: "Kamar 1",
@@ -199,7 +211,10 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
           genderComplex: "PUTRA",
           isActive: true,
           parentId: null,
-        });
+        };
+        prismaModule.orgUnit = prismaModule.orgUnit || {};
+        prismaModule.orgUnit.findUnique = async () => mockKamarData;
+        prismaModule.orgUnit.findFirst = async () => mockKamarData;
         prismaModule.assignment.findMany = async () => [
           {
             id: "asg-mudabbir-tbd",
@@ -218,7 +233,7 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
               capabilities: [
                 {
                   capabilityCode: "keasramaan.permission.create",
-                  scopeType: "ROOM_UNIT",
+                  scopeType: "UNIT",
                   businessRuleState: "PROPOSED_TBD",
                 },
               ],
@@ -236,7 +251,7 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
           },
         ];
 
-        const result = await resolveMudabbirPermissionCapability("usr-mudabbir-tbd");
+        const result = await resolveMudabbirPermissionCapability("usr-mudabbir-tbd", { kamarId: "ou-kmr-1" });
         assert.strictEqual(result.authorized, false, "PROPOSED_TBD must be DENIED");
         assert.match(result.reason || "", /harus VERIFIED_PRODUCTION/);
       } finally {
@@ -244,6 +259,9 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
         prismaModule.assignment.findMany = savedAssignmentFindMany;
         if (savedOrgUnitFindUnique) {
           prismaModule.orgUnit.findUnique = savedOrgUnitFindUnique;
+        }
+        if (savedOrgUnitFindFirst) {
+          prismaModule.orgUnit.findFirst = savedOrgUnitFindFirst;
         }
       }
     });

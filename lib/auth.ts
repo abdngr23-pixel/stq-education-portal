@@ -575,6 +575,13 @@ export async function resolveMudabbirPermissionCapability(
     return { authorized: false, reason: "Identitas pengguna tidak ditemukan." };
   }
 
+  if (!resourceContext || (!resourceContext.santriId && !resourceContext.kamarId && !resourceContext.resourceId && !resourceContext.unitId)) {
+    return {
+      authorized: false,
+      reason: "Target resource context is required for Mudhabbir authorization.",
+    };
+  }
+
   const effectiveDataProvider = dataProvider || createPrismaDataProvider(prisma);
   const decision = await authorizeCanonical({
     identity: { userId },

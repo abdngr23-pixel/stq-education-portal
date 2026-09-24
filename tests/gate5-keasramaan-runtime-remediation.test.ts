@@ -1300,7 +1300,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "GLOBAL",
+                scopeType: "DOMAIN",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -1358,7 +1358,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "GLOBAL",
+                scopeType: "DOMAIN",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -1415,7 +1415,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "GLOBAL",
+                scopeType: "DOMAIN",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -1483,7 +1483,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "GLOBAL",
+                scopeType: "DOMAIN",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -1561,7 +1561,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "GLOBAL",
+                scopeType: "DOMAIN",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -1642,7 +1642,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "GLOBAL",
+                scopeType: "DOMAIN",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -1725,7 +1725,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "GLOBAL",
+                scopeType: "DOMAIN",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -1805,7 +1805,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "GLOBAL",
+                scopeType: "DOMAIN",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -1878,7 +1878,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "GLOBAL",
+                scopeType: "DOMAIN",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -1953,7 +1953,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "GLOBAL",
+                scopeType: "DOMAIN",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -2021,7 +2021,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "GLOBAL",
+                scopeType: "DOMAIN",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -2087,7 +2087,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "GLOBAL",
+                scopeType: "DOMAIN",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -2111,7 +2111,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     assert.equal(log.assignmentId, "asg-kepala-audit-test");
     assert.equal(log.positionCode, "KEPALA_KEASRAMAAN");
     assert.equal(log.capabilityCode, KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE);
-    assert.equal(log.scopeType, "GLOBAL");
+    assert.equal(log.scopeType, "DOMAIN");
   });
 
   // 36. UNIT audit includes technicalAccount + humanExecutor
@@ -2555,7 +2555,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "GLOBAL",
+                scopeType: "DOMAIN",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -2715,7 +2715,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "GLOBAL",
+                scopeType: "DOMAIN",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -2876,5 +2876,515 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     assert.ok(gate5.details.includes("invalid domain"));
     assert.ok(gate5.details.includes("invalid genderComplex"));
   });
-});
 
+  // 48. Kamar manage scope lockdown: KEPALA_KEASRAMAAN with GLOBAL is DENIED, DOMAIN is ALLOWED
+  it("48. Kamar manage scope lockdown: KEPALA_KEASRAMAAN with GLOBAL is DENIED, DOMAIN is ALLOWED", async () => {
+    // 48.1 KEPALA_KEASRAMAAN + VERIFIED kamar.manage + GLOBAL => DENY
+    const dataProviderGlobal = createMockDataProvider({
+      identities: {
+        "user-kk-global": {
+          userId: "user-kk-global",
+          username: "kk.global",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-kk",
+          staffStatus: "AKTIF",
+        },
+      },
+      assignments: {
+        "user-kk-global": [
+          {
+            id: "asg-kk-global",
+            userId: "user-kk-global",
+            positionId: "pos-kk",
+            positionCode: "KEPALA_KEASRAMAAN",
+            positionName: "Kepala Keasramaan",
+            domain: "KEASRAMAAN",
+            unitId: "ou-root",
+            unitCode: "OU-ROOT",
+            unitName: "Root",
+            status: "ACTIVE",
+            validFrom: new Date(0),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
+                scopeType: "GLOBAL",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [],
+          },
+        ],
+      },
+    });
+
+    const mockPrisma1 = createMockPrismaForKamar();
+    const resGlobal = await createKamar({
+      callerIdentity: { userId: "user-kk-global", username: "kk.global", status: "AKTIF", accountType: "PERSONAL" },
+      code: "KMR-GLB-01",
+      name: "Kamar Global Test",
+      genderComplex: "PUTRA",
+      prismaClient: mockPrisma1,
+      dataProvider: dataProviderGlobal,
+    });
+
+    assert.equal(resGlobal.success, false);
+    assert.equal(resGlobal.code, "CAPABILITY_NOT_GRANTED");
+    assert.ok(resGlobal.reason?.includes("@ DOMAIN scope"));
+
+    // 48.2 KEPALA_KEASRAMAAN + VERIFIED kamar.manage + DOMAIN KEASRAMAAN => ALLOW
+    const dataProviderDomain = createMockDataProvider({
+      identities: {
+        "user-kk-domain": {
+          userId: "user-kk-domain",
+          username: "kk.domain",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-kk",
+          staffStatus: "AKTIF",
+        },
+      },
+      assignments: {
+        "user-kk-domain": [
+          {
+            id: "asg-kk-domain",
+            userId: "user-kk-domain",
+            positionId: "pos-kk",
+            positionCode: "KEPALA_KEASRAMAAN",
+            positionName: "Kepala Keasramaan",
+            domain: "KEASRAMAAN",
+            unitId: "ou-root",
+            unitCode: "OU-ROOT",
+            unitName: "Root",
+            status: "ACTIVE",
+            validFrom: new Date(0),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
+                scopeType: "DOMAIN",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [],
+          },
+        ],
+      },
+    });
+
+    const mockPrisma2 = createMockPrismaForKamar();
+    const resDomain = await createKamar({
+      callerIdentity: { userId: "user-kk-domain", username: "kk.domain", status: "AKTIF", accountType: "PERSONAL" },
+      code: "KMR-DOM-01",
+      name: "Kamar Domain Test",
+      genderComplex: "PUTRA",
+      prismaClient: mockPrisma2,
+      dataProvider: dataProviderDomain,
+    });
+
+    assert.equal(resDomain.success, true);
+    assert.equal((resDomain.data as any).code, "KMR-DOM-01");
+  });
+
+  // 49. ASSIGNED_UNITS fail-closed on inactive scope units (single active ALLOW, single inactive DENY, mixed active ALLOW & inactive DENY)
+  it("49. ASSIGNED_UNITS fail-closed on inactive scope units", async () => {
+    // 49.1 Single active scoped Kamar -> ALLOW own target
+    const dataProviderSingleActive = createMockDataProvider({
+      identities: {
+        "op-unit-1": {
+          userId: "op-unit-1",
+          username: "unit.op1",
+          status: "AKTIF",
+          accountType: "UNIT",
+          placementUnitId: "div-op-1",
+          genderComplex: "PUTRA",
+        },
+      },
+      placements: {
+        "op-unit-1": { unitId: "div-op-1", count: 1 },
+      },
+      executors: {
+        "exec-human-1": {
+          userId: "exec-human-1",
+          name: "Executor 1",
+          isActive: true,
+          santriId: "san-dummy",
+        },
+      },
+      assignments: {
+        "op-unit-1": [
+          {
+            id: "asg-op-1",
+            userId: "op-unit-1",
+            positionId: "pos-pok",
+            positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+            positionName: "Petugas",
+            domain: "KEASRAMAAN",
+            unitId: "div-op-1",
+            unitCode: "DIV-OP-1",
+            unitName: "Divisi Op",
+            unitGenderComplex: "PUTRA",
+            status: "ACTIVE",
+            validFrom: new Date(0),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.CREATE,
+                scopeType: "ASSIGNED_UNITS",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [
+              {
+                unitId: "opq-kmr-act-01",
+                unitCode: "OPQ-ACT-01",
+                unitContext: {
+                  unitId: "opq-kmr-act-01",
+                  unitCode: "OPQ-ACT-01",
+                  unitType: "KAMAR",
+                  domain: "KEASRAMAAN",
+                  genderComplex: "PUTRA",
+                  parentId: "div-op-1",
+                  ancestorUnitIds: ["div-op-1"],
+                  isActive: true,
+                },
+              },
+            ],
+          },
+        ],
+      },
+      resourceContexts: {
+        "san-act-target": {
+          santriId: "san-act-target",
+          kamarId: "opq-kmr-act-01",
+          orgUnitIds: ["opq-kmr-act-01"],
+          genderComplex: "PUTRA",
+          orgDomain: "KEASRAMAAN",
+        },
+      },
+    });
+
+    const resSingleActive = await authorizeCanonical({
+      identity: { userId: "op-unit-1" },
+      capability: KEASRAMAAN_PERMISSION_CAPABILITIES.CREATE,
+      isMutation: true,
+      executorContext: { humanExecutorId: "exec-human-1" },
+      resourceContext: { santriId: "san-act-target" },
+      dataProvider: dataProviderSingleActive,
+    });
+    assert.equal(resSingleActive.decision, "ALLOW");
+
+    // 49.2 Single inactive scoped Kamar only -> DENY (no fallback to raw unitIds)
+    const dataProviderSingleInactive = createMockDataProvider({
+      identities: {
+        "op-unit-2": {
+          userId: "op-unit-2",
+          username: "unit.op2",
+          status: "AKTIF",
+          accountType: "UNIT",
+          placementUnitId: "div-op-2",
+          genderComplex: "PUTRA",
+        },
+      },
+      placements: {
+        "op-unit-2": { unitId: "div-op-2", count: 1 },
+      },
+      executors: {
+        "exec-human-1": {
+          userId: "exec-human-1",
+          name: "Executor 1",
+          isActive: true,
+          santriId: "san-dummy",
+        },
+      },
+      assignments: {
+        "op-unit-2": [
+          {
+            id: "asg-op-2",
+            userId: "op-unit-2",
+            positionId: "pos-pok",
+            positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+            positionName: "Petugas",
+            domain: "KEASRAMAAN",
+            unitId: "div-op-2",
+            unitCode: "DIV-OP-2",
+            unitName: "Divisi Op 2",
+            unitGenderComplex: "PUTRA",
+            status: "ACTIVE",
+            validFrom: new Date(0),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.CREATE,
+                scopeType: "ASSIGNED_UNITS",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [
+              {
+                unitId: "opq-kmr-inact-02",
+                unitCode: "OPQ-INACT-02",
+                unitContext: {
+                  unitId: "opq-kmr-inact-02",
+                  unitCode: "OPQ-INACT-02",
+                  unitType: "KAMAR",
+                  domain: "KEASRAMAAN",
+                  genderComplex: "PUTRA",
+                  parentId: "div-op-2",
+                  ancestorUnitIds: ["div-op-2"],
+                  isActive: false, // INACTIVE!
+                },
+              },
+            ],
+          },
+        ],
+      },
+      resourceContexts: {
+        "san-inact-target": {
+          santriId: "san-inact-target",
+          kamarId: "opq-kmr-inact-02",
+          orgUnitIds: ["opq-kmr-inact-02"],
+          genderComplex: "PUTRA",
+          orgDomain: "KEASRAMAAN",
+        },
+      },
+    });
+
+    const resSingleInactive = await authorizeCanonical({
+      identity: { userId: "op-unit-2" },
+      capability: KEASRAMAAN_PERMISSION_CAPABILITIES.CREATE,
+      isMutation: true,
+      executorContext: { humanExecutorId: "exec-human-1" },
+      resourceContext: { santriId: "san-inact-target" },
+      dataProvider: dataProviderSingleInactive,
+    });
+    assert.equal(resSingleInactive.decision, "DENY");
+    assert.equal(resSingleInactive.code, "SCOPE_MISMATCH");
+
+    // 49.3 Mixed active + inactive -> active target ALLOW, inactive target DENY
+    const dataProviderMixed = createMockDataProvider({
+      identities: {
+        "op-unit-3": {
+          userId: "op-unit-3",
+          username: "unit.op3",
+          status: "AKTIF",
+          accountType: "UNIT",
+          placementUnitId: "div-op-3",
+          genderComplex: "PUTRA",
+        },
+      },
+      placements: {
+        "op-unit-3": { unitId: "div-op-3", count: 1 },
+      },
+      executors: {
+        "exec-human-1": {
+          userId: "exec-human-1",
+          name: "Executor 1",
+          isActive: true,
+          santriId: "san-dummy",
+        },
+      },
+      assignments: {
+        "op-unit-3": [
+          {
+            id: "asg-op-3",
+            userId: "op-unit-3",
+            positionId: "pos-pok",
+            positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+            positionName: "Petugas",
+            domain: "KEASRAMAAN",
+            unitId: "div-op-3",
+            unitCode: "DIV-OP-3",
+            unitName: "Divisi Op 3",
+            unitGenderComplex: "PUTRA",
+            status: "ACTIVE",
+            validFrom: new Date(0),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.CREATE,
+                scopeType: "ASSIGNED_UNITS",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [
+              {
+                unitId: "opq-kmr-mix-act",
+                unitCode: "OPQ-MIX-ACT",
+                unitContext: {
+                  unitId: "opq-kmr-mix-act",
+                  unitCode: "OPQ-MIX-ACT",
+                  unitType: "KAMAR",
+                  domain: "KEASRAMAAN",
+                  genderComplex: "PUTRA",
+                  parentId: "div-op-3",
+                  ancestorUnitIds: ["div-op-3"],
+                  isActive: true, // ACTIVE
+                },
+              },
+              {
+                unitId: "opq-kmr-mix-inact",
+                unitCode: "OPQ-MIX-INACT",
+                unitContext: {
+                  unitId: "opq-kmr-mix-inact",
+                  unitCode: "OPQ-MIX-INACT",
+                  unitType: "KAMAR",
+                  domain: "KEASRAMAAN",
+                  genderComplex: "PUTRA",
+                  parentId: "div-op-3",
+                  ancestorUnitIds: ["div-op-3"],
+                  isActive: false, // INACTIVE
+                },
+              },
+            ],
+          },
+        ],
+      },
+      resourceContexts: {
+        "san-target-act": {
+          santriId: "san-target-act",
+          kamarId: "opq-kmr-mix-act",
+          orgUnitIds: ["opq-kmr-mix-act"],
+          genderComplex: "PUTRA",
+          orgDomain: "KEASRAMAAN",
+        },
+        "san-target-inact": {
+          santriId: "san-target-inact",
+          kamarId: "opq-kmr-mix-inact",
+          orgUnitIds: ["opq-kmr-mix-inact"],
+          genderComplex: "PUTRA",
+          orgDomain: "KEASRAMAAN",
+        },
+      },
+    });
+
+    const resMixedAct = await authorizeCanonical({
+      identity: { userId: "op-unit-3" },
+      capability: KEASRAMAAN_PERMISSION_CAPABILITIES.CREATE,
+      isMutation: true,
+      executorContext: { humanExecutorId: "exec-human-1" },
+      resourceContext: { santriId: "san-target-act" },
+      dataProvider: dataProviderMixed,
+    });
+    assert.equal(resMixedAct.decision, "ALLOW");
+
+    const resMixedInact = await authorizeCanonical({
+      identity: { userId: "op-unit-3" },
+      capability: KEASRAMAAN_PERMISSION_CAPABILITIES.CREATE,
+      isMutation: true,
+      executorContext: { humanExecutorId: "exec-human-1" },
+      resourceContext: { santriId: "san-target-inact" },
+      dataProvider: dataProviderMixed,
+    });
+    assert.equal(resMixedInact.decision, "DENY");
+    assert.equal(resMixedInact.code, "SCOPE_MISMATCH");
+  });
+
+  // 50. Mudhabbir permission wrapper requires target resource context
+  it("50. Mudhabbir permission wrapper requires target resource context", async () => {
+    const dataProviderMud = createMockDataProvider({
+      identities: {
+        "user-mud-test": {
+          userId: "user-mud-test",
+          username: "mud.test",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-mud",
+          staffStatus: "AKTIF",
+        },
+      },
+      assignments: {
+        "user-mud-test": [
+          {
+            id: "asg-mud-test",
+            userId: "user-mud-test",
+            positionId: "pos-pembina",
+            positionCode: "PEMBINA_HALAQOH",
+            positionName: "Pembina",
+            domain: "KEASRAMAAN",
+            unitId: "kmr-own-101",
+            unitCode: "KMR-OWN-101",
+            unitName: "Kamar Own",
+            unitGenderComplex: "PUTRA",
+            status: "ACTIVE",
+            validFrom: new Date(0),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.CREATE,
+                scopeType: "UNIT",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [],
+          },
+        ],
+      },
+      resourceContexts: {
+        "kmr-own-101": {
+          kamarId: "kmr-own-101",
+          orgUnitIds: ["kmr-own-101"],
+          genderComplex: "PUTRA",
+          orgDomain: "KEASRAMAAN",
+        },
+        "kmr-other-202": {
+          kamarId: "kmr-other-202",
+          orgUnitIds: ["kmr-other-202"],
+          genderComplex: "PUTRA",
+          orgDomain: "KEASRAMAAN",
+        },
+      },
+    });
+
+    // 50.1 Verified PEMBINA_HALAQOH + no resourceContext => authorized: false
+    const resNoContext = await resolveMudabbirPermissionCapability(
+      "user-mud-test",
+      undefined,
+      dataProviderMud
+    );
+    assert.equal(resNoContext.authorized, false);
+    assert.ok(resNoContext.reason?.includes("Target resource context is required"));
+
+    // 50.2 Verified PEMBINA_HALAQOH + empty resourceContext => authorized: false
+    const resEmptyContext = await resolveMudabbirPermissionCapability(
+      "user-mud-test",
+      {} as any,
+      dataProviderMud
+    );
+    assert.equal(resEmptyContext.authorized, false);
+    assert.ok(resEmptyContext.reason?.includes("Target resource context is required"));
+
+    // 50.3 Verified PEMBINA_HALAQOH + own Kamar target => true
+    const resOwnKamar = await resolveMudabbirPermissionCapability(
+      "user-mud-test",
+      { kamarId: "kmr-own-101" },
+      dataProviderMud
+    );
+    assert.equal(resOwnKamar.authorized, true);
+    assert.equal(resOwnKamar.assignmentId, "asg-mud-test");
+    assert.equal(resOwnKamar.positionCode, "PEMBINA_HALAQOH");
+
+    // 50.4 Verified PEMBINA_HALAQOH + other Kamar target => false
+    const resOtherKamar = await resolveMudabbirPermissionCapability(
+      "user-mud-test",
+      { kamarId: "kmr-other-202" },
+      dataProviderMud
+    );
+    assert.equal(resOtherKamar.authorized, false);
+  });
+
+  // 51. Readiness check fails closed when no Kamar repository or raw SQL delegate is available
+  it("51. Readiness check fails closed when no Kamar repository or raw SQL delegate is available", async () => {
+    const mockDbNoDelegates: any = {};
+    const report = await checkPendidikanV2ProductionReadiness(mockDbNoDelegates);
+    const kamarGate = report.gates.find((g) => g.gate === "KEASRAMAAN_KAMAR_CONFIGURATION_READY");
+
+    assert.ok(kamarGate);
+    assert.equal(kamarGate.status, "BLOCKED");
+    assert.equal(kamarGate.reason, "DATABASE_UNAVAILABLE");
+    assert.equal(kamarGate.blocking, true);
+    assert.ok(kamarGate.details.includes("No authoritative Kamar repository or query mechanism"));
+  });
+
+});

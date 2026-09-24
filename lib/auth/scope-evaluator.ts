@@ -243,30 +243,54 @@ export function evaluateScopePredicate(
 
   // 4. ASSIGNED_UNITS Scope: Relationally bound multi-unit set (via AssignmentScopeUnit)
   if (scopeType === "ASSIGNED_UNITS") {
-    if (subjectIdentity.accountType === "UNIT") {
-      const activeExplicitUnits = (grant.scopeUnits || [])
-        .filter((unit) => unit.isActive)
-        .map((unit) => unit.unitId);
-      const permittedUnitIds = activeExplicitUnits.length > 0
-        ? activeExplicitUnits
-        : (unitIds || []);
+    const directTargetUnitTypes = new Set(["KAMAR", "HALAQOH", "ACADEMIC_CLASS"]);
+    const anchorIsAuthoritativeTarget = Boolean(
+      grant.anchorUnit?.isActive && directTargetUnitTypes.has(grant.anchorUnit.unitType)
+    );
 
+    const hasCanonicalScopeUnits = Array.isArray(grant.scopeUnits) && grant.scopeUnits.length > 0;
+    const permittedExplicitUnitIds: string[] = hasCanonicalScopeUnits
+      ? (grant.scopeUnits || []).filter((unit) => unit.isActive).map((unit) => unit.unitId)
+      : (unitIds || []);
+
+    if (subjectIdentity.accountType === "UNIT") {
       // AssignmentScopeUnit is the authoritative multi-resource binding.
-      if (permittedUnitIds.length > 0) {
-        const hasMatch = (context.orgUnitIds || []).some((u) => permittedUnitIds.includes(u));
-        if (hasMatch) {
+      if (hasCanonicalScopeUnits || (unitIds && unitIds.length > 0)) {
+        if (permittedExplicitUnitIds.length > 0) {
+          const hasMatch = (context.orgUnitIds || []).some((u) => permittedExplicitUnitIds.includes(u));
+          if (hasMatch) {
+            return {
+              matches: true,
+              code: "ALLOWED",
+              reason: "Target resource matched relationally assigned scope units.",
+              evaluatedScope: "ASSIGNED_UNITS",
+              evaluatedAnchorUnitId: anchorUnitId,
+            };
+          }
           return {
-            matches: true,
-            code: "ALLOWED",
-            reason: "Target resource matched relationally assigned scope units.",
+            matches: false,
+            code: "SCOPE_MISMATCH",
+            reason: "Target resource does not match any relationally assigned units.",
             evaluatedScope: "ASSIGNED_UNITS",
             evaluatedAnchorUnitId: anchorUnitId,
           };
         }
+
+        // Canonical scope metadata exists but all referenced scope units are inactive
+        if (hasCanonicalScopeUnits) {
+          return {
+            matches: false,
+            code: "SCOPE_MISMATCH",
+            reason: "All relationally assigned canonical scope units are inactive.",
+            evaluatedScope: "ASSIGNED_UNITS",
+            evaluatedAnchorUnitId: anchorUnitId,
+          };
+        }
+
         return {
           matches: false,
           code: "SCOPE_MISMATCH",
-          reason: "Target resource does not match any relationally assigned units.",
+          reason: "ASSIGNED_UNITS grant has zero explicit target resource bindings.",
           evaluatedScope: "ASSIGNED_UNITS",
           evaluatedAnchorUnitId: anchorUnitId,
         };
@@ -275,10 +299,6 @@ export function evaluateScopePredicate(
       // Direct anchor is a target only when authoritative metadata proves that
       // the anchor itself is a target-containing resource. DIVISION / OSDA
       // anchors never imply that a Santri belongs to that division.
-      const directTargetUnitTypes = new Set(["KAMAR", "HALAQOH", "ACADEMIC_CLASS"]);
-      const anchorIsAuthoritativeTarget = Boolean(
-        grant.anchorUnit?.isActive && directTargetUnitTypes.has(grant.anchorUnit.unitType)
-      );
       if (
         anchorIsAuthoritativeTarget &&
         anchorUnitId &&
@@ -296,28 +316,24 @@ export function evaluateScopePredicate(
       return {
         matches: false,
         code: "SCOPE_MISMATCH",
-        reason: permittedUnitIds.length === 0 && !anchorIsAuthoritativeTarget
-          ? "ASSIGNED_UNITS grant has zero explicit target resource bindings."
-          : "Target resource does not match relationally assigned unit.",
+        reason: "ASSIGNED_UNITS grant has zero explicit target resource bindings.",
         evaluatedScope: "ASSIGNED_UNITS",
         evaluatedAnchorUnitId: anchorUnitId,
       };
     }
 
-    const directTargetUnitTypes = new Set(["KAMAR", "HALAQOH", "ACADEMIC_CLASS"]);
-    const anchorIsAuthoritativeTarget = Boolean(
-      grant.anchorUnit?.isActive && directTargetUnitTypes.has(grant.anchorUnit.unitType)
-    );
     const permittedUnits = new Set<string>([
       ...(anchorIsAuthoritativeTarget && anchorUnitId ? [anchorUnitId] : []),
-      ...(unitIds || []),
+      ...permittedExplicitUnitIds,
     ]);
 
     if (permittedUnits.size === 0) {
       return {
         matches: false,
         code: "SCOPE_MISMATCH",
-        reason: "ASSIGNED_UNITS grant has zero permitted units bound.",
+        reason: hasCanonicalScopeUnits
+          ? "All relationally assigned canonical scope units are inactive."
+          : "ASSIGNED_UNITS grant has zero permitted units bound.",
         evaluatedScope: "ASSIGNED_UNITS",
       };
     }
