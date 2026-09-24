@@ -158,7 +158,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const report = await checkPendidikanV2ProductionReadiness(prisma as any);
       const gateNames = report.gates.map((g) => g.gate);
       assert.deepStrictEqual(gateNames, Array.from(CANONICAL_READINESS_GATE_NAMES));
-      assert.strictEqual(gateNames.length, 13);
+      assert.strictEqual(gateNames.length, CANONICAL_READINESS_GATE_NAMES.length);
     });
 
     it("2.4 Required positions gate: missing target positions => NOT_READY, PEMBINA_ASRAMA not required", async () => {
@@ -1523,17 +1523,17 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
             id: `usr-req-${idx}`,
             username: `user.req.${idx}`,
             status: "AKTIF",
-            accountType: "PERSONAL",
-            staffId: `stf-req-${idx}`,
-            staff: { id: `stf-req-${idx}`, status: "AKTIF" },
+            accountType: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? "UNIT" : "PERSONAL",
+            staffId: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? null : `stf-req-${idx}`,
+            staff: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? null : { id: `stf-req-${idx}`, status: "AKTIF" },
           },
           position: {
             id: `pos-req-${idx}`,
             code: posCode,
             name: posCode,
             isActive: true,
-            requiresPersonalAccount: true,
-            domain: "AKADEMIK",
+            requiresPersonalAccount: posCode !== "PETUGAS_OPERASIONAL_KEASRAMAAN",
+            domain: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? "KEASRAMAAN" : "AKADEMIK",
             capabilities,
           },
         };
@@ -2170,16 +2170,16 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           id: `usr-uat-${idx}`,
           username: `user.uat.${idx}`,
           status: "AKTIF",
-          accountType: "PERSONAL",
-          staffId: `stf-uat-${idx}`,
-          staff: { id: `stf-uat-${idx}`, status: "AKTIF" },
+          accountType: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? "UNIT" : "PERSONAL",
+          staffId: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? null : `stf-uat-${idx}`,
+          staff: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? null : { id: `stf-uat-${idx}`, status: "AKTIF" },
         },
         position: {
           id: `pos-uat-${idx}`,
           code: posCode,
           name: posCode,
           isActive: true,
-          requiresPersonalAccount: true,
+          requiresPersonalAccount: posCode !== "PETUGAS_OPERASIONAL_KEASRAMAAN",
           domain: posCode.includes("KEASRAMAAN") ? "KEASRAMAAN" : "TAHFIZH",
           capabilities,
         },
@@ -2558,22 +2558,28 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const keasramaanIdentity = {
         userId: "usr-asrama-op",
         username: "asrama.op",
-        accountType: "PERSONAL" as const,
-        staffId: "stf-asrama-op",
-        staffStatus: "AKTIF",
+        accountType: "UNIT" as const,
         status: "AKTIF",
         name: "Petugas Asrama Putra",
+        genderComplex: "PUTRA" as const,
+        placementUnitId: "asr-putra-1",
       };
       const keasramaanAssignment = {
         id: "asg-asr-1",
         userId: "usr-asrama-op",
         positionId: "pos-asr-op",
         positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+        positionName: "Petugas Operasional Keasramaan",
+        domain: "KEASRAMAAN",
         unitId: "asr-putra-1",
+        unitCode: "ASR-PUTRA-1",
+        unitName: "Asrama Putra 1",
+        unitGenderComplex: "PUTRA" as const,
         status: "ACTIVE" as const,
         validFrom: new Date(Date.now() - 86400000),
         validUntil: null,
-        scopeUnits: [{ unitId: "asr-putra-1" }],
+        requiresPersonalAccount: false,
+        scopeUnits: [{ unitId: "asr-putra-1", unitCode: "ASR-PUTRA-1" }],
         scopedUnits: [{ unitId: "asr-putra-1", unit: { id: "asr-putra-1", isActive: true } }],
         positionCapabilities: [
           {
@@ -2589,13 +2595,14 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         capability: "keasramaan.permission.read",
         resolvedContext: {
           resourceId: "perm-outside-1",
-          orgUnitIds: ["asr-putri-2"], // Outside unit
+          orgUnitIds: ["asr-putra-2"], // Outside unit but same gender complex
           orgDomain: "KEASRAMAAN",
+          genderComplex: "PUTRA",
         },
         dataProvider: {
           getIdentity: async () => keasramaanIdentity,
           getActiveAssignments: async () => [keasramaanAssignment] as any,
-          getUnitAccountPlacement: async () => null,
+          getUnitAccountPlacement: async () => ({ unitId: "asr-putra-1", count: 1 }),
           resolveResourceContext: async () => null,
           verifyHumanExecutor: async () => null,
         },
@@ -2641,22 +2648,28 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const keasramaanIdentity = {
         userId: "usr-asrama-op",
         username: "asrama.op",
-        accountType: "PERSONAL" as const,
-        staffId: "stf-asrama-op",
-        staffStatus: "AKTIF",
+        accountType: "UNIT" as const,
         status: "AKTIF",
         name: "Petugas Asrama Putra",
+        genderComplex: "PUTRA" as const,
+        placementUnitId: "asr-putra-1",
       };
       const keasramaanAssignment = {
         id: "asg-asr-1",
         userId: "usr-asrama-op",
         positionId: "pos-asr-op",
         positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+        positionName: "Petugas Operasional Keasramaan",
+        domain: "KEASRAMAAN",
         unitId: "asr-putra-1",
+        unitCode: "ASR-PUTRA-1",
+        unitName: "Asrama Putra 1",
+        unitGenderComplex: "PUTRA" as const,
         status: "ACTIVE" as const,
         validFrom: new Date(Date.now() - 86400000),
         validUntil: null,
-        scopeUnits: [{ unitId: "asr-putra-1" }],
+        requiresPersonalAccount: false,
+        scopeUnits: [{ unitId: "asr-putra-1", unitCode: "ASR-PUTRA-1" }],
         scopedUnits: [{ unitId: "asr-putra-1", unit: { id: "asr-putra-1", isActive: true } }],
         positionCapabilities: [
           {
@@ -2674,11 +2687,12 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           resourceId: "perm-inside-1",
           orgUnitIds: ["asr-putra-1"],
           orgDomain: "KEASRAMAAN",
+          genderComplex: "PUTRA",
         },
         dataProvider: {
           getIdentity: async () => keasramaanIdentity,
           getActiveAssignments: async () => [keasramaanAssignment] as any,
-          getUnitAccountPlacement: async () => null,
+          getUnitAccountPlacement: async () => ({ unitId: "asr-putra-1", count: 1 }),
           resolveResourceContext: async () => null,
           verifyHumanExecutor: async () => null,
         },
@@ -2899,8 +2913,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       });
       await prisma.position.upsert({
         where: { code: "PETUGAS_OPERASIONAL_KEASRAMAAN" },
-        update: {},
-        create: { id: POS_S6_OP_ASR, code: "PETUGAS_OPERASIONAL_KEASRAMAAN", name: "Petugas Operasional Keasramaan", domain: "KEASRAMAAN" },
+        update: { requiresPersonalAccount: false },
+        create: { id: POS_S6_OP_ASR, code: "PETUGAS_OPERASIONAL_KEASRAMAAN", name: "Petugas Operasional Keasramaan", domain: "KEASRAMAAN", requiresPersonalAccount: false },
       });
 
       const posOpTahfizh = await prisma.position.findUniqueOrThrow({ where: { code: "PETUGAS_OPERASIONAL_TAHFIZH" } });
@@ -2951,7 +2965,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           { id: USR_S6_MUSYRIF, username: "s6.musyrif", staffId: STF_S6_MUSYRIF, status: "AKTIF", role: "MT", passwordHash: "dummy" },
           { id: USR_S6_SCOPED, username: "s6.scoped", staffId: STF_S6_SCOPED, status: "AKTIF", role: "MT", passwordHash: "dummy" },
           { id: USR_S6_EMPTY, username: "s6.empty", staffId: STF_S6_EMPTY, status: "AKTIF", role: "MT", passwordHash: "dummy" },
-          { id: USR_S6_OP_ASR, username: "s6.op.asrama", staffId: STF_S6_OP_ASR, status: "AKTIF", role: "MK", passwordHash: "dummy" },
+          { id: USR_S6_OP_ASR, username: "s6.op.asrama", status: "AKTIF", role: "OSDA", accountType: "UNIT", passwordHash: "dummy" },
         ],
       });
 
@@ -2964,6 +2978,15 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           { id: "asg-s6-empty", userId: USR_S6_EMPTY, positionId: posMusyrif.id, unitId: OU_S6_HLQ_EMPTY, status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: USR_S6_EMPTY },
           { id: "asg-s6-op-asr", userId: USR_S6_OP_ASR, positionId: posOpAsr.id, unitId: OU_S6_KMR_1, status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: USR_S6_OP_ASR },
         ],
+      });
+
+      // 6b. UnitAccountPlacement for UNIT account USR_S6_OP_ASR
+      await prisma.unitAccountPlacement.create({
+        data: {
+          id: "uap-s6-op-asr",
+          userId: USR_S6_OP_ASR,
+          unitId: OU_S6_KMR_1,
+        },
       });
 
       // 7. AssignmentScopeUnit (Real Prisma relation)
@@ -3105,7 +3128,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
 
     it("6.8 Proof H: Keasramaan target: actual active SantriKamarPlacement in permitted unit => ALLOW", async () => {
       const auth = await authorizeCanonical({
-        identity: { userId: USR_S6_OP_ASR, username: "s6.op.asrama", accountType: "PERSONAL", status: "AKTIF" },
+        identity: { userId: USR_S6_OP_ASR, username: "s6.op.asrama", accountType: "UNIT", status: "AKTIF", placementUnitId: OU_S6_KMR_1, genderComplex: "PUTRA" },
         capability: "keasramaan.permission.read",
         resourceContext: { santriId: SAN_S6_KMR_1 },
         dataProvider,
@@ -3117,7 +3140,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
 
     it("6.9 Proof I: Keasramaan target: active SantriKamarPlacement outside assigned unit => DENY / SCOPE_MISMATCH", async () => {
       const auth = await authorizeCanonical({
-        identity: { userId: USR_S6_OP_ASR, username: "s6.op.asrama", accountType: "PERSONAL", status: "AKTIF" },
+        identity: { userId: USR_S6_OP_ASR, username: "s6.op.asrama", accountType: "UNIT", status: "AKTIF", placementUnitId: OU_S6_KMR_1, genderComplex: "PUTRA" },
         capability: "keasramaan.permission.read",
         resourceContext: { santriId: SAN_S6_KMR_2 },
         dataProvider,

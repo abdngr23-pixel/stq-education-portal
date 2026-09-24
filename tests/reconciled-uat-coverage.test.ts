@@ -306,8 +306,8 @@ describe("STQ ARCHITECTURE LOCK — RECONCILED UAT & SERVICE INTEGRATION SUITE",
       };
 
       const res = await checkPendidikanV2ProductionReadiness(mockDb as any);
-      assert.strictEqual(res.gates.length, 13);
-      assert.strictEqual(CANONICAL_READINESS_GATE_NAMES.length, 13);
+      assert.strictEqual(res.gates.length, CANONICAL_READINESS_GATE_NAMES.length);
+      assert.strictEqual(CANONICAL_READINESS_GATE_NAMES.length, 14);
       assert.ok(res.gates.some((g) => g.gate === "M3_3B_SCHEMA_READY"));
       assert.ok(res.gates.some((g) => g.gate === "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY"));
       assert.ok(res.gates.some((g) => g.gate === "STALE_POSITION_CAPABILITY_POLICY_READY"));

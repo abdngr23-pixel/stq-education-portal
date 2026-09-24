@@ -127,6 +127,22 @@ export interface UnitAccountPlacement {
 }
 
 /**
+ * Server-resolved metadata for an operational placement, assignment anchor,
+ * or relational scope unit. OrgUnit.id is opaque; authorization semantics
+ * come exclusively from these authoritative OrgUnit attributes.
+ */
+export interface CanonicalOperationalUnitContext {
+  unitId: string;
+  unitCode: string;
+  unitType: OrgUnitType;
+  domain: OrgDomain;
+  genderComplex: GenderComplex;
+  parentId: string | null;
+  ancestorUnitIds: string[];
+  isActive: boolean;
+}
+
+/**
  * Canonical Scope Types for fine-grained authorization containment
  * Capability is evaluated BEFORE scope.
  * GLOBAL does NOT mean unrestricted access; it means institutional scope for the granted capability.
@@ -204,6 +220,8 @@ export interface EffectiveCapabilityGrant {
   anchorUnitId: string;
   unitIds: string[];
   businessRuleState: BusinessRuleState;
+  anchorUnit?: CanonicalOperationalUnitContext;
+  scopeUnits?: CanonicalOperationalUnitContext[];
 }
 
 /**
@@ -612,6 +630,23 @@ export const KEASRAMAAN_PERMISSION_CAPABILITIES = {
   APPROVE_KS: "keasramaan.permission.approve_ks",
 } as const;
 
+export const KEASRAMAAN_KAMAR_CAPABILITIES = {
+  INSPECT: "keasramaan.kamar.inspect",
+  MANAGE: "keasramaan.kamar.manage",
+} as const;
+
+/**
+ * Approved code-level target policy only. This manifest provisions nothing and
+ * grants zero runtime authority while its state remains pending technical.
+ */
+export const KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY = {
+  positionCode: "KEPALA_KEASRAMAAN",
+  capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
+  scopeType: "DOMAIN",
+  domain: "KEASRAMAAN",
+  businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+} as const;
+
 /**
  * UAT Rule #7: Halaqoh attendance new-entry selectable options
  * MASBUK is strictly excluded from new entries (historical records remain readable).
@@ -796,6 +831,19 @@ export const UAT_ACTIVATION_TARGETS = {
   },
 } as const;
 
-
-
-
+/**
+ * Canonical Account Modality Contract (Gate 5 Hardening)
+ * Binds positions strictly to their approved account type modality.
+ * PETUGAS_OPERASIONAL_KEASRAMAAN -> UNIT only
+ * Institutional & managerial positions -> PERSONAL only
+ */
+export const POSITION_ACCOUNT_MODALITY_CONTRACT: Record<string, AccountType> = {
+  PETUGAS_OPERASIONAL_KEASRAMAAN: "UNIT",
+  GURU_KEPESANTRENAN: "PERSONAL",
+  PEMBINA_HALAQOH: "PERSONAL",
+  KEPALA_KEASRAMAAN: "PERSONAL",
+  MUDIR: "PERSONAL",
+  KABID_TAHFIZH: "PERSONAL",
+  MUSYRIF_TAHFIZH: "PERSONAL",
+  PETUGAS_OPERASIONAL_TAHFIZH: "PERSONAL",
+} as const;

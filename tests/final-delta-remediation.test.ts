@@ -34,94 +34,235 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
     it("1.1. VERIFIED_PRODUCTION grants runtime capability ALLOW", async () => {
       const savedUserFindUnique = prismaModule.user.findUnique;
       const savedAssignmentFindMany = prismaModule.assignment.findMany;
+      const savedOrgUnitFindUnique = prismaModule.orgUnit?.findUnique;
+      const savedOrgUnitFindFirst = prismaModule.orgUnit?.findFirst;
 
       try {
-        prismaModule.user.findUnique = async () => ({ id: "usr-mudabbir-verified", status: "AKTIF" });
+        prismaModule.user.findUnique = async () => ({
+          id: "usr-mudabbir-verified",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-1",
+          staff: { id: "stf-1", nama: "Ust Mudabbir", status: "AKTIF" },
+        });
+        const mockKamarData = {
+          id: "ou-kmr-1",
+          code: "KMR-1",
+          name: "Kamar 1",
+          type: "KAMAR",
+          domain: "KEASRAMAAN",
+          genderComplex: "PUTRA",
+          isActive: true,
+          parentId: null,
+        };
+        prismaModule.orgUnit = prismaModule.orgUnit || {};
+        prismaModule.orgUnit.findUnique = async () => mockKamarData;
+        prismaModule.orgUnit.findFirst = async () => mockKamarData;
         prismaModule.assignment.findMany = async () => [
           {
             id: "asg-mudabbir-1",
+            userId: "usr-mudabbir-verified",
             positionId: "pos-pembina",
+            status: "ACTIVE",
+            validFrom: new Date(0),
+            validUntil: null,
+            unitId: "ou-kmr-1",
             position: {
+              id: "pos-pembina",
+              code: "PEMBINA_HALAQOH",
+              name: "Pembina Halaqoh",
+              domain: "KEASRAMAAN",
+              requiresPersonalAccount: true,
               capabilities: [
                 {
                   capabilityCode: "keasramaan.permission.create",
-                  scopeType: "ROOM_UNIT",
+                  scopeType: "UNIT",
                   businessRuleState: "VERIFIED_PRODUCTION",
                 },
               ],
             },
+            unit: {
+              id: "ou-kmr-1",
+              code: "KMR-1",
+              name: "Kamar 1",
+              type: "KAMAR",
+              domain: "KEASRAMAAN",
+              genderComplex: "PUTRA",
+              isActive: true,
+            },
+            scopedUnits: [],
           },
         ];
 
-        const result = await resolveMudabbirPermissionCapability("usr-mudabbir-verified");
+        const result = await resolveMudabbirPermissionCapability("usr-mudabbir-verified", { kamarId: "ou-kmr-1" });
         assert.strictEqual(result.authorized, true, "VERIFIED_PRODUCTION must be ALLOWED");
         assert.strictEqual(result.assignmentId, "asg-mudabbir-1");
-        assert.strictEqual(result.scopeType, "ROOM_UNIT");
+        assert.strictEqual(result.scopeType, "UNIT");
       } finally {
         prismaModule.user.findUnique = savedUserFindUnique;
         prismaModule.assignment.findMany = savedAssignmentFindMany;
+        if (savedOrgUnitFindUnique) {
+          prismaModule.orgUnit.findUnique = savedOrgUnitFindUnique;
+        }
+        if (savedOrgUnitFindFirst) {
+          prismaModule.orgUnit.findFirst = savedOrgUnitFindFirst;
+        }
       }
     });
 
     it("1.2. APPROVED_TARGET_PENDING_TECHNICAL is strictly DENIED (Zero runtime authority)", async () => {
       const savedUserFindUnique = prismaModule.user.findUnique;
       const savedAssignmentFindMany = prismaModule.assignment.findMany;
+      const savedOrgUnitFindUnique = prismaModule.orgUnit?.findUnique;
+      const savedOrgUnitFindFirst = prismaModule.orgUnit?.findFirst;
 
       try {
-        prismaModule.user.findUnique = async () => ({ id: "usr-mudabbir-pending", status: "AKTIF" });
+        prismaModule.user.findUnique = async () => ({
+          id: "usr-mudabbir-pending",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-1",
+          staff: { id: "stf-1", nama: "Ust Mudabbir", status: "AKTIF" },
+        });
+        const mockKamarData = {
+          id: "ou-kmr-1",
+          code: "KMR-1",
+          name: "Kamar 1",
+          type: "KAMAR",
+          domain: "KEASRAMAAN",
+          genderComplex: "PUTRA",
+          isActive: true,
+          parentId: null,
+        };
+        prismaModule.orgUnit = prismaModule.orgUnit || {};
+        prismaModule.orgUnit.findUnique = async () => mockKamarData;
+        prismaModule.orgUnit.findFirst = async () => mockKamarData;
         prismaModule.assignment.findMany = async () => [
           {
             id: "asg-mudabbir-pending",
+            userId: "usr-mudabbir-pending",
             positionId: "pos-pembina",
+            status: "ACTIVE",
+            validFrom: new Date(0),
+            validUntil: null,
+            unitId: "ou-kmr-1",
             position: {
+              id: "pos-pembina",
+              code: "PEMBINA_HALAQOH",
+              name: "Pembina Halaqoh",
+              domain: "KEASRAMAAN",
+              requiresPersonalAccount: true,
               capabilities: [
                 {
                   capabilityCode: "keasramaan.permission.create",
-                  scopeType: "ROOM_UNIT",
+                  scopeType: "UNIT",
                   businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
                 },
               ],
             },
+            unit: {
+              id: "ou-kmr-1",
+              code: "KMR-1",
+              name: "Kamar 1",
+              type: "KAMAR",
+              domain: "KEASRAMAAN",
+              genderComplex: "PUTRA",
+              isActive: true,
+            },
+            scopedUnits: [],
           },
         ];
 
-        const result = await resolveMudabbirPermissionCapability("usr-mudabbir-pending");
+        const result = await resolveMudabbirPermissionCapability("usr-mudabbir-pending", { kamarId: "ou-kmr-1" });
         assert.strictEqual(result.authorized, false, "APPROVED_TARGET_PENDING_TECHNICAL must be DENIED");
         assert.match(result.reason || "", /harus VERIFIED_PRODUCTION/);
       } finally {
         prismaModule.user.findUnique = savedUserFindUnique;
         prismaModule.assignment.findMany = savedAssignmentFindMany;
+        if (savedOrgUnitFindUnique) {
+          prismaModule.orgUnit.findUnique = savedOrgUnitFindUnique;
+        }
+        if (savedOrgUnitFindFirst) {
+          prismaModule.orgUnit.findFirst = savedOrgUnitFindFirst;
+        }
       }
     });
 
     it("1.3. PROPOSED_TBD is strictly DENIED (Zero runtime authority)", async () => {
       const savedUserFindUnique = prismaModule.user.findUnique;
       const savedAssignmentFindMany = prismaModule.assignment.findMany;
+      const savedOrgUnitFindUnique = prismaModule.orgUnit?.findUnique;
+      const savedOrgUnitFindFirst = prismaModule.orgUnit?.findFirst;
 
       try {
-        prismaModule.user.findUnique = async () => ({ id: "usr-mudabbir-tbd", status: "AKTIF" });
+        prismaModule.user.findUnique = async () => ({
+          id: "usr-mudabbir-tbd",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-1",
+          staff: { id: "stf-1", nama: "Ust Mudabbir", status: "AKTIF" },
+        });
+        const mockKamarData = {
+          id: "ou-kmr-1",
+          code: "KMR-1",
+          name: "Kamar 1",
+          type: "KAMAR",
+          domain: "KEASRAMAAN",
+          genderComplex: "PUTRA",
+          isActive: true,
+          parentId: null,
+        };
+        prismaModule.orgUnit = prismaModule.orgUnit || {};
+        prismaModule.orgUnit.findUnique = async () => mockKamarData;
+        prismaModule.orgUnit.findFirst = async () => mockKamarData;
         prismaModule.assignment.findMany = async () => [
           {
             id: "asg-mudabbir-tbd",
+            userId: "usr-mudabbir-tbd",
             positionId: "pos-pembina",
+            status: "ACTIVE",
+            validFrom: new Date(0),
+            validUntil: null,
+            unitId: "ou-kmr-1",
             position: {
+              id: "pos-pembina",
+              code: "PEMBINA_HALAQOH",
+              name: "Pembina Halaqoh",
+              domain: "KEASRAMAAN",
+              requiresPersonalAccount: true,
               capabilities: [
                 {
                   capabilityCode: "keasramaan.permission.create",
-                  scopeType: "ROOM_UNIT",
+                  scopeType: "UNIT",
                   businessRuleState: "PROPOSED_TBD",
                 },
               ],
             },
+            unit: {
+              id: "ou-kmr-1",
+              code: "KMR-1",
+              name: "Kamar 1",
+              type: "KAMAR",
+              domain: "KEASRAMAAN",
+              genderComplex: "PUTRA",
+              isActive: true,
+            },
+            scopedUnits: [],
           },
         ];
 
-        const result = await resolveMudabbirPermissionCapability("usr-mudabbir-tbd");
+        const result = await resolveMudabbirPermissionCapability("usr-mudabbir-tbd", { kamarId: "ou-kmr-1" });
         assert.strictEqual(result.authorized, false, "PROPOSED_TBD must be DENIED");
         assert.match(result.reason || "", /harus VERIFIED_PRODUCTION/);
       } finally {
         prismaModule.user.findUnique = savedUserFindUnique;
         prismaModule.assignment.findMany = savedAssignmentFindMany;
+        if (savedOrgUnitFindUnique) {
+          prismaModule.orgUnit.findUnique = savedOrgUnitFindUnique;
+        }
+        if (savedOrgUnitFindFirst) {
+          prismaModule.orgUnit.findFirst = savedOrgUnitFindFirst;
+        }
       }
     });
   });

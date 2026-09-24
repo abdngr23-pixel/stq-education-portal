@@ -18,6 +18,7 @@
  */
 
 import {
+  AccountType,
   ScopeType,
   GenderComplex,
   EffectiveCapabilityGrant,
@@ -71,6 +72,9 @@ export function evaluateScopePredicate(
     userId: string;
     santriId?: string | null;
     staffId?: string | null;
+    accountType?: AccountType;
+    placementUnitId?: string | null;
+    genderComplex?: GenderComplex;
   }
 ): ScopeEvaluationResult {
   if (!grant || !grant.scopeType) {
@@ -104,22 +108,66 @@ export function evaluateScopePredicate(
     };
   }
 
-  // Gender boundary check
-  if (
-    context.genderComplex &&
-    grant.anchorUnitId &&
-    !evaluateGenderComplexBoundary(
-      (grant as unknown as { genderComplex?: GenderComplex }).genderComplex,
-      context.genderComplex
-    )
-  ) {
-    return {
-      matches: false,
-      code: "GENDER_COMPLEX_DENIED",
-      reason: `Access denied across gender boundary (${context.genderComplex}).`,
-      evaluatedScope: scopeType,
-      evaluatedAnchorUnitId: anchorUnitId,
-    };
+  // Operational UNIT Gender Boundary Hardening (Gate 5)
+  if (subjectIdentity.accountType === "UNIT") {
+    const actorGender =
+      (grant as unknown as { genderComplex?: GenderComplex }).genderComplex ||
+      subjectIdentity.genderComplex;
+
+    // If unit is gender-bound or evaluating gender-bound access:
+    if (actorGender === "PUTRA" || actorGender === "PUTRI") {
+      if (!context.genderComplex) {
+        return {
+          matches: false,
+          code: "GENDER_COMPLEX_DENIED",
+          reason: "Target resource is missing required gender context for gender-bound operational unit.",
+          evaluatedScope: scopeType,
+          evaluatedAnchorUnitId: anchorUnitId,
+        };
+      }
+      if (
+        actorGender !== context.genderComplex &&
+        context.genderComplex !== "CAMPUR" &&
+        context.genderComplex !== "TIDAK_TERIKAT"
+      ) {
+        return {
+          matches: false,
+          code: "GENDER_COMPLEX_DENIED",
+          reason: `Operational UNIT gender boundary violation (${actorGender} cannot access ${context.genderComplex}).`,
+          evaluatedScope: scopeType,
+          evaluatedAnchorUnitId: anchorUnitId,
+        };
+      }
+    } else {
+      // Missing actor gender where gender is required (e.g. Keasramaan operational access)
+      if (context.genderComplex && (context.genderComplex === "PUTRA" || context.genderComplex === "PUTRI")) {
+        return {
+          matches: false,
+          code: "GENDER_COMPLEX_DENIED",
+          reason: "Operational UNIT account is missing required gender context.",
+          evaluatedScope: scopeType,
+          evaluatedAnchorUnitId: anchorUnitId,
+        };
+      }
+    }
+  } else {
+    // Standard gender boundary check for PERSONAL / non-UNIT
+    if (
+      context.genderComplex &&
+      grant.anchorUnitId &&
+      !evaluateGenderComplexBoundary(
+        (grant as unknown as { genderComplex?: GenderComplex }).genderComplex,
+        context.genderComplex
+      )
+    ) {
+      return {
+        matches: false,
+        code: "GENDER_COMPLEX_DENIED",
+        reason: `Access denied across gender boundary (${context.genderComplex}).`,
+        evaluatedScope: scopeType,
+        evaluatedAnchorUnitId: anchorUnitId,
+      };
+    }
   }
 
   // 2. DOMAIN Scope: All units within the strategic domain (e.g. TAHFIZH, KEASRAMAAN)
@@ -195,16 +243,97 @@ export function evaluateScopePredicate(
 
   // 4. ASSIGNED_UNITS Scope: Relationally bound multi-unit set (via AssignmentScopeUnit)
   if (scopeType === "ASSIGNED_UNITS") {
+    const directTargetUnitTypes = new Set(["KAMAR", "HALAQOH", "ACADEMIC_CLASS"]);
+    const anchorIsAuthoritativeTarget = Boolean(
+      grant.anchorUnit?.isActive && directTargetUnitTypes.has(grant.anchorUnit.unitType)
+    );
+
+    const hasCanonicalScopeUnits = Array.isArray(grant.scopeUnits) && grant.scopeUnits.length > 0;
+    const permittedExplicitUnitIds: string[] = hasCanonicalScopeUnits
+      ? (grant.scopeUnits || []).filter((unit) => unit.isActive).map((unit) => unit.unitId)
+      : (unitIds || []);
+
+    if (subjectIdentity.accountType === "UNIT") {
+      // AssignmentScopeUnit is the authoritative multi-resource binding.
+      if (hasCanonicalScopeUnits || (unitIds && unitIds.length > 0)) {
+        if (permittedExplicitUnitIds.length > 0) {
+          const hasMatch = (context.orgUnitIds || []).some((u) => permittedExplicitUnitIds.includes(u));
+          if (hasMatch) {
+            return {
+              matches: true,
+              code: "ALLOWED",
+              reason: "Target resource matched relationally assigned scope units.",
+              evaluatedScope: "ASSIGNED_UNITS",
+              evaluatedAnchorUnitId: anchorUnitId,
+            };
+          }
+          return {
+            matches: false,
+            code: "SCOPE_MISMATCH",
+            reason: "Target resource does not match any relationally assigned units.",
+            evaluatedScope: "ASSIGNED_UNITS",
+            evaluatedAnchorUnitId: anchorUnitId,
+          };
+        }
+
+        // Canonical scope metadata exists but all referenced scope units are inactive
+        if (hasCanonicalScopeUnits) {
+          return {
+            matches: false,
+            code: "SCOPE_MISMATCH",
+            reason: "All relationally assigned canonical scope units are inactive.",
+            evaluatedScope: "ASSIGNED_UNITS",
+            evaluatedAnchorUnitId: anchorUnitId,
+          };
+        }
+
+        return {
+          matches: false,
+          code: "SCOPE_MISMATCH",
+          reason: "ASSIGNED_UNITS grant has zero explicit target resource bindings.",
+          evaluatedScope: "ASSIGNED_UNITS",
+          evaluatedAnchorUnitId: anchorUnitId,
+        };
+      }
+
+      // Direct anchor is a target only when authoritative metadata proves that
+      // the anchor itself is a target-containing resource. DIVISION / OSDA
+      // anchors never imply that a Santri belongs to that division.
+      if (
+        anchorIsAuthoritativeTarget &&
+        anchorUnitId &&
+        (context.orgUnitIds || []).includes(anchorUnitId)
+      ) {
+        return {
+          matches: true,
+          code: "ALLOWED",
+          reason: "Target resource matched relationally assigned anchor unit.",
+          evaluatedScope: "ASSIGNED_UNITS",
+          evaluatedAnchorUnitId: anchorUnitId,
+        };
+      }
+
+      return {
+        matches: false,
+        code: "SCOPE_MISMATCH",
+        reason: "ASSIGNED_UNITS grant has zero explicit target resource bindings.",
+        evaluatedScope: "ASSIGNED_UNITS",
+        evaluatedAnchorUnitId: anchorUnitId,
+      };
+    }
+
     const permittedUnits = new Set<string>([
-      ...(anchorUnitId ? [anchorUnitId] : []),
-      ...(unitIds || []),
+      ...(anchorIsAuthoritativeTarget && anchorUnitId ? [anchorUnitId] : []),
+      ...permittedExplicitUnitIds,
     ]);
 
     if (permittedUnits.size === 0) {
       return {
         matches: false,
         code: "SCOPE_MISMATCH",
-        reason: "ASSIGNED_UNITS grant has zero permitted units bound.",
+        reason: hasCanonicalScopeUnits
+          ? "All relationally assigned canonical scope units are inactive."
+          : "ASSIGNED_UNITS grant has zero permitted units bound.",
         evaluatedScope: "ASSIGNED_UNITS",
       };
     }
