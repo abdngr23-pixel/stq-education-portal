@@ -5,9 +5,12 @@ import {
   getCurrentSession,
   recordAuditLog,
   resolveUserIsMudabbir,
-  getMudabbirAssignedUnitIds,
-  resolveMudabbirPermissionCapability,
 } from "@/lib/auth";
+import {
+  authorizeCanonical,
+  createPrismaDataProvider,
+  type CanonicalAuthorizationDecision,
+} from "@/lib/auth/canonical-evaluator";
 import { JenisIzin, StatusIzin, StatusAbsensi, Prisma } from "@prisma/client";
 import { getWitaDateString } from "@/lib/wita-date";
 
@@ -69,6 +72,7 @@ export async function ajukanIzinAction(input: AjukanIzinData) {
   // Path F: WS (Wali Santri DENIED from self-request creation)
   let initialStatus: StatusIzin = StatusIzin.MENUNGGU_MK;
   let submissionRole: string = session.role;
+  const targetAuthorization = new Map<string, CanonicalAuthorizationDecision>();
 
   if (session.role === "ST") {
     if (!session.santriId) {
@@ -91,131 +95,93 @@ export async function ajukanIzinAction(input: AjukanIzinData) {
     }
     initialStatus = StatusIzin.MENUNGGU_MK;
     submissionRole = "ST";
-  } else if (isMudabbir) {
-    // Mudabbir operasional input (Pembina Halaqoh / Mudabbir)
-    // Verify capability pipeline: IDENTITY -> ACTIVE Assignment -> Position PEMBINA_HALAQOH -> keasramaan.permission.create capability -> APPROVED
-    const capCheck = await resolveMudabbirPermissionCapability(session.userId);
-    if (!capCheck.authorized) {
-      return {
-        success: false,
-        message: `Akses Ditolak: ${capCheck.reason || "Kewenangan kapabilitas perizinan tidak terpenuhi."}`,
-      };
-    }
+  } else {
+    // Operational creation path: evaluate canonical authorization for each target Santri
+    const dataProvider = createPrismaDataProvider(prisma);
+    let allCanonicalAllowed = true;
+    let canonicalDeniedReason = "";
+    let canonicalDeniedCode = "";
 
-    // 1. Resolve permitted scope from active assignments & halaqoh
-    const assignedUnits = await getMudabbirAssignedUnitIds(session.userId);
-    const allowedUnitIds = new Set<string>(assignedUnits);
-
-    if (allowedUnitIds.size > 0) {
-      const orgUnits = await prisma.orgUnit.findMany({
-        where: { id: { in: Array.from(allowedUnitIds) } },
-        select: { id: true, code: true },
+    for (const santriId of targetSantriIds) {
+      const decision = await authorizeCanonical({
+        identity: { userId: session.userId },
+        capability: "keasramaan.permission.create",
+        resourceContext: { santriId },
+        isMutation: true,
+        dataProvider,
       });
-      for (const ou of orgUnits) {
-        if (ou.code) allowedUnitIds.add(ou.code);
-        if (ou.id) allowedUnitIds.add(ou.id);
+      if (decision.decision === "ALLOW") {
+        targetAuthorization.set(santriId, decision);
+      } else {
+        allCanonicalAllowed = false;
+        canonicalDeniedCode = decision.code;
+        canonicalDeniedReason = decision.reason;
+        break;
       }
     }
 
-    const halaqohFilter: Prisma.HalaqohWhereInput[] = [];
-    if (allowedUnitIds.size > 0) {
-      halaqohFilter.push({ id: { in: Array.from(allowedUnitIds) } });
-      halaqohFilter.push({ halaqohCode: { in: Array.from(allowedUnitIds) } });
-    }
-    if (session.staffId) {
-      halaqohFilter.push({ pembinaId: session.staffId });
-    }
+    if (allCanonicalAllowed && targetAuthorization.size === targetSantriIds.length) {
+      // Authorized via canonical capability
+      const firstDecision = targetAuthorization.get(targetSantriIds[0])!;
+      if (firstDecision.positionCode === "PEMBINA_HALAQOH" || isMudabbir) {
+        const d1 = new Date(input.tanggalMulai);
+        const d2 = new Date(input.tanggalSelesai);
+        const isSameDay = getWitaDateString(d1) === getWitaDateString(d2);
+        const usesVehicle = Boolean(input.usesVehicle);
+        const isMultiDay = !isSameDay;
+        const isMenginap = Boolean(input.menginap || input.isMenginap || isMultiDay || input.jenis === JenisIzin.PULANG);
 
-    if (halaqohFilter.length > 0) {
-      const matchingHalaqohs = await prisma.halaqoh.findMany({
-        where: { OR: halaqohFilter },
-        select: { id: true, halaqohCode: true },
-      });
-      for (const h of matchingHalaqohs) {
-        if (h.id) allowedUnitIds.add(h.id);
-        if (h.halaqohCode) allowedUnitIds.add(h.halaqohCode);
+        if (isSameDay && input.jenis === JenisIzin.KELUAR_KOMPLEK && !usesVehicle && !isMenginap) {
+          initialStatus = StatusIzin.DISETUJUI;
+        } else {
+          initialStatus = StatusIzin.MENUNGGU_MK;
+        }
+        submissionRole = "MUDABBIR";
+      } else {
+        initialStatus = StatusIzin.DISETUJUI;
+        submissionRole = session.role;
       }
-    }
-
-    // Verify all target santri belong to the Mudabbir's allowed scope
-    const targetSantriList = await prisma.santri.findMany({
-      where: { id: { in: targetSantriIds } },
-      select: {
-        id: true,
-        nama: true,
-        halaqohId: true,
-        halaqoh: { select: { id: true, halaqohCode: true } },
-        kamarPlacements: { select: { kamarId: true } },
-      },
-    });
-
-    if (targetSantriList.length !== targetSantriIds.length) {
-      return {
-        success: false,
-        message: "Akses Ditolak: Satu atau lebih santri tidak ditemukan.",
-      };
-    }
-
-    for (const s of targetSantriList) {
-      const inScope =
-        (s.halaqohId && allowedUnitIds.has(s.halaqohId)) ||
-        (s.halaqoh?.id && allowedUnitIds.has(s.halaqoh.id)) ||
-        (s.halaqoh?.halaqohCode && allowedUnitIds.has(s.halaqoh.halaqohCode)) ||
-        s.kamarPlacements.some((kp) => allowedUnitIds.has(kp.kamarId));
-
-      if (!inScope) {
+    } else if (session.role === "MK" || session.role === "KS") {
+      // Direct Musyrif Keasramaan / Mudir role operational input
+      initialStatus = StatusIzin.DISETUJUI;
+      submissionRole = session.role;
+    } else {
+      // Fail closed with explicit semantic reason
+      if (canonicalDeniedCode === "SCOPE_MISMATCH") {
         return {
           success: false,
-          message: `Akses Ditolak: Santri ${s.nama} berada di luar cakupan binaan Anda.`,
+          message: "Akses Ditolak: santri berada di luar cakupan binaan (SCOPE_MISMATCH).",
         };
       }
+      if (canonicalDeniedCode === "CAPABILITY_NOT_GRANTED") {
+        return {
+          success: false,
+          message: `Akses Ditolak: ${canonicalDeniedReason}`,
+        };
+      }
+      if (session.role === "OSDA") {
+        return {
+          success: false,
+          message: "Akses Ditolak: Akun generic OSDA tidak memiliki kewenangan perizinan santri. Mudabbir bukan OSDA.",
+        };
+      }
+      if (session.role === "ADM") {
+        return {
+          success: false,
+          message: "Akses Ditolak: Role ADM tidak memiliki kewenangan operasional pencatatan izin santri secara otomatis. Hanya Musyrif atau Mudabbir yang berwenang.",
+        };
+      }
+      if (session.role === "WS") {
+        return {
+          success: false,
+          message: "Akses Ditolak: Wali Santri tidak berwenang mengajukan izin mandiri tanpa persetujuan santri/musyrif.",
+        };
+      }
+      return {
+        success: false,
+        message: `Akses ditolak: Role ${session.role} tidak memiliki kewenangan mengajukan perizinan santri.`,
+      };
     }
-
-    // Same-day exit WITHOUT vehicle: -> DISETUJUI
-    // Pulang: -> MENUNGGU_MK
-    // Menginap: -> MENUNGGU_MK
-    // Any permit USING VEHICLE: -> MENUNGGU_MK (Vehicle rule overrides same-day auto-approval)
-    // Business day = WITA calendar day ONLY (remove UTC-date OR condition)
-    const d1 = new Date(input.tanggalMulai);
-    const d2 = new Date(input.tanggalSelesai);
-    const isSameDay = getWitaDateString(d1) === getWitaDateString(d2);
-
-    // Explicit structured vehicle input only: usesVehicle: boolean (no text heuristics, no aliases)
-    const usesVehicle = Boolean(input.usesVehicle);
-
-    const isMultiDay = !isSameDay;
-    const isMenginap = Boolean(input.menginap || input.isMenginap || isMultiDay || input.jenis === JenisIzin.PULANG);
-
-    if (isSameDay && input.jenis === JenisIzin.KELUAR_KOMPLEK && !usesVehicle && !isMenginap) {
-      initialStatus = StatusIzin.DISETUJUI;
-    } else {
-      initialStatus = StatusIzin.MENUNGGU_MK;
-    }
-    submissionRole = "MUDABBIR";
-  } else if (session.role === "MK" || session.role === "KS") {
-    // Musyrif operasional input (individual atau batch langsung disetujui)
-    initialStatus = StatusIzin.DISETUJUI;
-    submissionRole = session.role;
-  } else if (session.role === "OSDA") {
-    return {
-      success: false,
-      message: "Akses Ditolak: Akun generic OSDA tidak memiliki kewenangan perizinan santri. Mudabbir bukan OSDA.",
-    };
-  } else if (session.role === "ADM") {
-    return {
-      success: false,
-      message: "Akses Ditolak: Role ADM tidak memiliki kewenangan operasional pencatatan izin santri secara otomatis. Hanya Musyrif atau Mudabbir yang berwenang.",
-    };
-  } else if (session.role === "WS") {
-    return {
-      success: false,
-      message: "Akses Ditolak: Wali Santri tidak berwenang mengajukan izin mandiri tanpa persetujuan santri/musyrif.",
-    };
-  } else {
-    return {
-      success: false,
-      message: `Akses ditolak: Role ${session.role} tidak memiliki kewenangan mengajukan perizinan santri.`,
-    };
   }
 
   try {
@@ -268,6 +234,14 @@ export async function ajukanIzinAction(input: AjukanIzinData) {
           initialStatus,
           diajukanOleh: session.username,
           diajukanOlehRole: submissionRole,
+          canonicalAuthorization: targetAuthorization.has(sId)
+            ? {
+                assignmentId: targetAuthorization.get(sId)?.assignmentId,
+                positionCode: targetAuthorization.get(sId)?.positionCode,
+                capabilityCode: targetAuthorization.get(sId)?.capabilityCode,
+                scopeType: targetAuthorization.get(sId)?.scopeType,
+              }
+            : undefined,
         },
       });
 

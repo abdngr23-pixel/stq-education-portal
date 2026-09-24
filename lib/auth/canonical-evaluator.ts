@@ -31,6 +31,7 @@ import {
   UnitAccountExecutorContext,
   GenderComplex,
   OrgDomain,
+  CanonicalOperationalUnitContext,
   POSITION_ACCOUNT_MODALITY_CONTRACT,
 } from "@/types/architecture-lock";
 import { UserSession } from "@/types/auth";
@@ -101,6 +102,7 @@ export interface CanonicalAssignmentWithDetails {
   unitCode: string;
   unitName: string;
   unitGenderComplex?: GenderComplex;
+  unitContext?: CanonicalOperationalUnitContext;
   status: AssignmentStatus;
   validFrom: Date;
   validUntil: Date | null;
@@ -113,6 +115,7 @@ export interface CanonicalAssignmentWithDetails {
   scopeUnits: Array<{
     unitId: string;
     unitCode?: string;
+    unitContext?: CanonicalOperationalUnitContext;
   }>;
 }
 
@@ -122,7 +125,9 @@ export interface CanonicalAssignmentWithDetails {
 export interface ICanonicalDataProvider {
   getIdentity(userId: string): Promise<CanonicalIdentity | null>;
   getActiveAssignments(userId: string, now: Date): Promise<CanonicalAssignmentWithDetails[]>;
-  getUnitAccountPlacement(userId: string): Promise<{ unitId: string; count?: number } | null>;
+  getUnitAccountPlacement(userId: string): Promise<(
+    { unitId: string; count?: number } & Partial<Omit<CanonicalOperationalUnitContext, "unitId">>
+  ) | null>;
   verifyHumanExecutor(executorId: string): Promise<CanonicalExecutorIdentity | null>;
   resolveResourceContext(requested: RequestedResourceContext, subjectUserId?: string, capability?: string): Promise<ResolvedResourceContext | null>;
 }
@@ -267,6 +272,14 @@ export async function authorizeCanonical(
           };
         }
         placementUnitId = placement.unitId;
+        if (placement.isActive === false) {
+          return {
+            decision: "DENY",
+            code: "SYSTEM_FAIL_CLOSED",
+            reasonCode: "UNIT_PLACEMENT_INACTIVE",
+            reason: "Unit account placement resolves to an inactive OrgUnit.",
+          };
+        }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         return {
@@ -453,6 +466,8 @@ export async function authorizeCanonical(
   }> = [];
 
   let profileRejection: { code: AuthorizationResultCode; reasonCode: string; reason: string } | null = null;
+  let capabilityConfiguredOnPosition = false;
+  let unverifiedState: string | null = null;
 
   for (const a of activeAssignments) {
     // UNIT placement invariant: assignment must match placementUnitId
@@ -462,10 +477,12 @@ export async function authorizeCanonical(
 
     for (const pc of a.positionCapabilities) {
       if (pc.capabilityCode === params.capability) {
+        capabilityConfiguredOnPosition = true;
         // Enforce Activation Triple:
         // Must be strictly VERIFIED_PRODUCTION (never PROPOSED_TBD or APPROVED_TARGET_PENDING_TECHNICAL)
         // APPROVED_TARGET_PENDING_TECHNICAL confers zero runtime authority before formal cutover
         if (pc.businessRuleState !== "VERIFIED_PRODUCTION") {
+          unverifiedState = pc.businessRuleState;
           continue;
         }
 
@@ -561,8 +578,16 @@ export async function authorizeCanonical(
             anchorUnitId: a.unitId,
             unitIds: a.scopeUnits.map((su) => su.unitId),
             businessRuleState: pc.businessRuleState,
-            ...(a.unitGenderComplex ? { genderComplex: a.unitGenderComplex } : {}),
-            ...(a.domain ? { orgDomain: a.domain as OrgDomain } : {}),
+            ...(a.unitContext ? { anchorUnit: a.unitContext } : {}),
+            scopeUnits: a.scopeUnits
+              .map((su) => su.unitContext)
+              .filter((unit): unit is CanonicalOperationalUnitContext => Boolean(unit)),
+            ...(a.unitContext?.genderComplex || a.unitGenderComplex
+              ? { genderComplex: a.unitContext?.genderComplex || a.unitGenderComplex }
+              : {}),
+            ...(a.unitContext?.domain || a.domain
+              ? { orgDomain: (a.unitContext?.domain || a.domain) as OrgDomain }
+              : {}),
           } as EffectiveCapabilityGrant,
         });
       }
@@ -578,11 +603,38 @@ export async function authorizeCanonical(
         reason: profileRejection.reason,
       };
     }
+    if (capabilityConfiguredOnPosition && unverifiedState) {
+      return {
+        decision: "DENY",
+        code: "CAPABILITY_NOT_GRANTED",
+        reasonCode: "CAPABILITY_NOT_GRANTED",
+        reason: `Kapabilitas '${params.capability}' berstatus '${unverifiedState}' (harus VERIFIED_PRODUCTION).`,
+      };
+    }
     return {
       decision: "DENY",
       code: "CAPABILITY_NOT_GRANTED",
       reasonCode: "CAPABILITY_NOT_GRANTED",
-      reason: `Capability '${params.capability}' is not granted to user with VERIFIED_PRODUCTION status.`,
+      reason: `Pengguna tidak memiliki kapabilitas '${params.capability}'.`,
+    };
+  }
+
+  // If no resource context was provided and not a mutation, verify candidate capability grants
+  if (!params.resourceContext && !params.resolvedContext && !params.isMutation) {
+    const firstGrant = candidateGrants[0];
+    return {
+      decision: "ALLOW",
+      code: "ALLOWED",
+      reasonCode: "ALLOWED",
+      reason: `Access authorized via assignment ${firstGrant.assignment.id} (${firstGrant.assignment.positionCode}) with capability '${params.capability}'.`,
+      assignmentId: firstGrant.assignment.id,
+      positionId: firstGrant.assignment.positionId,
+      positionCode: firstGrant.assignment.positionCode,
+      capabilityCode: firstGrant.grant.capabilityCode,
+      scopeType: firstGrant.grant.scopeType,
+      evaluatedUnitIds: firstGrant.grant.unitIds,
+      grantUsed: firstGrant.grant,
+      verifiedExecutor,
     };
   }
 
@@ -666,6 +718,41 @@ export async function authorizeCanonical(
  * Creates an authoritative Prisma-backed ICanonicalDataProvider instance.
  */
 export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataProvider {
+  async function resolveOperationalUnitContext(unitId: string): Promise<CanonicalOperationalUnitContext | null> {
+    const unit = await prisma.orgUnit.findUnique({ where: { id: unitId } });
+    if (!unit) return null;
+
+    const ancestorUnitIds: string[] = [];
+    const visited = new Set<string>([unit.id]);
+    let parentId = unit.parentId;
+    while (parentId) {
+      if (visited.has(parentId)) {
+        throw new Error(`OrgUnit hierarchy cycle detected at ${parentId}.`);
+      }
+      visited.add(parentId);
+      ancestorUnitIds.push(parentId);
+      const parent = await prisma.orgUnit.findUnique({
+        where: { id: parentId },
+        select: { id: true, parentId: true },
+      });
+      if (!parent) {
+        throw new Error(`OrgUnit ${unit.id} has missing canonical ancestor ${parentId}.`);
+      }
+      parentId = parent.parentId;
+    }
+
+    return {
+      unitId: unit.id,
+      unitCode: unit.code,
+      unitType: unit.type,
+      domain: unit.domain,
+      genderComplex: unit.genderComplex,
+      parentId: unit.parentId,
+      ancestorUnitIds,
+      isActive: unit.isActive,
+    };
+  }
+
   return {
     async getIdentity(userId: string): Promise<CanonicalIdentity | null> {
       const user = await prisma.user.findUnique({
@@ -721,39 +808,60 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
         },
       });
 
-      return assignments.map((a) => ({
-        id: a.id,
-        userId: a.userId,
-        positionId: a.positionId,
-        positionCode: a.position.code,
-        positionName: a.position.name,
-        domain: a.position.domain,
-        unitId: a.unitId,
-        unitCode: a.unit.code,
-        unitName: a.unit.name,
-        unitGenderComplex: a.unit.genderComplex,
-        status: a.status,
-        validFrom: a.validFrom,
-        validUntil: a.validUntil,
-        requiresPersonalAccount: a.position.requiresPersonalAccount,
-        positionCapabilities: a.position.capabilities.map((pc) => ({
-          capabilityCode: pc.capabilityCode,
-          scopeType: pc.scopeType,
-          businessRuleState: pc.businessRuleState,
-        })),
-        scopeUnits: a.scopedUnits.map((su) => ({
-          unitId: su.unitId,
-          unitCode: su.unit.code,
-        })),
+      return Promise.all(assignments.map(async (a) => {
+        const unitContext = await resolveOperationalUnitContext(a.unitId);
+        if (!unitContext) {
+          throw new Error(`Assignment ${a.id} references missing OrgUnit ${a.unitId}.`);
+        }
+        const scopeUnitContexts = await Promise.all(
+          a.scopedUnits.map(async (su) => {
+            const context = await resolveOperationalUnitContext(su.unitId);
+            if (!context) {
+              throw new Error(`AssignmentScopeUnit references missing OrgUnit ${su.unitId}.`);
+            }
+            return context;
+          })
+        );
+        return {
+          id: a.id,
+          userId: a.userId,
+          positionId: a.positionId,
+          positionCode: a.position.code,
+          positionName: a.position.name,
+          domain: a.position.domain,
+          unitId: a.unitId,
+          unitCode: a.unit.code,
+          unitName: a.unit.name,
+          unitGenderComplex: a.unit.genderComplex,
+          unitContext,
+          status: a.status,
+          validFrom: a.validFrom,
+          validUntil: a.validUntil,
+          requiresPersonalAccount: a.position.requiresPersonalAccount,
+          positionCapabilities: a.position.capabilities.map((pc) => ({
+            capabilityCode: pc.capabilityCode,
+            scopeType: pc.scopeType,
+            businessRuleState: pc.businessRuleState,
+          })),
+          scopeUnits: a.scopedUnits.map((su, index) => ({
+            unitId: su.unitId,
+            unitCode: su.unit.code,
+            unitContext: scopeUnitContexts[index],
+          })),
+        };
       }));
     },
 
-    async getUnitAccountPlacement(userId: string): Promise<{ unitId: string; count?: number } | null> {
+    async getUnitAccountPlacement(userId: string): Promise<(CanonicalOperationalUnitContext & { count?: number }) | null> {
       const placements = await prisma.unitAccountPlacement.findMany({
         where: { userId },
       });
       if (placements.length === 0) return null;
-      return { unitId: placements[0].unitId, count: placements.length };
+      const context = await resolveOperationalUnitContext(placements[0].unitId);
+      if (!context) {
+        throw new Error(`UnitAccountPlacement references missing OrgUnit ${placements[0].unitId}.`);
+      }
+      return { ...context, count: placements.length };
     },
 
     async verifyHumanExecutor(executorId: string): Promise<CanonicalExecutorIdentity | null> {
@@ -1054,10 +1162,19 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
           }
         }
 
-        const isAcademicContext = orgDomain === "AKADEMIK" || Boolean(requested.educationSessionId);
+        const capLower = (capability || "").toLowerCase();
+        const isKeasramaanContext =
+          orgDomain === "KEASRAMAAN" ||
+          capLower.startsWith("keasramaan.") ||
+          capLower.startsWith("kamar.") ||
+          capLower.startsWith("health.");
+        const isAcademicContext =
+          orgDomain === "AKADEMIK" ||
+          Boolean(requested.educationSessionId) ||
+          capLower.startsWith("academic.");
 
-        // Cross-domain scope containment: Do NOT turn Tahfizh halaqoh into authorization scope for academic capabilities
-        if (!isAcademicContext) {
+        // Cross-domain scope containment: Do NOT turn Tahfizh halaqoh into authorization scope for Keasramaan or Academic capabilities
+        if (!isAcademicContext && !isKeasramaanContext) {
           halaqohId = targetSantri.halaqohId || undefined;
           if (targetSantri.halaqohId) {
             orgUnitIds.push(targetSantri.halaqohId);
@@ -1087,17 +1204,43 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
 
         // Authoritative Kamar Placement Hydration
         // Invariant: Caller-supplied requested.kamarId is strictly ignored and MUST NEVER override actual placement.
-        // Invariant: Academic context does NOT borrow Keasramaan kamar into academic scope.
         if (prisma.santriKamarPlacement && !isAcademicContext) {
-          const activePlacement = await prisma.santriKamarPlacement.findFirst({
-            where: {
-              santriId: targetSantri.id,
-              isActive: true,
-            },
-            include: {
-              kamar: true,
-            },
-          });
+          let activePlacement: {
+            kamar?: {
+              id: string;
+              code?: string | null;
+              type: string;
+              domain: string;
+              isActive: boolean;
+              genderComplex?: string | null;
+            } | null;
+          } | null = null;
+          if (typeof prisma.santriKamarPlacement.findMany === "function") {
+            const activePlacements = await prisma.santriKamarPlacement.findMany({
+              where: {
+                santriId: targetSantri.id,
+                isActive: true,
+              },
+              include: {
+                kamar: true,
+              },
+            });
+
+            if (activePlacements.length > 1) {
+              return null;
+            }
+            activePlacement = activePlacements[0];
+          } else if (typeof prisma.santriKamarPlacement.findFirst === "function") {
+            activePlacement = await prisma.santriKamarPlacement.findFirst({
+              where: {
+                santriId: targetSantri.id,
+                isActive: true,
+              },
+              include: {
+                kamar: true,
+              },
+            });
+          }
 
           if (activePlacement && activePlacement.kamar) {
             const kamar = activePlacement.kamar;

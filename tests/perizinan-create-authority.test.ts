@@ -36,7 +36,7 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
         id: "pos-pzn-pembina-halaqoh",
         code: "PEMBINA_HALAQOH",
         name: "Pembina Halaqoh / Mudhabbir",
-        domain: "TAHFIZH",
+        domain: "KEASRAMAAN",
       },
     });
 
@@ -72,24 +72,26 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
       },
     });
 
-    // 2. OrgUnits for Scope
+    // 2. OrgUnits for Scope (Authoritative KAMAR in KEASRAMAAN domain)
     await prisma.orgUnit.createMany({
       data: [
         {
           id: "ou-pzn-hlq-01",
           code: "OU-PZN-HLQ-01",
-          name: "Halaqoh Mudabbir",
-          type: "HALAQOH",
-          domain: "TAHFIZH",
+          name: "Kamar Mudabbir 01",
+          type: "KAMAR",
+          domain: "KEASRAMAAN",
           genderComplex: "PUTRA",
+          isActive: true,
         },
         {
           id: "ou-pzn-hlq-02",
           code: "OU-PZN-HLQ-02",
-          name: "Halaqoh Lain",
-          type: "HALAQOH",
-          domain: "TAHFIZH",
+          name: "Kamar Lain 02",
+          type: "KAMAR",
+          domain: "KEASRAMAAN",
           genderComplex: "PUTRA",
+          isActive: true,
         },
       ],
     });
@@ -176,6 +178,33 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
       ],
     });
 
+    // 5b. Authoritative Santri Kamar Placements
+    await prisma.santriKamarPlacement.createMany({
+      data: [
+        {
+          id: "skp-pzn-01",
+          santriId: SANTRI_1,
+          kamarId: "ou-pzn-hlq-01",
+          isActive: true,
+          startDate: new Date(),
+        },
+        {
+          id: "skp-pzn-02",
+          santriId: SANTRI_2,
+          kamarId: "ou-pzn-hlq-01",
+          isActive: true,
+          startDate: new Date(),
+        },
+        {
+          id: "skp-pzn-03",
+          santriId: SANTRI_3,
+          kamarId: "ou-pzn-hlq-02",
+          isActive: true,
+          startDate: new Date(),
+        },
+      ],
+    });
+
     // 6. User records
     await prisma.user.createMany({
       data: [
@@ -183,6 +212,7 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
           id: "usr-pzn-ks",
           username: "mudir.stq",
           role: "KS",
+          accountType: "PERSONAL",
           staffId: STAFF_KS,
           passwordHash: "dummy-hash",
         },
@@ -190,6 +220,7 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
           id: "usr-pzn-mk",
           username: "musyrif.keasramaan",
           role: "MK",
+          accountType: "PERSONAL",
           staffId: STAFF_MK,
           passwordHash: "dummy-hash",
         },
@@ -197,18 +228,21 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
           id: "usr-pzn-adm",
           username: "admin.portal",
           role: "ADM",
+          accountType: "PERSONAL",
           passwordHash: "dummy-hash",
         },
         {
           id: "usr-pzn-osda",
           username: "mudabbir.osda",
           role: "OSDA",
+          accountType: "UNIT",
           passwordHash: "dummy-hash",
         },
         {
           id: "usr-pzn-st",
           username: "santri.uji",
           role: "ST",
+          accountType: "PERSONAL",
           santriId: SANTRI_1,
           passwordHash: "dummy-hash",
         },
@@ -216,6 +250,7 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
           id: "usr-pzn-ws",
           username: "wali.uji",
           role: "WS",
+          accountType: "PERSONAL",
           santriId: null,
           passwordHash: "dummy-hash",
         },
@@ -223,6 +258,7 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
           id: "usr-pzn-mudabbir",
           username: "mudabbir.kamar",
           role: "PH",
+          accountType: "PERSONAL",
           staffId: STAFF_MUDABBIR,
           passwordHash: "dummy-hash",
         },
@@ -230,6 +266,7 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
           id: "usr-pzn-no-asg",
           username: "noasg.mudabbir",
           role: "PH",
+          accountType: "PERSONAL",
           passwordHash: "dummy-hash",
         },
       ],

@@ -34,14 +34,42 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
     it("1.1. VERIFIED_PRODUCTION grants runtime capability ALLOW", async () => {
       const savedUserFindUnique = prismaModule.user.findUnique;
       const savedAssignmentFindMany = prismaModule.assignment.findMany;
+      const savedOrgUnitFindUnique = prismaModule.orgUnit?.findUnique;
 
       try {
-        prismaModule.user.findUnique = async () => ({ id: "usr-mudabbir-verified", status: "AKTIF" });
+        prismaModule.user.findUnique = async () => ({
+          id: "usr-mudabbir-verified",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-1",
+          staff: { id: "stf-1", nama: "Ust Mudabbir", status: "AKTIF" },
+        });
+        prismaModule.orgUnit = prismaModule.orgUnit || {};
+        prismaModule.orgUnit.findUnique = async () => ({
+          id: "ou-kmr-1",
+          code: "KMR-1",
+          name: "Kamar 1",
+          type: "KAMAR",
+          domain: "KEASRAMAAN",
+          genderComplex: "PUTRA",
+          isActive: true,
+          parentId: null,
+        });
         prismaModule.assignment.findMany = async () => [
           {
             id: "asg-mudabbir-1",
+            userId: "usr-mudabbir-verified",
             positionId: "pos-pembina",
+            status: "ACTIVE",
+            validFrom: new Date(0),
+            validUntil: null,
+            unitId: "ou-kmr-1",
             position: {
+              id: "pos-pembina",
+              code: "PEMBINA_HALAQOH",
+              name: "Pembina Halaqoh",
+              domain: "KEASRAMAAN",
+              requiresPersonalAccount: true,
               capabilities: [
                 {
                   capabilityCode: "keasramaan.permission.create",
@@ -50,6 +78,16 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
                 },
               ],
             },
+            unit: {
+              id: "ou-kmr-1",
+              code: "KMR-1",
+              name: "Kamar 1",
+              type: "KAMAR",
+              domain: "KEASRAMAAN",
+              genderComplex: "PUTRA",
+              isActive: true,
+            },
+            scopedUnits: [],
           },
         ];
 
@@ -60,20 +98,51 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
       } finally {
         prismaModule.user.findUnique = savedUserFindUnique;
         prismaModule.assignment.findMany = savedAssignmentFindMany;
+        if (savedOrgUnitFindUnique) {
+          prismaModule.orgUnit.findUnique = savedOrgUnitFindUnique;
+        }
       }
     });
 
     it("1.2. APPROVED_TARGET_PENDING_TECHNICAL is strictly DENIED (Zero runtime authority)", async () => {
       const savedUserFindUnique = prismaModule.user.findUnique;
       const savedAssignmentFindMany = prismaModule.assignment.findMany;
+      const savedOrgUnitFindUnique = prismaModule.orgUnit?.findUnique;
 
       try {
-        prismaModule.user.findUnique = async () => ({ id: "usr-mudabbir-pending", status: "AKTIF" });
+        prismaModule.user.findUnique = async () => ({
+          id: "usr-mudabbir-pending",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-1",
+          staff: { id: "stf-1", nama: "Ust Mudabbir", status: "AKTIF" },
+        });
+        prismaModule.orgUnit = prismaModule.orgUnit || {};
+        prismaModule.orgUnit.findUnique = async () => ({
+          id: "ou-kmr-1",
+          code: "KMR-1",
+          name: "Kamar 1",
+          type: "KAMAR",
+          domain: "KEASRAMAAN",
+          genderComplex: "PUTRA",
+          isActive: true,
+          parentId: null,
+        });
         prismaModule.assignment.findMany = async () => [
           {
             id: "asg-mudabbir-pending",
+            userId: "usr-mudabbir-pending",
             positionId: "pos-pembina",
+            status: "ACTIVE",
+            validFrom: new Date(0),
+            validUntil: null,
+            unitId: "ou-kmr-1",
             position: {
+              id: "pos-pembina",
+              code: "PEMBINA_HALAQOH",
+              name: "Pembina Halaqoh",
+              domain: "KEASRAMAAN",
+              requiresPersonalAccount: true,
               capabilities: [
                 {
                   capabilityCode: "keasramaan.permission.create",
@@ -82,6 +151,16 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
                 },
               ],
             },
+            unit: {
+              id: "ou-kmr-1",
+              code: "KMR-1",
+              name: "Kamar 1",
+              type: "KAMAR",
+              domain: "KEASRAMAAN",
+              genderComplex: "PUTRA",
+              isActive: true,
+            },
+            scopedUnits: [],
           },
         ];
 
@@ -91,20 +170,51 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
       } finally {
         prismaModule.user.findUnique = savedUserFindUnique;
         prismaModule.assignment.findMany = savedAssignmentFindMany;
+        if (savedOrgUnitFindUnique) {
+          prismaModule.orgUnit.findUnique = savedOrgUnitFindUnique;
+        }
       }
     });
 
     it("1.3. PROPOSED_TBD is strictly DENIED (Zero runtime authority)", async () => {
       const savedUserFindUnique = prismaModule.user.findUnique;
       const savedAssignmentFindMany = prismaModule.assignment.findMany;
+      const savedOrgUnitFindUnique = prismaModule.orgUnit?.findUnique;
 
       try {
-        prismaModule.user.findUnique = async () => ({ id: "usr-mudabbir-tbd", status: "AKTIF" });
+        prismaModule.user.findUnique = async () => ({
+          id: "usr-mudabbir-tbd",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-1",
+          staff: { id: "stf-1", nama: "Ust Mudabbir", status: "AKTIF" },
+        });
+        prismaModule.orgUnit = prismaModule.orgUnit || {};
+        prismaModule.orgUnit.findUnique = async () => ({
+          id: "ou-kmr-1",
+          code: "KMR-1",
+          name: "Kamar 1",
+          type: "KAMAR",
+          domain: "KEASRAMAAN",
+          genderComplex: "PUTRA",
+          isActive: true,
+          parentId: null,
+        });
         prismaModule.assignment.findMany = async () => [
           {
             id: "asg-mudabbir-tbd",
+            userId: "usr-mudabbir-tbd",
             positionId: "pos-pembina",
+            status: "ACTIVE",
+            validFrom: new Date(0),
+            validUntil: null,
+            unitId: "ou-kmr-1",
             position: {
+              id: "pos-pembina",
+              code: "PEMBINA_HALAQOH",
+              name: "Pembina Halaqoh",
+              domain: "KEASRAMAAN",
+              requiresPersonalAccount: true,
               capabilities: [
                 {
                   capabilityCode: "keasramaan.permission.create",
@@ -113,6 +223,16 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
                 },
               ],
             },
+            unit: {
+              id: "ou-kmr-1",
+              code: "KMR-1",
+              name: "Kamar 1",
+              type: "KAMAR",
+              domain: "KEASRAMAAN",
+              genderComplex: "PUTRA",
+              isActive: true,
+            },
+            scopedUnits: [],
           },
         ];
 
@@ -122,6 +242,9 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
       } finally {
         prismaModule.user.findUnique = savedUserFindUnique;
         prismaModule.assignment.findMany = savedAssignmentFindMany;
+        if (savedOrgUnitFindUnique) {
+          prismaModule.orgUnit.findUnique = savedOrgUnitFindUnique;
+        }
       }
     });
   });

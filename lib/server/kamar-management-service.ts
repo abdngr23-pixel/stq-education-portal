@@ -22,6 +22,7 @@ import type { PrismaClient } from "@prisma/client";
 import {
   authorizeCanonical,
   createPrismaDataProvider,
+  CanonicalAuthorizationDecision,
   CanonicalIdentity,
   ICanonicalDataProvider,
 } from "@/lib/auth/canonical-evaluator";
@@ -29,6 +30,8 @@ import { UserSession } from "@/types/auth";
 import {
   GenderComplex,
   KEASRAMAAN_KAMAR_CAPABILITIES,
+  KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY,
+  ScopeType,
   UnitAccountExecutorContext,
 } from "@/types/architecture-lock";
 
@@ -97,6 +100,24 @@ export interface InspectKamarParams {
   dataProvider?: ICanonicalDataProvider;
 }
 
+type KamarManageAuthorizationResult =
+  | {
+      allowed: false;
+      code: string;
+      reason: string;
+      auth: CanonicalAuthorizationDecision;
+    }
+  | {
+      allowed: true;
+      auth: CanonicalAuthorizationDecision;
+      provenance: {
+        assignmentId: string;
+        positionCode: string;
+        capabilityCode: string;
+        scopeType: ScopeType;
+      };
+    };
+
 /**
  * Validates canonical authority for kamar management.
  * Strictly restricted to KEPALA_KEASRAMAAN with valid keasramaan.kamar.manage grant.
@@ -105,14 +126,22 @@ async function authorizeKamarManage(
   callerIdentity: CanonicalIdentity | UserSession,
   executorContext: UnitAccountExecutorContext | undefined,
   kamarId: string | undefined,
-  dataProvider: ICanonicalDataProvider
-) {
+  dataProvider: ICanonicalDataProvider,
+  isMutation = true
+): Promise<KamarManageAuthorizationResult> {
   const auth = await authorizeCanonical({
     identity: callerIdentity,
     capability: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
     executorContext,
-    isMutation: true,
+    isMutation,
     resourceContext: kamarId ? { kamarId } : undefined,
+    resolvedContext: kamarId
+      ? undefined
+      : {
+          orgUnitIds: [],
+          orgDomain: KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.domain,
+          genderComplex: "TIDAK_TERIKAT",
+        },
     dataProvider,
   });
 
@@ -120,16 +149,34 @@ async function authorizeKamarManage(
     return {
       allowed: false,
       code: auth.code,
-      reason: auth.reason,
+      reason: auth.reason || "Canonical Kamar authorization denied.",
       auth,
     };
   }
 
-  if (auth.positionCode !== "KEPALA_KEASRAMAAN") {
+  if (
+    !auth.assignmentId ||
+    !auth.positionCode ||
+    !auth.capabilityCode ||
+    !auth.scopeType
+  ) {
+    return {
+      allowed: false,
+      code: "SYSTEM_FAIL_CLOSED",
+      reason: "Canonical Kamar authorization returned incomplete audit provenance.",
+      auth,
+    };
+  }
+
+  if (
+    auth.positionCode !== KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.positionCode ||
+    auth.capabilityCode !== KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.capabilityCode ||
+    (auth.scopeType !== "DOMAIN" && auth.scopeType !== "GLOBAL")
+  ) {
     return {
       allowed: false,
       code: "CAPABILITY_NOT_GRANTED",
-      reason: `Only KEPALA_KEASRAMAAN is authorized to manage Kamar topology (attempted by: ${auth.positionCode || "UNKNOWN"}).`,
+      reason: `Only KEPALA_KEASRAMAAN is authorized to manage Kamar configuration (requires ${KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.positionCode} + ${KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.capabilityCode} @ DOMAIN or GLOBAL scope).`,
       auth,
     };
   }
@@ -137,6 +184,12 @@ async function authorizeKamarManage(
   return {
     allowed: true,
     auth,
+    provenance: {
+      assignmentId: auth.assignmentId,
+      positionCode: auth.positionCode,
+      capabilityCode: auth.capabilityCode,
+      scopeType: auth.scopeType as ScopeType,
+    },
   };
 }
 
@@ -201,10 +254,10 @@ export async function createKamar(params: CreateKamarParams): Promise<KamarOpera
           action: "KAMAR_CREATE",
           entity: "OrgUnit",
           entityId: kamar.id,
-          capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-          assignmentId: authCheck.auth.assignmentId,
-          positionCode: authCheck.auth.positionCode || "KEPALA_KEASRAMAAN",
-          scopeType: authCheck.auth.scopeType,
+          capabilityCode: authCheck.provenance.capabilityCode,
+          assignmentId: authCheck.provenance.assignmentId,
+          positionCode: authCheck.provenance.positionCode,
+          scopeType: authCheck.provenance.scopeType,
           unitId: kamar.id,
           afterState: JSON.parse(JSON.stringify(kamar)),
         },
@@ -249,7 +302,7 @@ export async function renameKamar(params: RenameKamarParams): Promise<KamarOpera
   try {
     return await prisma.$transaction(async (tx) => {
       const kamar = await tx.orgUnit.findUnique({ where: { id: params.kamarId } });
-      if (!kamar || kamar.type !== "KAMAR" || kamar.domain !== "KEASRAMAAN") {
+      if (!kamar || kamar.type !== "KAMAR" || kamar.domain !== "KEASRAMAAN" || !kamar.isActive) {
         throw new Error(`Authoritative KEASRAMAAN KAMAR with ID ${params.kamarId} not found.`);
       }
 
@@ -272,10 +325,10 @@ export async function renameKamar(params: RenameKamarParams): Promise<KamarOpera
           action: "KAMAR_RENAME",
           entity: "OrgUnit",
           entityId: kamar.id,
-          capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-          assignmentId: authCheck.auth.assignmentId,
-          positionCode: authCheck.auth.positionCode || "KEPALA_KEASRAMAAN",
-          scopeType: authCheck.auth.scopeType,
+          capabilityCode: authCheck.provenance.capabilityCode,
+          assignmentId: authCheck.provenance.assignmentId,
+          positionCode: authCheck.provenance.positionCode,
+          scopeType: authCheck.provenance.scopeType,
           unitId: kamar.id,
           beforeState,
           afterState,
@@ -397,10 +450,10 @@ export async function assignMudhabbir(params: AssignMudhabbirParams): Promise<Ka
           action: "MUDHABBIR_ASSIGN",
           entity: "Assignment",
           entityId: newAssignment.id,
-          capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-          assignmentId: authCheck.auth.assignmentId,
-          positionCode: authCheck.auth.positionCode || "KEPALA_KEASRAMAAN",
-          scopeType: authCheck.auth.scopeType,
+          capabilityCode: authCheck.provenance.capabilityCode,
+          assignmentId: authCheck.provenance.assignmentId,
+          positionCode: authCheck.provenance.positionCode,
+          scopeType: authCheck.provenance.scopeType,
           unitId: kamar.id,
           beforeState: previousAssignments.length > 0 ? JSON.parse(JSON.stringify(previousAssignments)) : null,
           afterState: JSON.parse(JSON.stringify(newAssignment)),
@@ -523,10 +576,10 @@ export async function assignSantri(params: AssignSantriParams): Promise<KamarOpe
           action: "SANTRI_KAMAR_ASSIGN",
           entity: "SantriKamarPlacement",
           entityId: kamar.id,
-          capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-          assignmentId: authCheck.auth.assignmentId,
-          positionCode: authCheck.auth.positionCode || "KEPALA_KEASRAMAAN",
-          scopeType: authCheck.auth.scopeType,
+          capabilityCode: authCheck.provenance.capabilityCode,
+          assignmentId: authCheck.provenance.assignmentId,
+          positionCode: authCheck.provenance.positionCode,
+          scopeType: authCheck.provenance.scopeType,
           unitId: kamar.id,
           afterState: JSON.parse(JSON.stringify(createdPlacements)),
         },
@@ -606,8 +659,29 @@ export async function moveSantri(params: MoveSantriParams): Promise<KamarOperati
       if (activePlacements.length > 0) {
         previousPlacement = activePlacements[0];
         if (previousPlacement.kamarId === targetKamar.id) {
+          await tx.canonicalAuditLog.create({
+            data: {
+              technicalAccountId: params.callerIdentity.userId,
+              technicalAccountUsername: params.callerIdentity.username,
+              humanExecutorId: authCheck.auth.verifiedExecutor?.userId || null,
+              humanExecutorName: authCheck.auth.verifiedExecutor?.name || null,
+              action: "SANTRI_KAMAR_MOVE_NO_CHANGE",
+              entity: "SantriKamarPlacement",
+              entityId: santri.id,
+              capabilityCode: authCheck.provenance.capabilityCode,
+              assignmentId: authCheck.provenance.assignmentId,
+              positionCode: authCheck.provenance.positionCode,
+              scopeType: authCheck.provenance.scopeType,
+              unitId: targetKamar.id,
+              beforeState: JSON.parse(JSON.stringify(previousPlacement)),
+              afterState: JSON.parse(JSON.stringify(previousPlacement)),
+              reason: "NO_CHANGE: Santri already has an active placement in target Kamar.",
+            },
+          });
           return {
             success: true,
+            code: "NO_CHANGE",
+            reason: "Santri already has an active placement in target Kamar; no move was performed.",
             data: previousPlacement,
           };
         }
@@ -643,10 +717,10 @@ export async function moveSantri(params: MoveSantriParams): Promise<KamarOperati
           action: "SANTRI_KAMAR_MOVE",
           entity: "SantriKamarPlacement",
           entityId: santri.id,
-          capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-          assignmentId: authCheck.auth.assignmentId,
-          positionCode: authCheck.auth.positionCode || "KEPALA_KEASRAMAAN",
-          scopeType: authCheck.auth.scopeType,
+          capabilityCode: authCheck.provenance.capabilityCode,
+          assignmentId: authCheck.provenance.assignmentId,
+          positionCode: authCheck.provenance.positionCode,
+          scopeType: authCheck.provenance.scopeType,
           unitId: targetKamar.id,
           beforeState: previousPlacement ? JSON.parse(JSON.stringify(previousPlacement)) : null,
           afterState: JSON.parse(JSON.stringify(newPlacement)),
@@ -678,15 +752,34 @@ export async function inspectKamarConfiguration(params: InspectKamarParams): Pro
   let auth = await authorizeCanonical({
     identity: params.callerIdentity,
     capability: KEASRAMAAN_KAMAR_CAPABILITIES.INSPECT,
+    resourceContext: params.kamarId ? { kamarId: params.kamarId } : undefined,
     dataProvider,
   });
 
-  if (auth.decision !== "ALLOW") {
-    auth = await authorizeCanonical({
-      identity: params.callerIdentity,
-      capability: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
+  if (params.kamarId && auth.decision !== "ALLOW") {
+    const manage = await authorizeKamarManage(
+      params.callerIdentity,
+      undefined,
+      params.kamarId,
       dataProvider,
-    });
+      false
+    );
+    if (!manage.allowed) {
+      return { success: false, code: manage.code, reason: manage.reason };
+    }
+    auth = manage.auth;
+  } else if (!params.kamarId) {
+    const manage = await authorizeKamarManage(
+      params.callerIdentity,
+      undefined,
+      undefined,
+      dataProvider,
+      false
+    );
+    if (!manage.allowed) {
+      return { success: false, code: manage.code, reason: manage.reason };
+    }
+    auth = manage.auth;
   }
 
   if (auth.decision !== "ALLOW") {
@@ -702,6 +795,7 @@ export async function inspectKamarConfiguration(params: InspectKamarParams): Pro
       where: {
         type: "KAMAR",
         domain: "KEASRAMAAN",
+        isActive: true,
         ...(params.kamarId ? { id: params.kamarId } : {}),
       },
       include: {

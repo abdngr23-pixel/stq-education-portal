@@ -16,6 +16,7 @@ import {
   CanonicalIdentity,
   CanonicalAssignmentWithDetails,
   ICanonicalDataProvider,
+  createPrismaDataProvider,
 } from "../lib/auth/canonical-evaluator";
 import {
   evaluateScopePredicate,
@@ -32,6 +33,7 @@ import {
   assignMudhabbir,
   assignSantri,
   moveSantri,
+  inspectKamarConfiguration,
 } from "../lib/server/kamar-management-service";
 import { checkPendidikanV2ProductionReadiness } from "../lib/server/pendidikan-v2-readiness";
 
@@ -408,7 +410,22 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
-            scopeUnits: [],
+            scopeUnits: [
+              {
+                unitId: "kamar-putri-1",
+                unitCode: "KMR-P1",
+                unitContext: {
+                  unitId: "kamar-putri-1",
+                  unitCode: "KMR-P1",
+                  unitType: "KAMAR",
+                  domain: "KEASRAMAAN",
+                  genderComplex: "PUTRI",
+                  parentId: "ou-osda-putri",
+                  ancestorUnitIds: ["ou-osda-putri"],
+                  isActive: true,
+                },
+              },
+            ],
           },
         ],
       },
@@ -484,7 +501,22 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
-            scopeUnits: [],
+            scopeUnits: [
+              {
+                unitId: "kamar-putri-1",
+                unitCode: "KMR-P1",
+                unitContext: {
+                  unitId: "kamar-putri-1",
+                  unitCode: "KMR-P1",
+                  unitType: "KAMAR",
+                  domain: "KEASRAMAAN",
+                  genderComplex: "PUTRI",
+                  parentId: "ou-osda-putri",
+                  ancestorUnitIds: ["ou-osda-putri"],
+                  isActive: true,
+                },
+              },
+            ],
           },
         ],
       },
@@ -711,7 +743,22 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
-            scopeUnits: [],
+            scopeUnits: [
+              {
+                unitId: "kamar-putri-1",
+                unitCode: "KMR-P1",
+                unitContext: {
+                  unitId: "kamar-putri-1",
+                  unitCode: "KMR-P1",
+                  unitType: "KAMAR",
+                  domain: "KEASRAMAAN",
+                  genderComplex: "PUTRI",
+                  parentId: "ou-osda-putri",
+                  ancestorUnitIds: ["ou-osda-putri"],
+                  isActive: true,
+                },
+              },
+            ],
           },
         ],
       },
@@ -843,7 +890,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
       capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
       scopeType: "ASSIGNED_UNITS" as const,
       anchorUnitId: "ou-osda-putri",
-      unitIds: [],
+      unitIds: ["kamar-putri-101"],
       businessRuleState: "VERIFIED_PRODUCTION" as const,
       genderComplex: "PUTRI" as const,
       orgDomain: "KEASRAMAAN" as const,
@@ -1113,7 +1160,11 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     const units = await getMudabbirAssignedUnitIds("user-fake-mudabbir", mockPrismaUserOnly);
     assert.deepEqual(units, []);
 
-    const cap = await resolveMudabbirPermissionCapability("user-fake-mudabbir", undefined, mockPrismaUserOnly);
+    const cap = await resolveMudabbirPermissionCapability(
+      "user-fake-mudabbir",
+      undefined,
+      createPrismaDataProvider(mockPrismaUserOnly as any)
+    );
     assert.equal(cap.authorized, false);
   });
 
@@ -1134,7 +1185,14 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     const tx = {
       orgUnit: {
         findUnique: async ({ where }: any) => db.orgUnits.find((u: any) => u.id === where.id || u.code === where.code) || null,
-        findMany: async () => db.orgUnits,
+        findMany: async (args?: any) => {
+          if (!args?.where) return db.orgUnits;
+          return db.orgUnits.filter((u: any) => {
+            if (args.where.id && u.id !== args.where.id) return false;
+            if (args.where.isActive !== undefined && u.isActive !== args.where.isActive) return false;
+            return true;
+          });
+        },
         create: async ({ data }: any) => {
           const item = { id: `ou-${Date.now()}-${Math.random()}`, ...data };
           db.orgUnits.push(item);
@@ -2102,7 +2160,22 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
-            scopeUnits: [],
+            scopeUnits: [
+              {
+                unitId: "kamar-1",
+                unitCode: "KMR-1",
+                unitContext: {
+                  unitId: "kamar-1",
+                  unitCode: "KMR-1",
+                  unitType: "KAMAR",
+                  domain: "KEASRAMAAN",
+                  genderComplex: "PUTRI",
+                  parentId: "ou-osda-putri",
+                  ancestorUnitIds: ["ou-osda-putri"],
+                  isActive: true,
+                },
+              },
+            ],
           },
         ],
       },
@@ -2190,7 +2263,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     const kamarGate = report.gates.find((g) => g.gate === "KEASRAMAAN_KAMAR_CONFIGURATION_READY");
 
     assert.ok(kamarGate);
-    assert.equal(kamarGate.status, "NOT_READY");
+    assert.equal(kamarGate.status, "BLOCKED");
     assert.equal(kamarGate.reason, "DATABASE_UNAVAILABLE");
     assert.equal(kamarGate.blocking, true);
   });
@@ -2203,4 +2276,605 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     assert.equal(POSITION_ACCOUNT_MODALITY_CONTRACT.PEMBINA_HALAQOH, "PERSONAL");
     assert.equal(POSITION_ACCOUNT_MODALITY_CONTRACT.KEPALA_KEASRAMAAN, "PERSONAL");
   });
+
+  // 41. Strong Division A vs Division B isolation test using opaque IDs (cuid-like strings)
+  it("41. Strong Division A vs Division B isolation using opaque IDs", async () => {
+    const dataProvider = createMockDataProvider({
+      identities: {
+        "clx_unit_div_a_001": {
+          userId: "clx_unit_div_a_001",
+          username: "op_div_a",
+          status: "AKTIF",
+          accountType: "UNIT",
+          genderComplex: "PUTRI",
+        },
+        "clx_unit_div_b_002": {
+          userId: "clx_unit_div_b_002",
+          username: "op_div_b",
+          status: "AKTIF",
+          accountType: "UNIT",
+          genderComplex: "PUTRI",
+        },
+      },
+      placements: {
+        "clx_unit_div_a_001": { unitId: "clx_ou_div_a_001", count: 1 },
+        "clx_unit_div_b_002": { unitId: "clx_ou_div_b_002", count: 1 },
+      },
+      assignments: {
+        "clx_unit_div_a_001": [
+          {
+            id: "clx_asg_a_001",
+            userId: "clx_unit_div_a_001",
+            positionId: "pos-pok",
+            positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+            positionName: "Petugas Keasramaan",
+            domain: "KEASRAMAAN",
+            unitId: "clx_ou_div_a_001",
+            unitCode: "OU-DIV-A",
+            unitName: "Division A",
+            unitGenderComplex: "PUTRI",
+            status: "ACTIVE",
+            validFrom: new Date(0),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+                scopeType: "ASSIGNED_UNITS",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [
+              {
+                unitId: "clx_kmr_a1",
+                unitCode: "KMR-A1",
+                unitContext: {
+                  unitId: "clx_kmr_a1",
+                  unitCode: "KMR-A1",
+                  unitType: "KAMAR",
+                  domain: "KEASRAMAAN",
+                  genderComplex: "PUTRI",
+                  parentId: "clx_ou_div_a_001",
+                  ancestorUnitIds: ["clx_ou_div_a_001"],
+                  isActive: true,
+                },
+              },
+            ],
+          },
+        ],
+        "clx_unit_div_b_002": [
+          {
+            id: "clx_asg_b_002",
+            userId: "clx_unit_div_b_002",
+            positionId: "pos-pok",
+            positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+            positionName: "Petugas Keasramaan",
+            domain: "KEASRAMAAN",
+            unitId: "clx_ou_div_b_002",
+            unitCode: "OU-DIV-B",
+            unitName: "Division B",
+            unitGenderComplex: "PUTRI",
+            status: "ACTIVE",
+            validFrom: new Date(0),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+                scopeType: "ASSIGNED_UNITS",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [
+              {
+                unitId: "clx_kmr_b1",
+                unitCode: "KMR-B1",
+                unitContext: {
+                  unitId: "clx_kmr_b1",
+                  unitCode: "KMR-B1",
+                  unitType: "KAMAR",
+                  domain: "KEASRAMAAN",
+                  genderComplex: "PUTRI",
+                  parentId: "clx_ou_div_b_002",
+                  ancestorUnitIds: ["clx_ou_div_b_002"],
+                  isActive: true,
+                },
+              },
+            ],
+          },
+        ],
+      },
+      resourceContexts: {
+        "clx_san_a1": {
+          santriId: "clx_san_a1",
+          kamarId: "clx_kmr_a1",
+          orgUnitIds: ["clx_kmr_a1"],
+          genderComplex: "PUTRI",
+          orgDomain: "KEASRAMAAN",
+        },
+        "clx_san_b1": {
+          santriId: "clx_san_b1",
+          kamarId: "clx_kmr_b1",
+          orgUnitIds: ["clx_kmr_b1"],
+          genderComplex: "PUTRI",
+          orgDomain: "KEASRAMAAN",
+        },
+      },
+    });
+
+    // 1. Division A caller -> Santri A: ALLOW
+    const resAtoA = await authorizeCanonical({
+      identity: { userId: "clx_unit_div_a_001" },
+      capability: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+      resourceContext: { santriId: "clx_san_a1" },
+      dataProvider,
+    });
+    assert.equal(resAtoA.decision, "ALLOW");
+    assert.equal(resAtoA.code, "ALLOWED");
+
+    // 2. Division A caller -> Santri B: DENY (SCOPE_MISMATCH)
+    const resAtoB = await authorizeCanonical({
+      identity: { userId: "clx_unit_div_a_001" },
+      capability: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+      resourceContext: { santriId: "clx_san_b1" },
+      dataProvider,
+    });
+    assert.equal(resAtoB.decision, "DENY");
+    assert.equal(resAtoB.code, "SCOPE_MISMATCH");
+
+    // 3. Division B caller -> Santri B: ALLOW
+    const resBtoB = await authorizeCanonical({
+      identity: { userId: "clx_unit_div_b_002" },
+      capability: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+      resourceContext: { santriId: "clx_san_b1" },
+      dataProvider,
+    });
+    assert.equal(resBtoB.decision, "ALLOW");
+    assert.equal(resBtoB.code, "ALLOWED");
+
+    // 4. Division B caller -> Santri A: DENY (SCOPE_MISMATCH)
+    const resBtoA = await authorizeCanonical({
+      identity: { userId: "clx_unit_div_b_002" },
+      capability: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+      resourceContext: { santriId: "clx_san_a1" },
+      dataProvider,
+    });
+    assert.equal(resBtoA.decision, "DENY");
+    assert.equal(resBtoA.code, "SCOPE_MISMATCH");
+  });
+
+  // 42. Opaque IDs without "osda" behave identically to IDs with "osda" (No semantic string heuristic)
+  it("42. Opaque IDs without 'osda' behave identically to IDs with 'osda'", () => {
+    const grantWithoutOsda = {
+      assignmentId: "asg-cm3-alpha",
+      positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+      capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+      scopeType: "ASSIGNED_UNITS" as const,
+      anchorUnitId: "cm3_div_alpha",
+      unitIds: [],
+      businessRuleState: "VERIFIED_PRODUCTION" as const,
+      genderComplex: "PUTRI" as const,
+      orgDomain: "KEASRAMAAN" as const,
+    };
+
+    const grantWithOsda = {
+      assignmentId: "asg-cm3-beta",
+      positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+      capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+      scopeType: "ASSIGNED_UNITS" as const,
+      anchorUnitId: "cm3_osda_beta",
+      unitIds: [],
+      businessRuleState: "VERIFIED_PRODUCTION" as const,
+      genderComplex: "PUTRI" as const,
+      orgDomain: "KEASRAMAAN" as const,
+    };
+
+    const targetContext = {
+      santriId: "santri-1",
+      kamarId: "cm3_kmr_01",
+      orgUnitIds: ["cm3_kmr_01"],
+      genderComplex: "PUTRI" as const,
+      orgDomain: "KEASRAMAAN" as const,
+    };
+
+    const res1 = evaluateScopePredicate(grantWithoutOsda, targetContext, {
+      userId: "unit-alpha",
+      accountType: "UNIT",
+      genderComplex: "PUTRI",
+    });
+
+    const res2 = evaluateScopePredicate(grantWithOsda, targetContext, {
+      userId: "unit-beta",
+      accountType: "UNIT",
+      genderComplex: "PUTRI",
+    });
+
+    // BOTH MUST DENY identically with SCOPE_MISMATCH (no "osda" magic pass!)
+    assert.equal(res1.matches, false);
+    assert.equal(res1.code, "SCOPE_MISMATCH");
+    assert.equal(res2.matches, false);
+    assert.equal(res2.code, "SCOPE_MISMATCH");
+  });
+
+  // 43. Mudhabbir regression: PEMBINA_HALAQOH anchored only to HALAQOH -> resolveUserIsMudabbir = false, getMudabbirAssignedUnitIds = []
+  it("43. Mudhabbir regression: PEMBINA_HALAQOH anchored to HALAQOH confers zero Mudhabbir authority", async () => {
+    const mockPrismaTahfizhOnly = {
+      user: {
+        findUnique: async () => ({
+          id: "usr-ust-tahfizh",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staff: { id: "stf-tahfizh", status: "AKTIF" },
+        }),
+      },
+      assignment: {
+        findFirst: async () => null, // No KAMAR assignment!
+        findMany: async () => [
+          {
+            unitId: "ou-hlq-1",
+            unit: { type: "HALAQOH", domain: "TAHFIZH", isActive: true },
+            scopedUnits: [],
+          },
+        ],
+      },
+    };
+
+    const isMud = await resolveUserIsMudabbir("usr-ust-tahfizh", mockPrismaTahfizhOnly as any);
+    assert.equal(isMud, false);
+
+    const unitIds = await getMudabbirAssignedUnitIds("usr-ust-tahfizh", mockPrismaTahfizhOnly as any);
+    assert.deepEqual(unitIds, []);
+  });
+
+  // 44. Inactive Kamar mutation regression: renameKamar on inactive room -> DENIED
+  it("44. Inactive Kamar mutation regression: renameKamar on inactive room is DENIED", async () => {
+    const dataProvider = createMockDataProvider({
+      identities: {
+        "user-kepala": {
+          userId: "user-kepala",
+          username: "kepala.keasramaan",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-kepala",
+          staffStatus: "AKTIF",
+        },
+      },
+      assignments: {
+        "user-kepala": [
+          {
+            id: "asg-kepala",
+            userId: "user-kepala",
+            positionId: "pos-kk",
+            positionCode: "KEPALA_KEASRAMAAN",
+            positionName: "Kepala Keasramaan",
+            domain: "KEASRAMAAN",
+            unitId: "ou-root",
+            unitCode: "OU-ROOT",
+            unitName: "Root",
+            status: "ACTIVE",
+            validFrom: new Date(0),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
+                scopeType: "GLOBAL",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [],
+          },
+        ],
+      },
+    });
+
+    const mockPrisma = createMockPrismaForKamar({
+      orgUnits: [
+        {
+          id: "kmr-inactive",
+          code: "KMR-INACTIVE",
+          name: "Inactive Kamar",
+          type: "KAMAR",
+          domain: "KEASRAMAAN",
+          genderComplex: "PUTRA",
+          isActive: false, // Inactive!
+        },
+      ],
+    });
+
+    const res = await renameKamar({
+      callerIdentity: { userId: "user-kepala", username: "kepala.keasramaan", status: "AKTIF", accountType: "PERSONAL" },
+      kamarId: "kmr-inactive",
+      newName: "Renamed Room",
+      prismaClient: mockPrisma,
+      dataProvider,
+    });
+
+    assert.equal(res.success, false);
+    assert.equal(res.code, "SYSTEM_FAIL_CLOSED");
+    assert.ok(res.reason?.includes("not found"));
+  });
+
+  // 45. Kamar scoped inspect regressions: Mudhabbir cannot inspect without kamarId; cannot inspect other room; can inspect own room
+  it("45. Kamar scoped inspect: Mudhabbir cannot inspect globally or other room, can inspect own room", async () => {
+    const dataProvider = createMockDataProvider({
+      identities: {
+        "user-mudhabbir": {
+          userId: "user-mudhabbir",
+          username: "mudhabbir.ali",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-ali",
+          staffStatus: "AKTIF",
+        },
+      },
+      assignments: {
+        "user-mudhabbir": [
+          {
+            id: "asg-ph-own",
+            userId: "user-mudhabbir",
+            positionId: "pos-ph",
+            positionCode: "PEMBINA_HALAQOH",
+            positionName: "Pembina Halaqoh",
+            domain: "KEASRAMAAN",
+            unitId: "kmr-own",
+            unitCode: "KMR-OWN",
+            unitName: "Kamar Own",
+            unitGenderComplex: "PUTRA",
+            status: "ACTIVE",
+            validFrom: new Date(0),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.INSPECT,
+                scopeType: "KAMAR",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [],
+          },
+        ],
+      },
+      resourceContexts: {
+        "kmr-own": {
+          kamarId: "kmr-own",
+          orgUnitIds: ["kmr-own"],
+          genderComplex: "PUTRA",
+          orgDomain: "KEASRAMAAN",
+        },
+        "kmr-other": {
+          kamarId: "kmr-other",
+          orgUnitIds: ["kmr-other"],
+          genderComplex: "PUTRA",
+          orgDomain: "KEASRAMAAN",
+        },
+      },
+    });
+
+    const mockPrisma = createMockPrismaForKamar({
+      orgUnits: [
+        { id: "kmr-own", code: "KMR-OWN", name: "Kamar Own", type: "KAMAR", domain: "KEASRAMAAN", isActive: true },
+        { id: "kmr-other", code: "KMR-OTHER", name: "Kamar Other", type: "KAMAR", domain: "KEASRAMAAN", isActive: true },
+      ],
+    });
+
+    // 1. Mudhabbir without kamarId (attempting global inspect) -> DENY
+    const resGlobal = await inspectKamarConfiguration({
+      callerIdentity: { userId: "user-mudhabbir", username: "mudhabbir.ali", status: "AKTIF", accountType: "PERSONAL" },
+      prismaClient: mockPrisma,
+      dataProvider,
+    });
+    assert.equal(resGlobal.success, false);
+
+    // 2. Mudhabbir targeting another room -> DENY
+    const resOther = await inspectKamarConfiguration({
+      callerIdentity: { userId: "user-mudhabbir", username: "mudhabbir.ali", status: "AKTIF", accountType: "PERSONAL" },
+      kamarId: "kmr-other",
+      prismaClient: mockPrisma,
+      dataProvider,
+    });
+    assert.equal(resOther.success, false);
+
+    // 3. Mudhabbir targeting own room -> ALLOW
+    const resOwn = await inspectKamarConfiguration({
+      callerIdentity: { userId: "user-mudhabbir", username: "mudhabbir.ali", status: "AKTIF", accountType: "PERSONAL" },
+      kamarId: "kmr-own",
+      prismaClient: mockPrisma,
+      dataProvider,
+    });
+    assert.equal(resOwn.success, true);
+    assert.equal((resOwn.data as any[])?.length, 1);
+    assert.equal((resOwn.data as any[])?.[0].id, "kmr-own");
+  });
+
+  // 46. moveSantri no-op audit regression: moving to current room returns NO_CHANGE and records SANTRI_KAMAR_MOVE_NO_CHANGE
+  it("46. moveSantri no-op audit: moving to current room returns NO_CHANGE and records SANTRI_KAMAR_MOVE_NO_CHANGE", async () => {
+    const dataProvider = createMockDataProvider({
+      identities: {
+        "user-kepala": {
+          userId: "user-kepala",
+          username: "kepala.keasramaan",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-kepala",
+          staffStatus: "AKTIF",
+        },
+      },
+      assignments: {
+        "user-kepala": [
+          {
+            id: "asg-kepala",
+            userId: "user-kepala",
+            positionId: "pos-kk",
+            positionCode: "KEPALA_KEASRAMAAN",
+            positionName: "Kepala Keasramaan",
+            domain: "KEASRAMAAN",
+            unitId: "ou-root",
+            unitCode: "OU-ROOT",
+            unitName: "Root",
+            status: "ACTIVE",
+            validFrom: new Date(0),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
+                scopeType: "GLOBAL",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [],
+          },
+        ],
+      },
+    });
+
+    const mockPrisma = createMockPrismaForKamar({
+      orgUnits: [
+        { id: "kmr-target-1", code: "KMR-01", name: "Kamar 1", type: "KAMAR", domain: "KEASRAMAAN", genderComplex: "PUTRA", isActive: true },
+      ],
+      santris: [
+        { id: "san-1", nama: "Santri Satu", jenisKelamin: "L" },
+      ],
+      placements: [
+        {
+          id: "plc-existing",
+          santriId: "san-1",
+          kamarId: "kmr-target-1",
+          isActive: true,
+          startDate: new Date(0),
+          endDate: null,
+        },
+      ],
+    });
+
+    const res = await moveSantri({
+      callerIdentity: { userId: "user-kepala", username: "kepala.keasramaan", status: "AKTIF", accountType: "PERSONAL" },
+      santriId: "san-1",
+      targetKamarId: "kmr-target-1",
+      prismaClient: mockPrisma,
+      dataProvider,
+    });
+
+    assert.equal(res.success, true);
+    assert.equal(res.code, "NO_CHANGE");
+    assert.ok(res.reason?.includes("no move was performed"));
+
+    // Verify transactional audit log recorded SANTRI_KAMAR_MOVE_NO_CHANGE
+    const noChangeAudit = mockPrisma.db.auditLogs.find(
+      (log: any) => log.action === "SANTRI_KAMAR_MOVE_NO_CHANGE"
+    );
+    assert.ok(noChangeAudit, "SANTRI_KAMAR_MOVE_NO_CHANGE audit log must be recorded");
+    assert.equal(noChangeAudit.entityId, "san-1");
+    assert.equal(noChangeAudit.unitId, "kmr-target-1");
+  });
+
+  // 47. Readiness throw & parity tests: DB errors fail closed to BLOCKED with DATABASE_UNAVAILABLE; raw SQL parity
+  it("47. Readiness throw & parity tests: DB errors fail closed to BLOCKED with DATABASE_UNAVAILABLE; raw SQL parity", async () => {
+    // 47.1 santriKamarPlacement.findMany throws -> BLOCKED DATABASE_UNAVAILABLE
+    const mockDbPlacementThrows: any = {
+      orgUnit: {
+        findMany: async () => [
+          { id: "kmr-1", code: "KMR-1", type: "KAMAR", domain: "KEASRAMAAN", genderComplex: "PUTRA", isActive: true },
+        ],
+      },
+      santriKamarPlacement: {
+        findMany: async () => {
+          throw new Error("Disk read error on placements table");
+        },
+      },
+      assignment: {
+        findMany: async () => [],
+      },
+    };
+    const report1 = await checkPendidikanV2ProductionReadiness(mockDbPlacementThrows);
+    const gate1 = report1.gates.find((g) => g.gate === "KEASRAMAAN_KAMAR_CONFIGURATION_READY");
+    assert.ok(gate1);
+    assert.equal(gate1.status, "BLOCKED");
+    assert.equal(gate1.reason, "DATABASE_UNAVAILABLE");
+    assert.equal(gate1.blocking, true);
+
+    // 47.2 assignment.findMany throws -> BLOCKED DATABASE_UNAVAILABLE
+    const mockDbAssignmentThrows: any = {
+      orgUnit: {
+        findMany: async () => [
+          { id: "kmr-1", code: "KMR-1", type: "KAMAR", domain: "KEASRAMAAN", genderComplex: "PUTRA", isActive: true },
+        ],
+      },
+      santriKamarPlacement: {
+        findMany: async () => [],
+      },
+      assignment: {
+        findMany: async () => {
+          throw new Error("Network timeout querying assignments table");
+        },
+      },
+    };
+    const report2 = await checkPendidikanV2ProductionReadiness(mockDbAssignmentThrows);
+    const gate2 = report2.gates.find((g) => g.gate === "KEASRAMAAN_KAMAR_CONFIGURATION_READY");
+    assert.ok(gate2);
+    assert.equal(gate2.status, "BLOCKED");
+    assert.equal(gate2.reason, "DATABASE_UNAVAILABLE");
+    assert.equal(gate2.blocking, true);
+
+    // 47.3 missing assignment delegate when active Kamar exist -> BLOCKED DATABASE_UNAVAILABLE
+    const mockDbMissingAssignmentDelegate: any = {
+      orgUnit: {
+        findMany: async () => [
+          { id: "kmr-1", code: "KMR-1", type: "KAMAR", domain: "KEASRAMAAN", genderComplex: "PUTRA", isActive: true },
+        ],
+      },
+      santriKamarPlacement: {
+        findMany: async () => [],
+      },
+      // assignment delegate is undefined!
+    };
+    const report3 = await checkPendidikanV2ProductionReadiness(mockDbMissingAssignmentDelegate);
+    const gate3 = report3.gates.find((g) => g.gate === "KEASRAMAAN_KAMAR_CONFIGURATION_READY");
+    assert.ok(gate3);
+    assert.equal(gate3.status, "BLOCKED");
+    assert.equal(gate3.reason, "DATABASE_UNAVAILABLE");
+    assert.equal(gate3.blocking, true);
+
+    // 47.4 Raw SQL throws -> BLOCKED DATABASE_UNAVAILABLE
+    const mockDbRawSqlThrows: any = {
+      $queryRawUnsafe: async (sql: string) => {
+        if (sql.includes("FROM \"org_units\"")) {
+          return [
+            { id: "kmr-1", code: "KMR-1", type: "KAMAR", domain: "KEASRAMAAN", gender_complex: "PUTRA", is_active: true },
+          ];
+        }
+        throw new Error("Raw SQL connection reset by peer");
+      },
+    };
+    const report4 = await checkPendidikanV2ProductionReadiness(mockDbRawSqlThrows);
+    const gate4 = report4.gates.find((g) => g.gate === "KEASRAMAAN_KAMAR_CONFIGURATION_READY");
+    assert.ok(gate4);
+    assert.equal(gate4.status, "BLOCKED");
+    assert.equal(gate4.reason, "DATABASE_UNAVAILABLE");
+    assert.equal(gate4.blocking, true);
+
+    // 47.5 Raw SQL placement inconsistency & invalid domain/gender -> NOT_READY with details
+    const mockDbRawSqlIssues: any = {
+      $queryRawUnsafe: async (sql: string) => {
+        if (sql.includes("FROM \"org_units\"")) {
+          return [
+            { id: "kmr-bad-domain", code: "KMR-BD", type: "KAMAR", domain: "TAHFIZH", gender_complex: "PUTRA", is_active: true },
+            { id: "kmr-bad-gender", code: "KMR-BG", type: "KAMAR", domain: "KEASRAMAAN", gender_complex: "INVALID", is_active: true },
+          ];
+        }
+        if (sql.includes("issue_code")) {
+          return [
+            { issue_code: "MULTIPLE_ACTIVE_PLACEMENT", entity_id: "san-dup" },
+          ];
+        }
+        return [];
+      },
+    };
+    const report5 = await checkPendidikanV2ProductionReadiness(mockDbRawSqlIssues);
+    const gate5 = report5.gates.find((g) => g.gate === "KEASRAMAAN_KAMAR_CONFIGURATION_READY");
+    assert.ok(gate5);
+    assert.equal(gate5.status, "NOT_READY");
+    assert.equal(gate5.blocking, true);
+    assert.ok(gate5.details.includes("MULTIPLE_ACTIVE_PLACEMENT"));
+    assert.ok(gate5.details.includes("invalid domain"));
+    assert.ok(gate5.details.includes("invalid genderComplex"));
+  });
 });
+

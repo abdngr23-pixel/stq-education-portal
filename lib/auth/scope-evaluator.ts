@@ -244,10 +244,16 @@ export function evaluateScopePredicate(
   // 4. ASSIGNED_UNITS Scope: Relationally bound multi-unit set (via AssignmentScopeUnit)
   if (scopeType === "ASSIGNED_UNITS") {
     if (subjectIdentity.accountType === "UNIT") {
-      // UNIT operational principal:
-      // If explicit scoped units (unitIds) are assigned, target resource must belong to one of them.
-      if (unitIds && unitIds.length > 0) {
-        const hasMatch = (context.orgUnitIds || []).some((u) => unitIds.includes(u));
+      const activeExplicitUnits = (grant.scopeUnits || [])
+        .filter((unit) => unit.isActive)
+        .map((unit) => unit.unitId);
+      const permittedUnitIds = activeExplicitUnits.length > 0
+        ? activeExplicitUnits
+        : (unitIds || []);
+
+      // AssignmentScopeUnit is the authoritative multi-resource binding.
+      if (permittedUnitIds.length > 0) {
+        const hasMatch = (context.orgUnitIds || []).some((u) => permittedUnitIds.includes(u));
         if (hasMatch) {
           return {
             matches: true,
@@ -266,8 +272,18 @@ export function evaluateScopePredicate(
         };
       }
 
-      // Direct anchor unit match
-      if (anchorUnitId && (context.orgUnitIds || []).includes(anchorUnitId)) {
+      // Direct anchor is a target only when authoritative metadata proves that
+      // the anchor itself is a target-containing resource. DIVISION / OSDA
+      // anchors never imply that a Santri belongs to that division.
+      const directTargetUnitTypes = new Set(["KAMAR", "HALAQOH", "ACADEMIC_CLASS"]);
+      const anchorIsAuthoritativeTarget = Boolean(
+        grant.anchorUnit?.isActive && directTargetUnitTypes.has(grant.anchorUnit.unitType)
+      );
+      if (
+        anchorIsAuthoritativeTarget &&
+        anchorUnitId &&
+        (context.orgUnitIds || []).includes(anchorUnitId)
+      ) {
         return {
           matches: true,
           code: "ALLOWED",
@@ -277,43 +293,23 @@ export function evaluateScopePredicate(
         };
       }
 
-      // Operational UNIT principals with OSDA division anchor assignment operate across their authorized domain & gender boundary
-      // without falsely claiming that the target Santri belongs to an OSDA division
-      const isOsdaDivision = anchorUnitId && anchorUnitId.toLowerCase().includes("osda");
-      if (isOsdaDivision) {
-        const grantDomain =
-          (grant as unknown as { orgDomain?: string; domain?: string }).orgDomain ||
-          (grant as unknown as { orgDomain?: string; domain?: string }).domain;
-        if (grantDomain && context.orgDomain && grantDomain !== context.orgDomain) {
-          return {
-            matches: false,
-            code: "SCOPE_MISMATCH",
-            reason: `Target domain (${context.orgDomain}) does not match grant operational domain (${grantDomain}).`,
-            evaluatedScope: "ASSIGNED_UNITS",
-            evaluatedAnchorUnitId: anchorUnitId,
-          };
-        }
-
-        return {
-          matches: true,
-          code: "ALLOWED",
-          reason: "Target resource is within operational unit's authorized domain and gender boundary.",
-          evaluatedScope: "ASSIGNED_UNITS",
-          evaluatedAnchorUnitId: anchorUnitId,
-        };
-      }
-
       return {
         matches: false,
         code: "SCOPE_MISMATCH",
-        reason: "Target resource does not match relationally assigned unit.",
+        reason: permittedUnitIds.length === 0 && !anchorIsAuthoritativeTarget
+          ? "ASSIGNED_UNITS grant has zero explicit target resource bindings."
+          : "Target resource does not match relationally assigned unit.",
         evaluatedScope: "ASSIGNED_UNITS",
         evaluatedAnchorUnitId: anchorUnitId,
       };
     }
 
+    const directTargetUnitTypes = new Set(["KAMAR", "HALAQOH", "ACADEMIC_CLASS"]);
+    const anchorIsAuthoritativeTarget = Boolean(
+      grant.anchorUnit?.isActive && directTargetUnitTypes.has(grant.anchorUnit.unitType)
+    );
     const permittedUnits = new Set<string>([
-      ...(anchorUnitId ? [anchorUnitId] : []),
+      ...(anchorIsAuthoritativeTarget && anchorUnitId ? [anchorUnitId] : []),
       ...(unitIds || []),
     ]);
 
