@@ -49,7 +49,7 @@ Where:
 | `tahfizh.student.read` | Membaca daftar dan profil capaian hafalan santri | `MUDIR` (`GLOBAL`), `KABID_TAHFIZH` (`DOMAIN`), `MUSYRIF_TAHFIZH` (`HALAQOH`) | **VERIFIED_PRODUCTION** | Strict halaqoh enclosure for ordinary MT |
 | `tahfizh.setoran.create` | Mencatat setoran hafalan baru (Sabaq/Sabqi/Manzil/Mufar) | `MUSYRIF_TAHFIZH` (`HALAQOH`) | **VERIFIED_PRODUCTION** | Kabid writes setoran strictly for own halaqoh |
 | `tahfizh.recap.read` | Membaca rekapitulasi capaian hafalan | `MUDIR` (`GLOBAL`), `KABID_TAHFIZH` (`DOMAIN`), `ADMIN` (`GLOBAL`); `MUSYRIF_TAHFIZH` (`HALAQOH`, **VERIFIED_PRODUCTION**); `PETUGAS_OPERASIONAL_TAHFIZH` (`GLOBAL`, **APPROVED_TARGET_PENDING_TECHNICAL**) | Mixed (Production + Target) | Operational recap read breadth (GLOBAL) does NOT widen setoran write authority (HALAQOH) |
-| `tahfizh.reward.issue` | Menerbitkan reward resmi Tasmi'/Sima'an | `MUDIR` (`GLOBAL`, **VERIFIED_PRODUCTION**), `KABID_TAHFIZH` (`DOMAIN`, **VERIFIED_PRODUCTION**); `PETUGAS_OPERASIONAL_TAHFIZH` (`ASSIGNED_UNITS`, **APPROVED_TARGET_PENDING_TECHNICAL**) | Mixed (Production + Target) | Business Owner confirmed: special operational reward issuer authority is limited to assigned units/groups only (`ASSIGNED_UNITS`, not GLOBAL/DOMAIN); ordinary MT, PH, ADM strictly denied; GLOBAL recap read does NOT widen reward issuance scope |
+| `tahfizh.reward.issue` | Menerbitkan reward resmi Tasmi'/Sima'an | `MUDIR` (`GLOBAL`, **VERIFIED_PRODUCTION**), `KABID_TAHFIZH` (`DOMAIN`, **VERIFIED_PRODUCTION**) | **VERIFIED_PRODUCTION** | Restricted to MUDIR and KABID_TAHFIZH only per DIR-2026-023. PETUGAS_OPERASIONAL_TAHFIZH (POT), ordinary MT, PH, ADM are strictly denied (`CAPABILITY_NOT_GRANTED`). Prior target grant to POT with ASSIGNED_UNITS is formally SUPERSEDED. |
 | `tahfizh.policy.manage` | Mengubah ambang nilai, bintang, dan kebijakan reward | `MUDIR` (`KS`) (`GLOBAL`) | **VERIFIED_PRODUCTION** | Kabid Tahfizh and ordinary MT strictly denied |
 | `tahfizh.target.manage` | Menetapkan target bulanan/pekanan santri | `MUSYRIF_TAHFIZH` (`HALAQOH`), `PEMBINA_HALAQOH` (`HALAQOH`) | **APPROVED_TARGET_PENDING_TECHNICAL** | Approved UAT target policy; scoped strictly to assigned binaan; zero inferred Mudir/Kabid grants |
 | `tahfizh.setoran.cancel` | Membatalkan setoran tahfizh (dengan alasan & audit) | *TBD — Business Owner approval required* | **PROPOSED_TBD** | Cancellation audit requirement |
@@ -158,7 +158,7 @@ Canonical V2 statuses are EXACTLY: `DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`.
 
 ### 4.2. Declarative UAT Activation Targets Manifest
 Defined in `types/architecture-lock.ts` as `UAT_ACTIVATION_TARGETS`:
-- **OPERATIONAL_TAHFIZH**: `tahfizh.recap.read` (`GLOBAL`), `tahfizh.reward.issue` (`ASSIGNED_UNITS`), `tahfizh.setoran.backdate` (`ASSIGNED_UNITS`).
+- **OPERATIONAL_TAHFIZH**: `tahfizh.recap.read` (`GLOBAL`), `tahfizh.setoran.backdate` (`ASSIGNED_UNITS`). Note: `tahfizh.reward.issue` is SUPERSEDED per DIR-2026-023.
 - **TARGET_MANAGEMENT**: `MUSYRIF_TAHFIZH` (`HALAQOH`), `PEMBINA_HALAQOH` (`HALAQOH`).
 - **OPERATIONAL_KEASRAMAAN**: `keasramaan.permission.read` (`ASSIGNED_UNITS`), `keasramaan.permission.create` (`ASSIGNED_UNITS`). Denies all approval tiers.
 - **OSDA_PUTRI**: Max 1 active placement, `PUTRI` gender boundary enforced, prevents `PUTRA` resource access.

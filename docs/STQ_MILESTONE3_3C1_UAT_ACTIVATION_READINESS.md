@@ -43,7 +43,7 @@ Milestone 3.3C is partitioned into two distinct phases to ensure institutional d
 #### 2.1 Implemented & Locked (M3.3A & M3.3B)
 - **Health V2 Backend Foundation**: Additive schema (`health_cases_v2`, `health_case_v2_events`, `HealthStatusV2`), atomic audit, concurrency foundation, and multi-tenant isolation.
 - **Pendidikan Foundation**: Additive schema (`education_sessions`, `education_session_participants`, `education_session_attendances`), 6 canonical Studi Umum subjects, 5 Kepesantrenan subjects.
-- **Studi Umum Saturday JP Matrix & PBL 20-Week Rotation**: Canonical derivation of theory vs project weeks without manual tampering.
+- **Studi Umum Saturday JP Matrix & PBL 20-Week Rotation**: Canonical derivation of approved subject rotation (meetings 1–5 IPS, 6–10 IPA, 11–15 Bahasa Indonesia, 16–20 TIK) without invented theory/project phases (ORR-131 / DIR-2026-025).
 - **Kepesantrenan Daily Schedule**: Monday–Friday 18:30–19:30 WITA schedule windows with Arabic 3-tier pedagogical level facts.
 - **Session Lifecycle & CAS Concurrency**: Atomic transition `SCHEDULED -> STARTED` using Compare-And-Swap to eliminate race conditions.
 - **Participant Roster Verification**: Trust boundary enforcement requiring santri to be officially enrolled in session participants before attendance mutations.
@@ -55,7 +55,7 @@ Milestone 3.3C is partitioned into two distinct phases to ensure institutional d
 - **UAT #2: Tahfizh Recap Operational Read**: `tahfizh.recap.read` scoped to `GLOBAL`. Does not widen setoran mutations or reward issuance.
 - **UAT #4: Target Management (`MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`)**: `tahfizh.target.manage` scoped to `HALAQOH` (own assigned halaqoh only). Cross-halaqoh modifications denied.
 - **UAT #10: OSDA Putri Account Contract (`OU-OSDA-PUTRI`)**: `accountType: UNIT`, `genderComplex: PUTRI`, single active placement, human executor verification required, zero PUTRA data leakage.
-- **UAT #11: Special Operational Reward Issuance**: `tahfizh.reward.issue` scoped strictly to `ASSIGNED_UNITS`. Never GLOBAL reward issuance for operational roles.
+- **UAT #11: Reward Issuance Authority**: `tahfizh.reward.issue` restricted strictly to `MUDIR` (`GLOBAL`) and `KABID_TAHFIZH` (`DOMAIN`) only. Special operational reward issuance for `PETUGAS_OPERASIONAL_TAHFIZH` (`ASSIGNED_UNITS`) is SUPERSEDED per DIR-2026-023.
 - **UAT #12: Scoped Cross-Functional Access**: Orthogonal capability assignment without "superuser" roles or identity-based bypasses.
 
 #### 2.3 Formally Deferred Scope

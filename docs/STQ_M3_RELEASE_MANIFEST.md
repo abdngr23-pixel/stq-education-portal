@@ -577,7 +577,7 @@
 
 - **REL-POS-02 | Operational Staff Positions Provisioning**
   - **Domain:** POSITIONS / OPERATIONAL
-  - **Requirement:** Provision operational positions strictly limited to approved gate set (`REQUIRED_POSITIONS_READY`): `PETUGAS_OPERASIONAL_TAHFIZH`, `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, `PETUGAS_OPERASIONAL_KEASRAMAAN`. Additional operational positions (`MUDABBIR`, `GURU_AKADEMIK`) are `PROPOSED_TBD / DEFERRED`. Strictly remove/avoid invented position `GURU_KEPESANTRENAN`.
+  - **Requirement:** Provision operational positions strictly limited to approved gate set: `PETUGAS_OPERASIONAL_TAHFIZH`, `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, `PETUGAS_OPERASIONAL_KEASRAMAAN`, and canonical position `GURU_KEPESANTRENAN` (formalized in PR #29 / DIR-2026-028). Additional operational positions (`MUDABBIR`, `GURU_AKADEMIK`) are `PROPOSED_TBD / DEFERRED`.
   - **Source of truth:** `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`
   - **PolicyDecisionState:** `APPROVED` (for approved operational gate set; `PROPOSED_TBD` for `GURU_AKADEMIK` and `MUDABBIR`)
   - **Current state:** Unseeded in production.
@@ -712,17 +712,17 @@
 ### I. POSITION CAPABILITIES
 - **REL-PC-01 | PETUGAS_OPERASIONAL_TAHFIZH Grants Mapping**
   - **Domain:** POSITION_CAPABILITIES / TAHFIZH
-  - **Requirement:** Map `tahfizh.recap.read` with `scopeType: GLOBAL` and `tahfizh.reward.issue` with `scopeType: ASSIGNED_UNITS`.
-  - **Source of truth:** `types/architecture-lock.ts` (`UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH`)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL` (Conferring ZERO runtime authority until C2D promotion)
+  - **Requirement:** Map `tahfizh.recap.read` with `scopeType: GLOBAL`. Note: `tahfizh.reward.issue` for `PETUGAS_OPERASIONAL_TAHFIZH` is formally **SUPERSEDED** per DIR-2026-023 (reward issuance is restricted to Mudir [GLOBAL] and Kabid Tahfizh [DOMAIN] only; POT does not hold reward capability).
+  - **Source of truth:** `types/architecture-lock.ts`, `docs/STQ_OWNER_DIRECTIVES.md: DIR-2026-023`
+  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL` (for `tahfizh.recap.read`; `tahfizh.reward.issue` is SUPERSEDED)
   - **Current state:** Unmapped in production.
-  - **Target state:** Mapped with `businessRuleState = APPROVED_TARGET_PENDING_TECHNICAL`.
+  - **Target state:** Mapped with `businessRuleState = APPROVED_TARGET_PENDING_TECHNICAL` for `tahfizh.recap.read`.
   - **Dependency:** REL-POS-02, REL-CAP-01
   - **Production write required?:** YES (INSERT)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** C2C dry-run SQL.
-  - **Positive test:** Query verifies `scopeType = GLOBAL` for recap and `ASSIGNED_UNITS` for reward.
-  - **Negative test:** Engine denies reward issuance outside assigned units.
+  - **Positive test:** Query verifies `scopeType = GLOBAL` for recap.
+  - **Negative test:** Engine denies reward issuance for POT (`CAPABILITY_NOT_GRANTED`).
   - **Reconciliation evidence:** PositionCapability table audit.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-PC-OP-TAH`
@@ -776,9 +776,9 @@
     - `ACADEMIC_CAPABILITY_REGISTRATION = REQUIRED` (The four capabilities must be registered in the `capabilities` table as part of the exact 9 UAT set).
     - `ACADEMIC_POSITION_GRANT_POLICY = PROPOSED_TBD / BLOCKED` (`GURU_AKADEMIK` PositionCapability grants are NOT currently approved by canonical `UAT_ACTIVATION_TARGETS`).
     - `ACADEMIC_SCOPE_POLICY = BLOCKED`
-    - `ACADEMIC_ACCOUNT_MODALITY = PROPOSED_TBD` (Teacher account modality: PERSONAL linked Staff vs UNIT + verified human executor remains unresolved).
+    - `ACADEMIC_ACCOUNT_MODALITY = RESOLVED` (Studi Umum subject accounts use `SUBJECT` modality per PR #28 / DIR-2026-027; Kepesantrenan teachers use `PERSONAL` modality under canonical position `GURU_KEPESANTRENAN` per PR #29 / DIR-2026-028).
     - `ACADEMIC_UNIT_CONTAINMENT = BLOCKED_TECHNICAL` (`EducationSession` / `TeachingAssignment` have no authoritative `OrgUnit` relation for unit containment; failing closed without borrowing halaqoh/kamar into academic `orgUnitIds`).
-    - Strictly avoid/remove invented canonical position `GURU_KEPESANTRENAN`.
+    - `GURU_KEPESANTRENAN` is an approved canonical position contract under PERSONAL modality (PR #29 / DIR-2026-028).
     Do NOT activate academic PositionCapabilities until policy and technical containment are explicitly resolved. Grant mapping is an explicit release blocker.
   - **Source of truth:** `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`
   - **BusinessRuleState:** `PROPOSED_TBD`
@@ -883,13 +883,13 @@
 ---
 
 ### K. ASSIGNMENT SCOPE UNITS
-- **REL-ASU-01 | Operational Tahfizh Scope Units Binding**
+- **REL-ASU-01 | Operational Tahfizh Scope Units Binding (SUPERSEDED)**
   - **Domain:** SCOPE_UNITS / TAHFIZH
-  - **Requirement:** For assignments holding `tahfizh.reward.issue`, bind permitted halaqoh unit IDs relationally in `assignment_scope_units`.
-  - **Source of truth:** `types/architecture-lock.ts` (`AssignmentScopeUnit`)
-  - **PolicyDecisionState:** `APPROVED`
+  - **Requirement:** [SUPERSEDED] Prior requirement to bind halaqoh scope units for operational reward issuance is formally **SUPERSEDED** by DIR-2026-023 because `PETUGAS_OPERASIONAL_TAHFIZH` does not hold `tahfizh.reward.issue`.
+  - **Source of truth:** `docs/STQ_OWNER_DIRECTIVES.md: DIR-2026-023`
+  - **PolicyDecisionState:** `SUPERSEDED`
   - **Current state:** Unseeded in production.
-  - **Target state:** Relational scope units bound.
+  - **Target state:** SUPERSEDED (no scope unit binding needed for POT reward issuance).
   - **Dependency:** REL-ASN-02, REL-PC-01
   - **Production write required?:** YES (INSERT)
   - **Owner authorization required?:** YES

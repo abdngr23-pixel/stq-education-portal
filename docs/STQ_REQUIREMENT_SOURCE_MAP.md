@@ -93,7 +93,7 @@ This registry documents the authoritative institutional business documents and o
 - **Authority:** **SUPERSEDING EDUCATION DETAIL SOURCE**
 - **Rule:** Overrides `SOURCE-PEND-001` wherever conflict exists regarding session schedules, weekly PBL structure, and Kepesantrenan schedule ordering.
 - **Supersedences Over `SOURCE-PEND-001`:**
-  1. **Studi Umum PBL Schedule**: 20 Saturday meetings total across the semester (5 meetings each for IPS, IPA, Bahasa Indonesia, TIK; meetings 1–4 theory, meeting 5 major project = 4 major projects). Supersedes older interpretations reducing PBL to 18 meetings due to Mukaddimah/UAS calendar wording.
+  1. **Studi Umum PBL Schedule**: 20 Saturday meetings total across the semester (approved subject rotation: meetings 1–5 IPS, 6–10 IPA, 11–15 Bahasa Indonesia, 16–20 TIK). Supersedes older interpretations reducing PBL to 18 meetings; per ORR-131 / DIR-2026-025, invented phase semantics (theory vs project weeks or phase enums) are non-canonical.
   2. **Kepesantrenan Schedule Ordering (Putra)**:
      - Monday: Bahasa Arab (Tingkat I: Ust. Abi Hudzaifah; Tingkat II: Ust. Kamal Mukhtar; Tingkat III: Ust. Andi Quarzy Ayatullah; Durus al-Lughah)
      - Tuesday: Fikih (Ust. Razan)
@@ -118,5 +118,12 @@ This registry documents the authoritative institutional business documents and o
 | **Tahfizh Sima'an Reward** | `SOURCE-TAH-001` | Older 2-star claims for 5 juz | `SOURCE-TAH-001` establishes 1 bintang + 1 hari libur per 5 juz Sima'an. |
 | **OSDA Multimedia Placement** | `SOURCE-KEA-001` / BO Decision | PRD V2 6-division structure | Multimedia elevated to Pengurus Inti; Divisi standardized to 5. |
 | **Kepesantrenan Tue/Wed Subjects** | `SOURCE-PEND-002` | `SOURCE-PEND-001` (Tue Tafsir, Wed Fikih) | Business Owner aligned subject progression: Tue Fikih, Wed Tafsir. |
-| **PBL Saturday 20 Meetings** | `SOURCE-PEND-002` | 18-meeting reduction interpretations | Owner confirmed 4 full 5-week blocks = 20 meetings & 4 projects. |
+| **PBL Saturday 20 Meetings** | `SOURCE-PEND-002` / `ORR-131` | 18-meeting reduction / theory vs project phases | Owner confirmed 4 full 5-week blocks = 20 meetings subject rotation; phase enums and theory/project weeks are non-canonical (DIR-2026-025). |
 | **Ustazah Lisa Putri Scope** | BO Decision 2026-09-19 | Legacy broad / undefined access | Strict partitioning: Kepesantrenan Putri + Keasramaan Putri + Health Putri detail read; zero Putra leakage; zero Studi Umum. |
+| **Reward Issuance Authority** | BO Decision 2026-09-25 / `DIR-2026-023` | `DIR-2026-015` (POT reward issuance target) | Issuance restricted to Mudir (GLOBAL) and Kabid Tahfizh (DOMAIN) only; POT/Lisa reward authority superseded. |
+| **Sabaqi Automatic Derivation** | `ORR-067` / `DIR-2026-024` | Manual Sabaqi fallback / audit override | Sabaqi derived purely from authoritative stored SABAQ (isManualAllowed = false); zero manual fallback. |
+| **PBL Subject Rotation** | `ORR-131` / `DIR-2026-025` | Invented pedagogical phases (theory vs project) | Approved rotation (1-5 IPS, 6-10 IPA, 11-15 BI, 16-20 TIK); pblPhase enums are non-canonical. |
+| **Institutional Taxonomy Decoupling** | `ORR-003` / `DIR-2026-026` | Collapsing Tahfizh into Pendidikan authorization | Institutional curriculum grouping under Pendidikan does NOT alter independent OrgDomain: TAHFIZH ABAC architecture. |
+| **SUBJECT Account Modality** | PR #28 / `DIR-2026-027` | Fake Staff requirement for academic subject accounts | Formalized SUBJECT modality for Studi Umum subject accounts with single canonical subject binding. |
+| **GURU_KEPESANTRENAN Position** | PR #29 / `DIR-2026-028` | Stale claims of invented/deferred position | Canonical position contract under PERSONAL modality with server-derived teacher attendance on session start. |
+| **Release Gate Model (Gates 0–9)** | BO Decision 2026-09-25 / `DIR-2026-029` | Ad-hoc release gate naming (C2B, C2C, C2D) | Standardizes release lifecycle to sequential Gates 0–9; documents Gate 0 PostgreSQL dump and 15-sheet XLSX contract. |

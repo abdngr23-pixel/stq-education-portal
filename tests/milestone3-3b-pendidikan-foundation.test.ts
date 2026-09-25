@@ -465,6 +465,17 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3: CHECKPOINT M3.3B PENDIDIKAN FOU
       assert.strictEqual(resT1JP3.subject, "IPS");
       assert.strictEqual(resT1JP3.timeSlot, "13:30–15:20 WITA");
     });
+
+    it("D7. resolvePblMeeting returns pure block rotation without canonical theory/project phase assertions (ORR-131 / DIR-2026-025)", () => {
+      for (let m = 1; m <= 20; m++) {
+        const res = resolvePblMeeting(m);
+        assert.ok(res.subject, `Meeting ${m} must have approved subject`);
+        assert.ok(res.blockNumber >= 1 && res.blockNumber <= 4, `Meeting ${m} block must be 1-4`);
+        assert.ok(res.weekInBlock >= 1 && res.weekInBlock <= 5, `Meeting ${m} week in block must be 1-5`);
+        // Verify no canonical phase semantics (THEORY, PROJECT, INQUIRY) are asserted as owner rules
+        assert.strictEqual((res as any).phase, undefined, "resolvePblMeeting must not assert canonical phase semantics");
+      }
+    });
   });
 
   // ====================================================

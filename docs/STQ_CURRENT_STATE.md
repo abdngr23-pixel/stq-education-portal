@@ -50,6 +50,33 @@ All commit SHAs recorded below are verified historical checkpoints, not self-upd
   - Vercel `stq-education-portal-app`: SUCCESS
   - Classification: `PROJECT_CONTEXT_LOCK_MERGED_AND_POSTMERGE_VERIFIED`
 
+- **PR #28 SUBJECT Modality Formalization verified checkpoint:**
+  `7abe9fc14165ca89a93eceeda0fdd770c591a102`
+  (Merge commit for PR #28: `feat(identity): formalize SUBJECT credential modality for Studi Umum`)
+  - PR #28 state: MERGED
+  - Merge commit: `7abe9fc14165ca89a93eceeda0fdd770c591a102`
+  - Post-merge CI run: SUCCESS
+  - Classification: `PR28_SUBJECT_MODALITY_MERGED_AND_VERIFIED`
+
+- **PR #29 GURU_KEPESANTRENAN Contract verified checkpoint:**
+  `d2cbfba275817600d8cdbbf12a4d1b8db65292ac`
+  (Merge commit for PR #29: `feat(pendidikan): canonical GURU_KEPESANTRENAN position and teacher session attendance`)
+  - PR #29 state: MERGED
+  - Merge commit: `d2cbfba275817600d8cdbbf12a4d1b8db65292ac`
+  - Post-merge CI run: SUCCESS
+  - Classification: `PR29_GURU_KEPESANTRENAN_MERGED_AND_VERIFIED`
+
+- **PR #30 Keasramaan Runtime Remediation verified checkpoint:**
+  `6329fd0090ebb31af0a75c7e681123de148eb62b`
+  (Merge commit for PR #30: `feat(keasramaan): runtime authorization remediation and domain scope lock`)
+  - PR #30 state: MERGED
+  - Merge commit: `6329fd0090ebb31af0a75c7e681123de148eb62b`
+  - Post-merge CI run: SUCCESS
+  - Classification: `PR30_KEASRAMAAN_RUNTIME_REMEDIATION_MERGED_AND_VERIFIED`
+
+- **Verified live main base:**
+  `6329fd0090ebb31af0a75c7e681123de148eb62b`
+
 ---
 
 ## 2. PR #8 immutable guard
@@ -400,7 +427,7 @@ Examples currently classified `APPROVED_TARGET_PENDING_TECHNICAL` include:
 ### PETUGAS_OPERASIONAL_TAHFIZH
 
 - `tahfizh.recap.read` → `GLOBAL`
-- `tahfizh.reward.issue` → `ASSIGNED_UNITS`
+- `tahfizh.reward.issue` → `SUPERSEDED` per DIR-2026-023 (Reward issuance restricted to Mudir [GLOBAL] and Kabid Tahfizh [DOMAIN] only; POT, ordinary MT, PH, ADM strictly denied `CAPABILITY_NOT_GRANTED`)
 
 ### MUSYRIF_TAHFIZH
 
@@ -478,7 +505,7 @@ Currently unresolved unless a newer explicit Business Owner decision is document
 
 ## 17. Production rollout roadmap from current checkpoint
 
-Completed:
+Completed Code Milestones:
 
 - Architecture/Foundation ✅
 - M3.3A code ✅
@@ -487,100 +514,64 @@ Completed:
 - M3.3C2A ✅
 - M3.3C2A.1 (PR #8 migration ledger + Prisma schema parity reconciliation — PR #23) ✅
 - Project Context Lock (PR #24) ✅
+- SUBJECT Credential Modality (PR #28) ✅
+- GURU_KEPESANTRENAN Contract (PR #29) ✅
+- Keasramaan Runtime Remediation (PR #30) ✅
 
-Current next step:
+Current lifecycle point: **PRE-GATE CANONICAL REPOSITORY RECONCILIATION**.
+PR #29 and PR #30 code hardening ("Gate 5 remediation") do NOT constitute execution of Release Gate 5. Production actions = 0.
 
-### Current next planned gate — REAL PRODUCTION BACKUP READINESS
+### Sequential Release Gate Model (Gates 0–9)
+Per DIR-2026-029, the official sequential release gate model is:
 
-Requirements remain:
+- **Gate 0 — Real Production Backup & Snapshot**:
+  - Logical PostgreSQL dump: `STQ_PRODUCTION_T0.sql` (direct PostgreSQL wire connection, pg_dump compatible with production major, SHA-256 checksum, isolated restore verification).
+  - Snapshot workbook: `STQ_PRODUCTION_SNAPSHOT_T0.xlsx` generated from restored-T0 with EXACTLY 15 required sheets:
+    1. Manifest, 2. Santri, 3. User, 4. Staff, 5. Halaqoh, 6. SetoranTahfizh, 7. TargetSantri, 8. PerizinanSantri, 9. PelanggaranSantri, 10. MataPelajaran, 11. NilaiAkademik, 12. Assignments, 13. PositionCapabilities, 14. OrgUnits, 15. PrismaMigrations.
+  - Zero secrets/credentials.
+  - Status: **NOT_EXECUTED / PENDING_EXPLICIT_OWNER_AUTHORIZATION**
 
-- direct PostgreSQL wire-compatible connection
-- `pg_dump`
-- verified dump file
-- SHA-256 checksum
-- isolated restore verification
+- **Gate 1 — Production Migrations**:
+  - `prisma migrate deploy` for pending migrations (`20260918120000_m3_3a_health_v2_backend`, `20260918140000_m3_3b_pendidikan_foundation`, `20260920080000_prelaunch_reconciliation`).
+  - Status: **BLOCKED / NOT_STARTED**
 
-IMPORTANT:
+- **Gate 2 — Post-Migration Schema Reconciliation**:
+  - Read-only catalog inspection verifying tables, columns, indexes, and enums against Prisma schema.
 
-- Do NOT execute the backup as part of this PR.
-- Do NOT perform any production write.
-- Do NOT start C2B.
+- **Gate 3 — Foundation & Controlled Provisioning**:
+  - Provisioning canonical subjects, cohorts, OrgUnits, Positions, Capabilities, PositionCapabilities, Staff linkages, Assignments, ScopeUnits, and teaching assignments.
 
-Then, only after backup requirements and separate Business Owner authorization are satisfied:
+- **Gate 4 — Post-Provision Reconciliation**:
+  - Verification of data integrity, assignment bounds, and account states.
 
-### STEP 3 — M3.3C2B
-Production M3.3A + M3.3B migration. (Currently: BLOCKED / NOT STARTED)
+- **Gate 5 — Runtime Activation**:
+  - Controlled feature flag / policy activation in production.
 
-Then:
+- **Gate 6 — Readiness Verification**:
+  - Pre-UAT health and capability readiness checks.
 
-### STEP 4 — M3.3C2C
-Controlled production provisioning:
+- **Gate 7 — Live Production UAT**:
+  - Execution of authorized UAT scenarios with stakeholders.
 
-- canonical subjects
-- cohorts
-- cohort assignment
-- OrgUnits
-- Positions
-- Capabilities
-- PositionCapabilities
-- Staff linkages
-- Assignments
-- ScopeUnits
-- teaching assignments
-- OSDA Putri
-- approved account provisioning
+- **Gate 8 — Final Gap & Decommission Verification**:
+  - Verification of decommissioned accounts (e.g. `razan.mt`) and final cleanup.
 
-#### ACCOUNT CLEANUP / C2C (Planning / Context Only — Zero Production Writes in PR #24):
-- `razan.mt` dependency audit
-- prevent new canonical grants
-- determine safe disable/deactivate action
-- verify no duplicate Kabid authority
-- validate `musyrif.tahifzh` account identity/linkage before provisioning
-- hard delete only if separately authorized after dependency proof
-
-Then:
-
-### STEP 5 — M3.3C2D
-Activation of explicitly approved feature flags/policies.
-
-Canonical global authorization cutover is not automatically included.
-
-Then:
-
-### STEP 6 — M3.3C2E
-Live production UAT and final sign-off.
+- **Gate 9 — Evidence Pack & Sign-Off**:
+  - Final audit consolidation, release baseline lock, and formal business sign-off.
 
 ---
 
-## 18. Gate before C2B
+## 18. Gate Status Before Gate 1 (Production Migrations)
 
-Gate verification status before C2B:
-
-1. PR #8 migration-ledger/schema reconciliation independently audited
-   = SATISFIED
-
-2. Business Owner explicitly authorized reconciliation merge
-   = SATISFIED
-
-3. Reconciliation merged and post-merge verified
-   = SATISFIED (PR #23 merged at commit checkpoint `5ba4060f841304a189fce622d39243864b7c453a`)
-
-4. Production prisma migrate status
-   = Last read-only reconciliation verification showed only:
-     - `20260918120000_m3_3a_health_v2_backend`
-     - `20260918140000_m3_3b_pendidikan_foundation`
-     pending.
-     *(Note: This is a point-in-time audit observation, not a permanent truth. Production migrate status must be re-verified from the merged main context before C2B execution.)*
-
-5. Real production backup + SHA-256 + isolated restore
-   = NOT SATISFIED / BLOCKED
-
-6. Separate Business Owner authorization for C2B
-   = NOT GRANTED
+1. PR #8 migration-ledger/schema reconciliation independently audited = SATISFIED (PR #23)
+2. PRE-GATE Canonical Repository Reconciliation = CURRENT TASK
+3. Real production backup + SHA-256 + isolated restore (Gate 0) = NOT EXECUTED / BLOCKED
+4. Gate 0 snapshot workbook (`STQ_PRODUCTION_SNAPSHOT_T0.xlsx`) = NOT CREATED / BLOCKED
+5. Separate explicit Business Owner authorization for Gate 0 and Gate 1 = NOT GRANTED
 
 Therefore:
-
-`C2B = BLOCKED`
+`GATE 0 = NOT_EXECUTED`
+`GATE 1 = BLOCKED`
 
 ---
 
