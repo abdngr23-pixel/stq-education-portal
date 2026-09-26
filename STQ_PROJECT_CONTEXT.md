@@ -212,10 +212,13 @@ Canonical account modalities:
 
 - `PERSONAL`
 - `UNIT`
+- `SUBJECT`
 
 `PERSONAL` represents a human credential. Sensitive operational positions generally require valid active human/Staff linkage.
 
 `UNIT` represents a functional desk, organization, or operational unit credential.
+
+`SUBJECT` represents a technical credential modality for Studi Umum subject accounts (e.g. `mapel.matematika`, `mapel.ipa`). Governed by PR #28 and DIR-2026-027: requires exactly one active binding to a canonical subject, zero fake Staff requirement, subject-scoped access only, and fails closed across subjects.
 
 Every mutating `UNIT` transaction must retain verified human executor attribution.
 
@@ -325,10 +328,11 @@ Tahfizh contains legacy production behavior plus canonical target architecture. 
 Key current business boundaries:
 
 - Kabid Tahfizh is an organizational position, not a person-name permission.
-- Mudir has existing GLOBAL reward authority.
-- Kabid Tahfizh has existing DOMAIN managerial reward authority.
-- `tahfizh.reward.issue` for the special operational Tahfizh position is approved target only with `ASSIGNED_UNITS`; it is not automatically live.
-- `tahfizh.recap.read` breadth does not widen reward, target, or setoran write scope.
+- Mudir has existing GLOBAL reward authority (`tahfizh.reward.issue` + `GLOBAL`).
+- Kabid Tahfizh has existing DOMAIN managerial reward authority (`tahfizh.reward.issue` + `DOMAIN`).
+- Reward issuance (`tahfizh.reward.issue`) is strictly restricted to `MUDIR` and `KABID_TAHFIZH` ONLY. `PETUGAS_OPERASIONAL_TAHFIZH` (`musyirfah.putri`), ordinary `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, and `ADM` are NOT authorized (`CAPABILITY_NOT_GRANTED`). The prior target rule granting POT `ASSIGNED_UNITS` reward issuance is formally SUPERSEDED per `DIR-2026-023`.
+- `tahfizh.recap.read` breadth (`GLOBAL` for POT) does not widen reward, target, or setoran write scope.
+- Sabaqi is automatically derived from authoritative valid stored SABAQ setoran records within the active temporal weekly window (from Monday/Senin 00:00 WITA up to effective reference/input timestamp, with valid stored SABAQ and all applicable temporal/baseline filters enforced). Business semantics require `isManualAllowed = false`. Manual overrides, fake fallbacks, or manual Sabaqi entry with audit reason are strictly prohibited (ORR-067 / DIR-2026-024).
 - `MUSYRIF_TAHFIZH` target management scope is `HALAQOH`.
 - `PEMBINA_HALAQOH` target management scope is `HALAQOH`.
 - Target management is only for assigned halaqoh.
@@ -437,22 +441,14 @@ Weekly fixed subjects:
 - Matematika
 - Bahasa Inggris
 
-PBL rotation every five Saturdays:
+PBL rotation across the 20-week semester (approved canonical subject rotation):
 
 - meetings 1–5: IPS
 - meetings 6–10: IPA
 - meetings 11–15: Bahasa Indonesia
 - meetings 16–20: TIK
 
-Each five-week block:
-
-- week 1–4 theory
-- week 5 one project
-
-One semester:
-
-- 20 Saturdays
-- exactly 4 major projects, not 20 projects
+*(Per ORR-131 / DIR-2026-025, approved canonical owner rule is purely this 4-block subject rotation across 20 Saturday meetings. Invented pedagogical phases such as theory vs project weeks or phase enums are non-canonical).*
 
 Canonical Studi Umum subjects — exact:
 
@@ -675,6 +671,21 @@ Rules:
 - Before a major transition, consolidate implemented state, decisions, unresolved items, audit findings, no-touch invariants, and exact baseline.
 - Prompts to coding agents must define scope, business rules, acceptance tests, git constraints, production constraints, and final report format.
 
+### Sequential Release Gate Model (Gates 0–9)
+Per DIR-2026-029, the official production release sequence is strictly governed by sequential Gates 0 through 9:
+- **Gate 0:** Production backup + checksum + isolated restore + restored-T0 XLSX snapshot (`STQ_PRODUCTION_T0.sql`, `STQ_PRODUCTION_SNAPSHOT_T0.xlsx` with exactly 15 required sheets)
+- **Gate 1:** Production migrations (`prisma migrate deploy`)
+- **Gate 2:** Post-migration schema reconciliation
+- **Gate 3:** Foundation / provisioning
+- **Gate 4:** Post-provision reconciliation
+- **Gate 5:** Runtime activation
+- **Gate 6:** Readiness verification
+- **Gate 7:** Live UAT
+- **Gate 8:** Final gap / decommission verification
+- **Gate 9:** Evidence / sign-off / release baseline
+
+Current lifecycle point: **PRE-GATE RECONCILIATION**. PR #29 and PR #30 code hardening ("Gate 5 remediation") do NOT constitute execution of Release Gate 5. Production actions = 0.
+
 ---
 
 ## 17. PR #8 special guard
@@ -702,7 +713,7 @@ Always read that file before migration work.
 Unless a newer explicit Business Owner decision is documented, do not invent answers for unresolved areas such as:
 
 - permanent cohort mapping for current active santri;
-- teacher account modality where still undecided: PERSONAL linked Staff vs UNIT + verified human executor;
+- teacher account modality where still undecided (resolved for Studi Umum as `SUBJECT` modality per PR #28 / DIR-2026-027, and for Kepesantrenan as `PERSONAL` modality under `GURU_KEPESANTRENAN` per PR #29 / DIR-2026-028; other academic modalities remain pending explicit policy);
 - badal/substitute teacher authorization matrix;
 - cohort gap/repeater/transfer policy;
 - new canonical Kepesantrenan grading;

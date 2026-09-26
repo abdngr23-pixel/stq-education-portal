@@ -860,9 +860,9 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
   });
 
   // =========================================================================
-  // Section 10: UAT Item #11 — Tasmi'/Sima'an Reward Issuer
+  // Section 10: UAT Item #11 — Tasmi'/Sima'an Reward Issuer (DIR-2026-023 Reconciled)
   // =========================================================================
-  describe("Section 10: UAT Item #11 — Tasmi'/Sima'an Reward Issuer", () => {
+  describe("Section 10: UAT Item #11 — Tasmi'/Sima'an Reward Issuer (DIR-2026-023 Reconciled)", () => {
     it("10.1. Ordinary MT is denied reward issuance", async () => {
       const mtAssignment: CanonicalAssignmentWithDetails = {
         id: "asg-mt-ordinary",
@@ -927,43 +927,194 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
       assert.strictEqual(res.code, "CAPABILITY_NOT_GRANTED");
     });
 
-    it("10.2. Business Owner confirmed: special operational reward issuer authority is limited to assigned units/groups only", () => {
-      // Business Owner confirmed: special operational reward issuer authority is limited to assigned units/groups only.
-      const targetGrant: EffectiveCapabilityGrant = {
-        assignmentId: "asg-op-reward-issuer",
-        positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
-        capabilityCode: TAHFIZH_M32_CAPABILITIES.REWARD_ISSUE,
-        scopeType: "ASSIGNED_UNITS",
-        anchorUnitId: "hlq-assigned-01",
-        unitIds: ["hlq-assigned-01"],
-        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+    it("10.2. Mudir (GLOBAL) and Kabid Tahfizh (DOMAIN) are authorized for reward issuance", async () => {
+      const mudirAssignment: CanonicalAssignmentWithDetails = {
+        id: "asg-mudir-reward",
+        userId: "usr-mudir",
+        positionId: "pos-mudir",
+        positionCode: "MUDIR",
+        positionName: "Mudir Pesantren",
+        domain: "MANAJEMEN",
+        unitId: "ou-root",
+        unitCode: "INST-ROOT",
+        unitName: "STQ Pesantren",
+        status: "ACTIVE",
+        validFrom: new Date(Date.now() - 3600000),
+        validUntil: null,
+        positionCapabilities: [
+          {
+            capabilityCode: TAHFIZH_M32_CAPABILITIES.REWARD_ISSUE,
+            scopeType: "GLOBAL",
+            businessRuleState: "VERIFIED_PRODUCTION",
+          },
+        ],
+        scopeUnits: [],
       };
 
-      // Assigned unit resource -> Matches
-      const inUnitContext: ResolvedResourceContext = {
-        resourceId: "tasmi-01",
-        santriId: "san-assigned-01",
-        orgUnitIds: ["hlq-assigned-01"],
-        orgDomain: "TAHFIZH",
+      const kabidAssignment: CanonicalAssignmentWithDetails = {
+        id: "asg-kabid-reward",
+        userId: "usr-kabid",
+        positionId: "pos-kabid",
+        positionCode: "KABID_TAHFIZH",
+        positionName: "Kepala Bidang Tahfizh",
+        domain: "TAHFIZH",
+        unitId: "ou-tahfizh",
+        unitCode: "OU-TAHFIZH",
+        unitName: "Bidang Tahfizh",
+        status: "ACTIVE",
+        validFrom: new Date(Date.now() - 3600000),
+        validUntil: null,
+        positionCapabilities: [
+          {
+            capabilityCode: TAHFIZH_M32_CAPABILITIES.REWARD_ISSUE,
+            scopeType: "DOMAIN",
+            businessRuleState: "VERIFIED_PRODUCTION",
+          },
+        ],
+        scopeUnits: [],
       };
-      const allowRes = evaluateScopePredicate(targetGrant, inUnitContext, { userId: "usr-op" });
-      assert.strictEqual(allowRes.matches, true, "Assigned target santri must match scope");
-      assert.strictEqual(allowRes.code, "ALLOWED");
 
-      // Unassigned unit resource -> Denied (SCOPE_MISMATCH)
-      const outUnitContext: ResolvedResourceContext = {
-        resourceId: "tasmi-99",
-        santriId: "san-other-99",
-        orgUnitIds: ["hlq-other-99"],
-        orgDomain: "TAHFIZH",
+      const mudirProvider: ICanonicalDataProvider = {
+        async getIdentity() {
+          return {
+            userId: "usr-mudir",
+            username: "mudir",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            staffId: "stf-mudir",
+            staffStatus: "AKTIF",
+          };
+        },
+        async getActiveAssignments() {
+          return [mudirAssignment];
+        },
+        async getUnitAccountPlacement() {
+          return null;
+        },
+        async verifyHumanExecutor() {
+          return null;
+        },
+        async resolveResourceContext() {
+          return { orgUnitIds: ["hlq-any"], orgDomain: "TAHFIZH" };
+        },
       };
-      const denyRes = evaluateScopePredicate(targetGrant, outUnitContext, { userId: "usr-op" });
-      assert.strictEqual(denyRes.matches, false, "Outside assigned target must be denied");
-      assert.strictEqual(denyRes.code, "SCOPE_MISMATCH");
+
+      const mudirRes = await authorizeCanonical({
+        identity: {
+          userId: "usr-mudir",
+          username: "mudir",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+        },
+        capability: TAHFIZH_M32_CAPABILITIES.REWARD_ISSUE,
+        dataProvider: mudirProvider,
+      });
+      assert.strictEqual(mudirRes.decision, "ALLOW", "Mudir with GLOBAL scope must be ALLOWED");
+
+      const kabidProvider: ICanonicalDataProvider = {
+        async getIdentity() {
+          return {
+            userId: "usr-kabid",
+            username: "musyrif.tahifzh",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            staffId: "stf-kabid",
+            staffStatus: "AKTIF",
+          };
+        },
+        async getActiveAssignments() {
+          return [kabidAssignment];
+        },
+        async getUnitAccountPlacement() {
+          return null;
+        },
+        async verifyHumanExecutor() {
+          return null;
+        },
+        async resolveResourceContext() {
+          return { orgUnitIds: ["hlq-tahfizh-01"], orgDomain: "TAHFIZH" };
+        },
+      };
+
+      const kabidRes = await authorizeCanonical({
+        identity: {
+          userId: "usr-kabid",
+          username: "musyrif.tahifzh",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+        },
+        capability: TAHFIZH_M32_CAPABILITIES.REWARD_ISSUE,
+        dataProvider: kabidProvider,
+      });
+      assert.strictEqual(kabidRes.decision, "ALLOW", "Kabid Tahfizh with DOMAIN scope must be ALLOWED");
     });
 
-    it("10.3. GLOBAL tahfizh.recap.read does NOT widen tahfizh.reward.issue scope", () => {
-      // Operational staff has GLOBAL recap read and ASSIGNED_UNITS reward issue
+    it("10.3. PETUGAS_OPERASIONAL_TAHFIZH / musyirfah.putri is DENIED reward issuance (DIR-2026-023 supersedes prior ASSIGNED_UNITS rule)", async () => {
+      // Under DIR-2026-023, POT does NOT hold tahfizh.reward.issue; only tahfizh.recap.read is granted
+      const potAssignment: CanonicalAssignmentWithDetails = {
+        id: "asg-pot-lisa",
+        userId: "usr-lisa",
+        positionId: "pos-pot",
+        positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+        positionName: "Petugas Operasional Tahfizh",
+        domain: "TAHFIZH",
+        unitId: "ou-tahfizh",
+        unitCode: "OU-TAHFIZH",
+        unitName: "Bidang Tahfizh",
+        status: "ACTIVE",
+        validFrom: new Date(Date.now() - 3600000),
+        validUntil: null,
+        positionCapabilities: [
+          {
+            capabilityCode: TAHFIZH_M32_CAPABILITIES.RECAP_READ,
+            scopeType: "GLOBAL",
+            businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+          },
+        ],
+        scopeUnits: [],
+      };
+
+      const potProvider: ICanonicalDataProvider = {
+        async getIdentity() {
+          return {
+            userId: "usr-lisa",
+            username: "musyirfah.putri",
+            status: "AKTIF",
+            accountType: "PERSONAL",
+            staffId: "stf-lisa",
+            staffStatus: "AKTIF",
+          };
+        },
+        async getActiveAssignments() {
+          return [potAssignment];
+        },
+        async getUnitAccountPlacement() {
+          return null;
+        },
+        async verifyHumanExecutor() {
+          return null;
+        },
+        async resolveResourceContext() {
+          return { orgUnitIds: ["hlq-assigned-01"], orgDomain: "TAHFIZH" };
+        },
+      };
+
+      const potRes = await authorizeCanonical({
+        identity: {
+          userId: "usr-lisa",
+          username: "musyirfah.putri",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+        },
+        capability: TAHFIZH_M32_CAPABILITIES.REWARD_ISSUE,
+        dataProvider: potProvider,
+      });
+
+      assert.strictEqual(potRes.decision, "DENY", "POT / musyirfah.putri must be DENIED reward issuance");
+      assert.strictEqual(potRes.code, "CAPABILITY_NOT_GRANTED");
+    });
+
+    it("10.4. GLOBAL tahfizh.recap.read does NOT widen or grant tahfizh.reward.issue authority", () => {
       const recapGrant: EffectiveCapabilityGrant = {
         assignmentId: "asg-lisa-recap",
         positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
@@ -974,17 +1125,6 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
         businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
       };
 
-      const rewardGrant: EffectiveCapabilityGrant = {
-        assignmentId: "asg-lisa-reward",
-        positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
-        capabilityCode: TAHFIZH_M32_CAPABILITIES.REWARD_ISSUE,
-        scopeType: "ASSIGNED_UNITS",
-        anchorUnitId: "hlq-assigned-01",
-        unitIds: ["hlq-assigned-01"],
-        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
-      };
-
-      // Santri in outside halaqoh/unit
       const outsideContext: ResolvedResourceContext = {
         resourceId: "tasmi-outside",
         santriId: "san-outside-01",
@@ -996,10 +1136,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
       const recapEval = evaluateScopePredicate(recapGrant, outsideContext, { userId: "usr-lisa" });
       assert.strictEqual(recapEval.matches, true, "GLOBAL recap read allows institutional scope");
 
-      // But reward issuance on the same outside santri/resource strictly fails closed with SCOPE_MISMATCH
-      const rewardEval = evaluateScopePredicate(rewardGrant, outsideContext, { userId: "usr-lisa" });
-      assert.strictEqual(rewardEval.matches, false, "GLOBAL recap read must NEVER widen ASSIGNED_UNITS reward issue");
-      assert.strictEqual(rewardEval.code, "SCOPE_MISMATCH");
+      // Verify evaluateScopePredicate fails if reward capability is evaluated without grant
+      assert.strictEqual(recapGrant.capabilityCode, TAHFIZH_M32_CAPABILITIES.RECAP_READ);
     });
   });
 

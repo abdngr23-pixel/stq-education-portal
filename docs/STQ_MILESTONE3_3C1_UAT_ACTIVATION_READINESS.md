@@ -43,7 +43,7 @@ Milestone 3.3C is partitioned into two distinct phases to ensure institutional d
 #### 2.1 Implemented & Locked (M3.3A & M3.3B)
 - **Health V2 Backend Foundation**: Additive schema (`health_cases_v2`, `health_case_v2_events`, `HealthStatusV2`), atomic audit, concurrency foundation, and multi-tenant isolation.
 - **Pendidikan Foundation**: Additive schema (`education_sessions`, `education_session_participants`, `education_session_attendances`), 6 canonical Studi Umum subjects, 5 Kepesantrenan subjects.
-- **Studi Umum Saturday JP Matrix & PBL 20-Week Rotation**: Canonical derivation of theory vs project weeks without manual tampering.
+- **Studi Umum Saturday JP Matrix & PBL 20-Week Rotation**: Canonical derivation of approved subject rotation (meetings 1–5 IPS, 6–10 IPA, 11–15 Bahasa Indonesia, 16–20 TIK) without invented theory/project phases (ORR-131 / DIR-2026-025).
 - **Kepesantrenan Daily Schedule**: Monday–Friday 18:30–19:30 WITA schedule windows with Arabic 3-tier pedagogical level facts.
 - **Session Lifecycle & CAS Concurrency**: Atomic transition `SCHEDULED -> STARTED` using Compare-And-Swap to eliminate race conditions.
 - **Participant Roster Verification**: Trust boundary enforcement requiring santri to be officially enrolled in session participants before attendance mutations.
@@ -55,7 +55,7 @@ Milestone 3.3C is partitioned into two distinct phases to ensure institutional d
 - **UAT #2: Tahfizh Recap Operational Read**: `tahfizh.recap.read` scoped to `GLOBAL`. Does not widen setoran mutations or reward issuance.
 - **UAT #4: Target Management (`MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`)**: `tahfizh.target.manage` scoped to `HALAQOH` (own assigned halaqoh only). Cross-halaqoh modifications denied.
 - **UAT #10: OSDA Putri Account Contract (`OU-OSDA-PUTRI`)**: `accountType: UNIT`, `genderComplex: PUTRI`, single active placement, human executor verification required, zero PUTRA data leakage.
-- **UAT #11: Special Operational Reward Issuance**: `tahfizh.reward.issue` scoped strictly to `ASSIGNED_UNITS`. Never GLOBAL reward issuance for operational roles.
+- **UAT #11: Reward Issuance Authority**: `tahfizh.reward.issue` restricted strictly to `MUDIR` (`GLOBAL`) and `KABID_TAHFIZH` (`DOMAIN`) only. Special operational reward issuance for `PETUGAS_OPERASIONAL_TAHFIZH` (`ASSIGNED_UNITS`) is SUPERSEDED per DIR-2026-023.
 - **UAT #12: Scoped Cross-Functional Access**: Orthogonal capability assignment without "superuser" roles or identity-based bypasses.
 
 #### 2.3 Formally Deferred Scope
@@ -134,18 +134,22 @@ Milestone 3.3C is partitioned into two distinct phases to ensure institutional d
 
 ### 5. Production Readiness Diagnostic Framework (`M3_3C_PRODUCTION_READINESS`)
 
-A non-writing, read-only diagnostic engine (`checkPendidikanV2ProductionReadiness`) evaluates 11 critical readiness gates using the canonical registry (`CANONICAL_READINESS_GATE_NAMES`):
-1. `M3_3A_SCHEMA_READY`: `health_cases_v2`, `health_case_v2_events` exist; enum `HealthStatusV2` exists.
-2. `M3_3B_SCHEMA_READY`: `education_cohorts`, `teaching_assignments`, `education_sessions`, `education_session_participants`, `education_session_attendances` exist; enums `EducationTrack`, `PedagogicalLevel`, `EducationSessionStatus`, `EducationAttendanceStatus` exist.
-3. `CANONICAL_AUDIT_READY`: `canonical_audit_logs` exists.
-4. `STAFF_LINKAGE_READY`: Operational personal accounts have active linked `Staff` records. Accounts lacking linkage (such as `razan.mt`) are reported as `BLOCKED_IDENTITY_LINKAGE`.
-5. `REQUIRED_ORG_UNITS_READY`: Required organizational units exist (`OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT` derived from canonical contract constants).
-6. `REQUIRED_POSITIONS_READY`: Required Position records exist (`MUDIR`, `KABID_TAHFIZH`, `KEPALA_KEASRAMAAN`, `PETUGAS_OPERASIONAL_TAHFIZH`, `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, `PETUGAS_OPERASIONAL_KEASRAMAAN` derived from approved UAT targets; strictly no invented `PEMBINA_ASRAMA`).
-7. `CAPABILITIES_REGISTERED`: All 9 required UAT activation capabilities registered (`academic.schedule.read`, `academic.session.start`, `academic.material.record`, `academic.attendance.record`, `tahfizh.recap.read`, `tahfizh.reward.issue`, `tahfizh.target.manage`, `keasramaan.permission.read`, `keasramaan.permission.create`).
-8. `USER_ASSIGNMENTS_READY`: Active user assignments exist covering all approved target positions.
-9. `TEACHING_ASSIGNMENTS_READY`: Full active assignment coverage for all 18 canonical slots (6 Studi Umum, 7 Kps Putra, 5 Kps Putri).
-10. `COHORTS_ASSIGNED`: Relevant active santri population have explicit `cohort_id` assigned without deriving from school class or age (inactive historical santri do not block).
-11. `RUNTIME_ACTIVATION_FLAG`: `PENDIDIKAN_V2_UAT_ENABLED` is configured as `true`.
+A non-writing, read-only diagnostic engine (`checkPendidikanV2ProductionReadiness`) evaluates 14 critical readiness checks using the canonical registry (`CANONICAL_READINESS_GATE_NAMES`):
+1. `M3_3A_SCHEMA_READY` (blocking: true): `health_cases_v2`, `health_case_v2_events` exist; enum `HealthStatusV2` exists.
+2. `M3_3B_SCHEMA_READY` (blocking: true): `education_cohorts`, `teaching_assignments`, `education_sessions`, `education_session_participants`, `education_session_attendances` exist; enums `EducationTrack`, `PedagogicalLevel`, `EducationSessionStatus`, `EducationAttendanceStatus` exist.
+3. `CANONICAL_AUDIT_READY` (blocking: true): `canonical_audit_logs` exists.
+4. `STAFF_LINKAGE_READY` (blocking: true): Operational personal accounts have active linked `Staff` records. Accounts lacking linkage (such as `razan.mt`) are reported as `BLOCKED_IDENTITY_LINKAGE`.
+5. `REQUIRED_ORG_UNITS_READY` (blocking: true): Required organizational units exist (`OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT` derived from canonical contract constants).
+6. `REQUIRED_POSITIONS_READY` (blocking: true): Required Position records exist (`MUDIR`, `KABID_TAHFIZH`, `KEPALA_KEASRAMAAN`, `PETUGAS_OPERASIONAL_TAHFIZH`, `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, `PETUGAS_OPERASIONAL_KEASRAMAAN`, `GURU_KEPESANTRENAN` derived from approved contracts; strictly no invented `PEMBINA_ASRAMA`).
+7. `CAPABILITIES_REGISTERED` (blocking: true): All required activation capabilities registered (`academic.schedule.read`, `academic.session.start`, `academic.material.record`, `academic.attendance.record`, `tahfizh.recap.read`, `tahfizh.target.manage`, `keasramaan.permission.read`, `keasramaan.permission.create`). Note: `tahfizh.reward.issue` is reserved to leadership positions and is not an operational UAT target capability for POT per `DIR-2026-023`.
+8. `USER_ASSIGNMENTS_READY` (blocking: true): Active user assignments exist covering all approved target positions and scope constraints.
+9. `TEACHING_ASSIGNMENTS_READY` (blocking: true): Full active assignment coverage for canonical Kepesantrenan slots (7 Kps Putra, 5 Kps Putri).
+10. `KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY` (blocking: true): Evaluates runtime authorization policy readiness for Kepesantrenan actions. Requires explicit match against `KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES` manifest with `businessRuleState === "VERIFIED_PRODUCTION"`.
+11. `STALE_POSITION_CAPABILITY_POLICY_READY` (blocking: true): Rejects stale policy granting `tahfizh.reward.issue` to `PETUGAS_OPERASIONAL_TAHFIZH` (fails closed if present).
+12. `COHORTS_ASSIGNED` (blocking: false / DEFERRED_INFORMATIONAL): Active santri population cohort assignment. Deferred by owner lock; `COHORT_NOT_REQUIRED_FOR_RUNTIME`.
+13. `KEASRAMAAN_KAMAR_CONFIGURATION_READY` (blocking: false when 0 Kamar / DEFERRED; blocking: true when Kamar exist): Case A: 0 active Kamar => `CONFIGURATION_NOT_CREATED / DEFERRED` (non-blocking). Case B: active Kamar > 0 => validates topology, placement consistency, and Mudhabbir coverage. Database/query failure => `BLOCKED` (blocking).
+14. `RUNTIME_ACTIVATION_FLAG` (blocking: true): `PENDIDIKAN_V2_UAT_ENABLED` is configured as `true`.
+*Note: Internal readiness checks are diagnostic controls and do not replace Release Gates 0–9.*
 
 ---
 

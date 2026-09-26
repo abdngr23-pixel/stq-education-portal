@@ -577,7 +577,7 @@
 
 - **REL-POS-02 | Operational Staff Positions Provisioning**
   - **Domain:** POSITIONS / OPERATIONAL
-  - **Requirement:** Provision operational positions strictly limited to approved gate set (`REQUIRED_POSITIONS_READY`): `PETUGAS_OPERASIONAL_TAHFIZH`, `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, `PETUGAS_OPERASIONAL_KEASRAMAAN`. Additional operational positions (`MUDABBIR`, `GURU_AKADEMIK`) are `PROPOSED_TBD / DEFERRED`. Strictly remove/avoid invented position `GURU_KEPESANTRENAN`.
+  - **Requirement:** Provision operational positions strictly limited to approved gate set: `PETUGAS_OPERASIONAL_TAHFIZH`, `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, `PETUGAS_OPERASIONAL_KEASRAMAAN`, and canonical position `GURU_KEPESANTRENAN` (formalized in PR #29 / DIR-2026-028). Additional operational positions (`MUDABBIR`, `GURU_AKADEMIK`) are `PROPOSED_TBD / DEFERRED`.
   - **Source of truth:** `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`
   - **PolicyDecisionState:** `APPROVED` (for approved operational gate set; `PROPOSED_TBD` for `GURU_AKADEMIK` and `MUDABBIR`)
   - **Current state:** Unseeded in production.
@@ -712,17 +712,17 @@
 ### I. POSITION CAPABILITIES
 - **REL-PC-01 | PETUGAS_OPERASIONAL_TAHFIZH Grants Mapping**
   - **Domain:** POSITION_CAPABILITIES / TAHFIZH
-  - **Requirement:** Map `tahfizh.recap.read` with `scopeType: GLOBAL` and `tahfizh.reward.issue` with `scopeType: ASSIGNED_UNITS`.
-  - **Source of truth:** `types/architecture-lock.ts` (`UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH`)
-  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL` (Conferring ZERO runtime authority until C2D promotion)
+  - **Requirement:** Map `tahfizh.recap.read` with `scopeType: GLOBAL`. Note: `tahfizh.reward.issue` for `PETUGAS_OPERASIONAL_TAHFIZH` is formally **SUPERSEDED** per DIR-2026-023 (reward issuance is restricted to Mudir [GLOBAL] and Kabid Tahfizh [DOMAIN] only; POT does not hold reward capability).
+  - **Source of truth:** `types/architecture-lock.ts`, `docs/STQ_OWNER_DIRECTIVES.md: DIR-2026-023`
+  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL` (for `tahfizh.recap.read`; `tahfizh.reward.issue` is SUPERSEDED)
   - **Current state:** Unmapped in production.
-  - **Target state:** Mapped with `businessRuleState = APPROVED_TARGET_PENDING_TECHNICAL`.
+  - **Target state:** Mapped with `businessRuleState = APPROVED_TARGET_PENDING_TECHNICAL` for `tahfizh.recap.read`.
   - **Dependency:** REL-POS-02, REL-CAP-01
   - **Production write required?:** YES (INSERT)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** C2C dry-run SQL.
-  - **Positive test:** Query verifies `scopeType = GLOBAL` for recap and `ASSIGNED_UNITS` for reward.
-  - **Negative test:** Engine denies reward issuance outside assigned units.
+  - **Positive test:** Query verifies `scopeType = GLOBAL` for recap.
+  - **Negative test:** Engine denies reward issuance for POT (`CAPABILITY_NOT_GRANTED`).
   - **Reconciliation evidence:** PositionCapability table audit.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-PC-OP-TAH`
@@ -774,16 +774,16 @@
   - **Domain:** POSITION_CAPABILITIES / AKADEMIK
   - **Requirement:** Evaluate academic capabilities (`academic.schedule.read`, `academic.session.start`, `academic.material.record`, `academic.attendance.record`). Canonical classification:
     - `ACADEMIC_CAPABILITY_REGISTRATION = REQUIRED` (The four capabilities must be registered in the `capabilities` table as part of the exact 9 UAT set).
-    - `ACADEMIC_POSITION_GRANT_POLICY = PROPOSED_TBD / BLOCKED` (`GURU_AKADEMIK` PositionCapability grants are NOT currently approved by canonical `UAT_ACTIVATION_TARGETS`).
-    - `ACADEMIC_SCOPE_POLICY = BLOCKED`
-    - `ACADEMIC_ACCOUNT_MODALITY = PROPOSED_TBD` (Teacher account modality: PERSONAL linked Staff vs UNIT + verified human executor remains unresolved).
-    - `ACADEMIC_UNIT_CONTAINMENT = BLOCKED_TECHNICAL` (`EducationSession` / `TeachingAssignment` have no authoritative `OrgUnit` relation for unit containment; failing closed without borrowing halaqoh/kamar into academic `orgUnitIds`).
-    - Strictly avoid/remove invented canonical position `GURU_KEPESANTRENAN`.
-    Do NOT activate academic PositionCapabilities until policy and technical containment are explicitly resolved. Grant mapping is an explicit release blocker.
-  - **Source of truth:** `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`
-  - **BusinessRuleState:** `PROPOSED_TBD`
-  - **Current state:** Unmapped in production; grant mapping policy and unit containment unresolved.
-  - **Target state:** Capability codes registered in DB; PositionCapability grant mapping remains BLOCKED pending Business Owner policy decision and technical containment resolution.
+    - `ACADEMIC_POSITION_GRANT_POLICY = RESOLVED` (`GURU_KEPESANTRENAN` formalized under `PERSONAL` modality with `GLOBAL` capability scope and server-side teacher ownership per PR #29 / DIR-2026-028; Studi Umum resolved as `SUBJECT` modality under `AcademicSubjectAccountBinding` per PR #28 / DIR-2026-027; legacy `GURU_AKADEMIK` remains unapproved/deprecated).
+    - `ACADEMIC_SCOPE_POLICY = RESOLVED` (`GLOBAL` capability scope for `GURU_KEPESANTRENAN`, where server-side teacher and session ownership `scheduledStaffId === actorStaffId` and `actualTeacherUserId === actorUserId` enforce actual authorization boundaries; `SUBJECT` account binding for Studi Umum).
+    - `ACADEMIC_ACCOUNT_MODALITY = RESOLVED` (Studi Umum subject accounts use `SUBJECT` modality per PR #28 / DIR-2026-027; Kepesantrenan teachers use `PERSONAL` modality under canonical position `GURU_KEPESANTRENAN` per PR #29 / DIR-2026-028).
+    - `ACADEMIC_UNIT_CONTAINMENT = RESOLVED_VIA_TEACHER_OWNERSHIP` (For `GURU_KEPESANTRENAN`, `GLOBAL` capability scope eliminates artificial OrgUnit containment requirements while server-side teacher/session ownership strictly enforces boundaries; Studi Umum is bound via `AcademicSubjectAccountBinding`).
+    - `GURU_KEPESANTRENAN` is an approved canonical position contract under PERSONAL modality (PR #29 / DIR-2026-028).
+    Activation remains gated by sequential release controls (C2C provisioning and C2D activation flag).
+  - **Source of truth:** `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`, `docs/STQ_OWNER_DIRECTIVES.md: DIR-2026-028`
+  - **BusinessRuleState:** `APPROVED`
+  - **Current state:** Unmapped in production; contracts approved, awaiting C2C execution.
+  - **Target state:** Capability codes registered in DB; PositionCapability for GURU_KEPESANTRENAN seeded in C2C and evaluated under KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY gate.
   - **Dependency:** REL-POS-02, REL-CAP-01
   - **Production write required?:** YES (Future operational stage requires insert after resolution; CURRENT PR #25 EXECUTES ZERO PRODUCTION WRITES)
   - **Owner authorization required?:** YES
@@ -794,8 +794,8 @@
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state.
   - **Evidence Pack reference:** `EVID-PC-GURU-AKAD`
   - **Gate:** GATE-C2C
-  - **Status:** `BLOCKED` (Unresolved teacher account modality and academic unit containment)
-  - **Notes / unresolved decision:** Explicit release blocker. Retains 4 capabilities in the exact 9 UAT set without inventing grant approval.
+  - **Status:** `NOT_READY` (Pending C2C execution; teacher account modality and Kepesantrenan position contract resolved)
+  - **Notes / unresolved decision:** GURU_KEPESANTRENAN contract resolved under PERSONAL modality with 4 approved capabilities and server-side teacher ownership; Studi Umum resolved via SUBJECT accounts with 3 capabilities (attendance deferred).
 
 ---
 
@@ -862,36 +862,36 @@
 
 - **REL-ASN-04 | Academic Teacher Assignments Provisioning**
   - **Domain:** ASSIGNMENTS / AKADEMIK
-  - **Requirement:** Provision active Assignments for academic teachers (`GURU_AKADEMIK`). Dependent on `REL-PC-04`. Until exact anchor unit code (`OU-AKADEMIK`), `GURU_AKADEMIK` grant policy, teacher account modality, and academic OrgUnit containment receive authoritative approval: classify academic assignments as `BLOCKED / PROPOSED_TBD`. Do NOT provision active canonical academic Assignment before these dependencies are approved. Do NOT silently create `OU-AKADEMIK` merely to satisfy a dependency.
-  - **Source of truth:** `types/architecture-lock.ts`, `docs/STQ_M3_RELEASE_DEPENDENCIES.md`
-  - **PolicyDecisionState:** `PROPOSED_TBD`
-  - **Current state:** Unassigned in production; grant policy, teacher modality, containment, and anchor unit unresolved.
-  - **Target state:** Provisioned with `status: ACTIVE` only after all academic dependencies are approved.
-  - **Dependency:** REL-PC-04, REL-POS-02, REL-OU-01, REL-STF-01, Authoritative Anchor Approval
+  - **Requirement:** Provision active Assignments for academic teachers (`GURU_KEPESANTRENAN` under `PERSONAL` modality). Dependent on `REL-PC-04`. Teacher account modality is resolved for Kepesantrenan as `PERSONAL` under `GURU_KEPESANTRENAN` with `GLOBAL` capability scope and server-side teacher/session ownership (PR #29 / DIR-2026-028), and for Studi Umum as `SUBJECT` modality under `AcademicSubjectAccountBinding` with zero fake Staff profiles (PR #28 / DIR-2026-027). Provision active canonical Assignments in C2C only following approved contracts.
+  - **Source of truth:** `types/architecture-lock.ts`, `docs/STQ_M3_RELEASE_DEPENDENCIES.md`, `docs/STQ_OWNER_DIRECTIVES.md: DIR-2026-028`
+  - **PolicyDecisionState:** `APPROVED` (for `GURU_KEPESANTRENAN` PERSONAL and Studi Umum SUBJECT contracts; `PROPOSED_TBD` for legacy `GURU_AKADEMIK`)
+  - **Current state:** Unassigned in production; contracts resolved, awaiting C2C execution.
+  - **Target state:** Provisioned with `status: ACTIVE` in C2C according to approved contracts.
+  - **Dependency:** REL-PC-04, REL-POS-02, REL-OU-01, REL-STF-01
   - **Production write required?:** YES (INSERT)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** C2C dry-run SQL.
-  - **Positive test:** Teacher assignments active in query once all academic blockers resolved.
-  - **Negative test:** Unassigned teacher denied session start; assignment creation blocked while dependencies unapproved.
+  - **Positive test:** Teacher assignments active in query once C2C provisioning completes.
+  - **Negative test:** Unassigned teacher denied session start; cross-teacher session start denied (`SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED`).
   - **Reconciliation evidence:** Assignment table query.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-ASN-TEACHER`
   - **Gate:** GATE-C2C
-  - **Status:** `BLOCKED` (Gated by REL-PC-04, teacher account modality, unit containment, and anchor unit approval)
-  - **Notes / unresolved decision:** GURU_AKADEMIK grant policy unresolved; teacher account modality unresolved; academic OrgUnit containment unresolved; canonical academic assignment anchor unresolved.
+  - **Status:** `NOT_READY` (Pending C2C execution; teacher account modality resolved)
+  - **Notes / unresolved decision:** Resolved under approved GURU_KEPESANTRENAN PERSONAL contract and Studi Umum SUBJECT account architecture.
 
 ---
 
 ### K. ASSIGNMENT SCOPE UNITS
-- **REL-ASU-01 | Operational Tahfizh Scope Units Binding**
+- **REL-ASU-01 | Operational Tahfizh Scope Units Binding (SUPERSEDED)**
   - **Domain:** SCOPE_UNITS / TAHFIZH
-  - **Requirement:** For assignments holding `tahfizh.reward.issue`, bind permitted halaqoh unit IDs relationally in `assignment_scope_units`.
-  - **Source of truth:** `types/architecture-lock.ts` (`AssignmentScopeUnit`)
-  - **PolicyDecisionState:** `APPROVED`
+  - **Requirement:** [SUPERSEDED] Prior requirement to bind halaqoh scope units for operational reward issuance is formally **SUPERSEDED** by DIR-2026-023 because `PETUGAS_OPERASIONAL_TAHFIZH` does not hold `tahfizh.reward.issue`.
+  - **Source of truth:** `docs/STQ_OWNER_DIRECTIVES.md: DIR-2026-023`
+  - **PolicyDecisionState:** `SUPERSEDED`
   - **Current state:** Unseeded in production.
-  - **Target state:** Relational scope units bound.
+  - **Target state:** SUPERSEDED (no scope unit binding needed for POT reward issuance).
   - **Dependency:** REL-ASN-02, REL-PC-01
-  - **Production write required?:** YES (INSERT)
+  - **Production write required?:** NO (SUPERSEDED by DIR-2026-023; POT does not issue rewards)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** C2C dry-run SQL.
   - **Positive test:** Bound unit IDs match approved target units.
@@ -900,8 +900,8 @@
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-ASU-TAH`
   - **Gate:** GATE-C2C
-  - **Status:** `BLOCKED` (Awaiting C2B completion)
-  - **Notes / unresolved decision:** Prevents global reward issuance.
+  - **Status:** `SUPERSEDED`
+  - **Notes / unresolved decision:** Historical target policy superseded per DIR-2026-023; POT holds zero reward write authority.
 
 - **REL-ASU-02 | Operational Keasramaan Scope Units Binding**
   - **Domain:** SCOPE_UNITS / KEASRAMAAN

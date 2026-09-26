@@ -59,7 +59,7 @@ To prevent specification drift across code contracts, database models, and docum
 
 1. **Legacy Role is Coarse Compatibility Metadata, Not Canonical Authority**:
    - Current `Role` enum (`KS`, `MT`, `MK`, `ADM`, `PH`, `OSDA`, `WS`, `ST`, etc.) is legacy compatibility metadata.
-   - Credential modality is represented separately by `AccountType` (`PERSONAL` | `UNIT`).
+   - Credential modality is represented separately by `AccountType` (`PERSONAL` | `UNIT` | `SUBJECT`).
    - Organizational responsibilities are **Positions** held via active **Assignments**, not roles.
 2. **Zero Person-Name / Username Heuristics**:
    - A person's name or username must NEVER confer authority.
@@ -80,12 +80,17 @@ To prevent specification drift across code contracts, database models, and docum
 7. **Strict Trust Boundary on Resource Context**:
    - Callers submit untrusted `RequestedResourceContext` (target IDs only).
    - The engine evaluates server-hydrated `ResolvedResourceContext` (database-verified boundaries, `guardianLinkedSantriIds`). Callers can never supply or influence permitted child IDs.
-8. **Separation of Personal and Unit Accounts**:
+8. **Separation of Personal, Unit, and Subject Accounts**:
    - Asatidz, Asatidzah, and Santri use personal accounts (`AccountType: PERSONAL`).
    - Operational desks utilize designated unit accounts (`AccountType: UNIT`), where every mutating transaction MUST attribute both the **Technical Account** and authenticated **Human Executor** (`humanExecutorId` verified against active records).
+   - Studi Umum subject accounts utilize designated subject accounts (`AccountType: SUBJECT`, formalized in PR #28 / DIR-2026-027). Each subject account has exactly one active binding to a canonical subject, requires zero fake Staff profiles, and is strictly restricted to its bound subject (fails closed across subjects).
 9. **Additive, Controlled Evolution**:
    - Zero production migrations or breaking schema mutations in Phase 1.
    - Candidate persistence in Phase A adds `User.accountType` non-destructively.
+10. **Decoupling Institutional Curriculum Taxonomy from Technical Authorization Architecture**:
+   - Institutional curriculum groupings under "Pendidikan" (encompassing Ketahfidzan, Kepesantrenan, and Studi Umum per ORR-003 / DIR-2026-026) must NOT collapse technical authorization architecture.
+   - `OrgDomain: TAHFIZH` remains an independent technical authorization domain and capability namespace (`tahfizh.*`).
+   - `OrgDomain: AKADEMIK` (current technical enum value) encompasses `STUDI_UMUM` and `KEPESANTRENAN` tracks and capability namespace (`academic.*`), while "Pendidikan" serves as the overarching institutional/curriculum classification label.
 
 ---
 
