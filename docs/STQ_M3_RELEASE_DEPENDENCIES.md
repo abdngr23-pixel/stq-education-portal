@@ -45,7 +45,7 @@ flowchart TD
     G3 -->|PROVISIONING_COMPLETE| G4[Gate 4: Post-Provisioning Reconciliation]
     G4 -->|CROSS_LINKAGE_VERIFIED| G5[Gate 5: C2D Runtime Activation]
     G5 -->|FLAGS_ACTIVE| G6[Gate 6: Production Authorization & Diagnostic Verification]
-    G6 -->|11_GATES_PASS| G7[Gate 7: C2E Live Production UAT]
+    G6 -->|14_READINESS_CHECKS_PASS| G7[Gate 7: C2E Live Production UAT]
     G7 -->|UAT_ALL_PASS| G8[Gate 8: Final Gap Audit & Decommission Verification]
     G8 -->|AUDIT_CLEAN| G9[Gate 9: Release Sign-Off & Stable Baseline Lock]
 
@@ -59,12 +59,12 @@ flowchart TD
 | Gate ID | Stage Name | Upstream Prerequisite | Core Execution Scope | Automated Exit Criteria | Downstream Unlocked | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Gate 0** | **Pre-Release Freeze & Logical Backup** | Business Owner Authorization | PostgreSQL logical dump (`pg_dump -F p`, plain SQL) + SHA-256 checksum + dry-run plain SQL restore (`psql`) into scratch DB. Client `pg_dump` major version $\ge$ server major version. Dynamic verification: `RESTORED_T0 == SOURCE_T0`. | Restore verification log confirms restored table row counts, schema catalog, and migration ledger match T0 snapshot | Gate 1 (C2B Migration) | **BLOCKED** *(Awaiting tooling & connection)* |
-| **Gate 1** | **C2B Production Migration** | Gate 0 signed off | Re-verify historical migration checksum/readiness; execute pending authorized migrations (`20260918120000_m3_3a_health_v2_backend`, `20260918140000_m3_3b_pendidikan_foundation`). PR #8 reconciliation was completed in PR #23. | Migration deploy returns exit code 0; `_prisma_migrations` contains all applied records | Gate 2 (Schema Reconciliation) | **NOT_READY** *(Gated by Gate 0)* |
+| **Gate 1** | **C2B Production Migration** | Gate 0 signed off | Re-verify historical migration checksum/readiness; execute authorized repository migration chain:<br/>`20260918120000_m3_3a_health_v2_backend`<br/>$\\rightarrow$ `20260918140000_m3_3b_pendidikan_foundation`<br/>$\\rightarrow$ `20260920080000_prelaunch_reconciliation`.<br/>*Honesty Distinction*: Keep `REPOSITORY_MIGRATION_CHAIN` (exact 3-step repository migration chain) distinct from `PRODUCTION_APPLIED_OR_PENDING_STATE` (`HISTORICAL_POINT_IN_TIME / REQUIRES_FRESH_READ_ONLY_VERIFICATION`). Zero production access is performed during pre-gate reconciliation; do not label migrations as "currently pending in production" without fresh authoritative production evidence. PR #8 reconciliation was completed in PR #23. | Migration deploy returns exit code 0; `_prisma_migrations` contains all applied records | Gate 2 (Schema Reconciliation) | **NOT_READY** *(Gated by Gate 0)* |
 | **Gate 2** | **Post-Migration Reconciliation** | Gate 1 successful | Introspect production database information schema; verify existence of all required tables, columns, indexes, and enums | 0 missing tables; 0 column mismatches; Prisma validation passes cleanly | Gate 3 (C2C Provisioning) | **NOT_READY** *(Gated by Gate 1)* |
 | **Gate 3** | **C2C Foundation & Provisioning** | Gate 2 verified | Seed canonical subjects, minimum approved org units (`OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`), approved positions, 9 UAT capabilities, verified staff profiles, and user assignments. Cohort creation remains blocked pending owner admission data. | Database insert logs show expected row count; zero identity linkage violations | Gate 4 (Provisioning Reconciliation) | **NOT_READY** *(Gated by Gate 2)* |
 | **Gate 4** | **Post-Provisioning Reconciliation** | Gate 3 completed | Verify staff-to-account linkages, teaching assignment coverage (18 slots), and `razan.mt` decommission/isolation state | Linkage audit shows `razan.mt` has 0 staff links; all 18 teaching slots filled with valid staff IDs | Gate 5 (C2D Activation; strictly contingent on zero academic blockers) | **NOT_READY** *(Gated by Gate 3)* |
 | **Gate 5** | **C2D Runtime Activation (Pendidikan V2 Server Flag)** | ALL of: Gate 2 C2B schema reconciliation PASS; Gate 4 C2C prerequisite provisioning PASS; academic capability registration complete; academic PositionCapability policy explicitly approved; teacher account modality resolved; teacher User/Staff identity linkage verified; academic resource/unit containment resolved; required academic Assignments resolved; relevant TeachingAssignments verified; Business Owner explicit C2D authorization. If ANY remains PROPOSED_TBD / BLOCKED, PENDIDIKAN_V2_UAT_ENABLED MUST REMAIN FALSE. | Set `PENDIDIKAN_V2_UAT_ENABLED=true` in production environment only after all prerequisites pass | Server config inspection verifies flag is active; endpoint responds with authoritative DTO | Gate 6 (Auth Diagnostic) | **BLOCKED** *(Blocked by academic grant policy, teacher modality, and unit containment)* |
-| **Gate 6** | **Authorization & Diagnostic Verification** | Gate 5 active | Run `checkPendidikanV2ProductionReadiness` against live production instance | All 11 canonical readiness gates evaluate to `READY: true`; zero deny errors on valid tokens | Gate 7 (Live UAT) | **NOT_READY** *(Gated by Gate 5)* |
+| **Gate 6** | **Authorization & Diagnostic Verification** | Gate 5 active | Run `checkPendidikanV2ProductionReadiness` against live production instance | All 14 canonical readiness checks evaluate to `READY: true` (or compliant non-blocking/deferred status per contract); zero deny errors on valid tokens. Note: internal readiness checks are diagnostic controls and do not replace Release Gates 0–9. | Gate 7 (Live UAT) | **NOT_READY** *(Gated by Gate 5)* |
 | **Gate 7** | **C2E Live Production UAT** | Gate 6 passed | Execute live scenarios UAT-01 through UAT-09 with designated test accounts (UAT-04 restricted strictly to Kepesantrenan attendance) | 100% scenario test passes; sanitized audit logs capture all session transitions and mutations | Gate 8 (Final Audit) | **NOT_READY** *(Gated by Gate 6)* |
 | **Gate 8** | **Final Gap Audit & Decommission State Re-Verification** | Gate 7 passed | Final re-verification only: confirm `razan.mt` decommission state (mutated during C2C after dependency audit & authorization) remains fully intact in schema and sessions; audit all logs for unintended side-effects | `razan.mt` decommissioned/deactivated state verified; zero anomalous audit log entries | Gate 9 (Stable Baseline) | **NOT_READY** *(Gated by Gate 7)* |
 | **Gate 9** | **Release Sign-Off & Stable Baseline** | Gate 8 passed | Compile Master Evidence Pack; produce walkthrough; Business Owner signs off | Formal signed document; baseline tagged in Git | **STABLE BASELINE** | **NOT_READY** *(Gated by Gate 8)* |
@@ -112,7 +112,7 @@ graph TD
     end
 
     subgraph Step 8: Verification
-        S8[8.1 Diagnostic Suite Evaluates 11 Gates<br/>checkPendidikanV2ProductionReadiness]
+        S8[8.1 Diagnostic Suite Evaluates 14 Readiness Checks<br/>checkPendidikanV2ProductionReadiness]
     end
 
     S1 --> S2A
@@ -164,7 +164,22 @@ graph TD
    - **Academic Teacher Assignments (`REL-ASN-04`) and Scope Units (`REL-ASU-03`)**: Both are classified as `BLOCKED / PROPOSED_TBD`. Because `REL-PC-04` is blocked, teacher account modality is unresolved, and academic unit containment is unresolved, no active canonical academic Assignment may be provisioned. Furthermore, `AssignmentScopeUnit.unitId` strictly references `OrgUnit.id`; cohort IDs and subject IDs are NOT OrgUnit IDs and cannot be bound as pseudo-OrgUnits. Academic containment remains `ACADEMIC_UNIT_CONTAINMENT = BLOCKED_TECHNICAL` until an authoritative model is approved.
 9. **Step 7.1 (Teaching Assignments)**: Configure teaching assignments modeling subject + education track + gender complex + optional pedagogical level + validity period (Prisma fields: `mapelId`, `staffId`, `educationTrack`, `genderComplex`, `pedagogicalLevel`, `validFrom`, `validUntil`). Note: `TeachingAssignment` does NOT contain `cohortId` (cohort assignment is held independently on `EducationSession`). All 18 canonical slots covered.
    - **TeachingAssignment vs Canonical Assignment Distinction**: Keep these concepts distinct: `TeachingAssignment` (Step 7.1) is the scheduled pedagogical Staff assignment for subject/track/gender/level. A valid `TeachingAssignment` alone does NOT confer canonical runtime authority. Canonical `Assignment` (Step 6.1) is the `User -> Position -> OrgUnit` authorization anchor. Canonical `Assignment` alone does not prove a teacher is scheduled for a particular `EducationSession`. Both layers are required and independently evaluated.
-10. **Step 8.1 (Diagnostic Execution)**: Run `checkPendidikanV2ProductionReadiness()`. All 11 gates must evaluate to `READY: true`.
+10. **Step 8.1 (Diagnostic Execution)**: Run `checkPendidikanV2ProductionReadiness()`. Evaluates the 14 internal readiness checks from canonical registry `CANONICAL_READINESS_GATE_NAMES`:
+    1. `M3_3A_SCHEMA_READY` (blocking: true; validates Health V2 schema tables and enums)
+    2. `M3_3B_SCHEMA_READY` (blocking: true; validates Pendidikan V2 foundation tables and enums)
+    3. `CANONICAL_AUDIT_READY` (blocking: true; validates canonical_audit_logs table)
+    4. `STAFF_LINKAGE_READY` (blocking: true; validates operational accounts link to active Staff; razan.mt unlinked)
+    5. `REQUIRED_ORG_UNITS_READY` (blocking: true; validates minimum approved units: OU-OSDA-ROOT, OU-OSDA-PUTRI, OU-TKS-ROOT)
+    6. `REQUIRED_POSITIONS_READY` (blocking: true; validates approved position templates)
+    7. `CAPABILITIES_REGISTERED` (blocking: true; validates required UAT activation capabilities)
+    8. `USER_ASSIGNMENTS_READY` (blocking: true; validates user assignments and scope constraints)
+    9. `TEACHING_ASSIGNMENTS_READY` (blocking: true; validates Kepesantrenan teaching slots)
+    10. `KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY` (blocking: true; validates explicit owner-approved PositionCapability for GURU_KEPESANTRENAN with businessRuleState VERIFIED_PRODUCTION)
+    11. `STALE_POSITION_CAPABILITY_POLICY_READY` (blocking: true; rejects stale PETUGAS_OPERASIONAL_TAHFIZH -> tahfizh.reward.issue)
+    12. `COHORTS_ASSIGNED` (blocking: false / DEFERRED_INFORMATIONAL; cohort assignment deferred by owner lock, COHORT_NOT_REQUIRED_FOR_RUNTIME)
+    13. `KEASRAMAAN_KAMAR_CONFIGURATION_READY` (Case A: 0 active kamar => NOT_READY, CONFIGURATION_NOT_CREATED / DEFERRED, blocking: false; Case B: >0 active kamar => validates topology/placements/assignments, blocking: true; DB failure => BLOCKED, blocking: true)
+    14. `RUNTIME_ACTIVATION_FLAG` (blocking: true; validates PENDIDIKAN_V2_UAT_ENABLED === "true")
+    All blocking checks must evaluate to `READY: true` (or compliant non-blocking/deferred state). Internal readiness checks are diagnostic controls and do not replace Release Gates 0–9.
 
 ---
 

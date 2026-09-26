@@ -332,7 +332,7 @@ Key current business boundaries:
 - Kabid Tahfizh has existing DOMAIN managerial reward authority (`tahfizh.reward.issue` + `DOMAIN`).
 - Reward issuance (`tahfizh.reward.issue`) is strictly restricted to `MUDIR` and `KABID_TAHFIZH` ONLY. `PETUGAS_OPERASIONAL_TAHFIZH` (`musyirfah.putri`), ordinary `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, and `ADM` are NOT authorized (`CAPABILITY_NOT_GRANTED`). The prior target rule granting POT `ASSIGNED_UNITS` reward issuance is formally SUPERSEDED per `DIR-2026-023`.
 - `tahfizh.recap.read` breadth (`GLOBAL` for POT) does not widen reward, target, or setoran write scope.
-- Sabaqi is automatically derived from authoritative valid stored SABAQ setoran records within the active temporal weekly window (Monday–Friday). Business semantics require `isManualAllowed = false`. Manual overrides, fake fallbacks, or manual Sabaqi entry with audit reason are strictly prohibited (ORR-067 / DIR-2026-024).
+- Sabaqi is automatically derived from authoritative valid stored SABAQ setoran records within the active temporal weekly window (from Monday/Senin 00:00 WITA up to effective reference/input timestamp, with valid stored SABAQ and all applicable temporal/baseline filters enforced). Business semantics require `isManualAllowed = false`. Manual overrides, fake fallbacks, or manual Sabaqi entry with audit reason are strictly prohibited (ORR-067 / DIR-2026-024).
 - `MUSYRIF_TAHFIZH` target management scope is `HALAQOH`.
 - `PEMBINA_HALAQOH` target management scope is `HALAQOH`.
 - Target management is only for assigned halaqoh.

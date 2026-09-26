@@ -2247,92 +2247,106 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       },
     });
 
-    it("5.1 Proof 1: tahfizh.reward.issue (ASSIGNED_UNITS): resource outside assigned units => SCOPE_MISMATCH & Gate 8 NOT_READY", async () => {
-      // 1. Runtime authorizeCanonical evaluation
-      const lisaIdentity = {
-        userId: "usr-lisa",
-        username: "lisa.operasional",
+    it("5.1 Proof 1: Owner reward policy: MUDIR (GLOBAL) and KABID_TAHFIZH (DOMAIN) are valid reward issuers => ALLOW; PETUGAS_OPERASIONAL_TAHFIZH (POT) is strictly denied => CAPABILITY_NOT_GRANTED", async () => {
+      // 1. Mudir (GLOBAL) -> ALLOW
+      const mudirIdentity = {
+        userId: "usr-mudir",
+        username: "mudir.stq",
         accountType: "PERSONAL" as const,
-        staffId: "stf-lisa",
+        staffId: "stf-mudir",
         staffStatus: "AKTIF",
         status: "AKTIF",
-        name: "Lisa Operasional",
+        name: "Mudir STQ",
       };
-      const lisaAssignment = {
-        id: "asg-lisa-reward-1",
-        userId: "usr-lisa",
-        positionId: "pos-lisa",
-        positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+      const mudirAssignment = {
+        id: "asg-mudir-reward",
+        userId: "usr-mudir",
+        positionId: "pos-mudir",
+        positionCode: "MUDIR",
         unitId: "ou-tahfizh-unit-1",
         status: "ACTIVE" as const,
         validFrom: new Date(Date.now() - 86400000),
         validUntil: null,
-        scopeUnits: [{ unitId: "ou-tahfizh-unit-1" }],
-        scopedUnits: [{ unitId: "ou-tahfizh-unit-1", unit: { id: "ou-tahfizh-unit-1", isActive: true } }],
+        scopeUnits: [],
+        scopedUnits: [],
         positionCapabilities: [
           {
             capabilityCode: "tahfizh.reward.issue",
-            scopeType: "ASSIGNED_UNITS" as const,
+            scopeType: "GLOBAL" as const,
             businessRuleState: "VERIFIED_PRODUCTION" as const,
           },
         ],
       };
-
-      const authDeny = await authorizeCanonical({
-        identity: lisaIdentity,
+      const authMudir = await authorizeCanonical({
+        identity: mudirIdentity,
         capability: "tahfizh.reward.issue",
         resolvedContext: {
-          resourceId: "rw-outside-1",
-          orgUnitIds: ["ou-tahfizh-unit-99"],
+          resourceId: "rw-1",
+          orgUnitIds: ["ou-tahfizh-unit-1"],
           orgDomain: "TAHFIZH",
         },
         dataProvider: {
-          getIdentity: async () => lisaIdentity,
-          getActiveAssignments: async () => [lisaAssignment] as any,
+          getIdentity: async () => mudirIdentity,
+          getActiveAssignments: async () => [mudirAssignment] as any,
           getUnitAccountPlacement: async () => null,
           resolveResourceContext: async () => null,
           verifyHumanExecutor: async () => null,
         },
       });
+      assert.strictEqual(authMudir.decision, "ALLOW");
+      assert.strictEqual(authMudir.code, "ALLOWED");
 
-      assert.strictEqual(authDeny.decision, "DENY");
-      assert.strictEqual(authDeny.code, "SCOPE_MISMATCH");
-
-      // 2. Gate 8 Production Readiness Check (tested via ASSIGNED_UNITS policy santri.kamar.manage)
-      const assignments = createUatAssignments({
-        overridePosCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
-        overridePatch: (base) => ({
-          ...base,
-          unitId: "ou-asr-unit-1",
-          scopedUnits: [{ unitId: "ou-asr-unit-1", unit: { id: "ou-asr-unit-1", isActive: true } }],
-        }),
-      });
-
-      const mockDb = createDefaultMockDb(assignments, {
-        placementFindFirst: async (args: any) => {
-          if (args?.where?.kamarId?.in?.includes("ou-asr-unit-1")) {
-            return null; // No active santri placement in permitted unit
-          }
-          return { id: "skp-default", kamarId: "ou-default", santriId: "san-default", isActive: true, santri: { status: "AKTIF" } };
-        },
-        placementFindMany: async () => [
-          { id: "skp-outside", kamarId: "ou-asr-unit-99", santriId: "san-outside", isActive: true, santri: { status: "AKTIF" } },
+      // 2. Kabid Tahfizh (DOMAIN) -> ALLOW within TAHFIZH domain
+      const kabidIdentity = {
+        userId: "usr-kabid",
+        username: "kabid.tahfizh",
+        accountType: "PERSONAL" as const,
+        staffId: "stf-kabid",
+        staffStatus: "AKTIF",
+        status: "AKTIF",
+        name: "Kabid Tahfizh",
+      };
+      const kabidAssignment = {
+        id: "asg-kabid-reward",
+        userId: "usr-kabid",
+        positionId: "pos-kabid",
+        positionCode: "KABID_TAHFIZH",
+        domain: "TAHFIZH",
+        unitId: "ou-tahfizh-unit-1",
+        status: "ACTIVE" as const,
+        validFrom: new Date(Date.now() - 86400000),
+        validUntil: null,
+        scopeUnits: [],
+        scopedUnits: [],
+        positionCapabilities: [
+          {
+            capabilityCode: "tahfizh.reward.issue",
+            scopeType: "DOMAIN" as const,
+            businessRuleState: "VERIFIED_PRODUCTION" as const,
+          },
         ],
+      };
+      const authKabid = await authorizeCanonical({
+        identity: kabidIdentity,
+        capability: "tahfizh.reward.issue",
+        resolvedContext: {
+          resourceId: "rw-1",
+          orgUnitIds: ["ou-tahfizh-unit-1"],
+          orgDomain: "TAHFIZH",
+        },
+        dataProvider: {
+          getIdentity: async () => kabidIdentity,
+          getActiveAssignments: async () => [kabidAssignment] as any,
+          getUnitAccountPlacement: async () => null,
+          resolveResourceContext: async () => null,
+          verifyHumanExecutor: async () => null,
+        },
       });
+      assert.strictEqual(authKabid.decision, "ALLOW");
+      assert.strictEqual(authKabid.code, "ALLOWED");
 
-      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
-      const userGate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
-      assert.ok(userGate);
-      assert.strictEqual(userGate.status, "NOT_READY");
-      assert.ok(
-        userGate.details.includes("SCOPE_MISMATCH") && userGate.details.includes("PETUGAS_OPERASIONAL_KEASRAMAAN"),
-        `Expected SCOPE_MISMATCH failure, got: ${userGate.details}`
-      );
-    });
-
-    it("5.2 Proof 2: tahfizh.reward.issue (ASSIGNED_UNITS): resource inside assigned units with VERIFIED_PRODUCTION => ALLOW & Gate 8 READY", async () => {
-      // 1. Runtime authorizeCanonical evaluation
-      const lisaIdentity = {
+      // 3. PETUGAS_OPERASIONAL_TAHFIZH (POT / musyirfah.putri via POT) -> strictly DENY (CAPABILITY_NOT_GRANTED)
+      const potIdentity = {
         userId: "usr-lisa",
         username: "lisa.operasional",
         accountType: "PERSONAL" as const,
@@ -2341,10 +2355,10 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         status: "AKTIF",
         name: "Lisa Operasional",
       };
-      const lisaAssignment = {
-        id: "asg-lisa-reward-1",
+      const potAssignment = {
+        id: "asg-pot-1",
         userId: "usr-lisa",
-        positionId: "pos-lisa",
+        positionId: "pos-pot",
         positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
         unitId: "ou-tahfizh-unit-1",
         status: "ACTIVE" as const,
@@ -2354,7 +2368,63 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         scopedUnits: [{ unitId: "ou-tahfizh-unit-1", unit: { id: "ou-tahfizh-unit-1", isActive: true } }],
         positionCapabilities: [
           {
-            capabilityCode: "tahfizh.reward.issue",
+            capabilityCode: "tahfizh.recap.read",
+            scopeType: "GLOBAL" as const,
+            businessRuleState: "VERIFIED_PRODUCTION" as const,
+          },
+        ],
+      };
+      const authPot = await authorizeCanonical({
+        identity: potIdentity,
+        capability: "tahfizh.reward.issue",
+        resolvedContext: {
+          resourceId: "rw-1",
+          orgUnitIds: ["ou-tahfizh-unit-1"],
+          orgDomain: "TAHFIZH",
+        },
+        dataProvider: {
+          getIdentity: async () => potIdentity,
+          getActiveAssignments: async () => [potAssignment] as any,
+          getUnitAccountPlacement: async () => null,
+          resolveResourceContext: async () => null,
+          verifyHumanExecutor: async () => null,
+        },
+      });
+      assert.strictEqual(authPot.decision, "DENY");
+      assert.strictEqual(authPot.code, "CAPABILITY_NOT_GRANTED");
+    });
+
+    it("5.2 Proof 2: Generic scope mechanism (ASSIGNED_UNITS): resource inside assigned units with VERIFIED_PRODUCTION => ALLOW & Gate 8 READY", async () => {
+      // 1. Runtime authorizeCanonical evaluation with approved ASSIGNED_UNITS position capability (PETUGAS_OPERASIONAL_KEASRAMAAN)
+      const keasramaanIdentity = {
+        userId: "usr-asrama-op-52",
+        username: "asrama.op.52",
+        accountType: "UNIT" as const,
+        status: "AKTIF",
+        name: "Petugas Asrama Putra",
+        genderComplex: "PUTRA" as const,
+        placementUnitId: "ou-asr-unit-1",
+      };
+      const keasramaanAssignment = {
+        id: "asg-asr-52",
+        userId: "usr-asrama-op-52",
+        positionId: "pos-asr-op-52",
+        positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+        positionName: "Petugas Operasional Keasramaan",
+        domain: "KEASRAMAAN",
+        unitId: "ou-asr-unit-1",
+        unitCode: "ASR-PUTRA-1",
+        unitName: "Asrama Putra 1",
+        unitGenderComplex: "PUTRA" as const,
+        status: "ACTIVE" as const,
+        validFrom: new Date(Date.now() - 86400000),
+        validUntil: null,
+        requiresPersonalAccount: false,
+        scopeUnits: [{ unitId: "ou-asr-unit-1", unitCode: "ASR-PUTRA-1" }],
+        scopedUnits: [{ unitId: "ou-asr-unit-1", unit: { id: "ou-asr-unit-1", isActive: true } }],
+        positionCapabilities: [
+          {
+            capabilityCode: "santri.kamar.manage",
             scopeType: "ASSIGNED_UNITS" as const,
             businessRuleState: "VERIFIED_PRODUCTION" as const,
           },
@@ -2362,17 +2432,18 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       };
 
       const authAllow = await authorizeCanonical({
-        identity: lisaIdentity,
-        capability: "tahfizh.reward.issue",
+        identity: keasramaanIdentity,
+        capability: "santri.kamar.manage",
         resolvedContext: {
-          resourceId: "rw-inside-1",
-          orgUnitIds: ["ou-tahfizh-unit-1"],
-          orgDomain: "TAHFIZH",
+          resourceId: "kmr-inside-1",
+          orgUnitIds: ["ou-asr-unit-1"],
+          orgDomain: "KEASRAMAAN",
+          genderComplex: "PUTRA",
         },
         dataProvider: {
-          getIdentity: async () => lisaIdentity,
-          getActiveAssignments: async () => [lisaAssignment] as any,
-          getUnitAccountPlacement: async () => null,
+          getIdentity: async () => keasramaanIdentity,
+          getActiveAssignments: async () => [keasramaanAssignment] as any,
+          getUnitAccountPlacement: async () => ({ unitId: "ou-asr-unit-1", count: 1 }),
           resolveResourceContext: async () => null,
           verifyHumanExecutor: async () => null,
         },
@@ -2383,11 +2454,11 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
 
       // 2. Gate 8 Production Readiness Check
       const assignments = createUatAssignments({
-        overridePosCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+        overridePosCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
         overridePatch: (base) => ({
           ...base,
-          unitId: "ou-tahfizh-unit-1",
-          scopedUnits: [{ unitId: "ou-tahfizh-unit-1", unit: { id: "ou-tahfizh-unit-1", isActive: true } }],
+          unitId: "ou-asr-unit-1",
+          scopedUnits: [{ unitId: "ou-asr-unit-1", unit: { id: "ou-asr-unit-1", isActive: true } }],
         }),
       });
 
@@ -2763,8 +2834,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         scopedUnits: [{ unitId: "ou-tahfizh-1", unit: { id: "ou-tahfizh-1", isActive: true } }],
         positionCapabilities: [
           {
-            capabilityCode: "tahfizh.reward.issue",
-            scopeType: "ASSIGNED_UNITS" as const,
+            capabilityCode: "tahfizh.recap.read",
+            scopeType: "GLOBAL" as const,
             businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
           },
         ],
@@ -2772,7 +2843,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
 
       const authRes = await authorizeCanonical({
         identity: targetIdentity,
-        capability: "tahfizh.reward.issue",
+        capability: "tahfizh.recap.read",
         resolvedContext: {
           resourceId: "rw-inside-1",
           orgUnitIds: ["ou-tahfizh-1"],
@@ -2861,10 +2932,19 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     const OU_S6_HLQ_EMPTY = "ou-s6-hlq-empty";
     const OU_S6_KMR_1 = "ou-s6-kmr-1";
     const OU_S6_KMR_2 = "ou-s6-kmr-2";
+    const OU_S6_KMR_3 = "ou-s6-kmr-3";
 
+    const POS_S6_MUDIR = "pos-s6-mudir";
+    const POS_S6_KABID = "pos-s6-kabid";
     const POS_S6_OP_TAHFIZH = "pos-s6-op-tahfizh";
     const POS_S6_MUSYRIF = "pos-s6-musyrif";
     const POS_S6_OP_ASR = "pos-s6-op-asr";
+
+    const STF_S6_MUDIR = "stf-s6-mudir";
+    const USR_S6_MUDIR = "usr-s6-mudir";
+
+    const STF_S6_KABID = "stf-s6-kabid";
+    const USR_S6_KABID = "usr-s6-kabid";
 
     const STF_S6_OP_TAHFIZH = "stf-s6-op-tahfizh";
     const USR_S6_OP_TAHFIZH = "usr-s6-op-tahfizh";
@@ -2872,20 +2952,18 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     const STF_S6_MUSYRIF = "stf-s6-musyrif";
     const USR_S6_MUSYRIF = "usr-s6-musyrif";
 
-    const STF_S6_SCOPED = "stf-s6-scoped";
-    const USR_S6_SCOPED = "usr-s6-scoped";
-
     const STF_S6_EMPTY = "stf-s6-empty";
     const USR_S6_EMPTY = "usr-s6-empty";
 
-    const STF_S6_OP_ASR = "stf-s6-op-asr";
     const USR_S6_OP_ASR = "usr-s6-op-asr";
+    const USR_S6_SCOPED_ASR = "usr-s6-scoped-asr";
 
     const SAN_S6_A = "san-s6-a";
     const SAN_S6_B = "san-s6-b";
     const SAN_S6_C = "san-s6-c";
     const SAN_S6_KMR_1 = "san-s6-kmr-1";
     const SAN_S6_KMR_2 = "san-s6-kmr-2";
+    const SAN_S6_KMR_3 = "san-s6-kmr-3";
 
     before(async () => {
       // 1. OrgUnits
@@ -2897,10 +2975,21 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           { id: OU_S6_HLQ_EMPTY, code: "OU-S6-HLQ-EMPTY", name: "Halaqoh S6 Empty", type: "HALAQOH", domain: "TAHFIZH", genderComplex: "PUTRA", isActive: true },
           { id: OU_S6_KMR_1, code: "OU-S6-KMR-1", name: "Kamar S6 1", type: "KAMAR", domain: "KEASRAMAAN", genderComplex: "PUTRA", isActive: true },
           { id: OU_S6_KMR_2, code: "OU-S6-KMR-2", name: "Kamar S6 2", type: "KAMAR", domain: "KEASRAMAAN", genderComplex: "PUTRA", isActive: true },
+          { id: OU_S6_KMR_3, code: "OU-S6-KMR-3", name: "Kamar S6 3", type: "KAMAR", domain: "KEASRAMAAN", genderComplex: "PUTRA", isActive: true },
         ],
       });
 
       // 2. Positions
+      await prisma.position.upsert({
+        where: { code: "MUDIR" },
+        update: {},
+        create: { id: POS_S6_MUDIR, code: "MUDIR", name: "Mudir", domain: "INSTITUTIONAL" },
+      });
+      await prisma.position.upsert({
+        where: { code: "KABID_TAHFIZH" },
+        update: {},
+        create: { id: POS_S6_KABID, code: "KABID_TAHFIZH", name: "Kepala Bidang Tahfizh", domain: "TAHFIZH" },
+      });
       await prisma.position.upsert({
         where: { code: "PETUGAS_OPERASIONAL_TAHFIZH" },
         update: {},
@@ -2917,13 +3006,19 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         create: { id: POS_S6_OP_ASR, code: "PETUGAS_OPERASIONAL_KEASRAMAAN", name: "Petugas Operasional Keasramaan", domain: "KEASRAMAAN", requiresPersonalAccount: false },
       });
 
+      const posMudir = await prisma.position.findUniqueOrThrow({ where: { code: "MUDIR" } });
+      const posKabid = await prisma.position.findUniqueOrThrow({ where: { code: "KABID_TAHFIZH" } });
       const posOpTahfizh = await prisma.position.findUniqueOrThrow({ where: { code: "PETUGAS_OPERASIONAL_TAHFIZH" } });
       const posMusyrif = await prisma.position.findUniqueOrThrow({ where: { code: "MUSYRIF_TAHFIZH" } });
       const posOpAsr = await prisma.position.findUniqueOrThrow({ where: { code: "PETUGAS_OPERASIONAL_KEASRAMAAN" } });
 
       // 3. Capabilities & PositionCapabilities
+      // Mudir has GLOBAL reward authority, Kabid Tahfizh has DOMAIN reward authority.
+      // PETUGAS_OPERASIONAL_TAHFIZH (POT) is strictly NOT granted tahfizh.reward.issue.
+      // Generic ASSIGNED_UNITS scope is tested with approved keasramaan.permission.read.
       const testCaps = [
-        { code: "tahfizh.reward.issue", posId: posOpTahfizh.id, scope: "ASSIGNED_UNITS", domain: "TAHFIZH" },
+        { code: "tahfizh.reward.issue", posId: posMudir.id, scope: "GLOBAL", domain: "TAHFIZH" },
+        { code: "tahfizh.reward.issue", posId: posKabid.id, scope: "DOMAIN", domain: "TAHFIZH" },
         { code: "tahfizh.target.manage", posId: posMusyrif.id, scope: "HALAQOH", domain: "TAHFIZH" },
         { code: "keasramaan.permission.read", posId: posOpAsr.id, scope: "ASSIGNED_UNITS", domain: "KEASRAMAAN" },
         { code: "keasramaan.permission.create", posId: posOpAsr.id, scope: "ASSIGNED_UNITS", domain: "KEASRAMAAN" },
@@ -2950,50 +3045,53 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       // 4. Staff
       await prisma.staff.createMany({
         data: [
+          { id: STF_S6_MUDIR, staffCode: "STF-S6-00", nama: "Ust. S6 Mudir", noHp: "081200000000", roleStaff: "KS", status: "AKTIF" },
+          { id: STF_S6_KABID, staffCode: "STF-S6-09", nama: "Ust. S6 Kabid", noHp: "081200000009", roleStaff: "MT", status: "AKTIF" },
           { id: STF_S6_OP_TAHFIZH, staffCode: "STF-S6-01", nama: "Ust. S6 Tahfizh Op", noHp: "081200000001", roleStaff: "MT", status: "AKTIF" },
           { id: STF_S6_MUSYRIF, staffCode: "STF-S6-02", nama: "Ust. S6 Musyrif", noHp: "081200000002", roleStaff: "MT", status: "AKTIF" },
-          { id: STF_S6_SCOPED, staffCode: "STF-S6-03", nama: "Ust. S6 Scoped", noHp: "081200000003", roleStaff: "MT", status: "AKTIF" },
           { id: STF_S6_EMPTY, staffCode: "STF-S6-04", nama: "Ust. S6 Empty", noHp: "081200000004", roleStaff: "MT", status: "AKTIF" },
-          { id: STF_S6_OP_ASR, staffCode: "STF-S6-05", nama: "Ust. S6 Asrama Op", noHp: "081200000005", roleStaff: "MK", status: "AKTIF" },
         ],
       });
 
       // 5. Users
       await prisma.user.createMany({
         data: [
+          { id: USR_S6_MUDIR, username: "s6.mudir", staffId: STF_S6_MUDIR, status: "AKTIF", role: "KS", passwordHash: "dummy" },
+          { id: USR_S6_KABID, username: "s6.kabid", staffId: STF_S6_KABID, status: "AKTIF", role: "MT", passwordHash: "dummy" },
           { id: USR_S6_OP_TAHFIZH, username: "s6.op.tahfizh", staffId: STF_S6_OP_TAHFIZH, status: "AKTIF", role: "MT", passwordHash: "dummy" },
           { id: USR_S6_MUSYRIF, username: "s6.musyrif", staffId: STF_S6_MUSYRIF, status: "AKTIF", role: "MT", passwordHash: "dummy" },
-          { id: USR_S6_SCOPED, username: "s6.scoped", staffId: STF_S6_SCOPED, status: "AKTIF", role: "MT", passwordHash: "dummy" },
           { id: USR_S6_EMPTY, username: "s6.empty", staffId: STF_S6_EMPTY, status: "AKTIF", role: "MT", passwordHash: "dummy" },
           { id: USR_S6_OP_ASR, username: "s6.op.asrama", status: "AKTIF", role: "OSDA", accountType: "UNIT", passwordHash: "dummy" },
+          { id: USR_S6_SCOPED_ASR, username: "s6.scoped.asrama", status: "AKTIF", role: "OSDA", accountType: "UNIT", passwordHash: "dummy" },
         ],
       });
 
       // 6. Assignments
       await prisma.assignment.createMany({
         data: [
+          { id: "asg-s6-mudir", userId: USR_S6_MUDIR, positionId: posMudir.id, unitId: OU_S6_HLQ_A, status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: USR_S6_MUDIR },
+          { id: "asg-s6-kabid", userId: USR_S6_KABID, positionId: posKabid.id, unitId: OU_S6_HLQ_A, status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: USR_S6_KABID },
           { id: "asg-s6-op-tahfizh", userId: USR_S6_OP_TAHFIZH, positionId: posOpTahfizh.id, unitId: OU_S6_HLQ_A, status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: USR_S6_OP_TAHFIZH },
           { id: "asg-s6-musyrif", userId: USR_S6_MUSYRIF, positionId: posMusyrif.id, unitId: OU_S6_HLQ_A, status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: USR_S6_MUSYRIF },
-          { id: "asg-s6-scoped", userId: USR_S6_SCOPED, positionId: posOpTahfizh.id, unitId: OU_S6_HLQ_A, status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: USR_S6_SCOPED },
           { id: "asg-s6-empty", userId: USR_S6_EMPTY, positionId: posMusyrif.id, unitId: OU_S6_HLQ_EMPTY, status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: USR_S6_EMPTY },
           { id: "asg-s6-op-asr", userId: USR_S6_OP_ASR, positionId: posOpAsr.id, unitId: OU_S6_KMR_1, status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: USR_S6_OP_ASR },
+          { id: "asg-s6-scoped-asr", userId: USR_S6_SCOPED_ASR, positionId: posOpAsr.id, unitId: OU_S6_KMR_1, status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: USR_S6_SCOPED_ASR },
         ],
       });
 
-      // 6b. UnitAccountPlacement for UNIT account USR_S6_OP_ASR
-      await prisma.unitAccountPlacement.create({
-        data: {
-          id: "uap-s6-op-asr",
-          userId: USR_S6_OP_ASR,
-          unitId: OU_S6_KMR_1,
-        },
+      // 6b. UnitAccountPlacement for UNIT accounts
+      await prisma.unitAccountPlacement.createMany({
+        data: [
+          { id: "uap-s6-op-asr", userId: USR_S6_OP_ASR, unitId: OU_S6_KMR_1 },
+          { id: "uap-s6-scoped-asr", userId: USR_S6_SCOPED_ASR, unitId: OU_S6_KMR_1 },
+        ],
       });
 
-      // 7. AssignmentScopeUnit (Real Prisma relation)
+      // 7. AssignmentScopeUnit (Real Prisma relation: asg-s6-scoped-asr with anchor KMR_1 scoped to KMR_2)
       await prisma.assignmentScopeUnit.create({
         data: {
-          assignmentId: "asg-s6-scoped",
-          unitId: OU_S6_HLQ_B,
+          assignmentId: "asg-s6-scoped-asr",
+          unitId: OU_S6_KMR_2,
         },
       });
 
@@ -3015,6 +3113,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           { id: SAN_S6_C, nis: "SAN-S6-003", nama: "Santri S6 C", kelas: "7A", jenisKelamin: "L", status: "AKTIF", halaqohId: OU_S6_HLQ_C },
           { id: SAN_S6_KMR_1, nis: "SAN-S6-004", nama: "Santri S6 Kamar 1", kelas: "7A", jenisKelamin: "L", status: "AKTIF" },
           { id: SAN_S6_KMR_2, nis: "SAN-S6-005", nama: "Santri S6 Kamar 2", kelas: "7A", jenisKelamin: "L", status: "AKTIF" },
+          { id: SAN_S6_KMR_3, nis: "SAN-S6-006", nama: "Santri S6 Kamar 3", kelas: "7A", jenisKelamin: "L", status: "AKTIF" },
         ],
       });
 
@@ -3023,31 +3122,64 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         data: [
           { id: "skp-s6-1", santriId: SAN_S6_KMR_1, kamarId: OU_S6_KMR_1, isActive: true },
           { id: "skp-s6-2", santriId: SAN_S6_KMR_2, kamarId: OU_S6_KMR_2, isActive: true },
+          { id: "skp-s6-3", santriId: SAN_S6_KMR_3, kamarId: OU_S6_KMR_3, isActive: true },
         ],
       });
     });
 
-    it("6.1 Proof A: tahfizh.reward.issue ASSIGNED_UNITS: Assignment scope Halaqoh A, target santri in Halaqoh A => ALLOW", async () => {
-      const auth = await authorizeCanonical({
+    it("6.1 Proof A: Owner reward policy (real DB): MUDIR (GLOBAL) and KABID_TAHFIZH (DOMAIN) => ALLOW; PETUGAS_OPERASIONAL_TAHFIZH => DENY (CAPABILITY_NOT_GRANTED)", async () => {
+      // 1. Mudir (GLOBAL)
+      const authMudir = await authorizeCanonical({
+        identity: { userId: USR_S6_MUDIR, username: "s6.mudir", accountType: "PERSONAL", status: "AKTIF" },
+        capability: "tahfizh.reward.issue",
+        resourceContext: { santriId: SAN_S6_A },
+        dataProvider,
+      });
+      assert.strictEqual(authMudir.decision, "ALLOW");
+      assert.strictEqual(authMudir.code, "ALLOWED");
+      assert.strictEqual(authMudir.scopeType, "GLOBAL");
+
+      // 2. Kabid Tahfizh (DOMAIN)
+      const authKabid = await authorizeCanonical({
+        identity: { userId: USR_S6_KABID, username: "s6.kabid", accountType: "PERSONAL", status: "AKTIF" },
+        capability: "tahfizh.reward.issue",
+        resourceContext: { santriId: SAN_S6_A },
+        dataProvider,
+      });
+      assert.strictEqual(authKabid.decision, "ALLOW");
+      assert.strictEqual(authKabid.code, "ALLOWED");
+      assert.strictEqual(authKabid.scopeType, "DOMAIN");
+
+      // 3. POT (not an authorized reward issuer -> CAPABILITY_NOT_GRANTED)
+      const authPot = await authorizeCanonical({
         identity: { userId: USR_S6_OP_TAHFIZH, username: "s6.op.tahfizh", accountType: "PERSONAL", status: "AKTIF" },
         capability: "tahfizh.reward.issue",
         resourceContext: { santriId: SAN_S6_A },
         dataProvider,
       });
-      assert.strictEqual(auth.decision, "ALLOW");
-      assert.strictEqual(auth.code, "ALLOWED");
-      assert.strictEqual(auth.scopeType, "ASSIGNED_UNITS");
+      assert.strictEqual(authPot.decision, "DENY");
+      assert.strictEqual(authPot.code, "CAPABILITY_NOT_GRANTED");
     });
 
-    it("6.2 Proof B: Same assignment: target santri in Halaqoh B => DENY / SCOPE_MISMATCH", async () => {
-      const auth = await authorizeCanonical({
-        identity: { userId: USR_S6_OP_TAHFIZH, username: "s6.op.tahfizh", accountType: "PERSONAL", status: "AKTIF" },
-        capability: "tahfizh.reward.issue",
-        resourceContext: { santriId: SAN_S6_B },
+    it("6.2 Proof B: Generic scope mechanism (ASSIGNED_UNITS) single anchor: Kamar 1 target => ALLOW; Kamar 2 target => DENY / SCOPE_MISMATCH", async () => {
+      const authIn = await authorizeCanonical({
+        identity: { userId: USR_S6_OP_ASR, username: "s6.op.asrama", accountType: "UNIT", status: "AKTIF", placementUnitId: OU_S6_KMR_1, genderComplex: "PUTRA" },
+        capability: "keasramaan.permission.read",
+        resourceContext: { santriId: SAN_S6_KMR_1 },
         dataProvider,
       });
-      assert.strictEqual(auth.decision, "DENY");
-      assert.strictEqual(auth.code, "SCOPE_MISMATCH");
+      assert.strictEqual(authIn.decision, "ALLOW");
+      assert.strictEqual(authIn.code, "ALLOWED");
+      assert.strictEqual(authIn.scopeType, "ASSIGNED_UNITS");
+
+      const authOut = await authorizeCanonical({
+        identity: { userId: USR_S6_OP_ASR, username: "s6.op.asrama", accountType: "UNIT", status: "AKTIF", placementUnitId: OU_S6_KMR_1, genderComplex: "PUTRA" },
+        capability: "keasramaan.permission.read",
+        resourceContext: { santriId: SAN_S6_KMR_2 },
+        dataProvider,
+      });
+      assert.strictEqual(authOut.decision, "DENY");
+      assert.strictEqual(authOut.code, "SCOPE_MISMATCH");
     });
 
     it("6.3 Proof C: tahfizh.target.manage HALAQOH: own Halaqoh A => ALLOW", async () => {
@@ -3073,11 +3205,11 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(auth.code, "SCOPE_MISMATCH");
     });
 
-    it("6.5 Proof E: tahfizh.reward.issue ASSIGNED_UNITS using AssignmentScopeUnit: anchor Halaqoh A, scoped Halaqoh B, target santri in B => ALLOW", async () => {
+    it("6.5 Proof E: Generic scope mechanism (ASSIGNED_UNITS) using AssignmentScopeUnit: anchor Kamar 1, scoped Kamar 2, target in Kamar 2 => ALLOW", async () => {
       const auth = await authorizeCanonical({
-        identity: { userId: USR_S6_SCOPED, username: "s6.scoped", accountType: "PERSONAL", status: "AKTIF" },
-        capability: "tahfizh.reward.issue",
-        resourceContext: { santriId: SAN_S6_B },
+        identity: { userId: USR_S6_SCOPED_ASR, username: "s6.scoped.asrama", accountType: "UNIT", status: "AKTIF", placementUnitId: OU_S6_KMR_1, genderComplex: "PUTRA" },
+        capability: "keasramaan.permission.read",
+        resourceContext: { santriId: SAN_S6_KMR_2 },
         dataProvider,
       });
       assert.strictEqual(auth.decision, "ALLOW");
@@ -3085,11 +3217,11 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(auth.scopeType, "ASSIGNED_UNITS");
     });
 
-    it("6.6 Proof F: Target santri in Halaqoh C (outside anchor + scoped set) => DENY / SCOPE_MISMATCH", async () => {
+    it("6.6 Proof F: Generic scope mechanism (ASSIGNED_UNITS): Target in Kamar 3 (outside anchor + scoped set) => DENY / SCOPE_MISMATCH", async () => {
       const auth = await authorizeCanonical({
-        identity: { userId: USR_S6_SCOPED, username: "s6.scoped", accountType: "PERSONAL", status: "AKTIF" },
-        capability: "tahfizh.reward.issue",
-        resourceContext: { santriId: SAN_S6_C },
+        identity: { userId: USR_S6_SCOPED_ASR, username: "s6.scoped.asrama", accountType: "UNIT", status: "AKTIF", placementUnitId: OU_S6_KMR_1, genderComplex: "PUTRA" },
+        capability: "keasramaan.permission.read",
+        resourceContext: { santriId: SAN_S6_KMR_3 },
         dataProvider,
       });
       assert.strictEqual(auth.decision, "DENY");

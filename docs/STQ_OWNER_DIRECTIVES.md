@@ -160,18 +160,18 @@ This document serves as the persistent repository registry for authoritative Bus
 ### DIR-2026-006 | Ustazah Lisa Tahfizh Access (Recap Read vs Setoran & Target Scope)
 - **Directive ID:** `DIR-2026-006`
 - **Tanggal:** 2026-09-19
-- **Keputusan Business Owner:** `musyirfah.putri` harus dapat melihat rekap Tahfizh seluruh santri; mutasi setoran dan target tetap dalam scope halaqoh; reward issuance sesuai scope PUTRI operasional.
+- **Keputusan Business Owner:** `musyirfah.putri` harus dapat melihat rekap Tahfizh seluruh santri; mutasi setoran dan target tetap dalam scope halaqoh; reward issuance sesuai scope PUTRI operasional [REWARD CLAUSE PARTIALLY SUPERSEDED by DIR-2026-023].
 - **Canonical Interpretation:**
   1. Tahfizh Recap: `GLOBAL` READ across all santri via canonical `tahfizh.recap.read`.
   2. Setoran Mutations: strictly restricted to assigned Tahfizh halaqoh scope (`HALAQOH`).
   3. Target Management: may manage assigned halaqoh santri only (`HALAQOH`).
-  4. Tasmi'/Sima'an Reward Issuance: authorized according to assigned PUTRI operational scope (`ASSIGNED_UNITS`), **NOT GLOBAL** merely because recap read is GLOBAL.
+  4. Tasmi'/Sima'an Reward Issuance: [SUPERSEDED by DIR-2026-023] Prior target policy allowed PUTRI operational scope (`ASSIGNED_UNITS`), but `DIR-2026-023` strictly restricts `tahfizh.reward.issue` to `MUDIR` (`GLOBAL`) and `KABID_TAHFIZH` (`DOMAIN: TAHFIZH`). POT / `musyirfah.putri` holds zero reward issuance authority (`DENY / CAPABILITY_NOT_GRANTED`).
 - **Affected Domain:** TAHFIZH / AUTHORIZATION
-- **Implementation Status:** `CODE_PARTIAL` (Canonical authorization contract models `tahfizh.recap.read` scope `GLOBAL` in `types/architecture-lock.ts:599` and tests; runtime action `app/actions/tahfizh.ts` still relies on legacy role checks; release train lacks `PositionCapability` seeding in production)
+- **Implementation Status:** `CODE_PARTIAL` (Canonical authorization contract models `tahfizh.recap.read` scope `GLOBAL` in `types/architecture-lock.ts:599` and tests; runtime action `prosesRewardTasmiSimaanAction` in `app/actions/reward-sanksi.ts` strictly denies POT reward issuance per DIR-2026-023 / `tests/reward-abac-fail-closed.test.ts`; release train lacks `PositionCapability` seeding in production)
 - **Production Status:** `NOT_LIVE` (Pending Gate C2B migration and Gate C2C seeding)
-- **Supersedes / Superseded-By:** Supersedes halaqoh-only recap read restrictions for operational putri role
-- **Acceptance Criteria:** Authenticated session for `musyirfah.putri` reads recap data across all santri; setoran mutations outside assigned halaqoh fail closed; reward issuance authorized for PUTRI scope only.
-- **Evidence / Reference:** `types/architecture-lock.ts:599`, `tests/milestone3-2-uat-business-rules.test.ts:425`, `docs/STQ_M3_RELEASE_TRACEABILITY.md` TR-TAHF-01, TR-TAHF-02.
+- **Supersedes / Superseded-By:** Supersedes halaqoh-only recap read restrictions for operational putri role; Reward clause PARTIALLY SUPERSEDED by `DIR-2026-023`
+- **Acceptance Criteria:** Authenticated session for `musyirfah.putri` reads recap data across all santri; setoran mutations outside assigned halaqoh fail closed; reward issuance for PUTRI operational scope is SUPERSEDED by DIR-2026-023 (POT reward issuance denied with `CAPABILITY_NOT_GRANTED`).
+- **Evidence / Reference:** `types/architecture-lock.ts:599`, `docs/STQ_OWNER_DIRECTIVES.md: DIR-2026-023`, `app/actions/reward-sanksi.ts`, `tests/reward-abac-fail-closed.test.ts`, `docs/STQ_M3_RELEASE_TRACEABILITY.md` TR-TAHF-01, TR-TAHF-02.
 
 ---
 
@@ -431,13 +431,13 @@ This document serves as the persistent repository registry for authoritative Bus
   - Ordinary `MUSYRIF_TAHFIZH` (`DENY / CAPABILITY_NOT_GRANTED`)
   - `PEMBINA_HALAQOH` (`DENY / CAPABILITY_NOT_GRANTED`)
   - `ADM` (`DENY / CAPABILITY_NOT_GRANTED`)
-  The historical target rule granting POT / `musyirfah.putri` `ASSIGNED_UNITS` reward issuance is formally superseded. Operational Tahfizh recap read (`tahfizh.recap.read`) remains granted to POT with `GLOBAL` scope, but confers zero reward write authority.
+  The historical target rule granting POT / `musyirfah.putri` `ASSIGNED_UNITS` reward issuance is formally superseded (partially superseding DIR-2026-006 item 4 and superseding DIR-2026-015). Operational Tahfizh recap read (`tahfizh.recap.read`) remains granted to POT with `GLOBAL` scope, but confers zero reward write authority.
 - **Affected Domain:** TAHFIZH / REWARD / AUTHORIZATION
-- **Implementation Status:** `CODE_COMPLETE` (Enforced in runtime `app/actions/tahfizh.ts`, `types/architecture-lock.ts`, `tests/reward-abac-fail-closed.test.ts`, and `tests/milestone3-2-uat-business-rules.test.ts`)
+- **Implementation Status:** `CODE_COMPLETE` (Enforced in runtime server action `prosesRewardTasmiSimaanAction` in `app/actions/reward-sanksi.ts`, evaluated via `types/architecture-lock.ts` / ABAC policy evaluator, and verified in `tests/reward-abac-fail-closed.test.ts` and `tests/milestone3-3c1-real-postgres.test.ts`)
 - **Production Status:** `NOT_LIVE / REQUIRES_FRESH_READ_ONLY_VERIFICATION`
-- **Supersedes / Superseded-By:** `SUPERSEDES: DIR-2026-015`
-- **Acceptance Criteria:** `authorizeRewardIssue` allows MUDIR (GLOBAL) and KABID_TAHFIZH (DOMAIN); strictly denies POT, musyirfah.putri, ordinary musyrif, and ADM with `CAPABILITY_NOT_GRANTED`.
-- **Evidence / Reference:** `app/actions/tahfizh.ts`, `types/architecture-lock.ts`, `tests/reward-abac-fail-closed.test.ts`, `tests/milestone3-2-uat-business-rules.test.ts` Sec 10.
+- **Supersedes / Superseded-By:** `SUPERSEDES: DIR-2026-015`, `PARTIALLY SUPERSEDES: DIR-2026-006` (reward issuance clause)
+- **Acceptance Criteria:** Runtime action `prosesRewardTasmiSimaanAction` and canonical ABAC evaluation permit MUDIR (GLOBAL) and KABID_TAHFIZH (DOMAIN); strictly deny POT, musyirfah.putri, ordinary musyrif, and ADM with `CAPABILITY_NOT_GRANTED`.
+- **Evidence / Reference:** `app/actions/reward-sanksi.ts: prosesRewardTasmiSimaanAction`, `types/architecture-lock.ts`, `tests/reward-abac-fail-closed.test.ts`, `tests/milestone3-3c1-real-postgres.test.ts` Section 5.1 & Section 6.1.
 
 ---
 
@@ -445,7 +445,7 @@ This document serves as the persistent repository registry for authoritative Bus
 - **Directive ID:** `DIR-2026-024`
 - **Tanggal:** 2026-09-25
 - **Keputusan Business Owner:** Sabaqi TIDAK memiliki fallback manual atau fake fallback. Sabaqi diturunkan murni secara otomatis dari data setoran SABAQ valid yang tersimpan sesuai aturan temporal WITA (`isManualAllowed = false`).
-- **Canonical Interpretation:** Per ORR-067, Sabaqi is strictly derived from valid stored SABAQ setoran records within the active temporal weekly window (Monday–Friday). Business semantics require `isManualAllowed = false`. Manual overrides, fake fallbacks, or manual Sabaqi entry with audit reason are prohibited and non-canonical. Server-side automatic calculation remains authoritative.
+- **Canonical Interpretation:** Per ORR-067, Sabaqi is strictly derived from valid stored SABAQ setoran records within the active temporal weekly window (from Monday/Senin 00:00 WITA up to effective reference/input timestamp, with valid stored SABAQ and all applicable temporal/baseline filters enforced). Business semantics require `isManualAllowed = false`. Manual overrides, fake fallbacks, or manual Sabaqi entry with audit reason are prohibited and non-canonical. Server-side automatic calculation remains authoritative.
 - **Affected Domain:** TAHFIZH / SABAQI / INTEGRITY
 - **Implementation Status:** `CODE_COMPLETE` (Implemented in server derivation logic `lib/tahfizh-persistence.ts` and validated via tests; manual fallback disallowed)
 - **Production Status:** `REQUIRES_FRESH_READ_ONLY_VERIFICATION`
@@ -475,13 +475,13 @@ This document serves as the persistent repository registry for authoritative Bus
 - **Keputusan Business Owner:** Taksonomi kurikulum institusional (Pendidikan memayungi Ketahfidzan, Kepesantrenan, dan Studi Umum) TIDAK BOLEH meruntuhkan arsitektur otorisasi teknis. Domain otorisasi TAHFIZH tetap berdiri sendiri dan independen dari domain PENDIDIKAN.
 - **Canonical Interpretation:** Per ORR-003, the institutional/informational curriculum taxonomy groups all educational aspects (Tahfizh, Kepesantrenan, Studi Umum) under the broad concept of "Pendidikan". However, in technical ABAC authorization architecture:
   - `OrgDomain: TAHFIZH` remains an independent authorization domain and capability namespace (`tahfizh.*`).
-  - `OrgDomain: PENDIDIKAN` encompasses `STUDI_UMUM` and `KEPESANTRENAN` tracks and capability namespace (`academic.*`).
-  Technical evaluators, `OrgDomain`, `CapabilityNamespace`, `authorizeCanonical`, and resource-context resolution must NOT be collapsed or redesigned under the guise of taxonomy alignment.
+  - `OrgDomain: AKADEMIK` (current technical enum value in `types/architecture-lock.ts`) encompasses `STUDI_UMUM` and `KEPESANTRENAN` tracks and capability namespace (`academic.*`), while "PENDIDIKAN" serves as the overarching institutional/curriculum classification label.
+  Technical evaluators, `OrgDomain` (`AKADEMIK`, `TAHFIZH`, `KEASRAMAAN`, `INSTITUTIONAL`, `MANAJEMEN`), `CapabilityNamespace`, `authorizeCanonical`, and resource-context resolution must NOT be collapsed or redesigned under the guise of taxonomy alignment.
 - **Affected Domain:** ARCHITECTURE / TAXONOMY / AUTHORIZATION
 - **Implementation Status:** `CODE_COMPLETE` (Enforced in `types/architecture-lock.ts` and `lib/auth/canonical-evaluator.ts`)
 - **Production Status:** `REQUIRES_FRESH_READ_ONLY_VERIFICATION`
 - **Supersedes / Superseded-By:** None (Clarifies taxonomy vs authorization architecture boundary)
-- **Acceptance Criteria:** Institutional documents reflect curriculum groupings while architecture locks maintain strict technical isolation between `TAHFIZH` and `PENDIDIKAN` authorization domains.
+- **Acceptance Criteria:** Institutional documents reflect curriculum groupings under Pendidikan while architecture locks maintain strict technical isolation between `OrgDomain: TAHFIZH` and `OrgDomain: AKADEMIK` authorization domains.
 - **Evidence / Reference:** `ORR-003`, `types/architecture-lock.ts`, `docs/STQ_ARCHITECTURE_LOCK.md`.
 
 ---
@@ -581,7 +581,7 @@ The Business Owner explicitly affirms that **`ACUAN PROGRAM TAHFIDZ STQ DUC 2026
 1. **Program Objectives**: Mutqin memorization, muroja'ah habituation, quality evaluation, Qur'anic discipline and character.
 2. **Program Components**:
    - `SABAQ`: Daily new memorization. Minimum 1/2 page or 1 page per day. Setoran conducted at Subuh halaqoh. Individual santri targets may differ.
-   - `SABAQI`: Weekly revision of newly memorized material, automatically derived from authoritative valid stored SABAQ setoran records within the active temporal weekly window (Monday–Friday). Business semantics require `isManualAllowed = false`. Manual overrides, fake fallbacks, or manual Sabaqi entry with audit reason are strictly prohibited and non-canonical (ORR-067 / DIR-2026-024):
+   - `SABAQI`: Weekly revision of newly memorized material, automatically derived from authoritative valid stored SABAQ setoran records within the active temporal weekly window (from Monday/Senin 00:00 WITA up to effective reference/input timestamp, with valid stored SABAQ and all applicable temporal/baseline filters enforced). Business semantics require `isManualAllowed = false`. Manual overrides, fake fallbacks, or manual Sabaqi entry with audit reason are strictly prohibited and non-canonical (ORR-067 / DIR-2026-024):
      - Monday: Monday's memorization
      - Tuesday: Monday–Tuesday memorization
      - Wednesday: Monday–Wednesday memorization

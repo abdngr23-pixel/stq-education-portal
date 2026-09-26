@@ -90,7 +90,7 @@ To prevent specification drift across code contracts, database models, and docum
 10. **Decoupling Institutional Curriculum Taxonomy from Technical Authorization Architecture**:
    - Institutional curriculum groupings under "Pendidikan" (encompassing Ketahfidzan, Kepesantrenan, and Studi Umum per ORR-003 / DIR-2026-026) must NOT collapse technical authorization architecture.
    - `OrgDomain: TAHFIZH` remains an independent technical authorization domain and capability namespace (`tahfizh.*`).
-   - `OrgDomain: PENDIDIKAN` encompasses `STUDI_UMUM` and `KEPESANTRENAN` tracks and capability namespace (`academic.*`).
+   - `OrgDomain: AKADEMIK` (current technical enum value) encompasses `STUDI_UMUM` and `KEPESANTRENAN` tracks and capability namespace (`academic.*`), while "Pendidikan" serves as the overarching institutional/curriculum classification label.
 
 ---
 
