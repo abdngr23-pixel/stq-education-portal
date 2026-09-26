@@ -30,7 +30,7 @@ import {
   matchStudiUmumSession,
   matchKepesantrenanSession,
 } from "../lib/pendidikan-v2";
-import { UAT_ACTIVATION_TARGETS } from "../types/architecture-lock";
+import { UAT_ACTIVATION_TARGETS, POSITION_ACCOUNT_MODALITY_CONTRACT } from "../types/architecture-lock";
 
 describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PROOF", () => {
   let prisma: PrismaClient;
@@ -2395,7 +2395,24 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     });
 
     it("5.2 Proof 2: Generic scope mechanism (ASSIGNED_UNITS): resource inside assigned units with VERIFIED_PRODUCTION => ALLOW & Gate 8 READY", async () => {
-      // 1. Runtime authorizeCanonical evaluation with approved ASSIGNED_UNITS position capability (PETUGAS_OPERASIONAL_KEASRAMAAN)
+      // 1. Contract tuple assertions against architecture lock declarations
+      assert.strictEqual(
+        POSITION_ACCOUNT_MODALITY_CONTRACT["PETUGAS_OPERASIONAL_KEASRAMAAN"],
+        "UNIT"
+      );
+      assert.strictEqual(
+        UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.positionCode,
+        "PETUGAS_OPERASIONAL_KEASRAMAAN"
+      );
+      const targetPolicy = UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies.find(
+        (p) => p.capabilityCode === "keasramaan.permission.read"
+      );
+      assert.ok(targetPolicy, "Target policy for keasramaan.permission.read must exist in UAT_ACTIVATION_TARGETS");
+      assert.strictEqual(targetPolicy.scopeType, "ASSIGNED_UNITS");
+
+      // 2. Runtime authorizeCanonical evaluation with approved ASSIGNED_UNITS position capability (PETUGAS_OPERASIONAL_KEASRAMAAN)
+      // TEST_ONLY_SIMULATED_STATE: VERIFIED_PRODUCTION is simulated in this isolated test harness;
+      // target manifests and production state are not promoted.
       const keasramaanIdentity = {
         userId: "usr-asrama-op-52",
         username: "asrama.op.52",
@@ -2424,18 +2441,20 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         scopedUnits: [{ unitId: "ou-asr-unit-1", unit: { id: "ou-asr-unit-1", isActive: true } }],
         positionCapabilities: [
           {
-            capabilityCode: "santri.kamar.manage",
+            capabilityCode: "keasramaan.permission.read",
             scopeType: "ASSIGNED_UNITS" as const,
-            businessRuleState: "VERIFIED_PRODUCTION" as const,
+            businessRuleState: "VERIFIED_PRODUCTION" as const, // TEST_ONLY_SIMULATED_STATE
           },
         ],
       };
 
+      // Valid scenario: resource inside assigned unit => ALLOW / ALLOWED
       const authAllow = await authorizeCanonical({
         identity: keasramaanIdentity,
-        capability: "santri.kamar.manage",
+        capability: "keasramaan.permission.read",
+        isMutation: false,
         resolvedContext: {
-          resourceId: "kmr-inside-1",
+          resourceId: "perm-inside-1",
           orgUnitIds: ["ou-asr-unit-1"],
           orgDomain: "KEASRAMAAN",
           genderComplex: "PUTRA",
@@ -2452,7 +2471,32 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(authAllow.decision, "ALLOW");
       assert.strictEqual(authAllow.code, "ALLOWED");
 
-      // 2. Gate 8 Production Readiness Check
+      // Negative scenario: resource outside assigned unit (different orgUnitId) => DENY / SCOPE_MISMATCH
+      // Identity, grant, placement, and domain remain valid; only resource unit association differs.
+      const authDeny = await authorizeCanonical({
+        identity: keasramaanIdentity,
+        capability: "keasramaan.permission.read",
+        isMutation: false,
+        resolvedContext: {
+          resourceId: "perm-outside-1",
+          orgUnitIds: ["ou-asr-unit-2"],
+          orgDomain: "KEASRAMAAN",
+          genderComplex: "PUTRA",
+        },
+        dataProvider: {
+          getIdentity: async () => keasramaanIdentity,
+          getActiveAssignments: async () => [keasramaanAssignment] as any,
+          getUnitAccountPlacement: async () => ({ unitId: "ou-asr-unit-1", count: 1 }),
+          resolveResourceContext: async () => null,
+          verifyHumanExecutor: async () => null,
+        },
+      });
+
+      assert.strictEqual(authDeny.decision, "DENY");
+      assert.strictEqual(authDeny.code, "SCOPE_MISMATCH");
+
+      // 3. Gate 8 Production Readiness Check
+      // TEST_ONLY_SIMULATED_STATE: Gate 8 readiness evaluated against simulated mock assignments in isolated harness
       const assignments = createUatAssignments({
         overridePosCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
         overridePatch: (base) => ({

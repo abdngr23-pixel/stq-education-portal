@@ -532,7 +532,12 @@ Per DIR-2026-029, the official sequential release gate model is:
   - Status: **NOT_EXECUTED / PENDING_EXPLICIT_OWNER_AUTHORIZATION**
 
 - **Gate 1 — Production Migrations**:
-  - `prisma migrate deploy` for pending migrations (`20260918120000_m3_3a_health_v2_backend`, `20260918140000_m3_3b_pendidikan_foundation`, `20260920080000_prelaunch_reconciliation`).
+  - `REPOSITORY_MIGRATION_CHAIN`: Rantai migrasi repository yang valid dalam lingkup gate ini (secara berurutan):
+    1. `20260918120000_m3_3a_health_v2_backend`
+    2. `20260918140000_m3_3b_pendidikan_foundation`
+    3. `20260920080000_prelaunch_reconciliation`
+  - `PRODUCTION_APPLIED_OR_PENDING_STATE = NOT_VERIFIED_BY_THIS_TASK / REQUIRES_FRESH_READ_ONLY_VERIFICATION_AT_AUTHORIZED_GATE`
+  - Batasan Deployment: `prisma migrate deploy` adalah langkah rilis masa depan yang sepenuhnya bersyarat pada otorisasi Gate 1 dan penyelesaian Gate 0. Task remediasi ini TIDAK melakukan akses/verifikasi status produksi dan TIDAK menjalankan deploy/migrasi ke produksi.
   - Status: **BLOCKED / NOT_STARTED**
 
 - **Gate 2 — Post-Migration Schema Reconciliation**:
@@ -568,6 +573,7 @@ Per DIR-2026-029, the official sequential release gate model is:
 3. Real production backup + SHA-256 + isolated restore (Gate 0) = NOT EXECUTED / BLOCKED
 4. Gate 0 snapshot workbook (`STQ_PRODUCTION_SNAPSHOT_T0.xlsx`) = NOT CREATED / BLOCKED
 5. Separate explicit Business Owner authorization for Gate 0 and Gate 1 = NOT GRANTED
+6. Verifikasi status migrasi produksi (`PRODUCTION_APPLIED_OR_PENDING_STATE`) = NOT_VERIFIED_BY_THIS_TASK / REQUIRES_FRESH_READ_ONLY_VERIFICATION_AT_AUTHORIZED_GATE
 
 Therefore:
 `GATE 0 = NOT_EXECUTED`
