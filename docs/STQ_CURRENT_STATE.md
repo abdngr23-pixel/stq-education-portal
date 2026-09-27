@@ -74,8 +74,16 @@ All commit SHAs recorded below are verified historical checkpoints, not self-upd
   - Post-merge CI run: SUCCESS
   - Classification: `PR30_KEASRAMAAN_RUNTIME_REMEDIATION_MERGED_AND_VERIFIED`
 
+- **PR #31 Pre-Gate Owner Register Reconciliation verified checkpoint:**
+  `efc4a5d3694c5aac46435e37e5889d61b9164b70`
+  (Merge commit for PR #31: `chore/pre-gate-owner-register-reconciliation`)
+  - PR #31 state: MERGED
+  - Merge commit: `efc4a5d3694c5aac46435e37e5889d61b9164b70`
+  - Post-merge CI run: SUCCESS
+  - Classification: `PR31_PRE_GATE_RECONCILIATION_MERGED_AND_VERIFIED`
+
 - **Verified live main base:**
-  `6329fd0090ebb31af0a75c7e681123de148eb62b`
+  `efc4a5d3694c5aac46435e37e5889d61b9164b70`
 
 ---
 
@@ -145,33 +153,21 @@ PR #8 itself was NOT merged and remains:
 
 ---
 
-## 4. Current next planned gate & operational boundaries
+## 4. Release Lifecycle Status & Operational Boundaries
 
-M3.3C2A.1 PR #8 migration ledger + Prisma schema parity reconciliation is COMPLETE (merged via PR #23).
+### Current Lifecycle Progress:
+- **PRE-GATE**: COMPLETED (PR #31 merged)
+- **Gate 0 (Real Production Backup & T0 Snapshot)**: COMPLETED / PASS (Verified dump `STQ_PRODUCTION_T0.sql`, SHA-256 `9122580c59bbd7c48804bba10e8b2307b141197dc479d8b101ab6a428c9cfa7b`)
+- **Gate 1 (Conditional Production Migration)**: COMPLETED / PASS / NO-OP (All 11 migrations already applied with 100% checksum parity, zero writes performed)
+- **Gate 2 (Post-Migration Schema Reconciliation)**: BLOCKED (Blocked by confirmed `nilai_akademik_guru_id_fkey` referential action drift; migration history classified as `BASELINED_INCREMENTAL_HISTORY`)
+- **Current Task**: Gate 2 Remediation PR — CODE ONLY (`fix/gate2-nilai-akademik-fk-remediation`)
+- **Remediation Migration**: `20260928070000_gate2_nilai_akademik_guru_fk_reconciliation` staged in code only (NOT applied to production)
+- **Gate 3**: BLOCKED / NOT AUTHORIZED
 
-### Current next planned gate:
-
-**REAL PRODUCTION BACKUP READINESS**
-
-Requirements remain:
-
-- direct PostgreSQL wire-compatible connection
-- `pg_dump`
-- verified dump file
-- SHA-256 checksum
-- isolated restore verification
-
-IMPORTANT:
-
-- Do NOT execute the backup as part of this PR.
-- Do NOT perform any production write.
-- Do NOT start C2B.
-
-`M3.3C2B` remains:
-
-`BLOCKED / NOT STARTED`
-
-until backup requirements and separate Business Owner authorization are satisfied.
+### Operational Boundaries:
+- Zero production access during remediation PR tasks.
+- No production migration deploy without explicit separate Business Owner authorization.
+- Gate 3 remains strictly unauthorized.
 
 ---
 
