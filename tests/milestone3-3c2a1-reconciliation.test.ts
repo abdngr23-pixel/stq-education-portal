@@ -132,8 +132,8 @@ describe("Milestone 3.3C2A.1 — PR #8 Migration Ledger + Schema Parity Reconcil
     it("full migration chain deploys cleanly from scratch including restored migration", { timeout: 90000 }, async () => {
       const res = await runIsolatedMigrationChainVerification();
 
-      assert.equal(res.migrationCount, 11, "Total 11 migrations must exist in prisma/migrations");
-      assert.equal(res.migrationsApplied, 11, "All 11 migrations must apply successfully");
+      assert.ok(res.migrationCount >= 11, "At least 11 migrations must exist in prisma/migrations");
+      assert.equal(res.migrationsApplied, res.migrationCount, "All migrations must apply successfully");
       assert.equal(res.failedCount, 0, "Zero migrations failed");
       assert.equal(res.isUpToDate, true, "Database schema is up to date");
       assert.match(res.migrateStatusOutput, /Database schema is up to date/i);

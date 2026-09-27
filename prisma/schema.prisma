@@ -608,7 +608,7 @@ model NilaiAkademik {
   mapelId              String        @map("mapel_id")
   mapel                MataPelajaran @relation(fields: [mapelId], references: [id])
   guruId               String?       @map("guru_id")
-  guru                 Staff?        @relation(fields: [guruId], references: [id])
+  guru                 Staff?        @relation(fields: [guruId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   namaPengajarSnapshot String?       @map("nama_pengajar_snapshot")
   dicatatOlehUserId    String?       @map("dicatat_oleh_user_id")
   dicatatOlehUser      User?         @relation("NilaiDicatatOlehUser", fields: [dicatatOlehUserId], references: [id])
