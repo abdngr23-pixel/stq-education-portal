@@ -1,5 +1,5 @@
 # STQ EDUCATION PORTAL — MASTER RELEASE MANIFEST (M3.3)
-**Release Train Control Sheet: Gate 0 through Gate 5 (Live Production UAT)**
+**Release Train Control Sheet: Gate 0 through Gate 9 (Sequential Release Control Plane)**
 
 - **Repository:** `abdngr23-pixel/stq-education-portal`
 - **Current Main Checkpoint (before PR #34 merge):** `3524f26f6fde8580b91076bb255c4f1417d9e90a`
@@ -7,16 +7,20 @@
 - **HISTORICAL_POST_PR24_CHECKPOINT:** `8e670491d1ed0c88a480ed90186153e96ca1dea3`
 - **Current Official Gate State:**
   - `PRE-GATE` = CLOSED (Architecture Lock verified)
-  - `GATE 0` = CLOSED (Prerequisites Complete)
-  - `GATE 1` = CLOSED (Preflight Validation Complete)
-  - `GATE 2` = CLOSED (Production Migration Complete)
-  - `GATE 3` = PARTIAL / IN PROGRESS (Partial Provisioning Complete; Final Batch Pending Authorization)
-  - `GATE 4` = NOT AUTHORIZED / NOT STARTED
-  - `GATE 5` = NOT AUTHORIZED / NOT STARTED
-- **Status:** ACTIVE CONTROL PLANE (R4.1 CURRENT-STATE RECONCILED)
+  - `GATE 0` = CLOSED (Backup / Snapshot Complete)
+  - `GATE 1` = CLOSED (Production Migration Complete)
+  - `GATE 2` = CLOSED (Schema Reconcile Complete)
+  - `GATE 3` = PARTIAL / IN PROGRESS (Provisioning Complete in part; Final Batch Pending Authorization)
+  - `GATE 4` = NOT AUTHORIZED / NOT STARTED (Provisioning Reconcile)
+  - `GATE 5` = NOT AUTHORIZED / NOT STARTED (Runtime Activation)
+  - `GATE 6` = NOT AUTHORIZED / NOT STARTED (Readiness / 14 Internal Checks)
+  - `GATE 7` = NOT AUTHORIZED / NOT STARTED (Live UAT)
+  - `GATE 8` = NOT AUTHORIZED / NOT STARTED (Final Verification / Decommission)
+  - `GATE 9` = NOT AUTHORIZED / NOT STARTED (Sign-off / Release)
+- **Status:** ACTIVE CONTROL PLANE (R4.2 GATE-NUMBERING RECONCILED)
 - **Control-Plane Drafting:** COMPLETE
 - **Control-Plane Audit:** READY_FOR_FINAL_INDEPENDENT_MERGE_AUDIT
-- **Production Readiness:** Gate 0 prerequisites are CLOSED; Gate 1 and Gate 2 are CLOSED; Gate 3 is PARTIAL / IN PROGRESS; all production mutations strictly governed by explicit Owner Directives.
+- **Production Readiness:** Gate 0 (Backup/Snapshot), Gate 1 (Production Migration), and Gate 2 (Schema Reconcile) are CLOSED; Gate 3 (Provisioning) is PARTIAL / IN PROGRESS; Gates 4–9 are NOT AUTHORIZED / NOT STARTED; all production mutations strictly governed by explicit Owner Directives.
 - **Execution Model:** PARALLEL PREPARATION | SERIAL PRODUCTION EXECUTION | FAIL-CLOSED GATES | MANDATORY EVIDENCE PACKS
 - **Current Production Mutation Authorization:** **ZERO PRODUCTION WRITES AUTHORIZED IN THIS PR / PHASE**
 - **Field Semantics (`Production write required?`):** Classifies whether the operational target work item itself requires a database/environment write during its execution gate (`FUTURE_OPERATION_REQUIRES_PRODUCTION_WRITE`), NOT whether this documentation PR executes a write (`CURRENT_PR_EXECUTED_PRODUCTION_WRITE = 0`).
@@ -31,23 +35,27 @@
 > [!IMPORTANT]
 > **Operational Execution Authority:**
 > Current operational execution authority comes strictly from:
-> - **Current Gate 0–9 status** (Gate 0, 1, 2 CLOSED; Gate 3 PARTIAL / IN PROGRESS; Gates 4 and 5 NOT AUTHORIZED)
+> - **Current Gate 0–9 status** (Gate 0, 1, 2 CLOSED; Gate 3 PARTIAL / IN PROGRESS; Gates 4–9 NOT AUTHORIZED)
 > - **Accepted production evidence packs** (e.g. `release-handoff/GATE3_COMPLETION_*`)
 > - **Current Owner Directives** (`docs/STQ_OWNER_DIRECTIVES.md`)
 > - **Architecture lock contracts** (`types/architecture-lock.ts`)
 > - **Pendidikan V2 readiness engine** (`lib/server/pendidikan-v2-readiness.ts`)
 > 
-> Historical C2B/C2C/C2D status MUST NOT override current verified Gate state. Historical text must NEVER be interpreted as authorization to repeat an already-completed production mutation.
+> Historical C2B/C2C/C2D/C2E planning status MUST NOT override current verified Gate state. Historical text must NEVER be interpreted as authorization to repeat an already-completed production mutation.
 
 | Gate | Phase / Domain | Status | Notes / Current Truth |
 | :--- | :--- | :---: | :--- |
 | **PRE-GATE** | Pre-Release Architecture Lock | **CLOSED** | All foundational architecture locks verified in main |
-| **GATE 0** | Production Prerequisites | **CLOSED** | Prerequisites complete; read-only probes & baseline verified |
-| **GATE 1** | Production Preflight | **CLOSED** | Preflight checks and data validation passed |
-| **GATE 2** | Production Migration (DDL) | **CLOSED** | 12 migrations applied cleanly; schema verified |
-| **GATE 3** | Controlled Provisioning | **PARTIAL / IN PROGRESS** | Foundation topology (`OU-STQ-ROOT`, `OU-TAHFIZH`), Mudir/Kabid/Guru assignments, 12 TeachingAssignments, and account deactivations verified in prod; final batch (`OU-KEASRAMAAN`, 6 MT halaqohs, POT assignment) pending explicit authorization |
-| **GATE 4** | Capability & Policy Activation | **NOT AUTHORIZED / NOT STARTED** | Gated by Gate 3 complete closure |
-| **GATE 5** | Live Production UAT | **NOT AUTHORIZED / NOT STARTED** | Gated by Gate 4 completion and strict verified human executor proof |
+| **GATE 0** | Backup / Snapshot | **CLOSED** | Prerequisites complete; backup dump and snapshot verification complete |
+| **GATE 1** | Production Migration | **CLOSED** | 12 production migrations applied cleanly |
+| **GATE 2** | Schema Reconcile | **CLOSED** | Schema status reconciled and verified against canonical Prisma model |
+| **GATE 3** | Provisioning | **PARTIAL / IN PROGRESS** | Foundation topology (`OU-STQ-ROOT`, `OU-TAHFIZH`), Mudir/Kabid/Guru assignments, 12 TeachingAssignments, and account deactivations verified in prod; final batch (`OU-KEASRAMAAN`, 6 MT halaqohs, POT assignment) pending explicit authorization |
+| **GATE 4** | Provisioning Reconcile | **NOT AUTHORIZED / NOT STARTED** | Gated by Gate 3 complete closure |
+| **GATE 5** | Runtime Activation | **NOT AUTHORIZED / NOT STARTED** | Capability & policy activation; fails closed pending explicit owner authorization and strict verified human executor proof |
+| **GATE 6** | Readiness / 14 Internal Checks | **NOT AUTHORIZED / NOT STARTED** | Comprehensive post-activation readiness check suite |
+| **GATE 7** | Live UAT | **NOT AUTHORIZED / NOT STARTED** | Production end-user acceptance testing |
+| **GATE 8** | Final Verification / Decommission | **NOT AUTHORIZED / NOT STARTED** | Post-UAT forensic and decommission verification |
+| **GATE 9** | Sign-off / Release | **NOT AUTHORIZED / NOT STARTED** | Formal business owner sign-off and milestone closure |
 
 ---
 
@@ -89,10 +97,10 @@
 | **TOTALS** | **100** | **11** | **0** | **41** | **48** |
 
 ### Legacy Gate Status Overview (HISTORICAL_CONTROL_PLANE_SNAPSHOT — NON_AUTHORITATIVE_FOR_CURRENT_EXECUTION):
-- **GATE-C2B (Production Migration):** `CLOSED` in Gate 2 (12 migrations executed and verified in production).
-- **GATE-C2C (Controlled Provisioning):** `PARTIAL` in Gate 3 (Foundation provisioned; final batch pending authorization).
-- **GATE-C2D (Capability & Policy Activation):** `NOT_AUTHORIZED` (Corresponds to Gate 4).
-- **GATE-C2E (Live Production UAT):** `NOT_AUTHORIZED` (Corresponds to Gate 5).
+- **GATE-C2B (Production Migration):** Conceptually executed across Gate 1 (Production Migration) and Gate 2 (Schema Reconcile).
+- **GATE-C2C (Controlled Provisioning):** Conceptually belongs within Gate 3 (Provisioning) and Gate 4 (Provisioning Reconcile). Currently `PARTIAL` in Gate 3 (Foundation provisioned; final batch pending authorization).
+- **GATE-C2D (Capability & Policy Activation):** Conceptually corresponds to Gate 5 (Runtime Activation); post-activation readiness corresponds to Gate 6 (Readiness / 14 Internal Checks). Currently `NOT_AUTHORIZED`.
+- **GATE-C2E (Live Production UAT):** Conceptually corresponds to Gate 7 (Live UAT). Currently `NOT_AUTHORIZED`.
 
 ---
 
@@ -1784,7 +1792,7 @@
 ### V. FEATURE FLAGS / POLICY ACTIVATION
 - **REL-FLG-01 | PENDIDIKAN_V2_UAT_ENABLED Feature Flag Guard**
   - **Domain:** FEATURE_FLAGS / PENDIDIKAN_V2
-  - **Requirement:** Runtime flag `PENDIDIKAN_V2_UAT_ENABLED` defaults to `false` in production. Must remain false through C2B and C2C; activated strictly in C2D under explicit owner authorization. Gate 5 C2D Pendidikan activation requires ALL of: (1) C2B schema reconciliation PASS; (2) C2C prerequisite provisioning PASS; (3) academic capability registration complete; (4) academic PositionCapability policy explicitly approved; (5) teacher account modality resolved; (6) teacher User/Staff identity linkage verified; (7) academic resource/unit containment resolved; (8) required academic Assignments resolved; (9) relevant TeachingAssignments verified; (10) Business Owner explicit C2D authorization. If ANY remains PROPOSED_TBD / BLOCKED: PENDIDIKAN_V2_UAT_ENABLED MUST REMAIN FALSE. Upstream generic Gate 4 status cannot bypass explicit academic blockers.
+  - **Requirement:** Runtime flag `PENDIDIKAN_V2_UAT_ENABLED` defaults to `false` in production. Must remain false through Gate 1–3; activated strictly in Gate 5 (Runtime Activation) under explicit owner authorization. Gate 5 Runtime Activation requires ALL of: (1) schema reconciliation PASS; (2) prerequisite provisioning PASS; (3) academic capability registration complete; (4) academic PositionCapability policy explicitly approved; (5) teacher account modality resolved; (6) teacher User/Staff identity linkage verified; (7) academic resource/unit containment resolved; (8) required academic Assignments resolved; (9) relevant TeachingAssignments verified; (10) Business Owner explicit Gate 5 authorization. If ANY remains PROPOSED_TBD / BLOCKED: PENDIDIKAN_V2_UAT_ENABLED MUST REMAIN FALSE. Upstream generic Gate 4 (Provisioning Reconcile) status cannot bypass explicit academic blockers.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 8), `docs/STQ_M3_RELEASE_DEPENDENCIES.md` (Rule 9)
   - **PolicyDecisionState:** `APPROVED`
   - **Current state:** `RUNTIME_ACTIVATION_FLAG = NOT_READY` (`false` in production).
