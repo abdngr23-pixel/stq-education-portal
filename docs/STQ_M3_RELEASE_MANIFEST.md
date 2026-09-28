@@ -355,20 +355,20 @@
     - [HISTORICAL]: Prior pre-resolution audit noted `ACCOUNT_MODALITY = UNRESOLVED / MUST_VERIFY` with `PolicyDecisionState = PROPOSED_TBD` pending Owner decision.
   - **Source of truth:** `docs/STQ_OWNER_DIRECTIVES.md` (DIR-2026-032, DIR-2026-033), `docs/STQ_CURRENT_STATE.md` (Section 9)
   - **PolicyDecisionState:** `APPROVED` (per DIR-2026-032 and DIR-2026-033)
-  - **Current state:** Production preflight confirms `musyirfah.putri` is present and active (linked to `STF-0005`), `musyrifah.putri` is present (active, unlinked; suspension pending controlled Gate 3 production write), `pembina.halaqoh` is present (suspension pending controlled Gate 3 production write). Zero production writes executed in this PR.
-  - **Target state:** `musyirfah.putri` remains canonical active account for Ustazah Lisa (`STF-0005`); `pembina.halaqoh` and `musyrifah.putri` set to `SUSPENDED` without Staff linkage, without merge, and without hard delete in controlled Gate 3 production completion.
+  - **Current state:** Verified in production: `musyirfah.putri` is present and active (linked to `STF-0005`), `musyrifah.putri` is `SUSPENDED` (per DIR-2026-033), and `pembina.halaqoh` is `SUSPENDED` (per DIR-2026-032). [Historical note: Prior pre-resolution audit recorded these as pending controlled Gate 3 production write; execution and verification were completed in the authorized Gate 3 partial production batch].
+  - **Target state:** `musyirfah.putri` remains canonical active account for Ustazah Lisa (`STF-0005`); `pembina.halaqoh` and `musyrifah.putri` remain `SUSPENDED` without Staff linkage, without merge, and without hard delete.
   - **Dependency:** Gate 3 controlled production write execution
-  - **Production write required?:** YES (UPDATE `users` status to `SUSPENDED` during controlled Gate 3 execution; PR #33 executes zero production writes)
+  - **Production write required?:** YES (UPDATE `users` status to `SUSPENDED` during controlled Gate 3 execution; verified executed in production)
   - **Owner authorization required?:** YES (Granted via DIR-2026-032 and DIR-2026-033)
   - **Dry-run evidence:** Gate 3 provisioning dry-run audit plan.
   - **Positive test:** Target status matches SUSPENDED for legacy placeholder / duplicate accounts, while canonical active account retains valid Staff linkage to STF-0005.
   - **Negative test:** Rejects linkage for suspended legacy accounts; rejects hard deletion or merging of duplicate accounts.
-  - **Reconciliation evidence:** Users table query diff before/after Gate 3 execution.
+  - **Reconciliation evidence:** Users table query diff confirms `musyirfah.putri = AKTIF / STF-0005`, `musyrifah.putri = SUSPENDED`, `pembina.halaqoh = SUSPENDED`.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never blanket-null fields. Never hard delete.
   - **Evidence Pack reference:** `EVID-STF-LINKAGE`
   - **Gate:** GATE-3
-  - **Status:** `TARGET_APPROVED_PENDING_PRODUCTION_WRITE` (Policy approved; production update pending Gate 3 execution)
-  - **Notes / unresolved decision:** Reconciled per DIR-2026-032 and DIR-2026-033. No unresolved account modality remains for these accounts.
+  - **Status:** `PROVISIONED_VERIFIED_IN_PROD`
+  - **Notes / unresolved decision:** Reconciled per DIR-2026-032 and DIR-2026-033. No unresolved account modality remains for these accounts. Account suspension verified in production.
 
 - **REL-STF-03 | Non-Staff Account Modality Validation (santri, wali, yayasan, osda)**
   - **Domain:** IDENTITY / MODALITY
@@ -854,7 +854,13 @@
 
 - **REL-ASN-02 | Musyrif Tahfizh Halaqoh Assignments Provisioning**
   - **Domain:** ASSIGNMENTS / TAHFIZH
-  - **Requirement:** Provision active Assignments for Musyrif Tahfizh anchored to their respective `HALAQOH` OrgUnits (`OU-HLQ-0001` through `OU-HLQ-0006`). Current-six deterministic mapping approved per DIR-2026-035: `HLQ-0001` -> Ust. Razan Mufli (`musyrif.tahifzh` / `STF-0003`), `HLQ-0002` -> Ust. Kamal Mukhtar (`guru.kamal` / `STF-0006`), `HLQ-0003` -> Ust. Andi Quarzy Ayatullah (`mudir` / `STF-0001`), `HLQ-0004` -> Ust. Mujaddid Zhohruddin (`musyrif.asrama` / `STF-0004`), `HLQ-0005` -> Ust. Abi Hudzaifah (`guru.abi` / `STF-0002`), `HLQ-0006` -> Ust. Alwan (`guru.alwan` / `STF-0007`).
+  - **Requirement:** Provision active Assignments for Musyrif Tahfizh anchored to their respective `HALAQOH` OrgUnits (`OU-HLQ-0001` through `OU-HLQ-0006`). Current-six deterministic mapping approved per DIR-2026-035:
+    - `HLQ-0001` -> Ust. Razan Mufli (`musyrif.tahifzh` / `STF-0003`) -> `OU-HLQ-0001` (PUTRA)
+    - `HLQ-0002` -> Ust. Kamal (`kamal.ph` / `STF-0006`) -> `OU-HLQ-0002` (PUTRA)
+    - `HLQ-0003` -> Ust. Rizaldi (`rizaldi.ph` / `STF-0007`) -> `OU-HLQ-0003` (PUTRA)
+    - `HLQ-0004` -> Ust. Abi Hudzaifah (`hudzaifah.ph` / `STF-0008`) -> `OU-HLQ-0004` (PUTRA)
+    - `HLQ-0005` -> Ust. Alwan (`alwan.ph` / `STF-0009`) -> `OU-HLQ-0005` (PUTRA)
+    - `HLQ-0006` -> Ustazah Lisa Dwina Fitri (`musyirfah.putri` / `STF-0005`) -> `OU-HLQ-0006` (PUTRI)
   - **Source of truth:** `types/architecture-lock.ts:CANONICAL_CURRENT_SIX_HALAQOH_MAPPINGS`, `docs/STQ_OWNER_DIRECTIVES.md:DIR-2026-035`
   - **PolicyDecisionState:** `APPROVED` (per DIR-2026-035 for exact current-six halaqohs)
   - **Current state:** Declarative deterministic mapping locked in code; pending authorized production write batch.

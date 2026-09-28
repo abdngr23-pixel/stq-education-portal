@@ -1511,6 +1511,19 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           });
         }
 
+        const isUnit = posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN";
+        const staffCode =
+          posCode === "PETUGAS_OPERASIONAL_TAHFIZH"
+            ? "STF-0005"
+            : posCode === "KEPALA_KEASRAMAAN"
+            ? "STF-0004"
+            : posCode === "MUSYRIF_TAHFIZH"
+            ? "STF-0003"
+            : `STF-REQ-${idx}`;
+        const staffObj = isUnit
+          ? null
+          : { id: `stf-req-${idx}`, staffCode, code: staffCode, status: "AKTIF" };
+
         const base = {
           id: `asg-req-${idx}`,
           userId: `usr-req-${idx}`,
@@ -1520,13 +1533,14 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           validUntil: null,
           unitId: `ou-req-${idx}`,
           scopeUnits: [{ unitId: `ou-req-${idx}` }],
+          staff: staffObj,
           user: {
             id: `usr-req-${idx}`,
             username: `user.req.${idx}`,
             status: "AKTIF",
             accountType: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? "UNIT" : "PERSONAL",
             staffId: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? null : `stf-req-${idx}`,
-            staff: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? null : { id: `stf-req-${idx}`, status: "AKTIF" },
+            staff: staffObj,
           },
           position: {
             id: `pos-req-${idx}`,
@@ -2157,6 +2171,19 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         });
       }
 
+      const isUnit = posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN";
+      const staffCode =
+        posCode === "PETUGAS_OPERASIONAL_TAHFIZH"
+          ? "STF-0005"
+          : posCode === "KEPALA_KEASRAMAAN"
+          ? "STF-0004"
+          : posCode === "MUSYRIF_TAHFIZH"
+          ? "STF-0003"
+          : `STF-UAT-${idx}`;
+      const staffObj = isUnit
+        ? null
+        : { id: `stf-uat-${idx}`, staffCode, code: staffCode, status: "AKTIF" };
+
       const base = {
         id: `asg-uat-${idx}`,
         userId: `usr-uat-${idx}`,
@@ -2167,13 +2194,14 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         unitId: `ou-uat-${idx}`,
         scopeUnits: [{ unitId: `ou-uat-${idx}` }],
         scopedUnits: [{ unitId: `ou-uat-${idx}`, unit: { id: `ou-uat-${idx}`, isActive: true } }],
+        staff: staffObj,
         user: {
           id: `usr-uat-${idx}`,
           username: `user.uat.${idx}`,
           status: "AKTIF",
           accountType: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? "UNIT" : "PERSONAL",
           staffId: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? null : `stf-uat-${idx}`,
-          staff: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? null : { id: `stf-uat-${idx}`, status: "AKTIF" },
+          staff: staffObj,
         },
         position: {
           id: `pos-uat-${idx}`,

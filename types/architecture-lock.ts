@@ -1145,6 +1145,8 @@ export const CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT = {
 /**
  * Approved Gate 3 Required Active Assignment Positions vs Gate 5 Deferred Positions
  * Decouples Position templates from unconditional Gate 3 active-assignment requirements.
+ * Note: PEMBINA_HALAQOH position template is required; its active assignment is conditional
+ * (deferred when zero active Kamar exist, but coverage required when active Kamar exist).
  */
 export const CANONICAL_REQUIRED_POSITION_CODES = [
   "MUDIR",
@@ -1160,10 +1162,11 @@ export const CANONICAL_REQUIRED_POSITION_CODES = [
 export const GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES = [
   "MUDIR",
   "KABID_TAHFIZH",
-  "GURU_KEPESANTRENAN",
-  "PETUGAS_OPERASIONAL_TAHFIZH",
   "KEPALA_KEASRAMAAN",
+  "PETUGAS_OPERASIONAL_TAHFIZH",
   "MUSYRIF_TAHFIZH",
+  "PEMBINA_HALAQOH",
+  "GURU_KEPESANTRENAN",
 ] as const;
 
 export const GATE5_DEFERRED_UNIT_ASSIGNMENT_POSITION_CODES = [

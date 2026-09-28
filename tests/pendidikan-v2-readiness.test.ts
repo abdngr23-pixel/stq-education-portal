@@ -472,30 +472,57 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
           });
         }
         const isUnit = posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN";
+        const staffCode =
+          posCode === "PETUGAS_OPERASIONAL_TAHFIZH"
+            ? "STF-0005"
+            : posCode === "KEPALA_KEASRAMAAN"
+            ? "STF-0004"
+            : posCode === "MUSYRIF_TAHFIZH"
+            ? "STF-0003"
+            : `STF-00${idx + 10}`;
+        const staffId = `stf-${staffCode.toLowerCase()}`;
+        const isMusyrifTahfizh = posCode === "MUSYRIF_TAHFIZH";
+        const unitId = isMusyrifTahfizh ? "ou-hlq-1" : `ou-req-${idx}`;
+
         return {
           id: `asg-req-${idx}`,
-          userId: isUnit ? `u-unit-${idx}` : `u-1`,
+          userId: isUnit ? `u-unit-${idx}` : `u-${idx}`,
           positionId: `pos-req-${idx}`,
           status: "ACTIVE",
           validFrom: new Date(Date.now() - 86400000),
           validUntil: null,
-          unitId: `ou-req-${idx}`,
-          scopeUnits: [{ unitId: `ou-req-${idx}` }],
+          unitId,
+          scopeUnits: [{ unitId }],
+          unit: isMusyrifTahfizh
+            ? {
+                id: "ou-hlq-1",
+                code: "OU-HLQ-0001",
+                type: "HALAQOH",
+                domain: "TAHFIZH",
+                parentId: "ou-tahfizh",
+                parent: { code: "OU-TAHFIZH" },
+                genderComplex: "PUTRA",
+                isActive: true,
+              }
+            : undefined,
+          staff: isUnit
+            ? undefined
+            : { id: staffId, staffCode, code: staffCode, status: "AKTIF" },
           user: isUnit
             ? {
                 id: `u-unit-${idx}`,
                 username: `osda.putri`,
                 status: "AKTIF",
                 accountType: "UNIT",
-                unitPlacements: [{ unitId: `ou-req-${idx}` }],
+                unitPlacements: [{ unitId }],
               }
             : {
-                id: `u-1`,
-                username: `ust.ahmad`,
+                id: `u-${idx}`,
+                username: `ust.ahmad${idx}`,
                 status: "AKTIF",
                 accountType: "PERSONAL",
-                staffId: `stf-1`,
-                staff: { id: `stf-1`, status: "AKTIF" },
+                staffId,
+                staff: { id: staffId, staffCode, code: staffCode, status: "AKTIF" },
               },
           position: {
             id: `pos-req-${idx}`,
@@ -544,10 +571,16 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
         user: {
           findMany: async () => [
             { id: "u-1", username: "ust.ahmad", role: "MT", accountType: "PERSONAL", status: "AKTIF", staffId: "stf-1" },
+            { id: "u-unit-osda", username: "osda.putri", role: "POK", accountType: "UNIT", status: "AKTIF" },
           ],
         },
         staff: {
-          findMany: async () => [{ id: "stf-1", status: "AKTIF" }],
+          findMany: async () => [
+            { id: "stf-1", staffCode: "STF-0001", code: "STF-0001", status: "AKTIF" },
+            { id: "stf-stf-0005", staffCode: "STF-0005", code: "STF-0005", status: "AKTIF" },
+            { id: "stf-stf-0004", staffCode: "STF-0004", code: "STF-0004", status: "AKTIF" },
+            { id: "stf-stf-0003", staffCode: "STF-0003", code: "STF-0003", status: "AKTIF" },
+          ],
         },
         // Gate 5: Org units
         orgUnit: {
@@ -558,6 +591,7 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
             { id: "ou-1", code: "OU-OSDA-ROOT", isActive: true },
             { id: "ou-2", code: "OU-OSDA-PUTRI", isActive: true },
             { id: "ou-3", code: "OU-TKS-ROOT", isActive: true },
+            { id: "ou-hlq-1", code: "OU-HLQ-0001", type: "HALAQOH", domain: "TAHFIZH", parentId: "ou-tahfizh", parent: { code: "OU-TAHFIZH" }, genderComplex: "PUTRA", isActive: true },
           ],
         },
         // Gate 6: Positions

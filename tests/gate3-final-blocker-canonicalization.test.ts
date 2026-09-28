@@ -21,6 +21,7 @@ import {
   CANONICAL_REQUIRED_ORG_UNIT_CODES,
   checkPendidikanV2ProductionReadiness,
   evaluateKepesantrenanAcademicAuthPolicies,
+  evaluateGate5RuntimeActivation,
 } from "../lib/server/pendidikan-v2-readiness";
 import { authorizeCanonical } from "../lib/auth/canonical-evaluator";
 
@@ -338,6 +339,7 @@ describe("GATE 3 — FINAL BLOCKER CANONICALIZATION TEST SUITE (DIR-2026-034 to 
             type: "HALAQOH",
             domain: "TAHFIZH",
             parent: { code: "OU-TAHFIZH" },
+            genderComplex: "PUTRA",
             isActive: true,
           },
         ],
@@ -382,9 +384,9 @@ describe("GATE 3 — FINAL BLOCKER CANONICALIZATION TEST SUITE (DIR-2026-034 to 
   });
 
   // =========================================================================
-  // 14. Gate 5 activation still fails closed for deferred UNIT account
+  // 14. Gate 5 activation still fails closed for deferred UNIT account (DIR-2026-037)
   // =========================================================================
-  it("14. Gate 5 activation still fails closed for deferred UNIT account (zero premature activation)", () => {
+  it("14. Gate 5 activation still fails closed for deferred UNIT account (zero premature activation)", async () => {
     assert.strictEqual(
       CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.targetUserStatus,
       "SUSPENDED"
@@ -401,6 +403,58 @@ describe("GATE 3 — FINAL BLOCKER CANONICALIZATION TEST SUITE (DIR-2026-034 to 
       CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.assignmentScopeUnitsReady,
       false
     );
+
+    // Requirement 8: feature flag false => NOT_READY
+    const resFlagFalse = evaluateGate5RuntimeActivation({ featureFlagEnabled: false });
+    assert.strictEqual(resFlagFalse.status, "NOT_READY", "Feature flag false must evaluate to NOT_READY");
+
+    // Requirement 8: feature flag true + osda.putri suspended + executor path not ready + scope bindings not ready => STILL NOT_READY
+    const resFlagTrueSuspended = evaluateGate5RuntimeActivation({
+      featureFlagEnabled: true,
+      userStatus: "SUSPENDED",
+      verifiedHumanExecutorAttributionReady: false,
+      assignmentScopeUnitsReady: false,
+    });
+    assert.strictEqual(
+      resFlagTrueSuspended.status,
+      "NOT_READY",
+      "Feature flag true with suspended UNIT account and unready prerequisites must remain NOT_READY"
+    );
+    assert.ok(
+      resFlagTrueSuspended.details.includes("Feature flag cannot bypass UNIT security per DIR-2026-037"),
+      "Must explicitly state feature flag cannot bypass UNIT security"
+    );
+
+    // Verify via checkPendidikanV2ProductionReadiness that feature flag does not bypass UNIT security
+    const prevEnv = process.env.PENDIDIKAN_V2_UAT_ENABLED;
+    try {
+      process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
+      const mockDbSuspended = {
+        user: {
+          findMany: async () => [
+            { id: "u-osda", username: "osda.putri", status: "SUSPENDED", accountType: "UNIT" },
+          ],
+        },
+        assignment: { findMany: async () => [] },
+        staff: { findMany: async () => [] },
+        orgUnit: { findMany: async () => [] },
+        position: { findMany: async () => [] },
+      };
+      const rep = await checkPendidikanV2ProductionReadiness(mockDbSuspended as any);
+      const gate14 = rep.gates.find((g) => g.gate === "RUNTIME_ACTIVATION_FLAG");
+      assert.ok(gate14, "RUNTIME_ACTIVATION_FLAG gate must exist");
+      assert.strictEqual(
+        gate14.status,
+        "NOT_READY",
+        "RUNTIME_ACTIVATION_FLAG must remain NOT_READY when osda.putri is SUSPENDED"
+      );
+      assert.ok(
+        gate14.details.includes("Feature flag cannot bypass UNIT security"),
+        "Must enforce that feature flag cannot bypass UNIT security"
+      );
+    } finally {
+      process.env.PENDIDIKAN_V2_UAT_ENABLED = prevEnv;
+    }
   });
 
   // =========================================================================
@@ -493,5 +547,465 @@ describe("GATE 3 — FINAL BLOCKER CANONICALIZATION TEST SUITE (DIR-2026-034 to 
     } catch {
       assert.strictEqual(expectedPr8Head, "9068cae5587b7219c394c5c25bf0de07a15b0726");
     }
+  });
+
+  // =========================================================================
+  // 19. Regression: HALAQOH_QUERY_ERROR => USER_ASSIGNMENTS_READY != READY
+  // =========================================================================
+  it("19. Regression: HALAQOH_QUERY_ERROR causes USER_ASSIGNMENTS_READY to fail closed (BLOCKED / DATABASE_UNAVAILABLE)", async () => {
+    const mockDbQueryError = {
+      halaqoh: {
+        findMany: async () => {
+          throw new Error("P2021: Table halaqoh does not exist in current search path");
+        },
+      },
+      assignment: { findMany: async () => [] },
+      staff: { findMany: async () => [] },
+      orgUnit: { findMany: async () => [] },
+      position: { findMany: async () => [] },
+    };
+
+    const report = await checkPendidikanV2ProductionReadiness(mockDbQueryError as any);
+    const gate8 = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+    assert.ok(gate8, "USER_ASSIGNMENTS_READY gate must exist");
+    assert.notStrictEqual(gate8.status, "READY", "USER_ASSIGNMENTS_READY must NOT become READY on query error");
+    assert.strictEqual(gate8.status, "BLOCKED", "USER_ASSIGNMENTS_READY must be BLOCKED on query error");
+    assert.ok(
+      gate8.details.includes("DATABASE_UNAVAILABLE"),
+      "Details must indicate DATABASE_UNAVAILABLE"
+    );
+    assert.ok(
+      gate8.details.includes("Authoritative Halaqoh query failed"),
+      "Details must specify Authoritative Halaqoh query failed"
+    );
+  });
+
+  // =========================================================================
+  // 20. Target Holder Validation for PETUGAS_OPERASIONAL_TAHFIZH (Fail-Closed)
+  // =========================================================================
+  it("20. PETUGAS_OPERASIONAL_TAHFIZH target holder validation fails closed for wrong/missing/inactive Staff", async () => {
+    const baseUnit = { id: "ou-tahfizh", code: "OU-TAHFIZH", type: "DOMAIN", domain: "TAHFIZH", parentId: "ou-root", isActive: true };
+    const basePos = { id: "pos-pot", code: "PETUGAS_OPERASIONAL_TAHFIZH", isActive: true, requiresPersonalAccount: true };
+
+    // Case A: Wrong Staff code
+    const mockWrongStaffCode = {
+      assignment: {
+        findMany: async () => [
+          {
+            id: "asg-pot-1",
+            positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+            unitId: "ou-tahfizh",
+            userId: "u-lisa",
+            status: "ACTIVE",
+            user: { id: "u-lisa", username: "musyirfah.putri", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-wrong" },
+            staff: { id: "stf-wrong", code: "STF-9999", staffCode: "STF-9999", status: "AKTIF" },
+            unit: baseUnit,
+            position: basePos,
+          },
+        ],
+      },
+      staff: { findMany: async () => [] },
+      orgUnit: { findMany: async () => [baseUnit] },
+      position: { findMany: async () => [basePos] },
+    };
+    const repA = await checkPendidikanV2ProductionReadiness(mockWrongStaffCode as any);
+    const gateA = repA.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+    assert.ok(gateA);
+    assert.notStrictEqual(gateA.status, "READY");
+    assert.ok(gateA.details.includes("expected approved holder STF-0005"));
+
+    // Case B: Missing Staff code
+    const mockMissingStaffCode = {
+      assignment: {
+        findMany: async () => [
+          {
+            id: "asg-pot-2",
+            positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+            unitId: "ou-tahfizh",
+            userId: "u-lisa",
+            status: "ACTIVE",
+            user: { id: "u-lisa", username: "musyirfah.putri", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-no-code" },
+            staff: { id: "stf-no-code", code: "", staffCode: "", status: "AKTIF" },
+            unit: baseUnit,
+            position: basePos,
+          },
+        ],
+      },
+      staff: { findMany: async () => [] },
+      orgUnit: { findMany: async () => [baseUnit] },
+      position: { findMany: async () => [basePos] },
+    };
+    const repB = await checkPendidikanV2ProductionReadiness(mockMissingStaffCode as any);
+    const gateB = repB.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+    assert.ok(gateB);
+    assert.notStrictEqual(gateB.status, "READY");
+    assert.ok(gateB.details.includes("staff code is missing or empty"));
+
+    // Case C: Inactive Staff
+    const mockInactiveStaff = {
+      assignment: {
+        findMany: async () => [
+          {
+            id: "asg-pot-3",
+            positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+            unitId: "ou-tahfizh",
+            userId: "u-lisa",
+            status: "ACTIVE",
+            user: { id: "u-lisa", username: "musyirfah.putri", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-5" },
+            staff: { id: "stf-5", code: "STF-0005", staffCode: "STF-0005", status: "SUSPENDED" }, // INACTIVE
+            unit: baseUnit,
+            position: basePos,
+          },
+        ],
+      },
+      staff: { findMany: async () => [] },
+      orgUnit: { findMany: async () => [baseUnit] },
+      position: { findMany: async () => [basePos] },
+    };
+    const repC = await checkPendidikanV2ProductionReadiness(mockInactiveStaff as any);
+    const gateC = repC.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+    assert.ok(gateC);
+    assert.notStrictEqual(gateC.status, "READY");
+    assert.ok(gateC.details.includes("missing or inactive staff") || gateC.details.includes("staff is inactive"));
+
+    // Case D: Correct Staff STF-0005 passes holder validation
+    const mockCorrectStaff = {
+      assignment: {
+        findMany: async () => [
+          {
+            id: "asg-pot-4",
+            positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+            unitId: "ou-tahfizh",
+            userId: "u-lisa",
+            status: "ACTIVE",
+            user: { id: "u-lisa", username: "musyirfah.putri", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-5" },
+            staff: { id: "stf-5", code: "STF-0005", staffCode: "STF-0005", status: "AKTIF" },
+            unit: baseUnit,
+            position: basePos,
+          },
+        ],
+      },
+      staff: { findMany: async () => [] },
+      orgUnit: { findMany: async () => [baseUnit] },
+      position: { findMany: async () => [basePos] },
+    };
+    const repD = await checkPendidikanV2ProductionReadiness(mockCorrectStaff as any);
+    const gateD = repD.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+    assert.ok(gateD);
+    assert.strictEqual(gateD.details.includes("PETUGAS_OPERASIONAL_TAHFIZH: staff code"), false, "Correct STF-0005 holder must pass");
+  });
+
+  // =========================================================================
+  // 21. Target Holder Validation for KEPALA_KEASRAMAAN (Fail-Closed)
+  // =========================================================================
+  it("21. KEPALA_KEASRAMAAN target holder validation fails closed for wrong/missing/inactive Staff", async () => {
+    const baseUnit = { id: "ou-keasramaan", code: "OU-KEASRAMAAN", type: "DOMAIN", domain: "KEASRAMAAN", parentId: "ou-root", isActive: true };
+    const basePos = { id: "pos-kea", code: "KEPALA_KEASRAMAAN", isActive: true, requiresPersonalAccount: true };
+
+    // Case A: Wrong Staff code
+    const mockWrongStaffCode = {
+      assignment: {
+        findMany: async () => [
+          {
+            id: "asg-kea-1",
+            positionCode: "KEPALA_KEASRAMAAN",
+            unitId: "ou-keasramaan",
+            userId: "u-mujaddid",
+            status: "ACTIVE",
+            user: { id: "u-mujaddid", username: "musyrif.asrama", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-wrong" },
+            staff: { id: "stf-wrong", code: "STF-9999", staffCode: "STF-9999", status: "AKTIF" },
+            unit: baseUnit,
+            position: basePos,
+          },
+        ],
+      },
+      staff: { findMany: async () => [] },
+      orgUnit: { findMany: async () => [baseUnit] },
+      position: { findMany: async () => [basePos] },
+    };
+    const repA = await checkPendidikanV2ProductionReadiness(mockWrongStaffCode as any);
+    const gateA = repA.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+    assert.ok(gateA);
+    assert.notStrictEqual(gateA.status, "READY");
+    assert.ok(gateA.details.includes("expected approved holder STF-0004"));
+
+    // Case B: Missing Staff code
+    const mockMissingStaffCode = {
+      assignment: {
+        findMany: async () => [
+          {
+            id: "asg-kea-2",
+            positionCode: "KEPALA_KEASRAMAAN",
+            unitId: "ou-keasramaan",
+            userId: "u-mujaddid",
+            status: "ACTIVE",
+            user: { id: "u-mujaddid", username: "musyrif.asrama", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-no-code" },
+            staff: { id: "stf-no-code", code: "", staffCode: "", status: "AKTIF" },
+            unit: baseUnit,
+            position: basePos,
+          },
+        ],
+      },
+      staff: { findMany: async () => [] },
+      orgUnit: { findMany: async () => [baseUnit] },
+      position: { findMany: async () => [basePos] },
+    };
+    const repB = await checkPendidikanV2ProductionReadiness(mockMissingStaffCode as any);
+    const gateB = repB.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+    assert.ok(gateB);
+    assert.notStrictEqual(gateB.status, "READY");
+    assert.ok(gateB.details.includes("staff code is missing or empty"));
+
+    // Case C: Inactive Staff
+    const mockInactiveStaff = {
+      assignment: {
+        findMany: async () => [
+          {
+            id: "asg-kea-3",
+            positionCode: "KEPALA_KEASRAMAAN",
+            unitId: "ou-keasramaan",
+            userId: "u-mujaddid",
+            status: "ACTIVE",
+            user: { id: "u-mujaddid", username: "musyrif.asrama", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-4" },
+            staff: { id: "stf-4", code: "STF-0004", staffCode: "STF-0004", status: "NONAKTIF" },
+            unit: baseUnit,
+            position: basePos,
+          },
+        ],
+      },
+      staff: { findMany: async () => [] },
+      orgUnit: { findMany: async () => [baseUnit] },
+      position: { findMany: async () => [basePos] },
+    };
+    const repC = await checkPendidikanV2ProductionReadiness(mockInactiveStaff as any);
+    const gateC = repC.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+    assert.ok(gateC);
+    assert.notStrictEqual(gateC.status, "READY");
+    assert.ok(gateC.details.includes("missing or inactive staff") || gateC.details.includes("staff is inactive"));
+
+    // Case D: Correct Staff STF-0004 passes holder validation
+    const mockCorrectStaff = {
+      assignment: {
+        findMany: async () => [
+          {
+            id: "asg-kea-4",
+            positionCode: "KEPALA_KEASRAMAAN",
+            unitId: "ou-keasramaan",
+            userId: "u-mujaddid",
+            status: "ACTIVE",
+            user: { id: "u-mujaddid", username: "musyrif.asrama", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-4" },
+            staff: { id: "stf-4", code: "STF-0004", staffCode: "STF-0004", status: "AKTIF" },
+            unit: baseUnit,
+            position: basePos,
+          },
+        ],
+      },
+      staff: { findMany: async () => [] },
+      orgUnit: { findMany: async () => [baseUnit] },
+      position: { findMany: async () => [basePos] },
+    };
+    const repD = await checkPendidikanV2ProductionReadiness(mockCorrectStaff as any);
+    const gateD = repD.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+    assert.ok(gateD);
+    assert.strictEqual(gateD.details.includes("KEPALA_KEASRAMAAN: staff code"), false, "Correct STF-0004 holder must pass");
+  });
+
+  // =========================================================================
+  // 22. Unapproved future Halaqoh outside canonical six fails closed
+  // =========================================================================
+  it("22. Unapproved active Halaqoh outside canonical six triggers HALAQOH_RECONCILIATION_REQUIRED and fails closed", async () => {
+    const mockDbWithUnapprovedHalaqoh = {
+      halaqoh: {
+        findMany: async () => [
+          {
+            id: "hlq-7",
+            code: "HLQ-0007", // Outside current six
+            name: "Halaqoh 7 Baru",
+            status: "AKTIF",
+            musyrifId: "stf-10",
+            musyrif: {
+              id: "stf-10",
+              code: "STF-0010",
+              status: "AKTIF",
+              user: { id: "u-10", username: "ust.baru", status: "AKTIF", accountType: "PERSONAL" },
+            },
+          },
+        ],
+      },
+      assignment: { findMany: async () => [] },
+      staff: { findMany: async () => [] },
+      orgUnit: { findMany: async () => [] },
+      position: { findMany: async () => [] },
+    };
+
+    const report = await checkPendidikanV2ProductionReadiness(mockDbWithUnapprovedHalaqoh as any);
+    const gate8 = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+    assert.ok(gate8);
+    assert.notStrictEqual(gate8.status, "READY");
+    assert.ok(
+      gate8.details.includes("HALAQOH_RECONCILIATION_REQUIRED"),
+      "Must flag HALAQOH_RECONCILIATION_REQUIRED for unapproved halaqoh"
+    );
+  });
+
+  // =========================================================================
+  // 23. Target OrgUnit genderComplex fails closed for wrong/missing gender
+  // =========================================================================
+  it("23. Target OrgUnit genderComplex mismatch or absence causes MUSYRIF_TAHFIZH validation to fail closed", async () => {
+    // HLQ-0001 must have genderComplex PUTRA; test with PUTRI (wrong)
+    const mockDbWrongGender = {
+      halaqoh: {
+        findMany: async () => [
+          {
+            id: "hlq-1",
+            code: "HLQ-0001",
+            name: "Halaqoh 1",
+            status: "AKTIF",
+            musyrifId: "stf-3",
+            musyrif: {
+              id: "stf-3",
+              code: "STF-0003",
+              status: "AKTIF",
+              user: { id: "u-razan", username: "musyrif.tahifzh", status: "AKTIF", accountType: "PERSONAL" },
+            },
+          },
+        ],
+      },
+      assignment: { findMany: async () => [] },
+      staff: { findMany: async () => [] },
+      orgUnit: {
+        findMany: async () => [
+          {
+            id: "ou-hlq-1",
+            code: "OU-HLQ-0001",
+            type: "HALAQOH",
+            domain: "TAHFIZH",
+            parentId: "OU-TAHFIZH",
+            parent: { code: "OU-TAHFIZH" },
+            genderComplex: "PUTRI", // WRONG: HLQ-0001 is PUTRA
+            isActive: true,
+          },
+        ],
+      },
+      position: { findMany: async () => [] },
+    };
+
+    const reportWrongGender = await checkPendidikanV2ProductionReadiness(mockDbWrongGender as any);
+    const gate8 = reportWrongGender.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+    assert.ok(gate8);
+    assert.notStrictEqual(gate8.status, "READY");
+    assert.ok(
+      gate8.details.includes("genderComplex is PUTRI, expected PUTRA"),
+      "Must fail closed when target OrgUnit genderComplex is wrong"
+    );
+  });
+
+  // =========================================================================
+  // 24. Exact current six mappings pass when fully satisfied
+  // =========================================================================
+  it("24. All current six Halaqoh relational mappings pass when exact canonical requirements are satisfied", async () => {
+    const parentUnit = { id: "ou-tahfizh", code: "OU-TAHFIZH", type: "DOMAIN", domain: "TAHFIZH", isActive: true };
+    const posMusyrif = { id: "pos-mt", code: "MUSYRIF_TAHFIZH", isActive: true, requiresPersonalAccount: true };
+
+    const halaqohs = CANONICAL_CURRENT_SIX_HALAQOH_MAPPINGS.map((m, idx) => ({
+      id: `hlq-${idx + 1}`,
+      code: m.halaqohCode,
+      name: m.name,
+      status: "AKTIF",
+      musyrifId: `stf-${idx + 1}`,
+      musyrif: {
+        id: `stf-${idx + 1}`,
+        code: m.expectedStaffCode,
+        staffCode: m.expectedStaffCode,
+        status: "AKTIF",
+        user: {
+          id: `u-${idx + 1}`,
+          username: m.expectedUsername,
+          status: "AKTIF",
+          accountType: "PERSONAL",
+        },
+      },
+    }));
+
+    const orgUnits = [
+      parentUnit,
+      ...CANONICAL_CURRENT_SIX_HALAQOH_MAPPINGS.map((m, idx) => ({
+        id: `ou-hlq-${idx + 1}`,
+        code: m.targetOrgUnitCode,
+        type: m.targetOrgUnitType,
+        domain: m.targetOrgUnitDomain,
+        parentId: "ou-tahfizh",
+        parent: { code: "OU-TAHFIZH" },
+        genderComplex: m.genderComplex,
+        isActive: true,
+      })),
+    ];
+
+    const assignments = CANONICAL_CURRENT_SIX_HALAQOH_MAPPINGS.map((m, idx) => ({
+      id: `asg-hlq-${idx + 1}`,
+      positionCode: "MUSYRIF_TAHFIZH",
+      unitId: `ou-hlq-${idx + 1}`,
+      userId: `u-${idx + 1}`,
+      status: "ACTIVE",
+      user: {
+        id: `u-${idx + 1}`,
+        username: m.expectedUsername,
+        status: "AKTIF",
+        accountType: "PERSONAL",
+        staffId: `stf-${idx + 1}`,
+      },
+      staff: {
+        id: `stf-${idx + 1}`,
+        code: m.expectedStaffCode,
+        staffCode: m.expectedStaffCode,
+        status: "AKTIF",
+      },
+      unit: orgUnits[idx + 1],
+      position: posMusyrif,
+    }));
+
+    const mockDbCurrentSix = {
+      halaqoh: { findMany: async () => halaqohs },
+      assignment: { findMany: async () => assignments },
+      staff: { findMany: async () => halaqohs.map((h) => h.musyrif) },
+      orgUnit: { findMany: async () => orgUnits },
+      position: { findMany: async () => [posMusyrif] },
+    };
+
+    const report = await checkPendidikanV2ProductionReadiness(mockDbCurrentSix as any);
+    const gate8 = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+    assert.ok(gate8);
+    // Ensure zero issues were raised regarding halaqoh mappings
+    assert.strictEqual(
+      gate8.details.includes("Halaqoh HLQ-"),
+      false,
+      "Exact current-six mappings must satisfy all relational criteria without errors"
+    );
+  });
+
+  // =========================================================================
+  // 25. PEMBINA_HALAQOH conditional deferral vs active Kamar requirement
+  // =========================================================================
+  it("25. PEMBINA_HALAQOH active assignment is required when active Kamar exists (>0)", async () => {
+    // Active Kamar exists (count = 1), but zero PEMBINA_HALAQOH assignments exist
+    const mockDbActiveKamar = {
+      assignment: { findMany: async () => [] },
+      staff: { findMany: async () => [] },
+      orgUnit: {
+        findMany: async () => [
+          { id: "kamar-1", code: "KMR-01", type: "KAMAR", domain: "KEASRAMAAN", isActive: true },
+        ],
+      },
+      position: { findMany: async () => [] },
+    };
+
+    const report = await checkPendidikanV2ProductionReadiness(mockDbActiveKamar as any);
+    const gate8 = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+    assert.ok(gate8);
+    assert.notStrictEqual(gate8.status, "READY");
+    assert.ok(
+      gate8.details.includes("PEMBINA_HALAQOH"),
+      "When active Kamar exists, missing PEMBINA_HALAQOH assignment must fail closed"
+    );
   });
 });
