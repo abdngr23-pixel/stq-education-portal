@@ -15,6 +15,7 @@ import {
   UAT_ACTIVATION_TARGETS,
 } from "../types/architecture-lock";
 import {
+  CANONICAL_REQUIRED_ORG_UNIT_CODES,
   CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS,
   checkPendidikanV2ProductionReadiness,
   evaluateKepesantrenanAcademicAuthPolicies,
@@ -526,4 +527,146 @@ describe("GATE 3 — BLOCKER RESOLUTION CANONICAL RECONCILIATION TEST SUITE", ()
       "Must explicitly report missing or unresolved anchor unit context for KABID_TAHFIZH"
     );
   });
+
+  // =========================================================================
+  // 14. CANONICAL_REQUIRED_ORG_UNIT_CODES INCLUDES APPROVED CANONICAL ANCHORS
+  // =========================================================================
+  it("14. CANONICAL_REQUIRED_ORG_UNIT_CODES includes OU-STQ-ROOT, OU-TAHFIZH, OU-OSDA-ROOT, OU-OSDA-PUTRI, OU-TKS-ROOT", () => {
+    assert.ok(
+      CANONICAL_REQUIRED_ORG_UNIT_CODES.includes("OU-STQ-ROOT"),
+      "CANONICAL_REQUIRED_ORG_UNIT_CODES must include OU-STQ-ROOT"
+    );
+    assert.ok(
+      CANONICAL_REQUIRED_ORG_UNIT_CODES.includes("OU-TAHFIZH"),
+      "CANONICAL_REQUIRED_ORG_UNIT_CODES must include OU-TAHFIZH"
+    );
+    assert.ok(
+      CANONICAL_REQUIRED_ORG_UNIT_CODES.includes("OU-OSDA-ROOT"),
+      "CANONICAL_REQUIRED_ORG_UNIT_CODES must include OU-OSDA-ROOT"
+    );
+    assert.ok(
+      CANONICAL_REQUIRED_ORG_UNIT_CODES.includes("OU-OSDA-PUTRI"),
+      "CANONICAL_REQUIRED_ORG_UNIT_CODES must include OU-OSDA-PUTRI"
+    );
+    assert.ok(
+      CANONICAL_REQUIRED_ORG_UNIT_CODES.includes("OU-TKS-ROOT"),
+      "CANONICAL_REQUIRED_ORG_UNIT_CODES must include OU-TKS-ROOT"
+    );
+    assert.strictEqual(
+      CANONICAL_REQUIRED_ORG_UNIT_CODES[0],
+      CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.STQ_ROOT.code,
+      "OU-STQ-ROOT must be derived from CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.STQ_ROOT"
+    );
+    assert.strictEqual(
+      CANONICAL_REQUIRED_ORG_UNIT_CODES[1],
+      CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.TAHFIZH_DOMAIN.code,
+      "OU-TAHFIZH must be derived from CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.TAHFIZH_DOMAIN"
+    );
+    assert.strictEqual(
+      CANONICAL_REQUIRED_ORG_UNIT_CODES.length,
+      5,
+      "CANONICAL_REQUIRED_ORG_UNIT_CODES must contain exactly 5 required units"
+    );
+  });
+
+  // =========================================================================
+  // 15. REQUIRED_ORG_UNITS_READY FAILS CLOSED ON ATTRIBUTE & STATUS MISMATCHES
+  // =========================================================================
+  it("15. REQUIRED_ORG_UNITS_READY fails closed on missing units, inactive units, or invalid canonical attributes", async () => {
+    const validUnits = [
+      { id: "ou-root", code: "OU-STQ-ROOT", name: "STQ Darul Ulum Cendekia", type: "INSTITUTION", domain: "INSTITUTIONAL", parentId: null, isActive: true },
+      { id: "ou-tahfizh", code: "OU-TAHFIZH", name: "Tahfizh", type: "DOMAIN", domain: "TAHFIZH", parentId: "ou-root", isActive: true },
+      { id: "ou-osda-root", code: "OU-OSDA-ROOT", name: "OSDA", type: "ORGANIZATION", domain: "KEASRAMAAN", parentId: null, isActive: true },
+      { id: "ou-osda-putri", code: "OU-OSDA-PUTRI", name: "OSDA Putri", type: "ORGANIZATION", domain: "KEASRAMAAN", parentId: null, isActive: true },
+      { id: "ou-tks-root", code: "OU-TKS-ROOT", name: "TKS Root", type: "ORGANIZATION", domain: "KEASRAMAAN", parentId: null, isActive: true },
+    ];
+
+    // Base valid check -> READY
+    const validReport = await checkPendidikanV2ProductionReadiness({
+      orgUnit: { findMany: async () => validUnits },
+    } as any);
+    const validGate = validReport.gates.find((g) => g.gate === "REQUIRED_ORG_UNITS_READY");
+    assert.ok(validGate, "REQUIRED_ORG_UNITS_READY gate must be present");
+    assert.strictEqual(validGate.status, "READY", "Valid canonical units must result in READY");
+
+    // Case 1: OU-STQ-ROOT absent => NOT_READY
+    const missingRootReport = await checkPendidikanV2ProductionReadiness({
+      orgUnit: { findMany: async () => validUnits.filter((u) => u.code !== "OU-STQ-ROOT") },
+    } as any);
+    const missingRootGate = missingRootReport.gates.find((g) => g.gate === "REQUIRED_ORG_UNITS_READY");
+    assert.strictEqual(missingRootGate?.status, "NOT_READY", "Missing OU-STQ-ROOT must fail closed");
+    assert.ok(missingRootGate?.details.includes("OU-STQ-ROOT"));
+
+    // Case 2: OU-TAHFIZH absent => NOT_READY
+    const missingTahfizhReport = await checkPendidikanV2ProductionReadiness({
+      orgUnit: { findMany: async () => validUnits.filter((u) => u.code !== "OU-TAHFIZH") },
+    } as any);
+    const missingTahfizhGate = missingTahfizhReport.gates.find((g) => g.gate === "REQUIRED_ORG_UNITS_READY");
+    assert.strictEqual(missingTahfizhGate?.status, "NOT_READY", "Missing OU-TAHFIZH must fail closed");
+    assert.ok(missingTahfizhGate?.details.includes("OU-TAHFIZH"));
+
+    // Case 3: OU-STQ-ROOT wrong type => NOT_READY
+    const wrongRootTypeUnits = validUnits.map((u) => u.code === "OU-STQ-ROOT" ? { ...u, type: "DEPARTMENT" } : u);
+    const wrongRootTypeReport = await checkPendidikanV2ProductionReadiness({
+      orgUnit: { findMany: async () => wrongRootTypeUnits },
+    } as any);
+    const wrongRootTypeGate = wrongRootTypeReport.gates.find((g) => g.gate === "REQUIRED_ORG_UNITS_READY");
+    assert.strictEqual(wrongRootTypeGate?.status, "NOT_READY", "Wrong root type must fail closed");
+    assert.ok(wrongRootTypeGate?.details.includes("wrong type"));
+
+    // Case 4: OU-STQ-ROOT wrong domain => NOT_READY
+    const wrongRootDomainUnits = validUnits.map((u) => u.code === "OU-STQ-ROOT" ? { ...u, domain: "TAHFIZH" } : u);
+    const wrongRootDomainReport = await checkPendidikanV2ProductionReadiness({
+      orgUnit: { findMany: async () => wrongRootDomainUnits },
+    } as any);
+    const wrongRootDomainGate = wrongRootDomainReport.gates.find((g) => g.gate === "REQUIRED_ORG_UNITS_READY");
+    assert.strictEqual(wrongRootDomainGate?.status, "NOT_READY", "Wrong root domain must fail closed");
+    assert.ok(wrongRootDomainGate?.details.includes("wrong domain"));
+
+    // Case 5: OU-STQ-ROOT wrong parent (has parent when it must be root) => NOT_READY
+    const wrongRootParentUnits = validUnits.map((u) => u.code === "OU-STQ-ROOT" ? { ...u, parentId: "ou-other" } : u);
+    const wrongRootParentReport = await checkPendidikanV2ProductionReadiness({
+      orgUnit: { findMany: async () => wrongRootParentUnits },
+    } as any);
+    const wrongRootParentGate = wrongRootParentReport.gates.find((g) => g.gate === "REQUIRED_ORG_UNITS_READY");
+    assert.strictEqual(wrongRootParentGate?.status, "NOT_READY", "Root having parent must fail closed");
+    assert.ok(wrongRootParentGate?.details.includes("wrong parent"));
+
+    // Case 6: OU-TAHFIZH wrong type => NOT_READY
+    const wrongTahfizhTypeUnits = validUnits.map((u) => u.code === "OU-TAHFIZH" ? { ...u, type: "INSTITUTION" } : u);
+    const wrongTahfizhTypeReport = await checkPendidikanV2ProductionReadiness({
+      orgUnit: { findMany: async () => wrongTahfizhTypeUnits },
+    } as any);
+    const wrongTahfizhTypeGate = wrongTahfizhTypeReport.gates.find((g) => g.gate === "REQUIRED_ORG_UNITS_READY");
+    assert.strictEqual(wrongTahfizhTypeGate?.status, "NOT_READY", "Wrong Tahfizh type must fail closed");
+    assert.ok(wrongTahfizhTypeGate?.details.includes("wrong type"));
+
+    // Case 7: OU-TAHFIZH wrong domain => NOT_READY
+    const wrongTahfizhDomainUnits = validUnits.map((u) => u.code === "OU-TAHFIZH" ? { ...u, domain: "KEASRAMAAN" } : u);
+    const wrongTahfizhDomainReport = await checkPendidikanV2ProductionReadiness({
+      orgUnit: { findMany: async () => wrongTahfizhDomainUnits },
+    } as any);
+    const wrongTahfizhDomainGate = wrongTahfizhDomainReport.gates.find((g) => g.gate === "REQUIRED_ORG_UNITS_READY");
+    assert.strictEqual(wrongTahfizhDomainGate?.status, "NOT_READY", "Wrong Tahfizh domain must fail closed");
+    assert.ok(wrongTahfizhDomainGate?.details.includes("wrong domain"));
+
+    // Case 8: OU-TAHFIZH parent != OU-STQ-ROOT => NOT_READY
+    const wrongTahfizhParentUnits = validUnits.map((u) => u.code === "OU-TAHFIZH" ? { ...u, parentId: "ou-osda-root" } : u);
+    const wrongTahfizhParentReport = await checkPendidikanV2ProductionReadiness({
+      orgUnit: { findMany: async () => wrongTahfizhParentUnits },
+    } as any);
+    const wrongTahfizhParentGate = wrongTahfizhParentReport.gates.find((g) => g.gate === "REQUIRED_ORG_UNITS_READY");
+    assert.strictEqual(wrongTahfizhParentGate?.status, "NOT_READY", "Tahfizh parent != OU-STQ-ROOT must fail closed");
+    assert.ok(wrongTahfizhParentGate?.details.includes("wrong parent"));
+
+    // Case 9: required unit inactive => NOT_READY
+    const inactiveTahfizhUnits = validUnits.map((u) => u.code === "OU-TAHFIZH" ? { ...u, isActive: false } : u);
+    const inactiveTahfizhReport = await checkPendidikanV2ProductionReadiness({
+      orgUnit: { findMany: async () => inactiveTahfizhUnits },
+    } as any);
+    const inactiveTahfizhGate = inactiveTahfizhReport.gates.find((g) => g.gate === "REQUIRED_ORG_UNITS_READY");
+    assert.strictEqual(inactiveTahfizhGate?.status, "NOT_READY", "Inactive required unit must fail closed");
+    assert.ok(inactiveTahfizhGate?.details.includes("inactive"));
+  });
 });
+

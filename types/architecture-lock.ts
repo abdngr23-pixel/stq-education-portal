@@ -767,7 +767,7 @@ export const GURU_KEPESANTRENAN_POSITION_CONTRACT = {
 
 /**
  * Canonical Teacher Mapping Contract for Kepesantrenan Subjects (12 Slots)
- * Per Level-0 Owner Directive DIR-2026-028 & DIR-2026-030.
+ * Per Level-0 Owner Directive DIR-2026-031 (and DIR-2026-028 where relevant to teacher modality).
  * Declarative contract mapping confirmed human teacher names to exact curriculum slots.
  * ZERO production database IDs or User.id hardcoding.
  * Teacher identities are resolved at runtime via Staff/Assignment linkage, NOT static username keys.

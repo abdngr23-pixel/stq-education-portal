@@ -107,15 +107,15 @@ This document serves as the persistent repository registry for authoritative Bus
 - **Directive ID:** `DIR-2026-002`
 - **Tanggal:** 2026-09-19
 - **Keputusan Business Owner:** `lisa.mt` = legacy/deprecated rename source.
-- **Canonical Interpretation:** The username `lisa.mt` is classified as a deprecated legacy origin account destined for renaming to `musyirfah.putri`. The rename has **NOT BEEN EXECUTED** in production. `lisa.mt` must not be treated as a permanent target identity or referenced in new feature contracts.
+- **Canonical Interpretation:** The username `lisa.mt` is classified as a deprecated legacy origin account from early planning. Latest read-only production observation confirms `lisa.mt` is completely absent in production, while canonical active account `musyirfah.putri` is already present, `AKTIF`, and linked to `STF-0005`. Therefore, no outstanding rename execution is required or allowed. DO NOT attempt a new rename when `lisa.mt` is absent. `lisa.mt` must not be treated as an active identity, an outstanding migration task, or referenced in new feature contracts.
 - **Affected Domain:** IDENTITY / MIGRATION
-- **Implementation Status:** `CODE_COMPLETE` (Classified as legacy origin in release manifests, seed files, and test documentation)
+- **Implementation Status:** `CODE_COMPLETE` (Classified as legacy origin in release manifests, seed files, and test documentation; no active references)
 - **Production Status:** `LATEST_OBSERVATION_OBSOLETE_ABSENT`
-  - **HISTORICAL_STATE_BEFORE_GATE_EXECUTION:** Rename not executed; historical audit point-in-time observed legacy `lisa.mt`.
+  - **HISTORICAL_STATE_BEFORE_GATE_EXECUTION:** Planned rename not executed by release train; historical audit point-in-time observed legacy `lisa.mt`.
   - **LATEST_PRODUCTION_OBSERVATION (Gate 3 Preflight):** Legacy username `lisa.mt` is confirmed absent in production. No active records reference `lisa.mt`.
 - **Supersedes / Superseded-By:** None
-- **Acceptance Criteria:** `lisa.mt` is exclusively used as migration source data; all new capabilities and tests bind to generic roles/positions.
-- **Evidence / Reference:** `types/auth.ts:449`, `prisma/seed.ts:490`, `docs/STQ_M3_RELEASE_MANIFEST.md` REL-ACC-01.
+- **Acceptance Criteria:** `lisa.mt` is recognized as obsolete and absent in production; no outstanding rename execution is triggered; all new capabilities and tests bind to generic roles/positions.
+- **Evidence / Reference:** `types/auth.ts:449`, `prisma/seed.ts:490`, `docs/STQ_CURRENT_STATE.md`.
 
 ---
 
@@ -153,13 +153,23 @@ This document serves as the persistent repository registry for authoritative Bus
 - **Directive ID:** `DIR-2026-005`
 - **Tanggal:** 2026-09-19
 - **Keputusan Business Owner:** Preserve Staff linkage, history, sessions/audit relationships according to controlled migration; jangan membuat duplicate Lisa identity.
-- **Canonical Interpretation:** The rename of `lisa.mt` to `musyirfah.putri` must be performed as an in-place transactional update on the existing `User` primary record. No duplicate User record for Lisa may be created. All foreign keys (`Staff` relationship via staffCode `STF-0005`, `Halaqoh`, `Setoran`, `AuditLog`, sessions) must be preserved transactionally. Do not state an exact Lisa Staff database ID unless independently proven from authoritative database evidence; do not mislabel `staffCode` (`STF-0005`) as `Staff.id`.
+- **Canonical Interpretation:** HISTORICAL MIGRATION PROCEDURE / NO LONGER ACTIONABLE because current production already satisfies the canonical target.
+  - The historical procedure specified that any rename from `lisa.mt` to `musyirfah.putri` be performed as an in-place transactional update without creating duplicate User records.
+  - Latest read-only production observation (Gate 3 Preflight) proves that `lisa.mt` is ABSENT and `musyirfah.putri` is already PRESENT, `AKTIF`, and linked to Staff `STF-0005`.
+  - **DO NOT attempt a new lisa.mt rename when lisa.mt is absent.**
+  - Invariants strictly preserved:
+    1. Canonical account = `musyirfah.putri` (status: `AKTIF`, linked to `STF-0005`).
+    2. Duplicate legacy = `musyrifah.putri` (status: `AKTIF`, unlinked; designated target: `SUSPENDED`).
+    3. Duplicate target: `SUSPENDED` (to be applied in controlled Gate 3 production completion).
+    4. NO User merge (preserve distinct database rows and historical audit integrity).
+    5. NO Staff-link move (`STF-0005` remains exclusively with canonical `musyirfah.putri`).
+    6. NO hard delete of duplicate legacy account.
 - **Affected Domain:** IDENTITY / DATA INTEGRITY
-- **Implementation Status:** `TARGET_DESIGNED` (Transactional update procedure specified in release manifest REL-ACC-01)
-- **Production Status:** `PENDING_C2C`
-- **Supersedes / Superseded-By:** None
-- **Acceptance Criteria:** Post-migration audit proves exactly one User record for Ustazah Lisa Dwina Fitri exists, preserving `Staff` linkage (staffCode `STF-0005`) and all historical relations.
-- **Evidence / Reference:** `docs/STQ_M3_RELEASE_MANIFEST.md` REL-STF-02, REL-ACC-01, `prisma/seed.ts:102,490`.
+- **Implementation Status:** `HISTORICAL_MIGRATION_PROCEDURE / NO_LONGER_ACTIONABLE` (Target state already satisfied in production)
+- **Production Status:** `HISTORICAL_MIGRATION_PROCEDURE / NO_LONGER_ACTIONABLE (TARGET_SATISFIED)`
+- **Supersedes / Superseded-By:** Reconciled by Gate 3 Identity Audit and DIR-2026-033
+- **Acceptance Criteria:** Production maintains exactly one active canonical account for Ustazah Lisa Dwina Fitri (`musyirfah.putri` linked to `STF-0005`); `lisa.mt` is absent and requires no rename action; duplicate legacy `musyrifah.putri` is targeted for `SUSPENDED` without merge, staff-link move, or hard deletion.
+- **Evidence / Reference:** `docs/STQ_CURRENT_STATE.md`, `docs/STQ_OWNER_DIRECTIVES.md: DIR-2026-033`, `types/architecture-lock.ts: CANONICAL_IDENTITY_RESOLUTION_CONTRACT`.
 
 ---
 
@@ -602,11 +612,11 @@ This document serves as the persistent repository registry for authoritative Bus
   - Multi-slot assignments: Ust. Mujaddid Zhohruddin holds 2 Putra slots (Tafsir, Tajwid). Ustazah Lisa Dwina Fitri holds all 5 Putri slots.
   - Production database table `teaching_assignments` currently has 0 rows; creation of these 12 rows remains pending controlled Gate 3 completion.
 - **Affected Domain:** PENDIDIKAN / KEPESANTRENAN / TEACHING_ASSIGNMENT
-- **Implementation Status:** `CODE_COMPLETE` (Validated in `CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS` in `lib/server/pendidikan-v2-readiness.ts`)
+- **Implementation Status:** `CODE_COMPLETE` (Formally defined as `CANONICAL_KEPESANTRENAN_TEACHER_MAPPINGS` in `types/architecture-lock.ts` and validated in `CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS` in `lib/server/pendidikan-v2-readiness.ts`)
 - **Production Status:** `NOT_LIVE / PENDING_CONTROLLED_PROVISIONING` (Zero rows currently in `teaching_assignments`)
 - **Supersedes / Superseded-By:** Reaffirms existing schedule in Section 6.2; confirms schedule stability
 - **Acceptance Criteria:** Exactly 12 Kepesantrenan teaching assignment targets confirmed; multi-slot assignments recognized; zero invented teachers.
-- **Evidence / Reference:** `docs/STQ_OWNER_DIRECTIVES.md:719-727`, `docs/STQ_REQUIREMENT_SOURCE_MAP.md:97-105`, `lib/server/pendidikan-v2-readiness.ts`.
+- **Evidence / Reference:** `types/architecture-lock.ts` (`CANONICAL_KEPESANTRENAN_TEACHER_MAPPINGS`), `tests/gate3-blocker-canonical-reconciliation.test.ts`, `docs/STQ_OWNER_DIRECTIVES.md:719-727`, `docs/STQ_REQUIREMENT_SOURCE_MAP.md:97-105`, `lib/server/pendidikan-v2-readiness.ts`.
 
 ---
 
