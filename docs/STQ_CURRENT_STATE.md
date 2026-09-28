@@ -82,8 +82,16 @@ All commit SHAs recorded below are verified historical checkpoints, not self-upd
   - Post-merge CI run: SUCCESS
   - Classification: `PR31_PRE_GATE_RECONCILIATION_MERGED_AND_VERIFIED`
 
+- **PR #32 Gate 2 Remediation verified checkpoint:**
+  `cc4ac049402be0b566dad594ac0e5a92de253603`
+  (Merge commit for PR #32: `fix(gate2): reconcile NilaiAkademik guruId foreign key to RESTRICT`)
+  - PR #32 state: MERGED
+  - Merge commit: `cc4ac049402be0b566dad594ac0e5a92de253603`
+  - Post-merge CI run: SUCCESS
+  - Classification: `GATE2_REMEDIATION_MERGED_AND_VERIFIED`
+
 - **Verified live main base:**
-  `efc4a5d3694c5aac46435e37e5889d61b9164b70`
+  `cc4ac049402be0b566dad594ac0e5a92de253603`
 
 ---
 
@@ -302,6 +310,39 @@ A newer explicit Business Owner decision has SUPERSEDED the previous assumption 
 - `RAZAN_MT_STAFF_LINKAGE = PROHIBITED`
 - `KABID_TAHFIZH_ACCOUNT_OWNER_DESIGNATION = musyrif.tahifzh`
 - `RAZAN_MT_DECOMMISSION_EXECUTION = NOT_STARTED`
+
+### C. Current Business Owner Decision — `pembina.halaqoh` Legacy Placeholder Account (DIR-2026-032)
+- **Account classification:** `LEGACY_ACCOUNT_WITH_REPLACEMENT`.
+- **Target state:** `SUSPENDED`.
+- **Staff linkage:** `PROHIBITED` (do NOT create artificial Staff profile).
+- **Hard delete guard:** `PROHIBITED` (preserve historical records).
+- **Execution state:** `PENDING_CONTROLLED_PROVISIONING` (Zero writes executed in this PR).
+
+### D. Current Business Owner Decision — Ustazah Lisa Duplicate Account Resolution (DIR-2026-033)
+- **Account identity separation:**
+  - `musyirfah.putri`: Canonical active account for Ustazah Lisa Dwina Fitri (linked to `STF-0005`, Halaqoh leader).
+  - `musyrifah.putri`: Duplicate legacy technical account belonging to same human; target status = `SUSPENDED`.
+- **Invariants:**
+  - Distinct `User` rows in DB (`musyirfah.putri != musyrifah.putri`).
+  - Do NOT merge User IDs.
+  - Do NOT move Staff linkage to duplicate.
+  - Do NOT hard delete duplicate.
+  - No username grants authorization.
+- **Execution state:** `PENDING_CONTROLLED_PROVISIONING`.
+
+### E. Current Business Owner Decision — Institutional & Domain Unit Anchors (DIR-2026-030)
+- **Single Institutional Root:** `OU-STQ-ROOT` (`STQ Darul Ulum Cendekia`, type: `INSTITUTION`, domain: `INSTITUTIONAL`, parent: `null`).
+- **Tahfizh Domain Unit:** `OU-TAHFIZH` (`Tahfizh`, type: `DOMAIN`, domain: `TAHFIZH`, parent: `OU-STQ-ROOT`).
+- **Assignment Anchors:**
+  - `MUDIR` -> `OU-STQ-ROOT`
+  - `KABID_TAHFIZH` -> `OU-TAHFIZH`
+  - `GURU_KEPESANTRENAN` -> `OU-STQ-ROOT`
+- **Supersedence:** `OU-INSTITUTION` proposed anchor is formally superseded.
+
+### F. Current Business Owner Decision — Reaffirmation of 12 Kepesantrenan Teacher Slots (DIR-2026-031)
+- **Putra (7 slots):** Bahasa Arab T1 (Ust. Abi Hudzaifah), T2 (Ust. Kamal Mukhtar), T3 (Ust. Andi Quarzy Ayatullah), Fikih (Ust. Razan Mufli), Tafsir (Ust. Mujaddid Zhohruddin), Aqidah (Ust. Alwan), Tajwid (Ust. Mujaddid Zhohruddin).
+- **Putri (5 slots):** Bahasa Arab, Fikih, Tafsir, Aqidah, Tajwid (all 5 taught by Ustazah Lisa Dwina Fitri).
+- **Multi-slot:** Ust. Mujaddid (2 slots), Ustazah Lisa (5 slots). Zero invented teachers.
 
 Production linkage or mutation is a WRITE and requires explicit authorization. Do not silently repair.
 

@@ -755,6 +755,7 @@ export const GURU_KEPESANTRENAN_POSITION_CONTRACT = {
   requiresPersonalAccount: true as const,
   isLeadership: false as const,
   allowedUnitTypes: ["INSTITUTION"] as const,
+  assignmentAnchor: "OU-STQ-ROOT" as const,
   futureAssignmentAnchor: "OU-STQ-ROOT" as const,
   targetCapabilities: [
     "academic.schedule.read",
@@ -846,4 +847,66 @@ export const POSITION_ACCOUNT_MODALITY_CONTRACT: Record<string, AccountType> = {
   KABID_TAHFIZH: "PERSONAL",
   MUSYRIF_TAHFIZH: "PERSONAL",
   PETUGAS_OPERASIONAL_TAHFIZH: "PERSONAL",
+} as const;
+
+/**
+ * Canonical Institutional and Domain Hierarchy Contract (Gate 3 Blocker Resolution)
+ * Defines declarative structure approved by Business Owner (DIR-2026-030).
+ * Strictly non-production-writing — architecture contract only.
+ */
+export const CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT = {
+  STQ_ROOT: {
+    code: "OU-STQ-ROOT" as const,
+    name: "STQ Darul Ulum Cendekia" as const,
+    type: "INSTITUTION" as const,
+    domain: "INSTITUTIONAL" as const,
+    parentId: null,
+    genderComplex: "TIDAK_TERIKAT" as const,
+  },
+  TAHFIZH_DOMAIN: {
+    code: "OU-TAHFIZH" as const,
+    name: "Tahfizh" as const,
+    type: "DOMAIN" as const,
+    domain: "TAHFIZH" as const,
+    parentId: "OU-STQ-ROOT" as const,
+    genderComplex: "TIDAK_TERIKAT" as const,
+  },
+} as const;
+
+/**
+ * Approved Canonical Assignment Anchor Contract (DIR-2026-030)
+ * Binds positions to approved target anchor units.
+ * Authoritative assignment mapping without hardcoded usernames.
+ */
+export const CANONICAL_ASSIGNMENT_ANCHORS = {
+  MUDIR: "OU-STQ-ROOT" as const,
+  KABID_TAHFIZH: "OU-TAHFIZH" as const,
+  GURU_KEPESANTRENAN: "OU-STQ-ROOT" as const,
+} as const;
+
+/**
+ * Canonical Identity Resolution Contract (Gate 3 Blocker Resolution, DIR-2026-032 & DIR-2026-033)
+ * Distinguishes canonical active accounts from legacy placeholders and duplicate technical accounts.
+ * Usernames are identity labels ONLY; they NEVER confer authorization.
+ */
+export const CANONICAL_IDENTITY_RESOLUTION_CONTRACT = {
+  LISA_DWINA_FITRI: {
+    canonicalAccount: "musyirfah.putri" as const,
+    staffCode: "STF-0005" as const,
+    role: "MT" as const,
+    status: "AKTIF" as const,
+    accountType: "PERSONAL" as const,
+    duplicateLegacyAccount: "musyrifah.putri" as const,
+    duplicateLegacyTargetStatus: "SUSPENDED" as const,
+    hardDeleteAllowed: false as const,
+    mergeAllowed: false as const,
+  },
+  PEMBINA_HALAQOH_PLACEHOLDER: {
+    legacyAccount: "pembina.halaqoh" as const,
+    role: "PH" as const,
+    accountType: "PERSONAL" as const,
+    targetStatus: "SUSPENDED" as const,
+    hardDeleteAllowed: false as const,
+    staffLinkageAllowed: false as const,
+  },
 } as const;

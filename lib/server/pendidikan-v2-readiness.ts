@@ -15,7 +15,10 @@ import {
   OSDA_PUTRI_UNIT_CONTRACT,
   UAT_ACTIVATION_TARGETS,
   ResolvedResourceContext,
+  CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT,
+  CANONICAL_ASSIGNMENT_ANCHORS,
 } from "@/types/architecture-lock";
+export { CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT, CANONICAL_ASSIGNMENT_ANCHORS };
 import { CANONICAL_POSITION_CODES } from "@/lib/auth/compatibility";
 import {
   authorizeCanonical,
@@ -995,7 +998,17 @@ export async function checkPendidikanV2ProductionReadiness(
         }
 
         const code = pos.code || a.positionCode;
-        if (code) coveredCodes.add(code);
+        if (code) {
+          // Explicit Anchor Validation (DIR-2026-030)
+          const expectedAnchor = (CANONICAL_ASSIGNMENT_ANCHORS as Record<string, string>)[code];
+          if (expectedAnchor && unit && unit.code) {
+            if (unit.code !== expectedAnchor) {
+              assignmentIssues.push(`Assignment ${a.id} for ${code}: anchor unit code is ${unit.code}, expected approved anchor ${expectedAnchor}`);
+              continue;
+            }
+          }
+          coveredCodes.add(code);
+        }
       }
 
       // Check active Kamar units count

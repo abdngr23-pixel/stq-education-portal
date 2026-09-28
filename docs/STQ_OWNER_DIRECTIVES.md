@@ -123,7 +123,7 @@ This document serves as the persistent repository registry for authoritative Bus
 - **Affected Domain:** IDENTITY / PREFLIGHT AUDIT
 - **Implementation Status:** `REQUIRED` (Audit item REL-STF-02 registered in release manifest; preflight execution pending Gate C2C)
 - **Production Status:** `REQUIRES_FRESH_READ_ONLY_VERIFICATION` (HISTORICAL_OBSERVATION: `musyrifah.putri` appeared in historical seed/preflight records without Staff linkage; requires fresh read-only verification before any C2C step)
-- **Supersedes / Superseded-By:** None
+- **Supersedes / Superseded-By:** Interpretation that human ownership was unresolved superseded by DIR-2026-033 (which resolved that musyrifah.putri is a duplicate legacy account belonging to Ustazah Lisa, target: SUSPENDED; canonical active account remains musyirfah.putri per DIR-2026-001)
 - **Acceptance Criteria:** Preflight audit script executes against production DB, verifying account modality and preventing accidental overwrite or collision with `musyirfah.putri`.
 - **Evidence / Reference:** `docs/STQ_M3_RELEASE_MANIFEST.md` REL-STF-02, `docs/STQ_M3_RELEASE_DEPENDENCIES.md:160`, `docs/STQ_MILESTONE3_3C2A_PRODUCTION_PREFLIGHT.md:202`.
 
@@ -549,6 +549,104 @@ This document serves as the persistent repository registry for authoritative Bus
 - **Supersedes / Superseded-By:** Supersedes ad-hoc release gate naming (e.g. Gate C2B, C2C, C2D) by standardizing on Gate 0–9
 - **Acceptance Criteria:** Release documentation and runbooks uniformly reflect the Gate 0–9 execution sequence; Gate 0 artifact requirements define exactly 15 required sheets.
 - **Evidence / Reference:** `STQ_Owner_Request_Register_2026-09-20.xlsx`, `docs/STQ_CURRENT_STATE.md`, `docs/STQ_M3_RELEASE_MANIFEST.md`.
+
+---
+
+### DIR-2026-030 | Canonical Institutional Root and Tahfizh Assignment Anchors
+- **Directive ID:** `DIR-2026-030`
+- **Tanggal:** 2026-09-28
+- **Keputusan Business Owner:** `OU-STQ-ROOT` adalah satu-satunya institutional root untuk STQ Darul Ulum Cendekia. `OU-TAHFIZH` adalah domain unit di bawah `OU-STQ-ROOT`. Assignment anchors: MUDIR -> `OU-STQ-ROOT`, KABID_TAHFIZH -> `OU-TAHFIZH`, GURU_KEPESANTRENAN -> `OU-STQ-ROOT`. Proposal kode unit anchor `OU-INSTITUTION` digantikan (superseded). Jangan membuat unit root institusi kedua.
+- **Canonical Interpretation:** Approved single root institutional topology and assignment anchor mapping:
+  - `OU-STQ-ROOT`: `code: OU-STQ-ROOT`, `name: STQ Darul Ulum Cendekia`, `type: INSTITUTION`, `domain: INSTITUTIONAL`, `parentId: null`, `genderComplex: TIDAK_TERIKAT`.
+  - `OU-TAHFIZH`: `code: OU-TAHFIZH`, `name: Tahfizh`, `type: DOMAIN`, `domain: TAHFIZH`, `parentId: OU-STQ-ROOT`, `genderComplex: TIDAK_TERIKAT`.
+  - Assignment Anchors:
+    - `MUDIR` -> `OU-STQ-ROOT`
+    - `KABID_TAHFIZH` -> `OU-TAHFIZH`
+    - `GURU_KEPESANTRENAN` -> `OU-STQ-ROOT`
+  - `OU-INSTITUTION` proposed anchor is formally superseded for Mudir and institutional assignments.
+  - Production database provisioning remains pending controlled Gate 3 completion under explicit Business Owner authorization. Zero production writes are authorized by this documentation/contract change.
+- **Affected Domain:** STRUCTURE / IDENTITY / ASSIGNMENT / ORG_UNITS
+- **Implementation Status:** `CODE_COMPLETE` (Defined in `types/architecture-lock.ts` as `CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT` and `CANONICAL_ASSIGNMENT_ANCHORS`, and enforced in `lib/server/pendidikan-v2-readiness.ts`)
+- **Production Status:** `NOT_LIVE / PENDING_CONTROLLED_PROVISIONING` (Unit creation pending approved batch in Gate 3)
+- **Supersedes / Superseded-By:** Supersedes proposed anchor `OU-INSTITUTION` for Mudir assignment; clarifies hierarchy
+- **Acceptance Criteria:** `OU-STQ-ROOT` is recognized as the single institutional root; `OU-TAHFIZH` has parent `OU-STQ-ROOT`; assignments for Mudir, Kabid, and Guru anchor to approved units; no `OU-INSTITUTION` requirement remains.
+- **Evidence / Reference:** `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`, `docs/STQ_CURRENT_STATE.md`.
+
+---
+
+### DIR-2026-031 | Kepesantrenan 12-Slot Teacher Mapping Reaffirmed
+- **Directive ID:** `DIR-2026-031`
+- **Tanggal:** 2026-09-28
+- **Keputusan Business Owner:** Jadwal dan pemetaan pengampu 12 slot Kepesantrenan (7 slot Putra + 5 slot Putri) ditegaskan kembali persis sesuai jadwal kanonikal yang ada saat ini tanpa perubahan.
+- **Canonical Interpretation:** Reaffirmation of existing canonical education schedule (`SOURCE-PEND-002`) without inventing or modifying teachers:
+  - **PUTRA (7 slots)**:
+    1. Bahasa Arab / TINGKAT_1 -> Ust. Abi Hudzaifah (`STF-0008` / `hudzaifah.ph`)
+    2. Bahasa Arab / TINGKAT_2 -> Ust. Kamal Mukhtar (`STF-0006` / `kamal.ph`)
+    3. Bahasa Arab / TINGKAT_3 -> Ust. Andi Quarzy Ayatullah (`STF-0001` / `mudir`)
+    4. Fikih -> Ust. Razan Mufli (`STF-0003` / `musyrif.tahifzh`)
+    5. Tafsir -> Ust. Mujaddid Zhohruddin (`STF-0004` / `musyrif.asrama`)
+    6. Aqidah -> Ust. Alwan (`STF-0009` / `alwan.ph`)
+    7. Tajwid -> Ust. Mujaddid Zhohruddin (`STF-0004` / `musyrif.asrama`)
+  - **PUTRI (5 slots)**:
+    8. Bahasa Arab -> Ustazah Lisa Dwina Fitri (`STF-0005` / `musyirfah.putri`)
+    9. Fikih -> Ustazah Lisa Dwina Fitri (`STF-0005` / `musyirfah.putri`)
+    10. Tafsir -> Ustazah Lisa Dwina Fitri (`STF-0005` / `musyirfah.putri`)
+    11. Aqidah -> Ustazah Lisa Dwina Fitri (`STF-0005` / `musyirfah.putri`)
+    12. Tajwid -> Ustazah Lisa Dwina Fitri (`STF-0005` / `musyirfah.putri`)
+  - Multi-slot assignments: Ust. Mujaddid Zhohruddin holds 2 Putra slots (Tafsir, Tajwid). Ustazah Lisa Dwina Fitri holds all 5 Putri slots.
+  - Production database table `teaching_assignments` currently has 0 rows; creation of these 12 rows remains pending controlled Gate 3 completion.
+- **Affected Domain:** PENDIDIKAN / KEPESANTRENAN / TEACHING_ASSIGNMENT
+- **Implementation Status:** `CODE_COMPLETE` (Validated in `CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS` in `lib/server/pendidikan-v2-readiness.ts`)
+- **Production Status:** `NOT_LIVE / PENDING_CONTROLLED_PROVISIONING` (Zero rows currently in `teaching_assignments`)
+- **Supersedes / Superseded-By:** Reaffirms existing schedule in Section 6.2; confirms schedule stability
+- **Acceptance Criteria:** Exactly 12 Kepesantrenan teaching assignment targets confirmed; multi-slot assignments recognized; zero invented teachers.
+- **Evidence / Reference:** `docs/STQ_OWNER_DIRECTIVES.md:719-727`, `docs/STQ_REQUIREMENT_SOURCE_MAP.md:97-105`, `lib/server/pendidikan-v2-readiness.ts`.
+
+---
+
+### DIR-2026-032 | Legacy pembina.halaqoh Account Suspension Target
+- **Directive ID:** `DIR-2026-032`
+- **Tanggal:** 2026-09-28
+- **Keputusan Business Owner:** Akun `pembina.halaqoh` adalah akun placeholder lama dari seeding awal; target status adalah `SUSPENDED`; jangan dihapus fisik (hard delete).
+- **Canonical Interpretation:** The account `pembina.halaqoh` (`cmtur15m601sjiwfbt5o6f7b0`) is a legacy seeding placeholder. All 6 active halaqoh are assigned to specific individual pembina personal accounts with verified active Staff linkages. `pembina.halaqoh` has 0 audit logs, 0 active sessions, 0 assignments, and no staff linkage.
+  - Target status is `SUSPENDED`.
+  - Hard delete is strictly prohibited.
+  - Creating a dummy or unverified Staff profile is prohibited.
+  - Historical audit and reference dependencies are preserved.
+  - Production mutation is pending authorized execution in Gate 3.
+- **Affected Domain:** IDENTITY / AUTH / DATA_GOVERNANCE
+- **Implementation Status:** `CODE_COMPLETE` (Classified in `types/architecture-lock.ts:CANONICAL_IDENTITY_RESOLUTION_CONTRACT`)
+- **Production Status:** `CURRENT_PRODUCTION_FACT: AKTIF; TARGET: SUSPENDED` (Deactivation mutation pending authorized write batch)
+- **Supersedes / Superseded-By:** Supersedes any assumption that `pembina.halaqoh` represents an active operational pembina requiring Staff linkage
+- **Acceptance Criteria:** Account `pembina.halaqoh` designated for `SUSPENDED` status; no Staff profile created; historical records intact.
+- **Evidence / Reference:** `types/architecture-lock.ts`, Gate 3 Identity Audit, `docs/STQ_CURRENT_STATE.md`.
+
+---
+
+### DIR-2026-033 | Ustazah Lisa Duplicate Legacy Account Resolution
+- **Directive ID:** `DIR-2026-033`
+- **Tanggal:** 2026-09-28
+- **Keputusan Business Owner:** `musyrifah.putri` dan `musyirfah.putri` adalah akun teknis milik manusia yang sama: Ustazah Lisa Dwina Fitri. Akun aktif kanonikal adalah `musyirfah.putri` (terhubung ke `STF-0005`). Akun `musyrifah.putri` adalah duplicate legacy account dengan target status `SUSPENDED`. Jangan gabungkan User ID, jangan pindahkan Staff linkage, jangan hard delete.
+- **Canonical Interpretation:** Definitive resolution of Ustazah Lisa Dwina Fitri technical accounts:
+  - Both technical accounts belong to the same human: Ustazah Lisa Dwina Fitri.
+  - Canonical active identity: `musyirfah.putri` (`cmtur150v01sdiwfbs59rt11r`, status: `AKTIF`, linked to Staff `STF-0005`, Halaqoh leader).
+  - Duplicate legacy identity: `musyrifah.putri` (`cmtur14ya01sbiwfb2svkgmfp`, status: `AKTIF`, `staff_id: null`, 2 historical logins, 0 transactions).
+  - Target status for duplicate: `SUSPENDED`.
+  - Invariants:
+    1. They remain two distinct `User` rows in the database.
+    2. Do NOT merge User IDs.
+    3. Do NOT move Staff linkage (`STF-0005`) to the duplicate.
+    4. Do NOT hard delete the duplicate.
+    5. Historical login and audit references are preserved.
+    6. Neither username confers authorization; authority is governed by positions and capabilities.
+  - This directive supersedes the old interpretation in `DIR-2026-003` that human ownership was unresolved / must be treated as potentially independent. Historical `DIR-2026-003` is preserved. `DIR-2026-001` remains valid: canonical username for Lisa remains `musyirfah.putri`.
+  - Production deactivation mutation is pending authorized execution in Gate 3.
+- **Affected Domain:** IDENTITY / AUTH / DATA_INTEGRITY
+- **Implementation Status:** `CODE_COMPLETE` (Bound in `types/architecture-lock.ts:CANONICAL_IDENTITY_RESOLUTION_CONTRACT`)
+- **Production Status:** `CURRENT_PRODUCTION_FACT: musyirfah.putri (AKTIF, STF-0005), musyrifah.putri (AKTIF, no Staff); TARGET: musyrifah.putri -> SUSPENDED`
+- **Supersedes / Superseded-By:** Supersedes unresolved identity interpretation in `DIR-2026-003`; upholds `DIR-2026-001` and `DIR-2026-005`
+- **Acceptance Criteria:** `musyirfah.putri` confirmed as sole canonical active account for Ustazah Lisa; `musyrifah.putri` marked for suspension without hard deletion or User ID merger; no username grants authorization.
+- **Evidence / Reference:** `types/architecture-lock.ts`, `DIR-2026-001`, `DIR-2026-003`, `DIR-2026-005`, Gate 3 Identity Audit.
 
 ---
 

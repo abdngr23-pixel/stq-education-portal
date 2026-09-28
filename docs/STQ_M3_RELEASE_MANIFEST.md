@@ -469,28 +469,56 @@
   - **Status:** `NOT_READY`
   - **Notes / unresolved decision:** Enforces single leadership seat.
 
+- **REL-ACC-05 | pembina.halaqoh Legacy Placeholder Account Suspension Target**
+  - **Domain:** IDENTITY / ACCOUNT_DECOMMISSION
+  - **Requirement:** Enforce Business Owner decision `DIR-2026-032`: `pembina.halaqoh` is a legacy placeholder account destined for `SUSPENDED` status. All 6 active halaqoh have verified active pembina personal accounts. Hard delete is strictly PROHIBITED; Staff linkage is strictly PROHIBITED; historical records preserved.
+  - **Source of truth:** `docs/STQ_OWNER_DIRECTIVES.md:DIR-2026-032`, `types/architecture-lock.ts:CANONICAL_IDENTITY_RESOLUTION_CONTRACT`
+  - **PolicyDecisionState:** `APPROVED`
+  - **Current state:** `status: AKTIF`, `staff_id: null`, 0 sessions, 0 audit logs.
+  - **Target state:** `status: SUSPENDED`.
+  - **Dependency:** Gate 3 controlled write authorization
+  - **Production write required?:** YES (UPDATE `status = 'SUSPENDED'` in controlled Gate 3 write batch; zero writes in code PR)
+  - **Owner authorization required?:** YES
+  - **Evidence Pack reference:** `EVID-ACC-PEMBINA-HALAQOH`
+  - **Gate:** GATE-3
+  - **Status:** `TARGET_APPROVED_PENDING_PRODUCTION_WRITE`
+
+- **REL-ACC-06 | musyrifah.putri Ustazah Lisa Duplicate Account Resolution & Suspension Target**
+  - **Domain:** IDENTITY / DATA_INTEGRITY
+  - **Requirement:** Enforce Business Owner decision `DIR-2026-033`: `musyrifah.putri` is a duplicate legacy account belonging to Ustazah Lisa Dwina Fitri. Canonical active account for Lisa is `musyirfah.putri` (linked to `STF-0005`). Target status for `musyrifah.putri` is `SUSPENDED`. Distinct User rows in DB; zero merge; zero Staff link transfer; zero hard delete.
+  - **Source of truth:** `docs/STQ_OWNER_DIRECTIVES.md:DIR-2026-033`, `types/architecture-lock.ts:CANONICAL_IDENTITY_RESOLUTION_CONTRACT`
+  - **PolicyDecisionState:** `APPROVED`
+  - **Current state:** `status: AKTIF`, `staff_id: null`, 2 historical logins, 0 transactions.
+  - **Target state:** `status: SUSPENDED`.
+  - **Dependency:** Gate 3 controlled write authorization
+  - **Production write required?:** YES (UPDATE `status = 'SUSPENDED'` in controlled Gate 3 write batch; zero writes in code PR)
+  - **Owner authorization required?:** YES
+  - **Evidence Pack reference:** `EVID-ACC-MUSYRIFAH-PUTRI`
+  - **Gate:** GATE-3
+  - **Status:** `TARGET_APPROVED_PENDING_PRODUCTION_WRITE`
+
 ---
 
 ### F. ORG UNITS
 - **REL-OU-01 | Institutional Root & Domain Unit Provisioning**
   - **Domain:** ORG_UNITS / FOUNDATION
-  - **Requirement:** Provision exact minimum approved OrgUnits gate set (`REQUIRED_ORG_UNITS_READY`): `OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`. Additional organizational units (`OU-INSTITUTION`, `OU-TAHFIZH`, `OU-KEASRAMAAN`, `OU-AKADEMIK`, `OU-MANAJEMEN`) are classified as `PolicyDecisionState: PROPOSED_TBD` and are NOT approved for C2C production provisioning unless an authoritative canonical source explicitly requires those exact codes.
-  - **Source of truth:** `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`
-  - **PolicyDecisionState:** `APPROVED` (for approved gate set: `OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`; `PROPOSED_TBD` for additional hierarchy)
-  - **Current state:** Unseeded in production (`org_units = 0`).
-  - **Target state:** Exact approved gate set (`OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`) provisioned idempotently in C2C.
-  - **Dependency:** GATE-C2B
-  - **Production write required?:** YES (INSERT in C2C; CURRENT PR #25 EXECUTES ZERO PRODUCTION WRITES)
+  - **Requirement:** Provision approved institutional topology (`DIR-2026-030`): single institutional root `OU-STQ-ROOT` (type `INSTITUTION`, domain `INSTITUTIONAL`, parent `null`, genderComplex `TIDAK_TERIKAT`) and Tahfizh domain unit `OU-TAHFIZH` (type `DOMAIN`, domain `TAHFIZH`, parent `OU-STQ-ROOT`, genderComplex `TIDAK_TERIKAT`). Minimum approved Keasramaan units (`OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`) preserved. Proposed anchor code `OU-INSTITUTION` is formally superseded. Other units (`OU-KEASRAMAAN`, `OU-AKADEMIK`, `OU-MANAJEMEN`) remain deferred.
+  - **Source of truth:** `types/architecture-lock.ts:CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT`, `docs/STQ_OWNER_DIRECTIVES.md:DIR-2026-030`
+  - **PolicyDecisionState:** `APPROVED` (for `OU-STQ-ROOT`, `OU-TAHFIZH`, `OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`; `OU-INSTITUTION` SUPERSEDED)
+  - **Current state:** `OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT` present in DB. `OU-STQ-ROOT` and `OU-TAHFIZH` pending Gate 3 write authorization.
+  - **Target state:** Approved institutional topology provisioned idempotently.
+  - **Dependency:** Gate 3 controlled write authorization
+  - **Production write required?:** YES (INSERT in controlled Gate 3 write batch; zero writes in code PR)
   - **Owner authorization required?:** YES
-  - **Dry-run evidence:** C2C dry-run SQL classifying as `CREATE`.
-  - **Positive test:** Query verifies exact approved gate set exists with correct `domain` and `type`.
-  - **Negative test:** Unique constraint prevents duplicate `code`.
+  - **Dry-run evidence:** Gate 3 Write Plan.
+  - **Positive test:** Query verifies `OU-STQ-ROOT` and `OU-TAHFIZH` exist with correct parent hierarchy.
+  - **Negative test:** Duplicate code prevented.
   - **Reconciliation evidence:** Pre/post table row counts.
-  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows.
+  - **Rollback/recovery consideration:** Transaction rollback / compensating action.
   - **Evidence Pack reference:** `EVID-OU-ROOT`
-  - **Gate:** GATE-C2C
-  - **Status:** `BLOCKED` (Awaiting C2B completion)
-  - **Notes / unresolved decision:** Tree root foundation.
+  - **Gate:** GATE-3
+  - **Status:** `TARGET_APPROVED_PENDING_PRODUCTION_WRITE`
+  - **Notes / unresolved decision:** Single institutional root `OU-STQ-ROOT` approved; `OU-INSTITUTION` superseded.
 
 - **REL-OU-02 | OSDA Root & Division Unit Provisioning**
   - **Domain:** ORG_UNITS / KEASRAMAAN
@@ -802,23 +830,23 @@
 ### J. ASSIGNMENTS
 - **REL-ASN-01 | Mudir & Leadership Assignment Provisioning**
   - **Domain:** ASSIGNMENTS / LEADERSHIP
-  - **Requirement:** Provision active Assignment for Mudir (`MUDIR_OPERATIONAL_ACCOUNT = MUST_VERIFY_READ_ONLY` -> `MUDIR`). Do not assume literal username `mudir` unless authoritative production read-only evidence proves that exact account; names/usernames do not grant authority. Anchor `OU-INSTITUTION` is unapproved (`PROPOSED_TBD`). Until exact anchor unit code receives authoritative approval: classify anchor selection as `BLOCKED / PROPOSED_TBD`; do NOT provision an Assignment requiring an unprovisioned parent unit; do NOT silently create `OU-INSTITUTION` merely to satisfy a dependency.
-  - **Source of truth:** `docs/STQ_CURRENT_STATE.md`, `types/architecture-lock.ts`
-  - **PolicyDecisionState:** `PROPOSED_TBD` (Anchor OU-INSTITUTION unapproved; username must verify read-only)
-  - **Current state:** Unassigned in production (`assignments = 0`); operational username unverified; anchor OU-INSTITUTION unapproved.
-  - **Target state:** Provisioned with `status: ACTIVE`, valid time window once account and anchor are verified and approved.
-  - **Dependency:** GATE-C2B, REL-POS-01, REL-OU-01, Authoritative Anchor Approval
-  - **Production write required?:** YES (INSERT)
+  - **Requirement:** Provision active Assignment for Mudir anchored to approved single institutional root `OU-STQ-ROOT` (`DIR-2026-030`). Target operational account verified: `mudir` (linked to `STF-0001`, Ust. Andi Quarzy Ayatullah). Proposed anchor `OU-INSTITUTION` is formally superseded. Assignment for Kabid Tahfizh anchors to `OU-TAHFIZH` under account `musyrif.tahifzh` (linked to `STF-0003`, Ust. Razan Mufli). Assignment for Guru Kepesantrenan anchors to `OU-STQ-ROOT`.
+  - **Source of truth:** `docs/STQ_CURRENT_STATE.md`, `types/architecture-lock.ts:CANONICAL_ASSIGNMENT_ANCHORS`, `docs/STQ_OWNER_DIRECTIVES.md:DIR-2026-030`
+  - **PolicyDecisionState:** `APPROVED` (Anchor `OU-STQ-ROOT` approved; account `mudir` verified; anchor `OU-INSTITUTION` superseded)
+  - **Current state:** Unassigned in production (`assignments = 0`); account `mudir` verified linked to `STF-0001`; anchor `OU-STQ-ROOT` approved.
+  - **Target state:** Provisioned with `status: ACTIVE` anchored to `OU-STQ-ROOT`.
+  - **Dependency:** Gate 3 controlled write authorization
+  - **Production write required?:** YES (INSERT in controlled Gate 3 write batch; zero writes in code PR)
   - **Owner authorization required?:** YES
-  - **Dry-run evidence:** C2C dry-run script.
-  - **Positive test:** Mudir assignment active in DB query under verified account and approved anchor.
+  - **Dry-run evidence:** Gate 3 Write Plan.
+  - **Positive test:** Mudir assignment active in DB query under verified account `mudir` and approved anchor `OU-STQ-ROOT`.
   - **Negative test:** Expired window fails closed; unapproved anchor fails closed.
   - **Reconciliation evidence:** Assignment query.
-  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
+  - **Rollback/recovery consideration:** STOP -> preserve evidence -> transaction rollback / compensating action.
   - **Evidence Pack reference:** `EVID-ASN-LEAD`
-  - **Gate:** GATE-C2C
-  - **Status:** `BLOCKED` (Anchor OU-INSTITUTION unapproved; account requires read-only verification)
-  - **Notes / unresolved decision:** Anchor unit selection remains PROPOSED_TBD / BLOCKED.
+  - **Gate:** GATE-3
+  - **Status:** `TARGET_APPROVED_PENDING_PRODUCTION_WRITE`
+  - **Notes / unresolved decision:** Anchor `OU-STQ-ROOT` approved; `OU-INSTITUTION` superseded.
 
 - **REL-ASN-02 | Musyrif Tahfizh Halaqoh Assignments Provisioning**
   - **Domain:** ASSIGNMENTS / TAHFIZH

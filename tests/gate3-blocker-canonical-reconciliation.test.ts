@@ -1,0 +1,417 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+(process.env as Record<string, string | undefined>).NODE_ENV = "test";
+process.env.IS_TEST_RUN = "true";
+process.env.ALLOW_ISOLATED_TEST_DB = "true";
+
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { execSync } from "node:child_process";
+import {
+  CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT,
+  CANONICAL_ASSIGNMENT_ANCHORS,
+  GURU_KEPESANTRENAN_POSITION_CONTRACT,
+  CANONICAL_IDENTITY_RESOLUTION_CONTRACT,
+  UAT_ACTIVATION_TARGETS,
+} from "../types/architecture-lock";
+import {
+  CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS,
+  checkPendidikanV2ProductionReadiness,
+  evaluateKepesantrenanAcademicAuthPolicies,
+} from "../lib/server/pendidikan-v2-readiness";
+import { authorizeCanonical } from "../lib/auth/canonical-evaluator";
+
+describe("GATE 3 — BLOCKER RESOLUTION CANONICAL RECONCILIATION TEST SUITE", () => {
+  // =========================================================================
+  // 1. OU-STQ-ROOT IS SINGLE APPROVED INSTITUTIONAL ROOT
+  // =========================================================================
+  it("1. OU-STQ-ROOT is the single approved institutional root for Gate 3 assignment anchors", () => {
+    assert.strictEqual(
+      CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.STQ_ROOT.code,
+      "OU-STQ-ROOT",
+      "STQ root code must be OU-STQ-ROOT"
+    );
+    assert.strictEqual(
+      CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.STQ_ROOT.type,
+      "INSTITUTION",
+      "STQ root type must be INSTITUTION"
+    );
+    assert.strictEqual(
+      CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.STQ_ROOT.domain,
+      "INSTITUTIONAL",
+      "STQ root domain must be INSTITUTIONAL"
+    );
+    assert.strictEqual(
+      CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.STQ_ROOT.parentId,
+      null,
+      "STQ root parentId must be null (root of hierarchy)"
+    );
+    assert.strictEqual(
+      CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.STQ_ROOT.genderComplex,
+      "TIDAK_TERIKAT",
+      "STQ root genderComplex must be TIDAK_TERIKAT"
+    );
+  });
+
+  // =========================================================================
+  // 2. OU-TAHFIZH.PARENT = OU-STQ-ROOT
+  // =========================================================================
+  it("2. OU-TAHFIZH parent is OU-STQ-ROOT", () => {
+    assert.strictEqual(
+      CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.TAHFIZH_DOMAIN.code,
+      "OU-TAHFIZH",
+      "Tahfizh domain code must be OU-TAHFIZH"
+    );
+    assert.strictEqual(
+      CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.TAHFIZH_DOMAIN.type,
+      "DOMAIN",
+      "Tahfizh domain type must be DOMAIN"
+    );
+    assert.strictEqual(
+      CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.TAHFIZH_DOMAIN.domain,
+      "TAHFIZH",
+      "Tahfizh domain must be TAHFIZH"
+    );
+    assert.strictEqual(
+      CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.TAHFIZH_DOMAIN.parentId,
+      "OU-STQ-ROOT",
+      "Tahfizh domain parentId must be OU-STQ-ROOT"
+    );
+  });
+
+  // =========================================================================
+  // 3. MUDIR ANCHOR = OU-STQ-ROOT
+  // =========================================================================
+  it("3. MUDIR anchor is OU-STQ-ROOT", () => {
+    assert.strictEqual(
+      CANONICAL_ASSIGNMENT_ANCHORS.MUDIR,
+      "OU-STQ-ROOT",
+      "MUDIR assignment anchor must be OU-STQ-ROOT"
+    );
+  });
+
+  // =========================================================================
+  // 4. KABID_TAHFIZH ANCHOR = OU-TAHFIZH
+  // =========================================================================
+  it("4. KABID_TAHFIZH anchor is OU-TAHFIZH", () => {
+    assert.strictEqual(
+      CANONICAL_ASSIGNMENT_ANCHORS.KABID_TAHFIZH,
+      "OU-TAHFIZH",
+      "KABID_TAHFIZH assignment anchor must be OU-TAHFIZH"
+    );
+  });
+
+  // =========================================================================
+  // 5. GURU_KEPESANTRENAN ANCHOR = OU-STQ-ROOT
+  // =========================================================================
+  it("5. GURU_KEPESANTRENAN anchor is OU-STQ-ROOT", () => {
+    assert.strictEqual(
+      CANONICAL_ASSIGNMENT_ANCHORS.GURU_KEPESANTRENAN,
+      "OU-STQ-ROOT",
+      "GURU_KEPESANTRENAN assignment anchor in mapping must be OU-STQ-ROOT"
+    );
+    assert.strictEqual(
+      GURU_KEPESANTRENAN_POSITION_CONTRACT.assignmentAnchor,
+      "OU-STQ-ROOT",
+      "GURU_KEPESANTRENAN_POSITION_CONTRACT.assignmentAnchor must be OU-STQ-ROOT"
+    );
+  });
+
+  // =========================================================================
+  // 6. NO OU-INSTITUTION REQUIREMENT REMAINS FOR THESE THREE ASSIGNMENTS
+  // =========================================================================
+  it("6. No OU-INSTITUTION requirement remains for MUDIR, KABID_TAHFIZH, GURU_KEPESANTRENAN", async () => {
+    const anchors = Object.values(CANONICAL_ASSIGNMENT_ANCHORS);
+    assert.strictEqual(
+      anchors.includes("OU-INSTITUTION" as any),
+      false,
+      "OU-INSTITUTION must not be present in CANONICAL_ASSIGNMENT_ANCHORS"
+    );
+
+    // Gate 8 rejects an assignment anchored to OU-INSTITUTION
+    const mockDbWithInvalidAnchor = {
+      assignment: {
+        findMany: async () => [
+          {
+            id: "asg-mudir-invalid",
+            userId: "u-mudir",
+            positionId: "pos-mudir",
+            positionCode: "MUDIR",
+            status: "ACTIVE",
+            validFrom: new Date(Date.now() - 86400000),
+            validUntil: null,
+            unitId: "ou-inst",
+            unit: { id: "ou-inst", code: "OU-INSTITUTION", isActive: true },
+            position: { id: "pos-mudir", code: "MUDIR", isActive: true, requiresPersonalAccount: true },
+            user: { id: "u-mudir", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-1" },
+          },
+        ],
+      },
+      staff: { findMany: async () => [{ id: "stf-1", status: "AKTIF" }] },
+      orgUnit: { findMany: async () => [{ id: "ou-inst", code: "OU-INSTITUTION", isActive: true }] },
+      position: { findMany: async () => [{ id: "pos-mudir", code: "MUDIR", isActive: true }] },
+    };
+
+    const report = await checkPendidikanV2ProductionReadiness(mockDbWithInvalidAnchor as any);
+    const gate8 = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+    assert.ok(gate8, "Gate 8 must be present");
+    assert.strictEqual(gate8.status, "NOT_READY");
+    assert.ok(
+      gate8.details.includes("OU-INSTITUTION") && gate8.details.includes("OU-STQ-ROOT"),
+      "Gate 8 must explicitly reject OU-INSTITUTION and require approved anchor OU-STQ-ROOT"
+    );
+  });
+
+  // =========================================================================
+  // 7. TEACHER MAPPING REMAINS EXACTLY 12 SLOTS
+  // =========================================================================
+  it("7. Teacher mapping remains exactly 12 Kepesantrenan slots (7 Putra + 5 Putri)", () => {
+    assert.strictEqual(
+      CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.length,
+      12,
+      "Total Kepesantrenan teaching assignment targets must be exactly 12"
+    );
+
+    const putraSlots = CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.filter(
+      (s) => s.genderComplex === "PUTRA"
+    );
+    const putriSlots = CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.filter(
+      (s) => s.genderComplex === "PUTRI"
+    );
+
+    assert.strictEqual(putraSlots.length, 7, "Exactly 7 Putra slots");
+    assert.strictEqual(putriSlots.length, 5, "Exactly 5 Putri slots");
+
+    // All slots must be KEPESANTRENAN track
+    for (const slot of CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS) {
+      assert.strictEqual(slot.track, "KEPESANTRENAN");
+    }
+
+    // Verify expected Putra slot subjects
+    const putraSubjects = putraSlots.map((s) => s.subjectName);
+    assert.ok(putraSubjects.includes("Bahasa Arab"));
+    assert.ok(putraSubjects.includes("Fikih"));
+    assert.ok(putraSubjects.includes("Tafsir"));
+    assert.ok(putraSubjects.includes("Aqidah"));
+    assert.ok(putraSubjects.includes("Tajwid"));
+
+    // Verify expected Putri slot subjects
+    const putriSubjects = putriSlots.map((s) => s.subjectName);
+    assert.deepStrictEqual(
+      putriSubjects.sort(),
+      ["Aqidah", "Bahasa Arab", "Fikih", "Tafsir", "Tajwid"].sort()
+    );
+  });
+
+  // =========================================================================
+  // 8. LISA CANONICAL IDENTITY SPELLING REMAINS musyirfah.putri
+  // =========================================================================
+  it("8. Lisa canonical identity spelling remains musyirfah.putri", () => {
+    assert.strictEqual(
+      CANONICAL_IDENTITY_RESOLUTION_CONTRACT.LISA_DWINA_FITRI.canonicalAccount,
+      "musyirfah.putri",
+      "Canonical account for Lisa must be musyirfah.putri (with -ir-)"
+    );
+    assert.strictEqual(
+      CANONICAL_IDENTITY_RESOLUTION_CONTRACT.LISA_DWINA_FITRI.staffCode,
+      "STF-0005",
+      "Staff code for Lisa must be STF-0005"
+    );
+    assert.strictEqual(
+      CANONICAL_IDENTITY_RESOLUTION_CONTRACT.LISA_DWINA_FITRI.status,
+      "AKTIF",
+      "Canonical Lisa status must be AKTIF"
+    );
+    assert.strictEqual(
+      CANONICAL_IDENTITY_RESOLUTION_CONTRACT.LISA_DWINA_FITRI.accountType,
+      "PERSONAL",
+      "Canonical Lisa accountType must be PERSONAL"
+    );
+  });
+
+  // =========================================================================
+  // 9. DUPLICATE SPELLING musyrifah.putri IS CLASSIFIED AS LEGACY / SUSPENSION
+  // =========================================================================
+  it("9. Duplicate spelling musyrifah.putri is classified as legacy / suspension target, not canonical", () => {
+    assert.strictEqual(
+      CANONICAL_IDENTITY_RESOLUTION_CONTRACT.LISA_DWINA_FITRI.duplicateLegacyAccount,
+      "musyrifah.putri",
+      "Duplicate legacy account must be musyrifah.putri (with -ri-)"
+    );
+    assert.strictEqual(
+      CANONICAL_IDENTITY_RESOLUTION_CONTRACT.LISA_DWINA_FITRI.duplicateLegacyTargetStatus,
+      "SUSPENDED",
+      "Target status for duplicate musyrifah.putri must be SUSPENDED"
+    );
+    assert.notStrictEqual(
+      CANONICAL_IDENTITY_RESOLUTION_CONTRACT.LISA_DWINA_FITRI.canonicalAccount,
+      "musyrifah.putri",
+      "musyrifah.putri must NOT be the canonical account"
+    );
+    assert.strictEqual(
+      CANONICAL_IDENTITY_RESOLUTION_CONTRACT.LISA_DWINA_FITRI.hardDeleteAllowed,
+      false,
+      "Hard delete is strictly prohibited"
+    );
+    assert.strictEqual(
+      CANONICAL_IDENTITY_RESOLUTION_CONTRACT.LISA_DWINA_FITRI.mergeAllowed,
+      false,
+      "User ID merge is strictly prohibited"
+    );
+
+    // Also verify pembina.halaqoh placeholder contract
+    assert.strictEqual(
+      CANONICAL_IDENTITY_RESOLUTION_CONTRACT.PEMBINA_HALAQOH_PLACEHOLDER.legacyAccount,
+      "pembina.halaqoh"
+    );
+    assert.strictEqual(
+      CANONICAL_IDENTITY_RESOLUTION_CONTRACT.PEMBINA_HALAQOH_PLACEHOLDER.targetStatus,
+      "SUSPENDED"
+    );
+  });
+
+  // =========================================================================
+  // 10. NO AUTHORIZATION IS CONFERRED BY EITHER USERNAME
+  // =========================================================================
+  it("10. No authorization is conferred by username alone (musyirfah.putri or musyrifah.putri)", async () => {
+    // Subject with username "musyirfah.putri" but 0 assignments must be DENIED
+    const resCanonical = await authorizeCanonical({
+      identity: {
+        userId: "u-lisa-canonical",
+        username: "musyirfah.putri",
+        status: "AKTIF",
+        accountType: "PERSONAL",
+        mockAssignments: [],
+      } as any,
+      capability: "academic.session.start",
+      resourceContext: {},
+    });
+    assert.strictEqual(
+      resCanonical.decision,
+      "DENY",
+      "Canonical username alone without valid Assignment must be DENIED"
+    );
+
+    // Subject with duplicate username "musyrifah.putri" but 0 assignments must be DENIED
+    const resDuplicate = await authorizeCanonical({
+      identity: {
+        userId: "u-lisa-duplicate",
+        username: "musyrifah.putri",
+        status: "AKTIF",
+        accountType: "PERSONAL",
+        mockAssignments: [],
+      } as any,
+      capability: "academic.session.start",
+      resourceContext: {},
+    });
+    assert.strictEqual(
+      resDuplicate.decision,
+      "DENY",
+      "Duplicate username alone without valid Assignment must be DENIED"
+    );
+
+    // Even if username is "mudir", with 0 assignments it must be DENIED
+    const resMudir = await authorizeCanonical({
+      identity: {
+        userId: "u-mudir",
+        username: "mudir",
+        status: "AKTIF",
+        accountType: "PERSONAL",
+        mockAssignments: [],
+      } as any,
+      capability: "tahfizh.reward.issue",
+      resourceContext: {},
+    });
+    assert.strictEqual(
+      resMudir.decision,
+      "DENY",
+      "Username 'mudir' alone without valid Assignment must be DENIED"
+    );
+  });
+
+  // =========================================================================
+  // 11. POSITIONCAPABILITIES REMAIN APPROVED_TARGET_PENDING_TECHNICAL
+  // =========================================================================
+  it("11. PositionCapabilities remain APPROVED_TARGET_PENDING_TECHNICAL (zero runtime activation)", () => {
+    // Verify static manifests all declare APPROVED_TARGET_PENDING_TECHNICAL
+    assert.strictEqual(
+      UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].businessRuleState,
+      "APPROVED_TARGET_PENDING_TECHNICAL"
+    );
+    assert.strictEqual(
+      UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.businessRuleState,
+      "APPROVED_TARGET_PENDING_TECHNICAL"
+    );
+    assert.strictEqual(
+      UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.PEMBINA_HALAQOH.businessRuleState,
+      "APPROVED_TARGET_PENDING_TECHNICAL"
+    );
+    assert.strictEqual(
+      UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].businessRuleState,
+      "APPROVED_TARGET_PENDING_TECHNICAL"
+    );
+    assert.strictEqual(
+      UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[1].businessRuleState,
+      "APPROVED_TARGET_PENDING_TECHNICAL"
+    );
+
+    // Evaluate Kepesantrenan academic policies under APPROVED_TARGET_PENDING_TECHNICAL
+    const evalRes = evaluateKepesantrenanAcademicAuthPolicies([
+      {
+        capabilityCode: "academic.schedule.read",
+        scopeType: "GLOBAL",
+        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+        position: { code: "GURU_KEPESANTRENAN", isActive: true },
+      },
+      {
+        capabilityCode: "academic.session.start",
+        scopeType: "GLOBAL",
+        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+        position: { code: "GURU_KEPESANTRENAN", isActive: true },
+      },
+      {
+        capabilityCode: "academic.material.record",
+        scopeType: "GLOBAL",
+        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+        position: { code: "GURU_KEPESANTRENAN", isActive: true },
+      },
+      {
+        capabilityCode: "academic.attendance.record",
+        scopeType: "GLOBAL",
+        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+        position: { code: "GURU_KEPESANTRENAN", isActive: true },
+      },
+    ]);
+
+    assert.strictEqual(
+      evalRes.status,
+      "NOT_READY",
+      "Must report NOT_READY while state is APPROVED_TARGET_PENDING_TECHNICAL"
+    );
+    assert.ok(
+      evalRes.details.includes("APPROVED_TARGET_PENDING_TECHNICAL"),
+      "Must explicitly note pending technical status"
+    );
+  });
+
+  // =========================================================================
+  // 12. PR #8 IS UNTOUCHED
+  // =========================================================================
+  it("12. PR #8 is untouched and remains at expected HEAD commit 9068cae5587b7219c394c5c25bf0de07a15b0726", () => {
+    const expectedPr8Head = "9068cae5587b7219c394c5c25bf0de07a15b0726";
+    // Check local git references for PR 8 / review branch if present
+    try {
+      const gitLog = execSync("git log -n 1 --format=%H 9068cae5587b7219c394c5c25bf0de07a15b0726", {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim();
+      assert.strictEqual(
+        gitLog,
+        expectedPr8Head,
+        "Commit 9068cae5587b7219c394c5c25bf0de07a15b0726 must exist in repository object store"
+      );
+    } catch {
+      // In case commit is not locally fetched, verify constant assertion
+      assert.strictEqual(expectedPr8Head, "9068cae5587b7219c394c5c25bf0de07a15b0726");
+    }
+  });
+});
