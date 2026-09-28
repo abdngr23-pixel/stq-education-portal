@@ -554,6 +554,7 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
           findMany: async () => [
             { id: "ou-root", code: "OU-STQ-ROOT", name: "STQ Darul Ulum Cendekia", type: "INSTITUTION", domain: "INSTITUTIONAL", parentId: null, isActive: true },
             { id: "ou-tahfizh", code: "OU-TAHFIZH", name: "Tahfizh", type: "DOMAIN", domain: "TAHFIZH", parentId: "ou-root", isActive: true },
+            { id: "ou-keasramaan", code: "OU-KEASRAMAAN", name: "Keasramaan", type: "DOMAIN", domain: "KEASRAMAAN", parentId: "ou-root", isActive: true },
             { id: "ou-1", code: "OU-OSDA-ROOT", isActive: true },
             { id: "ou-2", code: "OU-OSDA-PUTRI", isActive: true },
             { id: "ou-3", code: "OU-TKS-ROOT", isActive: true },

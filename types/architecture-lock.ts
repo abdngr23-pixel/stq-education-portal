@@ -966,10 +966,132 @@ export const CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT = {
     parentId: "OU-STQ-ROOT" as const,
     genderComplex: "TIDAK_TERIKAT" as const,
   },
+  KEASRAMAAN_DOMAIN: {
+    code: "OU-KEASRAMAAN" as const,
+    name: "Keasramaan" as const,
+    type: "DOMAIN" as const,
+    domain: "KEASRAMAAN" as const,
+    parentId: "OU-STQ-ROOT" as const,
+    genderComplex: "TIDAK_TERIKAT" as const,
+  },
 } as const;
 
 /**
- * Approved Canonical Assignment Anchor Contract (DIR-2026-030)
+ * Approved Current Six Halaqoh Canonical OrgUnit Backfill Contract (DIR-2026-035)
+ * Declarative target truth mapping source Halaqoh rows to target OrgUnit and Musyrif Tahfizh assignments.
+ * Contract: OrgUnit code = "OU-" + source Halaqoh.halaqohCode
+ */
+export interface CanonicalHalaqohMapping {
+  halaqohCode: string;
+  targetOrgUnitCode: string;
+  targetOrgUnitType: "HALAQOH";
+  targetOrgUnitDomain: "TAHFIZH";
+  targetOrgUnitParent: "OU-TAHFIZH";
+  name: string;
+  genderComplex: "PUTRA" | "PUTRI";
+  staffCode: string;
+  expectedStaffCode: string;
+  teacherName: string;
+  canonicalUsername: string;
+  expectedUsername: string;
+  parentOrgUnitCode: "OU-TAHFIZH";
+}
+
+export const CANONICAL_CURRENT_SIX_HALAQOH_MAPPINGS: readonly CanonicalHalaqohMapping[] = [
+  {
+    halaqohCode: "HLQ-0001",
+    targetOrgUnitCode: "OU-HLQ-0001",
+    targetOrgUnitType: "HALAQOH",
+    targetOrgUnitDomain: "TAHFIZH",
+    targetOrgUnitParent: "OU-TAHFIZH",
+    name: "Halaqoh Ust. Razan Mufli, S.Pd",
+    genderComplex: "PUTRA",
+    staffCode: "STF-0003",
+    expectedStaffCode: "STF-0003",
+    teacherName: "Ust. Razan Mufli, S.Pd",
+    canonicalUsername: "musyrif.tahifzh",
+    expectedUsername: "musyrif.tahifzh",
+    parentOrgUnitCode: "OU-TAHFIZH",
+  },
+  {
+    halaqohCode: "HLQ-0002",
+    targetOrgUnitCode: "OU-HLQ-0002",
+    targetOrgUnitType: "HALAQOH",
+    targetOrgUnitDomain: "TAHFIZH",
+    targetOrgUnitParent: "OU-TAHFIZH",
+    name: "Halaqoh Ust. Kamal",
+    genderComplex: "PUTRA",
+    staffCode: "STF-0006",
+    expectedStaffCode: "STF-0006",
+    teacherName: "Ust. Kamal",
+    canonicalUsername: "kamal.ph",
+    expectedUsername: "kamal.ph",
+    parentOrgUnitCode: "OU-TAHFIZH",
+  },
+  {
+    halaqohCode: "HLQ-0003",
+    targetOrgUnitCode: "OU-HLQ-0003",
+    targetOrgUnitType: "HALAQOH",
+    targetOrgUnitDomain: "TAHFIZH",
+    targetOrgUnitParent: "OU-TAHFIZH",
+    name: "Halaqoh Ust. Rizaldi",
+    genderComplex: "PUTRA",
+    staffCode: "STF-0007",
+    expectedStaffCode: "STF-0007",
+    teacherName: "Ust. Rizaldi",
+    canonicalUsername: "rizaldi.ph",
+    expectedUsername: "rizaldi.ph",
+    parentOrgUnitCode: "OU-TAHFIZH",
+  },
+  {
+    halaqohCode: "HLQ-0004",
+    targetOrgUnitCode: "OU-HLQ-0004",
+    targetOrgUnitType: "HALAQOH",
+    targetOrgUnitDomain: "TAHFIZH",
+    targetOrgUnitParent: "OU-TAHFIZH",
+    name: "Halaqoh Ust. Abi Hudzaifah",
+    genderComplex: "PUTRA",
+    staffCode: "STF-0008",
+    expectedStaffCode: "STF-0008",
+    teacherName: "Ust. Abi Hudzaifah",
+    canonicalUsername: "hudzaifah.ph",
+    expectedUsername: "hudzaifah.ph",
+    parentOrgUnitCode: "OU-TAHFIZH",
+  },
+  {
+    halaqohCode: "HLQ-0005",
+    targetOrgUnitCode: "OU-HLQ-0005",
+    targetOrgUnitType: "HALAQOH",
+    targetOrgUnitDomain: "TAHFIZH",
+    targetOrgUnitParent: "OU-TAHFIZH",
+    name: "Halaqoh Ust. Alwan",
+    genderComplex: "PUTRA",
+    staffCode: "STF-0009",
+    expectedStaffCode: "STF-0009",
+    teacherName: "Ust. Alwan",
+    canonicalUsername: "alwan.ph",
+    expectedUsername: "alwan.ph",
+    parentOrgUnitCode: "OU-TAHFIZH",
+  },
+  {
+    halaqohCode: "HLQ-0006",
+    targetOrgUnitCode: "OU-HLQ-0006",
+    targetOrgUnitType: "HALAQOH",
+    targetOrgUnitDomain: "TAHFIZH",
+    targetOrgUnitParent: "OU-TAHFIZH",
+    name: "Halaqoh Ustadzah Lisa Dwina Fitri",
+    genderComplex: "PUTRI",
+    staffCode: "STF-0005",
+    expectedStaffCode: "STF-0005",
+    teacherName: "Ustadzah Lisa Dwina Fitri",
+    canonicalUsername: "musyirfah.putri",
+    expectedUsername: "musyirfah.putri",
+    parentOrgUnitCode: "OU-TAHFIZH",
+  },
+] as const;
+
+/**
+ * Approved Canonical Assignment Anchor Contract (DIR-2026-030, DIR-2026-034, DIR-2026-036)
  * Binds positions to approved target anchor units.
  * Authoritative assignment mapping without hardcoded usernames.
  */
@@ -977,6 +1099,97 @@ export const CANONICAL_ASSIGNMENT_ANCHORS = {
   MUDIR: "OU-STQ-ROOT" as const,
   KABID_TAHFIZH: "OU-TAHFIZH" as const,
   GURU_KEPESANTRENAN: "OU-STQ-ROOT" as const,
+  PETUGAS_OPERASIONAL_TAHFIZH: "OU-TAHFIZH" as const,
+  KEPALA_KEASRAMAAN: "OU-KEASRAMAAN" as const,
+} as const;
+
+/**
+ * Canonical PETUGAS_OPERASIONAL_TAHFIZH Contract (DIR-2026-034)
+ */
+export const CANONICAL_POT_CONTRACT = {
+  positionCode: "PETUGAS_OPERASIONAL_TAHFIZH" as const,
+  assignmentAnchor: "OU-TAHFIZH" as const,
+  targetHolderStaffCode: "STF-0005" as const,
+  targetHolderCanonicalUsername: "musyirfah.putri" as const,
+  targetHolderName: "Ustazah Lisa Dwina Fitri" as const,
+  recapReadCapabilityScope: "GLOBAL" as const,
+  rewardIssueAllowed: false as const,
+} as const;
+
+/**
+ * Canonical KEPALA_KEASRAMAAN Contract (DIR-2026-036)
+ */
+export const CANONICAL_KEPALA_KEASRAMAAN_CONTRACT = {
+  positionCode: "KEPALA_KEASRAMAAN" as const,
+  assignmentAnchor: "OU-KEASRAMAAN" as const,
+  targetHolderStaffCode: "STF-0004" as const,
+  targetHolderCanonicalUsername: "musyrif.asrama" as const,
+  targetHolderName: "Ust. Mujaddid Zhohruddin" as const,
+} as const;
+
+/**
+ * Canonical PETUGAS_OPERASIONAL_KEASRAMAAN Contract (DIR-2026-037)
+ */
+export const CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT = {
+  positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN" as const,
+  targetAccountType: "UNIT" as const,
+  targetUsername: "osda.putri" as const,
+  targetUserStatus: "SUSPENDED" as const,
+  targetOrgUnitCode: "OU-OSDA-PUTRI" as const,
+  activationState: "DEFERRED_PENDING_OWNER_ACTIVATION" as const,
+  verifiedHumanExecutorAttributionReady: false as const,
+  assignmentScopeUnitsReady: false as const,
+  gate3ActiveAssignmentRequired: false as const,
+} as const;
+
+/**
+ * Approved Gate 3 Required Active Assignment Positions vs Gate 5 Deferred Positions
+ * Decouples Position templates from unconditional Gate 3 active-assignment requirements.
+ */
+export const CANONICAL_REQUIRED_POSITION_CODES = [
+  "MUDIR",
+  "KABID_TAHFIZH",
+  "KEPALA_KEASRAMAAN",
+  "PETUGAS_OPERASIONAL_TAHFIZH",
+  "MUSYRIF_TAHFIZH",
+  "PEMBINA_HALAQOH",
+  "PETUGAS_OPERASIONAL_KEASRAMAAN",
+  "GURU_KEPESANTRENAN",
+] as const;
+
+export const GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES = [
+  "MUDIR",
+  "KABID_TAHFIZH",
+  "GURU_KEPESANTRENAN",
+  "PETUGAS_OPERASIONAL_TAHFIZH",
+  "KEPALA_KEASRAMAAN",
+  "MUSYRIF_TAHFIZH",
+] as const;
+
+export const GATE5_DEFERRED_UNIT_ASSIGNMENT_POSITION_CODES = [
+  "PETUGAS_OPERASIONAL_KEASRAMAAN",
+] as const;
+
+/**
+ * Approved Fixed Target Assignment Holders Contract (DIR-2026-034, DIR-2026-036)
+ * Maps fixed leadership & operational positions to their verified staff and anchor units.
+ * Non-repudiation: Authority is conferred by Position + Assignment + PositionCapability, never username.
+ */
+export const CANONICAL_TARGET_ASSIGNMENT_HOLDERS = {
+  PETUGAS_OPERASIONAL_TAHFIZH: {
+    positionCode: "PETUGAS_OPERASIONAL_TAHFIZH" as const,
+    staffCode: "STF-0005" as const,
+    canonicalUsername: "musyirfah.putri" as const,
+    teacherName: "Ustazah Lisa Dwina Fitri" as const,
+    anchorUnitCode: "OU-TAHFIZH" as const,
+  },
+  KEPALA_KEASRAMAAN: {
+    positionCode: "KEPALA_KEASRAMAAN" as const,
+    staffCode: "STF-0004" as const,
+    canonicalUsername: "musyrif.asrama" as const,
+    teacherName: "Ust. Mujaddid Zhohruddin" as const,
+    anchorUnitCode: "OU-KEASRAMAAN" as const,
+  },
 } as const;
 
 /**

@@ -13,6 +13,7 @@ import {
   evaluateKepesantrenanAcademicAuthPolicies,
   CANONICAL_READINESS_GATE_NAMES,
   CANONICAL_REQUIRED_POSITION_CODES,
+  GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES,
   CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS,
   REQUIRED_UAT_ACTIVATION_CAPABILITIES,
   EDUCATION_SESSION_ACTIVATION_CAPABILITIES,
@@ -2049,7 +2050,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.ok(userGate);
       assert.strictEqual(userGate.status, "READY");
       assert.ok(
-        userGate.details.includes(`All ${CANONICAL_REQUIRED_POSITION_CODES.length} required target positions have active user assignments`),
+        userGate.details.includes(`All ${GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES.length} required target positions have active user assignments`),
         "Must verify all required target positions are ready"
       );
     });

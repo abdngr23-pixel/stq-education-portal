@@ -90,8 +90,16 @@ All commit SHAs recorded below are verified historical checkpoints, not self-upd
   - Post-merge CI run: SUCCESS
   - Classification: `GATE2_REMEDIATION_MERGED_AND_VERIFIED`
 
+- **PR #33 Gate 3 Blocker Canonical Reconciliation verified checkpoint:**
+  `3524f26f6fde8580b91076bb255c4f1417d9e90a`
+  (Merge commit for PR #33: `chore(gate3): reconcile approved anchors, teacher mapping, and legacy identities`)
+  - PR #33 state: MERGED
+  - Merge commit: `3524f26f6fde8580b91076bb255c4f1417d9e90a`
+  - Post-merge CI run: SUCCESS
+  - Classification: `PR33_GATE3_BLOCKER_RECONCILIATION_MERGED_AND_VERIFIED`
+
 - **Verified live main base:**
-  `cc4ac049402be0b566dad594ac0e5a92de253603`
+  `3524f26f6fde8580b91076bb255c4f1417d9e90a`
 
 ---
 
@@ -173,19 +181,25 @@ PR #8 itself was NOT merged and remains:
 - **Gate 0 (Real Production Backup & T0 Snapshot)**: CLOSED (Verified backup dump `STQ_PRODUCTION_T0.sql`, SHA-256 `9122580c59bbd7c48804bba10e8b2307b141197dc479d8b101ab6a428c9cfa7b`)
 - **Gate 1 (Conditional Production Migration)**: CLOSED (All 11 migrations verified applied with 100% checksum parity, zero writes performed)
 - **Gate 2 (Post-Migration Schema Reconciliation)**: CLOSED (Remediation Migration `20260928070000_gate2_nilai_akademik_guru_fk_reconciliation` merged in PR #32, deployed and reverified with zero drift)
-- **Gate 3 (Production Provisioning & Canonical Reconciliation)**: PARTIAL / IN PROGRESS (Partial provisioning executed in production batch; canonical blocker reconciliation staged in code PR #33; production completion pending owner authorization)
+- **Gate 3 (Production Provisioning & Canonical Reconciliation)**: PARTIAL / IN PROGRESS (Partial provisioning batch executed; final blocker canonicalization staged in code PR; remaining production batch pending explicit owner authorization)
 
-### LATEST_PRODUCTION_OBSERVATION (Gate 3 Preflight Identity Audit):
+### LATEST_PRODUCTION_OBSERVATION (Gate 3 Evidenced State):
+- `OU-STQ-ROOT`: PRESENT / CANONICAL (type: INSTITUTION, domain: INSTITUTIONAL)
+- `OU-TAHFIZH`: PRESENT / CANONICAL (type: DOMAIN, domain: TAHFIZH, parent: OU-STQ-ROOT)
+- MUDIR active assignment: 1 (`OU-STQ-ROOT`)
+- KABID_TAHFIZH active assignment: 1 (`OU-TAHFIZH`)
+- GURU_KEPESANTRENAN active assignments: 7 (`OU-STQ-ROOT`)
+- Kepesantrenan TeachingAssignments: 12 (7 Putra, 5 Putri)
+- `musyirfah.putri`: PRESENT / AKTIF / STF-0005 (canonical active account for Ustazah Lisa Dwina Fitri)
+- `musyrifah.putri`: SUSPENDED (per DIR-2026-033)
+- `pembina.halaqoh`: SUSPENDED (per DIR-2026-032)
 - `lisa.mt`: ABSENT
-- `musyirfah.putri`: PRESENT / AKTIF / STF-0005 (canonical active account for Ustazah Lisa)
-- `musyrifah.putri`: PRESENT / AKTIF / no Staff (target SUSPENDED per DIR-2026-033, not yet executed in production)
-- `pembina.halaqoh`: PRESENT / target SUSPENDED per DIR-2026-032, not yet executed in production
-*(Note: Current evidence confirms `lisa.mt` is absent and `musyirfah.putri` is present; no claim is made regarding when or how the historical rename occurred).*
+*(Historical note: At initial preflight audit, `lisa.mt` was recorded as present in historical audit text, while current evidence confirms `lisa.mt` is absent and `musyirfah.putri` is present; no claim is made regarding when or how the historical rename occurred).*
 
 ### Operational Boundaries:
-- Zero production database access during PR #33 code/documentation reconciliation.
-- PR #33 executes zero production writes.
-- Gate 3 production completion and Gate 4 remain strictly unauthorized pending separate explicit Business Owner command.
+- Zero production database access during final blocker canonicalization.
+- PR executes zero production writes.
+- Gate 3 production completion, Gate 4, and Gate 5 remain strictly unauthorized pending separate explicit Business Owner command.
 
 ---
 
@@ -640,19 +654,20 @@ At initial preflight audit:
 - `GATE 0 = CLOSED` (Real production backup and T0 snapshot completed & verified)
 - `GATE 1 = CLOSED` (11 migrations verified applied with 100% parity, zero write)
 - `GATE 2 = CLOSED` (Migration 12 deployed and schema foreign key reconciled in PR #32)
-- `GATE 3 = PARTIAL / IN PROGRESS` (Partial provisioning completed; canonical blockers reconciled in code PR #33; production completion pending authorization)
+- `GATE 3 = PARTIAL / IN PROGRESS` (Partial provisioning completed; final blocker canonicalization staged in code PR; remaining production batch pending explicit owner authorization)
 
 ---
 
 ## 19. Owner Directive Registry & Acceptance Checkpoint
 
 - **Existence of Owner Directive Registry & Source Map**: Canonical registry established at `docs/STQ_OWNER_DIRECTIVES.md` and foundational provenance map at `docs/STQ_REQUIREMENT_SOURCE_MAP.md` as the persistent repository source-of-truth for Level 0 Business Owner directives. Conversational memory of coding agents is not a source of truth. Current reconciliation covers Structure/Identity/Auth, Tahfizh, Keasramaan, and Pendidikan; other domains remain deferred.
-- **Identity Rename Status (`lisa.mt` $\rightarrow$ `musyirfah.putri`)**:
+- **Identity Rename Status (`lisa.mt` $\rightarrow$ `musyirfah.putri`) & Account States**:
   - **HISTORICAL_STATE_BEFORE_GATE_EXECUTION:** Planned rename target unexecuted; historical audit noted database retained `lisa.mt`.
   - **CURRENT_VERIFIED_GATE_STATUS / LATEST_PRODUCTION_OBSERVATION:**
     - `lisa.mt`: ABSENT
-    - `musyirfah.putri`: PRESENT / AKTIF / STF-0005 (canonical active account for Ustazah Lisa)
-    - `musyrifah.putri`: PRESENT / AKTIF / no Staff (target SUSPENDED per DIR-2026-033, not yet executed in production)
+    - `musyirfah.putri`: PRESENT / AKTIF / STF-0005 (canonical active account for Ustazah Lisa Dwina Fitri)
+    - `musyrifah.putri`: SUSPENDED (per DIR-2026-033)
+    - `pembina.halaqoh`: SUSPENDED (per DIR-2026-032)
     *(Note: Current evidence confirms `lisa.mt` is absent and `musyirfah.putri` is present; no claim is made regarding when or how the historical rename occurred).*
 - **12-Point Owner Acceptance Matrix**: The 12-point acceptance matrix remains partially incomplete (Code: partially complete across several areas, e.g. search UI display requires cleanup, legacy server actions lack ABAC scope enforcement; Production: NOT_LIVE / REQUIRES_FRESH_READ_ONLY_VERIFICATION across unmigrated/unseeded items).
 - **Zero Production Write**: Zero production write from this documentation work. Production remains strictly read-only.
