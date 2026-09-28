@@ -156,6 +156,7 @@ describe("GATE 3 — BLOCKER RESOLUTION CANONICAL RECONCILIATION TEST SUITE", ()
       staff: { findMany: async () => [{ id: "stf-1", status: "AKTIF" }] },
       orgUnit: { findMany: async () => [{ id: "ou-inst", code: "OU-INSTITUTION", isActive: true }] },
       position: { findMany: async () => [{ id: "pos-mudir", code: "MUDIR", isActive: true }] },
+      halaqoh: { findMany: async () => [] },
     };
 
     const report = await checkPendidikanV2ProductionReadiness(mockDbWithInvalidAnchor as any);
@@ -483,6 +484,7 @@ describe("GATE 3 — BLOCKER RESOLUTION CANONICAL RECONCILIATION TEST SUITE", ()
       staff: { findMany: async () => [{ id: "stf-1", status: "AKTIF" }] },
       orgUnit: { findMany: async () => [{ id: "ou-root", code: "OU-STQ-ROOT", isActive: true }] },
       position: { findMany: async () => [{ id: "pos-mudir", code: "MUDIR", isActive: true }] },
+      halaqoh: { findMany: async () => [] },
     };
 
     const reportNoUnit = await checkPendidikanV2ProductionReadiness(mockDbMissingUnit as any);
@@ -516,6 +518,7 @@ describe("GATE 3 — BLOCKER RESOLUTION CANONICAL RECONCILIATION TEST SUITE", ()
       staff: { findMany: async () => [{ id: "stf-2", status: "AKTIF" }] },
       orgUnit: { findMany: async () => [{ id: "ou-tahfizh", code: "OU-TAHFIZH", isActive: true }] },
       position: { findMany: async () => [{ id: "pos-kabid", code: "KABID_TAHFIZH", isActive: true }] },
+      halaqoh: { findMany: async () => [] },
     };
 
     const reportNoCode = await checkPendidikanV2ProductionReadiness(mockDbMissingUnitCode as any);
@@ -531,7 +534,7 @@ describe("GATE 3 — BLOCKER RESOLUTION CANONICAL RECONCILIATION TEST SUITE", ()
   // =========================================================================
   // 14. CANONICAL_REQUIRED_ORG_UNIT_CODES INCLUDES APPROVED CANONICAL ANCHORS
   // =========================================================================
-  it("14. CANONICAL_REQUIRED_ORG_UNIT_CODES includes OU-STQ-ROOT, OU-TAHFIZH, OU-OSDA-ROOT, OU-OSDA-PUTRI, OU-TKS-ROOT", () => {
+  it("14. CANONICAL_REQUIRED_ORG_UNIT_CODES includes OU-STQ-ROOT, OU-TAHFIZH, OU-KEASRAMAAN, OU-OSDA-ROOT, OU-OSDA-PUTRI, OU-TKS-ROOT", () => {
     assert.ok(
       CANONICAL_REQUIRED_ORG_UNIT_CODES.includes("OU-STQ-ROOT"),
       "CANONICAL_REQUIRED_ORG_UNIT_CODES must include OU-STQ-ROOT"
@@ -539,6 +542,10 @@ describe("GATE 3 — BLOCKER RESOLUTION CANONICAL RECONCILIATION TEST SUITE", ()
     assert.ok(
       CANONICAL_REQUIRED_ORG_UNIT_CODES.includes("OU-TAHFIZH"),
       "CANONICAL_REQUIRED_ORG_UNIT_CODES must include OU-TAHFIZH"
+    );
+    assert.ok(
+      CANONICAL_REQUIRED_ORG_UNIT_CODES.includes("OU-KEASRAMAAN"),
+      "CANONICAL_REQUIRED_ORG_UNIT_CODES must include OU-KEASRAMAAN"
     );
     assert.ok(
       CANONICAL_REQUIRED_ORG_UNIT_CODES.includes("OU-OSDA-ROOT"),
@@ -563,9 +570,14 @@ describe("GATE 3 — BLOCKER RESOLUTION CANONICAL RECONCILIATION TEST SUITE", ()
       "OU-TAHFIZH must be derived from CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.TAHFIZH_DOMAIN"
     );
     assert.strictEqual(
+      CANONICAL_REQUIRED_ORG_UNIT_CODES[2],
+      CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.KEASRAMAAN_DOMAIN.code,
+      "OU-KEASRAMAAN must be derived from CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.KEASRAMAAN_DOMAIN"
+    );
+    assert.strictEqual(
       CANONICAL_REQUIRED_ORG_UNIT_CODES.length,
-      5,
-      "CANONICAL_REQUIRED_ORG_UNIT_CODES must contain exactly 5 required units"
+      6,
+      "CANONICAL_REQUIRED_ORG_UNIT_CODES must contain exactly 6 required units"
     );
   });
 
@@ -576,6 +588,7 @@ describe("GATE 3 — BLOCKER RESOLUTION CANONICAL RECONCILIATION TEST SUITE", ()
     const validUnits = [
       { id: "ou-root", code: "OU-STQ-ROOT", name: "STQ Darul Ulum Cendekia", type: "INSTITUTION", domain: "INSTITUTIONAL", parentId: null, isActive: true },
       { id: "ou-tahfizh", code: "OU-TAHFIZH", name: "Tahfizh", type: "DOMAIN", domain: "TAHFIZH", parentId: "ou-root", isActive: true },
+      { id: "ou-keasramaan", code: "OU-KEASRAMAAN", name: "Keasramaan", type: "DOMAIN", domain: "KEASRAMAAN", parentId: "ou-root", isActive: true },
       { id: "ou-osda-root", code: "OU-OSDA-ROOT", name: "OSDA", type: "ORGANIZATION", domain: "KEASRAMAAN", parentId: null, isActive: true },
       { id: "ou-osda-putri", code: "OU-OSDA-PUTRI", name: "OSDA Putri", type: "ORGANIZATION", domain: "KEASRAMAAN", parentId: null, isActive: true },
       { id: "ou-tks-root", code: "OU-TKS-ROOT", name: "TKS Root", type: "ORGANIZATION", domain: "KEASRAMAAN", parentId: null, isActive: true },

@@ -472,30 +472,57 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
           });
         }
         const isUnit = posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN";
+        const staffCode =
+          posCode === "PETUGAS_OPERASIONAL_TAHFIZH"
+            ? "STF-0005"
+            : posCode === "KEPALA_KEASRAMAAN"
+            ? "STF-0004"
+            : posCode === "MUSYRIF_TAHFIZH"
+            ? "STF-0003"
+            : `STF-00${idx + 10}`;
+        const staffId = `stf-${staffCode.toLowerCase()}`;
+        const isMusyrifTahfizh = posCode === "MUSYRIF_TAHFIZH";
+        const unitId = isMusyrifTahfizh ? "ou-hlq-1" : `ou-req-${idx}`;
+
         return {
           id: `asg-req-${idx}`,
-          userId: isUnit ? `u-unit-${idx}` : `u-1`,
+          userId: isUnit ? `u-unit-${idx}` : `u-${idx}`,
           positionId: `pos-req-${idx}`,
           status: "ACTIVE",
           validFrom: new Date(Date.now() - 86400000),
           validUntil: null,
-          unitId: `ou-req-${idx}`,
-          scopeUnits: [{ unitId: `ou-req-${idx}` }],
+          unitId,
+          scopeUnits: [{ unitId }],
+          unit: isMusyrifTahfizh
+            ? {
+                id: "ou-hlq-1",
+                code: "OU-HLQ-0001",
+                type: "HALAQOH",
+                domain: "TAHFIZH",
+                parentId: "ou-tahfizh",
+                parent: { code: "OU-TAHFIZH" },
+                genderComplex: "PUTRA",
+                isActive: true,
+              }
+            : undefined,
+          staff: isUnit
+            ? undefined
+            : { id: staffId, staffCode, code: staffCode, status: "AKTIF" },
           user: isUnit
             ? {
                 id: `u-unit-${idx}`,
                 username: `osda.putri`,
                 status: "AKTIF",
                 accountType: "UNIT",
-                unitPlacements: [{ unitId: `ou-req-${idx}` }],
+                unitPlacements: [{ unitId }],
               }
             : {
-                id: `u-1`,
-                username: `ust.ahmad`,
+                id: `u-${idx}`,
+                username: `ust.ahmad${idx}`,
                 status: "AKTIF",
                 accountType: "PERSONAL",
-                staffId: `stf-1`,
-                staff: { id: `stf-1`, status: "AKTIF" },
+                staffId,
+                staff: { id: staffId, staffCode, code: staffCode, status: "AKTIF" },
               },
           position: {
             id: `pos-req-${idx}`,
@@ -544,19 +571,27 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
         user: {
           findMany: async () => [
             { id: "u-1", username: "ust.ahmad", role: "MT", accountType: "PERSONAL", status: "AKTIF", staffId: "stf-1" },
+            { id: "u-unit-osda", username: "osda.putri", role: "POK", accountType: "UNIT", status: "SUSPENDED" },
           ],
         },
         staff: {
-          findMany: async () => [{ id: "stf-1", status: "AKTIF" }],
+          findMany: async () => [
+            { id: "stf-1", staffCode: "STF-0001", code: "STF-0001", status: "AKTIF" },
+            { id: "stf-stf-0005", staffCode: "STF-0005", code: "STF-0005", status: "AKTIF" },
+            { id: "stf-stf-0004", staffCode: "STF-0004", code: "STF-0004", status: "AKTIF" },
+            { id: "stf-stf-0003", staffCode: "STF-0003", code: "STF-0003", status: "AKTIF" },
+          ],
         },
         // Gate 5: Org units
         orgUnit: {
           findMany: async () => [
             { id: "ou-root", code: "OU-STQ-ROOT", name: "STQ Darul Ulum Cendekia", type: "INSTITUTION", domain: "INSTITUTIONAL", parentId: null, isActive: true },
             { id: "ou-tahfizh", code: "OU-TAHFIZH", name: "Tahfizh", type: "DOMAIN", domain: "TAHFIZH", parentId: "ou-root", isActive: true },
+            { id: "ou-keasramaan", code: "OU-KEASRAMAAN", name: "Keasramaan", type: "DOMAIN", domain: "KEASRAMAAN", parentId: "ou-root", isActive: true },
             { id: "ou-1", code: "OU-OSDA-ROOT", isActive: true },
             { id: "ou-2", code: "OU-OSDA-PUTRI", isActive: true },
             { id: "ou-3", code: "OU-TKS-ROOT", isActive: true },
+            { id: "ou-hlq-1", code: "OU-HLQ-0001", type: "HALAQOH", domain: "TAHFIZH", parentId: "ou-tahfizh", parent: { code: "OU-TAHFIZH" }, genderComplex: "PUTRA", isActive: true },
           ],
         },
         // Gate 6: Positions
@@ -604,6 +639,10 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
             { id: "skp-6", kamarId: "ou-req-6", santriId: "san-req-6", isActive: true, santri: { status: "AKTIF" } },
           ],
         },
+        // Gate authoritative halaqoh delegate
+        halaqoh: {
+          findMany: async () => [],
+        },
         // Gate 9: Teaching assignments (all 12 covered)
         teachingAssignment: {
           findMany: async () => slots,
@@ -636,7 +675,7 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
       };
 
       const prevEnv = process.env.PENDIDIKAN_V2_UAT_ENABLED;
-      process.env.PENDIDIKAN_V2_UAT_ENABLED = "true"; // Gate 11 is READY
+      process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
       try {
         const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
         const cohortGate = report.gates.find((g) => g.gate === "COHORTS_ASSIGNED");
@@ -648,11 +687,16 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
         const blockingGates = report.gates.filter((g) => g.blocking !== false);
         assert.ok(!blockingGates.some((g) => g.gate === "COHORTS_ASSIGNED"));
 
-        // All operational blocking gates (except unprovisioned auth policy gate) are READY
+        // All operational blocking gates (except unprovisioned auth policy gate and deferred Gate 5 runtime activation) are READY
         const operationalBlockingGates = blockingGates.filter(
-          (g) => g.gate !== "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY"
+          (g) => g.gate !== "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY" && g.gate !== "RUNTIME_ACTIVATION_FLAG"
         );
         assert.ok(operationalBlockingGates.every((g) => g.status === "READY"));
+
+        // Gate 5 runtime activation must remain NOT_READY per DIR-2026-037
+        const gate5 = report.gates.find((g) => g.gate === "RUNTIME_ACTIVATION_FLAG");
+        assert.ok(gate5);
+        assert.strictEqual(gate5.status, "NOT_READY", "Gate 5 activation must remain NOT_READY per DIR-2026-037");
       } finally {
         process.env.PENDIDIKAN_V2_UAT_ENABLED = prevEnv;
       }

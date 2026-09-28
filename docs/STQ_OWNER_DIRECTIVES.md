@@ -666,6 +666,113 @@ This document serves as the persistent repository registry for authoritative Bus
 
 ---
 
+### DIR-2026-034 | Canonical PETUGAS_OPERASIONAL_TAHFIZH Assignment Holder
+- **Directive ID:** `DIR-2026-034`
+- **Tanggal:** 2026-09-28
+- **Keputusan Business Owner:** Pengampu posisi `PETUGAS_OPERASIONAL_TAHFIZH` (POT) adalah Ustazah Lisa Dwina Fitri (akun kanonikal `musyirfah.putri`, Staff `STF-0005`). Anchor penugasan adalah `OU-TAHFIZH`. Target capability `tahfizh.recap.read` memiliki target scope `GLOBAL`. POT memiliki ZERO authority untuk `tahfizh.reward.issue` (DIR-2026-023). Username tidak boleh dijadikan kunci otorisasi.
+- **Canonical Interpretation:** Approved assignment holder and authority mapping for `PETUGAS_OPERASIONAL_TAHFIZH`:
+  - Assigned Human: Ustazah Lisa Dwina Fitri
+  - Technical User: `musyirfah.putri` (Status: `AKTIF`, AccountType: `PERSONAL`)
+  - Staff: `STF-0005` (Status: `AKTIF`)
+  - Target Position: `PETUGAS_OPERASIONAL_TAHFIZH`
+  - Target Anchor Unit: `OU-TAHFIZH` (type: `DOMAIN`, domain: `TAHFIZH`, parent: `OU-STQ-ROOT`)
+  - Target Capabilities: `tahfizh.recap.read` with scope `GLOBAL` (per DIR-2026-023). ZERO reward issuance (`tahfizh.reward.issue` is denied/absent).
+  - Anchor unit and capability scope are distinct concepts: anchor unit identifies placement in org tree (`OU-TAHFIZH`); scope defines resource visibility (`GLOBAL`).
+  - Username `musyirfah.putri` is an identity label only and confers zero runtime authority.
+- **Affected Domain:** TAHFIZH / IDENTITY / ASSIGNMENT / AUTH
+- **Implementation Status:** `CODE_COMPLETE` (Defined in `types/architecture-lock.ts:CANONICAL_TARGET_ASSIGNMENT_HOLDERS` and `CANONICAL_ASSIGNMENT_ANCHORS`, and validated in `lib/server/pendidikan-v2-readiness.ts`)
+- **Production Status:** `NOT_LIVE / PENDING_CONTROLLED_PROVISIONING` (Assignment creation pending authorized Gate 3 batch)
+- **Supersedes / Superseded-By:** Resolves unassigned POT placeholder; enforces DIR-2026-006 & DIR-2026-023
+- **Acceptance Criteria:** Target assignment binds `musyirfah.putri` / `STF-0005` to `PETUGAS_OPERASIONAL_TAHFIZH` anchored at `OU-TAHFIZH`; recap read scope is `GLOBAL`; reward issue remains denied; usernames confer zero authorization.
+- **Evidence / Reference:** `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`, `docs/STQ_M3_RELEASE_MANIFEST.md`, `STQ_GATE3_FINAL_BLOCKER_CANONICALIZATION_PR_2026-09-28.md`.
+
+---
+
+### DIR-2026-035 | Current Six Halaqoh Canonical OrgUnit Backfill and MUSYRIF_TAHFIZH Mapping
+- **Directive ID:** `DIR-2026-035`
+- **Tanggal:** 2026-09-28
+- **Keputusan Business Owner:** Setujui backfill 6 Halaqoh aktif saat ini menjadi OrgUnit kanonikal: `HLQ-0001 -> OU-HLQ-0001`, `HLQ-0002 -> OU-HLQ-0002`, `HLQ-0003 -> OU-HLQ-0003`, `HLQ-0004 -> OU-HLQ-0004`, `HLQ-0005 -> OU-HLQ-0005`, `HLQ-0006 -> OU-HLQ-0006`. Seluruh unit bertipe `HALAQOH`, domain `TAHFIZH`, induk `OU-TAHFIZH`. Penugasan `MUSYRIF_TAHFIZH` diturunkan secara relasional dari relasi Halaqoh -> Staff -> User yang sudah ada.
+- **Canonical Interpretation:** Approved declarative contract for the current six verified Halaqoh OrgUnits and assignments:
+  - Contract: `OrgUnit.code = "OU-" + Halaqoh.halaqohCode`
+  - Units topology:
+    - `OU-HLQ-0001` (Ust. Razan Mufli, S.Pd / PUTRA) -> parent `OU-TAHFIZH`
+    - `OU-HLQ-0002` (Ust. Kamal / PUTRA) -> parent `OU-TAHFIZH`
+    - `OU-HLQ-0003` (Ust. Rizaldi / PUTRA) -> parent `OU-TAHFIZH`
+    - `OU-HLQ-0004` (Ust. Abi Hudzaifah / PUTRA) -> parent `OU-TAHFIZH`
+    - `OU-HLQ-0005` (Ust. Alwan / PUTRA) -> parent `OU-TAHFIZH`
+    - `OU-HLQ-0006` (Ustadzah Lisa Dwina Fitri / PUTRI) -> parent `OU-TAHFIZH`
+  - All OrgUnits: `type: "HALAQOH"`, `domain: "TAHFIZH"`, `parentId: "OU-TAHFIZH"`, `isActive: true`.
+  - Authoritative relational assignment derivation:
+    - HLQ-0001 -> Staff `STF-0003` -> User `musyrif.tahifzh` -> Position `MUSYRIF_TAHFIZH` -> Unit `OU-HLQ-0001`
+    - HLQ-0002 -> Staff `STF-0006` -> User `kamal.ph` -> Position `MUSYRIF_TAHFIZH` -> Unit `OU-HLQ-0002`
+    - HLQ-0003 -> Staff `STF-0007` -> User `rizaldi.ph` -> Position `MUSYRIF_TAHFIZH` -> Unit `OU-HLQ-0003`
+    - HLQ-0004 -> Staff `STF-0008` -> User `hudzaifah.ph` -> Position `MUSYRIF_TAHFIZH` -> Unit `OU-HLQ-0004`
+    - HLQ-0005 -> Staff `STF-0009` -> User `alwan.ph` -> Position `MUSYRIF_TAHFIZH` -> Unit `OU-HLQ-0005`
+    - HLQ-0006 -> Staff `STF-0005` -> User `musyirfah.putri` -> Position `MUSYRIF_TAHFIZH` -> Unit `OU-HLQ-0006`
+  - Decision covers ONLY these six currently verified active Halaqohs. Future halaqohs require explicit reconciliation.
+- **Affected Domain:** TAHFIZH / STRUCTURE / ORG_UNITS / ASSIGNMENT
+- **Implementation Status:** `CODE_COMPLETE` (Defined in `types/architecture-lock.ts:CANONICAL_CURRENT_SIX_HALAQOH_MAPPINGS` and enforced in `lib/server/pendidikan-v2-readiness.ts`)
+- **Production Status:** `NOT_LIVE / PENDING_CONTROLLED_PROVISIONING` (Unit and assignment rows pending authorized Gate 3 batch)
+- **Supersedes / Superseded-By:** Resolves blocker on MUSYRIF_TAHFIZH unit anchors and relational assignments
+- **Acceptance Criteria:** Exactly 6 current Halaqoh unit mappings defined; parent is `OU-TAHFIZH`; assignments derive from existing active Halaqoh -> active Staff -> active PERSONAL User relations; missing unit or assignment causes readiness NOT_READY.
+- **Evidence / Reference:** `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`, `docs/STQ_CURRENT_STATE.md`, `STQ_GATE3_FINAL_BLOCKER_CANONICALIZATION_PR_2026-09-28.md`.
+
+---
+
+### DIR-2026-036 | Canonical Kepala Keasramaan and Keasramaan Domain Anchor
+- **Directive ID:** `DIR-2026-036`
+- **Tanggal:** 2026-09-28
+- **Keputusan Business Owner:** Kepala Keasramaan adalah Ust. Mujaddid Zhohruddin (akun `musyrif.asrama`, Staff `STF-0004`). Unit anchor domain adalah `OU-KEASRAMAAN` (nama `Keasramaan`, type `DOMAIN`, domain `KEASRAMAAN`, parent `OU-STQ-ROOT`, genderComplex `TIDAK_TERIKAT`). Target penugasan: `musyrif.asrama -> KEPALA_KEASRAMAAN -> OU-KEASRAMAAN`. Jangan melakukan provisi divisi OSDA atau unit layanan TKS pada PR ini.
+- **Canonical Interpretation:** Approved leadership position and domain anchor for Keasramaan:
+  - Canonical Domain OrgUnit:
+    - `code: "OU-KEASRAMAAN"`
+    - `name: "Keasramaan"`
+    - `type: "DOMAIN"`
+    - `domain: "KEASRAMAAN"`
+    - `parentId: "OU-STQ-ROOT"`
+    - `genderComplex: "TIDAK_TERIKAT"`
+    - `isActive: true`
+  - Canonical Assignment Holder:
+    - Assigned Human: Ust. Mujaddid Zhohruddin
+    - User: `musyrif.asrama` (Status: `AKTIF`, AccountType: `PERSONAL`)
+    - Staff: `STF-0004` (Status: `AKTIF`)
+    - Position: `KEPALA_KEASRAMAAN`
+    - Anchor Unit: `OU-KEASRAMAAN`
+  - Scope boundaries: Resolves prior unapproved Keasramaan domain anchor. Does NOT provision OSDA divisions, sub-units, or TKS service units in this PR.
+- **Affected Domain:** KEASRAMAAN / STRUCTURE / IDENTITY / ASSIGNMENT
+- **Implementation Status:** `CODE_COMPLETE` (Defined in `types/architecture-lock.ts:CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT`, `CANONICAL_ASSIGNMENT_ANCHORS`, `CANONICAL_TARGET_ASSIGNMENT_HOLDERS`, and enforced in `lib/server/pendidikan-v2-readiness.ts`)
+- **Production Status:** `NOT_LIVE / PENDING_CONTROLLED_PROVISIONING` (Unit and assignment pending authorized Gate 3 batch)
+- **Supersedes / Superseded-By:** Supersedes any ambiguous or unapproved Keasramaan domain anchor; provides authoritative parent for keasramaan sub-tree
+- **Acceptance Criteria:** `OU-KEASRAMAAN` defined with parent `OU-STQ-ROOT`; `KEPALA_KEASRAMAAN` assignment anchored to `OU-KEASRAMAAN`; no premature OSDA divisions or TKS units claimed; missing `OU-KEASRAMAAN` fails closed.
+- **Evidence / Reference:** `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`, `docs/STQ_CURRENT_STATE.md`, `STQ_GATE3_FINAL_BLOCKER_CANONICALIZATION_PR_2026-09-28.md`.
+
+---
+
+### DIR-2026-037 | OSDA Putri UNIT Account Remains Suspended Until Executor Path Ready
+- **Directive ID:** `DIR-2026-037`
+- **Tanggal:** 2026-09-28
+- **Keputusan Business Owner:** Akun UNIT `osda.putri` TETAP DALAM STATUS SUSPENDED. Jangan mengaktifkan kembali akun ini sampai technical path pelaksana manusia terverifikasi (verified-human-executor), binding scope penugasan, dan prasyarat keamanan PUTRI siap secara teknis. Penugasan aktif `PETUGAS_OPERASIONAL_KEASRAMAAN` TIDAK diwajibkan pada Gate 3 saat akun ditangguhkan secara terencana.
+- **Canonical Interpretation:** Controlled suspension and deferred activation dependency for `osda.putri`:
+  - Technical Account: `osda.putri` (`cmtur157n01sgtiwfbt4x8c89`, `accountType: "UNIT"`, status: `SUSPENDED`).
+  - Unit placement to `OU-OSDA-PUTRI` may remain in metadata.
+  - Strict Prohibitions:
+    - DO NOT reactivate `osda.putri` in production.
+    - DO NOT create or require an ACTIVE `PETUGAS_OPERASIONAL_KEASRAMAAN` assignment merely to satisfy Gate 3 while the account is intentionally suspended.
+    - DO NOT bypass verified human executor requirements.
+    - DO NOT allow PUTRA data or scope leakage.
+  - Gate 3 vs Gate 5 boundary:
+    - `PETUGAS_OPERASIONAL_KEASRAMAAN` remains an approved required Position template.
+    - Its active assignment is separated into `GATE5_DEFERRED_UNIT_ASSIGNMENT_POSITION_CODES` rather than `GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES`.
+    - Gate 5 runtime activation must fail closed until the human executor path and scope unit bindings are formally proven.
+- **Affected Domain:** KEASRAMAAN / IDENTITY / AUTH / SECURITY
+- **Implementation Status:** `CODE_COMPLETE` (Differentiated in `lib/server/pendidikan-v2-readiness.ts` via `GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES` vs `GATE5_DEFERRED_UNIT_ASSIGNMENT_POSITION_CODES`)
+- **Production Status:** `CURRENT_PRODUCTION_FACT: SUSPENDED` (Consistent with owner policy; reactivation strictly barred)
+- **Supersedes / Superseded-By:** Clarifies Gate 3 pre-requisite boundaries without weakening Gate 5 runtime security
+- **Acceptance Criteria:** `osda.putri` remains `SUSPENDED`; Gate 3 does not block on missing active assignment for deferred UNIT account; Gate 5 activation continues to fail closed without executor prerequisites; zero automatic reactivation.
+- **Evidence / Reference:** `lib/server/pendidikan-v2-readiness.ts`, `docs/STQ_CURRENT_STATE.md`, `STQ_GATE3_FINAL_BLOCKER_CANONICALIZATION_PR_2026-09-28.md`.
+
+---
+
 ## 3. 12-Point Owner Acceptance Matrix
 
 This matrix evaluates Points 2 through 13 of the Business Owner directives, reporting current status across all dimensions truthfully and without false inflation.

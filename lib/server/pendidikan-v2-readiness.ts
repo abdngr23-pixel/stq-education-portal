@@ -17,9 +17,22 @@ import {
   ResolvedResourceContext,
   CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT,
   CANONICAL_ASSIGNMENT_ANCHORS,
+  CANONICAL_TARGET_ASSIGNMENT_HOLDERS,
+  CANONICAL_CURRENT_SIX_HALAQOH_MAPPINGS,
+  CANONICAL_REQUIRED_POSITION_CODES,
+  GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES,
+  GATE5_DEFERRED_UNIT_ASSIGNMENT_POSITION_CODES,
+  CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT,
 } from "@/types/architecture-lock";
-export { CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT, CANONICAL_ASSIGNMENT_ANCHORS };
-import { CANONICAL_POSITION_CODES } from "@/lib/auth/compatibility";
+export {
+  CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT,
+  CANONICAL_ASSIGNMENT_ANCHORS,
+  CANONICAL_TARGET_ASSIGNMENT_HOLDERS,
+  CANONICAL_CURRENT_SIX_HALAQOH_MAPPINGS,
+  CANONICAL_REQUIRED_POSITION_CODES,
+  GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES,
+  GATE5_DEFERRED_UNIT_ASSIGNMENT_POSITION_CODES,
+};
 import {
   authorizeCanonical,
   CanonicalAssignmentWithDetails,
@@ -131,6 +144,18 @@ export interface ReadinessDbClient {
       [key: string]: any;
     }>>;
   };
+  halaqoh?: {
+    findMany: (args?: any) => Promise<Array<{
+      id: string;
+      halaqohCode: string;
+      nama: string;
+      status: string;
+      pembinaId?: string;
+      pembina?: any;
+      santriList?: any[];
+      [key: string]: any;
+    }>>;
+  };
   assignment?: {
     findMany: (args?: any) => Promise<Array<{
       id: string;
@@ -185,29 +210,88 @@ export const CANONICAL_READINESS_GATE_NAMES = [
 /**
  * Required OrgUnits derived programmatically from canonical contract constants.
  * Includes approved institutional root, domain anchor, and operational units.
+ * Updated per DIR-2026-030 and DIR-2026-036 to include OU-KEASRAMAAN.
  */
 export const CANONICAL_REQUIRED_ORG_UNIT_CODES = [
   CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.STQ_ROOT.code,
   CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.TAHFIZH_DOMAIN.code,
+  CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.KEASRAMAAN_DOMAIN.code,
   OSDA_STRUCTURE_CONTRACT.NODE.code,
   OSDA_PUTRI_UNIT_CONTRACT.NODE.code,
   TKS_STRUCTURE_CONTRACT.NODE.code,
 ] as const;
 
 /**
- * Required Position codes derived programmatically from approved UAT targets + verified managerial positions
- * Strictly excludes unapproved / invented codes (e.g. PEMBINA_ASRAMA)
+ * Gate 5 Runtime Activation Evaluator (DIR-2026-037)
+ * Evaluates whether runtime activation prerequisites are technically ready.
+ * Enforces that feature flag alone cannot bypass Gate 5 UNIT security prerequisites:
+ * osda.putri remains SUSPENDED; verifiedHumanExecutorAttributionReady and assignmentScopeUnitsReady
+ * must be verified before runtime activation can be considered READY.
  */
-export const CANONICAL_REQUIRED_POSITION_CODES = [
-  CANONICAL_POSITION_CODES.MUDIR,
-  CANONICAL_POSITION_CODES.KABID_TAHFIZH,
-  CANONICAL_POSITION_CODES.KEPALA_KEASRAMAAN,
-  UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.positionCode,
-  UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.positionCode,
-  UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.PEMBINA_HALAQOH.positionCode,
-  UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.positionCode,
-  CANONICAL_POSITION_CODES.GURU_KEPESANTRENAN,
-] as const;
+export interface Gate5RuntimeActivationParams {
+  featureFlagEnabled?: boolean;
+  userStatus?: string;
+  verifiedHumanExecutorAttributionReady?: boolean;
+  assignmentScopeUnitsReady?: boolean;
+}
+
+export interface Gate5RuntimeActivationResult {
+  status: ReadinessStatus;
+  details: string;
+  blocking: boolean;
+  remediationAdvice?: string;
+}
+
+export function evaluateGate5RuntimeActivation(
+  params?: Gate5RuntimeActivationParams
+): Gate5RuntimeActivationResult {
+  const featureFlagEnabled =
+    params?.featureFlagEnabled ?? (process.env.PENDIDIKAN_V2_UAT_ENABLED === "true");
+  const userStatus =
+    params?.userStatus ?? CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.targetUserStatus;
+  const executorReady =
+    params?.verifiedHumanExecutorAttributionReady ??
+    CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.verifiedHumanExecutorAttributionReady;
+  const scopeUnitsReady =
+    params?.assignmentScopeUnitsReady ??
+    CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.assignmentScopeUnitsReady;
+
+  if (!featureFlagEnabled) {
+    return {
+      status: "NOT_READY",
+      details: `PENDIDIKAN_V2_UAT_ENABLED=${process.env.PENDIDIKAN_V2_UAT_ENABLED ?? "false"}`,
+      blocking: true,
+      remediationAdvice: "Set PENDIDIKAN_V2_UAT_ENABLED=true in server environment when ready for live UAT",
+    };
+  }
+
+  // Feature flag alone must NOT make runtime ready if Gate 5 UNIT security prerequisites are not satisfied (DIR-2026-037)
+  const securityIssues: string[] = [];
+  if (userStatus === "SUSPENDED" || userStatus !== "AKTIF") {
+    securityIssues.push(`osda.putri user status is ${userStatus} (activation deferred per DIR-2026-037)`);
+  }
+  if (!executorReady) {
+    securityIssues.push("verifiedHumanExecutorAttributionReady is false");
+  }
+  if (!scopeUnitsReady) {
+    securityIssues.push("assignmentScopeUnitsReady is false");
+  }
+
+  if (securityIssues.length > 0) {
+    return {
+      status: "NOT_READY",
+      details: `PENDIDIKAN_V2_UAT_ENABLED=true but Gate 5 UNIT security prerequisites not met: ${securityIssues.join("; ")} (Feature flag cannot bypass UNIT security per DIR-2026-037)`,
+      blocking: true,
+      remediationAdvice: "Gate 5 runtime activation requires verified human executor attribution and assignment scope units before activation",
+    };
+  }
+
+  return {
+    status: "READY",
+    details: "PENDIDIKAN_V2_UAT_ENABLED=true and Gate 5 UNIT security prerequisites satisfied",
+    blocking: true,
+  };
+}
 
 /**
  * Programmatically derived UAT activation capability targets:
@@ -893,6 +977,40 @@ export async function checkPendidikanV2ProductionReadiness(
         }
       }
 
+      // 5. Strict canonical attribute validation for OU-KEASRAMAAN (DIR-2026-036)
+      const keasramaan = unitMapByCode.get(CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.KEASRAMAAN_DOMAIN.code);
+      if (keasramaan) {
+        const expectedType = CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.KEASRAMAAN_DOMAIN.type;
+        const expectedDomain = CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.KEASRAMAAN_DOMAIN.domain;
+        if (keasramaan.type !== expectedType) {
+          issues.push(`${keasramaan.code} wrong type: got ${keasramaan.type}, expected ${expectedType}`);
+        }
+        if (keasramaan.domain !== expectedDomain) {
+          issues.push(`${keasramaan.code} wrong domain: got ${keasramaan.domain}, expected ${expectedDomain}`);
+        }
+
+        // Validate parent is OU-STQ-ROOT
+        let resolvedParentCode: string | null = null;
+        if (keasramaan.parent && keasramaan.parent.code) {
+          resolvedParentCode = keasramaan.parent.code;
+        } else if (keasramaan.parentId) {
+          if (keasramaan.parentId === CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.STQ_ROOT.code) {
+            resolvedParentCode = keasramaan.parentId;
+          } else {
+            const parentUnit = unitMapById.get(keasramaan.parentId);
+            if (parentUnit) {
+              resolvedParentCode = parentUnit.code;
+            } else if (stqRoot && keasramaan.parentId === stqRoot.id) {
+              resolvedParentCode = stqRoot.code;
+            }
+          }
+        }
+
+        if (resolvedParentCode !== CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.STQ_ROOT.code) {
+          issues.push(`${keasramaan.code} wrong parent: resolved parent is ${resolvedParentCode ?? "none/unresolved"}, expected ${CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.STQ_ROOT.code}`);
+        }
+      }
+
       if (issues.length === 0) {
         gates.push({
           gate: "REQUIRED_ORG_UNITS_READY",
@@ -1023,9 +1141,12 @@ export async function checkPendidikanV2ProductionReadiness(
       }
 
       let unitsMap = new Map<string, any>();
-      if (db.orgUnit && asgs.some((a: any) => !a.unit && a.unitId)) {
+      if (db.orgUnit) {
         const units = await db.orgUnit.findMany().catch(() => []);
         unitsMap = new Map(units.map((u: any) => [u.id, u]));
+        for (const u of units) {
+          if (u.code) unitsMap.set(u.code, u);
+        }
       }
 
       let staffMap = new Map<string, any>();
@@ -1078,7 +1199,7 @@ export async function checkPendidikanV2ProductionReadiness(
 
         const code = pos.code || a.positionCode;
         if (code) {
-          // Explicit Anchor Validation (DIR-2026-030)
+          // Explicit Anchor Validation (DIR-2026-030, DIR-2026-034, DIR-2026-036)
           const expectedAnchor = (CANONICAL_ASSIGNMENT_ANCHORS as Record<string, string>)[code];
           if (expectedAnchor) {
             if (a.unit === null || (!a.unit && !a.unitId)) {
@@ -1096,7 +1217,253 @@ export async function checkPendidikanV2ProductionReadiness(
               }
             }
           }
+
+          // Specific Target Holder Validation (DIR-2026-034: POT -> Lisa / STF-0005)
+          if (code === "PETUGAS_OPERASIONAL_TAHFIZH") {
+            const staff = staffMap.get(user.staffId) || (user.staff ? user.staff : null) || (a.staff ? a.staff : null);
+            if (!staff) {
+              assignmentIssues.push(`Assignment ${a.id} for ${code}: staff object not resolved for user ${user.username || user.id}`);
+              continue;
+            }
+            if (!(staff.status === "AKTIF" || staff.status === "ACTIVE")) {
+              assignmentIssues.push(`Assignment ${a.id} for ${code}: staff is inactive (${staff.status})`);
+              continue;
+            }
+            const staffCode = staff.staffCode || staff.code;
+            if (!staffCode || staffCode.trim() === "") {
+              assignmentIssues.push(`Assignment ${a.id} for ${code}: staff code is missing or empty`);
+              continue;
+            }
+            if (staffCode !== CANONICAL_TARGET_ASSIGNMENT_HOLDERS.PETUGAS_OPERASIONAL_TAHFIZH.staffCode) {
+              assignmentIssues.push(`Assignment ${a.id} for ${code}: staff code is ${staffCode}, expected approved holder ${CANONICAL_TARGET_ASSIGNMENT_HOLDERS.PETUGAS_OPERASIONAL_TAHFIZH.staffCode}`);
+              continue;
+            }
+          }
+
+          // Specific Target Holder Validation (DIR-2026-036: KEPALA_KEASRAMAAN -> Mujaddid / STF-0004)
+          if (code === "KEPALA_KEASRAMAAN") {
+            const staff = staffMap.get(user.staffId) || (user.staff ? user.staff : null) || (a.staff ? a.staff : null);
+            if (!staff) {
+              assignmentIssues.push(`Assignment ${a.id} for ${code}: staff object not resolved for user ${user.username || user.id}`);
+              continue;
+            }
+            if (!(staff.status === "AKTIF" || staff.status === "ACTIVE")) {
+              assignmentIssues.push(`Assignment ${a.id} for ${code}: staff is inactive (${staff.status})`);
+              continue;
+            }
+            const staffCode = staff.staffCode || staff.code;
+            if (!staffCode || staffCode.trim() === "") {
+              assignmentIssues.push(`Assignment ${a.id} for ${code}: staff code is missing or empty`);
+              continue;
+            }
+            if (staffCode !== CANONICAL_TARGET_ASSIGNMENT_HOLDERS.KEPALA_KEASRAMAAN.staffCode) {
+              assignmentIssues.push(`Assignment ${a.id} for ${code}: staff code is ${staffCode}, expected approved holder ${CANONICAL_TARGET_ASSIGNMENT_HOLDERS.KEPALA_KEASRAMAAN.staffCode}`);
+              continue;
+            }
+          }
+
+          // Specific Topology Validation (DIR-2026-035: MUSYRIF_TAHFIZH -> HALAQOH unit under OU-TAHFIZH)
+          if (code === "MUSYRIF_TAHFIZH") {
+            if (unit) {
+              if (unit.type && unit.type !== "HALAQOH") {
+                assignmentIssues.push(`Assignment ${a.id} for ${code}: anchor unit type is ${unit.type}, expected HALAQOH`);
+                continue;
+              }
+              if (unit.domain && unit.domain !== "TAHFIZH") {
+                assignmentIssues.push(`Assignment ${a.id} for ${code}: anchor unit domain is ${unit.domain}, expected TAHFIZH`);
+                continue;
+              }
+              let pCode: string | null = null;
+              if (unit.parent?.code) {
+                pCode = unit.parent.code;
+              } else if (unit.parentId) {
+                if (unit.parentId === "OU-TAHFIZH") {
+                  pCode = unit.parentId;
+                } else {
+                  const pUnit = unitsMap.get(unit.parentId);
+                  if (pUnit) pCode = pUnit.code;
+                }
+              }
+              if (pCode && pCode !== "OU-TAHFIZH") {
+                assignmentIssues.push(`Assignment ${a.id} for ${code}: anchor unit parent is ${pCode}, expected OU-TAHFIZH`);
+                continue;
+              }
+              // Target OrgUnit genderComplex validation (Item 10)
+              const matchingMapping = CANONICAL_CURRENT_SIX_HALAQOH_MAPPINGS.find(
+                (m) => m.targetOrgUnitCode === unit.code
+              );
+              if (matchingMapping) {
+                if (!unit.genderComplex || unit.genderComplex !== matchingMapping.genderComplex) {
+                  assignmentIssues.push(
+                    `Assignment ${a.id} for ${code}: anchor unit ${unit.code} genderComplex is ${unit.genderComplex ?? "missing"}, expected ${matchingMapping.genderComplex}`
+                  );
+                  continue;
+                }
+              }
+            }
+          }
+
           coveredCodes.add(code);
+        }
+      }
+
+      // Dynamic Relational Halaqoh Validation (DIR-2026-035)
+      // If halaqoh records are present in database, validate exact approved current-six halaqohs have corresponding OrgUnits and active assignments
+      let halaqohQueryFailed = false;
+      let halaqohQueryErrorDetail = "";
+      let activeHalaqohs: any[] = [];
+
+      if (!db.halaqoh || typeof db.halaqoh.findMany !== "function") {
+        halaqohQueryFailed = true;
+        halaqohQueryErrorDetail = "authoritative Halaqoh repository/delegate is unavailable for current-six validation";
+      } else {
+        try {
+          const rawHalaqohs = await db.halaqoh.findMany({
+            where: { status: "AKTIF" },
+            include: { pembina: { include: { user: true } } },
+          });
+          activeHalaqohs = (rawHalaqohs || []).filter(
+            (h: any) => !h.status || h.status === "AKTIF" || h.status === "ACTIVE"
+          );
+        } catch (err: unknown) {
+          halaqohQueryFailed = true;
+          halaqohQueryErrorDetail = `Authoritative Halaqoh query failed: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      }
+
+      if (!halaqohQueryFailed && db.halaqoh && activeHalaqohs.length > 0) {
+        // Validate against unapproved future halaqohs (DIR-2026-035: current six only)
+        for (const h of activeHalaqohs) {
+          const hCode = h.halaqohCode || h.code;
+          const isApproved = CANONICAL_CURRENT_SIX_HALAQOH_MAPPINGS.some(
+            (m) => m.halaqohCode === hCode
+          );
+          if (!isApproved) {
+            assignmentIssues.push(
+              `Halaqoh ${hCode}: unapproved active Halaqoh outside canonical six (HALAQOH_RECONCILIATION_REQUIRED)`
+            );
+          }
+        }
+
+        // Validate exact current six mappings
+        for (const mapping of CANONICAL_CURRENT_SIX_HALAQOH_MAPPINGS) {
+          const h = activeHalaqohs.find(
+            (ah: any) => (ah.halaqohCode || ah.code) === mapping.halaqohCode
+          );
+          if (!h) {
+            assignmentIssues.push(
+              `Halaqoh ${mapping.halaqohCode}: missing active source Halaqoh record`
+            );
+            continue;
+          }
+
+          const targetUnitCode = mapping.targetOrgUnitCode;
+          const targetUnit = Array.from(unitsMap.values()).find(
+            (u: any) => u.code === targetUnitCode
+          );
+          if (!targetUnit) {
+            assignmentIssues.push(
+              `Halaqoh ${mapping.halaqohCode}: missing target OrgUnit ${targetUnitCode}`
+            );
+            continue;
+          }
+          if (targetUnit.type && targetUnit.type !== "HALAQOH") {
+            assignmentIssues.push(
+              `Halaqoh OrgUnit ${targetUnitCode}: wrong type ${targetUnit.type}, expected HALAQOH`
+            );
+            continue;
+          }
+          if (targetUnit.domain && targetUnit.domain !== "TAHFIZH") {
+            assignmentIssues.push(
+              `Halaqoh OrgUnit ${targetUnitCode}: wrong domain ${targetUnit.domain}, expected TAHFIZH`
+            );
+            continue;
+          }
+          let parentCode: string | null = null;
+          if (targetUnit.parent?.code) {
+            parentCode = targetUnit.parent.code;
+          } else if (targetUnit.parentId) {
+            if (targetUnit.parentId === "OU-TAHFIZH") {
+              parentCode = targetUnit.parentId;
+            } else {
+              const parentUnit = unitsMap.get(targetUnit.parentId);
+              parentCode = parentUnit ? parentUnit.code : targetUnit.parentId;
+            }
+          }
+          if (!parentCode || parentCode !== "OU-TAHFIZH") {
+            assignmentIssues.push(
+              `Halaqoh OrgUnit ${targetUnitCode}: parent is not OU-TAHFIZH (found ${parentCode ?? "unresolved"})`
+            );
+            continue;
+          }
+
+          // Target OrgUnit genderComplex validation (Item 10)
+          if (!targetUnit.genderComplex || targetUnit.genderComplex !== mapping.genderComplex) {
+            assignmentIssues.push(
+              `Halaqoh OrgUnit ${targetUnitCode}: genderComplex is ${targetUnit.genderComplex ?? "missing"}, expected ${mapping.genderComplex}`
+            );
+          }
+
+          const staff =
+            h.pembina ||
+            h.musyrif ||
+            (h.musyrifId ? staffMap.get(h.musyrifId) : null) ||
+            (h.pembinaId ? staffMap.get(h.pembinaId) : null);
+          if (!staff || !(staff.status === "AKTIF" || staff.status === "ACTIVE")) {
+            assignmentIssues.push(
+              `Halaqoh ${mapping.halaqohCode}: musyrif Staff is not AKTIF`
+            );
+            continue;
+          }
+          const sCode = staff.staffCode || staff.code;
+          if (!sCode || sCode !== mapping.expectedStaffCode) {
+            assignmentIssues.push(
+              `Halaqoh ${mapping.halaqohCode}: staff code is ${sCode ?? "missing"}, expected ${mapping.expectedStaffCode}`
+            );
+            continue;
+          }
+
+          const user =
+            staff.user ||
+            (staff.userId ? usersMap.get(staff.userId) : null) ||
+            (staff.id ? Array.from(usersMap.values()).find((u: any) => u.staffId === staff.id) : null);
+          if (!user || !(user.status === "AKTIF" || user.status === "ACTIVE")) {
+            assignmentIssues.push(
+              `Halaqoh ${mapping.halaqohCode}: musyrif user is missing or inactive`
+            );
+            continue;
+          }
+          if (user.accountType && user.accountType !== "PERSONAL") {
+            assignmentIssues.push(
+              `Halaqoh ${mapping.halaqohCode}: musyrif user accountType is not PERSONAL (${user.accountType})`
+            );
+            continue;
+          }
+          if (user.username && user.username !== mapping.expectedUsername) {
+            assignmentIssues.push(
+              `Halaqoh ${mapping.halaqohCode}: musyrif username is ${user.username}, expected ${mapping.expectedUsername}`
+            );
+            continue;
+          }
+
+          const matchingAsg = asgs.find((a: any) => {
+            if (a.status !== "ACTIVE") return false;
+            const pCode =
+              a.position?.code ||
+              (a.positionId ? positionsMap.get(a.positionId)?.code : null) ||
+              a.positionCode;
+            if (pCode !== "MUSYRIF_TAHFIZH") return false;
+            const uCode = a.unit?.code || (a.unitId ? unitsMap.get(a.unitId)?.code : null);
+            if (uCode !== targetUnitCode && a.unitId !== targetUnit.id) return false;
+            const aUserId = a.userId || a.user?.id;
+            return aUserId === user.id;
+          });
+
+          if (!matchingAsg) {
+            assignmentIssues.push(
+              `Halaqoh ${mapping.halaqohCode}: missing active MUSYRIF_TAHFIZH assignment for user ${user.username || user.id} at ${targetUnitCode}`
+            );
+          }
         }
       }
 
@@ -1104,7 +1471,7 @@ export async function checkPendidikanV2ProductionReadiness(
       const activeKamars = Array.from(unitsMap.values()).filter((u) => u.type === "KAMAR" && u.isActive !== false);
       const activeKamarCount = activeKamars.length;
 
-      let missingPositions = CANONICAL_REQUIRED_POSITION_CODES.filter((c) => !coveredCodes.has(c));
+      let missingPositions = GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES.filter((c) => !coveredCodes.has(c));
       let deferredPembinaHalaqoh = false;
       if (activeKamarCount === 0 && missingPositions.includes("PEMBINA_HALAQOH")) {
         // Zero active kamar exists -> PEMBINA_HALAQOH room assignment is deferred
@@ -1488,12 +1855,24 @@ export async function checkPendidikanV2ProductionReadiness(
         }
       }
 
-      if (missingPositions.length > 0) {
-        const issuesSuffix = assignmentIssues.length > 0 ? ` (${assignmentIssues.join("; ")})` : "";
+      if (halaqohQueryFailed) {
+        const issuesSuffix = (missingPositions.length > 0 || assignmentIssues.length > 0)
+          ? ` (also detected: ${[...missingPositions.map((p) => `missing ${p}`), ...assignmentIssues].join("; ")})`
+          : "";
+        gates.push({
+          gate: "USER_ASSIGNMENTS_READY",
+          status: "BLOCKED",
+          reason: "DATABASE_UNAVAILABLE",
+          details: `DATABASE_UNAVAILABLE: ${halaqohQueryErrorDetail}${issuesSuffix}`,
+          remediationAdvice: "Authoritative Halaqoh database table must be accessible before user assignments can be verified",
+        });
+      } else if (missingPositions.length > 0 || assignmentIssues.length > 0) {
+        const issuesPrefix = missingPositions.length > 0 ? `Missing active user assignments for required positions: ${missingPositions.join(", ")}` : "User assignment validation issues detected";
+        const issuesSuffix = assignmentIssues.length > 0 ? (missingPositions.length > 0 ? ` (${assignmentIssues.join("; ")})` : `: ${assignmentIssues.join("; ")}`) : "";
         gates.push({
           gate: "USER_ASSIGNMENTS_READY",
           status: "NOT_READY",
-          details: `Missing active user assignments for required positions: ${missingPositions.join(", ")}${issuesSuffix}`,
+          details: `${issuesPrefix}${issuesSuffix}`,
           remediationAdvice: "Requires active assignments linking active Users and active Staff to approved positions in M3.3C2",
         });
       } else if (policyIssues.length > 0) {
@@ -1512,7 +1891,7 @@ export async function checkPendidikanV2ProductionReadiness(
         });
       } else {
         const deferredNote = deferredPembinaHalaqoh ? " (PEMBINA_HALAQOH deferred: zero active Kamar)" : "";
-        const expectedCount = CANONICAL_REQUIRED_POSITION_CODES.length - (deferredPembinaHalaqoh ? 1 : 0);
+        const expectedCount = GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES.length - (deferredPembinaHalaqoh ? 1 : 0);
         gates.push({
           gate: "USER_ASSIGNMENTS_READY",
           status: "READY",
@@ -1551,7 +1930,7 @@ export async function checkPendidikanV2ProductionReadiness(
       `).catch(() => [{ count: "0" }]);
       const activeKamarCount = parseInt(kamarRows[0]?.count || "0", 10);
 
-      let missingPositions = CANONICAL_REQUIRED_POSITION_CODES.filter((c) => !coveredCodes.has(c));
+      let missingPositions = GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES.filter((c) => !coveredCodes.has(c));
       let deferredPembinaHalaqoh = false;
       if (activeKamarCount === 0 && missingPositions.includes("PEMBINA_HALAQOH")) {
         missingPositions = missingPositions.filter((c) => c !== "PEMBINA_HALAQOH");
@@ -1626,7 +2005,7 @@ export async function checkPendidikanV2ProductionReadiness(
         });
       } else {
         const deferredNote = deferredPembinaHalaqoh ? " (PEMBINA_HALAQOH deferred: zero active Kamar)" : "";
-        const expectedCount = CANONICAL_REQUIRED_POSITION_CODES.length - (deferredPembinaHalaqoh ? 1 : 0);
+        const expectedCount = GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES.length - (deferredPembinaHalaqoh ? 1 : 0);
         gates.push({
           gate: "USER_ASSIGNMENTS_READY",
           status: "READY",
@@ -2373,13 +2752,32 @@ export async function checkPendidikanV2ProductionReadiness(
     }
   }
 
-  // Gate 11: Feature Flag Enabled
-  const featureEnabled = process.env.PENDIDIKAN_V2_UAT_ENABLED === "true";
+  // Gate 14: Runtime Activation Flag (Gate 5) & UNIT Security Prerequisites
+  // Per DIR-2026-037: User status ACTIVE is NEVER proof of human executor attribution or AssignmentScopeUnit readiness.
+  // Both prerequisites require independent canonical evidence and remain false under current lock.
+  let osdaUserStatus: string = CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.targetUserStatus;
+
+  if (db.user) {
+    const users = await db.user.findMany().catch(() => []);
+    const osdaUser = (users || []).find((u: any) => u.username === "osda.putri");
+    if (osdaUser) {
+      osdaUserStatus = osdaUser.status;
+    }
+  }
+
+  const gate5Activation = evaluateGate5RuntimeActivation({
+    featureFlagEnabled: process.env.PENDIDIKAN_V2_UAT_ENABLED === "true",
+    userStatus: osdaUserStatus,
+    verifiedHumanExecutorAttributionReady: CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.verifiedHumanExecutorAttributionReady,
+    assignmentScopeUnitsReady: CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.assignmentScopeUnitsReady,
+  });
+
   gates.push({
     gate: "RUNTIME_ACTIVATION_FLAG",
-    status: featureEnabled ? "READY" : "NOT_READY",
-    details: `PENDIDIKAN_V2_UAT_ENABLED=${process.env.PENDIDIKAN_V2_UAT_ENABLED ?? "false"}`,
-    remediationAdvice: featureEnabled ? undefined : "Set PENDIDIKAN_V2_UAT_ENABLED=true in server environment when ready for live UAT",
+    status: gate5Activation.status,
+    details: gate5Activation.details,
+    remediationAdvice: gate5Activation.remediationAdvice,
+    blocking: true,
   });
 
   const blockingGates = gates.filter((g) => g.blocking !== false);

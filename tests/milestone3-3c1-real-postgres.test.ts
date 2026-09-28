@@ -13,6 +13,7 @@ import {
   evaluateKepesantrenanAcademicAuthPolicies,
   CANONICAL_READINESS_GATE_NAMES,
   CANONICAL_REQUIRED_POSITION_CODES,
+  GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES,
   CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS,
   REQUIRED_UAT_ACTIVATION_CAPABILITIES,
   EDUCATION_SESSION_ACTIVATION_CAPABILITIES,
@@ -888,6 +889,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
             },
           ],
         },
+        halaqoh: { findMany: async () => [] },
       };
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
@@ -1510,6 +1512,19 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           });
         }
 
+        const isUnit = posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN";
+        const staffCode =
+          posCode === "PETUGAS_OPERASIONAL_TAHFIZH"
+            ? "STF-0005"
+            : posCode === "KEPALA_KEASRAMAAN"
+            ? "STF-0004"
+            : posCode === "MUSYRIF_TAHFIZH"
+            ? "STF-0003"
+            : `STF-REQ-${idx}`;
+        const staffObj = isUnit
+          ? null
+          : { id: `stf-req-${idx}`, staffCode, code: staffCode, status: "AKTIF" };
+
         const base = {
           id: `asg-req-${idx}`,
           userId: `usr-req-${idx}`,
@@ -1519,13 +1534,14 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           validUntil: null,
           unitId: `ou-req-${idx}`,
           scopeUnits: [{ unitId: `ou-req-${idx}` }],
+          staff: staffObj,
           user: {
             id: `usr-req-${idx}`,
             username: `user.req.${idx}`,
             status: "AKTIF",
             accountType: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? "UNIT" : "PERSONAL",
             staffId: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? null : `stf-req-${idx}`,
-            staff: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? null : { id: `stf-req-${idx}`, status: "AKTIF" },
+            staff: staffObj,
           },
           position: {
             id: `pos-req-${idx}`,
@@ -1934,6 +1950,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         positionCapability: {
           findMany: async () => [],
         },
+        halaqoh: { findMany: async () => [] },
       };
 
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
@@ -1958,6 +1975,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         positionCapability: {
           findMany: async () => [],
         },
+        halaqoh: { findMany: async () => [] },
       };
 
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
@@ -1982,6 +2000,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         positionCapability: {
           findMany: async () => [],
         },
+        halaqoh: { findMany: async () => [] },
       };
 
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
@@ -2010,6 +2029,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         positionCapability: {
           findMany: async () => [],
         },
+        halaqoh: { findMany: async () => [] },
         santri: {
           findFirst: async (args: any) => {
             const hId = args?.where?.halaqohId;
@@ -2049,7 +2069,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.ok(userGate);
       assert.strictEqual(userGate.status, "READY");
       assert.ok(
-        userGate.details.includes(`All ${CANONICAL_REQUIRED_POSITION_CODES.length} required target positions have active user assignments`),
+        userGate.details.includes(`All ${GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES.length} required target positions have active user assignments`),
         "Must verify all required target positions are ready"
       );
     });
@@ -2074,6 +2094,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         positionCapability: {
           findMany: async () => [],
         },
+        halaqoh: { findMany: async () => [] },
       };
 
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
@@ -2108,6 +2129,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         positionCapability: {
           findMany: async () => [],
         },
+        halaqoh: { findMany: async () => [] },
       };
 
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
@@ -2156,6 +2178,19 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         });
       }
 
+      const isUnit = posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN";
+      const staffCode =
+        posCode === "PETUGAS_OPERASIONAL_TAHFIZH"
+          ? "STF-0005"
+          : posCode === "KEPALA_KEASRAMAAN"
+          ? "STF-0004"
+          : posCode === "MUSYRIF_TAHFIZH"
+          ? "STF-0003"
+          : `STF-UAT-${idx}`;
+      const staffObj = isUnit
+        ? null
+        : { id: `stf-uat-${idx}`, staffCode, code: staffCode, status: "AKTIF" };
+
       const base = {
         id: `asg-uat-${idx}`,
         userId: `usr-uat-${idx}`,
@@ -2166,13 +2201,14 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         unitId: `ou-uat-${idx}`,
         scopeUnits: [{ unitId: `ou-uat-${idx}` }],
         scopedUnits: [{ unitId: `ou-uat-${idx}`, unit: { id: `ou-uat-${idx}`, isActive: true } }],
+        staff: staffObj,
         user: {
           id: `usr-uat-${idx}`,
           username: `user.uat.${idx}`,
           status: "AKTIF",
           accountType: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? "UNIT" : "PERSONAL",
           staffId: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? null : `stf-uat-${idx}`,
-          staff: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? null : { id: `stf-uat-${idx}`, status: "AKTIF" },
+          staff: staffObj,
         },
         position: {
           id: `pos-uat-${idx}`,
@@ -2208,6 +2244,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     ) => ({
       assignment: { findMany: async () => assignments },
       positionCapability: { findMany: async () => [] },
+      halaqoh: { findMany: async () => [] },
       santri: {
         findFirst:
           overrides?.santriFindFirst ??
@@ -3291,6 +3328,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         positionCapability: { findMany: async () => [] },
         santri: prisma.santri,
         santriKamarPlacement: prisma.santriKamarPlacement,
+        halaqoh: { findMany: async () => [] },
       } as any);
 
       const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
