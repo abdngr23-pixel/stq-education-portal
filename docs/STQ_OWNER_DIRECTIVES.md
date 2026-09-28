@@ -94,7 +94,9 @@ This document serves as the persistent repository registry for authoritative Bus
 - **Canonical Interpretation:** The authoritative production target username for Ustazah Lisa Dwina Fitri is standardized to the exact spelling `musyirfah.putri` (with `-ir-`, not `-ri-`). This is a PERSONAL account. This username represents an identity label and must never be used as an authorization key.
 - **Affected Domain:** IDENTITY / AUTH
 - **Implementation Status:** `TARGET_DESIGNED` (Target username specified in canonical documentation and release manifests; authority modeled via generic positions)
-- **Production Status:** `NOT_EXECUTED / REQUIRES_FRESH_READ_ONLY_VERIFICATION` (Planned rename target unexecuted; historical audit observed legacy `lisa.mt`)
+- **Production Status:** `LATEST_OBSERVATION_SATISFIED`
+  - **HISTORICAL_STATE_BEFORE_GATE_EXECUTION:** Planned rename target unexecuted; historical audit observed legacy `lisa.mt`.
+  - **LATEST_PRODUCTION_OBSERVATION (Gate 3 Preflight):** Read-only preflight audit confirms `musyirfah.putri` is present, `AKTIF`, and linked to Staff `STF-0005`. `lisa.mt` is absent. (Note: Evidence does not claim to prove when or how the historical rename occurred; current production observation confirms canonical target is in place).
 - **Supersedes / Superseded-By:** Supersedes informal references to `lisa.putri`; distinct from legacy placeholder `musyrifah.putri`
 - **Acceptance Criteria:** Target production user record for Ustazah Lisa Dwina Fitri has username `musyirfah.putri` without duplicate identity creation.
 - **Evidence / Reference:** `docs/STQ_CURRENT_STATE.md`, `docs/STQ_M3_RELEASE_MANIFEST.md` REL-STF-02.
@@ -108,7 +110,9 @@ This document serves as the persistent repository registry for authoritative Bus
 - **Canonical Interpretation:** The username `lisa.mt` is classified as a deprecated legacy origin account destined for renaming to `musyirfah.putri`. The rename has **NOT BEEN EXECUTED** in production. `lisa.mt` must not be treated as a permanent target identity or referenced in new feature contracts.
 - **Affected Domain:** IDENTITY / MIGRATION
 - **Implementation Status:** `CODE_COMPLETE` (Classified as legacy origin in release manifests, seed files, and test documentation)
-- **Production Status:** `NOT_EXECUTED / REQUIRES_FRESH_READ_ONLY_VERIFICATION` (Rename not executed; historical audit point-in-time observed `lisa.mt`)
+- **Production Status:** `LATEST_OBSERVATION_OBSOLETE_ABSENT`
+  - **HISTORICAL_STATE_BEFORE_GATE_EXECUTION:** Rename not executed; historical audit point-in-time observed legacy `lisa.mt`.
+  - **LATEST_PRODUCTION_OBSERVATION (Gate 3 Preflight):** Legacy username `lisa.mt` is confirmed absent in production. No active records reference `lisa.mt`.
 - **Supersedes / Superseded-By:** None
 - **Acceptance Criteria:** `lisa.mt` is exclusively used as migration source data; all new capabilities and tests bind to generic roles/positions.
 - **Evidence / Reference:** `types/auth.ts:449`, `prisma/seed.ts:490`, `docs/STQ_M3_RELEASE_MANIFEST.md` REL-ACC-01.
@@ -133,12 +137,14 @@ This document serves as the persistent repository registry for authoritative Bus
 - **Directive ID:** `DIR-2026-004`
 - **Tanggal:** 2026-09-19
 - **Keputusan Business Owner:** Rename production belum dilakukan.
-- **Canonical Interpretation:** Controlled rename from `lisa.mt` to `musyirfah.putri` has NOT been executed in the release train. Status remains `NOT_EXECUTED` (planned for Gate C2C); fresh read-only verification required prior to execution. No system component, test, or documentation may state or assume that production has completed this rename.
+- **Canonical Interpretation:** Controlled rename from `lisa.mt` to `musyirfah.putri` was tracked as pending in the historical release plan. However, fresh read-only observation in Gate 3 preflight confirmed `lisa.mt` is absent and `musyirfah.putri` is already present and active. No claim is made regarding when the rename happened. No system component, test, or documentation may rely on `lisa.mt`.
 - **Affected Domain:** DATABASE / PRODUCTION / RELEASE
-- **Implementation Status:** `TARGET_DESIGNED` (Release control plane tracks this as a pending operational mutation under Gate C2C)
-- **Production Status:** `NOT_EXECUTED / REQUIRES_FRESH_READ_ONLY_VERIFICATION`
+- **Implementation Status:** `TARGET_DESIGNED` (Release control plane tracks identity status)
+- **Production Status:** `SUPERSEDED_BY_OBSERVATION`
+  - **HISTORICAL_STATE_BEFORE_GATE_EXECUTION:** Release train had not executed a controlled rename from `lisa.mt` to `musyirfah.putri`.
+  - **LATEST_PRODUCTION_OBSERVATION (Gate 3 Preflight):** Read-only preflight observation during Gate 3 revealed that `lisa.mt` is absent and `musyirfah.putri` is already present, `AKTIF`, and linked to `STF-0005`. No claim is made regarding when or how the historical rename happened; production no longer contains `lisa.mt`.
 - **Supersedes / Superseded-By:** None
-- **Acceptance Criteria:** Documentation and release manifests truthfully reflect `lisa.mt` as the legacy unrenamed identity until Gate C2C execution (HISTORICAL_OBSERVATION: last known point-in-time).
+- **Acceptance Criteria:** Documentation and release manifests truthfully reflect `lisa.mt` as absent and `musyirfah.putri` as present in latest production observation.
 - **Evidence / Reference:** `docs/STQ_CURRENT_STATE.md`, `docs/STQ_M3_RELEASE_MANIFEST.md` REL-ACC-01.
 
 ---

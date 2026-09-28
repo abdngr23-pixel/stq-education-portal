@@ -10,6 +10,7 @@ import {
   CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT,
   CANONICAL_ASSIGNMENT_ANCHORS,
   GURU_KEPESANTRENAN_POSITION_CONTRACT,
+  CANONICAL_KEPESANTRENAN_TEACHER_MAPPINGS,
   CANONICAL_IDENTITY_RESOLUTION_CONTRACT,
   UAT_ACTIVATION_TARGETS,
 } from "../types/architecture-lock";
@@ -114,6 +115,11 @@ describe("GATE 3 — BLOCKER RESOLUTION CANONICAL RECONCILIATION TEST SUITE", ()
       "OU-STQ-ROOT",
       "GURU_KEPESANTRENAN_POSITION_CONTRACT.assignmentAnchor must be OU-STQ-ROOT"
     );
+    assert.strictEqual(
+      (GURU_KEPESANTRENAN_POSITION_CONTRACT as any).futureAssignmentAnchor,
+      undefined,
+      "futureAssignmentAnchor must be removed to eliminate ambiguous future semantics"
+    );
   });
 
   // =========================================================================
@@ -162,9 +168,9 @@ describe("GATE 3 — BLOCKER RESOLUTION CANONICAL RECONCILIATION TEST SUITE", ()
   });
 
   // =========================================================================
-  // 7. TEACHER MAPPING REMAINS EXACTLY 12 SLOTS
+  // 7. TEACHER MAPPING REMAINS EXACTLY 12 SLOTS & MAPS EXACT CONFIRMED TEACHERS
   // =========================================================================
-  it("7. Teacher mapping remains exactly 12 Kepesantrenan slots (7 Putra + 5 Putri)", () => {
+  it("7. Teacher mapping remains exactly 12 Kepesantrenan slots (7 Putra + 5 Putri) and matches confirmed human teachers", () => {
     assert.strictEqual(
       CANONICAL_TEACHING_ASSIGNMENT_COVERAGE_TARGETS.length,
       12,
@@ -200,6 +206,41 @@ describe("GATE 3 — BLOCKER RESOLUTION CANONICAL RECONCILIATION TEST SUITE", ()
       putriSubjects.sort(),
       ["Aqidah", "Bahasa Arab", "Fikih", "Tafsir", "Tajwid"].sort()
     );
+
+    // Verify declarative CANONICAL_KEPESANTRENAN_TEACHER_MAPPINGS contract (12 confirmed human mappings)
+    assert.strictEqual(
+      CANONICAL_KEPESANTRENAN_TEACHER_MAPPINGS.length,
+      12,
+      "CANONICAL_KEPESANTRENAN_TEACHER_MAPPINGS must contain exactly 12 mappings"
+    );
+
+    const expectedMappings = [
+      { slot: 1, genderComplex: "PUTRA", subjectName: "Bahasa Arab", pedagogicalLevel: "TINGKAT_1", teacherName: "Ust. Abi Hudzaifah" },
+      { slot: 2, genderComplex: "PUTRA", subjectName: "Bahasa Arab", pedagogicalLevel: "TINGKAT_2", teacherName: "Ust. Kamal Mukhtar" },
+      { slot: 3, genderComplex: "PUTRA", subjectName: "Bahasa Arab", pedagogicalLevel: "TINGKAT_3", teacherName: "Ust. Andi Quarzy Ayatullah" },
+      { slot: 4, genderComplex: "PUTRA", subjectName: "Fikih", pedagogicalLevel: null, teacherName: "Ust. Razan Mufli" },
+      { slot: 5, genderComplex: "PUTRA", subjectName: "Tafsir", pedagogicalLevel: null, teacherName: "Ust. Mujaddid Zhohruddin" },
+      { slot: 6, genderComplex: "PUTRA", subjectName: "Aqidah", pedagogicalLevel: null, teacherName: "Ust. Alwan" },
+      { slot: 7, genderComplex: "PUTRA", subjectName: "Tajwid", pedagogicalLevel: null, teacherName: "Ust. Mujaddid Zhohruddin" },
+      { slot: 8, genderComplex: "PUTRI", subjectName: "Bahasa Arab", pedagogicalLevel: null, teacherName: "Ustazah Lisa Dwina Fitri" },
+      { slot: 9, genderComplex: "PUTRI", subjectName: "Fikih", pedagogicalLevel: null, teacherName: "Ustazah Lisa Dwina Fitri" },
+      { slot: 10, genderComplex: "PUTRI", subjectName: "Tafsir", pedagogicalLevel: null, teacherName: "Ustazah Lisa Dwina Fitri" },
+      { slot: 11, genderComplex: "PUTRI", subjectName: "Aqidah", pedagogicalLevel: null, teacherName: "Ustazah Lisa Dwina Fitri" },
+      { slot: 12, genderComplex: "PUTRI", subjectName: "Tajwid", pedagogicalLevel: null, teacherName: "Ustazah Lisa Dwina Fitri" },
+    ];
+
+    for (let i = 0; i < 12; i++) {
+      const actual = CANONICAL_KEPESANTRENAN_TEACHER_MAPPINGS[i];
+      const expected = expectedMappings[i];
+      assert.strictEqual(actual.slot, expected.slot, `Slot ${expected.slot} number must match`);
+      assert.strictEqual(actual.genderComplex, expected.genderComplex, `Slot ${expected.slot} genderComplex must match`);
+      assert.strictEqual(actual.subjectName, expected.subjectName, `Slot ${expected.slot} subjectName must match`);
+      assert.strictEqual(actual.pedagogicalLevel, expected.pedagogicalLevel, `Slot ${expected.slot} pedagogicalLevel must match`);
+      assert.strictEqual(actual.teacherName, expected.teacherName, `Slot ${expected.slot} teacherName must match`);
+      // Zero database User.id hardcoding
+      assert.strictEqual((actual as any).userId, undefined, `Slot ${expected.slot} must not contain hardcoded userId`);
+      assert.strictEqual((actual as any).id, undefined, `Slot ${expected.slot} must not contain hardcoded database ID`);
+    }
   });
 
   // =========================================================================
@@ -413,5 +454,76 @@ describe("GATE 3 — BLOCKER RESOLUTION CANONICAL RECONCILIATION TEST SUITE", ()
       // In case commit is not locally fetched, verify constant assertion
       assert.strictEqual(expectedPr8Head, "9068cae5587b7219c394c5c25bf0de07a15b0726");
     }
+  });
+
+  // =========================================================================
+  // 13. FAIL-CLOSED REGRESSION: ANCHOR VALIDATION FAILS CLOSED ON MISSING/UNRESOLVED UNIT CONTEXT
+  // =========================================================================
+  it("13. Anchor validation fails closed when unit context is missing or unresolved", async () => {
+    // Test A: MUDIR assignment with null unit must fail closed
+    const mockDbMissingUnit = {
+      assignment: {
+        findMany: async () => [
+          {
+            id: "asg-mudir-no-unit",
+            userId: "u-mudir",
+            positionId: "pos-mudir",
+            positionCode: "MUDIR",
+            status: "ACTIVE",
+            validFrom: new Date(Date.now() - 86400000),
+            validUntil: null,
+            unitId: null,
+            unit: null,
+            position: { id: "pos-mudir", code: "MUDIR", isActive: true, requiresPersonalAccount: true },
+            user: { id: "u-mudir", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-1" },
+          },
+        ],
+      },
+      staff: { findMany: async () => [{ id: "stf-1", status: "AKTIF" }] },
+      orgUnit: { findMany: async () => [{ id: "ou-root", code: "OU-STQ-ROOT", isActive: true }] },
+      position: { findMany: async () => [{ id: "pos-mudir", code: "MUDIR", isActive: true }] },
+    };
+
+    const reportNoUnit = await checkPendidikanV2ProductionReadiness(mockDbMissingUnit as any);
+    const gate8NoUnit = reportNoUnit.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+    assert.ok(gate8NoUnit, "Gate 8 must be present");
+    assert.strictEqual(gate8NoUnit.status, "NOT_READY", "Must fail closed (NOT_READY) when unit is null");
+    assert.ok(
+      gate8NoUnit.details.includes("missing or unresolved anchor unit context (expected OU-STQ-ROOT)"),
+      "Must explicitly report missing or unresolved anchor unit context"
+    );
+
+    // Test B: KABID_TAHFIZH assignment with undefined unit.code must fail closed
+    const mockDbMissingUnitCode = {
+      assignment: {
+        findMany: async () => [
+          {
+            id: "asg-kabid-no-code",
+            userId: "u-kabid",
+            positionId: "pos-kabid",
+            positionCode: "KABID_TAHFIZH",
+            status: "ACTIVE",
+            validFrom: new Date(Date.now() - 86400000),
+            validUntil: null,
+            unitId: "ou-tahfizh",
+            unit: { id: "ou-tahfizh" }, // missing code
+            position: { id: "pos-kabid", code: "KABID_TAHFIZH", isActive: true, requiresPersonalAccount: true },
+            user: { id: "u-kabid", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-2" },
+          },
+        ],
+      },
+      staff: { findMany: async () => [{ id: "stf-2", status: "AKTIF" }] },
+      orgUnit: { findMany: async () => [{ id: "ou-tahfizh", code: "OU-TAHFIZH", isActive: true }] },
+      position: { findMany: async () => [{ id: "pos-kabid", code: "KABID_TAHFIZH", isActive: true }] },
+    };
+
+    const reportNoCode = await checkPendidikanV2ProductionReadiness(mockDbMissingUnitCode as any);
+    const gate8NoCode = reportNoCode.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+    assert.ok(gate8NoCode, "Gate 8 must be present");
+    assert.strictEqual(gate8NoCode.status, "NOT_READY", "Must fail closed (NOT_READY) when unit.code is missing");
+    assert.ok(
+      gate8NoCode.details.includes("missing or unresolved anchor unit context (expected OU-TAHFIZH)"),
+      "Must explicitly report missing or unresolved anchor unit context for KABID_TAHFIZH"
+    );
   });
 });

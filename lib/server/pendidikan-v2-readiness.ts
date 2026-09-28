@@ -1001,10 +1001,20 @@ export async function checkPendidikanV2ProductionReadiness(
         if (code) {
           // Explicit Anchor Validation (DIR-2026-030)
           const expectedAnchor = (CANONICAL_ASSIGNMENT_ANCHORS as Record<string, string>)[code];
-          if (expectedAnchor && unit && unit.code) {
-            if (unit.code !== expectedAnchor) {
-              assignmentIssues.push(`Assignment ${a.id} for ${code}: anchor unit code is ${unit.code}, expected approved anchor ${expectedAnchor}`);
+          if (expectedAnchor) {
+            if (a.unit === null || (!a.unit && !a.unitId)) {
+              assignmentIssues.push(`Assignment ${a.id} for ${code}: missing or unresolved anchor unit context (expected ${expectedAnchor})`);
               continue;
+            }
+            if (unit) {
+              if (!unit.code || unit.code.trim() === "") {
+                assignmentIssues.push(`Assignment ${a.id} for ${code}: missing or unresolved anchor unit context (expected ${expectedAnchor})`);
+                continue;
+              }
+              if (unit.code !== expectedAnchor) {
+                assignmentIssues.push(`Assignment ${a.id} for ${code}: anchor unit code is ${unit.code}, expected approved anchor ${expectedAnchor}`);
+                continue;
+              }
             }
           }
           coveredCodes.add(code);

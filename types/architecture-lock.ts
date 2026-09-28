@@ -756,7 +756,6 @@ export const GURU_KEPESANTRENAN_POSITION_CONTRACT = {
   isLeadership: false as const,
   allowedUnitTypes: ["INSTITUTION"] as const,
   assignmentAnchor: "OU-STQ-ROOT" as const,
-  futureAssignmentAnchor: "OU-STQ-ROOT" as const,
   targetCapabilities: [
     "academic.schedule.read",
     "academic.session.start",
@@ -765,6 +764,102 @@ export const GURU_KEPESANTRENAN_POSITION_CONTRACT = {
   ] as const,
   scopeType: "GLOBAL" as const,
 } as const;
+
+/**
+ * Canonical Teacher Mapping Contract for Kepesantrenan Subjects (12 Slots)
+ * Per Level-0 Owner Directive DIR-2026-028 & DIR-2026-030.
+ * Declarative contract mapping confirmed human teacher names to exact curriculum slots.
+ * ZERO production database IDs or User.id hardcoding.
+ * Teacher identities are resolved at runtime via Staff/Assignment linkage, NOT static username keys.
+ */
+export const CANONICAL_KEPESANTRENAN_TEACHER_MAPPINGS = [
+  // PUTRA SLOTS (7)
+  {
+    slot: 1,
+    genderComplex: "PUTRA" as const,
+    subjectName: "Bahasa Arab" as const,
+    pedagogicalLevel: "TINGKAT_1" as const,
+    teacherName: "Ust. Abi Hudzaifah" as const,
+  },
+  {
+    slot: 2,
+    genderComplex: "PUTRA" as const,
+    subjectName: "Bahasa Arab" as const,
+    pedagogicalLevel: "TINGKAT_2" as const,
+    teacherName: "Ust. Kamal Mukhtar" as const,
+  },
+  {
+    slot: 3,
+    genderComplex: "PUTRA" as const,
+    subjectName: "Bahasa Arab" as const,
+    pedagogicalLevel: "TINGKAT_3" as const,
+    teacherName: "Ust. Andi Quarzy Ayatullah" as const,
+  },
+  {
+    slot: 4,
+    genderComplex: "PUTRA" as const,
+    subjectName: "Fikih" as const,
+    pedagogicalLevel: null,
+    teacherName: "Ust. Razan Mufli" as const,
+  },
+  {
+    slot: 5,
+    genderComplex: "PUTRA" as const,
+    subjectName: "Tafsir" as const,
+    pedagogicalLevel: null,
+    teacherName: "Ust. Mujaddid Zhohruddin" as const,
+  },
+  {
+    slot: 6,
+    genderComplex: "PUTRA" as const,
+    subjectName: "Aqidah" as const,
+    pedagogicalLevel: null,
+    teacherName: "Ust. Alwan" as const,
+  },
+  {
+    slot: 7,
+    genderComplex: "PUTRA" as const,
+    subjectName: "Tajwid" as const,
+    pedagogicalLevel: null,
+    teacherName: "Ust. Mujaddid Zhohruddin" as const,
+  },
+  // PUTRI SLOTS (5)
+  {
+    slot: 8,
+    genderComplex: "PUTRI" as const,
+    subjectName: "Bahasa Arab" as const,
+    pedagogicalLevel: null,
+    teacherName: "Ustazah Lisa Dwina Fitri" as const,
+  },
+  {
+    slot: 9,
+    genderComplex: "PUTRI" as const,
+    subjectName: "Fikih" as const,
+    pedagogicalLevel: null,
+    teacherName: "Ustazah Lisa Dwina Fitri" as const,
+  },
+  {
+    slot: 10,
+    genderComplex: "PUTRI" as const,
+    subjectName: "Tafsir" as const,
+    pedagogicalLevel: null,
+    teacherName: "Ustazah Lisa Dwina Fitri" as const,
+  },
+  {
+    slot: 11,
+    genderComplex: "PUTRI" as const,
+    subjectName: "Aqidah" as const,
+    pedagogicalLevel: null,
+    teacherName: "Ustazah Lisa Dwina Fitri" as const,
+  },
+  {
+    slot: 12,
+    genderComplex: "PUTRI" as const,
+    subjectName: "Tajwid" as const,
+    pedagogicalLevel: null,
+    teacherName: "Ustazah Lisa Dwina Fitri" as const,
+  },
+] as const;
 
 /**
  * Declarative UAT Activation Target Policy Manifest (M3.3C1)
