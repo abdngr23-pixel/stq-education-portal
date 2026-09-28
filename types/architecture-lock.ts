@@ -755,7 +755,7 @@ export const GURU_KEPESANTRENAN_POSITION_CONTRACT = {
   requiresPersonalAccount: true as const,
   isLeadership: false as const,
   allowedUnitTypes: ["INSTITUTION"] as const,
-  futureAssignmentAnchor: "OU-STQ-ROOT" as const,
+  assignmentAnchor: "OU-STQ-ROOT" as const,
   targetCapabilities: [
     "academic.schedule.read",
     "academic.session.start",
@@ -764,6 +764,102 @@ export const GURU_KEPESANTRENAN_POSITION_CONTRACT = {
   ] as const,
   scopeType: "GLOBAL" as const,
 } as const;
+
+/**
+ * Canonical Teacher Mapping Contract for Kepesantrenan Subjects (12 Slots)
+ * Per Level-0 Owner Directive DIR-2026-031 (and DIR-2026-028 where relevant to teacher modality).
+ * Declarative contract mapping confirmed human teacher names to exact curriculum slots.
+ * ZERO production database IDs or User.id hardcoding.
+ * Teacher identities are resolved at runtime via Staff/Assignment linkage, NOT static username keys.
+ */
+export const CANONICAL_KEPESANTRENAN_TEACHER_MAPPINGS = [
+  // PUTRA SLOTS (7)
+  {
+    slot: 1,
+    genderComplex: "PUTRA" as const,
+    subjectName: "Bahasa Arab" as const,
+    pedagogicalLevel: "TINGKAT_1" as const,
+    teacherName: "Ust. Abi Hudzaifah" as const,
+  },
+  {
+    slot: 2,
+    genderComplex: "PUTRA" as const,
+    subjectName: "Bahasa Arab" as const,
+    pedagogicalLevel: "TINGKAT_2" as const,
+    teacherName: "Ust. Kamal Mukhtar" as const,
+  },
+  {
+    slot: 3,
+    genderComplex: "PUTRA" as const,
+    subjectName: "Bahasa Arab" as const,
+    pedagogicalLevel: "TINGKAT_3" as const,
+    teacherName: "Ust. Andi Quarzy Ayatullah" as const,
+  },
+  {
+    slot: 4,
+    genderComplex: "PUTRA" as const,
+    subjectName: "Fikih" as const,
+    pedagogicalLevel: null,
+    teacherName: "Ust. Razan Mufli" as const,
+  },
+  {
+    slot: 5,
+    genderComplex: "PUTRA" as const,
+    subjectName: "Tafsir" as const,
+    pedagogicalLevel: null,
+    teacherName: "Ust. Mujaddid Zhohruddin" as const,
+  },
+  {
+    slot: 6,
+    genderComplex: "PUTRA" as const,
+    subjectName: "Aqidah" as const,
+    pedagogicalLevel: null,
+    teacherName: "Ust. Alwan" as const,
+  },
+  {
+    slot: 7,
+    genderComplex: "PUTRA" as const,
+    subjectName: "Tajwid" as const,
+    pedagogicalLevel: null,
+    teacherName: "Ust. Mujaddid Zhohruddin" as const,
+  },
+  // PUTRI SLOTS (5)
+  {
+    slot: 8,
+    genderComplex: "PUTRI" as const,
+    subjectName: "Bahasa Arab" as const,
+    pedagogicalLevel: null,
+    teacherName: "Ustazah Lisa Dwina Fitri" as const,
+  },
+  {
+    slot: 9,
+    genderComplex: "PUTRI" as const,
+    subjectName: "Fikih" as const,
+    pedagogicalLevel: null,
+    teacherName: "Ustazah Lisa Dwina Fitri" as const,
+  },
+  {
+    slot: 10,
+    genderComplex: "PUTRI" as const,
+    subjectName: "Tafsir" as const,
+    pedagogicalLevel: null,
+    teacherName: "Ustazah Lisa Dwina Fitri" as const,
+  },
+  {
+    slot: 11,
+    genderComplex: "PUTRI" as const,
+    subjectName: "Aqidah" as const,
+    pedagogicalLevel: null,
+    teacherName: "Ustazah Lisa Dwina Fitri" as const,
+  },
+  {
+    slot: 12,
+    genderComplex: "PUTRI" as const,
+    subjectName: "Tajwid" as const,
+    pedagogicalLevel: null,
+    teacherName: "Ustazah Lisa Dwina Fitri" as const,
+  },
+] as const;
 
 /**
  * Declarative UAT Activation Target Policy Manifest (M3.3C1)
@@ -846,4 +942,66 @@ export const POSITION_ACCOUNT_MODALITY_CONTRACT: Record<string, AccountType> = {
   KABID_TAHFIZH: "PERSONAL",
   MUSYRIF_TAHFIZH: "PERSONAL",
   PETUGAS_OPERASIONAL_TAHFIZH: "PERSONAL",
+} as const;
+
+/**
+ * Canonical Institutional and Domain Hierarchy Contract (Gate 3 Blocker Resolution)
+ * Defines declarative structure approved by Business Owner (DIR-2026-030).
+ * Strictly non-production-writing — architecture contract only.
+ */
+export const CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT = {
+  STQ_ROOT: {
+    code: "OU-STQ-ROOT" as const,
+    name: "STQ Darul Ulum Cendekia" as const,
+    type: "INSTITUTION" as const,
+    domain: "INSTITUTIONAL" as const,
+    parentId: null,
+    genderComplex: "TIDAK_TERIKAT" as const,
+  },
+  TAHFIZH_DOMAIN: {
+    code: "OU-TAHFIZH" as const,
+    name: "Tahfizh" as const,
+    type: "DOMAIN" as const,
+    domain: "TAHFIZH" as const,
+    parentId: "OU-STQ-ROOT" as const,
+    genderComplex: "TIDAK_TERIKAT" as const,
+  },
+} as const;
+
+/**
+ * Approved Canonical Assignment Anchor Contract (DIR-2026-030)
+ * Binds positions to approved target anchor units.
+ * Authoritative assignment mapping without hardcoded usernames.
+ */
+export const CANONICAL_ASSIGNMENT_ANCHORS = {
+  MUDIR: "OU-STQ-ROOT" as const,
+  KABID_TAHFIZH: "OU-TAHFIZH" as const,
+  GURU_KEPESANTRENAN: "OU-STQ-ROOT" as const,
+} as const;
+
+/**
+ * Canonical Identity Resolution Contract (Gate 3 Blocker Resolution, DIR-2026-032 & DIR-2026-033)
+ * Distinguishes canonical active accounts from legacy placeholders and duplicate technical accounts.
+ * Usernames are identity labels ONLY; they NEVER confer authorization.
+ */
+export const CANONICAL_IDENTITY_RESOLUTION_CONTRACT = {
+  LISA_DWINA_FITRI: {
+    canonicalAccount: "musyirfah.putri" as const,
+    staffCode: "STF-0005" as const,
+    role: "MT" as const,
+    status: "AKTIF" as const,
+    accountType: "PERSONAL" as const,
+    duplicateLegacyAccount: "musyrifah.putri" as const,
+    duplicateLegacyTargetStatus: "SUSPENDED" as const,
+    hardDeleteAllowed: false as const,
+    mergeAllowed: false as const,
+  },
+  PEMBINA_HALAQOH_PLACEHOLDER: {
+    legacyAccount: "pembina.halaqoh" as const,
+    role: "PH" as const,
+    accountType: "PERSONAL" as const,
+    targetStatus: "SUSPENDED" as const,
+    hardDeleteAllowed: false as const,
+    staffLinkageAllowed: false as const,
+  },
 } as const;

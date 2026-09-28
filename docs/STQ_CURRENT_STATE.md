@@ -82,8 +82,16 @@ All commit SHAs recorded below are verified historical checkpoints, not self-upd
   - Post-merge CI run: SUCCESS
   - Classification: `PR31_PRE_GATE_RECONCILIATION_MERGED_AND_VERIFIED`
 
+- **PR #32 Gate 2 Remediation verified checkpoint:**
+  `cc4ac049402be0b566dad594ac0e5a92de253603`
+  (Merge commit for PR #32: `fix(gate2): reconcile NilaiAkademik guruId foreign key to RESTRICT`)
+  - PR #32 state: MERGED
+  - Merge commit: `cc4ac049402be0b566dad594ac0e5a92de253603`
+  - Post-merge CI run: SUCCESS
+  - Classification: `GATE2_REMEDIATION_MERGED_AND_VERIFIED`
+
 - **Verified live main base:**
-  `efc4a5d3694c5aac46435e37e5889d61b9164b70`
+  `cc4ac049402be0b566dad594ac0e5a92de253603`
 
 ---
 
@@ -155,19 +163,29 @@ PR #8 itself was NOT merged and remains:
 
 ## 4. Release Lifecycle Status & Operational Boundaries
 
-### Current Lifecycle Progress:
+### HISTORICAL_STATE_BEFORE_GATE_EXECUTION:
 - **PRE-GATE**: COMPLETED (PR #31 merged)
-- **Gate 0 (Real Production Backup & T0 Snapshot)**: COMPLETED / PASS (Verified dump `STQ_PRODUCTION_T0.sql`, SHA-256 `9122580c59bbd7c48804bba10e8b2307b141197dc479d8b101ab6a428c9cfa7b`)
-- **Gate 1 (Conditional Production Migration)**: COMPLETED / PASS / NO-OP (All 11 migrations already applied with 100% checksum parity, zero writes performed)
+- **Gate 0 (Real Production Backup & T0 Snapshot)**: PENDING
+- **Gate 1 (Conditional Production Migration)**: PENDING
 - **Gate 2 (Post-Migration Schema Reconciliation)**: BLOCKED (Blocked by confirmed `nilai_akademik_guru_id_fkey` referential action drift; migration history classified as `BASELINED_INCREMENTAL_HISTORY`)
-- **Current Task**: Gate 2 Remediation PR — CODE ONLY (`fix/gate2-nilai-akademik-fk-remediation`)
-- **Remediation Migration**: `20260928070000_gate2_nilai_akademik_guru_fk_reconciliation` staged in code only (NOT applied to production)
-- **Gate 3**: BLOCKED / NOT AUTHORIZED
+
+### CURRENT_VERIFIED_GATE_STATUS:
+- **Gate 0 (Real Production Backup & T0 Snapshot)**: CLOSED (Verified backup dump `STQ_PRODUCTION_T0.sql`, SHA-256 `9122580c59bbd7c48804bba10e8b2307b141197dc479d8b101ab6a428c9cfa7b`)
+- **Gate 1 (Conditional Production Migration)**: CLOSED (All 11 migrations verified applied with 100% checksum parity, zero writes performed)
+- **Gate 2 (Post-Migration Schema Reconciliation)**: CLOSED (Remediation Migration `20260928070000_gate2_nilai_akademik_guru_fk_reconciliation` merged in PR #32, deployed and reverified with zero drift)
+- **Gate 3 (Production Provisioning & Canonical Reconciliation)**: PARTIAL / IN PROGRESS (Partial provisioning executed in production batch; canonical blocker reconciliation staged in code PR #33; production completion pending owner authorization)
+
+### LATEST_PRODUCTION_OBSERVATION (Gate 3 Preflight Identity Audit):
+- `lisa.mt`: ABSENT
+- `musyirfah.putri`: PRESENT / AKTIF / STF-0005 (canonical active account for Ustazah Lisa)
+- `musyrifah.putri`: PRESENT / AKTIF / no Staff (target SUSPENDED per DIR-2026-033, not yet executed in production)
+- `pembina.halaqoh`: PRESENT / target SUSPENDED per DIR-2026-032, not yet executed in production
+*(Note: Current evidence confirms `lisa.mt` is absent and `musyirfah.putri` is present; no claim is made regarding when or how the historical rename occurred).*
 
 ### Operational Boundaries:
-- Zero production access during remediation PR tasks.
-- No production migration deploy without explicit separate Business Owner authorization.
-- Gate 3 remains strictly unauthorized.
+- Zero production database access during PR #33 code/documentation reconciliation.
+- PR #33 executes zero production writes.
+- Gate 3 production completion and Gate 4 remain strictly unauthorized pending separate explicit Business Owner command.
 
 ---
 
@@ -302,6 +320,39 @@ A newer explicit Business Owner decision has SUPERSEDED the previous assumption 
 - `RAZAN_MT_STAFF_LINKAGE = PROHIBITED`
 - `KABID_TAHFIZH_ACCOUNT_OWNER_DESIGNATION = musyrif.tahifzh`
 - `RAZAN_MT_DECOMMISSION_EXECUTION = NOT_STARTED`
+
+### C. Current Business Owner Decision — `pembina.halaqoh` Legacy Placeholder Account (DIR-2026-032)
+- **Account classification:** `LEGACY_ACCOUNT_WITH_REPLACEMENT`.
+- **Target state:** `SUSPENDED`.
+- **Staff linkage:** `PROHIBITED` (do NOT create artificial Staff profile).
+- **Hard delete guard:** `PROHIBITED` (preserve historical records).
+- **Execution state:** `PENDING_CONTROLLED_PROVISIONING` (Zero writes executed in this PR).
+
+### D. Current Business Owner Decision — Ustazah Lisa Duplicate Account Resolution (DIR-2026-033)
+- **Account identity separation:**
+  - `musyirfah.putri`: Canonical active account for Ustazah Lisa Dwina Fitri (linked to `STF-0005`, Halaqoh leader).
+  - `musyrifah.putri`: Duplicate legacy technical account belonging to same human; target status = `SUSPENDED`.
+- **Invariants:**
+  - Distinct `User` rows in DB (`musyirfah.putri != musyrifah.putri`).
+  - Do NOT merge User IDs.
+  - Do NOT move Staff linkage to duplicate.
+  - Do NOT hard delete duplicate.
+  - No username grants authorization.
+- **Execution state:** `PENDING_CONTROLLED_PROVISIONING`.
+
+### E. Current Business Owner Decision — Institutional & Domain Unit Anchors (DIR-2026-030)
+- **Single Institutional Root:** `OU-STQ-ROOT` (`STQ Darul Ulum Cendekia`, type: `INSTITUTION`, domain: `INSTITUTIONAL`, parent: `null`).
+- **Tahfizh Domain Unit:** `OU-TAHFIZH` (`Tahfizh`, type: `DOMAIN`, domain: `TAHFIZH`, parent: `OU-STQ-ROOT`).
+- **Assignment Anchors:**
+  - `MUDIR` -> `OU-STQ-ROOT`
+  - `KABID_TAHFIZH` -> `OU-TAHFIZH`
+  - `GURU_KEPESANTRENAN` -> `OU-STQ-ROOT`
+- **Supersedence:** `OU-INSTITUTION` proposed anchor is formally superseded.
+
+### F. Current Business Owner Decision — Reaffirmation of 12 Kepesantrenan Teacher Slots (DIR-2026-031)
+- **Putra (7 slots):** Bahasa Arab T1 (Ust. Abi Hudzaifah), T2 (Ust. Kamal Mukhtar), T3 (Ust. Andi Quarzy Ayatullah), Fikih (Ust. Razan Mufli), Tafsir (Ust. Mujaddid Zhohruddin), Aqidah (Ust. Alwan), Tajwid (Ust. Mujaddid Zhohruddin).
+- **Putri (5 slots):** Bahasa Arab, Fikih, Tafsir, Aqidah, Tajwid (all 5 taught by Ustazah Lisa Dwina Fitri).
+- **Multi-slot:** Ust. Mujaddid (2 slots), Ustazah Lisa (5 slots). Zero invented teachers.
 
 Production linkage or mutation is a WRITE and requires explicit authorization. Do not silently repair.
 
@@ -514,8 +565,15 @@ Completed Code Milestones:
 - GURU_KEPESANTRENAN Contract (PR #29) ✅
 - Keasramaan Runtime Remediation (PR #30) ✅
 
-Current lifecycle point: **PRE-GATE CANONICAL REPOSITORY RECONCILIATION**.
-PR #29 and PR #30 code hardening ("Gate 5 remediation") do NOT constitute execution of Release Gate 5. Production actions = 0.
+Current lifecycle point:
+- **PRE-GATE**: CLOSED
+- **GATE 0**: CLOSED
+- **GATE 1**: CLOSED
+- **GATE 2**: CLOSED
+- **GATE 3**: PARTIAL / IN PROGRESS (Code and docs reconciled in PR #33; production execution pending explicit owner authorization)
+- **GATE 4**: NOT STARTED
+
+*(Historical note: Historical pre-gate hardening in PR #29 and PR #30 did not constitute execution of Release Gate 5; production actions at that milestone were 0).*
 
 ### Sequential Release Gate Model (Gates 0–9)
 Per DIR-2026-029, the official sequential release gate model is:
@@ -525,22 +583,25 @@ Per DIR-2026-029, the official sequential release gate model is:
   - Snapshot workbook: `STQ_PRODUCTION_SNAPSHOT_T0.xlsx` generated from restored-T0 with EXACTLY 15 required sheets:
     1. Manifest, 2. Santri, 3. User, 4. Staff, 5. Halaqoh, 6. SetoranTahfizh, 7. TargetSantri, 8. PerizinanSantri, 9. PelanggaranSantri, 10. MataPelajaran, 11. NilaiAkademik, 12. Assignments, 13. PositionCapabilities, 14. OrgUnits, 15. PrismaMigrations.
   - Zero secrets/credentials.
-  - Status: **NOT_EXECUTED / PENDING_EXPLICIT_OWNER_AUTHORIZATION**
+  - Historical status before execution: NOT_EXECUTED / PENDING_EXPLICIT_OWNER_AUTHORIZATION
+  - Current verified gate status: CLOSED (Verified dump `STQ_PRODUCTION_T0.sql`, SHA-256 `9122580c59bbd7c48804bba10e8b2307b141197dc479d8b101ab6a428c9cfa7b`)
 
 - **Gate 1 — Production Migrations**:
   - `REPOSITORY_MIGRATION_CHAIN`: Rantai migrasi repository yang valid dalam lingkup gate ini (secara berurutan):
     1. `20260918120000_m3_3a_health_v2_backend`
     2. `20260918140000_m3_3b_pendidikan_foundation`
     3. `20260920080000_prelaunch_reconciliation`
-  - `PRODUCTION_APPLIED_OR_PENDING_STATE = NOT_VERIFIED_BY_THIS_TASK / REQUIRES_FRESH_READ_ONLY_VERIFICATION_AT_AUTHORIZED_GATE`
-  - Batasan Deployment: `prisma migrate deploy` adalah langkah rilis masa depan yang sepenuhnya bersyarat pada otorisasi Gate 1 dan penyelesaian Gate 0. Task remediasi ini TIDAK melakukan akses/verifikasi status produksi dan TIDAK menjalankan deploy/migrasi ke produksi.
-  - Status: **BLOCKED / NOT_STARTED**
+  - Historical status before execution: BLOCKED / NOT_STARTED
+  - Current verified gate status: CLOSED (All 11 migrations verified applied with 100% checksum parity, zero writes performed)
 
 - **Gate 2 — Post-Migration Schema Reconciliation**:
   - Read-only catalog inspection verifying tables, columns, indexes, and enums against Prisma schema.
+  - Historical status: BLOCKED (by confirmed `nilai_akademik_guru_id_fkey` referential action drift)
+  - Current verified gate status: CLOSED (Migration 12 `20260928070000_gate2_nilai_akademik_guru_fk_reconciliation` merged in PR #32, deployed and reverified with zero drift)
 
 - **Gate 3 — Foundation & Controlled Provisioning**:
   - Provisioning canonical subjects, cohorts, OrgUnits, Positions, Capabilities, PositionCapabilities, Staff linkages, Assignments, ScopeUnits, and teaching assignments.
+  - Current verified gate status: PARTIAL / IN PROGRESS (Partial provisioning executed in production batch; remaining canonical blockers reconciled in code PR #33; production completion pending owner authorization)
 
 - **Gate 4 — Post-Provision Reconciliation**:
   - Verification of data integrity, assignment bounds, and account states.
@@ -562,24 +623,36 @@ Per DIR-2026-029, the official sequential release gate model is:
 
 ---
 
-## 18. Gate Status Before Gate 1 (Production Migrations)
+## 18. Gate Status & Execution Lifecycle Tracking
 
+### HISTORICAL_STATE_BEFORE_GATE_EXECUTION:
+At initial preflight audit:
 1. PR #8 migration-ledger/schema reconciliation independently audited = SATISFIED (PR #23)
-2. PRE-GATE Canonical Repository Reconciliation = CURRENT TASK
+2. PRE-GATE Canonical Repository Reconciliation = COMPLETED (PR #31)
 3. Real production backup + SHA-256 + isolated restore (Gate 0) = NOT EXECUTED / BLOCKED
 4. Gate 0 snapshot workbook (`STQ_PRODUCTION_SNAPSHOT_T0.xlsx`) = NOT CREATED / BLOCKED
 5. Separate explicit Business Owner authorization for Gate 0 and Gate 1 = NOT GRANTED
-6. Verifikasi status migrasi produksi (`PRODUCTION_APPLIED_OR_PENDING_STATE`) = NOT_VERIFIED_BY_THIS_TASK / REQUIRES_FRESH_READ_ONLY_VERIFICATION_AT_AUTHORIZED_GATE
+6. Initial gate status at that point in time:
+   - `GATE 0 = NOT_EXECUTED`
+   - `GATE 1 = BLOCKED`
 
-Therefore:
-`GATE 0 = NOT_EXECUTED`
-`GATE 1 = BLOCKED`
+### CURRENT_VERIFIED_GATE_STATUS:
+- `GATE 0 = CLOSED` (Real production backup and T0 snapshot completed & verified)
+- `GATE 1 = CLOSED` (11 migrations verified applied with 100% parity, zero write)
+- `GATE 2 = CLOSED` (Migration 12 deployed and schema foreign key reconciled in PR #32)
+- `GATE 3 = PARTIAL / IN PROGRESS` (Partial provisioning completed; canonical blockers reconciled in code PR #33; production completion pending authorization)
 
 ---
 
 ## 19. Owner Directive Registry & Acceptance Checkpoint
 
 - **Existence of Owner Directive Registry & Source Map**: Canonical registry established at `docs/STQ_OWNER_DIRECTIVES.md` and foundational provenance map at `docs/STQ_REQUIREMENT_SOURCE_MAP.md` as the persistent repository source-of-truth for Level 0 Business Owner directives. Conversational memory of coding agents is not a source of truth. Current reconciliation covers Structure/Identity/Auth, Tahfizh, Keasramaan, and Pendidikan; other domains remain deferred.
-- **Identity Rename Status (`lisa.mt` $\rightarrow$ `musyirfah.putri`)**: `lisa.mt -> musyirfah.putri` = approved rename target, NOT EXECUTED. HISTORICAL_OBSERVATION (last known point-in-time): database retains unrenamed `lisa.mt`; rename requires fresh read-only verification and controlled execution at Gate C2C.
+- **Identity Rename Status (`lisa.mt` $\rightarrow$ `musyirfah.putri`)**:
+  - **HISTORICAL_STATE_BEFORE_GATE_EXECUTION:** Planned rename target unexecuted; historical audit noted database retained `lisa.mt`.
+  - **CURRENT_VERIFIED_GATE_STATUS / LATEST_PRODUCTION_OBSERVATION:**
+    - `lisa.mt`: ABSENT
+    - `musyirfah.putri`: PRESENT / AKTIF / STF-0005 (canonical active account for Ustazah Lisa)
+    - `musyrifah.putri`: PRESENT / AKTIF / no Staff (target SUSPENDED per DIR-2026-033, not yet executed in production)
+    *(Note: Current evidence confirms `lisa.mt` is absent and `musyirfah.putri` is present; no claim is made regarding when or how the historical rename occurred).*
 - **12-Point Owner Acceptance Matrix**: The 12-point acceptance matrix remains partially incomplete (Code: partially complete across several areas, e.g. search UI display requires cleanup, legacy server actions lack ABAC scope enforcement; Production: NOT_LIVE / REQUIRES_FRESH_READ_ONLY_VERIFICATION across unmigrated/unseeded items).
 - **Zero Production Write**: Zero production write from this documentation work. Production remains strictly read-only.

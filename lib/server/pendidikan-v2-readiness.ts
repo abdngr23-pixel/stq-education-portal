@@ -15,7 +15,10 @@ import {
   OSDA_PUTRI_UNIT_CONTRACT,
   UAT_ACTIVATION_TARGETS,
   ResolvedResourceContext,
+  CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT,
+  CANONICAL_ASSIGNMENT_ANCHORS,
 } from "@/types/architecture-lock";
+export { CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT, CANONICAL_ASSIGNMENT_ANCHORS };
 import { CANONICAL_POSITION_CODES } from "@/lib/auth/compatibility";
 import {
   authorizeCanonical,
@@ -180,9 +183,12 @@ export const CANONICAL_READINESS_GATE_NAMES = [
 ] as const;
 
 /**
- * Required OrgUnits derived programmatically from canonical contract constants
+ * Required OrgUnits derived programmatically from canonical contract constants.
+ * Includes approved institutional root, domain anchor, and operational units.
  */
 export const CANONICAL_REQUIRED_ORG_UNIT_CODES = [
+  CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.STQ_ROOT.code,
+  CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.TAHFIZH_DOMAIN.code,
   OSDA_STRUCTURE_CONTRACT.NODE.code,
   OSDA_PUTRI_UNIT_CONTRACT.NODE.code,
   TKS_STRUCTURE_CONTRACT.NODE.code,
@@ -813,16 +819,92 @@ export async function checkPendidikanV2ProductionReadiness(
     gates.push({ gate: "STAFF_LINKAGE_READY", status: "NOT_READY", details: String(err) });
   }
 
-  // Gate 5: Required OrgUnits Exist (Approved Canonical Contracts from Architecture Lock / M3.1)
+  // Gate 5: Required OrgUnits Exist & Meet Canonical Attributes (Approved Canonical Contracts from Architecture Lock / M3.1 / DIR-2026-030)
   try {
     if (db.orgUnit) {
       const units = await db.orgUnit.findMany();
-      const unitCodes = new Set(units.map((u) => u.code));
-      const missing = CANONICAL_REQUIRED_ORG_UNIT_CODES.filter((c) => !unitCodes.has(c));
-      if (missing.length === 0) {
-        gates.push({ gate: "REQUIRED_ORG_UNITS_READY", status: "READY", details: "All required organizational units exist" });
+      const unitMapByCode = new Map(units.map((u) => [u.code, u]));
+      const unitMapById = new Map(units.filter((u) => u.id).map((u) => [u.id, u]));
+
+      const issues: string[] = [];
+
+      // 1. Check all required codes exist
+      const missing = CANONICAL_REQUIRED_ORG_UNIT_CODES.filter((c) => !unitMapByCode.has(c));
+      if (missing.length > 0) {
+        issues.push(`Missing required OrgUnits: ${missing.join(", ")}`);
+      }
+
+      // 2. Check each required unit for active status
+      for (const code of CANONICAL_REQUIRED_ORG_UNIT_CODES) {
+        const u = unitMapByCode.get(code);
+        if (!u) continue; // reported in missing
+        if (u.isActive === false) {
+          issues.push(`Required OrgUnit ${code} is inactive`);
+        }
+      }
+
+      // 3. Strict canonical attribute validation for OU-STQ-ROOT
+      const stqRoot = unitMapByCode.get(CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.STQ_ROOT.code);
+      if (stqRoot) {
+        const expectedType = CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.STQ_ROOT.type;
+        const expectedDomain = CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.STQ_ROOT.domain;
+        if (stqRoot.type !== expectedType) {
+          issues.push(`${stqRoot.code} wrong type: got ${stqRoot.type}, expected ${expectedType}`);
+        }
+        if (stqRoot.domain !== expectedDomain) {
+          issues.push(`${stqRoot.code} wrong domain: got ${stqRoot.domain}, expected ${expectedDomain}`);
+        }
+        if (stqRoot.parentId !== null && stqRoot.parentId !== undefined && stqRoot.parentId !== "") {
+          issues.push(`${stqRoot.code} wrong parent: got ${stqRoot.parentId}, expected null`);
+        }
+      }
+
+      // 4. Strict canonical attribute validation for OU-TAHFIZH
+      const tahfizh = unitMapByCode.get(CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.TAHFIZH_DOMAIN.code);
+      if (tahfizh) {
+        const expectedType = CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.TAHFIZH_DOMAIN.type;
+        const expectedDomain = CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.TAHFIZH_DOMAIN.domain;
+        if (tahfizh.type !== expectedType) {
+          issues.push(`${tahfizh.code} wrong type: got ${tahfizh.type}, expected ${expectedType}`);
+        }
+        if (tahfizh.domain !== expectedDomain) {
+          issues.push(`${tahfizh.code} wrong domain: got ${tahfizh.domain}, expected ${expectedDomain}`);
+        }
+
+        // Validate parent is OU-STQ-ROOT
+        let resolvedParentCode: string | null = null;
+        if (tahfizh.parent && tahfizh.parent.code) {
+          resolvedParentCode = tahfizh.parent.code;
+        } else if (tahfizh.parentId) {
+          if (tahfizh.parentId === CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.STQ_ROOT.code) {
+            resolvedParentCode = tahfizh.parentId;
+          } else {
+            const parentUnit = unitMapById.get(tahfizh.parentId);
+            if (parentUnit) {
+              resolvedParentCode = parentUnit.code;
+            } else if (stqRoot && tahfizh.parentId === stqRoot.id) {
+              resolvedParentCode = stqRoot.code;
+            }
+          }
+        }
+
+        if (resolvedParentCode !== CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.STQ_ROOT.code) {
+          issues.push(`${tahfizh.code} wrong parent: resolved parent is ${resolvedParentCode ?? "none/unresolved"}, expected ${CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT.STQ_ROOT.code}`);
+        }
+      }
+
+      if (issues.length === 0) {
+        gates.push({
+          gate: "REQUIRED_ORG_UNITS_READY",
+          status: "READY",
+          details: `All ${CANONICAL_REQUIRED_ORG_UNIT_CODES.length} required organizational units exist with verified canonical attributes`,
+        });
       } else {
-        gates.push({ gate: "REQUIRED_ORG_UNITS_READY", status: "NOT_READY", details: `Missing required OrgUnits: ${missing.join(", ")}` });
+        gates.push({
+          gate: "REQUIRED_ORG_UNITS_READY",
+          status: "NOT_READY",
+          details: issues.join("; "),
+        });
       }
     } else {
       gates.push({ gate: "REQUIRED_ORG_UNITS_READY", status: "NOT_READY", details: "OrgUnit repository unavailable" });
@@ -995,7 +1077,27 @@ export async function checkPendidikanV2ProductionReadiness(
         }
 
         const code = pos.code || a.positionCode;
-        if (code) coveredCodes.add(code);
+        if (code) {
+          // Explicit Anchor Validation (DIR-2026-030)
+          const expectedAnchor = (CANONICAL_ASSIGNMENT_ANCHORS as Record<string, string>)[code];
+          if (expectedAnchor) {
+            if (a.unit === null || (!a.unit && !a.unitId)) {
+              assignmentIssues.push(`Assignment ${a.id} for ${code}: missing or unresolved anchor unit context (expected ${expectedAnchor})`);
+              continue;
+            }
+            if (unit) {
+              if (!unit.code || unit.code.trim() === "") {
+                assignmentIssues.push(`Assignment ${a.id} for ${code}: missing or unresolved anchor unit context (expected ${expectedAnchor})`);
+                continue;
+              }
+              if (unit.code !== expectedAnchor) {
+                assignmentIssues.push(`Assignment ${a.id} for ${code}: anchor unit code is ${unit.code}, expected approved anchor ${expectedAnchor}`);
+                continue;
+              }
+            }
+          }
+          coveredCodes.add(code);
+        }
       }
 
       // Check active Kamar units count
