@@ -1008,4 +1008,140 @@ describe("GATE 3 — FINAL BLOCKER CANONICALIZATION TEST SUITE (DIR-2026-034 to 
       "When active Kamar exists, missing PEMBINA_HALAQOH assignment must fail closed"
     );
   });
+
+  // =========================================================================
+  // 26. Halaqoh repository unavailable must fail closed (USER_ASSIGNMENTS_READY BLOCKED)
+  // =========================================================================
+  it("26. Assignment data exists but authoritative db.halaqoh unavailable => USER_ASSIGNMENTS_READY = BLOCKED (DATABASE_UNAVAILABLE)", async () => {
+    const mockDbNoHalaqoh = {
+      assignment: {
+        findMany: async () => [
+          {
+            id: "asg-1",
+            status: "ACTIVE",
+            validFrom: new Date(Date.now() - 86400000),
+            position: { code: "MUDIR", isActive: true },
+            unit: { code: "OU-STQ-ROOT", isActive: true },
+            user: { id: "u-1", status: "AKTIF", staffId: "stf-1" },
+            staff: { id: "stf-1", status: "AKTIF" },
+          },
+        ],
+      },
+      staff: { findMany: async () => [{ id: "stf-1", status: "AKTIF" }] },
+      user: { findMany: async () => [{ id: "u-1", status: "AKTIF", staffId: "stf-1" }] },
+      orgUnit: { findMany: async () => [{ id: "ou-root", code: "OU-STQ-ROOT", isActive: true }] },
+      position: { findMany: async () => [{ id: "p-mudir", code: "MUDIR", isActive: true }] },
+      // db.halaqoh is explicitly absent / unavailable
+    };
+
+    const report = await checkPendidikanV2ProductionReadiness(mockDbNoHalaqoh as any);
+    const gate8 = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+    assert.ok(gate8, "USER_ASSIGNMENTS_READY gate must exist");
+    assert.strictEqual(gate8.status, "BLOCKED", "Gate 8 must be BLOCKED when halaqoh delegate is unavailable");
+    assert.strictEqual(gate8.reason, "DATABASE_UNAVAILABLE", "Reason must be DATABASE_UNAVAILABLE");
+    assert.ok(
+      gate8.details.includes("authoritative Halaqoh repository/delegate is unavailable for current-six validation"),
+      `Details must mention halaqoh delegate unavailable: ${gate8.details}`
+    );
+  });
+
+  // =========================================================================
+  // 27. Gate 5 OSDA security — User status ACTIVE is NEVER proof of human executor or scope units
+  // =========================================================================
+  it("27. Gate 5 OSDA security: User status ACTIVE never auto-promotes executor attribution or scope units", async () => {
+    const prevEnv = process.env.PENDIDIKAN_V2_UAT_ENABLED;
+
+    // A. Feature flag false => NOT_READY
+    try {
+      process.env.PENDIDIKAN_V2_UAT_ENABLED = "false";
+      const repA = await checkPendidikanV2ProductionReadiness({
+        user: { findMany: async () => [{ id: "u-osda", username: "osda.putri", status: "AKTIF" }] },
+      } as any);
+      const gate5A = repA.gates.find((g) => g.gate === "RUNTIME_ACTIVATION_FLAG");
+      assert.ok(gate5A);
+      assert.strictEqual(gate5A.status, "NOT_READY", "Feature flag false => NOT_READY");
+    } finally {
+      process.env.PENDIDIKAN_V2_UAT_ENABLED = prevEnv;
+    }
+
+    // B. Feature flag true + osda suspended => NOT_READY
+    try {
+      process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
+      const repB = await checkPendidikanV2ProductionReadiness({
+        user: { findMany: async () => [{ id: "u-osda", username: "osda.putri", status: "SUSPENDED" }] },
+      } as any);
+      const gate5B = repB.gates.find((g) => g.gate === "RUNTIME_ACTIVATION_FLAG");
+      assert.ok(gate5B);
+      assert.strictEqual(gate5B.status, "NOT_READY", "Feature flag true + osda suspended => NOT_READY");
+      assert.ok(gate5B.details.includes("activation deferred per DIR-2026-037"));
+    } finally {
+      process.env.PENDIDIKAN_V2_UAT_ENABLED = prevEnv;
+    }
+
+    // C. Feature flag true + osda accidentally ACTIVE in DB
+    //    ACTIVE status must NEVER auto-promote verifiedHumanExecutorAttributionReady or assignmentScopeUnitsReady
+    try {
+      process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
+      const repC = await checkPendidikanV2ProductionReadiness({
+        user: { findMany: async () => [{ id: "u-osda", username: "osda.putri", status: "AKTIF" }] },
+      } as any);
+      const gate5C = repC.gates.find((g) => g.gate === "RUNTIME_ACTIVATION_FLAG");
+      assert.ok(gate5C);
+      assert.strictEqual(gate5C.status, "NOT_READY", "Feature flag true + osda ACTIVE must still be NOT_READY");
+      assert.ok(gate5C.details.includes("verifiedHumanExecutorAttributionReady is false"));
+      assert.ok(gate5C.details.includes("assignmentScopeUnitsReady is false"));
+      assert.ok(gate5C.details.includes("Feature flag cannot bypass UNIT security per DIR-2026-037"));
+    } finally {
+      process.env.PENDIDIKAN_V2_UAT_ENABLED = prevEnv;
+    }
+  });
+
+  // =========================================================================
+  // 28. evaluateGate5RuntimeActivation pure helper prerequisite independence
+  // =========================================================================
+  it("28. evaluateGate5RuntimeActivation requires independent proof of executor attribution and scope units", () => {
+    // 1. Feature flag false => NOT_READY
+    const r1 = evaluateGate5RuntimeActivation({
+      featureFlagEnabled: false,
+      userStatus: "AKTIF",
+      verifiedHumanExecutorAttributionReady: true,
+      assignmentScopeUnitsReady: true,
+    });
+    assert.strictEqual(r1.status, "NOT_READY");
+
+    // 2. Feature flag true + osda suspended => NOT_READY
+    const r2 = evaluateGate5RuntimeActivation({
+      featureFlagEnabled: true,
+      userStatus: "SUSPENDED",
+      verifiedHumanExecutorAttributionReady: true,
+      assignmentScopeUnitsReady: true,
+    });
+    assert.strictEqual(r2.status, "NOT_READY");
+
+    // 3. Feature flag true + osda active BUT executorReady=false => NOT_READY
+    const r3 = evaluateGate5RuntimeActivation({
+      featureFlagEnabled: true,
+      userStatus: "AKTIF",
+      verifiedHumanExecutorAttributionReady: false,
+      assignmentScopeUnitsReady: true,
+    });
+    assert.strictEqual(r3.status, "NOT_READY");
+    assert.ok(r3.details.includes("verifiedHumanExecutorAttributionReady is false"));
+
+    // 4. Feature flag true + osda active BUT assignmentScopeUnitsReady=false => NOT_READY
+    const r4 = evaluateGate5RuntimeActivation({
+      featureFlagEnabled: true,
+      userStatus: "AKTIF",
+      verifiedHumanExecutorAttributionReady: true,
+      assignmentScopeUnitsReady: false,
+    });
+    assert.strictEqual(r4.status, "NOT_READY");
+    assert.ok(r4.details.includes("assignmentScopeUnitsReady is false"));
+
+    // 5. Default contract parameters (osda suspended, executor=false, scopeUnits=false) => NOT_READY
+    const r5 = evaluateGate5RuntimeActivation({
+      featureFlagEnabled: true,
+    });
+    assert.strictEqual(r5.status, "NOT_READY");
+  });
 });

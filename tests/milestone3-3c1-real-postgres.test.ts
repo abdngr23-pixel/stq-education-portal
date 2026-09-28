@@ -889,6 +889,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
             },
           ],
         },
+        halaqoh: { findMany: async () => [] },
       };
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
       const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
@@ -1949,6 +1950,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         positionCapability: {
           findMany: async () => [],
         },
+        halaqoh: { findMany: async () => [] },
       };
 
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
@@ -1973,6 +1975,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         positionCapability: {
           findMany: async () => [],
         },
+        halaqoh: { findMany: async () => [] },
       };
 
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
@@ -1997,6 +2000,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         positionCapability: {
           findMany: async () => [],
         },
+        halaqoh: { findMany: async () => [] },
       };
 
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
@@ -2025,6 +2029,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         positionCapability: {
           findMany: async () => [],
         },
+        halaqoh: { findMany: async () => [] },
         santri: {
           findFirst: async (args: any) => {
             const hId = args?.where?.halaqohId;
@@ -2089,6 +2094,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         positionCapability: {
           findMany: async () => [],
         },
+        halaqoh: { findMany: async () => [] },
       };
 
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
@@ -2123,6 +2129,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         positionCapability: {
           findMany: async () => [],
         },
+        halaqoh: { findMany: async () => [] },
       };
 
       const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
@@ -2237,6 +2244,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     ) => ({
       assignment: { findMany: async () => assignments },
       positionCapability: { findMany: async () => [] },
+      halaqoh: { findMany: async () => [] },
       santri: {
         findFirst:
           overrides?.santriFindFirst ??
@@ -3320,6 +3328,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         positionCapability: { findMany: async () => [] },
         santri: prisma.santri,
         santriKamarPlacement: prisma.santriKamarPlacement,
+        halaqoh: { findMany: async () => [] },
       } as any);
 
       const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");

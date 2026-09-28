@@ -156,6 +156,7 @@ describe("GATE 3 — BLOCKER RESOLUTION CANONICAL RECONCILIATION TEST SUITE", ()
       staff: { findMany: async () => [{ id: "stf-1", status: "AKTIF" }] },
       orgUnit: { findMany: async () => [{ id: "ou-inst", code: "OU-INSTITUTION", isActive: true }] },
       position: { findMany: async () => [{ id: "pos-mudir", code: "MUDIR", isActive: true }] },
+      halaqoh: { findMany: async () => [] },
     };
 
     const report = await checkPendidikanV2ProductionReadiness(mockDbWithInvalidAnchor as any);
@@ -483,6 +484,7 @@ describe("GATE 3 — BLOCKER RESOLUTION CANONICAL RECONCILIATION TEST SUITE", ()
       staff: { findMany: async () => [{ id: "stf-1", status: "AKTIF" }] },
       orgUnit: { findMany: async () => [{ id: "ou-root", code: "OU-STQ-ROOT", isActive: true }] },
       position: { findMany: async () => [{ id: "pos-mudir", code: "MUDIR", isActive: true }] },
+      halaqoh: { findMany: async () => [] },
     };
 
     const reportNoUnit = await checkPendidikanV2ProductionReadiness(mockDbMissingUnit as any);
@@ -516,6 +518,7 @@ describe("GATE 3 — BLOCKER RESOLUTION CANONICAL RECONCILIATION TEST SUITE", ()
       staff: { findMany: async () => [{ id: "stf-2", status: "AKTIF" }] },
       orgUnit: { findMany: async () => [{ id: "ou-tahfizh", code: "OU-TAHFIZH", isActive: true }] },
       position: { findMany: async () => [{ id: "pos-kabid", code: "KABID_TAHFIZH", isActive: true }] },
+      halaqoh: { findMany: async () => [] },
     };
 
     const reportNoCode = await checkPendidikanV2ProductionReadiness(mockDbMissingUnitCode as any);

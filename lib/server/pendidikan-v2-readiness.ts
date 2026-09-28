@@ -1313,7 +1313,10 @@ export async function checkPendidikanV2ProductionReadiness(
       let halaqohQueryErrorDetail = "";
       let activeHalaqohs: any[] = [];
 
-      if (db.halaqoh) {
+      if (!db.halaqoh || typeof db.halaqoh.findMany !== "function") {
+        halaqohQueryFailed = true;
+        halaqohQueryErrorDetail = "authoritative Halaqoh repository/delegate is unavailable for current-six validation";
+      } else {
         try {
           const rawHalaqohs = await db.halaqoh.findMany({
             where: { status: "AKTIF" },
@@ -1324,7 +1327,7 @@ export async function checkPendidikanV2ProductionReadiness(
           );
         } catch (err: unknown) {
           halaqohQueryFailed = true;
-          halaqohQueryErrorDetail = err instanceof Error ? err.message : String(err);
+          halaqohQueryErrorDetail = `Authoritative Halaqoh query failed: ${err instanceof Error ? err.message : String(err)}`;
         }
       }
 
@@ -1853,10 +1856,14 @@ export async function checkPendidikanV2ProductionReadiness(
       }
 
       if (halaqohQueryFailed) {
+        const issuesSuffix = (missingPositions.length > 0 || assignmentIssues.length > 0)
+          ? ` (also detected: ${[...missingPositions.map((p) => `missing ${p}`), ...assignmentIssues].join("; ")})`
+          : "";
         gates.push({
           gate: "USER_ASSIGNMENTS_READY",
           status: "BLOCKED",
-          details: `DATABASE_UNAVAILABLE: Authoritative Halaqoh query failed: ${halaqohQueryErrorDetail}`,
+          reason: "DATABASE_UNAVAILABLE",
+          details: `DATABASE_UNAVAILABLE: ${halaqohQueryErrorDetail}${issuesSuffix}`,
           remediationAdvice: "Authoritative Halaqoh database table must be accessible before user assignments can be verified",
         });
       } else if (missingPositions.length > 0 || assignmentIssues.length > 0) {
@@ -2746,23 +2753,23 @@ export async function checkPendidikanV2ProductionReadiness(
   }
 
   // Gate 14: Runtime Activation Flag (Gate 5) & UNIT Security Prerequisites
+  // Per DIR-2026-037: User status ACTIVE is NEVER proof of human executor attribution or AssignmentScopeUnit readiness.
+  // Both prerequisites require independent canonical evidence and remain false under current lock.
   let osdaUserStatus: string = CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.targetUserStatus;
-  let isOsdaActiveInDb = false;
 
   if (db.user) {
     const users = await db.user.findMany().catch(() => []);
     const osdaUser = (users || []).find((u: any) => u.username === "osda.putri");
     if (osdaUser) {
       osdaUserStatus = osdaUser.status;
-      isOsdaActiveInDb = osdaUser.status === "AKTIF" || osdaUser.status === "ACTIVE";
     }
   }
 
   const gate5Activation = evaluateGate5RuntimeActivation({
     featureFlagEnabled: process.env.PENDIDIKAN_V2_UAT_ENABLED === "true",
     userStatus: osdaUserStatus,
-    verifiedHumanExecutorAttributionReady: isOsdaActiveInDb ? true : CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.verifiedHumanExecutorAttributionReady,
-    assignmentScopeUnitsReady: isOsdaActiveInDb ? true : CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.assignmentScopeUnitsReady,
+    verifiedHumanExecutorAttributionReady: CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.verifiedHumanExecutorAttributionReady,
+    assignmentScopeUnitsReady: CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.assignmentScopeUnitsReady,
   });
 
   gates.push({

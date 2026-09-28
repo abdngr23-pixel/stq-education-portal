@@ -571,7 +571,7 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
         user: {
           findMany: async () => [
             { id: "u-1", username: "ust.ahmad", role: "MT", accountType: "PERSONAL", status: "AKTIF", staffId: "stf-1" },
-            { id: "u-unit-osda", username: "osda.putri", role: "POK", accountType: "UNIT", status: "AKTIF" },
+            { id: "u-unit-osda", username: "osda.putri", role: "POK", accountType: "UNIT", status: "SUSPENDED" },
           ],
         },
         staff: {
@@ -639,6 +639,10 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
             { id: "skp-6", kamarId: "ou-req-6", santriId: "san-req-6", isActive: true, santri: { status: "AKTIF" } },
           ],
         },
+        // Gate authoritative halaqoh delegate
+        halaqoh: {
+          findMany: async () => [],
+        },
         // Gate 9: Teaching assignments (all 12 covered)
         teachingAssignment: {
           findMany: async () => slots,
@@ -671,7 +675,7 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
       };
 
       const prevEnv = process.env.PENDIDIKAN_V2_UAT_ENABLED;
-      process.env.PENDIDIKAN_V2_UAT_ENABLED = "true"; // Gate 11 is READY
+      process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
       try {
         const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
         const cohortGate = report.gates.find((g) => g.gate === "COHORTS_ASSIGNED");
@@ -683,11 +687,16 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
         const blockingGates = report.gates.filter((g) => g.blocking !== false);
         assert.ok(!blockingGates.some((g) => g.gate === "COHORTS_ASSIGNED"));
 
-        // All operational blocking gates (except unprovisioned auth policy gate) are READY
+        // All operational blocking gates (except unprovisioned auth policy gate and deferred Gate 5 runtime activation) are READY
         const operationalBlockingGates = blockingGates.filter(
-          (g) => g.gate !== "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY"
+          (g) => g.gate !== "KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY" && g.gate !== "RUNTIME_ACTIVATION_FLAG"
         );
         assert.ok(operationalBlockingGates.every((g) => g.status === "READY"));
+
+        // Gate 5 runtime activation must remain NOT_READY per DIR-2026-037
+        const gate5 = report.gates.find((g) => g.gate === "RUNTIME_ACTIVATION_FLAG");
+        assert.ok(gate5);
+        assert.strictEqual(gate5.status, "NOT_READY", "Gate 5 activation must remain NOT_READY per DIR-2026-037");
       } finally {
         process.env.PENDIDIKAN_V2_UAT_ENABLED = prevEnv;
       }

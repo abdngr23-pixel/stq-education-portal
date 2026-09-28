@@ -597,8 +597,12 @@ Current lifecycle point:
 - **GATE 0**: CLOSED
 - **GATE 1**: CLOSED
 - **GATE 2**: CLOSED
-- **GATE 3**: PARTIAL / IN PROGRESS (Code and docs reconciled in PR #33; production execution pending explicit owner authorization)
-- **GATE 4**: NOT STARTED
+- **GATE 3**: PARTIAL / IN PROGRESS
+  - PR #33: MERGED foundational blocker reconciliation (`3524f26f6fde8580b91076bb255c4f1417d9e90a`)
+  - Previously-authorized Gate 3 production completion batch: EXECUTED AND VERIFIED
+  - PR #34: OPEN / DRAFT / UNMERGED final blocker canonicalization
+  - Final remaining production write batch: NOT YET AUTHORIZED
+- **GATE 4**: NOT STARTED / NOT AUTHORIZED
 
 *(Historical note: Historical pre-gate hardening in PR #29 and PR #30 did not constitute execution of Release Gate 5; production actions at that milestone were 0).*
 
@@ -628,10 +632,16 @@ Per DIR-2026-029, the official sequential release gate model is:
 
 - **Gate 3 — Foundation & Controlled Provisioning**:
   - Provisioning canonical subjects, cohorts, OrgUnits, Positions, Capabilities, PositionCapabilities, Staff linkages, Assignments, ScopeUnits, and teaching assignments.
-  - Current verified gate status: PARTIAL / IN PROGRESS (Partial provisioning executed in production batch; remaining canonical blockers reconciled in code PR #33; production completion pending owner authorization)
+  - Historical status before execution: NOT_STARTED
+  - Current verified gate status: PARTIAL / IN PROGRESS
+    - PR #33 merged as foundational blocker reconciliation (`3524f26f6fde8580b91076bb255c4f1417d9e90a`).
+    - Previously-authorized Gate 3 production completion batch was EXECUTED AND VERIFIED in production.
+    - PR #34 is OPEN / DRAFT / UNMERGED final blocker canonicalization (code, docs, tests only).
+    - Final remaining production write batch is NOT YET AUTHORIZED (requires separate explicit Business Owner authorization).
 
 - **Gate 4 — Post-Provision Reconciliation**:
   - Verification of data integrity, assignment bounds, and account states.
+  - Status: NOT STARTED / NOT AUTHORIZED (gated by Gate 3 completion).
 
 - **Gate 5 — Runtime Activation**:
   - Controlled feature flag / policy activation in production.
@@ -666,8 +676,8 @@ At initial preflight audit:
 ### CURRENT_VERIFIED_GATE_STATUS:
 - `GATE 0 = CLOSED` (Real production backup and T0 snapshot completed & verified)
 - `GATE 1 = CLOSED` (11 migrations verified applied with 100% parity, zero write)
-- `GATE 2 = CLOSED` (Migration 12 deployed and schema foreign key reconciled in PR #32)
-- `GATE 3 = PARTIAL / IN PROGRESS` (Partial provisioning completed; final blocker canonicalization staged in code PR; remaining production batch pending explicit owner authorization)
+- `GATE 3 = PARTIAL / IN PROGRESS` (PR #33 merged foundational blocker reconciliation; previously-authorized Gate 3 production completion batch executed and verified; PR #34 open/draft/unmerged final blocker canonicalization; final remaining production write batch not yet authorized)
+- `GATE 4 = NOT STARTED / NOT AUTHORIZED`
 
 ---
 
