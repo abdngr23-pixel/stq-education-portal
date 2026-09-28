@@ -10,6 +10,7 @@
 - **Execution Model:** PARALLEL PREPARATION | SERIAL PRODUCTION EXECUTION | FAIL-CLOSED GATES | MANDATORY EVIDENCE PACKS
 - **Current Production Mutation Authorization:** **ZERO PRODUCTION WRITES AUTHORIZED IN THIS PHASE**
 - **Field Semantics (`Production write required?`):** Classifies whether the operational target work item itself requires a database/environment write during its execution gate (`FUTURE_OPERATION_REQUIRES_PRODUCTION_WRITE`), NOT whether this documentation PR executes a write (`CURRENT_PR_EXECUTED_PRODUCTION_WRITE = 0`).
+- **Current-State Precedence Rule:** `CURRENT_VERIFIED_PRODUCTION_STATE` strictly supersedes `HISTORICAL_PRE_GATE_STATE` for all operational execution decisions. Historical text must NEVER be interpreted as authorization to repeat an already-completed production mutation. Where accepted production evidence proves a catalog, account, unit, or assignment is already provisioned, `Production write required NOW` evaluates to `NO`.
 
 ---
 
@@ -355,10 +356,11 @@
     - [HISTORICAL]: Prior pre-resolution audit noted `ACCOUNT_MODALITY = UNRESOLVED / MUST_VERIFY` with `PolicyDecisionState = PROPOSED_TBD` pending Owner decision.
   - **Source of truth:** `docs/STQ_OWNER_DIRECTIVES.md` (DIR-2026-032, DIR-2026-033), `docs/STQ_CURRENT_STATE.md` (Section 9)
   - **PolicyDecisionState:** `APPROVED` (per DIR-2026-032 and DIR-2026-033)
-  - **Current state:** Verified in production: `musyirfah.putri` is present and active (linked to `STF-0005`), `musyrifah.putri` is `SUSPENDED` (per DIR-2026-033), and `pembina.halaqoh` is `SUSPENDED` (per DIR-2026-032). [Historical note: Prior pre-resolution audit recorded these as pending controlled Gate 3 production write; execution and verification were completed in the authorized Gate 3 partial production batch].
+  - **HISTORICAL_PRE_GATE_STATE / HISTORICAL_EXECUTION:** Prior pre-resolution audit recorded these as pending controlled Gate 3 production write; UPDATE `users` status to `SUSPENDED` was executed and verified during the authorized Gate 3 partial production batch.
+  - **CURRENT_VERIFIED_PRODUCTION_STATE:** Verified in production: `musyirfah.putri = AKTIF / STF-0005`, `musyrifah.putri = SUSPENDED`, `pembina.halaqoh = SUSPENDED`.
   - **Target state:** `musyirfah.putri` remains canonical active account for Ustazah Lisa (`STF-0005`); `pembina.halaqoh` and `musyrifah.putri` remain `SUSPENDED` without Staff linkage, without merge, and without hard delete.
-  - **Dependency:** Gate 3 controlled production write execution
-  - **Production write required?:** YES (UPDATE `users` status to `SUSPENDED` during controlled Gate 3 execution; verified executed in production)
+  - **Dependency:** None (Already verified in production)
+  - **Production write required NOW?:** NO (Already provisioned and verified in production)
   - **Owner authorization required?:** YES (Granted via DIR-2026-032 and DIR-2026-033)
   - **Dry-run evidence:** Gate 3 provisioning dry-run audit plan.
   - **Positive test:** Target status matches SUSPENDED for legacy placeholder / duplicate accounts, while canonical active account retains valid Staff linkage to STF-0005.
@@ -368,7 +370,7 @@
   - **Evidence Pack reference:** `EVID-STF-LINKAGE`
   - **Gate:** GATE-3
   - **Status:** `PROVISIONED_VERIFIED_IN_PROD`
-  - **Notes / unresolved decision:** Reconciled per DIR-2026-032 and DIR-2026-033. No unresolved account modality remains for these accounts. Account suspension verified in production.
+  - **Notes / unresolved decision:** Reconciled per DIR-2026-032 and DIR-2026-033. No unresolved account modality remains for these accounts. Account suspension verified in production. Zero additional production writes required.
 
 - **REL-STF-03 | Non-Staff Account Modality Validation (santri, wali, yayasan, osda)**
   - **Domain:** IDENTITY / MODALITY
@@ -398,20 +400,21 @@
   - **Requirement:** Enforce Business Owner decision: `razan.mt` is DEPRECATED / DECOMMISSION TARGET. Strictly PROHIBIT linking to Staff `STF-0003` (or any Staff profile). Strictly PROHIBIT granting Position, Assignment, Capability, or runtime authority. Target implementation is decommission via schema-supported deactivation/revocation (`status = NONAKTIF` or `SUSPENDED`). Hard delete remains prohibited pending read-only dependency audit. Post-decommission evidence must prove: (1) new login denied; (2) existing cookie/JWT cannot obtain a valid server-resolved session (`user.status != AKTIF`); (3) server actions and API operations deny the account; (4) zero canonical assignments/grants; (5) no duplicate Kabid authority.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 9), `STQ_PROJECT_CONTEXT.md` (Section 6)
   - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** `RAZAN_MT_TARGET_STATE = DECOMMISSION`, `RAZAN_MT_STAFF_LINKAGE = PROHIBITED`, `RAZAN_MT_DECOMMISSION_EXECUTION = NOT_STARTED`. CANONICAL_ASSIGNMENT_AUTHORITY = ZERO; LEGACY_RUNTIME_AUTHORITY = MUST_AUDIT / MAY_EXIST (read-only effective-access inventory required prior to C2C).
-  - **Target state:** Decommissioned in controlled future C2C operation via schema-supported deactivation after dependency audit. Post-decommission verification proves server session resolver rejects non-AKTIF user.
-  - **Dependency:** REL-ACC-02 (Pre-decommission dependency audit)
-  - **Production write required?:** YES (Future operational stage requires deactivation mutation; CURRENT PR #25 EXECUTES ZERO PRODUCTION WRITES)
+  - **HISTORICAL_PRE_GATE_STATE:** `RAZAN_MT_TARGET_STATE = DECOMMISSION`, `RAZAN_MT_STAFF_LINKAGE = PROHIBITED`, pending execution prior to Gate 3.
+  - **CURRENT_VERIFIED_PRODUCTION_STATE:** `DECOMMISSION_EXECUTED_AND_VERIFIED`. Accepted Gate 3 evidence confirms `razan.mt = SUSPENDED`, staff linkage = `NONE`, and canonical assignments = `0`. Hard delete remains prohibited.
+  - **Target state:** Maintained in decommissioned state (`status = SUSPENDED`, zero Staff linkage, zero canonical assignments, login denied).
+  - **Dependency:** None (Decommission executed and verified)
+  - **Production write required NOW?:** NO (Decommission mutation already executed and verified in production; hard delete remains prohibited)
   - **Owner authorization required?:** YES (Satisfied by owner decision)
-  - **Dry-run evidence:** Documentation lock in PR #24 and pre-decommission read-only effective access audit script.
-  - **Positive test:** Automated audit verifies zero canonical assignments granted to `razan.mt`, new login denied, and server session resolver rejects deactivated user.
+  - **Dry-run evidence:** Documentation lock and Gate 3 provisioning evidence.
+  - **Positive test:** Automated audit verifies zero canonical assignments granted to `razan.mt`, login denied, and server session resolver rejects deactivated user.
   - **Negative test:** Any attempt to link `razan.mt` to `STF-0003` or authenticate deactivated session throws fatal error.
-  - **Reconciliation evidence:** Project context invariant inspection.
+  - **Reconciliation evidence:** Production audit confirms `razan.mt` is SUSPENDED with 0 staff links and 0 assignments.
   - **Rollback/recovery consideration:** N/A
   - **Evidence Pack reference:** `EVID-ACC-RAZAN`
-  - **Gate:** GATE-C2C
-  - **Status:** `BLOCKED` (Gated by pre-decommission read-only dependency audit)
-  - **Notes / unresolved decision:** Do not hard delete yet.
+  - **Gate:** GATE-3
+  - **Status:** `DECOMMISSION_EXECUTED_AND_VERIFIED`
+  - **Notes / unresolved decision:** Decommission executed and verified; hard delete remains prohibited. Zero additional production writes required.
 
 - **REL-ACC-02 | razan.mt Pre-Decommission Read-Only Dependency Audit**
   - **Domain:** IDENTITY / AUDIT
@@ -456,50 +459,53 @@
 - **REL-ACC-04 | Duplicate Kabid Authority Prevention**
   - **Domain:** IDENTITY / AUTHORIZATION
   - **Requirement:** Verify that exactly ONE active operational account holds the canonical `KABID_TAHFIZH` position; ensure zero duplicate authority between `razan.mt` and `musyrif.tahifzh`.
-  - **Source of truth:** `STQ_PROJECT_CONTEXT.md` (Section 8)
+  - **Source of truth:** `STQ_PROJECT_CONTEXT.md` (Section 8), Gate 3 Completion Evidence
   - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** Both accounts have CANONICAL_ASSIGNMENT_AUTHORITY = ZERO. Legacy runtime authorization remains authoritative in production until explicit cutover (LEGACY_RUNTIME_AUTHORITY = MUST_AUDIT / MAY_EXIST). Read-only effective-access inventory required prior to C2C.
+  - **HISTORICAL_PRE_GATE_STATE:** Both accounts had `CANONICAL_ASSIGNMENT_AUTHORITY = ZERO`.
+  - **CURRENT_VERIFIED_PRODUCTION_STATE:** Singular Kabid seat is now provisioned in production: `musyrif.tahifzh` is the canonical Kabid identity (`STF-0003`) holding exactly 1 active `KABID_TAHFIZH` Assignment anchored to `OU-TAHFIZH`. `razan.mt` is `SUSPENDED` with zero Staff linkage and zero canonical Assignment. Zero duplicate authority exists.
   - **Target state:** Exactly one active canonical Assignment for `KABID_TAHFIZH`; zero duplicate authority across legacy and canonical layers.
-  - **Dependency:** REL-ACC-01, REL-ACC-03
-  - **Production write required?:** NO (Validation rule)
+  - **Dependency:** None (Single Kabid seat verified in production)
+  - **Production write required NOW?:** NO (Validation satisfied; assignment already provisioned)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** Assignment uniqueness validation query and effective access audit.
   - **Positive test:** Exactly 1 active assignment for position code `KABID_TAHFIZH`.
   - **Negative test:** Multiple active assignments trigger fail-closed error.
-  - **Reconciliation evidence:** Audit query of `assignments` table and legacy session inspection.
+  - **Reconciliation evidence:** Audit query of `assignments` table confirms 1 active Kabid Tahfizh assignment.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-ACC-KABID-DUP`
-  - **Gate:** GATE-C2C
-  - **Status:** `NOT_READY`
-  - **Notes / unresolved decision:** Enforces single leadership seat.
+  - **Gate:** GATE-3
+  - **Status:** `PROVISIONED_VERIFIED_IN_PROD`
+  - **Notes / unresolved decision:** Enforces single leadership seat; satisfied in production.
 
 - **REL-ACC-05 | pembina.halaqoh Legacy Placeholder Account Suspension Target**
   - **Domain:** IDENTITY / ACCOUNT_DECOMMISSION
   - **Requirement:** Enforce Business Owner decision `DIR-2026-032`: `pembina.halaqoh` is a legacy placeholder account destined for `SUSPENDED` status. All 6 active halaqoh have verified active pembina personal accounts. Hard delete is strictly PROHIBITED; Staff linkage is strictly PROHIBITED; historical records preserved.
   - **Source of truth:** `docs/STQ_OWNER_DIRECTIVES.md:DIR-2026-032`, `types/architecture-lock.ts:CANONICAL_IDENTITY_RESOLUTION_CONTRACT`
   - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** `status: AKTIF`, `staff_id: null`, 0 sessions, 0 audit logs.
-  - **Target state:** `status: SUSPENDED`.
-  - **Dependency:** Gate 3 controlled write authorization
-  - **Production write required?:** YES (UPDATE `status = 'SUSPENDED'` in controlled Gate 3 write batch; zero writes in code PR)
-  - **Owner authorization required?:** YES
+  - **HISTORICAL_PRE_GATE_STATE:** `status: AKTIF`, `staff_id: null`, 0 sessions, 0 audit logs.
+  - **CURRENT_VERIFIED_PRODUCTION_STATE:** `status: SUSPENDED`, `staff_id: null`. Deactivation executed and verified in production during Gate 3 partial completion batch.
+  - **Target state:** `status: SUSPENDED` without Staff linkage, without hard delete.
+  - **Dependency:** None (Already verified suspended in production)
+  - **Production write required NOW?:** NO (Already executed and verified in production)
+  - **Owner authorization required?:** YES (Granted via DIR-2026-032)
   - **Evidence Pack reference:** `EVID-ACC-PEMBINA-HALAQOH`
   - **Gate:** GATE-3
-  - **Status:** `TARGET_APPROVED_PENDING_PRODUCTION_WRITE`
+  - **Status:** `PROVISIONED_VERIFIED_IN_PROD`
 
 - **REL-ACC-06 | musyrifah.putri Ustazah Lisa Duplicate Account Resolution & Suspension Target**
   - **Domain:** IDENTITY / DATA_INTEGRITY
   - **Requirement:** Enforce Business Owner decision `DIR-2026-033`: `musyrifah.putri` is a duplicate legacy account belonging to Ustazah Lisa Dwina Fitri. Canonical active account for Lisa is `musyirfah.putri` (linked to `STF-0005`). Target status for `musyrifah.putri` is `SUSPENDED`. Distinct User rows in DB; zero merge; zero Staff link transfer; zero hard delete.
   - **Source of truth:** `docs/STQ_OWNER_DIRECTIVES.md:DIR-2026-033`, `types/architecture-lock.ts:CANONICAL_IDENTITY_RESOLUTION_CONTRACT`
   - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** `status: AKTIF`, `staff_id: null`, 2 historical logins, 0 transactions.
-  - **Target state:** `status: SUSPENDED`.
-  - **Dependency:** Gate 3 controlled write authorization
-  - **Production write required?:** YES (UPDATE `status = 'SUSPENDED'` in controlled Gate 3 write batch; zero writes in code PR)
-  - **Owner authorization required?:** YES
+  - **HISTORICAL_PRE_GATE_STATE:** `status: AKTIF`, `staff_id: null`, 2 historical logins, 0 transactions.
+  - **CURRENT_VERIFIED_PRODUCTION_STATE:** `status: SUSPENDED`, `staff_id: null`. Deactivation executed and verified in production during Gate 3 partial completion batch; canonical active account remains `musyirfah.putri` (`AKTIF / STF-0005`).
+  - **Target state:** `status: SUSPENDED` without Staff linkage, without merge, and without hard delete.
+  - **Dependency:** None (Already verified suspended in production)
+  - **Production write required NOW?:** NO (Already executed and verified in production)
+  - **Owner authorization required?:** YES (Granted via DIR-2026-033)
   - **Evidence Pack reference:** `EVID-ACC-MUSYRIFAH-PUTRI`
   - **Gate:** GATE-3
-  - **Status:** `TARGET_APPROVED_PENDING_PRODUCTION_WRITE`
+  - **Status:** `PROVISIONED_VERIFIED_IN_PROD`
 
 ---
 
@@ -509,10 +515,11 @@
   - **Requirement:** Provision approved institutional topology (`DIR-2026-030`): single institutional root `OU-STQ-ROOT` (type `INSTITUTION`, domain `INSTITUTIONAL`, parent `null`, genderComplex `TIDAK_TERIKAT`) and Tahfizh domain unit `OU-TAHFIZH` (type `DOMAIN`, domain `TAHFIZH`, parent `OU-STQ-ROOT`, genderComplex `TIDAK_TERIKAT`). Minimum approved Keasramaan units (`OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`) preserved. Proposed anchor code `OU-INSTITUTION` is formally superseded. Other units (`OU-AKADEMIK`, `OU-MANAJEMEN`) remain deferred.
   - **Source of truth:** `types/architecture-lock.ts:CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT`, `docs/STQ_OWNER_DIRECTIVES.md:DIR-2026-030`
   - **PolicyDecisionState:** `APPROVED` (for `OU-STQ-ROOT`, `OU-TAHFIZH`, `OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT`; `OU-INSTITUTION` SUPERSEDED)
-  - **Current state:** `OU-STQ-ROOT` and `OU-TAHFIZH` are now PROVISIONED in production batch. `OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT` present in DB.
+  - **HISTORICAL_PRE_GATE_STATE:** Unprovisioned prior to Gate 3 provisioning batch.
+  - **CURRENT_VERIFIED_PRODUCTION_STATE:** `OU-STQ-ROOT` and `OU-TAHFIZH` are PROVISIONED and VERIFIED in production. `OU-OSDA-ROOT`, `OU-OSDA-PUTRI`, `OU-TKS-ROOT` exist in DB. (Note: `OU-KEASRAMAAN` remains separate and pending the final authorized Gate 3 batch per DIR-2026-036).
   - **Target state:** Approved institutional topology provisioned idempotently.
-  - **Dependency:** Gate 3 controlled write authorization (executed in partial batch)
-  - **Production write required?:** YES (INSERT in controlled Gate 3 write batch; verified provisioned in production)
+  - **Dependency:** Gate 3 controlled write authorization (executed and verified in production)
+  - **Production write required NOW?:** NO (OU-STQ-ROOT and OU-TAHFIZH already provisioned and verified in production; zero additional writes required)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** Gate 3 Write Plan.
   - **Positive test:** Query verifies `OU-STQ-ROOT` and `OU-TAHFIZH` exist with correct parent hierarchy.
@@ -522,7 +529,7 @@
   - **Evidence Pack reference:** `EVID-OU-ROOT`
   - **Gate:** GATE-3
   - **Status:** `PROVISIONED_VERIFIED_IN_PROD`
-  - **Notes / unresolved decision:** Single institutional root `OU-STQ-ROOT` and `OU-TAHFIZH` provisioned; `OU-INSTITUTION` superseded.
+  - **Notes / unresolved decision:** Single institutional root `OU-STQ-ROOT` and `OU-TAHFIZH` provisioned; `OU-INSTITUTION` superseded. Zero additional production writes required.
 
 - **REL-OU-02 | OSDA Root & Division Unit Provisioning**
   - **Domain:** ORG_UNITS / KEASRAMAAN
@@ -820,21 +827,22 @@
     - `GURU_KEPESANTRENAN` is an approved canonical position contract under PERSONAL modality (PR #29 / DIR-2026-028).
     Activation remains gated by sequential release controls (C2C provisioning and C2D activation flag).
   - **Source of truth:** `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`, `docs/STQ_OWNER_DIRECTIVES.md: DIR-2026-028`
-  - **BusinessRuleState:** `APPROVED`
-  - **Current state:** Unmapped in production; contracts approved, awaiting C2C execution.
-  - **Target state:** Capability codes registered in DB; PositionCapability for GURU_KEPESANTRENAN seeded in C2C and evaluated under KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY gate.
-  - **Dependency:** REL-POS-02, REL-CAP-01
-  - **Production write required?:** YES (Future operational stage requires insert after resolution; CURRENT PR #25 EXECUTES ZERO PRODUCTION WRITES)
+  - **BusinessRuleState:** `APPROVED_TARGET_PENDING_TECHNICAL`
+  - **HISTORICAL_PRE_GATE_STATE:** Unmapped prior to Gate 3 provisioning.
+  - **CURRENT_VERIFIED_PRODUCTION_STATE:** Exactly 4 `GURU_KEPESANTRENAN` PositionCapability rows exist in the production database with `businessRuleState = APPROVED_TARGET_PENDING_TECHNICAL` (`academic.schedule.read`, `academic.session.start`, `academic.material.record`, `academic.attendance.record`; all with `scopeType: GLOBAL`). Runtime activation is `NOT_READY` under `KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY`. Promotion to `VERIFIED_PRODUCTION` is `NOT EXECUTED / NOT AUTHORIZED` and belongs to a future explicitly authorized activation process outside this PR.
+  - **Target state:** Maintained with `businessRuleState = APPROVED_TARGET_PENDING_TECHNICAL`; runtime activation remains deferred pending owner authorization.
+  - **Dependency:** None for creation (rows already exist in production)
+  - **Production write required NOW for creation?:** NO (Rows are already present and verified in production; any future promotion write belongs to a later explicitly authorized activation process)
   - **Owner authorization required?:** YES
-  - **Dry-run evidence:** Capability registration script verification.
-  - **Positive test:** Registration query confirms 4 academic capabilities exist in `capabilities` table.
-  - **Negative test:** Fail closed if unapproved PositionCapability grant is attempted without resolved modality and containment.
-  - **Reconciliation evidence:** PositionCapability and Capability catalog table audit.
+  - **Dry-run evidence:** Capability registration script verification and Gate 3 provisioning logs.
+  - **Positive test:** Query confirms 4 academic PositionCapability rows exist for `GURU_KEPESANTRENAN` with `scopeType: GLOBAL` and `businessRuleState = APPROVED_TARGET_PENDING_TECHNICAL`.
+  - **Negative test:** Fail closed if unapproved PositionCapability grant is attempted without resolved modality and containment; runtime activation remains NOT_READY without explicit owner promotion.
+  - **Reconciliation evidence:** PositionCapability and Capability catalog table audit in Gate 3 diagnostic.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state.
   - **Evidence Pack reference:** `EVID-PC-GURU-AKAD`
-  - **Gate:** GATE-C2C
-  - **Status:** `NOT_READY` (Pending C2C execution; teacher account modality and Kepesantrenan position contract resolved)
-  - **Notes / unresolved decision:** GURU_KEPESANTRENAN contract resolved under PERSONAL modality with 4 approved capabilities and server-side teacher ownership; Studi Umum resolved via SUBJECT accounts with 3 capabilities (attendance deferred).
+  - **Gate:** GATE-3
+  - **Status:** `TARGET_APPROVED_PROVISIONED_PENDING_ACTIVATION` (`GURU_KEPESANTRENAN` PositionCapability rows provisioned; runtime activation remains NOT_READY)
+  - **Notes / unresolved decision:** GURU_KEPESANTRENAN contract resolved under PERSONAL modality with 4 approved capabilities and server-side teacher ownership; Studi Umum resolved via SUBJECT accounts with 3 capabilities (attendance deferred). Creation writes are complete.
 
 ---
 
@@ -844,10 +852,11 @@
   - **Requirement:** Provision active Assignment for Mudir anchored to approved single institutional root `OU-STQ-ROOT` (`DIR-2026-030`). Target operational account verified: `mudir` (linked to `STF-0001`, Ust. Andi Quarzy Ayatullah). Proposed anchor `OU-INSTITUTION` is formally superseded. Assignment for Kabid Tahfizh anchors to `OU-TAHFIZH` under account `musyrif.tahifzh` (linked to `STF-0003`, Ust. Razan Mufli). Assignment for Guru Kepesantrenan anchors to `OU-STQ-ROOT`.
   - **Source of truth:** `docs/STQ_CURRENT_STATE.md`, `types/architecture-lock.ts:CANONICAL_ASSIGNMENT_ANCHORS`, `docs/STQ_OWNER_DIRECTIVES.md:DIR-2026-030`
   - **PolicyDecisionState:** `APPROVED` (Anchor `OU-STQ-ROOT` approved; account `mudir` verified; anchor `OU-INSTITUTION` superseded)
-  - **Current state:** 1 active assignment for `mudir` provisioned in production batch anchored to `OU-STQ-ROOT` (linked to `STF-0001`).
+  - **HISTORICAL_PRE_GATE_STATE:** Unprovisioned prior to Gate 3 provisioning batch.
+  - **CURRENT_VERIFIED_PRODUCTION_STATE:** 1 active assignment for `mudir` provisioned and verified in production batch anchored to `OU-STQ-ROOT` (linked to `STF-0001`).
   - **Target state:** Provisioned with `status: ACTIVE` anchored to `OU-STQ-ROOT`.
-  - **Dependency:** Gate 3 controlled write authorization (executed in partial batch)
-  - **Production write required?:** YES (INSERT in controlled Gate 3 write batch; verified provisioned in production)
+  - **Dependency:** None (Already provisioned and verified in production)
+  - **Production write required NOW?:** NO (Active assignment already exists at OU-STQ-ROOT; zero additional writes required)
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** Gate 3 Write Plan.
   - **Positive test:** Mudir assignment active in DB query under verified account `mudir` and approved anchor `OU-STQ-ROOT`.
@@ -857,7 +866,7 @@
   - **Evidence Pack reference:** `EVID-ASN-LEAD`
   - **Gate:** GATE-3
   - **Status:** `PROVISIONED_VERIFIED_IN_PROD`
-  - **Notes / unresolved decision:** Anchor `OU-STQ-ROOT` approved; Mudir active assignment provisioned.
+  - **Notes / unresolved decision:** Anchor `OU-STQ-ROOT` approved; Mudir active assignment provisioned. Zero additional production writes required.
 
 - **REL-ASN-02 | Musyrif Tahfizh Halaqoh Assignments Provisioning**
   - **Domain:** ASSIGNMENTS / TAHFIZH
@@ -890,10 +899,11 @@
   - **Requirement:** Provision active Assignment for designated Kabid Tahfizh account (`musyrif.tahifzh`, linked to `STF-0003`, Ust. Razan Mufli). Canonical anchor is `OU-TAHFIZH` (type `DOMAIN`, domain `TAHFIZH`, parent `OU-STQ-ROOT`), formally approved per DIR-2026-030. Unit `OU-TAHFIZH` and active assignment for `musyrif.tahifzh` are now provisioned in production.
   - **Source of truth:** `docs/STQ_OWNER_DIRECTIVES.md` (DIR-2026-030), `types/architecture-lock.ts` (`CANONICAL_ASSIGNMENT_ANCHORS.KABID_TAHFIZH`)
   - **PolicyDecisionState:** `APPROVED` (per DIR-2026-030)
-  - **Current state:** 1 active assignment for `KABID_TAHFIZH` under `musyrif.tahifzh` provisioned in production batch anchored to `OU-TAHFIZH`.
+  - **HISTORICAL_PRE_GATE_STATE:** Unprovisioned prior to Gate 3 provisioning batch.
+  - **CURRENT_VERIFIED_PRODUCTION_STATE:** Exactly 1 active assignment for `KABID_TAHFIZH` under `musyrif.tahifzh` (linked to `STF-0003`) provisioned and verified in production batch anchored to `OU-TAHFIZH`.
   - **Target state:** Exactly 1 active assignment provisioned for `KABID_TAHFIZH` anchored to `OU-TAHFIZH`.
-  - **Dependency:** REL-POS-01, Provisioning of `OU-TAHFIZH` under `OU-STQ-ROOT`
-  - **Production write required?:** YES (INSERT in controlled Gate 3 write batch; verified provisioned in production)
+  - **Dependency:** None (Already provisioned and verified in production)
+  - **Production write required NOW?:** NO (KABID_TAHFIZH active assignment already exists at OU-TAHFIZH; zero additional writes required)
   - **Owner authorization required?:** YES (Granted via DIR-2026-030)
   - **Dry-run evidence:** Gate 3 provisioning write plan.
   - **Positive test:** Exactly 1 active assignment for `KABID_TAHFIZH` under approved anchor `OU-TAHFIZH`.
@@ -903,27 +913,28 @@
   - **Evidence Pack reference:** `EVID-ASN-KABID`
   - **Gate:** GATE-3
   - **Status:** `PROVISIONED_VERIFIED_IN_PROD`
-  - **Notes / unresolved decision:** Anchor unit approved as `OU-TAHFIZH` per DIR-2026-030; assignment provisioned.
+  - **Notes / unresolved decision:** Anchor unit approved as `OU-TAHFIZH` per DIR-2026-030; assignment provisioned. Zero additional production writes required.
 
 - **REL-ASN-04 | Academic Teacher Assignments Provisioning**
   - **Domain:** ASSIGNMENTS / AKADEMIK
   - **Requirement:** Provision active Assignments for academic teachers (`GURU_KEPESANTRENAN` under `PERSONAL` modality). Teacher account modality is resolved for Kepesantrenan as `PERSONAL` under `GURU_KEPESANTRENAN` with `GLOBAL` capability scope and server-side teacher/session ownership (PR #29 / DIR-2026-028), and for Studi Umum as `SUBJECT` modality under `AcademicSubjectAccountBinding` with zero fake Staff profiles (PR #28 / DIR-2026-027). Canonical anchor is `OU-STQ-ROOT`.
   - **Source of truth:** `types/architecture-lock.ts:CANONICAL_KEPESANTRENAN_TEACHER_MAPPINGS`, `docs/STQ_M3_RELEASE_DEPENDENCIES.md`, `docs/STQ_OWNER_DIRECTIVES.md: DIR-2026-028`
   - **PolicyDecisionState:** `APPROVED` (for `GURU_KEPESANTRENAN` PERSONAL and Studi Umum SUBJECT contracts)
-  - **Current state:** 7 active assignments for `GURU_KEPESANTRENAN` provisioned in production batch anchored to `OU-STQ-ROOT`. 12 Kepesantrenan TeachingAssignments provisioned (7 Putra, 5 Putri). Studi Umum remains SUBJECT modality without Staff linkage.
-  - **Target state:** Provisioned with `status: ACTIVE` in production according to approved contracts.
-  - **Dependency:** REL-PC-04, REL-POS-02, REL-OU-01, REL-STF-01
-  - **Production write required?:** YES (INSERT in partial Gate 3 write batch; verified provisioned in production)
+  - **HISTORICAL_PRE_GATE_STATE:** Unprovisioned prior to Gate 3 partial provisioning batch.
+  - **CURRENT_VERIFIED_PRODUCTION_STATE:** Exactly 7 active assignments for `GURU_KEPESANTRENAN` provisioned and verified in production anchored to `OU-STQ-ROOT`. Exactly 12 Kepesantrenan TeachingAssignments provisioned and verified in production (PUTRA = 7, PUTRI = 5). Studi Umum remains SUBJECT binding architecture without Staff linkage.
+  - **Target state:** Maintained with 7 active GURU_KEPESANTRENAN Assignments and 12 Kepesantrenan TeachingAssignments provisioned in production.
+  - **Dependency:** None for currently provisioned rows
+  - **Production write required NOW?:** NO (7 GURU_KEPESANTRENAN active assignments and 12 Kepesantrenan TeachingAssignments are already provisioned and verified in production; zero additional teacher-assignment INSERT is required)
   - **Owner authorization required?:** YES
-  - **Dry-run evidence:** C2C dry-run SQL.
-  - **Positive test:** Teacher assignments active in query under approved anchor `OU-STQ-ROOT`.
+  - **Dry-run evidence:** C2C dry-run SQL and Gate 3 provisioning evidence.
+  - **Positive test:** Teacher assignments active in query under approved anchor `OU-STQ-ROOT` (7 rows) and 12 TeachingAssignments verified.
   - **Negative test:** Unassigned teacher denied session start; cross-teacher session start denied (`SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED`).
-  - **Reconciliation evidence:** Assignment table query confirms 7 active GURU_KEPESANTRENAN assignments.
+  - **Reconciliation evidence:** Assignment table query confirms 7 active GURU_KEPESANTRENAN assignments; TeachingAssignment query confirms 12 active Kepesantrenan rows.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-ASN-TEACHER`
   - **Gate:** GATE-3
-  - **Status:** `PARTIALLY_PROVISIONED_IN_PROD` (7 GURU_KEPESANTRENAN active assignments and 12 TeachingAssignments provisioned; remaining scope pending Gate 3 completion)
-  - **Notes / unresolved decision:** Resolved under approved GURU_KEPESANTRENAN PERSONAL contract and Studi Umum SUBJECT account architecture.
+  - **Status:** `PROVISIONED_VERIFIED_IN_PROD`
+  - **Notes / unresolved decision:** Resolved under approved GURU_KEPESANTRENAN PERSONAL contract and Studi Umum SUBJECT account architecture. 7 active assignments and 12 TeachingAssignments already provisioned; zero additional writes required now.
 
 - **REL-ASN-05 | Petugas Operasional Tahfizh (POT) Assignment Provisioning**
   - **Domain:** ASSIGNMENTS / TAHFIZH
@@ -1667,40 +1678,42 @@
   - **Requirement:** Table `teaching_assignments` created via migration M3.3B to model teacher ownership/assignment for subject + education track + gender complex + optional pedagogical level + validity period (Prisma fields: `mapelId`, `staffId`, `educationTrack`, `genderComplex`, `pedagogicalLevel`, `validFrom`, `validUntil`). Note: `TeachingAssignment` does NOT contain `cohortId` (`EducationSession` holds `cohortId` independently). Do not invent a TeachingAssignment -> cohort relation.
   - **Source of truth:** `prisma/migrations/20260918140000_m3_3b_pendidikan_foundation/migration.sql`
   - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** Pending C2B.
-  - **Target state:** Table created via C2B DDL; seeded in C2C.
-  - **Dependency:** REL-MIG-04
-  - **Production write required?:** YES (Future C2C operation; CURRENT PR #25 EXECUTES ZERO PRODUCTION WRITES)
+  - **HISTORICAL_PRE_GATE_STATE:** Table creation and seeding had not occurred prior to C2B execution.
+  - **CURRENT_VERIFIED_PRODUCTION_STATE:** C2B / schema migration = COMPLETE; `teaching_assignments` table = PRESENT; exactly 12 canonical Kepesantrenan TeachingAssignments = PROVISIONED / VERIFIED in production (PUTRA = 7, PUTRI = 5). Future new teaching assignments are normal future business data, not a missing launch bootstrap task.
+  - **Target state:** Maintained with table present and 12 canonical Kepesantrenan rows provisioned.
+  - **Dependency:** None (Migration complete and 12 rows provisioned)
+  - **Production write required NOW for those 12?:** NO (C2B schema migration complete and 12 canonical Kepesantrenan TeachingAssignments are already provisioned and verified in production)
   - **Owner authorization required?:** YES
-  - **Dry-run evidence:** C2C dry-run SQL.
-  - **Positive test:** Table queryable via Prisma with valid field bindings.
+  - **Dry-run evidence:** C2C dry-run SQL and Gate 3 provisioning evidence.
+  - **Positive test:** Table queryable via Prisma with valid field bindings; 12 active Kepesantrenan TeachingAssignments verified.
   - **Negative test:** Invalid foreign keys or schema violations rejected.
-  - **Reconciliation evidence:** Pre/post table row counts.
+  - **Reconciliation evidence:** TeachingAssignment table audit confirms 12 active Kepesantrenan rows.
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows.
   - **Evidence Pack reference:** `EVID-TEA-PROVISION`
-  - **Gate:** GATE-C2C
-  - **Status:** `BLOCKED` (Awaiting C2B completion)
-  - **Notes / unresolved decision:** Relational teacher binding.
+  - **Gate:** GATE-3
+  - **Status:** `PROVISIONED_VERIFIED_IN_PROD`
+  - **Notes / unresolved decision:** Relational teacher binding; 12 canonical rows provisioned; zero launch bootstrap writes required now.
 
 - **REL-TEA-02 | Teacher Account Modality Decision Specification**
   - **Domain:** TEACHING_ASSIGNMENTS / GOVERNANCE
-  - **Requirement:** Teacher account modality (PERSONAL linked Staff vs UNIT + verified human executor) remains an unresolved business decision. Design supports both.
-  - **Source of truth:** `STQ_PROJECT_CONTEXT.md` (Section 18)
-  - **PolicyDecisionState:** `PROPOSED_TBD`
-  - **Current state:** Unresolved business decision #2.
-  - **Target state:** Resolved by Business Owner before teacher assignment provisioning.
-  - **Dependency:** Explicit Business Owner Decision
-  - **Production write required?:** NO in this stage
-  - **Owner authorization required?:** YES
-  - **Dry-run evidence:** TypeScript interfaces supporting both.
-  - **Positive test:** System accepts either valid personal or valid unit credential.
-  - **Negative test:** Unverified anonymous teacher credential rejected.
+  - **Requirement:** Teacher account modality is resolved: Studi Umum resolved as SUBJECT via `AcademicSubjectAccountBinding` with zero fake Staff profiles (DIR-2026-027 / PR #28); Kepesantrenan resolved as PERSONAL Staff/User via `GURU_KEPESANTRENAN` with server-side teacher ownership (DIR-2026-028 / PR #29).
+  - **Source of truth:** `docs/STQ_OWNER_DIRECTIVES.md: DIR-2026-027, DIR-2026-028`, `types/architecture-lock.ts`
+  - **PolicyDecisionState:** `RESOLVED`
+  - **HISTORICAL_PRE_GATE_STATE:** Previously tracked as unresolved business decision #2.
+  - **CURRENT_VERIFIED_PRODUCTION_STATE:** Formally resolved in code and architecture contracts: Studi Umum = SUBJECT via `AcademicSubjectAccountBinding`; Kepesantrenan = PERSONAL Staff/User via `GURU_KEPESANTRENAN`.
+  - **Target state:** Maintained as resolved architecture contract.
+  - **Dependency:** None
+  - **Production write required NOW?:** NO
+  - **Owner authorization required?:** YES (Granted via DIR-2026-027 and DIR-2026-028)
+  - **Dry-run evidence:** TypeScript interfaces and architecture lock tests.
+  - **Positive test:** System enforces SUBJECT modality for Studi Umum and PERSONAL modality for Kepesantrenan.
+  - **Negative test:** Unverified anonymous teacher credential rejected; fake Staff profile for subject account rejected.
   - **Reconciliation evidence:** Architecture lock tests.
   - **Rollback/recovery consideration:** N/A
   - **Evidence Pack reference:** `EVID-TEA-MODALITY`
-  - **Gate:** GATE-C2C
-  - **Status:** `NOT_READY`
-  - **Notes / unresolved decision:** Unresolved business decision #2.
+  - **Gate:** GATE-3
+  - **Status:** `RESOLVED`
+  - **Notes / unresolved decision:** Teacher account modality resolved; no unresolved business decision remains for teacher modality.
 
 - **REL-TEA-03 | Substitute Teacher (Badal) Authorization Matrix**
   - **Domain:** TEACHING_ASSIGNMENTS / BADAL
@@ -2083,10 +2096,10 @@
   - **Status:** `BLOCKED`
 
 - **REL-DEC-02 | Decision #2: Teacher Account Modality (PERSONAL vs UNIT)**
-  - **Scope Impact:** Blocks `C2C` teacher assignment provisioning. Safely deferred for C2B.
-  - **Classification:** `BLOCKED_BEFORE_C2C_TEACHER_PROVISIONING`
-  - **Resolution Requirement:** Business Owner decides personal linked vs shared unit desk.
-  - **Status:** `BLOCKED`
+  - **Scope Impact:** Formally resolved (DIR-2026-027, DIR-2026-028). Studi Umum = SUBJECT via `AcademicSubjectAccountBinding`; Kepesantrenan = PERSONAL Staff/User via `GURU_KEPESANTRENAN`.
+  - **Classification:** `RESOLVED`
+  - **Resolution Requirement:** Resolved by Owner Directives DIR-2026-027 and DIR-2026-028.
+  - **Status:** `RESOLVED`
 
 - **REL-DEC-03 | Decision #3: Substitute / Badal Teacher Authorization Matrix**
   - **Scope Impact:** Blocks `C2D` substitute teacher activation. Does NOT block C2B or primary C2C provisioning.
