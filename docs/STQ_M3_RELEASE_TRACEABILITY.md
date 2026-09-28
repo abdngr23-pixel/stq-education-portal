@@ -46,22 +46,25 @@ The STQ Education Portal Release Train enforces end-to-end bidirectional traceab
      *(For every mutating UNIT transaction, verified human executor attribution is strictly required; the technical credential itself does not masquerade as a personal Staff profile).*
 3. **No Personal Identity Grants**: Usernames (e.g. `lisa.mt`, `razan.mt`), personal names, or email strings must NEVER appear in authorization policies or conditional logic.
 4. **Fail-Closed Domain Trust**: Unknown capability namespaces and unassigned resources fail closed with `INVALID_RESOURCE_CONTEXT` or `SCOPE_MISMATCH`.
-5. **Exact UAT Capability Coverage**: The 9 canonical capabilities required for UAT activation must maintain 100% complete traceability links before C2D activation:
-   1. `academic.schedule.read`
-   2. `academic.session.start`
-   3. `academic.material.record`
-   4. `academic.attendance.record`
-   5. `tahfizh.recap.read`
-   6. `tahfizh.reward.issue`
-   7. `tahfizh.target.manage`
-   8. `keasramaan.permission.read`
-   9. `keasramaan.permission.create`
+5. **Exact Capability Registry & UAT Activation Distinction**:
+   - `REGISTERED_CAPABILITY_CATALOG_COUNT = 9` (the full canonical catalog in `types/architecture-lock.ts` and the `capabilities` table):
+     1. `academic.schedule.read`
+     2. `academic.session.start`
+     3. `academic.material.record`
+     4. `academic.attendance.record`
+     5. `tahfizh.recap.read`
+     6. `tahfizh.reward.issue`
+     7. `tahfizh.target.manage`
+     8. `keasramaan.permission.read`
+     9. `keasramaan.permission.create`
+   - `REQUIRED_UAT_ACTIVATION_CAPABILITY_COUNT = 8` (the 8 runtime activation capability codes derived by `REQUIRED_UAT_ACTIVATION_CAPABILITIES` in `lib/server/pendidikan-v2-readiness.ts`: 4 academic session capabilities + 4 approved operational target capabilities).
 6. **Academic PositionCapability Classification & Operational Boundary**:
-   - `ACADEMIC_CAPABILITY_REGISTRATION = REQUIRED` (The four academic capabilities remain in the exact 9 UAT set).
-   - `ACADEMIC_POSITION_GRANT_POLICY = PROPOSED_TBD / BLOCKED` (`GURU_AKADEMIK` PositionCapability grants are NOT currently approved by canonical `UAT_ACTIVATION_TARGETS`).
-   - `ACADEMIC_SCOPE_POLICY = BLOCKED`
-   - `ACADEMIC_ACCOUNT_MODALITY = RESOLVED` (Resolved for Studi Umum as `SUBJECT` modality per PR #28 / DIR-2026-027, and for Kepesantrenan as `PERSONAL` modality under `GURU_KEPESANTRENAN` per PR #29 / DIR-2026-028).
-   - `GURU_KEPESANTRENAN` is an approved canonical position contract under PERSONAL modality (PR #29 / DIR-2026-028).
+   - `ACADEMIC_CAPABILITY_REGISTRATION = REQUIRED` (The four academic capabilities remain registered in the 9-capability catalog).
+   - `GURU_KEPESANTRENAN policy/scope = RESOLVED as approved target` (`GURU_KEPESANTRENAN` formalized under `PERSONAL` modality with `GLOBAL` capability scope and server-side teacher ownership per PR #29 / DIR-2026-028; legacy `GURU_AKADEMIK` remains unapproved/deprecated).
+   - `businessRuleState = APPROVED_TARGET_PENDING_TECHNICAL` (PositionCapabilities for GURU_KEPESANTRENAN are approved target definitions pending technical activation in Gate 3 C2D).
+   - `runtime activation = NOT_READY until controlled promotion / activation gate` (evaluated under `KEPESANTRENAN_ACADEMIC_AUTH_POLICY_READY`).
+   - `Studi Umum = SUBJECT binding architecture` (`AcademicSubjectAccountBinding` binds subject accounts to subjects; not fake Staff TeachingAssignments).
+   - `Kepesantrenan = PERSONAL Staff/User + GURU_KEPESANTRENAN Assignment` (Personal staff linked to personal User with `GURU_KEPESANTRENAN` Position).
 7. **Honest Readiness Classification**: Any component with missing migrations, unprovisioned accounts, or unapproved policies is classified as `GAP / BLOCKED / NOT_READY`. No speculative "READY" states.
 8. **TeachingAssignment vs Canonical Assignment Invariant**:
    - **TeachingAssignment**: Scheduled pedagogical Staff assignment linking a `Staff` profile to subject, track, gender group, and pedagogical level (`TeachingAssignment.staffId`, `mapelId`, etc.). A valid `TeachingAssignment` alone does NOT confer canonical runtime authority.
@@ -107,7 +110,7 @@ The STQ Education Portal Release Train enforces end-to-end bidirectional traceab
 
 ## 4. Capability Registry Traceability Summary
 
-All 9 canonical UAT capabilities are registered in architectural definitions and verified across code and test suites:
+The canonical architecture distinguishes between the registered capability catalog (`REGISTERED_CAPABILITY_CATALOG_COUNT = 9`) and the runtime activation capabilities evaluated during UAT readiness (`REQUIRED_UAT_ACTIVATION_CAPABILITY_COUNT = 8`). All 9 catalog capabilities are defined in `CANONICAL_UAT_CAPABILITIES`, while the 8 runtime activation capability codes are derived by `REQUIRED_UAT_ACTIVATION_CAPABILITIES`:
 
 ```typescript
 // types/architecture-lock.ts

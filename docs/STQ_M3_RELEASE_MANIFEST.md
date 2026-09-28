@@ -592,19 +592,20 @@
   - **Requirement:** Provision leadership positions strictly limited to approved gate set (`REQUIRED_POSITIONS_READY`): `MUDIR`, `KABID_TAHFIZH`, `KEPALA_KEASRAMAAN`. Do NOT create duplicate/synonym position codes such as `KEPALA_BIDANG_TAHFIZH`, `MUSYRIF_KEASRAMAAN`, `KEPALA_SEKOLAH` as independent canonical positions. ("Kepala Keasramaan = Musyrif Keasramaan" is terminology equivalence, not permission to seed two duplicate canonical positions; `KEPALA_SEKOLAH` is `PROPOSED_TBD / DEFERRED`).
   - **Source of truth:** `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`
   - **PolicyDecisionState:** `APPROVED` (for approved gate set)
-  - **Current state:** Unseeded in production (`positions = 0`).
+  - **HISTORICAL_PRE_GATE_STATE:** Unseeded in production (`positions = 0`).
+  - **CURRENT_VERIFIED_PRODUCTION_STATE:** Provisioned and verified in production during Gate 3 provisioning (`REQUIRED_POSITIONS_READY: READY`). All required leadership position templates (`MUDIR`, `KABID_TAHFIZH`, `KEPALA_KEASRAMAAN`) exist in the production `positions` table.
   - **Target state:** Exact approved leadership positions provisioned with `isLeadership = true`, `requiresPersonalAccount = true`.
   - **Dependency:** REL-OU-01
-  - **Production write required?:** YES (INSERT in C2C; CURRENT PR #25 EXECUTES ZERO PRODUCTION WRITES)
+  - **Production write required?:** NO (Templates already provisioned in production; active user assignments evaluated independently)
   - **Owner authorization required?:** YES
-  - **Dry-run evidence:** C2C dry-run SQL.
+  - **Dry-run evidence:** Gate 3 provisioning evidence (`BATCH_B3_POSITIONS.log`).
   - **Positive test:** Position query confirms exact approved leadership positions exist with correct allowed unit types and domain.
   - **Negative test:** Duplicate code constraint blocks collision.
-  - **Reconciliation evidence:** Position table audit.
+  - **Reconciliation evidence:** Position table audit (`REQUIRED_POSITIONS_READY: READY`).
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows.
   - **Evidence Pack reference:** `EVID-POS-LEAD`
-  - **Gate:** GATE-C2C
-  - **Status:** `BLOCKED` (Awaiting C2B completion)
+  - **Gate:** GATE-3 (C2C)
+  - **Status:** `VERIFIED_PRODUCTION` (Templates provisioned in production; user assignments evaluated under `USER_ASSIGNMENTS_READY`)
   - **Notes / unresolved decision:** Musyrif Keasramaan = Kepala Keasramaan.
 
 - **REL-POS-02 | Operational Staff Positions Provisioning**
@@ -612,19 +613,20 @@
   - **Requirement:** Provision operational positions strictly limited to approved gate set: `PETUGAS_OPERASIONAL_TAHFIZH`, `MUSYRIF_TAHFIZH`, `PEMBINA_HALAQOH`, `PETUGAS_OPERASIONAL_KEASRAMAAN`, and canonical position `GURU_KEPESANTRENAN` (formalized in PR #29 / DIR-2026-028). Additional operational positions (`MUDABBIR`, `GURU_AKADEMIK`) are `PROPOSED_TBD / DEFERRED`.
   - **Source of truth:** `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`
   - **PolicyDecisionState:** `APPROVED` (for approved operational gate set; `PROPOSED_TBD` for `GURU_AKADEMIK` and `MUDABBIR`)
-  - **Current state:** Unseeded in production.
+  - **HISTORICAL_PRE_GATE_STATE:** Unseeded in production.
+  - **CURRENT_VERIFIED_PRODUCTION_STATE:** Provisioned and verified in production during Gate 3 provisioning (`REQUIRED_POSITIONS_READY: READY`). All 5 approved operational position templates exist in the production `positions` table (8/8 required positions present overall).
   - **Target state:** Exact approved operational positions provisioned with correct domain and unit type constraints.
   - **Dependency:** REL-POS-01
-  - **Production write required?:** YES (INSERT in C2C; CURRENT PR #25 EXECUTES ZERO PRODUCTION WRITES)
+  - **Production write required?:** NO (Templates already provisioned in production; active user assignments evaluated independently)
   - **Owner authorization required?:** YES
-  - **Dry-run evidence:** C2C dry-run SQL.
+  - **Dry-run evidence:** Gate 3 provisioning evidence (`BATCH_B3_POSITIONS.log`).
   - **Positive test:** `MUSYRIF_TAHFIZH` and `PEMBINA_HALAQOH` allow unit type `HALAQOH`; `PETUGAS_OPERASIONAL_KEASRAMAAN` allows `ORGANIZATION` / `DIVISION`.
   - **Negative test:** Disallowed unit type rejected.
-  - **Reconciliation evidence:** Position table audit.
+  - **Reconciliation evidence:** Position table audit (`REQUIRED_POSITIONS_READY: READY`).
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows.
   - **Evidence Pack reference:** `EVID-POS-OPS`
-  - **Gate:** GATE-C2C
-  - **Status:** `NOT_READY`
+  - **Gate:** GATE-3 (C2C)
+  - **Status:** `VERIFIED_PRODUCTION` (Templates provisioned in production; user assignments evaluated under `USER_ASSIGNMENTS_READY`)
   - **Notes / unresolved decision:** Operational templates.
 
 - **REL-POS-03 | Student Leadership & Desk Positions Provisioning**
@@ -649,30 +651,33 @@
 
 - **REL-POS-04 | Unit Functional Desk Positions Provisioning**
   - **Domain:** POSITIONS / UNIT_DESK
-  - **Requirement:** UNIT accounts (`AccountType.UNIT`) represent functional desks and are an account modality, not a Position definition. UNIT accounts may receive canonical Assignments only through an approved Position and must retain verified human executor attribution for mutations. Exact Position codes (e.g. `UNIT_OPERASIONAL_PUTRI`, `UNIT_POSKESTREN`, `UNIT_TKS`) are `NOT YET APPROVED` in canonical architecture and must NOT be provisioned unless a future explicit Business Owner/canonical contract approves those exact codes. Do not invent a Position merely because `accountType = UNIT`.
-  - **Source of truth:** `types/architecture-lock.ts` (`AccountType.UNIT` modality rule)
-  - **PolicyDecisionState:** `PROPOSED_TBD` (Exact unit desk Position codes not yet approved)
-  - **Current state:** Unapproved / unseeded in production.
-  - **Target state:** Unit credential modality governed; exact Position codes blocked until explicitly approved.
+  - **Requirement:** UNIT accounts (`AccountType.UNIT`) represent functional desks and are an account modality, not a Position definition. UNIT accounts may receive canonical Assignments only through an approved Position and must retain verified human executor attribution for mutations.
+    - **Approved Canonical Position Template:** `PETUGAS_OPERASIONAL_KEASRAMAAN` is an approved canonical Position template, provisioned and verified in production under `KEASRAMAAN` domain. The technical unit account `osda.putri` belongs to this template but remains `SUSPENDED` per DIR-2026-037; its active Assignment and runtime executor activation are deferred pending independent proof of human executor attribution and assignment scope units.
+    - **Unapproved Speculative Position Codes:** Speculative UNIT position codes (e.g. `UNIT_OPERASIONAL_PUTRI`, `UNIT_POSKESTREN`, `UNIT_TKS`) remain `PROPOSED_TBD` in canonical architecture and must NOT be provisioned unless a future explicit Business Owner/canonical contract approves those exact codes. Do not invent a Position merely because `accountType = UNIT`.
+  - **Source of truth:** `types/architecture-lock.ts` (`AccountType.UNIT` modality rule, DIR-2026-037)
+  - **PolicyDecisionState:** `APPROVED` for `PETUGAS_OPERASIONAL_KEASRAMAAN` template; `PROPOSED_TBD` for speculative/unapproved unit desk position codes
+  - **HISTORICAL_PRE_GATE_STATE:** Unapproved / unseeded in production.
+  - **CURRENT_VERIFIED_PRODUCTION_STATE:** `PETUGAS_OPERASIONAL_KEASRAMAAN` template is provisioned and verified in production (`REQUIRED_POSITIONS_READY: READY`). `osda.putri` account is present with target/current status `SUSPENDED`. Active assignment and runtime activation remain deferred. Other speculative unit position codes remain unseeded and unapproved.
+  - **Target state:** Unit credential modality governed; `PETUGAS_OPERASIONAL_KEASRAMAAN` template provisioned; speculative position codes blocked until explicitly approved.
   - **Dependency:** REL-POS-01, Business Owner Decision
-  - **Production write required?:** YES (INSERT; BLOCKED)
+  - **Production write required?:** NO for template (already provisioned); speculative codes BLOCKED
   - **Owner authorization required?:** YES
   - **Dry-run evidence:** C2C dry-run SQL.
   - **Positive test:** UNIT account assignment permitted only through explicitly approved Position codes.
   - **Negative test:** Rejects provisioning or assignment to invented/unapproved unit Position codes.
-  - **Reconciliation evidence:** Position table audit.
+  - **Reconciliation evidence:** Position table audit (`REQUIRED_POSITIONS_READY: READY`).
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-POS-UNIT`
-  - **Gate:** GATE-C2C
-  - **Status:** `BLOCKED` (Exact unit Position codes not yet approved; speculative codes removed)
-  - **Notes / unresolved decision:** Exact Position codes for UNIT accounts unresolved.
+  - **Gate:** GATE-3 (C2C)
+  - **Status:** `RESOLVED_TEMPLATE_PROVISIONED_ACCOUNT_DEFERRED` (`PETUGAS_OPERASIONAL_KEASRAMAAN` template provisioned; `osda.putri` suspended; speculative desk position codes remain `PROPOSED_TBD`)
+  - **Notes / unresolved decision:** Approved PETUGAS_OPERASIONAL_KEASRAMAAN template distinguished from unapproved future UNIT desk position codes.
 
 ---
 
 ### H. CAPABILITIES
-- **REL-CAP-01 | Canonical 9 UAT Capabilities Registration**
+- **REL-CAP-01 | Canonical Capability Catalog Registration**
   - **Domain:** CAPABILITIES / REGISTRATION
-  - **Requirement:** Register exactly the 9 approved UAT capabilities:
+  - **Requirement:** Register exactly the 9 approved canonical capabilities:
     1. `academic.schedule.read`
     2. `academic.session.start`
     3. `academic.material.record`
@@ -682,22 +687,24 @@
     7. `tahfizh.target.manage`
     8. `keasramaan.permission.read`
     9. `keasramaan.permission.create`
+    Canonical distinction: `REGISTERED_CAPABILITY_CATALOG_COUNT = 9` (catalog count in DB) vs `REQUIRED_UAT_ACTIVATION_CAPABILITY_COUNT = 8` (runtime activation capabilities evaluated by `REQUIRED_UAT_ACTIVATION_CAPABILITIES`).
   - **Source of truth:** `types/architecture-lock.ts` (`ACADEMIC_CAPABILITIES`, `TAHFIZH_M32_CAPABILITIES`, `KEASRAMAAN_PERMISSION_CAPABILITIES`)
   - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** Unseeded in production (`capabilities = 0`).
+  - **HISTORICAL_PRE_GATE_STATE:** Unseeded in production (`capabilities = 0`).
+  - **CURRENT_VERIFIED_PRODUCTION_STATE:** Provisioned and verified in production during Gate 3 provisioning (`CAPABILITIES_REGISTERED: READY`). All 9 canonical capabilities are registered in the production `capabilities` table (`REGISTERED_CAPABILITY_CATALOG_COUNT = 9`), and all 8 required activation capabilities are verified at runtime (`REQUIRED_UAT_ACTIVATION_CAPABILITY_COUNT = 8`).
   - **Target state:** Registered in `capabilities` table.
   - **Dependency:** GATE-C2B
-  - **Production write required?:** YES (INSERT)
+  - **Production write required?:** NO (Already provisioned and verified in production)
   - **Owner authorization required?:** YES
-  - **Dry-run evidence:** C2C dry-run script verifying exact 9 codes and namespaces.
+  - **Dry-run evidence:** Gate 3 provisioning evidence (`BATCH_B4_CAPABILITIES.log`).
   - **Positive test:** `SELECT count(*) FROM capabilities` returns 9.
   - **Negative test:** Disallowed arbitrary capability codes rejected.
-  - **Reconciliation evidence:** Pre/post capabilities query.
+  - **Reconciliation evidence:** Capabilities catalog audit (`CAPABILITIES_REGISTERED: READY`).
   - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
   - **Evidence Pack reference:** `EVID-CAP-9UAT`
-  - **Gate:** GATE-C2C
-  - **Status:** `BLOCKED` (Awaiting C2B completion)
-  - **Notes / unresolved decision:** Do NOT register unapproved speculative capabilities.
+  - **Gate:** GATE-3 (C2C)
+  - **Status:** `VERIFIED_PRODUCTION` (Registered catalog present in production)
+  - **Notes / unresolved decision:** All 9 catalog capabilities registered; 8 required for UAT activation.
 
 - **REL-CAP-02 | Deferred Academic Capabilities Retention in Code Only**
   - **Domain:** CAPABILITIES / DEFERRED
@@ -1023,23 +1030,27 @@
 
 - **REL-ASU-03 | Academic Teacher Scope Units Binding**
   - **Domain:** SCOPE_UNITS / AKADEMIK
-  - **Requirement:** Binding academic teachers to scope units. Canonical Prisma contract: `AssignmentScopeUnit.unitId` references `OrgUnit.id`. Cohort IDs and Subject IDs are NOT OrgUnit IDs. Do NOT invent cohort/subject pseudo-OrgUnits. Academic containment remains `ACADEMIC_UNIT_CONTAINMENT = BLOCKED_TECHNICAL` until a canonical authoritative OrgUnit containment model is approved.
-  - **Source of truth:** `types/architecture-lock.ts`, `prisma/schema.prisma`
-  - **PolicyDecisionState:** `PROPOSED_TBD`
-  - **Current state:** Unseeded in production; academic unit containment blocked technically.
-  - **Target state:** Relational scope units bound only after authoritative OrgUnit containment model is approved.
-  - **Dependency:** REL-ASN-04, REL-PC-04, Authoritative OrgUnit Containment Model
-  - **Production write required?:** YES (INSERT)
+  - **Requirement:** Binding academic teachers to scope units. Under the canonical education model (PR #28 / DIR-2026-027 and PR #29 / DIR-2026-028), `AssignmentScopeUnit` is **intentionally NOT required** for academic flows:
+    - For `GURU_KEPESANTRENAN`, authorization is resolved using `GLOBAL` capability scope combined with server-side teacher and session ownership (`scheduledStaffId === actorStaffId` and `actualTeacherUserId === actorUserId`).
+    - For `Studi Umum`, teachers use `SUBJECT` modality governed by `AcademicSubjectAccountBinding` directly binding subject accounts to canonical subjects.
+    - `AssignmentScopeUnit.unitId` strictly references `OrgUnit.id`. Cohort IDs and Subject IDs are NOT OrgUnit IDs, and no obsolete pseudo-OrgUnit requirement is needed or used.
+  - **Source of truth:** `types/architecture-lock.ts`, `prisma/schema.prisma`, `docs/STQ_OWNER_DIRECTIVES.md: DIR-2026-027, DIR-2026-028`
+  - **PolicyDecisionState:** `RESOLVED_VIA_TEACHER_OWNERSHIP_AND_SUBJECT_BINDING` (AssignmentScopeUnit intentionally not required)
+  - **HISTORICAL_PRE_GATE_STATE:** Classified as `BLOCKED_TECHNICAL` pending containment model resolution.
+  - **CURRENT_VERIFIED_PRODUCTION_STATE:** Resolved. `AssignmentScopeUnit` is intentionally not required for academic flows. 7 active `GURU_KEPESANTRENAN` assignments are anchored at `OU-STQ-ROOT` without scope units.
+  - **Target state:** Academic teacher authorization enforced via `GLOBAL` capability scope + server-side teacher/session ownership (Kepesantrenan) and `AcademicSubjectAccountBinding` (Studi Umum).
+  - **Dependency:** REL-ASN-04, REL-PC-04
+  - **Production write required?:** NO (AssignmentScopeUnit intentionally not required for academic flows)
   - **Owner authorization required?:** YES
-  - **Dry-run evidence:** C2C dry-run SQL.
-  - **Positive test:** Scope units match authorized OrgUnits once containment model approved.
-  - **Negative test:** Fail closed if pseudo-OrgUnits (cohort/subject IDs) are used as unitId; access denied to unassigned units.
-  - **Reconciliation evidence:** Scope units table query.
-  - **Rollback/recovery consideration:** STOP -> preserve evidence -> inspect transaction state -> compare exact before-state -> use transaction rollback when still possible -> otherwise perform only explicitly authorized compensating action based on exact created/changed IDs and captured before-state. Never delete pre-existing rows. Never blanket-null fields. Never run corrective production writes from a validation step alone.
+  - **Dry-run evidence:** Schema and architecture lock verification.
+  - **Positive test:** Teacher session ownership and subject bindings verified by test suite.
+  - **Negative test:** Non-scheduled teacher starting session fails closed with `SUBSTITUTE_TEACHER_POLICY_NOT_APPROVED`; unauthenticated teacher denied.
+  - **Reconciliation evidence:** Academic session authorization test suite.
+  - **Rollback/recovery consideration:** N/A
   - **Evidence Pack reference:** `EVID-ASU-AKAD`
-  - **Gate:** GATE-C2C
-  - **Status:** `BLOCKED` (AssignmentScopeUnit.unitId references OrgUnit.id; cohort/subject pseudo-OrgUnits forbidden; academic containment is BLOCKED_TECHNICAL)
-  - **Notes / unresolved decision:** Academic containment remains BLOCKED_TECHNICAL pending canonical model approval.
+  - **Gate:** GATE-3 (C2C)
+  - **Status:** `RESOLVED_NOT_REQUIRED` (`AssignmentScopeUnit` intentionally not required; authorization enforced via server-side session ownership and subject bindings)
+  - **Notes / unresolved decision:** Pseudo-OrgUnit requirement eliminated; containment resolved via teacher ownership and subject binding.
 
 ---
 
