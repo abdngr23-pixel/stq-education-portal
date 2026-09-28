@@ -1,20 +1,61 @@
 # STQ EDUCATION PORTAL — MASTER RELEASE MANIFEST (M3.3)
-**Release Train Control Sheet: C2B (Database Migration) through C2E (Live Production UAT)**
+**Release Train Control Sheet: Gate 0 through Gate 5 (Live Production UAT)**
 
 - **Repository:** `abdngr23-pixel/stq-education-portal`
-- **Canonical Main Checkpoint:** `8e670491d1ed0c88a480ed90186153e96ca1dea3` (Post-PR #24 Merge)
-- **Status:** ACTIVE CONTROL PLANE (AUDIT REMEDIATION APPLIED)
+- **Current Main Checkpoint (before PR #34 merge):** `3524f26f6fde8580b91076bb255c4f1417d9e90a`
+- **PR #34 Status:** DRAFT / UNMERGED (`chore/gate3-final-blocker-canonicalization`)
+- **HISTORICAL_POST_PR24_CHECKPOINT:** `8e670491d1ed0c88a480ed90186153e96ca1dea3`
+- **Current Official Gate State:**
+  - `PRE-GATE` = CLOSED (Architecture Lock verified)
+  - `GATE 0` = CLOSED (Prerequisites Complete)
+  - `GATE 1` = CLOSED (Preflight Validation Complete)
+  - `GATE 2` = CLOSED (Production Migration Complete)
+  - `GATE 3` = PARTIAL / IN PROGRESS (Partial Provisioning Complete; Final Batch Pending Authorization)
+  - `GATE 4` = NOT AUTHORIZED / NOT STARTED
+  - `GATE 5` = NOT AUTHORIZED / NOT STARTED
+- **Status:** ACTIVE CONTROL PLANE (R4.1 CURRENT-STATE RECONCILED)
 - **Control-Plane Drafting:** COMPLETE
-- **Control-Plane Audit:** REMEDIATION_COMPLETE_READY_FOR_AUDIT
-- **Production Readiness:** BLOCKED (Pending Gate 0 prerequisites and Business Owner authorization)
+- **Control-Plane Audit:** READY_FOR_FINAL_INDEPENDENT_MERGE_AUDIT
+- **Production Readiness:** Gate 0 prerequisites are CLOSED; Gate 1 and Gate 2 are CLOSED; Gate 3 is PARTIAL / IN PROGRESS; all production mutations strictly governed by explicit Owner Directives.
 - **Execution Model:** PARALLEL PREPARATION | SERIAL PRODUCTION EXECUTION | FAIL-CLOSED GATES | MANDATORY EVIDENCE PACKS
-- **Current Production Mutation Authorization:** **ZERO PRODUCTION WRITES AUTHORIZED IN THIS PHASE**
+- **Current Production Mutation Authorization:** **ZERO PRODUCTION WRITES AUTHORIZED IN THIS PR / PHASE**
 - **Field Semantics (`Production write required?`):** Classifies whether the operational target work item itself requires a database/environment write during its execution gate (`FUTURE_OPERATION_REQUIRES_PRODUCTION_WRITE`), NOT whether this documentation PR executes a write (`CURRENT_PR_EXECUTED_PRODUCTION_WRITE = 0`).
 - **Current-State Precedence Rule:** `CURRENT_VERIFIED_PRODUCTION_STATE` strictly supersedes `HISTORICAL_PRE_GATE_STATE` for all operational execution decisions. Historical text must NEVER be interpreted as authorization to repeat an already-completed production mutation. Where accepted production evidence proves a catalog, account, unit, or assignment is already provisioned, `Production write required NOW` evaluates to `NO`.
 
 ---
 
 ## 1. Release Manifest Dashboard & Summary
+
+### A. Authoritative Current Release & Gate Status
+
+> [!IMPORTANT]
+> **Operational Execution Authority:**
+> Current operational execution authority comes strictly from:
+> - **Current Gate 0–9 status** (Gate 0, 1, 2 CLOSED; Gate 3 PARTIAL / IN PROGRESS; Gates 4 and 5 NOT AUTHORIZED)
+> - **Accepted production evidence packs** (e.g. `release-handoff/GATE3_COMPLETION_*`)
+> - **Current Owner Directives** (`docs/STQ_OWNER_DIRECTIVES.md`)
+> - **Architecture lock contracts** (`types/architecture-lock.ts`)
+> - **Pendidikan V2 readiness engine** (`lib/server/pendidikan-v2-readiness.ts`)
+> 
+> Historical C2B/C2C/C2D status MUST NOT override current verified Gate state. Historical text must NEVER be interpreted as authorization to repeat an already-completed production mutation.
+
+| Gate | Phase / Domain | Status | Notes / Current Truth |
+| :--- | :--- | :---: | :--- |
+| **PRE-GATE** | Pre-Release Architecture Lock | **CLOSED** | All foundational architecture locks verified in main |
+| **GATE 0** | Production Prerequisites | **CLOSED** | Prerequisites complete; read-only probes & baseline verified |
+| **GATE 1** | Production Preflight | **CLOSED** | Preflight checks and data validation passed |
+| **GATE 2** | Production Migration (DDL) | **CLOSED** | 12 migrations applied cleanly; schema verified |
+| **GATE 3** | Controlled Provisioning | **PARTIAL / IN PROGRESS** | Foundation topology (`OU-STQ-ROOT`, `OU-TAHFIZH`), Mudir/Kabid/Guru assignments, 12 TeachingAssignments, and account deactivations verified in prod; final batch (`OU-KEASRAMAAN`, 6 MT halaqohs, POT assignment) pending explicit authorization |
+| **GATE 4** | Capability & Policy Activation | **NOT AUTHORIZED / NOT STARTED** | Gated by Gate 3 complete closure |
+| **GATE 5** | Live Production UAT | **NOT AUTHORIZED / NOT STARTED** | Gated by Gate 4 completion and strict verified human executor proof |
+
+---
+
+### B. Legacy Control-Plane Snapshot (HISTORICAL_CONTROL_PLANE_SNAPSHOT)
+
+> [!NOTE]
+> **HISTORICAL_CONTROL_PLANE_SNAPSHOT — NON_AUTHORITATIVE_FOR_CURRENT_EXECUTION**
+> The 100-item table and legacy C2B–C2E summary below represent the initial pre-release baseline drafted before the sequential Gate 0–9 release process executed. For current operational execution decisions, refer to the Authoritative Current Release & Gate Status table above and the `CURRENT_VERIFIED_PRODUCTION_STATE` of each individual work item.
 
 | Stage / Scope | Total Items | PASS | READY | BLOCKED | NOT_READY |
 | :--- | :---: | :---: | :---: | :---: | :---: |
@@ -47,11 +88,11 @@
 | **AA. Unresolved Business Decisions** | 10 | 0 | 0 | 3 | 7 |
 | **TOTALS** | **100** | **11** | **0** | **41** | **48** |
 
-### Gate Status Overview:
-- **GATE-C2B (Production Migration):** `BLOCKED` (Pending verified backup execution and separate Business Owner C2B authorization).
-- **GATE-C2C (Controlled Provisioning):** `BLOCKED` (Strict dependency on C2B completion).
-- **GATE-C2D (Capability & Policy Activation):** `BLOCKED` (Strict dependency on C2C completion).
-- **GATE-C2E (Live Production UAT):** `BLOCKED` (Strict dependency on C2D completion).
+### Legacy Gate Status Overview (HISTORICAL_CONTROL_PLANE_SNAPSHOT — NON_AUTHORITATIVE_FOR_CURRENT_EXECUTION):
+- **GATE-C2B (Production Migration):** `CLOSED` in Gate 2 (12 migrations executed and verified in production).
+- **GATE-C2C (Controlled Provisioning):** `PARTIAL` in Gate 3 (Foundation provisioned; final batch pending authorization).
+- **GATE-C2D (Capability & Policy Activation):** `NOT_AUTHORIZED` (Corresponds to Gate 4).
+- **GATE-C2E (Live Production UAT):** `NOT_AUTHORIZED` (Corresponds to Gate 5).
 
 ---
 
@@ -329,23 +370,24 @@
 ### D. STAFF LINKAGE
 - **REL-STF-01 | Baseline Staff Linkage Inventory**
   - **Domain:** IDENTITY / STAFF_LINKAGE
-  - **Requirement:** Maintain verified record of 10 linked Staff (`STF-0001` to `STF-0010`) and 8 unlinked users in production.
-  - **Source of truth:** `docs/STQ_MILESTONE3_3C2A_PRODUCTION_PREFLIGHT.md`
+  - **Requirement:** Maintain verified record of linked Staff (`STF-0001` through `STF-0010`) and unlinked operational accounts. Ensure operational accounts link to active Staff records or are decommissioned/suspended.
+  - **Source of truth:** `docs/STQ_MILESTONE3_3C2A_PRODUCTION_PREFLIGHT.md`, `lib/server/pendidikan-v2-readiness.ts`
   - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** Audited in C2A; `STAFF_LINKAGE_READY = BLOCKED`.
-  - **Target state:** Identified accounts resolved to appropriate modality before assignment.
-  - **Dependency:** None
-  - **Production write required?:** NO
-  - **Owner authorization required?:** NO
-  - **Dry-run evidence:** C2A preflight table audit.
-  - **Positive test:** Query matches 10 active linked staff.
-  - **Negative test:** Fails closed if unexpected unlinked staff accounts mutate data.
-  - **Reconciliation evidence:** C2A preflight report.
+  - **HISTORICAL_C2A_BASELINE:** Audited in C2A preflight where 3 unlinked operational accounts (`musyrifah.putri`, `pembina.halaqoh`, `razan.mt`) resulted in `STAFF_LINKAGE_READY = BLOCKED`.
+  - **CURRENT_GATE3_STATE:** Verified in production during Gate 3 partial completion. Legacy placeholder and duplicate accounts (`pembina.halaqoh`, `musyrifah.putri`, `razan.mt`) have been deactivated to `SUSPENDED` with zero Staff linkage. Canonical active operational accounts have active linked Staff records (`musyirfah.putri` -> `STF-0005`, `mudir` -> `STF-0001`, `musyrif.tahifzh` -> `STF-0003`, etc.). `STAFF_LINKAGE_READY` evaluates to `READY` in readiness verification (`lib/server/pendidikan-v2-readiness.ts`).
+  - **Target state:** All active operational personal accounts maintain valid linked active Staff records; unlinked legacy accounts remain suspended without artificial Staff profiles.
+  - **Dependency:** None (Already reconciled and verified in Gate 3)
+  - **Production write required NOW?:** NO (Staff linkage reconciled; duplicate/placeholder accounts suspended; zero additional writes required)
+  - **Owner authorization required?:** YES (Satisfied via DIR-2026-032, DIR-2026-033)
+  - **Dry-run evidence:** C2A preflight table audit and Gate 3 provisioning evidence.
+  - **Positive test:** Query confirms active operational accounts link to active Staff; `STAFF_LINKAGE_READY` passes.
+  - **Negative test:** Fails closed if unexpected unlinked staff accounts mutate data or if suspended accounts attempt login.
+  - **Reconciliation evidence:** Users table audit and `pendidikan-v2-readiness` gate verification.
   - **Rollback/recovery consideration:** N/A
   - **Evidence Pack reference:** `EVID-STF-AUDIT`
-  - **Gate:** GATE-C2C
-  - **Status:** `NOT_READY` (Requires C2C provisioning plan)
-  - **Notes / unresolved decision:** Baseline for account resolution.
+  - **Gate:** GATE-3
+  - **Status:** `PROVISIONED_VERIFIED_IN_PROD`
+  - **Notes / unresolved decision:** Reconciled per DIR-2026-032 and DIR-2026-033. Baseline accounts resolved; `STAFF_LINKAGE_READY` is READY. Zero additional writes required.
 
 - **REL-STF-02 | Operational Account Linkage Resolution (musyrifah.putri & pembina.halaqoh)**
   - **Domain:** IDENTITY / STAFF_LINKAGE
@@ -418,43 +460,45 @@
 
 - **REL-ACC-02 | razan.mt Pre-Decommission Read-Only Dependency Audit**
   - **Domain:** IDENTITY / AUDIT
-  - **Requirement:** Before any deactivation/deletion in production, perform comprehensive read-only dependency audit: historical records, transactions, audit logs, active sessions, halaqoh ownership, and foreign keys.
-  - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 9)
+  - **Requirement:** Comprehensive read-only dependency audit for legacy account `razan.mt` prior to deactivation/deletion in production (historical records, transactions, audit logs, active sessions, halaqoh ownership, and foreign keys). Hard delete remains prohibited.
+  - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 9), Gate 3 Completion Evidence
   - **PolicyDecisionState:** `APPROVED`
-  - **Current state:** NOT EXECUTED.
-  - **Target state:** Completed audit report proving whether deactivation vs deletion is safe.
-  - **Dependency:** Direct DB access in C2C
-  - **Production write required?:** NO (Strictly read-only query)
-  - **Owner authorization required?:** YES (Read access)
-  - **Dry-run evidence:** SQL audit script querying all tables referencing `users.id` where `username = 'razan.mt'`.
-  - **Positive test:** Audit script returns exact row counts across all referencing tables.
-  - **Negative test:** Hard delete rejected if foreign key references exist.
-  - **Reconciliation evidence:** Dependency audit evidence report.
+  - **HISTORICAL_PRE_DECOMMISSION_AUDIT:** Was required before mutation to evaluate foreign keys and historical transaction dependencies.
+  - **CURRENT_STATE:** Decommission already executed and verified in production during Gate 3 partial completion. `razan.mt = SUSPENDED`, staff linkage = `NONE`, canonical assignments = `0`. Zero additional decommission audit or mutation is blocking the final Gate 3 batch. Hard delete remains prohibited.
+  - **Target state:** Maintained in decommissioned state (`status = SUSPENDED`, zero Staff linkage, zero canonical assignments); hard delete prohibited.
+  - **Dependency:** None (Decommission executed and verified)
+  - **Production write required NOW?:** NO (Already executed and verified; zero additional writes required)
+  - **Owner authorization required?:** YES (Satisfied)
+  - **Dry-run evidence:** Gate 3 provisioning evidence and dependency verification.
+  - **Positive test:** Audit verifies `razan.mt` is SUSPENDED with 0 staff links and 0 assignments.
+  - **Negative test:** Hard delete rejected; any attempt to link `razan.mt` to Staff or grant canonical authority fails closed.
+  - **Reconciliation evidence:** Production audit confirms `razan.mt` is SUSPENDED with 0 staff links and 0 assignments.
   - **Rollback/recovery consideration:** N/A
   - **Evidence Pack reference:** `EVID-ACC-RAZAN-DEP`
-  - **Gate:** GATE-C2C
-  - **Status:** `BLOCKED` (Awaiting production read-only audit window)
-  - **Notes / unresolved decision:** Mandatory before mutating account.
+  - **Gate:** GATE-3
+  - **Status:** `PROVISIONED_VERIFIED_IN_PROD`
+  - **Notes / unresolved decision:** Historical prerequisite satisfied. Decommission executed and verified; hard delete remains prohibited. Zero additional production writes required.
 
 - **REL-ACC-03 | musyrif.tahifzh Business Owner Designation & Pre-Provisioning Verification**
   - **Domain:** IDENTITY / KABID_TAHFIZH
-  - **Requirement:** Document operational account designation `musyrif.tahifzh` as Business Owner designated; verify exact username presence and Staff linkage read-only before provisioning canonical Position/Assignment. Preserve exact spelling. REMOVE all unsupported assumptions that `musyrif.tahifzh` -> `STF-0002` or that `STF-0002` is definitively Kabid Tahfizh. Ust. Razan Mufli, S.Pd is Kabid Tahfizh and historically associated with `STF-0003`, BUT do NOT automatically link `musyrif.tahifzh` to `STF-0003` either. Exact production User -> Staff relationship must first be verified read-only.
-  - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 9)
-  - **PolicyDecisionState:** `APPROVED` (Account designation approved; Staff linkage UNKNOWN / MUST_VERIFY_READ_ONLY)
-  - **Current state:** `MUSYRIF_TAHIFZH_ACCOUNT = BUSINESS_OWNER_DESIGNATED`, `MUSYRIF_TAHIFZH_STAFF_LINKAGE = UNKNOWN / MUST_VERIFY_READ_ONLY`.
-  - **Target state:** Verified in production database via read-only inspection; provisioned to canonical `KABID_TAHFIZH` position if verified.
-  - **Dependency:** Direct DB access in C2C
-  - **Production write required?:** NO in this stage
-  - **Owner authorization required?:** YES
-  - **Dry-run evidence:** Pre-provisioning lookup query `SELECT id, username, staff_id FROM users WHERE username = 'musyrif.tahifzh'`.
-  - **Positive test:** Query returns exactly 1 valid record.
-  - **Negative test:** Fail closed if username not found or linked to invalid staff.
-  - **Reconciliation evidence:** Query evidence artifact.
-  - **Rollback/recovery consideration:** Abort Kabid Tahfizh assignment if user record invalid.
+  - **Requirement:** Document operational account designation `musyrif.tahifzh` as Business Owner designated canonical identity; verify User -> Staff linkage and operational Kabid assignment. Preserve exact spelling.
+  - **Source of truth:** `docs/STQ_CURRENT_STATE.md` (Section 9), `docs/STQ_OWNER_DIRECTIVES.md: DIR-2026-030`, Gate 3 Completion Evidence
+  - **PolicyDecisionState:** `APPROVED` (per DIR-2026-030)
+  - **HISTORICAL_PRE_GATE_STATE:** Prior to Gate 3 provisioning, Staff linkage was tracked as `UNKNOWN / MUST_VERIFY_READ_ONLY`.
+  - **CURRENT_VERIFIED_PRODUCTION_STATE:** Verified in production: `musyrif.tahifzh` -> linked to `STF-0003` (Ust. Razan Mufli, S.Pd) -> `isKepalaBidangTahfidz = true` -> holds exactly 1 active `KABID_TAHFIZH` Assignment anchored to `OU-TAHFIZH`.
+  - **Target state:** Maintained with verified Staff linkage (`STF-0003`) and 1 active canonical `KABID_TAHFIZH` Assignment at `OU-TAHFIZH`.
+  - **Dependency:** None (Already verified in production)
+  - **Production write required NOW?:** NO for identity/linkage verification (Already verified in production; assignment provisioned; zero additional writes required)
+  - **Owner authorization required?:** YES (Granted via DIR-2026-030)
+  - **Dry-run evidence:** Gate 3 provisioning write plan and diagnostic evidence.
+  - **Positive test:** Query verifies `musyrif.tahifzh` links to `STF-0003` with active `KABID_TAHFIZH` assignment anchored to `OU-TAHFIZH`.
+  - **Negative test:** Rejects if target user not confirmed or duplicate Kabid authority detected.
+  - **Reconciliation evidence:** Users and assignments table queries confirm verified linkage and assignment.
+  - **Rollback/recovery consideration:** N/A
   - **Evidence Pack reference:** `EVID-ACC-MUSYRIF-TAH`
-  - **Gate:** GATE-C2C
-  - **Status:** `BLOCKED` (Awaiting live read-only verification)
-  - **Notes / unresolved decision:** Do not autocorrect spelling to `musyrif.tahfizh`.
+  - **Gate:** GATE-3
+  - **Status:** `PROVISIONED_VERIFIED_IN_PROD`
+  - **Notes / unresolved decision:** Reconciled per DIR-2026-030. Verified in production; preserve exact spelling `musyrif.tahifzh`. Zero additional writes required.
 
 - **REL-ACC-04 | Duplicate Kabid Authority Prevention**
   - **Domain:** IDENTITY / AUTHORIZATION
