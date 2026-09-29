@@ -48,6 +48,30 @@ export async function ajukanIzinAction(input: AjukanIzinData) {
     return { success: false, message: "Silakan login terlebih dahulu." };
   }
 
+  // Authoritative identity resolution & hard denial for UNIT accounts per DIR-2026-038
+  // UNIT accounts (such as osda.putri) are strictly READ-ONLY and must fail closed on ANY mutation.
+  // The UNIT must not gain mutation authority via role fallback, username, legacy OSDA semantics, MK/KS fallback, etc.
+  let dbUser: { id: string; username: string; status: string; accountType: string; role: string } | null = null;
+  try {
+    dbUser = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { id: true, username: true, status: true, accountType: true, role: true },
+    });
+  } catch {
+    return { success: false, message: "Database error resolving user identity (FAIL CLOSED)." };
+  }
+
+  if (!dbUser || dbUser.status !== "AKTIF") {
+    return { success: false, message: "Akses Ditolak: Pengguna tidak aktif atau tidak ditemukan." };
+  }
+
+  if (dbUser.accountType === "UNIT" || dbUser.username === "osda.putri" || session.username === "osda.putri") {
+    return {
+      success: false,
+      message: "Akses Ditolak: Akun UNIT (osda.putri) hanya berwenang untuk monitoring READ-ONLY dan dilarang melakukan pengajuan perizinan (DIR-2026-038).",
+    };
+  }
+
   // Deteksi identitas Mudabbir (secara canonical assignment atau session attribute)
   const isMudabbir = await resolveIsMudabbir(session);
 
@@ -284,6 +308,28 @@ export async function konfirmasiKembaliIzinAction(params: { izinId: string }) {
     return { success: false, message: "Silakan login terlebih dahulu." };
   }
 
+  // Hard denial for UNIT accounts per DIR-2026-038
+  let dbUser: { id: string; username: string; status: string; accountType: string; role: string } | null = null;
+  try {
+    dbUser = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { id: true, username: true, status: true, accountType: true, role: true },
+    });
+  } catch {
+    return { success: false, message: "Database error resolving user identity (FAIL CLOSED)." };
+  }
+
+  if (!dbUser || dbUser.status !== "AKTIF") {
+    return { success: false, message: "Akses Ditolak: Pengguna tidak aktif atau tidak ditemukan." };
+  }
+
+  if (dbUser.accountType === "UNIT" || dbUser.username === "osda.putri" || session.username === "osda.putri") {
+    return {
+      success: false,
+      message: "Akses Ditolak: Akun UNIT (osda.putri) hanya berwenang untuk monitoring READ-ONLY dan dilarang melakukan konfirmasi kepulangan perizinan (DIR-2026-038).",
+    };
+  }
+
   const isMudabbir = await resolveIsMudabbir(session);
 
   if (!["MK", "KS"].includes(session.role) && !isMudabbir) {
@@ -357,6 +403,28 @@ export async function batalkanIzinAction(params: { izinId: string; alasan: strin
   const session = await getCurrentSession();
   if (!session) {
     return { success: false, message: "Silakan login terlebih dahulu." };
+  }
+
+  // Hard denial for UNIT accounts per DIR-2026-038
+  let dbUser: { id: string; username: string; status: string; accountType: string; role: string } | null = null;
+  try {
+    dbUser = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { id: true, username: true, status: true, accountType: true, role: true },
+    });
+  } catch {
+    return { success: false, message: "Database error resolving user identity (FAIL CLOSED)." };
+  }
+
+  if (!dbUser || dbUser.status !== "AKTIF") {
+    return { success: false, message: "Akses Ditolak: Pengguna tidak aktif atau tidak ditemukan." };
+  }
+
+  if (dbUser.accountType === "UNIT" || dbUser.username === "osda.putri" || session.username === "osda.putri") {
+    return {
+      success: false,
+      message: "Akses Ditolak: Akun UNIT (osda.putri) hanya berwenang untuk monitoring READ-ONLY dan dilarang membatalkan perizinan (DIR-2026-038).",
+    };
   }
 
   const cancelReason = (params.alasan || "").trim();
@@ -455,6 +523,28 @@ export async function verifikasiIzinAction(params: {
     return { success: false, message: "Silakan login terlebih dahulu." };
   }
 
+  // Hard denial for UNIT accounts per DIR-2026-038
+  let dbUser: { id: string; username: string; status: string; accountType: string; role: string } | null = null;
+  try {
+    dbUser = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { id: true, username: true, status: true, accountType: true, role: true },
+    });
+  } catch {
+    return { success: false, message: "Database error resolving user identity (FAIL CLOSED)." };
+  }
+
+  if (!dbUser || dbUser.status !== "AKTIF") {
+    return { success: false, message: "Akses Ditolak: Pengguna tidak aktif atau tidak ditemukan." };
+  }
+
+  if (dbUser.accountType === "UNIT" || dbUser.username === "osda.putri" || session.username === "osda.putri") {
+    return {
+      success: false,
+      message: "Akses Ditolak: Akun UNIT (osda.putri) hanya berwenang untuk monitoring READ-ONLY dan dilarang melakukan verifikasi/approval perizinan (DIR-2026-038).",
+    };
+  }
+
   // Hanya MK dan KS yang berhak memberikan approval
   if (session.role !== "MK" && session.role !== "KS") {
     return {
@@ -531,7 +621,10 @@ export async function verifikasiIzinAction(params: {
 }
 
 /**
- * Server Action: Mengambil daftar perizinan santri (Terkontrol Sesi & ABAC Fail-Closed)
+ * Server Action: Mengambil daftar perizinan santri (Terkontrol Sesi & ABAC / Canonical Evaluator Fail-Closed)
+ * DIR-2026-038: osda.putri is a shared UNIT account for READ-ONLY monitoring across ALL SANTRIWATI PUTRI.
+ * Scope model: DOMAIN / KEASRAMAAN + PUTRI gender boundary.
+ * PUTRA data must NEVER be returned to this UNIT account.
  */
 export async function getPerizinanListAction(statusFilter?: StatusIzin) {
   const session = await getCurrentSession();
@@ -543,27 +636,117 @@ export async function getPerizinanListAction(statusFilter?: StatusIzin) {
     };
   }
 
+  // Resolve canonical user from DB (strict database status & accountType verification)
+  let dbUser: {
+    id: string;
+    username: string;
+    status: string;
+    accountType: string;
+    staffId: string | null;
+    santriId: string | null;
+    role: string;
+  } | null = null;
+
+  try {
+    dbUser = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: {
+        id: true,
+        username: true,
+        status: true,
+        accountType: true,
+        staffId: true,
+        santriId: true,
+        role: true,
+      },
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      message: `Database error resolving user identity: ${msg} (FAIL CLOSED).`,
+      data: [],
+    };
+  }
+
+  if (!dbUser || dbUser.status !== "AKTIF") {
+    return {
+      success: false,
+      message: `Akses Ditolak: Pengguna ${dbUser ? "tidak aktif" : "tidak ditemukan"} (FAIL CLOSED).`,
+      data: [],
+    };
+  }
+
   const where: Prisma.PerizinanSantriWhereInput = {};
   if (statusFilter) where.status = statusFilter;
 
-  // ABAC: Wali Santri & Santri hanya dapat melihat perizinan santri sendiri
-  if (session.role === "WS" || session.role === "ST") {
-    if (!session.santriId) {
+  // 1. Wali Santri & Santri Self-Service
+  if (dbUser.role === "WS" || dbUser.role === "ST") {
+    if (!dbUser.santriId) {
       return {
         success: false,
         message: "Akses Ditolak: Akun belum terhubung dengan data santri.",
         data: [],
       };
     }
-    where.santriId = session.santriId;
-  } else if (["MK", "KS", "ADM"].includes(session.role) || (await resolveIsMudabbir(session))) {
-    // Wewenang operasional kesantrian & perizinan pesantren (Mudir, MK, ADM, Mudabbir)
-    // Generic OSDA is NOT Mudabbir and has NO authority
+    where.santriId = dbUser.santriId;
+  } else if (dbUser.accountType === "UNIT" || dbUser.username === "osda.putri" || session.username === "osda.putri") {
+    // 2. UNIT Account (osda.putri) — Canonical Authorization per DIR-2026-038
+    // Invariants:
+    // - Never authorize from username or legacy role alone.
+    // - Resolve canonical identity, assignment, PositionCapability, and scope.
+    // - Required capability: keasramaan.permission.read
+    // - Required scope: DOMAIN / KEASRAMAAN
+    // - Server-resolved target gender MUST be PUTRI.
+    // - PUTRA data must never be returned.
+    // - Missing gender/resource context: FAIL CLOSED.
+    // - Database/resource-resolution failure: FAIL CLOSED.
+    const dataProvider = createPrismaDataProvider(prisma);
+    const authRes = await authorizeCanonical({
+      identity: { userId: dbUser.id },
+      capability: "keasramaan.permission.read",
+      dataProvider,
+    });
+
+    if (authRes.decision !== "ALLOW") {
+      return {
+        success: false,
+        message: `Akses Ditolak: ${authRes.reason || "Akun UNIT tidak memiliki kapabilitas keasramaan.permission.read yang aktif dan terverifikasi."}`,
+        data: [],
+      };
+    }
+
+    if (authRes.scopeType !== "DOMAIN") {
+      return {
+        success: false,
+        message: `Akses Ditolak: Cakupan kapabilitas (${authRes.scopeType}) tidak sesuai, diharapkan DOMAIN (DIR-2026-038).`,
+        data: [],
+      };
+    }
+
+    const grantDomain =
+      (authRes.grantUsed as unknown as { orgDomain?: string; domain?: string })?.orgDomain ||
+      (authRes.grantUsed as unknown as { orgDomain?: string; domain?: string })?.domain;
+    if (grantDomain && grantDomain !== "KEASRAMAAN") {
+      return {
+        success: false,
+        message: `Akses Ditolak: Domain kapabilitas (${grantDomain}) tidak sesuai, diharapkan KEASRAMAAN.`,
+        data: [],
+      };
+    }
+
+    // Server-side query boundary: strictly limit to female santri (jenisKelamin = 'P')
+    where.santri = {
+      jenisKelamin: "P",
+    };
+  } else if (["MK", "KS", "ADM"].includes(dbUser.role) || (await resolveIsMudabbir(session))) {
+    // 3. Authorized Personal Staff Accounts (Musyrif Keasramaan, Mudir, Admin, Mudabbir)
+    // Legacy operational kesantrian access pending canonical personal grant rollout
   } else {
-    // Fail-Closed: Role di luar MK, KS, ADM, OSDA, WS, ST tidak berwenang membaca data perizinan
+    // Fail-Closed: Role outside authorized list
     return {
       success: false,
-      message: `Akses Ditolak: Role ${session.role} tidak memiliki otorisasi membaca data perizinan.`,
+      message: `Akses Ditolak: Role ${dbUser.role} tidak memiliki otorisasi membaca data perizinan.`,
       data: [],
     };
   }
@@ -595,6 +778,7 @@ export async function getPerizinanListAction(statusFilter?: StatusIzin) {
             nama: true,
             nis: true,
             kelas: true,
+            jenisKelamin: true,
           },
         },
         disetujuiMK: {
@@ -610,10 +794,31 @@ export async function getPerizinanListAction(statusFilter?: StatusIzin) {
       },
     });
 
+    // Defense-in-depth: Server-side validation of retrieved data for UNIT accounts
+    // Fail closed if any record has missing gender or non-PUTRI gender
+    if (dbUser.accountType === "UNIT" || dbUser.username === "osda.putri" || session.username === "osda.putri") {
+      for (const item of list) {
+        if (!item.santri || !item.santri.jenisKelamin) {
+          return {
+            success: false,
+            message: "FAIL CLOSED: Terdeteksi data perizinan dengan konteks gender santri yang tidak lengkap/hilang.",
+            data: [],
+          };
+        }
+        if (item.santri.jenisKelamin !== "P") {
+          return {
+            success: false,
+            message: "FAIL CLOSED: Kebocoran data santri PUTRA terdeteksi pada akun pemantauan PUTRI.",
+            data: [],
+          };
+        }
+      }
+    }
+
     return { success: true, data: list };
   } catch (error) {
     console.error("Gagal mengambil data perizinan:", error);
-    return { success: false, data: [], message: "Gagal mengambil data perizinan santri." };
+    return { success: false, data: [], message: "Gagal mengambil data perizinan santri (FAIL CLOSED)." };
   }
 }
 
@@ -632,8 +837,8 @@ export async function catatAbsensiAction(params: {
   }
 
   // MK, PH, dan KS yang dapat mencatat absensi asrama (OSDA generic role-only write denied pending canonical policy)
-  if (session.role === "OSDA") {
-    return { success: false, message: "Akses Ditolak: Generic OSDA role tidak memiliki kewenangan pencatatan absensi asrama." };
+  if (session.role === "OSDA" || session.username === "osda.putri") {
+    return { success: false, message: "Akses Ditolak: Akun UNIT (osda.putri) / Generic OSDA dilarang melakukan pencatatan absensi asrama (DIR-2026-038)." };
   }
   if (!["MK", "PH", "KS"].includes(session.role)) {
     return { success: false, message: `Role ${session.role} tidak berhak mencatat absensi asrama.` };

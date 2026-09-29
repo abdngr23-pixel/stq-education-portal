@@ -389,12 +389,17 @@ describe("GATE 3 — BLOCKER RESOLUTION CANONICAL RECONCILIATION TEST SUITE", ()
       "APPROVED_TARGET_PENDING_TECHNICAL"
     );
     assert.strictEqual(
+      UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies.length,
+      1,
+      "OPERATIONAL_KEASRAMAAN must have exactly 1 approved policy under DIR-2026-038"
+    );
+    assert.strictEqual(
       UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].businessRuleState,
       "APPROVED_TARGET_PENDING_TECHNICAL"
     );
     assert.strictEqual(
-      UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[1].businessRuleState,
-      "APPROVED_TARGET_PENDING_TECHNICAL"
+      UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].scopeType,
+      "DOMAIN"
     );
 
     // Evaluate Kepesantrenan academic policies under APPROVED_TARGET_PENDING_TECHNICAL

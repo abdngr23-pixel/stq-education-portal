@@ -9,6 +9,11 @@ import { TahfizhDailyStatus } from "@/lib/tahfizh-status";
 import { WeeklySabaqProgress, HalaqohWorkloadSummary } from "@/lib/tahfizh-mufar-tier";
 export type { HalaqohWorkloadSummary };
 
+import {
+  authorizeCanonical,
+  createPrismaDataProvider,
+} from "@/lib/auth/canonical-evaluator";
+
 export type TahfizhOperationalFilter =
   | "ALL"
   | "PERLU_TINDAKAN"
@@ -94,9 +99,42 @@ export async function getTahfizhOperationalMonitoring(
       };
     }
 
-    // 1. Role Allowlist ABAC
-    const ALLOWED_ROLES = ["MT", "PH", "KS", "ADM", "YAY"];
-    if (!ALLOWED_ROLES.includes(session.role)) {
+    // 1. Authoritative Canonical Evaluation for tahfizh.recap.read
+    const dataProvider = createPrismaDataProvider(db);
+    const authRes = await authorizeCanonical({
+      identity: { userId: session.userId },
+      capability: "tahfizh.recap.read",
+      dataProvider,
+    }).catch(() => null);
+
+    let isAuthorized = false;
+    let isKabidOrManagerial = false;
+    let canonicalHalaqohIds: string[] | null = null;
+
+    if (authRes && authRes.decision === "ALLOW") {
+      isAuthorized = true;
+      if (authRes.scopeType === "GLOBAL") {
+        // PETUGAS_OPERASIONAL_TAHFIZH / Mudir / Managerial: GLOBAL institutional recap read
+        isKabidOrManagerial = true;
+      } else if (authRes.scopeType === "HALAQOH") {
+        // MUSYRIF_TAHFIZH / PEMBINA_HALAQOH: Scoped strictly to assigned halaqoh
+        isKabidOrManagerial = false;
+        canonicalHalaqohIds = authRes.grantUsed?.unitIds && authRes.grantUsed.unitIds.length > 0
+          ? authRes.grantUsed.unitIds
+          : authRes.grantUsed?.anchorUnitId
+          ? [authRes.grantUsed.anchorUnitId]
+          : null;
+      }
+    } else {
+      // Legacy Role Fallback (Transition Phase before full cutover)
+      const ALLOWED_ROLES = ["MT", "PH", "KS", "ADM", "YAY"];
+      if (ALLOWED_ROLES.includes(session.role)) {
+        isAuthorized = true;
+        isKabidOrManagerial = ["KS", "ADM", "YAY"].includes(session.role) || Boolean(session.isKepalaBidangTahfidz);
+      }
+    }
+
+    if (!isAuthorized) {
       return {
         success: false,
         message: "Akses Ditolak: Anda tidak memiliki wewenang untuk mengakses monitoring operasional Tahfizh.",
@@ -104,26 +142,27 @@ export async function getTahfizhOperationalMonitoring(
       };
     }
 
-    const isKabid = Boolean(session.isKepalaBidangTahfidz);
-    const isManagerial = ["KS", "ADM", "YAY"].includes(session.role);
-    const isKabidOrManagerial = isKabid || isManagerial;
-
     // 2. Strict MT/PH scoping & fail-closed check
-    if (!isKabidOrManagerial && (session.role === "MT" || session.role === "PH")) {
-      if (!session.staffId) {
-        return {
-          success: false,
-          message: "Akses Ditolak: Profil staf pembina Anda belum terhubung. Silakan hubungi admin.",
-          error: "STAFF_ID_MISSING",
-        };
-      }
+    if (!isKabidOrManagerial) {
+      let allowedHalaqohIds: string[] = [];
+      if (canonicalHalaqohIds && canonicalHalaqohIds.length > 0) {
+        allowedHalaqohIds = canonicalHalaqohIds;
+      } else if (session.role === "MT" || session.role === "PH") {
+        if (!session.staffId) {
+          return {
+            success: false,
+            message: "Akses Ditolak: Profil staf pembina Anda belum terhubung. Silakan hubungi admin.",
+            error: "STAFF_ID_MISSING",
+          };
+        }
 
-      // Ambil halaqoh binaan MT
-      const halaqohDibina = await db.halaqoh.findMany({
-        where: { pembinaId: session.staffId },
-        select: { id: true, nama: true },
-      });
-      const allowedHalaqohIds = halaqohDibina.map((h) => h.id);
+        // Ambil halaqoh binaan MT
+        const halaqohDibina = await db.halaqoh.findMany({
+          where: { pembinaId: session.staffId },
+          select: { id: true, nama: true },
+        });
+        allowedHalaqohIds = halaqohDibina.map((h) => h.id);
+      }
 
       // Jika MT mencoba mengakses halaqoh tertentu di luar binaannya -> FAIL CLOSED
       if (params?.halaqohId && params.halaqohId !== "ALL" && !allowedHalaqohIds.includes(params.halaqohId)) {

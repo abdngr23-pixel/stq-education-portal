@@ -137,9 +137,15 @@ export async function prosesRewardTasmiSimaanAction(tasmiSimaanId: string) {
     return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
   }
 
-  // Otoritas Penerbitan Reward: Hanya Mudir (KS) dan Kabid Tahfizh (isKepalaBidangTahfidz)
-  // Ordinary Musyrif Tahfizh, ADM, MK, PH, OSDA, dsb ditolak tegas (fail-closed)
-  const isAuthorizedIssuer = session.role === "KS" || Boolean(session.isKepalaBidangTahfidz);
+  // Otoritas Penerbitan Reward: Khusus Mudir (KS).
+  // POT (PETUGAS_OPERASIONAL_TAHFIZH / musyirfah.putri) MUST NOT gain tahfizh.reward.issue per DIR-2026-023, DIR-2026-034, and DIR-2026-038.
+  if (session.username === "musyirfah.putri") {
+    return {
+      success: false,
+      message: "Akses Ditolak: PETUGAS_OPERASIONAL_TAHFIZH tidak memiliki kewenangan penerbitan reward (DIR-2026-023/DIR-2026-038).",
+    };
+  }
+  const isAuthorizedIssuer = session.role === "KS";
 
   // Representative Milestone 2 shadow evaluation (Safe-by-default: OFF in production)
   // When CANONICAL_AUTH_SHADOW_ENABLED=false: zero additional canonical/shadow context queries.

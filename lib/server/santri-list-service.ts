@@ -20,6 +20,11 @@ import {
   WeeklySabaqProgress,
 } from "@/lib/tahfizh-mufar-tier";
 
+import {
+  authorizeCanonical,
+  createPrismaDataProvider,
+} from "@/lib/auth/canonical-evaluator";
+
 export interface SantriListParams {
   search?: string;
   kelas?: string;
@@ -98,7 +103,30 @@ export async function getSantriListForSession(
 
     const where: Prisma.SantriWhereInput = {};
 
-    // Scoping berdasarkan Role
+    // 1. Authoritative Canonical Evaluation for tahfizh.recap.read
+    const dataProvider = createPrismaDataProvider(db);
+    const authRes = await authorizeCanonical({
+      identity: { userId: session.userId },
+      capability: "tahfizh.recap.read",
+      dataProvider,
+    }).catch(() => null);
+
+    let hasGlobalRecapRead = false;
+    let canonicalHalaqohIds: string[] | null = null;
+
+    if (authRes && authRes.decision === "ALLOW") {
+      if (authRes.scopeType === "GLOBAL") {
+        hasGlobalRecapRead = true;
+      } else if (authRes.scopeType === "HALAQOH") {
+        canonicalHalaqohIds = authRes.grantUsed?.unitIds && authRes.grantUsed.unitIds.length > 0
+          ? authRes.grantUsed.unitIds
+          : authRes.grantUsed?.anchorUnitId
+          ? [authRes.grantUsed.anchorUnitId]
+          : null;
+      }
+    }
+
+    // 2. Scoping berdasarkan Role & Canonical Capability
     if (session.role === "WS" || session.role === "ST") {
       if (!session.santriId) {
         return {
@@ -109,6 +137,20 @@ export async function getSantriListForSession(
         };
       }
       where.id = session.santriId;
+    } else if (hasGlobalRecapRead || ["KS", "ADM", "YAY"].includes(session.role) || session.isKepalaBidangTahfidz) {
+      // Global monitoring: dapat memfilter ke halaqoh mana pun
+      if (params?.halaqohId && params.halaqohId !== "ALL") {
+        where.halaqohId = params.halaqohId;
+      }
+    } else if (canonicalHalaqohIds && canonicalHalaqohIds.length > 0) {
+      // Scoped strictly to canonical halaqoh assignment
+      if (params?.halaqohId && canonicalHalaqohIds.includes(params.halaqohId)) {
+        where.halaqohId = params.halaqohId;
+      } else if (!params?.halaqohId || params.halaqohId === "ALL") {
+        where.halaqohId = { in: canonicalHalaqohIds };
+      } else {
+        return { success: true, data: [] };
+      }
     } else if (session.role === "MT" || session.role === "PH") {
       if (!session.staffId) {
         return {
@@ -118,23 +160,17 @@ export async function getSantriListForSession(
           data: [],
         };
       }
-      if (session.isKepalaBidangTahfidz) {
-        if (params?.halaqohId && params.halaqohId !== "ALL") {
-          where.halaqohId = params.halaqohId;
-        }
+      const halaqohDibina = await db.halaqoh.findMany({
+        where: { pembinaId: session.staffId },
+        select: { id: true },
+      });
+      const halaqohIds = halaqohDibina.map((h) => h.id);
+      if (params?.halaqohId && halaqohIds.includes(params.halaqohId)) {
+        where.halaqohId = params.halaqohId;
+      } else if (halaqohIds.length > 0) {
+        where.halaqohId = { in: halaqohIds };
       } else {
-        const halaqohDibina = await db.halaqoh.findMany({
-          where: { pembinaId: session.staffId },
-          select: { id: true },
-        });
-        const halaqohIds = halaqohDibina.map((h) => h.id);
-        if (params?.halaqohId && halaqohIds.includes(params.halaqohId)) {
-          where.halaqohId = params.halaqohId;
-        } else if (halaqohIds.length > 0) {
-          where.halaqohId = { in: halaqohIds };
-        } else {
-          return { success: true, data: [] };
-        }
+        return { success: true, data: [] };
       }
     } else {
       if (params?.halaqohId && params.halaqohId !== "ALL") {

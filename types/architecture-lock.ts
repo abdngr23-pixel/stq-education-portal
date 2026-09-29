@@ -722,6 +722,9 @@ export const OSDA_PUTRI_UNIT_CONTRACT = {
     maxActivePlacements: 1,
     allowMultipleDevices: true,
     requiresVerifiedHumanExecutor: true,
+    requiresVerifiedHumanExecutorForMutation: true,
+    allowMutation: false,
+    operationalModality: "READ_ONLY_MONITORING" as const,
     preventPutraAccess: true,
   },
 } as const;
@@ -896,34 +899,41 @@ export const UAT_ACTIVATION_TARGETS = {
       notes: "Own assigned halaqoh only. Cross-halaqoh modifications denied.",
     },
   },
-  // C. Operational Keasramaan
+  // C. Operational Keasramaan (DIR-2026-038)
   OPERATIONAL_KEASRAMAAN: {
     positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
     policies: [
       {
         capabilityCode: "keasramaan.permission.read",
-        scopeType: "ASSIGNED_UNITS",
+        scopeType: "DOMAIN",
+        domain: "KEASRAMAAN",
+        genderComplex: "PUTRI",
         businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
-      },
-      {
-        capabilityCode: "keasramaan.permission.create",
-        scopeType: "ASSIGNED_UNITS",
-        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+        notes: "DOMAIN read of Keasramaan permissions for PUTRI santriwati per DIR-2026-038. Mutation strictly denied.",
       },
     ],
+    deniedCapabilities: [
+      "keasramaan.permission.create",
+      "keasramaan.permission.update",
+      "keasramaan.permission.approve_mk",
+      "keasramaan.permission.approve_ks",
+    ],
     deniedApprovalCapabilities: ["keasramaan.permission.approve_mk", "keasramaan.permission.approve_ks"],
-    notes: "Read and create permissions for assigned units only. Approval capabilities strictly excluded.",
+    notes: "Read-only Keasramaan monitoring for PUTRI domain per DIR-2026-038. All mutation capabilities strictly denied for this UNIT account.",
   },
-  // D. OSDA PUTRI Unit Account
+  // D. OSDA PUTRI Unit Account (DIR-2026-038)
   OSDA_PUTRI: {
     accountCode: "OU-OSDA-PUTRI",
     accountType: "UNIT",
     genderComplex: "PUTRI",
     maxActivePlacements: 1,
+    operationalModality: "READ_ONLY_MONITORING",
+    allowMutation: false,
+    requiresVerifiedHumanExecutorForMutation: true,
     requiresVerifiedHumanExecutor: true,
     preventPutraAccess: true,
     businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
-    notes: "Santriwati technical operational unit account. Strictly prevents PUTRA data leakage.",
+    notes: "Santriwati technical operational unit account for READ-ONLY monitoring per DIR-2026-038. Strictly prevents PUTRA data leakage.",
   },
 } as const;
 
@@ -1137,6 +1147,19 @@ export const CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT = {
   targetUserStatus: "SUSPENDED" as const,
   targetOrgUnitCode: "OU-OSDA-PUTRI" as const,
   activationState: "DEFERRED_PENDING_OWNER_ACTIVATION" as const,
+  operationalModality: "READ_ONLY_MONITORING" as const, // DIR-2026-038
+  approvedCapability: "keasramaan.permission.read" as const,
+  approvedScopeType: "DOMAIN" as const,
+  approvedDomain: "KEASRAMAAN" as const,
+  approvedGenderComplex: "PUTRI" as const,
+  deniedCapabilities: [
+    "keasramaan.permission.create",
+    "keasramaan.permission.update",
+    "keasramaan.permission.approve_mk",
+    "keasramaan.permission.approve_ks",
+  ] as const,
+  requiresVerifiedHumanExecutorForMutation: true as const,
+  allowUnitMutation: false as const,
   verifiedHumanExecutorAttributionReady: false as const,
   assignmentScopeUnitsReady: false as const,
   gate3ActiveAssignmentRequired: false as const,

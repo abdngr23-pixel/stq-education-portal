@@ -740,9 +740,10 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: UAT ACTIVATION READINESS & 
       assert.strictEqual(UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.PEMBINA_HALAQOH.scopeType, "HALAQOH");
     });
 
-    it("46. Operational Keasramaan permission read/create is ASSIGNED_UNITS", () => {
+    it("46. Operational Keasramaan permission read is DOMAIN scope per DIR-2026-038", () => {
+      assert.strictEqual(UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies.length, 1);
       for (const p of UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies) {
-        assert.strictEqual(p.scopeType, "ASSIGNED_UNITS");
+        assert.strictEqual(p.scopeType, "DOMAIN");
       }
     });
 

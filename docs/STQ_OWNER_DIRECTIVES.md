@@ -773,6 +773,26 @@ This document serves as the persistent repository registry for authoritative Bus
 
 ---
 
+### DIR-2026-038 | OSDA Putri Read-Only Monitoring Model & Gender Boundary Scope
+- **Directive ID:** `DIR-2026-038`
+- **Tanggal:** 2026-09-29
+- **Keputusan Business Owner:**
+  - **Decision A (A3):** `osda.putri` adalah akun UNIT bersama khusus untuk **READ-ONLY monitoring**. Akun ini TIDAK DIPERBOLEHKAN melakukan create/update/approval/delete/state mutation perizinan keasramaan. Setiap upaya mutasi oleh akun UNIT ini WAJIB gagal tertutup (fail closed). Mutasi perizinan hanya dilakukan oleh akun PERSONAL yang berwenang.
+  - **Decision B (B-READ-1):** `osda.putri` berwenang memonitor SELURUH SANTRIWATI PUTRI. Akses ke data santri PUTRA dilarang keras dan wajib gagal tertutup. Model scope yang disetujui adalah `scopeType: DOMAIN`, `domain: KEASRAMAAN`, `genderComplex: PUTRI`. Dilarang membuat OrgUnit palsu atau memaksakan `AssignmentScopeUnit` hanya untuk merepresentasikan seluruh santriwati putri.
+- **Canonical Interpretation:**
+  - Technical Account: `osda.putri` (`AccountType.UNIT`), placement anchor `OU-OSDA-PUTRI`.
+  - Approved Runtime Capability: `keasramaan.permission.read` with `scopeType: DOMAIN`, `domain: KEASRAMAAN`, `genderComplex: PUTRI`.
+  - Explicitly Denied Capabilities: `keasramaan.permission.create`, `keasramaan.permission.update`, `keasramaan.permission.approve_mk`, `keasramaan.permission.approve_ks`.
+  - Readiness Impact: Readiness aktivasi read-only TIDAK diblokir oleh ketiadaan human executor atau `AssignmentScopeUnit`. Namun, jika kapabilitas mutasi UNIT terkonfigurasi secara tidak terduga, kesiapan wajib gagal tertutup seketika.
+- **Affected Domain:** KEASRAMAAN / IDENTITY / AUTH / SECURITY
+- **Implementation Status:** `CODE_COMPLETE` (Reconciled in `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`, `app/actions/kesantrian.ts`, and verified in `tests/gate5-dir2026-038-runtime-auth.test.ts`)
+- **Production Status:** `NOT_LIVE / PENDING_GATE5B_ACTIVATION` (Zero production writes executed; pending formal Gate 5B execution)
+- **Supersedes / Superseded-By:** Supersedes previous Gate 5 proposals expecting `keasramaan.permission.create` for `PETUGAS_OPERASIONAL_KEASRAMAAN`, UNIT mutation via `osda.putri`, `AssignmentScopeUnit` bindings for broad Putri monitoring, and human-executor attribution as a blocker for read-only monitoring activation.
+- **Acceptance Criteria:** `osda.putri` read returns PUTRI perizinan; PUTRA perizinan strictly blocked; permission creation/update/approval by `osda.putri` immediately fails closed; human-executor invariant remains in canonical engine for any future mutation.
+- **Evidence / Reference:** `types/architecture-lock.ts`, `lib/server/pendidikan-v2-readiness.ts`, `app/actions/kesantrian.ts`, `tests/gate5-dir2026-038-runtime-auth.test.ts`.
+
+---
+
 ## 3. 12-Point Owner Acceptance Matrix
 
 This matrix evaluates Points 2 through 13 of the Business Owner directives, reporting current status across all dimensions truthfully and without false inflation.

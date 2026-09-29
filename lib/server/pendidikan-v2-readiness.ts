@@ -233,6 +233,7 @@ export interface Gate5RuntimeActivationParams {
   userStatus?: string;
   verifiedHumanExecutorAttributionReady?: boolean;
   assignmentScopeUnitsReady?: boolean;
+  unitMutationConfigured?: boolean;
 }
 
 export interface Gate5RuntimeActivationResult {
@@ -252,9 +253,9 @@ export function evaluateGate5RuntimeActivation(
   const executorReady =
     params?.verifiedHumanExecutorAttributionReady ??
     CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.verifiedHumanExecutorAttributionReady;
-  const scopeUnitsReady =
-    params?.assignmentScopeUnitsReady ??
-    CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.assignmentScopeUnitsReady;
+  const unitMutationConfigured =
+    params?.unitMutationConfigured ??
+    CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.allowUnitMutation;
 
   if (!featureFlagEnabled) {
     return {
@@ -265,30 +266,35 @@ export function evaluateGate5RuntimeActivation(
     };
   }
 
-  // Feature flag alone must NOT make runtime ready if Gate 5 UNIT security prerequisites are not satisfied (DIR-2026-037)
+  // Feature flag alone must NOT make runtime ready if Gate 5 UNIT security prerequisites are not satisfied (DIR-2026-037/DIR-2026-038)
   const securityIssues: string[] = [];
   if (userStatus === "SUSPENDED" || userStatus !== "AKTIF") {
-    securityIssues.push(`osda.putri user status is ${userStatus} (activation deferred per DIR-2026-037)`);
+    securityIssues.push(`osda.putri user status is ${userStatus} (activation deferred per DIR-2026-037/DIR-2026-038)`);
   }
-  if (!executorReady) {
-    securityIssues.push("verifiedHumanExecutorAttributionReady is false");
-  }
-  if (!scopeUnitsReady) {
-    securityIssues.push("assignmentScopeUnitsReady is false");
+
+  // Invariant (DIR-2026-038): Under the approved READ-ONLY UNIT model (DOMAIN KEASRAMAAN + PUTRI),
+  // verifiedHumanExecutorAttributionReady and assignmentScopeUnitsReady do NOT block read-only activation.
+  // HOWEVER, if UNIT mutation capability is configured or active, fail closed immediately unless executor is ready!
+  if (unitMutationConfigured) {
+    if (!executorReady) {
+      securityIssues.push("verifiedHumanExecutorAttributionReady is false while UNIT mutation is configured (fail-closed security invariant)");
+    }
   }
 
   if (securityIssues.length > 0) {
     return {
       status: "NOT_READY",
-      details: `PENDIDIKAN_V2_UAT_ENABLED=true but Gate 5 UNIT security prerequisites not met: ${securityIssues.join("; ")} (Feature flag cannot bypass UNIT security per DIR-2026-037)`,
+      details: `PENDIDIKAN_V2_UAT_ENABLED=true but Gate 5 UNIT security prerequisites not met: ${securityIssues.join("; ")} (Feature flag cannot bypass UNIT security per DIR-2026-037/DIR-2026-038)`,
       blocking: true,
-      remediationAdvice: "Gate 5 runtime activation requires verified human executor attribution and assignment scope units before activation",
+      remediationAdvice: unitMutationConfigured && !executorReady
+        ? "UNIT mutation requires verified human executor attribution before activation"
+        : "Gate 5 runtime activation requires active account status before activation",
     };
   }
 
   return {
     status: "READY",
-    details: "PENDIDIKAN_V2_UAT_ENABLED=true and Gate 5 UNIT security prerequisites satisfied",
+    details: "PENDIDIKAN_V2_UAT_ENABLED=true and Gate 5 UNIT security prerequisites satisfied (READ-ONLY monitoring per DIR-2026-038)",
     blocking: true,
   };
 }
@@ -296,7 +302,7 @@ export function evaluateGate5RuntimeActivation(
 /**
  * Programmatically derived UAT activation capability targets:
  * 1. Education session activation capabilities (4 items)
- * 2. Approved UAT target capabilities from UAT_ACTIVATION_TARGETS manifest (4 items)
+ * 2. Approved UAT target capabilities from UAT_ACTIVATION_TARGETS manifest (3 items per DIR-2026-038)
  * Deferred capabilities (academic.score.input, academic.rapor.print, etc.) are excluded.
  */
 export const EDUCATION_SESSION_ACTIVATION_CAPABILITIES = [
@@ -310,7 +316,6 @@ export const APPROVED_UAT_TARGET_CAPABILITY_CODES = [
   UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].capabilityCode,
   UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.capabilityCode,
   UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].capabilityCode,
-  UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[1].capabilityCode,
 ] as const;
 
 export const REQUIRED_UAT_ACTIVATION_CAPABILITIES = [
@@ -339,7 +344,7 @@ export const REQUIRED_KEPESANTRENAN_TEACHER_CAPABILITIES = [
 export interface UatTargetPolicySpec {
   positionCode: string;
   capabilityCode: string;
-  expectedScope: "GLOBAL" | "ASSIGNED_UNITS" | "HALAQOH";
+  expectedScope: "GLOBAL" | "ASSIGNED_UNITS" | "HALAQOH" | "DOMAIN";
   expectedBusinessState: "APPROVED_TARGET_PENDING_TECHNICAL";
 }
 
@@ -365,14 +370,8 @@ export const CANONICAL_UAT_TARGET_POLICIES: readonly UatTargetPolicySpec[] = [
   {
     positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.positionCode,
     capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].capabilityCode,
-    expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].scopeType as "ASSIGNED_UNITS",
+    expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].scopeType as "DOMAIN",
     expectedBusinessState: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].businessRuleState as "APPROVED_TARGET_PENDING_TECHNICAL",
-  },
-  {
-    positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.positionCode,
-    capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[1].capabilityCode,
-    expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[1].scopeType as "ASSIGNED_UNITS",
-    expectedBusinessState: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[1].businessRuleState as "APPROVED_TARGET_PENDING_TECHNICAL",
   },
 ] as const;
 
@@ -1756,48 +1755,24 @@ export async function checkPendidikanV2ProductionReadiness(
                   policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} ${authRes.code}: ${authRes.reason} (runtime NOT_READY)`);
                 }
               } else if (target.positionCode === "PETUGAS_OPERASIONAL_KEASRAMAAN") {
-                // Real Keasramaan Representative Resource: find active SantriKamarPlacement in permittedUnits
-                let activePlacement: any = null;
-                if (db.santriKamarPlacement?.findFirst) {
-                  activePlacement = await db.santriKamarPlacement.findFirst({
+                // Real Keasramaan Representative Resource (DIR-2026-038: DOMAIN + PUTRI monitoring)
+                let activePutriSantri: any = null;
+                if (db.santri?.findFirst) {
+                  activePutriSantri = await db.santri.findFirst({
                     where: {
-                      isActive: true,
-                      kamarId: { in: permittedUnits },
-                      santri: { status: "AKTIF" },
+                      status: "AKTIF",
+                      jenisKelamin: "P",
                     },
-                    include: { kamar: true, santri: true },
                   }).catch(() => null);
-                } else if (db.santriKamarPlacement?.findMany) {
-                  const placements = await db.santriKamarPlacement.findMany().catch(() => []);
-                  activePlacement = placements.find(
-                    (p: any) => p.isActive && permittedUnits.includes(p.kamarId) && (!p.santri?.status || p.santri.status === "AKTIF")
+                } else if (db.santri?.findMany) {
+                  const santriList = await db.santri.findMany().catch(() => []);
+                  activePutriSantri = santriList.find(
+                    (s: any) => (!s.status || s.status === "AKTIF") && s.jenisKelamin === "P"
                   ) || null;
                 }
 
-                if (!activePlacement) {
-                  // Check if active placement exists outside permittedUnits
-                  let outsidePlacement: any = null;
-                  if (db.santriKamarPlacement?.findFirst) {
-                    outsidePlacement = await db.santriKamarPlacement.findFirst({
-                      where: {
-                        isActive: true,
-                        kamarId: { notIn: permittedUnits },
-                        santri: { status: "AKTIF" },
-                      },
-                      include: { kamar: true },
-                    }).catch(() => null);
-                  } else if (db.santriKamarPlacement?.findMany) {
-                    const placements = await db.santriKamarPlacement.findMany().catch(() => []);
-                    outsidePlacement = placements.find(
-                      (p: any) => p.isActive && !permittedUnits.includes(p.kamarId) && (!p.santri?.status || p.santri.status === "AKTIF")
-                    ) || null;
-                  }
-
-                  if (outsidePlacement && outsidePlacement.kamarId) {
-                    policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} SCOPE_MISMATCH: resource units [${outsidePlacement.kamarId}] not in assigned units [${permittedUnits.join(", ")}] (runtime NOT_READY)`);
-                  } else {
-                    policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_NOT_READY (no representative active santri kamar placement found in assigned units [${permittedUnits.join(", ")}])`);
-                  }
+                if (!activePutriSantri) {
+                  policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_NOT_READY (no representative active santriwati putri found)`);
                   continue;
                 }
 
@@ -1809,26 +1784,27 @@ export async function checkPendidikanV2ProductionReadiness(
                   positionCode: target.positionCode,
                   positionName: asg.position?.name || target.positionCode,
                   domain: asg.position?.domain || "KEASRAMAAN",
-                  unitId: anchorUnit || permittedUnits[0],
-                  unitCode: asg.unit?.code || "OU-ASR",
-                  unitName: asg.unit?.name || "Keasramaan",
+                  unitId: anchorUnit || "OU-OSDA-PUTRI",
+                  unitCode: asg.unit?.code || "OU-OSDA-PUTRI",
+                  unitName: asg.unit?.name || "OSDA Putri",
+                  unitGenderComplex: "PUTRI",
                   status: "ACTIVE",
                   validFrom: asg.validFrom ? new Date(asg.validFrom) : new Date(0),
                   validUntil: asg.validUntil ? new Date(asg.validUntil) : null,
                   positionCapabilities: [
                     {
                       capabilityCode: target.capabilityCode,
-                      scopeType: "ASSIGNED_UNITS",
+                      scopeType: "DOMAIN",
                       businessRuleState: "VERIFIED_PRODUCTION",
                     },
                   ],
-                  scopeUnits: scopedUnits.map((u: string) => ({ unitId: u })),
+                  scopeUnits: [],
                 };
 
                 const resolvedContext: ResolvedResourceContext = {
-                  santriId: activePlacement.santriId,
-                  kamarId: activePlacement.kamarId,
-                  orgUnitIds: [activePlacement.kamarId],
+                  santriId: activePutriSantri.id,
+                  orgUnitIds: [],
+                  genderComplex: "PUTRI",
                   orgDomain: "KEASRAMAAN",
                 };
 
@@ -1838,11 +1814,12 @@ export async function checkPendidikanV2ProductionReadiness(
                     username: user.username || `user-${user.id}`,
                     status: user.status || "AKTIF",
                     accountType: "UNIT",
-                    placementUnitId: anchorUnit || permittedUnits[0],
+                    genderComplex: "PUTRI",
+                    placementUnitId: anchorUnit || "OU-OSDA-PUTRI",
                     mockAssignments: [mockAssignment],
                   } as any,
                   capability: target.capabilityCode,
-                  resourceContext: { santriId: activePlacement.santriId },
+                  resourceContext: { santriId: activePutriSantri.id },
                   resolvedContext,
                 });
 
