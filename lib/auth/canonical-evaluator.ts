@@ -1186,21 +1186,8 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
                 orgUnitIds.push(mapping.orgUnitId);
                 if (!unitGenderComplex) unitGenderComplex = mapping.genderComplex;
               } else {
-                // Fallback for tests: check if targetSantri.halaqohId is already an active HALAQOH OrgUnit ID
-                let directUnit: { id: string; genderComplex: string } | null = null;
-                if (typeof (prisma as unknown as { orgUnit?: { findFirst?: unknown } })?.orgUnit?.findFirst === "function") {
-                  directUnit = (await prisma.orgUnit.findFirst({
-                    where: { id: targetSantri.halaqohId, type: "HALAQOH", isActive: true },
-                  })) as { id: string; genderComplex: string } | null;
-                }
-                if (directUnit) {
-                  halaqohId = directUnit.id;
-                  orgUnitIds.push(directUnit.id);
-                  if (!unitGenderComplex) unitGenderComplex = directUnit.genderComplex as GenderComplex;
-                } else {
-                  // Missing or inactive halaqoh mapping in real database -> fail closed
-                  halaqohId = undefined;
-                }
+                // Missing, inactive, or unmapped halaqoh mapping in database -> fail closed (zero raw ID fallback per DIR-2026-038)
+                halaqohId = undefined;
               }
             } else {
               // In pure mock environments without halaqoh model (e.g. unit tests), preserve targetSantri.halaqohId
@@ -1321,42 +1308,14 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
               if (!unitGenderComplex) unitGenderComplex = mapping.genderComplex;
               if (!orgDomain) orgDomain = "TAHFIZH";
             } else {
-              if (typeof (prisma as unknown as { orgUnit?: { findFirst?: unknown } })?.orgUnit?.findFirst === "function") {
-                const halaqohUnit = await prisma.orgUnit.findFirst({
-                  where: { id: requested.halaqohId, type: "HALAQOH", isActive: true },
-                });
-                if (halaqohUnit) {
-                  halaqohId = halaqohUnit.id;
-                  orgUnitIds.push(halaqohUnit.id);
-                  if (!unitGenderComplex) unitGenderComplex = halaqohUnit.genderComplex as GenderComplex;
-                  if (!orgDomain) orgDomain = halaqohUnit.domain as OrgDomain;
-                } else {
-                  return null;
-                }
-              } else {
-                return null;
-              }
+              // Authoritative Halaqoh mapping failed -> fail closed (zero raw ID fallback per DIR-2026-038)
+              return null;
             }
           } else {
-            if (typeof (prisma as unknown as { orgUnit?: { findFirst?: unknown } })?.orgUnit?.findFirst === "function") {
-              const halaqohUnit = await prisma.orgUnit.findFirst({
-                where: { id: requested.halaqohId, type: "HALAQOH", isActive: true },
-              });
-              if (halaqohUnit) {
-                halaqohId = halaqohUnit.id;
-                orgUnitIds.push(halaqohUnit.id);
-                if (!unitGenderComplex) unitGenderComplex = halaqohUnit.genderComplex as GenderComplex;
-                if (!orgDomain) orgDomain = halaqohUnit.domain as OrgDomain;
-              } else {
-                halaqohId = requested.halaqohId;
-                orgUnitIds.push(requested.halaqohId);
-                if (!orgDomain) orgDomain = "TAHFIZH";
-              }
-            } else {
-              halaqohId = requested.halaqohId;
-              orgUnitIds.push(requested.halaqohId);
-              if (!orgDomain) orgDomain = "TAHFIZH";
-            }
+            // In pure mock environments without halaqoh model (e.g. unit tests), preserve requested.halaqohId
+            halaqohId = requested.halaqohId;
+            orgUnitIds.push(requested.halaqohId);
+            if (!orgDomain) orgDomain = "TAHFIZH";
           }
         }
 

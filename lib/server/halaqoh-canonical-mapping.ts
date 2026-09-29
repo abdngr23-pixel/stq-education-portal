@@ -119,13 +119,10 @@ export async function resolveCanonicalOrgUnitForHalaqoh(
     isActive: boolean;
   }>;
   try {
-    // Look up primarily by canonical code "OU-" + halaqohCode, or fallback to matching orgUnit id if present
+    // Look up strictly by exact derived canonical code: "OU-" + halaqohCode (NO raw ID fallback per DIR-2026-038)
     orgUnits = await db.orgUnit.findMany({
       where: {
-        OR: [
-          { code: expectedOrgUnitCode },
-          { id: halaqoh.id, type: "HALAQOH", domain: "TAHFIZH" },
-        ],
+        code: expectedOrgUnitCode,
       },
       select: {
         id: true,
@@ -148,17 +145,17 @@ export async function resolveCanonicalOrgUnitForHalaqoh(
     return null; // Missing canonical OrgUnit -> fail closed
   }
 
-  // If both canonical code and id matched different rows, check for exact code match first
-  let orgUnit = orgUnits.find((u) => u.code === expectedOrgUnitCode);
-  if (!orgUnit) {
-    if (orgUnits.length === 1) {
-      orgUnit = orgUnits[0];
-    } else {
-      throw new HalaqohMappingError(
-        `Ambiguous canonical OrgUnit for '${expectedOrgUnitCode}': found ${orgUnits.length} rows`,
-        "AMBIGUOUS_ORG_UNIT"
-      );
-    }
+  if (orgUnits.length > 1) {
+    throw new HalaqohMappingError(
+      `Ambiguous canonical OrgUnit for '${expectedOrgUnitCode}': found ${orgUnits.length} rows`,
+      "AMBIGUOUS_ORG_UNIT"
+    );
+  }
+
+  const orgUnit = orgUnits[0];
+
+  if (orgUnit.code !== expectedOrgUnitCode) {
+    return null; // Exact code mismatch -> fail closed
   }
 
   if (!orgUnit.isActive) {
@@ -251,9 +248,11 @@ export async function resolveHalaqohForCanonicalOrgUnit(
     return null; // Inactive or not a Tahfizh halaqoh -> fail closed
   }
 
-  const halaqohCode = orgUnit.code.startsWith("OU-")
-    ? orgUnit.code.slice(3)
-    : orgUnit.code;
+  if (!orgUnit.code.startsWith("OU-")) {
+    return null; // Non-canonical code -> fail closed
+  }
+
+  const expectedHalaqohCode = orgUnit.code.slice(3);
 
   let halaqohList: Array<{
     id: string;
@@ -262,12 +261,10 @@ export async function resolveHalaqohForCanonicalOrgUnit(
     status: string;
   }>;
   try {
+    // Look up strictly by exact derived halaqohCode (NO raw ID fallback per DIR-2026-038)
     halaqohList = await db.halaqoh.findMany({
       where: {
-        OR: [
-          { halaqohCode },
-          { id: orgUnit.id },
-        ],
+        halaqohCode: expectedHalaqohCode,
       },
       select: {
         id: true,
@@ -288,16 +285,16 @@ export async function resolveHalaqohForCanonicalOrgUnit(
     return null;
   }
 
-  let halaqoh = halaqohList.find((h) => h.halaqohCode === halaqohCode);
-  if (!halaqoh) {
-    if (halaqohList.length === 1) {
-      halaqoh = halaqohList[0];
-    } else {
-      throw new HalaqohMappingError(
-        `Ambiguous halaqoh for reverse mapping '${halaqohCode}': found ${halaqohList.length} rows`,
-        "AMBIGUOUS_HALAQOH_SOURCE"
-      );
-    }
+  if (halaqohList.length > 1) {
+    throw new HalaqohMappingError(
+      `Ambiguous halaqoh for reverse mapping '${expectedHalaqohCode}': found ${halaqohList.length} rows`,
+      "AMBIGUOUS_HALAQOH_SOURCE"
+    );
+  }
+
+  const halaqoh = halaqohList[0];
+  if (halaqoh.halaqohCode !== expectedHalaqohCode) {
+    return null;
   }
 
   if (halaqoh.status !== "AKTIF") {

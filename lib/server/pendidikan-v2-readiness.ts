@@ -235,12 +235,16 @@ export const FORBIDDEN_UNIT_MUTATION_CAPABILITIES = [
   "keasramaan.permission.approve_ks",
 ] as const;
 
+export type LiveInspectionState = "SUCCESS" | "DATABASE_ERROR" | "INSPECTION_UNAVAILABLE";
+
 export interface Gate5RuntimeActivationParams {
   featureFlagEnabled?: boolean;
   userStatus?: string;
   verifiedHumanExecutorAttributionReady?: boolean;
   assignmentScopeUnitsReady?: boolean;
   unitMutationConfigured?: boolean;
+  inspectionState?: LiveInspectionState;
+  inspectionErrorMessage?: string;
   livePositionCapabilities?: Array<{
     positionCode?: string;
     capabilityCode?: string;
@@ -258,6 +262,26 @@ export interface Gate5RuntimeActivationResult {
 export function evaluateGate5RuntimeActivation(
   params?: Gate5RuntimeActivationParams
 ): Gate5RuntimeActivationResult {
+  // Authoritative fail-closed security inspection guard (DIR-2026-038):
+  // QUERY ERROR != EMPTY RESULT. Database or inspection failures must immediately BLOCK.
+  if (params?.inspectionState === "DATABASE_ERROR") {
+    return {
+      status: "BLOCKED",
+      details: `DATABASE_UNAVAILABLE: Authoritative live inspection of PositionCapability failed closed due to query failure (${params.inspectionErrorMessage || "QUERY_ERROR"}). QUERY ERROR != EMPTY RESULT per DIR-2026-038.`,
+      blocking: true,
+      remediationAdvice: "Resolve database error before evaluating Gate 5 runtime activation",
+    };
+  }
+
+  if (params?.inspectionState === "INSPECTION_UNAVAILABLE") {
+    return {
+      status: "BLOCKED",
+      details: "INSPECTION_UNAVAILABLE: No authoritative inspection mechanism available for PositionCapability verification. Fails closed per DIR-2026-038.",
+      blocking: true,
+      remediationAdvice: "Ensure Prisma client or raw query interface is configured with PositionCapability access",
+    };
+  }
+
   // 1. Authoritative Live Detection of Forbidden UNIT Mutation Capabilities (DIR-2026-038)
   const liveRows = params?.livePositionCapabilities || [];
   const unitMutationRows = liveRows.filter((r) => {
@@ -2782,40 +2806,56 @@ export async function checkPendidikanV2ProductionReadiness(
     }
   }
 
+  let liveInspectionState: LiveInspectionState = "INSPECTION_UNAVAILABLE";
+  let liveInspectionError: string | undefined;
   let liveUnitPositionCapabilities: Array<{
     positionCode?: string;
     capabilityCode?: string;
     businessRuleState?: string | null;
   }> = [];
 
-  if (db.positionCapability) {
-    const pcs = await db.positionCapability.findMany({
-      where: {
-        position: {
-          code: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+  if (db.positionCapability && typeof db.positionCapability.findMany === "function") {
+    try {
+      const pcs = await db.positionCapability.findMany({
+        where: {
+          position: {
+            code: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+          },
         },
-      },
-      include: {
-        position: true,
-      },
-    }).catch(() => []);
-    liveUnitPositionCapabilities = (pcs || []).map((r: any) => ({
-      positionCode: r.position?.code ?? r.positionCode ?? "PETUGAS_OPERASIONAL_KEASRAMAAN",
-      capabilityCode: r.capabilityCode,
-      businessRuleState: r.businessRuleState,
-    }));
+        include: {
+          position: true,
+        },
+      });
+      liveUnitPositionCapabilities = (pcs || []).map((r: any) => ({
+        positionCode: r.position?.code ?? r.positionCode ?? "PETUGAS_OPERASIONAL_KEASRAMAAN",
+        capabilityCode: r.capabilityCode,
+        businessRuleState: r.businessRuleState,
+      }));
+      liveInspectionState = "SUCCESS";
+    } catch (err: unknown) {
+      liveInspectionState = "DATABASE_ERROR";
+      liveInspectionError = err instanceof Error ? err.message : String(err);
+    }
   } else if (typeof db.$queryRawUnsafe === "function") {
-    const rows = await db.$queryRawUnsafe<Array<{ capability_code: string; business_rule_state: string; position_code: string }>>(`
-      SELECT pc.capability_code, pc.business_rule_state::text, p.code as position_code
-      FROM position_capabilities pc
-      JOIN positions p ON p.id = pc.position_id
-      WHERE p.code = 'PETUGAS_OPERASIONAL_KEASRAMAAN';
-    `).catch(() => []);
-    liveUnitPositionCapabilities = (rows || []).map((r: any) => ({
-      positionCode: r.position_code,
-      capabilityCode: r.capability_code,
-      businessRuleState: r.business_rule_state,
-    }));
+    try {
+      const rows = await db.$queryRawUnsafe<Array<{ capability_code: string; business_rule_state: string; position_code: string }>>(`
+        SELECT pc.capability_code, pc.business_rule_state::text, p.code as position_code
+        FROM position_capabilities pc
+        JOIN positions p ON p.id = pc.position_id
+        WHERE p.code = 'PETUGAS_OPERASIONAL_KEASRAMAAN';
+      `);
+      liveUnitPositionCapabilities = (rows || []).map((r: any) => ({
+        positionCode: r.position_code,
+        capabilityCode: r.capability_code,
+        businessRuleState: r.business_rule_state,
+      }));
+      liveInspectionState = "SUCCESS";
+    } catch (err: unknown) {
+      liveInspectionState = "DATABASE_ERROR";
+      liveInspectionError = err instanceof Error ? err.message : String(err);
+    }
+  } else {
+    liveInspectionState = "INSPECTION_UNAVAILABLE";
   }
 
   const gate5Activation = evaluateGate5RuntimeActivation({
@@ -2823,7 +2863,9 @@ export async function checkPendidikanV2ProductionReadiness(
     userStatus: osdaUserStatus,
     verifiedHumanExecutorAttributionReady: CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.verifiedHumanExecutorAttributionReady,
     assignmentScopeUnitsReady: CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.assignmentScopeUnitsReady,
-    livePositionCapabilities: liveUnitPositionCapabilities,
+    inspectionState: liveInspectionState,
+    inspectionErrorMessage: liveInspectionError,
+    livePositionCapabilities: liveInspectionState === "SUCCESS" ? liveUnitPositionCapabilities : undefined,
   });
 
   gates.push({
