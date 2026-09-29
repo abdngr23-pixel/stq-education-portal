@@ -439,6 +439,7 @@ describe("GATE 3 — FINAL BLOCKER CANONICALIZATION TEST SUITE (DIR-2026-034 to 
         staff: { findMany: async () => [] },
         orgUnit: { findMany: async () => [] },
         position: { findMany: async () => [] },
+        positionCapability: { findMany: async () => [] },
       };
       const rep = await checkPendidikanV2ProductionReadiness(mockDbSuspended as any);
       const gate14 = rep.gates.find((g) => g.gate === "RUNTIME_ACTIVATION_FLAG");
@@ -1056,6 +1057,7 @@ describe("GATE 3 — FINAL BLOCKER CANONICALIZATION TEST SUITE (DIR-2026-034 to 
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "false";
       const repA = await checkPendidikanV2ProductionReadiness({
         user: { findMany: async () => [{ id: "u-osda", username: "osda.putri", status: "AKTIF" }] },
+        positionCapability: { findMany: async () => [] },
       } as any);
       const gate5A = repA.gates.find((g) => g.gate === "RUNTIME_ACTIVATION_FLAG");
       assert.ok(gate5A);
@@ -1069,6 +1071,7 @@ describe("GATE 3 — FINAL BLOCKER CANONICALIZATION TEST SUITE (DIR-2026-034 to 
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
       const repB = await checkPendidikanV2ProductionReadiness({
         user: { findMany: async () => [{ id: "u-osda", username: "osda.putri", status: "SUSPENDED" }] },
+        positionCapability: { findMany: async () => [] },
       } as any);
       const gate5B = repB.gates.find((g) => g.gate === "RUNTIME_ACTIVATION_FLAG");
       assert.ok(gate5B);
@@ -1085,6 +1088,7 @@ describe("GATE 3 — FINAL BLOCKER CANONICALIZATION TEST SUITE (DIR-2026-034 to 
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
       const repC = await checkPendidikanV2ProductionReadiness({
         user: { findMany: async () => [{ id: "u-osda", username: "osda.putri", status: "AKTIF" }] },
+        positionCapability: { findMany: async () => [] },
       } as any);
       const gate5C = repC.gates.find((g) => g.gate === "RUNTIME_ACTIVATION_FLAG");
       assert.ok(gate5C);

@@ -3045,10 +3045,10 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       // 1. OrgUnits
       await prisma.orgUnit.createMany({
         data: [
-          { id: OU_S6_HLQ_A, code: "OU-S6-HLQ-A", name: "Halaqoh S6 A", type: "HALAQOH", domain: "TAHFIZH", genderComplex: "PUTRA", isActive: true },
-          { id: OU_S6_HLQ_B, code: "OU-S6-HLQ-B", name: "Halaqoh S6 B", type: "HALAQOH", domain: "TAHFIZH", genderComplex: "PUTRA", isActive: true },
-          { id: OU_S6_HLQ_C, code: "OU-S6-HLQ-C", name: "Halaqoh S6 C", type: "HALAQOH", domain: "TAHFIZH", genderComplex: "PUTRA", isActive: true },
-          { id: OU_S6_HLQ_EMPTY, code: "OU-S6-HLQ-EMPTY", name: "Halaqoh S6 Empty", type: "HALAQOH", domain: "TAHFIZH", genderComplex: "PUTRA", isActive: true },
+          { id: OU_S6_HLQ_A, code: "OU-HLQ-S6-A", name: "Halaqoh S6 A", type: "HALAQOH", domain: "TAHFIZH", genderComplex: "PUTRA", isActive: true },
+          { id: OU_S6_HLQ_B, code: "OU-HLQ-S6-B", name: "Halaqoh S6 B", type: "HALAQOH", domain: "TAHFIZH", genderComplex: "PUTRA", isActive: true },
+          { id: OU_S6_HLQ_C, code: "OU-HLQ-S6-C", name: "Halaqoh S6 C", type: "HALAQOH", domain: "TAHFIZH", genderComplex: "PUTRA", isActive: true },
+          { id: OU_S6_HLQ_EMPTY, code: "OU-HLQ-S6-EMPTY", name: "Halaqoh S6 Empty", type: "HALAQOH", domain: "TAHFIZH", genderComplex: "PUTRA", isActive: true },
           { id: OU_S6_KMR_1, code: "OU-S6-KMR-1", name: "Kamar S6 1", type: "KAMAR", domain: "KEASRAMAAN", genderComplex: "PUTRA", isActive: true },
           { id: OU_S6_KMR_2, code: "OU-S6-KMR-2", name: "Kamar S6 2", type: "KAMAR", domain: "KEASRAMAAN", genderComplex: "PUTRA", isActive: true },
           { id: OU_S6_KMR_3, code: "OU-S6-KMR-3", name: "Kamar S6 3", type: "KAMAR", domain: "KEASRAMAAN", genderComplex: "PUTRA", isActive: true },
