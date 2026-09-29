@@ -9,6 +9,7 @@ import { PrismaClient, SantriStatus } from "@prisma/client";
 import { startTestDatabase, stopTestDatabase } from "./test-db-manager";
 import { getSantriListForSession } from "../lib/server/santri-list-service";
 import { UserSession } from "../types/auth";
+import { assignCanonicalMusyrif, assignCanonicalKabid } from "./helpers/canonical-test-seed";
 
 describe("P0 DATA SANTRI — PRE-M3.3B SCHEMA COMPATIBILITY REGRESSION TEST", () => {
   let prisma: PrismaClient;
@@ -18,6 +19,7 @@ describe("P0 DATA SANTRI — PRE-M3.3B SCHEMA COMPATIBILITY REGRESSION TEST", ()
     username: "admin.test",
     role: "ADM",
     name: "Administrator Test",
+    staffId: "STF-ADMIN-PRE-01",
   };
 
   const sessionMusyrif: UserSession = {
@@ -60,15 +62,25 @@ describe("P0 DATA SANTRI — PRE-M3.3B SCHEMA COMPATIBILITY REGRESSION TEST", ()
       console.log("[P0-TEST] 03 schema ready");
 
       // 3. Seed test fixtures
-      await prisma.staff.create({
-        data: {
-          id: "STF-TEST-PRE-01",
-          staffCode: "STF-PRE-01",
-          nama: "Ust. Pembina Pre-M33B",
-          roleStaff: "MT",
-          noHp: "081234567890",
-          status: "AKTIF",
-        },
+      await prisma.staff.createMany({
+        data: [
+          {
+            id: "STF-ADMIN-PRE-01",
+            staffCode: "STF-ADM-01",
+            nama: "Administrator Test",
+            roleStaff: "ADM",
+            noHp: "081234567899",
+            status: "AKTIF",
+          },
+          {
+            id: "STF-TEST-PRE-01",
+            staffCode: "STF-PRE-01",
+            nama: "Ust. Pembina Pre-M33B",
+            roleStaff: "MT",
+            noHp: "081234567890",
+            status: "AKTIF",
+          },
+        ],
       });
 
       await prisma.halaqoh.create({
@@ -80,6 +92,34 @@ describe("P0 DATA SANTRI — PRE-M3.3B SCHEMA COMPATIBILITY REGRESSION TEST", ()
           pembinaId: "STF-TEST-PRE-01",
           status: "AKTIF",
         },
+      });
+
+      // Seed Users & Canonical Architecture Lock Assignments
+      await prisma.user.createMany({
+        data: [
+          {
+            id: sessionAdmin.userId,
+            username: sessionAdmin.username,
+            passwordHash: "hash-test",
+            role: "ADM",
+            status: "AKTIF",
+            staffId: "STF-ADMIN-PRE-01",
+          },
+          {
+            id: sessionMusyrif.userId,
+            username: sessionMusyrif.username,
+            passwordHash: "hash-test",
+            role: "MT",
+            status: "AKTIF",
+            staffId: "STF-TEST-PRE-01",
+          },
+        ],
+      });
+
+      await assignCanonicalKabid(prisma, { userId: sessionAdmin.userId });
+      await assignCanonicalMusyrif(prisma, {
+        userId: sessionMusyrif.userId,
+        halaqohCode: "HLQ-PRE-01",
       });
 
       // 4 Santri: 2 Putra (L), 2 Putri (P)
@@ -311,12 +351,13 @@ describe("P0 DATA SANTRI — PRE-M3.3B SCHEMA COMPATIBILITY REGRESSION TEST", ()
     // C. Musyrif without staffId fails-closed (Error != Empty)
     const brokenMusyrif: UserSession = {
       ...sessionMusyrif,
+      userId: "USR-MT-NOSTAFF",
       staffId: undefined,
     };
     const brokenRes = await getSantriListForSession(undefined, brokenMusyrif, prisma);
     assert.strictEqual(brokenRes.success, false);
     assert.ok(brokenRes.error);
-    assert.ok(brokenRes.error.includes("belum terhubung"));
+    assert.match(brokenRes.error, /(belum terhubung|Akses Ditolak|FORBIDDEN|IDENTITY_NOT_LINKED)/i);
   });
 
   it("7. Verifies mutation & response contract preservation on pre-M3.3B schema (update/create/read preserve all 16 PRE-M3.3B scalars)", async () => {

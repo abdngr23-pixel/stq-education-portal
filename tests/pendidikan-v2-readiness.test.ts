@@ -710,6 +710,9 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
         santri: {
           findMany: async () => [{ id: "san-1", status: "AKTIF", cohortId: null }],
         },
+        positionCapability: {
+          findMany: async () => [],
+        },
       };
       const prevEnv = process.env.PENDIDIKAN_V2_UAT_ENABLED;
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "false"; // Gate 11 is NOT_READY (blocking)

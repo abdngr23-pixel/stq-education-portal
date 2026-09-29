@@ -439,6 +439,7 @@ describe("GATE 3 — FINAL BLOCKER CANONICALIZATION TEST SUITE (DIR-2026-034 to 
         staff: { findMany: async () => [] },
         orgUnit: { findMany: async () => [] },
         position: { findMany: async () => [] },
+        positionCapability: { findMany: async () => [] },
       };
       const rep = await checkPendidikanV2ProductionReadiness(mockDbSuspended as any);
       const gate14 = rep.gates.find((g) => g.gate === "RUNTIME_ACTIVATION_FLAG");
@@ -1056,6 +1057,7 @@ describe("GATE 3 — FINAL BLOCKER CANONICALIZATION TEST SUITE (DIR-2026-034 to 
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "false";
       const repA = await checkPendidikanV2ProductionReadiness({
         user: { findMany: async () => [{ id: "u-osda", username: "osda.putri", status: "AKTIF" }] },
+        positionCapability: { findMany: async () => [] },
       } as any);
       const gate5A = repA.gates.find((g) => g.gate === "RUNTIME_ACTIVATION_FLAG");
       assert.ok(gate5A);
@@ -1069,6 +1071,7 @@ describe("GATE 3 — FINAL BLOCKER CANONICALIZATION TEST SUITE (DIR-2026-034 to 
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
       const repB = await checkPendidikanV2ProductionReadiness({
         user: { findMany: async () => [{ id: "u-osda", username: "osda.putri", status: "SUSPENDED" }] },
+        positionCapability: { findMany: async () => [] },
       } as any);
       const gate5B = repB.gates.find((g) => g.gate === "RUNTIME_ACTIVATION_FLAG");
       assert.ok(gate5B);
@@ -1079,18 +1082,27 @@ describe("GATE 3 — FINAL BLOCKER CANONICALIZATION TEST SUITE (DIR-2026-034 to 
     }
 
     // C. Feature flag true + osda accidentally ACTIVE in DB
-    //    ACTIVE status must NEVER auto-promote verifiedHumanExecutorAttributionReady or assignmentScopeUnitsReady
+    //    Under DIR-2026-038 READ-ONLY model, active osda.putri is READY for read monitoring
+    //    BUT if UNIT mutation is configured, active status alone must NEVER bypass executor attribution
     try {
       process.env.PENDIDIKAN_V2_UAT_ENABLED = "true";
       const repC = await checkPendidikanV2ProductionReadiness({
         user: { findMany: async () => [{ id: "u-osda", username: "osda.putri", status: "AKTIF" }] },
+        positionCapability: { findMany: async () => [] },
       } as any);
       const gate5C = repC.gates.find((g) => g.gate === "RUNTIME_ACTIVATION_FLAG");
       assert.ok(gate5C);
-      assert.strictEqual(gate5C.status, "NOT_READY", "Feature flag true + osda ACTIVE must still be NOT_READY");
-      assert.ok(gate5C.details.includes("verifiedHumanExecutorAttributionReady is false"));
-      assert.ok(gate5C.details.includes("assignmentScopeUnitsReady is false"));
-      assert.ok(gate5C.details.includes("Feature flag cannot bypass UNIT security per DIR-2026-037"));
+      assert.strictEqual(gate5C.status, "READY", "Read-only UNIT monitoring without mutation is READY when active per DIR-2026-038");
+
+      // Mutation fail-closed check: if unit mutation is configured, executor attribution is strictly required
+      const repMutation = evaluateGate5RuntimeActivation({
+        featureFlagEnabled: true,
+        userStatus: "AKTIF",
+        unitMutationConfigured: true,
+        verifiedHumanExecutorAttributionReady: false,
+      });
+      assert.strictEqual(repMutation.status, "NOT_READY");
+      assert.ok(repMutation.details.includes("verifiedHumanExecutorAttributionReady is false"));
     } finally {
       process.env.PENDIDIKAN_V2_UAT_ENABLED = prevEnv;
     }
@@ -1099,7 +1111,7 @@ describe("GATE 3 — FINAL BLOCKER CANONICALIZATION TEST SUITE (DIR-2026-034 to 
   // =========================================================================
   // 28. evaluateGate5RuntimeActivation pure helper prerequisite independence
   // =========================================================================
-  it("28. evaluateGate5RuntimeActivation requires independent proof of executor attribution and scope units", () => {
+  it("28. evaluateGate5RuntimeActivation requires independent proof of executor attribution when UNIT mutation is configured", () => {
     // 1. Feature flag false => NOT_READY
     const r1 = evaluateGate5RuntimeActivation({
       featureFlagEnabled: false,
@@ -1118,27 +1130,27 @@ describe("GATE 3 — FINAL BLOCKER CANONICALIZATION TEST SUITE (DIR-2026-034 to 
     });
     assert.strictEqual(r2.status, "NOT_READY");
 
-    // 3. Feature flag true + osda active BUT executorReady=false => NOT_READY
-    const r3 = evaluateGate5RuntimeActivation({
+    // 3. Feature flag true + osda active + READ-ONLY model (default) => READY (DIR-2026-038)
+    const r3ReadOnly = evaluateGate5RuntimeActivation({
       featureFlagEnabled: true,
       userStatus: "AKTIF",
       verifiedHumanExecutorAttributionReady: false,
-      assignmentScopeUnitsReady: true,
+      assignmentScopeUnitsReady: false,
+      unitMutationConfigured: false,
     });
-    assert.strictEqual(r3.status, "NOT_READY");
-    assert.ok(r3.details.includes("verifiedHumanExecutorAttributionReady is false"));
+    assert.strictEqual(r3ReadOnly.status, "READY", "Read-only UNIT monitoring does not require executor attribution");
 
-    // 4. Feature flag true + osda active BUT assignmentScopeUnitsReady=false => NOT_READY
-    const r4 = evaluateGate5RuntimeActivation({
+    // 4. Feature flag true + osda active BUT unitMutationConfigured=true AND executorReady=false => NOT_READY (Fail Closed)
+    const r4Mutation = evaluateGate5RuntimeActivation({
       featureFlagEnabled: true,
       userStatus: "AKTIF",
-      verifiedHumanExecutorAttributionReady: true,
-      assignmentScopeUnitsReady: false,
+      unitMutationConfigured: true,
+      verifiedHumanExecutorAttributionReady: false,
     });
-    assert.strictEqual(r4.status, "NOT_READY");
-    assert.ok(r4.details.includes("assignmentScopeUnitsReady is false"));
+    assert.strictEqual(r4Mutation.status, "NOT_READY");
+    assert.ok(r4Mutation.details.includes("verifiedHumanExecutorAttributionReady is false"));
 
-    // 5. Default contract parameters (osda suspended, executor=false, scopeUnits=false) => NOT_READY
+    // 5. Default contract parameters (osda suspended per canonical contract) => NOT_READY
     const r5 = evaluateGate5RuntimeActivation({
       featureFlagEnabled: true,
     });

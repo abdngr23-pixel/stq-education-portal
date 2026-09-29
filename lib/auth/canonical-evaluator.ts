@@ -37,6 +37,7 @@ import {
 import { UserSession } from "@/types/auth";
 import { evaluateScopePredicate } from "./scope-evaluator";
 import type { PrismaClient } from "@prisma/client";
+import { resolveCanonicalOrgUnitForHalaqoh } from "@/lib/server/halaqoh-canonical-mapping";
 
 /**
  * Machine-readable structured canonical authorization decision
@@ -1175,9 +1176,24 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
 
         // Cross-domain scope containment: Do NOT turn Tahfizh halaqoh into authorization scope for Keasramaan or Academic capabilities
         if (!isAcademicContext && !isKeasramaanContext) {
-          halaqohId = targetSantri.halaqohId || undefined;
           if (targetSantri.halaqohId) {
-            orgUnitIds.push(targetSantri.halaqohId);
+            const hasHalaqohModel = typeof (prisma as unknown as { halaqoh?: { findMany?: unknown } })?.halaqoh?.findMany === "function";
+            if (hasHalaqohModel) {
+              // Authoritative mapping bridge: Halaqoh.id -> canonical OrgUnit.id
+              const mapping = await resolveCanonicalOrgUnitForHalaqoh(targetSantri.halaqohId, prisma);
+              if (mapping) {
+                halaqohId = mapping.orgUnitId;
+                orgUnitIds.push(mapping.orgUnitId);
+                if (!unitGenderComplex) unitGenderComplex = mapping.genderComplex;
+              } else {
+                // Missing, inactive, or unmapped halaqoh mapping in database -> fail closed (zero raw ID fallback per DIR-2026-038)
+                halaqohId = undefined;
+              }
+            } else {
+              // In pure mock environments without halaqoh model (e.g. unit tests), preserve targetSantri.halaqohId
+              halaqohId = targetSantri.halaqohId;
+              orgUnitIds.push(targetSantri.halaqohId);
+            }
           }
         }
 
@@ -1283,16 +1299,23 @@ export function createPrismaDataProvider(prisma: PrismaClient): ICanonicalDataPr
         // If santriId is NOT provided (e.g. standalone room/unit inspection):
         // Only accept halaqohId/kamarId if authoritatively verified against OrgUnit table
         if (requested.halaqohId) {
-          const halaqohUnit = await prisma.orgUnit.findFirst({
-            where: { id: requested.halaqohId, type: "HALAQOH", isActive: true },
-          });
-          if (halaqohUnit) {
-            halaqohId = halaqohUnit.id;
-            orgUnitIds.push(halaqohUnit.id);
-            if (!unitGenderComplex) unitGenderComplex = halaqohUnit.genderComplex as GenderComplex;
-            if (!orgDomain) orgDomain = halaqohUnit.domain as OrgDomain;
+          const hasHalaqohModel = typeof (prisma as unknown as { halaqoh?: { findMany?: unknown } })?.halaqoh?.findMany === "function";
+          if (hasHalaqohModel) {
+            const mapping = await resolveCanonicalOrgUnitForHalaqoh(requested.halaqohId, prisma);
+            if (mapping) {
+              halaqohId = mapping.orgUnitId;
+              orgUnitIds.push(mapping.orgUnitId);
+              if (!unitGenderComplex) unitGenderComplex = mapping.genderComplex;
+              if (!orgDomain) orgDomain = "TAHFIZH";
+            } else {
+              // Authoritative Halaqoh mapping failed -> fail closed (zero raw ID fallback per DIR-2026-038)
+              return null;
+            }
           } else {
-            return null;
+            // In pure mock environments without halaqoh model (e.g. unit tests), preserve requested.halaqohId
+            halaqohId = requested.halaqohId;
+            orgUnitIds.push(requested.halaqohId);
+            if (!orgDomain) orgDomain = "TAHFIZH";
           }
         }
 

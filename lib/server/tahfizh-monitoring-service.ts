@@ -9,6 +9,12 @@ import { TahfizhDailyStatus } from "@/lib/tahfizh-status";
 import { WeeklySabaqProgress, HalaqohWorkloadSummary } from "@/lib/tahfizh-mufar-tier";
 export type { HalaqohWorkloadSummary };
 
+import {
+  authorizeCanonical,
+  createPrismaDataProvider,
+} from "@/lib/auth/canonical-evaluator";
+import { mapOrgUnitIdsToHalaqohIds } from "@/lib/server/halaqoh-canonical-mapping";
+
 export type TahfizhOperationalFilter =
   | "ALL"
   | "PERLU_TINDAKAN"
@@ -94,39 +100,70 @@ export async function getTahfizhOperationalMonitoring(
       };
     }
 
-    // 1. Role Allowlist ABAC
-    const ALLOWED_ROLES = ["MT", "PH", "KS", "ADM", "YAY"];
-    if (!ALLOWED_ROLES.includes(session.role)) {
+    // 1. Authoritative Canonical Evaluation for tahfizh.recap.read (Gate 5 / DIR-2026-038)
+    // Invariants:
+    // - Canonical DENY / ERROR MUST remain DENY / ERROR.
+    // - ZERO fallback to session.role, username, isKepalaBidangTahfidz, legacy PH/MT relation, ADM, YAY, KS.
+    // - Unmapped legacy authorities classify as OWNER_DECISION_REQUIRED / FAIL CLOSED.
+    const dataProvider = createPrismaDataProvider(db);
+    const authRes = await authorizeCanonical({
+      identity: { userId: session.userId },
+      capability: "tahfizh.recap.read",
+      dataProvider,
+    }).catch(() => null);
+
+    if (!authRes || authRes.decision !== "ALLOW") {
       return {
         success: false,
-        message: "Akses Ditolak: Anda tidak memiliki wewenang untuk mengakses monitoring operasional Tahfizh.",
-        error: "FORBIDDEN_ROLE",
+        message: `Akses Ditolak: ${authRes?.reason || "Anda tidak memiliki wewenang canonical (tahfizh.recap.read) untuk mengakses monitoring operasional Tahfizh."}`,
+        error: authRes?.code || "FORBIDDEN",
       };
     }
 
-    const isKabid = Boolean(session.isKepalaBidangTahfidz);
-    const isManagerial = ["KS", "ADM", "YAY"].includes(session.role);
-    const isKabidOrManagerial = isKabid || isManagerial;
+    let isKabidOrManagerial = false;
+    let allowedHalaqohIds: string[] = [];
 
-    // 2. Strict MT/PH scoping & fail-closed check
-    if (!isKabidOrManagerial && (session.role === "MT" || session.role === "PH")) {
-      if (!session.staffId) {
+    if (
+      authRes.scopeType === "GLOBAL" ||
+      (authRes.scopeType === "DOMAIN" && (authRes.grantUsed as { domain?: string | null })?.domain === "TAHFIZH")
+    ) {
+      // PETUGAS_OPERASIONAL_TAHFIZH / Mudir / Managerial: GLOBAL institutional recap read
+      isKabidOrManagerial = true;
+    } else if (authRes.scopeType === "HALAQOH") {
+      // MUSYRIF_TAHFIZH / PEMBINA_HALAQOH: Scoped strictly to assigned halaqoh
+      isKabidOrManagerial = false;
+      const rawOrgUnitIds =
+        authRes.grantUsed?.unitIds && authRes.grantUsed.unitIds.length > 0
+          ? authRes.grantUsed.unitIds
+          : authRes.grantUsed?.anchorUnitId
+          ? [authRes.grantUsed.anchorUnitId]
+          : [];
+
+      // Authoritative mapping bridge: translate canonical OrgUnit IDs to Halaqoh IDs
+      allowedHalaqohIds = await mapOrgUnitIdsToHalaqohIds(rawOrgUnitIds, db);
+      if (allowedHalaqohIds.length === 0) {
         return {
           success: false,
-          message: "Akses Ditolak: Profil staf pembina Anda belum terhubung. Silakan hubungi admin.",
-          error: "STAFF_ID_MISSING",
+          message: "Akses Ditolak: Penugasan halaqoh tidak ditemukan atau tidak aktif (FAIL CLOSED).",
+          error: "NO_ACTIVE_HALAQOH_MAPPING",
         };
       }
+    } else {
+      // Scope outside GLOBAL / DOMAIN / HALAQOH -> fail closed
+      return {
+        success: false,
+        message: `Akses Ditolak: Cakupan ${authRes.scopeType} tidak didukung untuk monitoring Tahfizh.`,
+        error: "SCOPE_NOT_SUPPORTED",
+      };
+    }
 
-      // Ambil halaqoh binaan MT
-      const halaqohDibina = await db.halaqoh.findMany({
-        where: { pembinaId: session.staffId },
-        select: { id: true, nama: true },
-      });
-      const allowedHalaqohIds = halaqohDibina.map((h) => h.id);
-
-      // Jika MT mencoba mengakses halaqoh tertentu di luar binaannya -> FAIL CLOSED
-      if (params?.halaqohId && params.halaqohId !== "ALL" && !allowedHalaqohIds.includes(params.halaqohId)) {
+    // 2. Strict halaqoh scoping & fail-closed check
+    if (!isKabidOrManagerial) {
+      if (
+        params?.halaqohId &&
+        params.halaqohId !== "ALL" &&
+        !allowedHalaqohIds.includes(params.halaqohId)
+      ) {
         return {
           success: false,
           message: "Akses Ditolak: Anda tidak memiliki akses ke halaqoh ini.",
