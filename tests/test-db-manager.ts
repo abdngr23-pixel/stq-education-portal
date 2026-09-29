@@ -2,6 +2,11 @@
 import EmbeddedPostgres from "embedded-postgres";
 import { PrismaClient } from "@prisma/client";
 import { createPrismaDataProvider, type ICanonicalDataProvider } from "../lib/auth/canonical-evaluator";
+import {
+  ensureCanonicalTahfizhBase,
+  createCanonicalHalaqohOrgUnit,
+  assignCanonicalMusyrif,
+} from "./helpers/canonical-test-seed";
 
 async function executeSqlStatementsOnClient(prismaClient: PrismaClient, sqlString: string): Promise<void> {
   // Strip single-line comments (-- ...)
@@ -360,6 +365,17 @@ export async function setupTestFixtures(prisma: PrismaClient) {
     },
   });
 
+  // 3b. Buat Canonical Foundation & Assignment untuk User MT (Gate 5 canonical runtime)
+  await ensureCanonicalTahfizhBase(prisma);
+  await createCanonicalHalaqohOrgUnit(prisma, "HLQ-TEST-01", {
+    id: "ou-hlq-test-01",
+    name: "Halaqoh Uji Coba Test",
+  });
+  await assignCanonicalMusyrif(prisma, {
+    userId: FIXTURES.USER_ID,
+    halaqohCode: "HLQ-TEST-01",
+  });
+
   // 4. Buat Santri Fixtures
   // A. Santri Multi-halaman (Modal 421 di akhir Juz 21, hafalan berikutnya 422 di Juz 22)
   await prisma.santri.create({
@@ -635,6 +651,13 @@ export async function cleanupTestFixtures(prisma: PrismaClient) {
   await prisma.santri.deleteMany({
     where: {
       id: { in: testSantriIds },
+    },
+  });
+
+  // Hapus Assignment test
+  await prisma.assignment.deleteMany({
+    where: {
+      userId: FIXTURES.USER_ID,
     },
   });
 

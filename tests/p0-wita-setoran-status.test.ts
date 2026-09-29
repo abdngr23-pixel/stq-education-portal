@@ -78,7 +78,7 @@ describe("Verifikasi Status Setoran Hari Ini Berbasis Zona Waktu WITA & Service 
 
     // Canonical authorization setup for sessionMT
     await ensureCanonicalTahfizhBase(prisma);
-    const ouHalaqoh = await createCanonicalHalaqohOrgUnit(prisma, "HLQ-WITA-01", {
+    await createCanonicalHalaqohOrgUnit(prisma, "HLQ-WITA-01", {
       id: "ou-hlq-wita-01",
       name: "Halaqoh Uji WITA",
     });
