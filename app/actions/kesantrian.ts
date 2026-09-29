@@ -4,7 +4,6 @@ import prisma from "@/lib/prisma";
 import {
   getCurrentSession,
   recordAuditLog,
-  resolveUserIsMudabbir,
 } from "@/lib/auth";
 import {
   authorizeCanonical,
@@ -26,11 +25,7 @@ export interface AjukanIzinData {
   isMenginap?: boolean;
 }
 
-import { UserSession } from "@/types/auth";
 
-async function resolveIsMudabbir(session: UserSession): Promise<boolean> {
-  return resolveUserIsMudabbir(session?.userId);
-}
 
 /**
  * Server Action: Ajukan / Catat Perizinan Santri
@@ -944,16 +939,129 @@ export async function getPerizinanListAction(statusFilter?: StatusIzin) {
       };
     }
     where.santriId = santriId;
-  } else if (["MK", "KS", "ADM"].includes(effectiveRole) || (await resolveIsMudabbir(session))) {
-    // 3. Authorized Personal Staff Accounts (Musyrif Keasramaan, Mudir, Admin, Mudabbir)
-    // Legacy operational kesantrian access pending canonical personal grant rollout
   } else {
-    // Fail-Closed: Role outside authorized list
-    return {
-      success: false,
-      message: `Akses Ditolak: Role ${effectiveRole} tidak memiliki otorisasi membaca data perizinan.`,
-      data: [],
-    };
+    // 3. PERSONAL Staff Accounts: Strictly canonical authorization via 'keasramaan.permission.read'
+    // Legacy roles (MK, KS, ADM) and ad-hoc mudabbir flags are strictly eliminated.
+    // ADM has no canonical grant (ADM_PERMISSION_READ_POLICY = DEFERRED_UNTIL_FUTURE_OWNER_DECISION / NO_CURRENT_AUTHORITY).
+    if (effectiveRole === "ADM") {
+      return {
+        success: false,
+        message: "Akses Ditolak: Role ADM tidak memiliki otorisasi membaca data perizinan (ADM_PERMISSION_READ_POLICY: DEFERRED / NO_CURRENT_AUTHORITY).",
+        data: [],
+      };
+    }
+
+    if (!dbUser || dbUser.status !== "AKTIF") {
+      return {
+        success: false,
+        message: "Akses Ditolak: Akun pengguna tidak aktif atau tidak ditemukan dalam database (FAIL CLOSED).",
+        data: [],
+      };
+    }
+
+    const dataProvider = createPrismaDataProvider(prisma);
+    const authRes = await authorizeCanonical({
+      identity: { userId: dbUser.id },
+      capability: "keasramaan.permission.read",
+      dataProvider,
+    }).catch(() => null);
+
+    if (!authRes || authRes.decision !== "ALLOW") {
+      return {
+        success: false,
+        message: `Akses Ditolak: ${authRes?.reason || "Pengguna tidak memiliki kapabilitas keasramaan.permission.read yang aktif dan terverifikasi (FAIL CLOSED)."}` ,
+        data: [],
+      };
+    }
+
+    // Evaluate canonical position + scope contracts:
+    // A. MUDIR: institutional authority (GLOBAL scope)
+    if (authRes.positionCode === "MUDIR") {
+      if (authRes.scopeType !== "GLOBAL") {
+        return {
+          success: false,
+          message: `Akses Ditolak: Cakupan kapabilitas Mudir (${authRes.scopeType}) tidak sesuai, diharapkan GLOBAL.`,
+          data: [],
+        };
+      }
+      // MUDIR GLOBAL: institutional read of all permissions
+    } else if (authRes.positionCode === "KEPALA_KEASRAMAAN") {
+      // B. KEPALA_KEASRAMAAN: domain authority (DOMAIN / KEASRAMAAN)
+      if (authRes.scopeType !== "DOMAIN") {
+        return {
+          success: false,
+          message: `Akses Ditolak: Cakupan kapabilitas Kepala Keasramaan (${authRes.scopeType}) tidak sesuai, diharapkan DOMAIN.`,
+          data: [],
+        };
+      }
+      const grantDomain =
+        (authRes.grantUsed as unknown as { orgDomain?: string; domain?: string })?.orgDomain ||
+        (authRes.grantUsed as unknown as { orgDomain?: string; domain?: string })?.domain;
+      if (grantDomain && grantDomain !== "KEASRAMAAN") {
+        return {
+          success: false,
+          message: `Akses Ditolak: Domain kapabilitas (${grantDomain}) tidak sesuai, diharapkan KEASRAMAAN.`,
+          data: [],
+        };
+      }
+      // KEPALA_KEASRAMAAN DOMAIN: domain access to Keasramaan permissions
+    } else if (authRes.positionCode === "PEMBINA_HALAQOH") {
+      // C. PEMBINA_HALAQOH (Mudabbir / Pembina Kamar): KAMAR scope
+      // Resource chain:
+      // PERSONAL identity -> ACTIVE PEMBINA_HALAQOH assignment -> VERIFIED_PRODUCTION keasramaan.permission.read
+      // -> KAMAR scope -> active SantriKamarPlacement -> permission target santri -> ALLOW
+      if (authRes.scopeType !== "KAMAR") {
+        return {
+          success: false,
+          message: `Akses Ditolak: Cakupan kapabilitas Pembina Kamar (${authRes.scopeType}) tidak sesuai, diharapkan KAMAR.`,
+          data: [],
+        };
+      }
+
+      const kamarId = authRes.grantUsed?.anchorUnitId || authRes.grantUsed?.unitIds?.[0];
+      if (!kamarId) {
+        return {
+          success: false,
+          message: "Akses Ditolak: Pembina Kamar tidak memiliki unit kamar terdaftar (FAIL CLOSED).",
+          data: [],
+        };
+      }
+
+      // Query active SantriKamarPlacement for this kamar
+      try {
+        const placements = await prisma.santriKamarPlacement.findMany({
+          where: {
+            kamarId,
+            isActive: true,
+          },
+          select: {
+            santriId: true,
+          },
+        });
+
+        if (placements.length === 0) {
+          // Zero active placements in assigned Kamar -> return empty list
+          return { success: true, data: [] };
+        }
+
+        const allowedSantriIds = placements.map((p) => p.santriId);
+        where.santriId = { in: allowedSantriIds };
+      } catch (err) {
+        console.error("Gagal memeriksa santriKamarPlacement untuk Pembina Kamar:", err);
+        return {
+          success: false,
+          message: "Gagal memeriksa penempatan kamar santri (FAIL CLOSED).",
+          data: [],
+        };
+      }
+    } else {
+      // Fail closed for any unexpected position
+      return {
+        success: false,
+        message: `Akses Ditolak: Posisi ${authRes.positionCode} tidak berwenang membaca data perizinan.`,
+        data: [],
+      };
+    }
   }
 
   try {

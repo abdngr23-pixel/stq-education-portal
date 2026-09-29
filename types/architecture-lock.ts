@@ -1052,6 +1052,39 @@ export const CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES = {
 } as const;
 
 /**
+ * Canonical Personal Permission Read Target Policies (R1 Remediation)
+ * Derived from approved C1 Keasramaan workflow:
+ * - MUDIR: GLOBAL
+ * - KEPALA_KEASRAMAAN: DOMAIN / KEASRAMAAN
+ * - PEMBINA_HALAQOH: KAMAR (only own active Kamar placements)
+ * State: APPROVED_TARGET_PENDING_TECHNICAL (ZERO runtime authority before Gate 5B promotion).
+ */
+export const CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES = {
+  PEMBINA_HALAQOH: {
+    positionCode: "PEMBINA_HALAQOH" as const,
+    capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+    scopeType: "KAMAR" as const,
+    businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+    notes: "Mudabbir own assigned Kamar permission read only.",
+  },
+  KEPALA_KEASRAMAAN: {
+    positionCode: "KEPALA_KEASRAMAAN" as const,
+    capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+    scopeType: "DOMAIN" as const,
+    domain: "KEASRAMAAN" as const,
+    businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+    notes: "Kepala Keasramaan domain permission read authority.",
+  },
+  MUDIR: {
+    positionCode: "MUDIR" as const,
+    capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+    scopeType: "GLOBAL" as const,
+    businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+    notes: "Mudir institutional permission read authority.",
+  },
+} as const;
+
+/**
  * Canonical Account Modality Contract (Gate 5 Hardening)
  * Binds positions strictly to their approved account type modality.
  * PETUGAS_OPERASIONAL_KEASRAMAAN -> UNIT only

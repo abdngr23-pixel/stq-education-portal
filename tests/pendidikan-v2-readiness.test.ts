@@ -15,6 +15,7 @@ import {
   KEPESANTRENAN_REQUIRED_ACADEMIC_AUTH_CAPABILITIES,
   KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES,
   evaluateKepesantrenanAcademicAuthPolicies,
+  evaluateGate5RuntimeActivation,
 } from "../lib/server/pendidikan-v2-readiness";
 import { authorizeCanonical } from "../lib/auth/canonical-evaluator";
 
@@ -1220,6 +1221,239 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
       assert.strictEqual(res.status, "BLOCKED");
       assert.ok(res.details.includes("UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY"));
       assert.strictEqual(KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES.length, 4);
+    });
+  });
+
+  // =========================================================================
+  // SECTION 14: C1/D1 AUTHORITY & PRIVACY READINESS FAIL-CLOSED (R1-BLOCKER-03)
+  // =========================================================================
+  describe("14. C1/D1 Authority & Privacy Readiness Fail-Closed Tests", () => {
+    it("1. Missing student.guardian_contact.read catalog entry => readiness NOT_READY", async () => {
+      const mockDb = {
+        capability: {
+          findMany: async () => [
+            { code: "academic.schedule.read" },
+            { code: "academic.session.start" },
+            { code: "academic.material.record" },
+            { code: "academic.attendance.record" },
+            { code: "tahfizh.recap.manage" },
+            { code: "tahfizh.target.manage" },
+            { code: "keasramaan.permission.read" },
+            { code: "keasramaan.permission.create" },
+            { code: "keasramaan.permission.update" },
+            { code: "keasramaan.permission.approve_mk" },
+            { code: "keasramaan.permission.approve_ks" },
+            // Missing: student.guardian_contact.read
+          ],
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "CAPABILITIES_REGISTERED");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(gate.details.includes("student.guardian_contact.read"));
+    });
+
+    it("2. Missing required C1 PositionCapability target => readiness NOT_READY", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes('SELECT DISTINCT p."code"')) {
+            return [
+              { code: "MUDIR" },
+              { code: "KABID_TAHFIZH" },
+              { code: "KEPALA_KEASRAMAAN" },
+              { code: "PETUGAS_OPERASIONAL_TAHFIZH" },
+              { code: "MUSYRIF_TAHFIZH" },
+              { code: "PEMBINA_HALAQOH" },
+              { code: "GURU_KEPESANTRENAN" },
+            ];
+          }
+          if (sql.includes('COUNT(*)::text as count FROM "org_units"')) {
+            return [{ count: "0" }];
+          }
+          if (sql.includes('FROM "positions" p')) {
+            // Missing required C1 target keasramaan.permission.create
+            return [];
+          }
+          return [];
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(
+        gate.details.includes("missing PositionCapability for keasramaan.permission.create") ||
+        gate.details.includes("Target policy definition mismatch")
+      );
+    });
+
+    it("3. Missing D1 PositionCapability target => readiness NOT_READY", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes('SELECT DISTINCT p."code"')) {
+            return [
+              { code: "MUDIR" },
+              { code: "KABID_TAHFIZH" },
+              { code: "KEPALA_KEASRAMAAN" },
+              { code: "PETUGAS_OPERASIONAL_TAHFIZH" },
+              { code: "MUSYRIF_TAHFIZH" },
+              { code: "PEMBINA_HALAQOH" },
+              { code: "GURU_KEPESANTRENAN" },
+            ];
+          }
+          if (sql.includes('COUNT(*)::text as count FROM "org_units"')) {
+            return [{ count: "0" }];
+          }
+          if (sql.includes('FROM "positions" p')) {
+            // C1 target present, but D1 target student.guardian_contact.read absent
+            return [
+              {
+                position_code: "MUDIR",
+                capability_code: "keasramaan.permission.create",
+                scope_type: "GLOBAL",
+                business_rule_state: "APPROVED_TARGET_PENDING_TECHNICAL",
+              },
+            ];
+          }
+          return [];
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(
+        gate.details.includes("student.guardian_contact.read") ||
+        gate.details.includes("Target policy definition mismatch")
+      );
+    });
+
+    it("4. Wrong scope for D1 target => NOT_READY", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes('SELECT DISTINCT p."code"')) {
+            return [
+              { code: "MUDIR" },
+              { code: "KABID_TAHFIZH" },
+              { code: "KEPALA_KEASRAMAAN" },
+              { code: "PETUGAS_OPERASIONAL_TAHFIZH" },
+              { code: "MUSYRIF_TAHFIZH" },
+              { code: "PEMBINA_HALAQOH" },
+              { code: "GURU_KEPESANTRENAN" },
+            ];
+          }
+          if (sql.includes('COUNT(*)::text as count FROM "org_units"')) {
+            return [{ count: "0" }];
+          }
+          if (sql.includes('FROM "positions" p')) {
+            // D1 target with wrong scope HALAQOH instead of GLOBAL
+            return [
+              {
+                position_code: "MUDIR",
+                capability_code: "student.guardian_contact.read",
+                scope_type: "HALAQOH",
+                business_rule_state: "APPROVED_TARGET_PENDING_TECHNICAL",
+              },
+            ];
+          }
+          return [];
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(
+        gate.details.includes("target policy scope mismatch for student.guardian_contact.read") ||
+        gate.details.includes("expected GLOBAL, found HALAQOH")
+      );
+    });
+
+    it("5. Wrong position for guardian-contact capability => NOT_READY", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes('SELECT DISTINCT p."code"')) {
+            return [
+              { code: "MUDIR" },
+              { code: "KABID_TAHFIZH" },
+              { code: "KEPALA_KEASRAMAAN" },
+              { code: "PETUGAS_OPERASIONAL_TAHFIZH" },
+              { code: "MUSYRIF_TAHFIZH" },
+              { code: "PEMBINA_HALAQOH" },
+              { code: "GURU_KEPESANTRENAN" },
+            ];
+          }
+          if (sql.includes('COUNT(*)::text as count FROM "org_units"')) {
+            return [{ count: "0" }];
+          }
+          if (sql.includes('FROM "positions" p')) {
+            // Guardian capability on wrong position GURU_KEPESANTRENAN
+            return [
+              {
+                position_code: "GURU_KEPESANTRENAN",
+                capability_code: "student.guardian_contact.read",
+                scope_type: "GLOBAL",
+                business_rule_state: "APPROVED_TARGET_PENDING_TECHNICAL",
+              },
+            ];
+          }
+          return [];
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(
+        gate.details.includes("MUDIR: missing PositionCapability for student.guardian_contact.read") ||
+        gate.details.includes("missing PositionCapability")
+      );
+    });
+
+    it("6. Stale OSDA mutation target => MUST_NOT_PROMOTE notice", () => {
+      const result = evaluateGate5RuntimeActivation({
+        livePositionCapabilities: [
+          {
+            positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+            capabilityCode: "keasramaan.permission.create",
+            businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+          },
+        ],
+      });
+
+      assert.ok(result.details.includes("SUPERSEDED / MUST_NOT_PROMOTE"));
+      assert.ok(result.details.includes("keasramaan.permission.create"));
+    });
+
+    it("7. DB query error => BLOCKED, never treated as empty", async () => {
+      const mockDb = {
+        capability: {
+          findMany: async () => {
+            throw new Error("PostgreSQL connection terminated unexpectedly");
+          },
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "CAPABILITIES_REGISTERED");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "BLOCKED");
+      assert.strictEqual(gate.reason, "DATABASE_UNAVAILABLE");
+      assert.ok(gate.details.includes("DATABASE_UNAVAILABLE"));
+
+      // Also verify evaluateGate5RuntimeActivation handles query error fail-closed:
+      const actResult = evaluateGate5RuntimeActivation({
+        inspectionState: "DATABASE_ERROR",
+        inspectionErrorMessage: "Connection reset by peer",
+      });
+      assert.strictEqual(actResult.status, "BLOCKED");
+      assert.ok(actResult.details.includes("QUERY ERROR != EMPTY RESULT"));
     });
   });
 });

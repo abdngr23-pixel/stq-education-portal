@@ -67,6 +67,11 @@ function createMudabbirAssignment(
     requiresPersonalAccount: true,
     positionCapabilities: [
       {
+        capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+        scopeType: "KAMAR",
+        businessRuleState: state,
+      },
+      {
         capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.CREATE,
         scopeType: "KAMAR",
         businessRuleState: state,
@@ -876,7 +881,7 @@ describe("STQ GATE 5 — FINAL PERSONAL AUTHORITY & PRIVACY RECONCILIATION SUITE
   });
 
   // ===========================================================================
-  // SUITE 5: GUARDIAN CONTACT PRIVACY (DIR-2026-040 / D1) (Tests 30–40)
+  // SUITE 5: GUARDIAN CONTACT PRIVACY (DIR-2026-040 / D1) (Tests A–P)
   // ===========================================================================
   describe("5. Guardian Contact Privacy (DIR-2026-040 / D1)", () => {
     const testSantriList = [
@@ -886,17 +891,164 @@ describe("STQ GATE 5 — FINAL PERSONAL AUTHORITY & PRIVACY RECONCILIATION SUITE
       { id: "san-h2-k2", halaqohId: "hlq-02" },
     ];
 
-    it("30. Mudir (GLOBAL scope + active assignment) sees noHpWali -> disclosed", async () => {
-      const mockDb: any = {
+    function createPrivacyMockDb(opts: {
+      userId: string;
+      username: string;
+      role?: string;
+      accountType?: "PERSONAL" | "UNIT";
+      status?: string;
+      positionCode?: string;
+      scopeType?: string;
+      domain?: string;
+      businessRuleState?: BusinessRuleState;
+      hasGuardianCapability?: boolean;
+      unitId?: string;
+      santriList?: Array<{ id: string; halaqohId?: string | null }>;
+      kamarPlacements?: Array<{ santriId: string; kamarId: string }>;
+      throwError?: boolean;
+    }) {
+      if (opts.throwError) {
+        return {
+          user: {
+            findUnique: async () => {
+              throw new Error("DB_FAILURE");
+            },
+          },
+          assignment: {
+            findMany: async () => {
+              throw new Error("DB_FAILURE");
+            },
+          },
+        } as any;
+      }
+
+      const unitId = opts.unitId || (opts.positionCode === "PEMBINA_HALAQOH" ? "OU-KMR-01" : opts.positionCode === "MUSYRIF_TAHFIZH" ? "hlq-01" : "OU-ROOT");
+      const positionCode = opts.positionCode || "UNKNOWN_POSITION";
+      const domain = opts.domain || (positionCode === "KEPALA_KEASRAMAAN" || positionCode === "PEMBINA_HALAQOH" ? "KEASRAMAAN" : positionCode === "MUSYRIF_TAHFIZH" ? "TAHFIZH" : "MANAJEMEN");
+      const scopeType = opts.scopeType || "GLOBAL";
+      const hasCap = opts.hasGuardianCapability ?? true;
+      const businessRuleState = opts.businessRuleState || "VERIFIED_PRODUCTION";
+
+      return {
+        user: {
+          findUnique: async () => ({
+            id: opts.userId,
+            username: opts.username,
+            status: opts.status || "AKTIF",
+            accountType: opts.accountType || "PERSONAL",
+            role: opts.role || "STF",
+            staffId: `stf-${opts.userId}`,
+            santriId: null,
+            staff: {
+              id: `stf-${opts.userId}`,
+              status: "AKTIF",
+              nama: opts.username,
+            },
+            santri: null,
+            unitPlacement: null,
+          }),
+        },
         assignment: {
           findMany: async () => [
             {
-              position: { code: "MUDIR" },
-              unit: { code: "OU-ROOT", type: "INSTITUTION" },
+              id: `asg-${opts.userId}`,
+              userId: opts.userId,
+              positionId: `pos-${positionCode.toLowerCase()}`,
+              unitId,
+              status: "ACTIVE",
+              validFrom: new Date(0),
+              validUntil: null,
+              position: {
+                id: `pos-${positionCode.toLowerCase()}`,
+                code: positionCode,
+                name: positionCode,
+                domain,
+                requiresPersonalAccount: opts.accountType !== "UNIT",
+                capabilities: hasCap
+                  ? [
+                      {
+                        id: `pc-${positionCode.toLowerCase()}`,
+                        capabilityCode: "student.guardian_contact.read",
+                        scopeType,
+                        businessRuleState,
+                      },
+                    ]
+                  : [],
+              },
+              unit: {
+                id: unitId,
+                code: unitId,
+                name: `Unit ${unitId}`,
+                type: positionCode === "PEMBINA_HALAQOH" ? "KAMAR" : positionCode === "MUSYRIF_TAHFIZH" ? "HALAQOH" : "INSTITUTION",
+                domain,
+                genderComplex: "PUTRA",
+                parentId: null,
+                isActive: true,
+              },
+              scopedUnits: [],
             },
           ],
         },
-      };
+        orgUnit: {
+          findUnique: async ({ where }: { where: { id: string } }) => ({
+            id: where.id,
+            code: where.id,
+            name: `Unit ${where.id}`,
+            type: positionCode === "PEMBINA_HALAQOH" ? "KAMAR" : positionCode === "MUSYRIF_TAHFIZH" ? "HALAQOH" : "INSTITUTION",
+            domain,
+            genderComplex: "PUTRA",
+            parentId: null,
+            isActive: true,
+          }),
+        },
+        santri: {
+          findUnique: async ({ where }: { where: { id: string } }) => {
+            const found = opts.santriList?.find((s) => s.id === where.id);
+            return {
+              id: where.id,
+              nama: `Santri ${where.id}`,
+              jenisKelamin: "L",
+              halaqohId: found?.halaqohId || null,
+              halaqoh: null,
+            };
+          },
+        },
+        santriKamarPlacement: {
+          findMany: async ({ where }: { where: { santriId: string; isActive?: boolean } }) => {
+            const placements = (opts.kamarPlacements || []).filter(
+              (p) => p.santriId === where.santriId
+            );
+            return placements.map((p) => ({
+              santriId: p.santriId,
+              kamarId: p.kamarId,
+              isActive: true,
+              kamar: {
+                id: p.kamarId,
+                code: p.kamarId,
+                name: `Kamar ${p.kamarId}`,
+                type: "KAMAR",
+                domain: "KEASRAMAAN",
+                isActive: true,
+                genderComplex: "PUTRA",
+              },
+            }));
+          },
+        },
+        unitAccountPlacement: {
+          findMany: async () => [],
+        },
+      } as any;
+    }
+
+    it("30A. MUDIR assignment only, no guardian capability -> hidden (0 disclosure)", async () => {
+      const mockDb = createPrivacyMockDb({
+        userId: "usr-mudir",
+        username: "mudir",
+        positionCode: "MUDIR",
+        scopeType: "GLOBAL",
+        hasGuardianCapability: false,
+        santriList: testSantriList,
+      });
 
       const session: UserSession = {
         userId: "usr-mudir",
@@ -910,26 +1062,78 @@ describe("STQ GATE 5 — FINAL PERSONAL AUTHORITY & PRIVACY RECONCILIATION SUITE
         mockDb
       );
 
-      assert.strictEqual(authorizedIds.size, testSantriList.length);
+      assert.strictEqual(authorizedIds.size, 0, "Mudir without guardian capability must receive zero contacts");
+    });
+
+    it("30B. MUDIR + pending guardian capability (APPROVED_TARGET_PENDING_TECHNICAL) -> hidden (0 disclosure)", async () => {
+      const mockDb = createPrivacyMockDb({
+        userId: "usr-mudir",
+        username: "mudir",
+        positionCode: "MUDIR",
+        scopeType: "GLOBAL",
+        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+        hasGuardianCapability: true,
+        santriList: testSantriList,
+      });
+
+      const session: UserSession = {
+        userId: "usr-mudir",
+        username: "mudir",
+        role: "KS",
+      };
+
+      const authorizedIds = await resolveAuthorizedGuardianContactSantriIds(
+        session,
+        testSantriList,
+        mockDb
+      );
+
+      assert.strictEqual(authorizedIds.size, 0, "Pending capability confers zero runtime authority");
+    });
+
+    it("30C. MUDIR + VERIFIED_PRODUCTION guardian capability / GLOBAL -> visible", async () => {
+      const mockDb = createPrivacyMockDb({
+        userId: "usr-mudir",
+        username: "mudir",
+        positionCode: "MUDIR",
+        scopeType: "GLOBAL",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        hasGuardianCapability: true,
+        santriList: testSantriList,
+      });
+
+      const session: UserSession = {
+        userId: "usr-mudir",
+        username: "mudir",
+        role: "KS",
+      };
+
+      const authorizedIds = await resolveAuthorizedGuardianContactSantriIds(
+        session,
+        testSantriList,
+        mockDb
+      );
+
+      assert.strictEqual(authorizedIds.size, testSantriList.length, "Mudir with verified GLOBAL grant sees all contacts");
       for (const s of testSantriList) {
-        assert.ok(authorizedIds.has(s.id), `Mudir must see guardian contact for ${s.id}`);
+        assert.ok(authorizedIds.has(s.id));
       }
     });
 
-    it("31. Kepala Keasramaan (DOMAIN scope + active assignment) sees noHpWali -> disclosed", async () => {
-      const mockDb: any = {
-        assignment: {
-          findMany: async () => [
-            {
-              position: { code: "KEPALA_KEASRAMAAN" },
-              unit: { code: "OU-KEASRAMAAN", type: "DOMAIN" },
-            },
-          ],
-        },
-      };
+    it("30D. KEPALA_KEASRAMAAN + verified DOMAIN KEASRAMAAN -> visible", async () => {
+      const mockDb = createPrivacyMockDb({
+        userId: "usr-mk",
+        username: "kepala.keasramaan",
+        positionCode: "KEPALA_KEASRAMAAN",
+        scopeType: "DOMAIN",
+        domain: "KEASRAMAAN",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        hasGuardianCapability: true,
+        santriList: testSantriList,
+      });
 
       const session: UserSession = {
-        userId: "usr-kepala-keasramaan",
+        userId: "usr-mk",
         username: "kepala.keasramaan",
         role: "MK",
       };
@@ -940,24 +1144,68 @@ describe("STQ GATE 5 — FINAL PERSONAL AUTHORITY & PRIVACY RECONCILIATION SUITE
         mockDb
       );
 
-      assert.strictEqual(authorizedIds.size, testSantriList.length);
+      assert.strictEqual(authorizedIds.size, testSantriList.length, "Kepala Keasramaan with verified DOMAIN grant sees all contacts");
       for (const s of testSantriList) {
-        assert.ok(authorizedIds.has(s.id), `Kepala Keasramaan must see contact for ${s.id}`);
+        assert.ok(authorizedIds.has(s.id));
       }
     });
 
-    it("32. Musyrif Tahfizh with active halaqoh assignment sees noHpWali of own halaqoh santri -> disclosed", async () => {
-      const mockDb: any = {
-        assignment: {
-          findMany: async () => [
-            {
-              position: { code: "MUSYRIF_TAHFIZH" },
-              unitId: "hlq-01",
-              unit: { code: "OU-hlq-01", type: "HALAQOH" },
-            },
-          ],
-        },
+    it("30E. KEPALA with HALAQOH or wrong domain -> hidden (0 disclosure)", async () => {
+      const mockDbWrongScope = createPrivacyMockDb({
+        userId: "usr-mk",
+        username: "kepala.keasramaan",
+        positionCode: "KEPALA_KEASRAMAAN",
+        scopeType: "HALAQOH", // Wrong scope
+        domain: "KEASRAMAAN",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        hasGuardianCapability: true,
+        santriList: testSantriList,
+      });
+
+      const session: UserSession = {
+        userId: "usr-mk",
+        username: "kepala.keasramaan",
+        role: "MK",
       };
+
+      const authIdsWrongScope = await resolveAuthorizedGuardianContactSantriIds(
+        session,
+        testSantriList,
+        mockDbWrongScope
+      );
+      assert.strictEqual(authIdsWrongScope.size, 0, "Mis-scoped Kepala Keasramaan receives zero contacts");
+
+      const mockDbWrongDomain = createPrivacyMockDb({
+        userId: "usr-mk",
+        username: "kepala.keasramaan",
+        positionCode: "KEPALA_KEASRAMAAN",
+        scopeType: "DOMAIN",
+        domain: "TAHFIZH", // Wrong domain
+        businessRuleState: "VERIFIED_PRODUCTION",
+        hasGuardianCapability: true,
+        santriList: testSantriList,
+      });
+
+      const authIdsWrongDomain = await resolveAuthorizedGuardianContactSantriIds(
+        session,
+        testSantriList,
+        mockDbWrongDomain
+      );
+      assert.strictEqual(authIdsWrongDomain.size, 0, "Wrong domain Kepala Keasramaan receives zero contacts");
+    });
+
+    it("30F. Musyrif Tahfizh with verified HALAQOH grant, own santri -> visible", async () => {
+      const mockDb = createPrivacyMockDb({
+        userId: "usr-musyrif-01",
+        username: "musyrif.tahfizh",
+        positionCode: "MUSYRIF_TAHFIZH",
+        scopeType: "HALAQOH",
+        unitId: "hlq-01",
+        domain: "TAHFIZH",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        hasGuardianCapability: true,
+        santriList: testSantriList,
+      });
 
       const session: UserSession = {
         userId: "usr-musyrif-01",
@@ -971,22 +1219,24 @@ describe("STQ GATE 5 — FINAL PERSONAL AUTHORITY & PRIVACY RECONCILIATION SUITE
         mockDb
       );
 
-      assert.ok(authorizedIds.has("san-h1-k1"), "Must see santri in own halaqoh");
-      assert.ok(authorizedIds.has("san-h1-k2"), "Must see santri in own halaqoh");
+      assert.ok(authorizedIds.has("san-h1-k1"), "Must see santri 1 in own halaqoh");
+      assert.ok(authorizedIds.has("san-h1-k2"), "Must see santri 2 in own halaqoh");
+      assert.strictEqual(authorizedIds.has("san-h2-k1"), false);
+      assert.strictEqual(authorizedIds.has("san-h2-k2"), false);
     });
 
-    it("33. Musyrif Tahfizh does NOT see noHpWali of santri in other halaqoh -> hidden (undefined)", async () => {
-      const mockDb: any = {
-        assignment: {
-          findMany: async () => [
-            {
-              position: { code: "MUSYRIF_TAHFIZH" },
-              unitId: "hlq-01",
-              unit: { code: "OU-hlq-01", type: "HALAQOH" },
-            },
-          ],
-        },
-      };
+    it("30G. Musyrif cross-halaqoh -> hidden (cross-halaqoh contacts hidden)", async () => {
+      const mockDb = createPrivacyMockDb({
+        userId: "usr-musyrif-01",
+        username: "musyrif.tahfizh",
+        positionCode: "MUSYRIF_TAHFIZH",
+        scopeType: "HALAQOH",
+        unitId: "hlq-01",
+        domain: "TAHFIZH",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        hasGuardianCapability: true,
+        santriList: testSantriList,
+      });
 
       const session: UserSession = {
         userId: "usr-musyrif-01",
@@ -1004,24 +1254,22 @@ describe("STQ GATE 5 — FINAL PERSONAL AUTHORITY & PRIVACY RECONCILIATION SUITE
       assert.strictEqual(authorizedIds.has("san-h2-k2"), false, "Cross-halaqoh contact must be hidden");
     });
 
-    it("34. Mudabbir / Pembina Kamar with active placement sees noHpWali of own kamar santri -> disclosed", async () => {
-      const mockDb: any = {
-        assignment: {
-          findMany: async () => [
-            {
-              position: { code: "PEMBINA_HALAQOH" },
-              unitId: "OU-KMR-01",
-              unit: { code: "OU-KMR-01", type: "KAMAR" },
-            },
-          ],
-        },
-        santriKamarPlacement: {
-          findMany: async () => [
-            { santriId: "san-h1-k1" },
-            { santriId: "san-h2-k1" },
-          ],
-        },
-      };
+    it("30H. Pembina with verified KAMAR grant, own active placement -> visible", async () => {
+      const mockDb = createPrivacyMockDb({
+        userId: "usr-mudabbir-01",
+        username: "mudabbir.01",
+        positionCode: "PEMBINA_HALAQOH",
+        scopeType: "KAMAR",
+        unitId: "OU-KMR-01",
+        domain: "KEASRAMAAN",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        hasGuardianCapability: true,
+        santriList: testSantriList,
+        kamarPlacements: [
+          { santriId: "san-h1-k1", kamarId: "OU-KMR-01" },
+          { santriId: "san-h2-k1", kamarId: "OU-KMR-01" },
+        ],
+      });
 
       const session: UserSession = {
         userId: "usr-mudabbir-01",
@@ -1035,27 +1283,28 @@ describe("STQ GATE 5 — FINAL PERSONAL AUTHORITY & PRIVACY RECONCILIATION SUITE
         mockDb
       );
 
-      assert.ok(authorizedIds.has("san-h1-k1"), "Must see santri placed in own kamar");
-      assert.ok(authorizedIds.has("san-h2-k1"), "Must see santri placed in own kamar");
+      assert.ok(authorizedIds.has("san-h1-k1"), "Must see placed santri in own kamar");
+      assert.ok(authorizedIds.has("san-h2-k1"), "Must see placed santri in own kamar");
+      assert.strictEqual(authorizedIds.has("san-h1-k2"), false);
+      assert.strictEqual(authorizedIds.has("san-h2-k2"), false);
     });
 
-    it("35. Mudabbir does NOT see noHpWali of santri in other kamar -> hidden (undefined)", async () => {
-      const mockDb: any = {
-        assignment: {
-          findMany: async () => [
-            {
-              position: { code: "PEMBINA_HALAQOH" },
-              unitId: "OU-KMR-01",
-              unit: { code: "OU-KMR-01", type: "KAMAR" },
-            },
-          ],
-        },
-        santriKamarPlacement: {
-          findMany: async () => [
-            { santriId: "san-h1-k1" },
-          ],
-        },
-      };
+    it("30I. Pembina cross-kamar -> hidden (cross-kamar contacts hidden)", async () => {
+      const mockDb = createPrivacyMockDb({
+        userId: "usr-mudabbir-01",
+        username: "mudabbir.01",
+        positionCode: "PEMBINA_HALAQOH",
+        scopeType: "KAMAR",
+        unitId: "OU-KMR-01",
+        domain: "KEASRAMAAN",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        hasGuardianCapability: true,
+        santriList: testSantriList,
+        kamarPlacements: [
+          { santriId: "san-h1-k1", kamarId: "OU-KMR-01" },
+          { santriId: "san-h1-k2", kamarId: "OU-KMR-02" }, // Different kamar
+        ],
+      });
 
       const session: UserSession = {
         userId: "usr-mudabbir-01",
@@ -1070,20 +1319,24 @@ describe("STQ GATE 5 — FINAL PERSONAL AUTHORITY & PRIVACY RECONCILIATION SUITE
       );
 
       assert.strictEqual(authorizedIds.has("san-h1-k2"), false, "Cross-kamar santri contact must be hidden");
-      assert.strictEqual(authorizedIds.has("san-h2-k2"), false, "Cross-kamar santri contact must be hidden");
     });
 
-    it("36. ADM role without canonical personal grant -> noHpWali hidden (undefined)", async () => {
-      const mockDb: any = {
-        assignment: {
-          findMany: async () => [], // ADM has no supervising position
-        },
-      };
+    it("30J. Unexpected position with GLOBAL guardian capability -> hidden (0 disclosure)", async () => {
+      const mockDb = createPrivacyMockDb({
+        userId: "usr-guru-01",
+        username: "guru.mapel",
+        positionCode: "GURU_MAPEL",
+        scopeType: "GLOBAL",
+        domain: "AKADEMIK",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        hasGuardianCapability: true,
+        santriList: testSantriList,
+      });
 
       const session: UserSession = {
-        userId: "usr-adm-01",
-        username: "admin.tu",
-        role: "ADM",
+        userId: "usr-guru-01",
+        username: "guru.mapel",
+        role: "GA",
       };
 
       const authorizedIds = await resolveAuthorizedGuardianContactSantriIds(
@@ -1092,15 +1345,22 @@ describe("STQ GATE 5 — FINAL PERSONAL AUTHORITY & PRIVACY RECONCILIATION SUITE
         mockDb
       );
 
-      assert.strictEqual(authorizedIds.size, 0, "ADM without supervisory position receives zero guardian contacts");
+      assert.strictEqual(authorizedIds.size, 0, "Unexpected position must fail closed");
     });
 
-    it("37. OSDA Putri UNIT account -> noHpWali hidden (undefined)", async () => {
-      const mockDb: any = {
-        assignment: {
-          findMany: async () => [],
-        },
-      };
+    it("30K. OSDA -> hidden (0 disclosure)", async () => {
+      const mockDb = createPrivacyMockDb({
+        userId: "usr-osda-putri",
+        username: "osda.putri",
+        role: "OSDA",
+        accountType: "UNIT",
+        positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+        scopeType: "DOMAIN",
+        domain: "KEASRAMAAN",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        hasGuardianCapability: true,
+        santriList: testSantriList,
+      });
 
       const session: UserSession = {
         userId: "usr-osda-putri",
@@ -1117,17 +1377,42 @@ describe("STQ GATE 5 — FINAL PERSONAL AUTHORITY & PRIVACY RECONCILIATION SUITE
       assert.strictEqual(authorizedIds.size, 0, "OSDA UNIT account receives zero guardian contacts");
     });
 
-    it("38. Petugas Operasional Tahfizh (POT) -> noHpWali hidden (undefined)", async () => {
-      const mockDb: any = {
-        assignment: {
-          findMany: async () => [
-            {
-              position: { code: "PETUGAS_OPERASIONAL_TAHFIZH" },
-              unit: { code: "OU-TAHFIZH", type: "DOMAIN" },
-            },
-          ],
-        },
+    it("30L. ADM -> hidden (0 disclosure)", async () => {
+      const mockDb = createPrivacyMockDb({
+        userId: "usr-adm-01",
+        username: "admin.tu",
+        role: "ADM",
+        hasGuardianCapability: false,
+        santriList: testSantriList,
+      });
+
+      const session: UserSession = {
+        userId: "usr-adm-01",
+        username: "admin.tu",
+        role: "ADM",
       };
+
+      const authorizedIds = await resolveAuthorizedGuardianContactSantriIds(
+        session,
+        testSantriList,
+        mockDb
+      );
+
+      assert.strictEqual(authorizedIds.size, 0, "ADM receives zero guardian contacts");
+    });
+
+    it("30M. POT -> hidden (0 disclosure)", async () => {
+      const mockDb = createPrivacyMockDb({
+        userId: "usr-pot-01",
+        username: "musyrifah.putri",
+        role: "MT",
+        positionCode: "PETUGAS_OPERASIONAL_TAHFIZH",
+        scopeType: "DOMAIN",
+        domain: "TAHFIZH",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        hasGuardianCapability: true,
+        santriList: testSantriList,
+      });
 
       const session: UserSession = {
         userId: "usr-pot-01",
@@ -1141,11 +1426,18 @@ describe("STQ GATE 5 — FINAL PERSONAL AUTHORITY & PRIVACY RECONCILIATION SUITE
         mockDb
       );
 
-      assert.strictEqual(authorizedIds.size, 0, "POT Tahfizh receives zero guardian contacts");
+      assert.strictEqual(authorizedIds.size, 0, "POT receives zero guardian contacts");
     });
 
-    it("39. Santri (ST) querying list -> noHpWali hidden (undefined)", async () => {
-      const mockDb: any = {};
+    it("30N. ST -> hidden (0 disclosure)", async () => {
+      const mockDb = createPrivacyMockDb({
+        userId: "usr-st-01",
+        username: "santri.ahmad",
+        role: "ST",
+        hasGuardianCapability: false,
+        santriList: testSantriList,
+      });
+
       const session: UserSession = {
         userId: "usr-st-01",
         username: "santri.ahmad",
@@ -1158,11 +1450,18 @@ describe("STQ GATE 5 — FINAL PERSONAL AUTHORITY & PRIVACY RECONCILIATION SUITE
         mockDb
       );
 
-      assert.strictEqual(authorizedIds.size, 0, "Santri must never see other santri guardian contacts");
+      assert.strictEqual(authorizedIds.size, 0, "Santri receives zero guardian contacts");
     });
 
-    it("40. Wali Santri (WS) querying general list -> noHpWali hidden (undefined)", async () => {
-      const mockDb: any = {};
+    it("30O. WS -> hidden (0 disclosure)", async () => {
+      const mockDb = createPrivacyMockDb({
+        userId: "usr-ws-01",
+        username: "wali.ahmad",
+        role: "WS",
+        hasGuardianCapability: false,
+        santriList: testSantriList,
+      });
+
       const session: UserSession = {
         userId: "usr-ws-01",
         username: "wali.ahmad",
@@ -1175,7 +1474,31 @@ describe("STQ GATE 5 — FINAL PERSONAL AUTHORITY & PRIVACY RECONCILIATION SUITE
         mockDb
       );
 
-      assert.strictEqual(authorizedIds.size, 0, "Wali Santri in general list receives zero contacts");
+      assert.strictEqual(authorizedIds.size, 0, "Wali Santri receives zero contacts in general list");
+    });
+
+    it("30P. DB/canonical error -> hidden (0 disclosure / fail closed)", async () => {
+      const mockDb = createPrivacyMockDb({
+        userId: "usr-mudir",
+        username: "mudir",
+        positionCode: "MUDIR",
+        throwError: true,
+        santriList: testSantriList,
+      });
+
+      const session: UserSession = {
+        userId: "usr-mudir",
+        username: "mudir",
+        role: "KS",
+      };
+
+      const authorizedIds = await resolveAuthorizedGuardianContactSantriIds(
+        session,
+        testSantriList,
+        mockDb
+      );
+
+      assert.strictEqual(authorizedIds.size, 0, "Database error must fail closed with zero disclosure");
     });
   });
 
@@ -1325,6 +1648,270 @@ describe("STQ GATE 5 — FINAL PERSONAL AUTHORITY & PRIVACY RECONCILIATION SUITE
       assert.ok(CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.MUSYRIF_TAHFIZH);
       assert.ok(CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.PEMBINA_HALAQOH);
       assert.ok(UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH);
+    });
+  });
+
+  // ===========================================================================
+  // SUITE 7: PERSONAL PERMISSION READ AUTHORITY (R1-BLOCKER-02)
+  // ===========================================================================
+  describe("7. Personal Permission Read Authority (R1-BLOCKER-02)", () => {
+    it("47. MUDIR canonical GLOBAL read -> ALLOWED", async () => {
+      const mockAsg: CanonicalAssignmentWithDetails = {
+        id: "asg-mudir-read",
+        userId: "usr-mudir",
+        positionId: "pos-mudir",
+        positionCode: "MUDIR",
+        positionName: "Mudir",
+        domain: "MANAJEMEN",
+        unitId: "OU-ROOT",
+        unitCode: "OU-ROOT",
+        unitName: "Root",
+        unitGenderComplex: "TIDAK_TERIKAT",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        requiresPersonalAccount: true,
+        positionCapabilities: [
+          {
+            capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+            scopeType: "GLOBAL",
+            businessRuleState: "VERIFIED_PRODUCTION",
+          },
+        ],
+        scopeUnits: [],
+      };
+
+      const authRes = await authorizeCanonical({
+        identity: createStaffIdentity({
+          userId: "usr-mudir",
+          username: "mudir",
+          mockAssignments: [mockAsg],
+        }) as any,
+        capability: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+      });
+
+      assert.strictEqual(authRes.decision, "ALLOW");
+      assert.strictEqual(authRes.scopeType, "GLOBAL");
+      assert.strictEqual(authRes.positionCode, "MUDIR");
+    });
+
+    it("48. KEPALA_KEASRAMAAN canonical DOMAIN read -> ALLOWED", async () => {
+      const mockAsg: CanonicalAssignmentWithDetails = {
+        id: "asg-mk-read",
+        userId: "usr-mk",
+        positionId: "pos-ks",
+        positionCode: "KEPALA_KEASRAMAAN",
+        positionName: "Kepala Keasramaan",
+        domain: "KEASRAMAAN",
+        unitId: "OU-KEASRAMAAN",
+        unitCode: "OU-KEASRAMAAN",
+        unitName: "Keasramaan",
+        unitGenderComplex: "TIDAK_TERIKAT",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        requiresPersonalAccount: true,
+        positionCapabilities: [
+          {
+            capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+            scopeType: "DOMAIN",
+            businessRuleState: "VERIFIED_PRODUCTION",
+          },
+        ],
+        scopeUnits: [],
+      };
+
+      const authRes = await authorizeCanonical({
+        identity: createStaffIdentity({
+          userId: "usr-mk",
+          username: "kepala.keasramaan",
+          mockAssignments: [mockAsg],
+        }) as any,
+        capability: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+      });
+
+      assert.strictEqual(authRes.decision, "ALLOW");
+      assert.strictEqual(authRes.scopeType, "DOMAIN");
+      assert.strictEqual(authRes.positionCode, "KEPALA_KEASRAMAAN");
+    });
+
+    it("49. PEMBINA_HALAQOH own KAMAR: only own records returned -> ALLOWED", async () => {
+      const mockAsg = createMudabbirAssignment("OU-KMR-01", "VERIFIED_PRODUCTION");
+      const resolvedContext: ResolvedResourceContext = {
+        santriId: "santri-kmr1",
+        kamarId: "OU-KMR-01",
+        orgUnitIds: ["OU-KMR-01"],
+        orgDomain: "KEASRAMAAN",
+      };
+
+      const authRes = await authorizeCanonical({
+        identity: createStaffIdentity({
+          userId: "usr-mudabbir-01",
+          username: "mudabbir.01",
+          mockAssignments: [mockAsg],
+        }) as any,
+        capability: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+        resourceContext: { santriId: "santri-kmr1" },
+        resolvedContext,
+      });
+
+      assert.strictEqual(authRes.decision, "ALLOW");
+      assert.strictEqual(authRes.scopeType, "KAMAR");
+    });
+
+    it("50. PEMBINA_HALAQOH cross-Kamar: not returned -> DENIED", async () => {
+      const mockAsg = createMudabbirAssignment("OU-KMR-01", "VERIFIED_PRODUCTION");
+      const resolvedContext: ResolvedResourceContext = {
+        santriId: "santri-kmr2",
+        kamarId: "OU-KMR-02", // Different room
+        orgUnitIds: ["OU-KMR-02"],
+        orgDomain: "KEASRAMAAN",
+      };
+
+      const authRes = await authorizeCanonical({
+        identity: createStaffIdentity({
+          userId: "usr-mudabbir-01",
+          username: "mudabbir.01",
+          mockAssignments: [mockAsg],
+        }) as any,
+        capability: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+        resourceContext: { santriId: "santri-kmr2" },
+        resolvedContext,
+      });
+
+      assert.strictEqual(authRes.decision, "DENY");
+      assert.strictEqual(authRes.code, "SCOPE_MISMATCH");
+    });
+
+    it("51. ADM legacy role with no canonical grant -> DENIED", async () => {
+      const authRes = await authorizeCanonical({
+        identity: createStaffIdentity({
+          userId: "usr-adm-01",
+          username: "admin.tu",
+          role: "ADM",
+          mockAssignments: [],
+        }) as any,
+        capability: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+      });
+
+      assert.strictEqual(authRes.decision, "DENY");
+      assert.strictEqual(authRes.code, "CAPABILITY_NOT_GRANTED");
+    });
+
+    it("52. Legacy MK role with no canonical grant -> DENIED", async () => {
+      const authRes = await authorizeCanonical({
+        identity: createStaffIdentity({
+          userId: "usr-legacy-mk",
+          username: "legacy.mk",
+          role: "MK",
+          mockAssignments: [],
+        }) as any,
+        capability: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+      });
+
+      assert.strictEqual(authRes.decision, "DENY");
+      assert.strictEqual(authRes.code, "CAPABILITY_NOT_GRANTED");
+    });
+
+    it("53. Legacy KS role with no canonical grant -> DENIED", async () => {
+      const authRes = await authorizeCanonical({
+        identity: createStaffIdentity({
+          userId: "usr-legacy-ks",
+          username: "legacy.ks",
+          role: "KS",
+          mockAssignments: [],
+        }) as any,
+        capability: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+      });
+
+      assert.strictEqual(authRes.decision, "DENY");
+      assert.strictEqual(authRes.code, "CAPABILITY_NOT_GRANTED");
+    });
+
+    it("54. Canonical pending read grant (APPROVED_TARGET_PENDING_TECHNICAL) -> DENIED (zero runtime authority)", async () => {
+      const mockAsg: CanonicalAssignmentWithDetails = {
+        id: "asg-ks-pending",
+        userId: "usr-ks-pending",
+        positionId: "pos-ks",
+        positionCode: "KEPALA_KEASRAMAAN",
+        positionName: "Kepala Keasramaan",
+        domain: "KEASRAMAAN",
+        unitId: "OU-KEASRAMAAN",
+        unitCode: "OU-KEASRAMAAN",
+        unitName: "Keasramaan",
+        unitGenderComplex: "TIDAK_TERIKAT",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        requiresPersonalAccount: true,
+        positionCapabilities: [
+          {
+            capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+            scopeType: "DOMAIN",
+            businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+          },
+        ],
+        scopeUnits: [],
+      };
+
+      const authRes = await authorizeCanonical({
+        identity: createStaffIdentity({
+          userId: "usr-ks-pending",
+          username: "ks.pending",
+          mockAssignments: [mockAsg],
+        }) as any,
+        capability: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+      });
+
+      assert.strictEqual(authRes.decision, "DENY");
+      assert.strictEqual(authRes.code, "CAPABILITY_NOT_GRANTED");
+    });
+
+    it("55. Canonical query error during read -> fail closed (SYSTEM_FAIL_CLOSED)", async () => {
+      const throwingProvider: ICanonicalDataProvider = {
+        getIdentity: async () => { throw new Error("Database timeout"); },
+        getActiveAssignments: async () => { throw new Error("Database timeout"); },
+        getUnitAccountPlacement: async () => null,
+        verifyHumanExecutor: async () => null,
+        resolveResourceContext: async () => null,
+      };
+
+      const authRes = await authorizeCanonical({
+        identity: { userId: "usr-actor" } as any,
+        capability: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+        dataProvider: throwingProvider,
+      });
+
+      assert.ok(authRes.decision === "ERROR" || authRes.decision === "DENY");
+      assert.strictEqual(authRes.code, "SYSTEM_FAIL_CLOSED");
+    });
+
+    it("56. OSDA Putri read-only regression: still PUTRI only (PUTRA denied)", async () => {
+      const mockAsg = createOsdaPutriUnitAssignment("VERIFIED_PRODUCTION");
+      const resolvedContextPutra: ResolvedResourceContext = {
+        santriId: "santri-putra-01",
+        genderComplex: "PUTRA",
+        orgDomain: "KEASRAMAAN",
+        orgUnitIds: [],
+      };
+
+      const authRes = await authorizeCanonical({
+        identity: {
+          userId: "usr-osda-putri",
+          username: "osda.putri",
+          status: "AKTIF",
+          accountType: "UNIT",
+          genderComplex: "PUTRI",
+          placementUnitId: "OU-OSDA-PUTRI",
+          mockAssignments: [mockAsg],
+        } as any,
+        capability: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+        resourceContext: { santriId: "santri-putra-01" },
+        resolvedContext: resolvedContextPutra,
+      });
+
+      assert.strictEqual(authRes.decision, "DENY");
+      assert.strictEqual(authRes.code, "GENDER_COMPLEX_DENIED");
     });
   });
 });

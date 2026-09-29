@@ -23,6 +23,9 @@ import {
   GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES,
   GATE5_DEFERRED_UNIT_ASSIGNMENT_POSITION_CODES,
   CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT,
+  CANONICAL_PERSONAL_PERMISSION_MUTATION_TARGET_POLICIES,
+  CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES,
+  CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES,
 } from "@/types/architecture-lock";
 export {
   CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT,
@@ -32,6 +35,9 @@ export {
   CANONICAL_REQUIRED_POSITION_CODES,
   GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES,
   GATE5_DEFERRED_UNIT_ASSIGNMENT_POSITION_CODES,
+  CANONICAL_PERSONAL_PERMISSION_MUTATION_TARGET_POLICIES,
+  CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES,
+  CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES,
 };
 import {
   authorizeCanonical,
@@ -375,30 +381,6 @@ export const EDUCATION_SESSION_ACTIVATION_CAPABILITIES = [
   ACADEMIC_CAPABILITIES.ATTENDANCE_RECORD,
 ] as const;
 
-export const APPROVED_UAT_TARGET_CAPABILITY_CODES = [
-  UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].capabilityCode,
-  UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.capabilityCode,
-  UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].capabilityCode,
-] as const;
-
-export const REQUIRED_UAT_ACTIVATION_CAPABILITIES = [
-  ...EDUCATION_SESSION_ACTIVATION_CAPABILITIES,
-  ...APPROVED_UAT_TARGET_CAPABILITY_CODES,
-] as const;
-
-export const REQUIRED_STUDI_UMUM_TEACHER_CAPABILITIES = [
-  ACADEMIC_CAPABILITIES.SCHEDULE_READ,
-  ACADEMIC_CAPABILITIES.SESSION_START,
-  ACADEMIC_CAPABILITIES.MATERIAL_RECORD,
-] as const;
-
-export const REQUIRED_KEPESANTRENAN_TEACHER_CAPABILITIES = [
-  ACADEMIC_CAPABILITIES.SCHEDULE_READ,
-  ACADEMIC_CAPABILITIES.SESSION_START,
-  ACADEMIC_CAPABILITIES.MATERIAL_RECORD,
-  ACADEMIC_CAPABILITIES.ATTENDANCE_RECORD,
-] as const;
-
 /**
  * Approved UAT target effective grant policy definitions (M3.3C1).
  * Declarative policy manifest for approved UAT targets.
@@ -407,11 +389,14 @@ export const REQUIRED_KEPESANTRENAN_TEACHER_CAPABILITIES = [
 export interface UatTargetPolicySpec {
   positionCode: string;
   capabilityCode: string;
-  expectedScope: "GLOBAL" | "ASSIGNED_UNITS" | "HALAQOH" | "DOMAIN";
+  expectedScope: "GLOBAL" | "ASSIGNED_UNITS" | "HALAQOH" | "DOMAIN" | "KAMAR";
   expectedBusinessState: "APPROVED_TARGET_PENDING_TECHNICAL";
+  domain?: string;
+  notes?: string;
 }
 
 export const CANONICAL_UAT_TARGET_POLICIES: readonly UatTargetPolicySpec[] = [
+  // 1. Base UAT activation targets (Tahfizh + OSDA Putri read-only)
   {
     positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.positionCode,
     capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].capabilityCode,
@@ -435,7 +420,101 @@ export const CANONICAL_UAT_TARGET_POLICIES: readonly UatTargetPolicySpec[] = [
     capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].capabilityCode,
     expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].scopeType as "DOMAIN",
     expectedBusinessState: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].businessRuleState as "APPROVED_TARGET_PENDING_TECHNICAL",
+    domain: "KEASRAMAAN",
   },
+
+  // 2. C1 Personal Permission Read Targets (NEW_C1_READ_TARGETS)
+  {
+    positionCode: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.PEMBINA_HALAQOH.positionCode,
+    capabilityCode: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.PEMBINA_HALAQOH.capabilityCode,
+    expectedScope: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.PEMBINA_HALAQOH.scopeType,
+    expectedBusinessState: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.PEMBINA_HALAQOH.businessRuleState,
+  },
+  {
+    positionCode: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.KEPALA_KEASRAMAAN.positionCode,
+    capabilityCode: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.KEPALA_KEASRAMAAN.capabilityCode,
+    expectedScope: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.KEPALA_KEASRAMAAN.scopeType,
+    expectedBusinessState: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.KEPALA_KEASRAMAAN.businessRuleState,
+    domain: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.KEPALA_KEASRAMAAN.domain,
+  },
+  {
+    positionCode: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.MUDIR.positionCode,
+    capabilityCode: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.MUDIR.capabilityCode,
+    expectedScope: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.MUDIR.scopeType,
+    expectedBusinessState: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.MUDIR.businessRuleState,
+  },
+
+  // 3. C1 Personal Permission Mutation Targets (C1_MUTATION_TARGETS)
+  ...CANONICAL_PERSONAL_PERMISSION_MUTATION_TARGET_POLICIES.PEMBINA_HALAQOH.map((p) => ({
+    positionCode: p.positionCode,
+    capabilityCode: p.capabilityCode,
+    expectedScope: p.scopeType,
+    expectedBusinessState: p.businessRuleState,
+  })),
+  ...CANONICAL_PERSONAL_PERMISSION_MUTATION_TARGET_POLICIES.KEPALA_KEASRAMAAN.map((p) => ({
+    positionCode: p.positionCode,
+    capabilityCode: p.capabilityCode,
+    expectedScope: p.scopeType,
+    expectedBusinessState: p.businessRuleState,
+    domain: p.domain,
+  })),
+  ...CANONICAL_PERSONAL_PERMISSION_MUTATION_TARGET_POLICIES.MUDIR.map((p) => ({
+    positionCode: p.positionCode,
+    capabilityCode: p.capabilityCode,
+    expectedScope: p.scopeType,
+    expectedBusinessState: p.businessRuleState,
+  })),
+
+  // 4. D1 Guardian Contact Privacy Targets (D1_PRIVACY_TARGETS)
+  {
+    positionCode: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.MUDIR.positionCode,
+    capabilityCode: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.MUDIR.capabilityCode,
+    expectedScope: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.MUDIR.scopeType,
+    expectedBusinessState: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.MUDIR.businessRuleState,
+  },
+  {
+    positionCode: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.KEPALA_KEASRAMAAN.positionCode,
+    capabilityCode: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.KEPALA_KEASRAMAAN.capabilityCode,
+    expectedScope: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.KEPALA_KEASRAMAAN.scopeType,
+    expectedBusinessState: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.KEPALA_KEASRAMAAN.businessRuleState,
+    domain: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.KEPALA_KEASRAMAAN.domain,
+  },
+  {
+    positionCode: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.MUSYRIF_TAHFIZH.positionCode,
+    capabilityCode: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.MUSYRIF_TAHFIZH.capabilityCode,
+    expectedScope: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.MUSYRIF_TAHFIZH.scopeType,
+    expectedBusinessState: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.MUSYRIF_TAHFIZH.businessRuleState,
+  },
+  {
+    positionCode: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.PEMBINA_HALAQOH.positionCode,
+    capabilityCode: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.PEMBINA_HALAQOH.capabilityCode,
+    expectedScope: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.PEMBINA_HALAQOH.scopeType,
+    expectedBusinessState: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.PEMBINA_HALAQOH.businessRuleState,
+  },
+] as const;
+
+export const APPROVED_UAT_TARGET_CAPABILITY_CODES = Array.from(
+  new Set(CANONICAL_UAT_TARGET_POLICIES.map((p) => p.capabilityCode))
+);
+
+export const REQUIRED_UAT_ACTIVATION_CAPABILITIES = Array.from(
+  new Set([
+    ...EDUCATION_SESSION_ACTIVATION_CAPABILITIES,
+    ...APPROVED_UAT_TARGET_CAPABILITY_CODES,
+  ])
+);
+
+export const REQUIRED_STUDI_UMUM_TEACHER_CAPABILITIES = [
+  ACADEMIC_CAPABILITIES.SCHEDULE_READ,
+  ACADEMIC_CAPABILITIES.SESSION_START,
+  ACADEMIC_CAPABILITIES.MATERIAL_RECORD,
+] as const;
+
+export const REQUIRED_KEPESANTRENAN_TEACHER_CAPABILITIES = [
+  ACADEMIC_CAPABILITIES.SCHEDULE_READ,
+  ACADEMIC_CAPABILITIES.SESSION_START,
+  ACADEMIC_CAPABILITIES.MATERIAL_RECORD,
+  ACADEMIC_CAPABILITIES.ATTENDANCE_RECORD,
 ] as const;
 
 /**
@@ -1154,7 +1233,12 @@ export async function checkPendidikanV2ProductionReadiness(
       gates.push({ gate: "CAPABILITIES_REGISTERED", status: "NOT_READY", details: "Capability repository unavailable" });
     }
   } catch (err: unknown) {
-    gates.push({ gate: "CAPABILITIES_REGISTERED", status: "NOT_READY", details: String(err) });
+    gates.push({
+      gate: "CAPABILITIES_REGISTERED",
+      status: "BLOCKED",
+      reason: "DATABASE_UNAVAILABLE",
+      details: `DATABASE_UNAVAILABLE: ${String(err)}`,
+    });
   }
 
   // Gate 8: User Assignments Ready (Verifies active coverage of all approved target positions with active user/position/orgUnit/staff chains and UAT target policy validation)
@@ -1978,22 +2062,24 @@ export async function checkPendidikanV2ProductionReadiness(
         deferredPembinaHalaqoh = true;
       }
 
-      const pcRows = await db.$queryRawUnsafe<Array<{
-        position_code: string;
-        capability_code: string;
-        scope_type: string;
-        business_rule_state: string;
-      }>>(`
-        SELECT 
-          p."code" as position_code,
-          pc."capability_code",
-          pc."scope_type",
-          pc."business_rule_state"
-        FROM "positions" p
-        JOIN "position_capabilities" pc ON pc."position_id" = p."id"
-        WHERE p."code" IN ('PETUGAS_OPERASIONAL_TAHFIZH', 'MUSYRIF_TAHFIZH', 'PEMBINA_HALAQOH', 'PETUGAS_OPERASIONAL_KEASRAMAAN')
-          AND p."is_active" = true;
-      `).catch(() => []);
+        const targetPosCodes = Array.from(new Set(CANONICAL_UAT_TARGET_POLICIES.map((t) => t.positionCode)));
+        const targetPosSql = targetPosCodes.map((c) => `'${c}'`).join(", ");
+        const pcRows = await db.$queryRawUnsafe<Array<{
+          position_code: string;
+          capability_code: string;
+          scope_type: string;
+          business_rule_state: string;
+        }>>(`
+          SELECT 
+            p."code" as position_code,
+            pc."capability_code",
+            pc."scope_type",
+            pc."business_rule_state"
+          FROM "positions" p
+          JOIN "position_capabilities" pc ON pc."position_id" = p."id"
+          WHERE p."code" IN (${targetPosSql})
+            AND p."is_active" = true;
+        `).catch(() => []);
 
       const policyIssues: string[] = [];
       const pendingTechnicalIssues: string[] = [];
@@ -2057,7 +2143,12 @@ export async function checkPendidikanV2ProductionReadiness(
       gates.push({ gate: "USER_ASSIGNMENTS_READY", status: "NOT_READY", details: "Cannot inspect user assignments" });
     }
   } catch (err: unknown) {
-    gates.push({ gate: "USER_ASSIGNMENTS_READY", status: "NOT_READY", details: String(err) });
+    gates.push({
+      gate: "USER_ASSIGNMENTS_READY",
+      status: "BLOCKED",
+      reason: "DATABASE_UNAVAILABLE",
+      details: `DATABASE_UNAVAILABLE: ${String(err)}`,
+    });
   }
 
   // Gate 9: Teaching Assignments Ready (Validates planning / scheduled-teacher coverage for the 12 Kepesantrenan slots)

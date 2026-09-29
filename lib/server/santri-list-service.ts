@@ -456,11 +456,13 @@ export async function resolveAuthorizedGuardianContactSantriIds(
 ): Promise<Set<string>> {
   if (!session || !session.userId) return new Set();
 
-  // Fail-closed for non-staff / technical / self-service roles per D1
+  // Fail-closed for non-staff / technical / self-service / unapproved roles per D1
   if (
     session.role === "ST" ||
     session.role === "WS" ||
     session.role === "OSDA" ||
+    session.role === "ADM" ||
+    (session.role as string) === "POT" ||
     session.username === "osda.putri"
   ) {
     return new Set();
@@ -476,99 +478,76 @@ export async function resolveAuthorizedGuardianContactSantriIds(
       dataProvider,
     }).catch(() => null);
 
-    if (contactAuth && contactAuth.decision === "ALLOW") {
-      // A. MUDIR: institutional authority (GLOBAL scope)
-      if (contactAuth.scopeType === "GLOBAL" || contactAuth.positionCode === "MUDIR") {
+    // If canonical evaluation fails, errors, or does not ALLOW -> FAIL CLOSED (zero disclosure)
+    // Invariant: APPROVED_TARGET_PENDING_TECHNICAL confers ZERO runtime authority
+    if (!contactAuth || contactAuth.decision !== "ALLOW") {
+      return new Set();
+    }
+
+    // A. MUDIR: institutional authority (strictly requires positionCode = MUDIR AND scopeType = GLOBAL)
+    if (contactAuth.positionCode === "MUDIR") {
+      if (contactAuth.scopeType === "GLOBAL") {
         return new Set(santriList.map((s) => s.id));
       }
+      // Mis-scoped MUDIR -> fail closed
+      return new Set();
+    }
 
-      // B. KEPALA_KEASRAMAAN: Keasramaan domain authority (DOMAIN scope)
-      if (contactAuth.scopeType === "DOMAIN" || contactAuth.positionCode === "KEPALA_KEASRAMAAN") {
+    // B. KEPALA_KEASRAMAAN: domain authority (strictly requires positionCode = KEPALA_KEASRAMAAN AND scopeType = DOMAIN AND domain = KEASRAMAAN)
+    if (contactAuth.positionCode === "KEPALA_KEASRAMAAN") {
+      const grantDomain =
+        (contactAuth.grantUsed as { orgDomain?: string } | undefined)?.orgDomain ||
+        contactAuth.grantUsed?.anchorUnit?.domain;
+      if (contactAuth.scopeType === "DOMAIN" && grantDomain === "KEASRAMAAN") {
         return new Set(santriList.map((s) => s.id));
       }
+      // Mis-scoped or wrong domain -> fail closed
+      return new Set();
+    }
 
-      // C. Resource-scoped supervisor with canonical grant
-      const allowed = new Set<string>();
-      for (const s of santriList) {
-        const perSantriDecision = await authorizeCanonical({
-          identity: { userId: session.userId },
-          capability: "student.guardian_contact.read",
-          resourceContext: { santriId: s.id },
-          dataProvider,
-        }).catch(() => null);
+    // C. Resource-scoped supervisor: MUSYRIF_TAHFIZH (HALAQOH) or PEMBINA_HALAQOH (KAMAR)
+    // Unexpected position with guardian capability -> fail closed
+    if (
+      contactAuth.positionCode !== "MUSYRIF_TAHFIZH" &&
+      contactAuth.positionCode !== "PEMBINA_HALAQOH"
+    ) {
+      return new Set();
+    }
 
-        if (perSantriDecision && perSantriDecision.decision === "ALLOW") {
+    // Mis-scoped check for supervisor positions
+    if (contactAuth.positionCode === "MUSYRIF_TAHFIZH" && contactAuth.scopeType !== "HALAQOH") {
+      return new Set();
+    }
+    if (contactAuth.positionCode === "PEMBINA_HALAQOH" && contactAuth.scopeType !== "KAMAR") {
+      return new Set();
+    }
+
+    // Per-target canonical scope evaluation:
+    // Uses canonical evaluator and authoritative Halaqoh <-> OrgUnit bridge mapping
+    // Missing mapping, ambiguous mapping, inactive mapping, or DB error fails closed automatically
+    const allowed = new Set<string>();
+    for (const s of santriList) {
+      const perSantriDecision = await authorizeCanonical({
+        identity: { userId: session.userId },
+        capability: "student.guardian_contact.read",
+        resourceContext: { santriId: s.id },
+        dataProvider,
+      }).catch(() => null);
+
+      if (perSantriDecision && perSantriDecision.decision === "ALLOW") {
+        if (
+          perSantriDecision.positionCode === "MUSYRIF_TAHFIZH" &&
+          perSantriDecision.scopeType === "HALAQOH"
+        ) {
+          allowed.add(s.id);
+        } else if (
+          perSantriDecision.positionCode === "PEMBINA_HALAQOH" &&
+          perSantriDecision.scopeType === "KAMAR"
+        ) {
           allowed.add(s.id);
         }
       }
-      return allowed;
     }
-
-    // 2. Authoritative server-side relational proof for verified active staff supervisors:
-    // When PositionCapability for guardian contact read is pending technical rollout,
-    // evaluate authoritative relational supervision for approved leadership / supervisors.
-    const activeAssignments = await db.assignment.findMany({
-      where: {
-        userId: session.userId,
-        status: "ACTIVE",
-      },
-      include: {
-        position: true,
-        unit: true,
-      },
-    }).catch(() => []);
-
-    const allowed = new Set<string>();
-
-    for (const a of activeAssignments) {
-      if (a.position.code === "MUDIR") {
-        return new Set(santriList.map((s) => s.id));
-      }
-      if (a.position.code === "KEPALA_KEASRAMAAN") {
-        return new Set(santriList.map((s) => s.id));
-      }
-      if (a.position.code === "MUSYRIF_TAHFIZH" || a.position.code === "PEMBINA_HALAQOH") {
-        // Direct halaqoh supervision: match santri in assigned halaqoh unit or supervised halaqoh
-        for (const s of santriList) {
-          if (
-            s.halaqohId &&
-            (s.halaqohId === a.unitId ||
-              s.halaqohId === a.unit.code.replace(/^OU-/, "") ||
-              a.unit.code === `OU-${s.halaqohId}`)
-          ) {
-            allowed.add(s.id);
-          }
-        }
-        if (session.staffId) {
-          const supervisedHalaqohs = await db.halaqoh.findMany({
-            where: { pembinaId: session.staffId, status: "AKTIF" },
-            select: { id: true },
-          }).catch(() => []);
-          const halaqohIds = new Set(supervisedHalaqohs.map((h) => h.id));
-          for (const s of santriList) {
-            if (s.halaqohId && halaqohIds.has(s.halaqohId)) {
-              allowed.add(s.id);
-            }
-          }
-        }
-
-        // Direct Kamar supervision: match santri with active placement in assigned Kamar
-        if (a.unit.type === "KAMAR") {
-          const kamarPlacements = await db.santriKamarPlacement.findMany({
-            where: {
-              kamarId: a.unitId,
-              isActive: true,
-              santriId: { in: santriList.map((s) => s.id) },
-            },
-            select: { santriId: true },
-          }).catch(() => []);
-          for (const kp of kamarPlacements) {
-            allowed.add(kp.santriId);
-          }
-        }
-      }
-    }
-
     return allowed;
   } catch {
     // Database or resolution error -> fail closed (hide all)
