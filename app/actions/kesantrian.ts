@@ -77,8 +77,6 @@ export async function ajukanIzinAction(input: AjukanIzinData) {
     };
   }
 
-  // Deteksi identitas Mudabbir (secara canonical assignment atau session attribute)
-  const isMudabbir = await resolveIsMudabbir(session);
 
   // Normalisasi target santri
   const targetSantriIds: string[] =
@@ -141,6 +139,11 @@ export async function ajukanIzinAction(input: AjukanIzinData) {
       });
       if (decision.decision === "ALLOW") {
         targetAuthorization.set(santriId, decision);
+      } else if (decision.decision === "ERROR") {
+        return {
+          success: false,
+          message: `Database error evaluating canonical authorization: ${decision.reason || "Database unavailable"} (FAIL CLOSED).`,
+        };
       } else {
         allCanonicalAllowed = false;
         canonicalDeniedCode = decision.code;
@@ -152,7 +155,7 @@ export async function ajukanIzinAction(input: AjukanIzinData) {
     if (allCanonicalAllowed && targetAuthorization.size === targetSantriIds.length) {
       // Authorized via canonical capability
       const firstDecision = targetAuthorization.get(targetSantriIds[0])!;
-      if (firstDecision.positionCode === "PEMBINA_HALAQOH" || isMudabbir) {
+      if (firstDecision.positionCode === "PEMBINA_HALAQOH") {
         const d1 = new Date(input.tanggalMulai);
         const d2 = new Date(input.tanggalSelesai);
         const isSameDay = getWitaDateString(d1) === getWitaDateString(d2);
@@ -166,26 +169,34 @@ export async function ajukanIzinAction(input: AjukanIzinData) {
           initialStatus = StatusIzin.MENUNGGU_MK;
         }
         submissionRole = "MUDABBIR";
+      } else if (firstDecision.positionCode === "KEPALA_KEASRAMAAN") {
+        initialStatus = StatusIzin.DISETUJUI;
+        submissionRole = "MK";
+      } else if (firstDecision.positionCode === "MUDIR") {
+        initialStatus = StatusIzin.DISETUJUI;
+        submissionRole = "KS";
       } else {
         initialStatus = StatusIzin.DISETUJUI;
-        submissionRole = session.role;
+        submissionRole = firstDecision.positionCode || session.role;
       }
-    } else if (session.role === "MK" || session.role === "KS") {
-      // Direct Musyrif Keasramaan / Mudir role operational input
-      initialStatus = StatusIzin.DISETUJUI;
-      submissionRole = session.role;
     } else {
-      // Fail closed with explicit semantic reason
+      // Fail closed: Zero role fallback per DIR-2026-039 (C1).
       if (canonicalDeniedCode === "SCOPE_MISMATCH") {
         return {
           success: false,
           message: "Akses Ditolak: santri berada di luar cakupan binaan (SCOPE_MISMATCH).",
         };
       }
+      if (canonicalDeniedCode === "INVALID_RESOURCE_CONTEXT") {
+        return {
+          success: false,
+          message: "Akses Ditolak: santri tidak memiliki penempatan kamar yang aktif (INVALID_RESOURCE_CONTEXT).",
+        };
+      }
       if (canonicalDeniedCode === "CAPABILITY_NOT_GRANTED") {
         return {
           success: false,
-          message: `Akses Ditolak: ${canonicalDeniedReason}`,
+          message: `Akses Ditolak: ${canonicalDeniedReason || "Pengguna tidak memiliki kapabilitas keasramaan.permission.create (CAPABILITY_NOT_GRANTED)." }`,
         };
       }
       if (session.role === "OSDA") {
@@ -197,7 +208,7 @@ export async function ajukanIzinAction(input: AjukanIzinData) {
       if (session.role === "ADM") {
         return {
           success: false,
-          message: "Akses Ditolak: Role ADM tidak memiliki kewenangan operasional pencatatan izin santri secara otomatis. Hanya Musyrif atau Mudabbir yang berwenang.",
+          message: "Akses Ditolak: Role ADM tidak memiliki kewenangan operasional pencatatan izin santri secara otomatis. Hanya pemegang kapabilitas canonical yang berwenang.",
         };
       }
       if (session.role === "WS") {
@@ -208,7 +219,7 @@ export async function ajukanIzinAction(input: AjukanIzinData) {
       }
       return {
         success: false,
-        message: `Akses ditolak: Role ${session.role} tidak memiliki kewenangan mengajukan perizinan santri.`,
+        message: `Akses ditolak: ${canonicalDeniedReason || `Role ${session.role} tidak memiliki kewenangan mengajukan perizinan santri.`}`,
       };
     }
   }
@@ -239,10 +250,10 @@ export async function ajukanIzinAction(input: AjukanIzinData) {
           status: initialStatus,
           diajukanOlehRole: submissionRole,
           diajukanOlehUserId: session.userId,
-          ...(initialStatus === StatusIzin.DISETUJUI && session.role === "MK" && session.staffId
+          ...(initialStatus === StatusIzin.DISETUJUI && targetAuthorization.get(sId)?.positionCode === "KEPALA_KEASRAMAAN" && session.staffId
             ? { disetujuiMKId: session.staffId }
             : {}),
-          ...(initialStatus === StatusIzin.DISETUJUI && session.role === "KS" && session.staffId
+          ...(initialStatus === StatusIzin.DISETUJUI && targetAuthorization.get(sId)?.positionCode === "MUDIR" && session.staffId
             ? { disetujuiKSId: session.staffId }
             : {}),
         },
@@ -340,32 +351,58 @@ export async function konfirmasiKembaliIzinAction(params: { izinId: string }) {
     };
   }
 
-  const isMudabbir = await resolveIsMudabbir(session);
+  let izin;
+  try {
+    izin = await prisma.perizinanSantri.findUnique({
+      where: { id: params.izinId },
+      include: { santri: true },
+    });
+  } catch (error) {
+    console.error("Gagal membaca data perizinan:", error);
+    return { success: false, message: "Database error resolving permission (FAIL CLOSED)." };
+  }
 
-  if (!["MK", "KS"].includes(session.role) && !isMudabbir) {
+  if (!izin) {
+    return { success: false, message: "Data izin tidak ditemukan." };
+  }
+
+  if (izin.status !== StatusIzin.DISETUJUI) {
     return {
       success: false,
-      message: `Akses ditolak: Role ${session.role} tidak memiliki otoritas konfirmasi kepulangan santri.`,
+      message: `Hanya izin berstatus DISETUJUI yang dapat dikonfirmasi kepulangannya (Status saat ini: ${izin.status}).`,
+    };
+  }
+
+  // Authoritative Canonical Authorization Check (DIR-2026-039 / C1)
+  const dataProvider = createPrismaDataProvider(prisma);
+  const decision = await authorizeCanonical({
+    identity: { userId: session.userId },
+    capability: "keasramaan.permission.update",
+    resourceContext: { santriId: izin.santriId },
+    isMutation: true,
+    dataProvider,
+  });
+
+  if (decision.decision !== "ALLOW") {
+    if (decision.decision === "ERROR") {
+      return {
+        success: false,
+        message: `Database error evaluating canonical authorization: ${decision.reason || "Database unavailable"} (FAIL CLOSED).`,
+      };
+    }
+    if (decision.code === "SCOPE_MISMATCH") {
+      return {
+        success: false,
+        message: "Akses Ditolak: santri berada di luar cakupan binaan (SCOPE_MISMATCH).",
+      };
+    }
+    return {
+      success: false,
+      message: `Akses Ditolak: ${decision.reason || "Pengguna tidak memiliki otoritas konfirmasi kepulangan santri."}`,
     };
   }
 
   try {
-    const izin = await prisma.perizinanSantri.findUnique({
-      where: { id: params.izinId },
-      include: { santri: true },
-    });
-
-    if (!izin) {
-      return { success: false, message: "Data izin tidak ditemukan." };
-    }
-
-    if (izin.status !== StatusIzin.DISETUJUI) {
-      return {
-        success: false,
-        message: `Hanya izin berstatus DISETUJUI yang dapat dikonfirmasi kepulangannya (Status saat ini: ${izin.status}).`,
-      };
-    }
-
     const now = new Date();
     const isLate = now.getTime() > new Date(izin.tanggalSelesai).getTime();
 
@@ -447,49 +484,81 @@ export async function batalkanIzinAction(params: { izinId: string; alasan: strin
     return { success: false, message: "Alasan pembatalan izin wajib diisi minimal 3 karakter." };
   }
 
-  const isMudabbir = await resolveIsMudabbir(session);
-
-  if (!["MK", "KS", "ST"].includes(session.role) && !isMudabbir) {
-    return { success: false, message: `Role ${session.role} tidak memiliki hak akses membatalkan perizinan.` };
-  }
-
+  let izin;
   try {
-    const izin = await prisma.perizinanSantri.findUnique({
+    izin = await prisma.perizinanSantri.findUnique({
       where: { id: params.izinId },
       include: { santri: true },
     });
+  } catch (error) {
+    console.error("Gagal membaca data perizinan:", error);
+    return { success: false, message: "Database error resolving permission (FAIL CLOSED)." };
+  }
 
-    if (!izin) {
-      return { success: false, message: "Data izin tidak ditemukan." };
+  if (!izin) {
+    return { success: false, message: "Data izin tidak ditemukan." };
+  }
+
+  if (izin.status === StatusIzin.DIBATALKAN) {
+    return { success: false, message: "Izin ini telah dibatalkan sebelumnya." };
+  }
+
+  if (izin.status === StatusIzin.KEMBALI_TERKONFIRMASI) {
+    return { success: false, message: "Izin yang santrinya sudah kembali tidak dapat dibatalkan." };
+  }
+
+  // Authorization Evaluation (DIR-2026-039 / C1):
+  if (session.role === "ST") {
+    // 1. Santri self-service cancellation: own still-pending request only
+    if (izin.santriId !== session.santriId || izin.status !== StatusIzin.MENUNGGU_MK) {
+      return {
+        success: false,
+        message:
+          "Akses Ditolak: Anda hanya dapat membatalkan permohonan izin Anda yang masih berstatus menunggu verifikasi.",
+      };
     }
+  } else {
+    // 2. Operational staff cancellation: must hold canonical 'keasramaan.permission.update'
+    const dataProvider = createPrismaDataProvider(prisma);
+    const decision = await authorizeCanonical({
+      identity: { userId: session.userId },
+      capability: "keasramaan.permission.update",
+      resourceContext: { santriId: izin.santriId },
+      isMutation: true,
+      dataProvider,
+    });
 
-    if (izin.status === StatusIzin.DIBATALKAN) {
-      return { success: false, message: "Izin ini telah dibatalkan sebelumnya." };
-    }
-
-    if (izin.status === StatusIzin.KEMBALI_TERKONFIRMASI) {
-      return { success: false, message: "Izin yang santrinya sudah kembali tidak dapat dibatalkan." };
-    }
-
-    if (session.role === "ST") {
-      if (izin.santriId !== session.santriId || izin.status !== StatusIzin.MENUNGGU_MK) {
+    if (decision.decision !== "ALLOW") {
+      if (decision.decision === "ERROR") {
         return {
           success: false,
-          message:
-            "Akses Ditolak: Anda hanya dapat membatalkan permohonan izin Anda yang masih berstatus menunggu verifikasi.",
+          message: `Database error evaluating canonical authorization: ${decision.reason || "Database unavailable"} (FAIL CLOSED).`,
         };
       }
-    } else if (isMudabbir) {
-      if (izin.diajukanOlehUserId !== session.userId && !["MK", "KS"].includes(session.role)) {
+      if (decision.code === "SCOPE_MISMATCH") {
+        return {
+          success: false,
+          message: "Akses Ditolak: santri berada di luar cakupan binaan (SCOPE_MISMATCH).",
+        };
+      }
+      return {
+        success: false,
+        message: `Akses Ditolak: ${decision.reason || "Pengguna tidak memiliki otoritas membatalkan perizinan santri."}`,
+      };
+    }
+
+    // Mudabbir operational rule: Mudabbir may only cancel permissions submitted by own account
+    if (decision.positionCode === "PEMBINA_HALAQOH") {
+      if (izin.diajukanOlehUserId !== session.userId) {
         return {
           success: false,
           message: "Akses Ditolak: Mudabbir hanya dapat membatalkan izin yang diajukan oleh akun sendiri.",
         };
       }
-    } else if (!["MK", "KS"].includes(session.role)) {
-      return { success: false, message: `Role ${session.role} tidak memiliki hak akses membatalkan perizinan.` };
     }
+  }
 
+  try {
     const updated = await prisma.perizinanSantri.update({
       where: { id: params.izinId },
       data: {
@@ -565,51 +634,105 @@ export async function verifikasiIzinAction(params: {
     };
   }
 
-  // Hanya MK dan KS yang berhak memberikan approval
-  if (session.role !== "MK" && session.role !== "KS") {
-    return {
-      success: false,
-      message: `Role ${session.role} tidak memiliki otoritas untuk memverifikasi perizinan santri.`,
-    };
-  }
-
+  let izin;
   try {
-    const izin = await prisma.perizinanSantri.findUnique({
+    izin = await prisma.perizinanSantri.findUnique({
       where: { id: params.izinId },
       include: { santri: true },
     });
+  } catch (error) {
+    console.error("Gagal membaca data perizinan:", error);
+    return { success: false, message: "Database error resolving permission (FAIL CLOSED)." };
+  }
 
-    if (!izin) {
-      return { success: false, message: "Data izin tidak ditemukan." };
-    }
+  if (!izin) {
+    return { success: false, message: "Data izin tidak ditemukan." };
+  }
 
-    let newStatus: StatusIzin = izin.status;
-    const updateData: Prisma.PerizinanSantriUpdateInput = {
-      catatan: params.catatan || izin.catatan,
+  // Authoritative Canonical Evaluation for Permission Verification (DIR-2026-039 / C1)
+  const dataProvider = createPrismaDataProvider(prisma);
+
+  let ksDecision: CanonicalAuthorizationDecision | null = null;
+  let mkDecision: CanonicalAuthorizationDecision | null = null;
+
+  try {
+    // Check if actor has Mudir final approval authority (approve_ks)
+    ksDecision = await authorizeCanonical({
+      identity: { userId: session.userId },
+      capability: "keasramaan.permission.approve_ks",
+      resourceContext: { santriId: izin.santriId },
+      isMutation: true,
+      dataProvider,
+    });
+  } catch (e) {
+    console.error("Canonical evaluation error for approve_ks:", e);
+    return { success: false, message: "Database error evaluating canonical authorization (FAIL CLOSED)." };
+  }
+
+  try {
+    // Check if actor has Kepala Keasramaan MK approval authority (approve_mk)
+    mkDecision = await authorizeCanonical({
+      identity: { userId: session.userId },
+      capability: "keasramaan.permission.approve_mk",
+      resourceContext: { santriId: izin.santriId },
+      isMutation: true,
+      dataProvider,
+    });
+  } catch (e) {
+    console.error("Canonical evaluation error for approve_mk:", e);
+    return { success: false, message: "Database error evaluating canonical authorization (FAIL CLOSED)." };
+  }
+
+  if (ksDecision?.decision === "ERROR" || mkDecision?.decision === "ERROR") {
+    return { success: false, message: "Database error evaluating canonical authorization (FAIL CLOSED)." };
+  }
+
+  const hasApproveKS = ksDecision?.decision === "ALLOW";
+  const hasApproveMK = mkDecision?.decision === "ALLOW";
+
+  if (!hasApproveKS && !hasApproveMK) {
+    return {
+      success: false,
+      message: "Akses Ditolak: Anda tidak memiliki otoritas verifikasi/approval perizinan (keasramaan.permission.approve_mk atau approve_ks).",
     };
+  }
 
-    if (params.action === "REJECT") {
-      newStatus = StatusIzin.DITOLAK;
-    } else if (params.action === "ESCALATE_KS") {
+  // Enforcement: Kepala Keasramaan cannot exercise approve_ks
+  if (izin.status === StatusIzin.MENUNGGU_KS && !hasApproveKS) {
+    return {
+      success: false,
+      message: "Akses Ditolak: Kepala Keasramaan tidak berwenang memberikan persetujuan akhir Mudir (approve_ks).",
+    };
+  }
+
+  let newStatus: StatusIzin = izin.status;
+  const updateData: Prisma.PerizinanSantriUpdateInput = {
+    catatan: params.catatan || izin.catatan,
+  };
+
+  if (params.action === "REJECT") {
+    newStatus = StatusIzin.DITOLAK;
+  } else if (params.action === "ESCALATE_KS") {
+    newStatus = StatusIzin.MENUNGGU_KS;
+    if (session.staffId) updateData.disetujuiMK = { connect: { id: session.staffId } };
+  } else if (params.action === "APPROVE") {
+    // Jika izin PULANG dan aktor hanya memiliki hak approve_mk (bukan approve_ks), eskalasi ke KS
+    if (izin.jenis === JenisIzin.PULANG && !hasApproveKS && izin.status !== StatusIzin.MENUNGGU_KS) {
       newStatus = StatusIzin.MENUNGGU_KS;
       if (session.staffId) updateData.disetujuiMK = { connect: { id: session.staffId } };
-    } else if (params.action === "APPROVE") {
-      // Jika izin PULANG, butuh persetujuan KS
-      if (izin.jenis === JenisIzin.PULANG && session.role !== "KS" && izin.status !== StatusIzin.MENUNGGU_KS) {
-        newStatus = StatusIzin.MENUNGGU_KS;
-        if (session.staffId) updateData.disetujuiMK = { connect: { id: session.staffId } };
-      } else {
-        newStatus = StatusIzin.DISETUJUI;
-        if (session.role === "KS" && session.staffId) {
-          updateData.disetujuiKS = { connect: { id: session.staffId } };
-        } else if (session.role === "MK" && session.staffId) {
-          updateData.disetujuiMK = { connect: { id: session.staffId } };
-        }
+    } else {
+      newStatus = StatusIzin.DISETUJUI;
+      if (hasApproveKS && session.staffId) {
+        updateData.disetujuiKS = { connect: { id: session.staffId } };
+      } else if (hasApproveMK && session.staffId) {
+        updateData.disetujuiMK = { connect: { id: session.staffId } };
       }
     }
+  }
 
-    updateData.status = newStatus;
+  updateData.status = newStatus;
 
+  try {
     const updated = await prisma.perizinanSantri.update({
       where: { id: params.izinId },
       data: updateData,
