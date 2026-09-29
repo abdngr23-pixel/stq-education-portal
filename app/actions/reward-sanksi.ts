@@ -145,7 +145,7 @@ export async function prosesRewardTasmiSimaanAction(tasmiSimaanId: string) {
       message: "Akses Ditolak: PETUGAS_OPERASIONAL_TAHFIZH tidak memiliki kewenangan penerbitan reward (DIR-2026-023/DIR-2026-038).",
     };
   }
-  const isAuthorizedIssuer = session.role === "KS";
+  const isAuthorizedIssuer = session.role === "KS" || Boolean(session.isKepalaBidangTahfidz);
 
   // Representative Milestone 2 shadow evaluation (Safe-by-default: OFF in production)
   // When CANONICAL_AUTH_SHADOW_ENABLED=false: zero additional canonical/shadow context queries.

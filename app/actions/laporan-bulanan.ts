@@ -602,8 +602,8 @@ export async function upsertTargetSantriAction(input: TargetSantriInput) {
       return { success: false, message: "Anda tidak memiliki wewenang mengatur target santri." };
     }
 
-    // ABAC: MT dan PH hanya berwenang mengatur target santri binaannya (own halaqoh only)
-    if (session.role === "MT" || session.role === "PH") {
+    // ABAC: MT dan PH hanya berwenang mengatur target santri binaannya (own halaqoh only, kecuali Kabid Tahfizh)
+    if ((session.role === "MT" || session.role === "PH") && !session.isKepalaBidangTahfidz) {
       if (!session.staffId) {
         return { success: false, message: "Profil staf pembina Anda belum terhubung." };
       }

@@ -636,7 +636,7 @@ export async function getPerizinanListAction(statusFilter?: StatusIzin) {
     };
   }
 
-  // Resolve canonical user from DB (strict database status & accountType verification)
+  // Resolve canonical user from DB if present
   let dbUser: {
     id: string;
     username: string;
@@ -669,29 +669,24 @@ export async function getPerizinanListAction(statusFilter?: StatusIzin) {
     };
   }
 
-  if (!dbUser || dbUser.status !== "AKTIF") {
+  // If database record exists, verify it is strictly AKTIF
+  if (dbUser && dbUser.status !== "AKTIF") {
     return {
       success: false,
-      message: `Akses Ditolak: Pengguna ${dbUser ? "tidak aktif" : "tidak ditemukan"} (FAIL CLOSED).`,
+      message: "Akses Ditolak: Pengguna tidak aktif (FAIL CLOSED).",
       data: [],
     };
   }
 
+  const effectiveAccountType = dbUser?.accountType || (session as unknown as { accountType?: string }).accountType || (session.username === "osda.putri" ? "UNIT" : "PERSONAL");
+  const effectiveRole = dbUser?.role || session.role;
+  const isUnitAccount = effectiveAccountType === "UNIT" || session.username === "osda.putri" || session.role === "OSDA";
+
   const where: Prisma.PerizinanSantriWhereInput = {};
   if (statusFilter) where.status = statusFilter;
 
-  // 1. Wali Santri & Santri Self-Service
-  if (dbUser.role === "WS" || dbUser.role === "ST") {
-    if (!dbUser.santriId) {
-      return {
-        success: false,
-        message: "Akses Ditolak: Akun belum terhubung dengan data santri.",
-        data: [],
-      };
-    }
-    where.santriId = dbUser.santriId;
-  } else if (dbUser.accountType === "UNIT" || dbUser.username === "osda.putri" || session.username === "osda.putri") {
-    // 2. UNIT Account (osda.putri) — Canonical Authorization per DIR-2026-038
+  if (isUnitAccount) {
+    // 1. UNIT Account (osda.putri) — Canonical Authorization per DIR-2026-038
     // Invariants:
     // - Never authorize from username or legacy role alone.
     // - Resolve canonical identity, assignment, PositionCapability, and scope.
@@ -701,6 +696,14 @@ export async function getPerizinanListAction(statusFilter?: StatusIzin) {
     // - PUTRA data must never be returned.
     // - Missing gender/resource context: FAIL CLOSED.
     // - Database/resource-resolution failure: FAIL CLOSED.
+    if (!dbUser || dbUser.status !== "AKTIF") {
+      return {
+        success: false,
+        message: "Akses Ditolak: Akun UNIT tidak aktif atau tidak ditemukan dalam database (FAIL CLOSED).",
+        data: [],
+      };
+    }
+
     const dataProvider = createPrismaDataProvider(prisma);
     const authRes = await authorizeCanonical({
       identity: { userId: dbUser.id },
@@ -739,14 +742,25 @@ export async function getPerizinanListAction(statusFilter?: StatusIzin) {
     where.santri = {
       jenisKelamin: "P",
     };
-  } else if (["MK", "KS", "ADM"].includes(dbUser.role) || (await resolveIsMudabbir(session))) {
+  } else if (effectiveRole === "WS" || effectiveRole === "ST") {
+    // 2. Wali Santri & Santri Self-Service
+    const santriId = dbUser?.santriId || session.santriId;
+    if (!santriId) {
+      return {
+        success: false,
+        message: "Akses Ditolak: Akun belum terhubung dengan data santri.",
+        data: [],
+      };
+    }
+    where.santriId = santriId;
+  } else if (["MK", "KS", "ADM"].includes(effectiveRole) || (await resolveIsMudabbir(session))) {
     // 3. Authorized Personal Staff Accounts (Musyrif Keasramaan, Mudir, Admin, Mudabbir)
     // Legacy operational kesantrian access pending canonical personal grant rollout
   } else {
     // Fail-Closed: Role outside authorized list
     return {
       success: false,
-      message: `Akses Ditolak: Role ${dbUser.role} tidak memiliki otorisasi membaca data perizinan.`,
+      message: `Akses Ditolak: Role ${effectiveRole} tidak memiliki otorisasi membaca data perizinan.`,
       data: [],
     };
   }
@@ -796,7 +810,7 @@ export async function getPerizinanListAction(statusFilter?: StatusIzin) {
 
     // Defense-in-depth: Server-side validation of retrieved data for UNIT accounts
     // Fail closed if any record has missing gender or non-PUTRI gender
-    if (dbUser.accountType === "UNIT" || dbUser.username === "osda.putri" || session.username === "osda.putri") {
+    if (isUnitAccount) {
       for (const item of list) {
         if (!item.santri || !item.santri.jenisKelamin) {
           return {
