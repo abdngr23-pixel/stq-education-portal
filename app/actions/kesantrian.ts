@@ -758,6 +758,24 @@ export async function getPerizinanListAction(statusFilter?: StatusIzin) {
       };
     }
 
+    // Authoritative verification of actor UNIT gender boundary & operational model (R2-BLOCKER-04 / DIR-2026-038)
+    // A hypothetical PUTRA UNIT or unconstrained UNIT with the same capability MUST NOT read PUTRI records.
+    const actorUnitIdentity = await dataProvider.getIdentity(dbUser.id);
+    const actorUnitPlacement = await dataProvider.getUnitAccountPlacement(dbUser.id);
+    const actorUnitGender =
+      (authRes.grantUsed as unknown as { genderComplex?: string })?.genderComplex ||
+      actorUnitIdentity?.genderComplex ||
+      actorUnitPlacement?.genderComplex;
+
+    if (actorUnitGender !== "PUTRI") {
+      return {
+        success: false,
+        message: `Akses Ditolak: Akun UNIT dengan batas gender '${actorUnitGender ?? "TIDAK_TERIKAT"}' tidak berwenang mengakses data santriwati PUTRI (GENDER_COMPLEX_DENIED).`,
+        error: "GENDER_COMPLEX_DENIED",
+        data: [],
+      };
+    }
+
     // Server-side query boundary: strictly limit to female santri (jenisKelamin = 'P')
     where.santri = {
       jenisKelamin: "P",

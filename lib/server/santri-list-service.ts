@@ -24,6 +24,7 @@ import {
   authorizeCanonical,
   createPrismaDataProvider,
 } from "@/lib/auth/canonical-evaluator";
+import { mapOrgUnitIdsToHalaqohIds } from "@/lib/server/halaqoh-canonical-mapping";
 
 export interface SantriListParams {
   search?: string;
@@ -103,7 +104,9 @@ export async function getSantriListForSession(
 
     const where: Prisma.SantriWhereInput = {};
 
-    // 1. Authoritative Canonical Evaluation for tahfizh.recap.read
+    // 1. Authoritative Canonical Evaluation for tahfizh.recap.read (Gate 5 / DIR-2026-038)
+    // Non-WS/ST roles MUST hold approved canonical PositionCapability.
+    // ZERO fallback to session.role, isKepalaBidangTahfidz, legacy staff linkage, ADM, YAY, KS.
     const dataProvider = createPrismaDataProvider(db);
     const authRes = await authorizeCanonical({
       identity: { userId: session.userId },
@@ -111,22 +114,7 @@ export async function getSantriListForSession(
       dataProvider,
     }).catch(() => null);
 
-    let hasGlobalRecapRead = false;
-    let canonicalHalaqohIds: string[] | null = null;
-
-    if (authRes && authRes.decision === "ALLOW") {
-      if (authRes.scopeType === "GLOBAL") {
-        hasGlobalRecapRead = true;
-      } else if (authRes.scopeType === "HALAQOH") {
-        canonicalHalaqohIds = authRes.grantUsed?.unitIds && authRes.grantUsed.unitIds.length > 0
-          ? authRes.grantUsed.unitIds
-          : authRes.grantUsed?.anchorUnitId
-          ? [authRes.grantUsed.anchorUnitId]
-          : null;
-      }
-    }
-
-    // 2. Scoping berdasarkan Role & Canonical Capability
+    // 2. Scoping: Personal Santri/Wali Self-Service vs Canonical Staff Monitoring
     if (session.role === "WS" || session.role === "ST") {
       if (!session.santriId) {
         return {
@@ -137,44 +125,55 @@ export async function getSantriListForSession(
         };
       }
       where.id = session.santriId;
-    } else if (hasGlobalRecapRead || ["KS", "ADM", "YAY"].includes(session.role) || session.isKepalaBidangTahfidz) {
-      // Global monitoring: dapat memfilter ke halaqoh mana pun
-      if (params?.halaqohId && params.halaqohId !== "ALL") {
-        where.halaqohId = params.halaqohId;
-      }
-    } else if (canonicalHalaqohIds && canonicalHalaqohIds.length > 0) {
-      // Scoped strictly to canonical halaqoh assignment
-      if (params?.halaqohId && canonicalHalaqohIds.includes(params.halaqohId)) {
-        where.halaqohId = params.halaqohId;
-      } else if (!params?.halaqohId || params.halaqohId === "ALL") {
-        where.halaqohId = { in: canonicalHalaqohIds };
-      } else {
-        return { success: true, data: [] };
-      }
-    } else if (session.role === "MT" || session.role === "PH") {
-      if (!session.staffId) {
+    } else {
+      // All staff/managerial views require canonical authorization
+      if (!authRes || authRes.decision !== "ALLOW") {
         return {
           success: false,
-          message: "Profil staf pembina Anda belum terhubung. Silakan hubungi admin.",
-          error: "Profil staf pembina Anda belum terhubung. Silakan hubungi admin.",
+          message: `Akses Ditolak: ${authRes?.reason || "Anda tidak memiliki wewenang canonical (tahfizh.recap.read) untuk mengakses daftar santri Tahfizh."}`,
+          error: authRes?.code || "FORBIDDEN",
           data: [],
         };
       }
-      const halaqohDibina = await db.halaqoh.findMany({
-        where: { pembinaId: session.staffId },
-        select: { id: true },
-      });
-      const halaqohIds = halaqohDibina.map((h) => h.id);
-      if (params?.halaqohId && halaqohIds.includes(params.halaqohId)) {
-        where.halaqohId = params.halaqohId;
-      } else if (halaqohIds.length > 0) {
-        where.halaqohId = { in: halaqohIds };
+
+      if (
+        authRes.scopeType === "GLOBAL" ||
+        (authRes.scopeType === "DOMAIN" && (authRes.grantUsed as { domain?: string | null })?.domain === "TAHFIZH")
+      ) {
+        // Global / institutional monitoring: can filter to any halaqoh
+        if (params?.halaqohId && params.halaqohId !== "ALL") {
+          where.halaqohId = params.halaqohId;
+        }
+      } else if (authRes.scopeType === "HALAQOH") {
+        // Scoped strictly to canonical halaqoh assignment via mapping bridge
+        const rawOrgUnitIds =
+          authRes.grantUsed?.unitIds && authRes.grantUsed.unitIds.length > 0
+            ? authRes.grantUsed.unitIds
+            : authRes.grantUsed?.anchorUnitId
+            ? [authRes.grantUsed.anchorUnitId]
+            : [];
+
+        const allowedHalaqohIds = await mapOrgUnitIdsToHalaqohIds(rawOrgUnitIds, db);
+        if (allowedHalaqohIds.length === 0) {
+          return { success: true, data: [] };
+        }
+
+        if (params?.halaqohId && params.halaqohId !== "ALL") {
+          if (allowedHalaqohIds.includes(params.halaqohId)) {
+            where.halaqohId = params.halaqohId;
+          } else {
+            return { success: true, data: [] }; // Cross-halaqoh isolation
+          }
+        } else {
+          where.halaqohId = { in: allowedHalaqohIds };
+        }
       } else {
-        return { success: true, data: [] };
-      }
-    } else {
-      if (params?.halaqohId && params.halaqohId !== "ALL") {
-        where.halaqohId = params.halaqohId;
+        return {
+          success: false,
+          message: `Akses Ditolak: Cakupan ${authRes.scopeType} tidak didukung untuk daftar santri Tahfizh.`,
+          error: "SCOPE_NOT_SUPPORTED",
+          data: [],
+        };
       }
     }
 

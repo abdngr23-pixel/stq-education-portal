@@ -22,6 +22,7 @@ import {
   authorizeCanonical,
   createPrismaDataProvider,
 } from "@/lib/auth/canonical-evaluator";
+import { mapOrgUnitIdsToHalaqohIds } from "@/lib/server/halaqoh-canonical-mapping";
 
 export interface TargetSantriInput {
   santriId: string;
@@ -86,59 +87,66 @@ export async function getLaporanBulananHalaqohAction(
       return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
     }
 
-    // 1. ABAC Role Enforcement (Explicit Allowlist & Default Deny)
+    // 1. Authoritative Canonical Evaluation for tahfizh.recap.read (Gate 5 / DIR-2026-038)
+    // ZERO fallback to session.role, isKabidTahfidz, ADM, YAY, KS.
+    const dataProvider = createPrismaDataProvider(prisma);
+    const authRes = await authorizeCanonical({
+      identity: { userId: session.userId },
+      capability: "tahfizh.recap.read",
+      dataProvider,
+    }).catch(() => null);
+
+    if (!authRes || authRes.decision !== "ALLOW") {
+      return {
+        success: false,
+        message: `Akses Ditolak: ${authRes?.reason || "Anda tidak memiliki wewenang canonical (tahfizh.recap.read) untuk mengakses rekap laporan bulanan halaqoh."}`,
+        error: authRes?.code || "Akses Ditolak",
+        data: null,
+      };
+    }
+
     let effectiveHalaqohId = halaqohId || "ALL";
-    const isKabidTahfidz = Boolean(session.isKepalaBidangTahfidz);
 
-    if (["KS", "ADM", "YAY"].includes(session.role) || isKabidTahfidz) {
-      // KS, ADM, YAY, dan Kepala Bidang Tahfidz: Otoritas manajerial untuk melihat halaqoh manapun atau agregasi seluruh halaqoh
+    if (
+      authRes.scopeType === "GLOBAL" ||
+      (authRes.scopeType === "DOMAIN" && (authRes.grantUsed as { domain?: string | null })?.domain === "TAHFIZH")
+    ) {
+      // Institutional/managerial recap read: can view any requested halaqoh or "ALL"
       effectiveHalaqohId = halaqohId || "ALL";
-    } else if (session.role === "MT" || session.role === "PH") {
-      // Musyrif/Pembina biasa (selain Kabid): Wajib memiliki profil staf dan dibatasi ke halaqoh binaan sendiri
-      if (!session.staffId) {
+    } else if (authRes.scopeType === "HALAQOH") {
+      // Musyrif Tahfizh / Pembina Halaqoh: scoped strictly to assigned halaqoh
+      const rawOrgUnitIds =
+        authRes.grantUsed?.unitIds && authRes.grantUsed.unitIds.length > 0
+          ? authRes.grantUsed.unitIds
+          : authRes.grantUsed?.anchorUnitId
+          ? [authRes.grantUsed.anchorUnitId]
+          : [];
+
+      const allowedHalaqohIds = await mapOrgUnitIdsToHalaqohIds(rawOrgUnitIds, prisma);
+      if (allowedHalaqohIds.length === 0) {
         return {
           success: false,
-          message: "Profil staf pembina Anda belum terhubung. Hubungi Admin.",
+          message: "Akun belum ditugaskan ke halaqoh aktif mana pun. Hubungi Admin.",
           error: "Akses Ditolak",
           data: null,
         };
       }
 
-      const halaqohRecord = await prisma.halaqoh.findFirst({
-        where: { pembinaId: session.staffId },
-        select: { id: true, halaqohCode: true },
-      });
-
-      if (!halaqohRecord) {
-        return {
-          success: false,
-          message: "Akun belum ditugaskan ke halaqoh mana pun. Hubungi Admin.",
-          error: "Akses Ditolak",
-          data: null,
-        };
-      }
-
-      // Jika meminta halaqoh lain selain binaannya sendiri: tolak tegas
-      if (
-        halaqohId &&
-        halaqohId !== "ALL" &&
-        halaqohId !== halaqohRecord.id &&
-        halaqohId !== halaqohRecord.halaqohCode
-      ) {
+      // If specific halaqoh requested, must match allowed halaqoh
+      if (halaqohId && halaqohId !== "ALL" && !allowedHalaqohIds.includes(halaqohId)) {
         return {
           success: false,
           message: "Akses Ditolak: Anda hanya berwenang melihat laporan halaqoh binaan Anda.",
-          error: "Akses Ditolak",
+          error: "CROSS_HALAQOH_FORBIDDEN",
           data: null,
         };
       }
 
-      effectiveHalaqohId = halaqohRecord.id;
+      effectiveHalaqohId = halaqohId && halaqohId !== "ALL" ? halaqohId : allowedHalaqohIds[0];
     } else {
-      // Default Deny untuk seluruh role lain (GMR, MK, WS, ST, dll)
       return {
         success: false,
-        message: "Akses Ditolak: Anda tidak memiliki wewenang mengakses rekap laporan bulanan halaqoh.",
+        message: `Akses Ditolak: Cakupan ${authRes.scopeType} tidak didukung untuk laporan bulanan halaqoh.`,
         error: "Akses Ditolak",
         data: null,
       };
@@ -572,7 +580,8 @@ export async function upsertTargetSantriAction(input: TargetSantriInput) {
     return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
   }
 
-  // Authoritative Canonical Authorization for tahfizh.target.manage (Gate 5)
+  // Authoritative Canonical Authorization for tahfizh.target.manage (Gate 5 / DIR-2026-038)
+  // ZERO fallback to session.role, isKepalaBidangTahfidz, legacy staff linkage, ADM, KS.
   const dataProvider = createPrismaDataProvider(prisma);
   const authRes = await authorizeCanonical({
     identity: { userId: session.userId },
@@ -582,49 +591,12 @@ export async function upsertTargetSantriAction(input: TargetSantriInput) {
     dataProvider,
   }).catch(() => null);
 
-  let isTargetManageAllowed = false;
-
-  if (authRes && authRes.decision === "ALLOW") {
-    isTargetManageAllowed = true;
-  } else if (authRes && authRes.code === "SCOPE_MISMATCH") {
+  if (!authRes || authRes.decision !== "ALLOW") {
     return {
       success: false,
-      message: "Akses Ditolak: Anda hanya berwenang mengatur target santri di dalam halaqoh binaan Anda (SCOPE_MISMATCH).",
+      message: `Akses Ditolak: ${authRes?.reason || "Anda tidak memiliki wewenang canonical (tahfizh.target.manage) untuk mengatur target santri."}`,
+      error: authRes?.code || "FORBIDDEN",
     };
-  } else if (authRes && authRes.code === "GENDER_COMPLEX_DENIED") {
-    return {
-      success: false,
-      message: "Akses Ditolak: Batas gender santri tidak sesuai dengan penugasan halaqoh Anda.",
-    };
-  } else {
-    // Legacy Role Fallback (Transition Phase)
-    if (!["MT", "PH", "KS", "ADM"].includes(session.role)) {
-      return { success: false, message: "Anda tidak memiliki wewenang mengatur target santri." };
-    }
-
-    // ABAC: MT dan PH hanya berwenang mengatur target santri binaannya (own halaqoh only, kecuali Kabid Tahfizh)
-    if ((session.role === "MT" || session.role === "PH") && !session.isKepalaBidangTahfidz) {
-      if (!session.staffId) {
-        return { success: false, message: "Profil staf pembina Anda belum terhubung." };
-      }
-      const isBinaan = await prisma.halaqoh.findFirst({
-        where: {
-          pembinaId: session.staffId,
-          santriList: { some: { id: input.santriId } },
-        },
-      });
-      if (!isBinaan) {
-        return {
-          success: false,
-          message: "Akses Ditolak: Anda hanya berwenang mengatur target santri di dalam halaqoh binaan Anda.",
-        };
-      }
-    }
-    isTargetManageAllowed = true;
-  }
-
-  if (!isTargetManageAllowed) {
-    return { success: false, message: "Anda tidak memiliki wewenang mengatur target santri." };
   }
 
   // Validasi input server-side target santri
@@ -718,65 +690,28 @@ export async function getTargetSantriAction(
     return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
   }
 
-  // Authoritative Canonical Authorization for reading target santri
-  const dataProvider = createPrismaDataProvider(prisma);
-  const authRes = await authorizeCanonical({
-    identity: { userId: session.userId },
-    capability: "tahfizh.target.manage",
-    resourceContext: { santriId },
-    dataProvider,
-  }).catch(() => null);
-
-  let isTargetReadAllowed = false;
-
-  // ABAC:
+  // ABAC / Canonical:
   // WS / ST: Hanya boleh melihat target santri miliknya sendiri
   if (session.role === "WS" || session.role === "ST") {
     if (!session.santriId || session.santriId !== santriId) {
       return { success: false, message: "Akses Ditolak: Anda hanya berhak melihat target anak Anda." };
     }
-    isTargetReadAllowed = true;
-  } else if (authRes && authRes.decision === "ALLOW") {
-    isTargetReadAllowed = true;
-  } else if (authRes && authRes.code === "SCOPE_MISMATCH") {
-    return {
-      success: false,
-      message: "Akses Ditolak: Anda hanya berwenang melihat target santri di dalam halaqoh binaan Anda.",
-    };
-  } else if (session.role === "MT" || session.role === "PH") {
-    // MT / PH: Fail-closed jika belum terhubung staf
-    if (!session.staffId) {
-      return { success: false, message: "Profil staf pembina Anda belum terhubung." };
-    }
-    const isBinaan = await prisma.halaqoh.findFirst({
-      where: {
-        pembinaId: session.staffId,
-        santriList: { some: { id: santriId } },
-      },
-    });
-    if (!isBinaan) {
+  } else {
+    // Canonical Authorization without legacy fallback
+    const dataProvider = createPrismaDataProvider(prisma);
+    const authRes = await authorizeCanonical({
+      identity: { userId: session.userId },
+      capability: "tahfizh.target.manage",
+      resourceContext: { santriId },
+      dataProvider,
+    }).catch(() => null);
+
+    if (!authRes || authRes.decision !== "ALLOW") {
       return {
         success: false,
-        message: "Akses Ditolak: Anda hanya berwenang melihat target santri di dalam halaqoh binaan Anda.",
+        message: `Akses Ditolak: ${authRes?.reason || "Anda tidak memiliki wewenang canonical untuk mengakses target santri."}`,
       };
     }
-    isTargetReadAllowed = true;
-  } else if (["KS", "ADM", "YAY"].includes(session.role) || session.isKepalaBidangTahfidz) {
-    // Otoritas manajerial diperkenankan
-    isTargetReadAllowed = true;
-  } else {
-    // Default Deny untuk seluruh role lain
-    return {
-      success: false,
-      message: "Akses Ditolak: Anda tidak memiliki wewenang mengakses target santri.",
-    };
-  }
-
-  if (!isTargetReadAllowed) {
-    return {
-      success: false,
-      message: "Akses Ditolak: Anda tidak memiliki wewenang mengakses target santri.",
-    };
   }
 
   try {

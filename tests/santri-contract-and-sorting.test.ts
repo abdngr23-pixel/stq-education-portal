@@ -11,6 +11,7 @@ import {
 } from "./test-db-manager";
 import { getSantriListForSession } from "../lib/server/santri-list-service";
 import { UserSession } from "../types/auth";
+import { assignCanonicalMusyrif } from "./helpers/canonical-test-seed";
 
 describe("Verifikasi Kontrak Data, Sorting Gender & Bintang Kebaikan getSantriListForSession", () => {
   let prisma: PrismaClient;
@@ -51,6 +52,23 @@ describe("Verifikasi Kontrak Data, Sorting Gender & Bintang Kebaikan getSantriLi
         tahunAjaran: "2026/2027",
         status: "AKTIF",
       },
+    });
+
+    // Seed User & Canonical Assignment
+    await prisma.user.create({
+      data: {
+        id: sessionMT.userId,
+        username: sessionMT.username,
+        passwordHash: "hash-test",
+        role: "MT",
+        status: "AKTIF",
+        staffId: STAFF_ID,
+      },
+    });
+
+    await assignCanonicalMusyrif(prisma, {
+      userId: sessionMT.userId,
+      halaqohCode: "HLQ-SORTING-01",
     });
 
     // Seed Santri:

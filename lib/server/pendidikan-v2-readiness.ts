@@ -228,12 +228,24 @@ export const CANONICAL_REQUIRED_ORG_UNIT_CODES = [
  * osda.putri remains SUSPENDED; verifiedHumanExecutorAttributionReady and assignmentScopeUnitsReady
  * must be verified before runtime activation can be considered READY.
  */
+export const FORBIDDEN_UNIT_MUTATION_CAPABILITIES = [
+  "keasramaan.permission.create",
+  "keasramaan.permission.update",
+  "keasramaan.permission.approve_mk",
+  "keasramaan.permission.approve_ks",
+] as const;
+
 export interface Gate5RuntimeActivationParams {
   featureFlagEnabled?: boolean;
   userStatus?: string;
   verifiedHumanExecutorAttributionReady?: boolean;
   assignmentScopeUnitsReady?: boolean;
   unitMutationConfigured?: boolean;
+  livePositionCapabilities?: Array<{
+    positionCode?: string;
+    capabilityCode?: string;
+    businessRuleState?: string | null;
+  }>;
 }
 
 export interface Gate5RuntimeActivationResult {
@@ -246,6 +258,33 @@ export interface Gate5RuntimeActivationResult {
 export function evaluateGate5RuntimeActivation(
   params?: Gate5RuntimeActivationParams
 ): Gate5RuntimeActivationResult {
+  // 1. Authoritative Live Detection of Forbidden UNIT Mutation Capabilities (DIR-2026-038)
+  const liveRows = params?.livePositionCapabilities || [];
+  const unitMutationRows = liveRows.filter((r) => {
+    const isTargetPosition = !r.positionCode || r.positionCode === "PETUGAS_OPERASIONAL_KEASRAMAAN";
+    return isTargetPosition && FORBIDDEN_UNIT_MUTATION_CAPABILITIES.includes(r.capabilityCode as any);
+  });
+
+  const verifiedForbidden = unitMutationRows.filter((r) => r.businessRuleState === "VERIFIED_PRODUCTION");
+  if (verifiedForbidden.length > 0) {
+    const forbiddenCodes = verifiedForbidden.map((r) => r.capabilityCode).join(", ");
+    return {
+      status: "BLOCKED",
+      details: `UNAUTHORIZED_UNIT_MUTATION_RUNTIME_AUTHORITY: Live VERIFIED_PRODUCTION PositionCapability detected for forbidden UNIT mutation (${forbiddenCodes}). Gate5B eligibility = NO per DIR-2026-038.`,
+      blocking: true,
+      remediationAdvice: "Revoke and remove unauthorized VERIFIED_PRODUCTION UNIT mutation PositionCapability rows immediately (UNIT accounts are strictly READ-ONLY per DIR-2026-038)",
+    };
+  }
+
+  const supersededTargetRows = unitMutationRows.filter(
+    (r) => r.businessRuleState === "APPROVED_TARGET_PENDING_TECHNICAL"
+  );
+  let supersededNotice = "";
+  if (supersededTargetRows.length > 0) {
+    const supersededCodes = supersededTargetRows.map((r) => r.capabilityCode).join(", ");
+    supersededNotice = ` [SUPERSEDED / MUST_NOT_PROMOTE: Stale target capability ${supersededCodes} confers zero runtime authority per DIR-2026-038]`;
+  }
+
   const featureFlagEnabled =
     params?.featureFlagEnabled ?? (process.env.PENDIDIKAN_V2_UAT_ENABLED === "true");
   const userStatus =
@@ -260,7 +299,7 @@ export function evaluateGate5RuntimeActivation(
   if (!featureFlagEnabled) {
     return {
       status: "NOT_READY",
-      details: `PENDIDIKAN_V2_UAT_ENABLED=${process.env.PENDIDIKAN_V2_UAT_ENABLED ?? "false"}`,
+      details: `PENDIDIKAN_V2_UAT_ENABLED=${process.env.PENDIDIKAN_V2_UAT_ENABLED ?? "false"}${supersededNotice}`,
       blocking: true,
       remediationAdvice: "Set PENDIDIKAN_V2_UAT_ENABLED=true in server environment when ready for live UAT",
     };
@@ -284,7 +323,7 @@ export function evaluateGate5RuntimeActivation(
   if (securityIssues.length > 0) {
     return {
       status: "NOT_READY",
-      details: `PENDIDIKAN_V2_UAT_ENABLED=true but Gate 5 UNIT security prerequisites not met: ${securityIssues.join("; ")} (Feature flag cannot bypass UNIT security per DIR-2026-037/DIR-2026-038)`,
+      details: `PENDIDIKAN_V2_UAT_ENABLED=true but Gate 5 UNIT security prerequisites not met: ${securityIssues.join("; ")} (Feature flag cannot bypass UNIT security per DIR-2026-037/DIR-2026-038)${supersededNotice}`,
       blocking: true,
       remediationAdvice: unitMutationConfigured && !executorReady
         ? "UNIT mutation requires verified human executor attribution before activation"
@@ -294,7 +333,7 @@ export function evaluateGate5RuntimeActivation(
 
   return {
     status: "READY",
-    details: "PENDIDIKAN_V2_UAT_ENABLED=true and Gate 5 UNIT security prerequisites satisfied (READ-ONLY monitoring per DIR-2026-038)",
+    details: `PENDIDIKAN_V2_UAT_ENABLED=true and Gate 5 UNIT security prerequisites satisfied (READ-ONLY monitoring per DIR-2026-038)${supersededNotice}`,
     blocking: true,
   };
 }
@@ -2743,11 +2782,48 @@ export async function checkPendidikanV2ProductionReadiness(
     }
   }
 
+  let liveUnitPositionCapabilities: Array<{
+    positionCode?: string;
+    capabilityCode?: string;
+    businessRuleState?: string | null;
+  }> = [];
+
+  if (db.positionCapability) {
+    const pcs = await db.positionCapability.findMany({
+      where: {
+        position: {
+          code: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+        },
+      },
+      include: {
+        position: true,
+      },
+    }).catch(() => []);
+    liveUnitPositionCapabilities = (pcs || []).map((r: any) => ({
+      positionCode: r.position?.code ?? r.positionCode ?? "PETUGAS_OPERASIONAL_KEASRAMAAN",
+      capabilityCode: r.capabilityCode,
+      businessRuleState: r.businessRuleState,
+    }));
+  } else if (typeof db.$queryRawUnsafe === "function") {
+    const rows = await db.$queryRawUnsafe<Array<{ capability_code: string; business_rule_state: string; position_code: string }>>(`
+      SELECT pc.capability_code, pc.business_rule_state::text, p.code as position_code
+      FROM position_capabilities pc
+      JOIN positions p ON p.id = pc.position_id
+      WHERE p.code = 'PETUGAS_OPERASIONAL_KEASRAMAAN';
+    `).catch(() => []);
+    liveUnitPositionCapabilities = (rows || []).map((r: any) => ({
+      positionCode: r.position_code,
+      capabilityCode: r.capability_code,
+      businessRuleState: r.business_rule_state,
+    }));
+  }
+
   const gate5Activation = evaluateGate5RuntimeActivation({
     featureFlagEnabled: process.env.PENDIDIKAN_V2_UAT_ENABLED === "true",
     userStatus: osdaUserStatus,
     verifiedHumanExecutorAttributionReady: CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.verifiedHumanExecutorAttributionReady,
     assignmentScopeUnitsReady: CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.assignmentScopeUnitsReady,
+    livePositionCapabilities: liveUnitPositionCapabilities,
   });
 
   gates.push({

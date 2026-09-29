@@ -28,6 +28,7 @@ import {
   TahfizhMonitoringSantriItem,
 } from "../lib/server/tahfizh-monitoring-service";
 import { createSetoranAction } from "../app/actions/tahfizh";
+import { assignCanonicalMusyrif, assignCanonicalKabid } from "./helpers/canonical-test-seed";
 
 describe("PR #7 — Tahfizh Operational Monitoring & Action Center (Comprehensive Test Suite)", () => {
   let prisma: PrismaClient;
@@ -241,6 +242,19 @@ describe("PR #7 — Tahfizh Operational Monitoring & Action Center (Comprehensiv
           santriId: SANTRI_1_ID,
         },
       ],
+    });
+
+    // 4b. Seed Canonical Architecture Lock Fixtures
+    await assignCanonicalMusyrif(prisma, {
+      userId: sessionMT1.userId,
+      halaqohCode: "HLQ-MON-01",
+    });
+    await assignCanonicalMusyrif(prisma, {
+      userId: sessionMT2.userId,
+      halaqohCode: "HLQ-MON-02",
+    });
+    await assignCanonicalKabid(prisma, {
+      userId: sessionKabid.userId,
     });
 
     // 5. Seed TargetSantri untuk Santri 1 (Target Pekanan 5 Halaman)
@@ -595,7 +609,7 @@ describe("PR #7 — Tahfizh Operational Monitoring & Action Center (Comprehensiv
         prisma
       );
       assert.equal(res.success, false);
-      assert.match(res.message || "", /Profil staf pembina Anda belum terhubung/i);
+      assert.match(res.message || "", /Akses Ditolak/i);
     });
 
     it("5.4. Role tidak berwenang (WS) default-deny", async () => {

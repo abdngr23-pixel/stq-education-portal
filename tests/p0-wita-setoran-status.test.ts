@@ -20,6 +20,11 @@ import {
 import { isTodayWita, getWitaDateString, parseWITADate } from "../lib/wita-date";
 import { getSantriListForSession } from "../lib/server/santri-list-service";
 import { UserSession } from "../types/auth";
+import {
+  ensureCanonicalTahfizhBase,
+  createCanonicalHalaqohOrgUnit,
+  assignCanonicalMusyrif,
+} from "./helpers/canonical-test-seed";
 
 describe("Verifikasi Status Setoran Hari Ini Berbasis Zona Waktu WITA & Service Internal Produksi getSantriListForSession", () => {
   let prisma: PrismaClient;
@@ -69,6 +74,27 @@ describe("Verifikasi Status Setoran Hari Ini Berbasis Zona Waktu WITA & Service 
         tahunAjaran: "2026/2027",
         status: "AKTIF",
       },
+    });
+
+    // Canonical authorization setup for sessionMT
+    await ensureCanonicalTahfizhBase(prisma);
+    const ouHalaqoh = await createCanonicalHalaqohOrgUnit(prisma, "HLQ-WITA-01", {
+      id: "ou-hlq-wita-01",
+      name: "Halaqoh Uji WITA",
+    });
+    await prisma.user.create({
+      data: {
+        id: sessionMT.userId,
+        username: sessionMT.username,
+        passwordHash: "hash-wita-test",
+        role: "MT",
+        status: "AKTIF",
+        staffId: "staff-wita-test-01",
+      },
+    });
+    await assignCanonicalMusyrif(prisma, {
+      userId: sessionMT.userId,
+      halaqohCode: "HLQ-WITA-01",
     });
 
     // Buat 4 Santri Uji

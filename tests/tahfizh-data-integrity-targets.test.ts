@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
 import { startTestDatabase, stopTestDatabase } from "./test-db-manager";
 import { setTestSession, resolveVerifiedSessionPayload } from "../lib/auth";
+import { assignCanonicalMusyrif, assignCanonicalKabid } from "./helpers/canonical-test-seed";
 import { UserSession, AuthTokenPayload, hasModuleAccess, Role } from "../types/auth";
 import { getSantriListForSession } from "../lib/server/santri-list-service";
 import {
@@ -271,6 +272,19 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (43 Skena
       ],
     });
 
+    // 3b. Seed Canonical Architecture Lock Fixtures
+    await assignCanonicalMusyrif(prisma, {
+      userId: sessionMT1.userId,
+      halaqohCode: "HLQ-01",
+    });
+    await assignCanonicalMusyrif(prisma, {
+      userId: sessionMT2.userId,
+      halaqohCode: "HLQ-02",
+    });
+    await assignCanonicalKabid(prisma, {
+      userId: sessionKabid.userId,
+    });
+
     // 4. Seed Kebijakan Reward Sanksi
     await prisma.kebijakanRewardSanksi.create({
       data: {
@@ -492,11 +506,11 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (43 Skena
       tahunAjaran: "2026/2027",
     });
     assert.equal(upsertRes.success, false);
-    assert.match(upsertRes.message, /Profil staf pembina Anda belum terhubung/i);
+    assert.match(upsertRes.message, /(Profil staf pembina Anda belum terhubung|Akses Ditolak|FORBIDDEN)/i);
 
     const getRes = await getTargetSantriAction(SANTRI_AHMAD_ID, 9, "2026/2027");
     assert.equal(getRes.success, false);
-    assert.match(getRes.message ?? "", /Profil staf pembina Anda belum terhubung/i);
+    assert.match(getRes.message ?? "", /(Profil staf pembina Anda belum terhubung|Akses Ditolak|FORBIDDEN)/i);
   });
 
   it("10. Kabid Tahfizh mendapatkan scope berdasarkan DB flag", async () => {

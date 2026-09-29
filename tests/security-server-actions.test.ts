@@ -62,6 +62,82 @@ describe("P0 Security & ABAC Verification for Server Actions & Services", () => 
           throw new Error("FATAL database corruption error at /var/lib/postgresql/data");
         },
       },
+      user: {
+        findFirst: async () => ({
+          id: "usr-faulty",
+          username: "faulty.mt",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          role: "MT",
+          staffId: "staff-faulty",
+          staff: {
+            id: "staff-faulty",
+            nama: "Musyrif Faulty",
+            status: "AKTIF",
+          },
+        }),
+        findUnique: async () => ({
+          id: "usr-faulty",
+          username: "faulty.mt",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          role: "MT",
+          staffId: "staff-faulty",
+          staff: {
+            id: "staff-faulty",
+            nama: "Musyrif Faulty",
+            status: "AKTIF",
+          },
+        }),
+      },
+      assignment: {
+        findMany: async () => [
+          {
+            id: "asg-faulty",
+            userId: "usr-faulty",
+            positionId: "pos-faulty-mt",
+            unitId: "ou-faulty-01",
+            status: "ACTIVE",
+            position: {
+              id: "pos-faulty-mt",
+              code: "MUSYRIF_TAHFIZH",
+              domain: "TAHFIZH",
+              isActive: true,
+              capabilities: [
+                {
+                  capabilityCode: "tahfizh.recap.read",
+                  scopeType: "GLOBAL",
+                  businessRuleState: "VERIFIED_PRODUCTION",
+                  capability: {
+                    code: "tahfizh.recap.read",
+                    namespace: "TAHFIZH",
+                    isActive: true,
+                  },
+                },
+              ],
+            },
+            unit: {
+              id: "ou-faulty-01",
+              code: "OU-HLQ-001",
+              type: "HALAQOH",
+              domain: "TAHFIZH",
+              isActive: true,
+            },
+            scopedUnits: [],
+          },
+        ],
+      },
+      orgUnit: {
+        findUnique: async () => ({
+          id: "ou-faulty-01",
+          code: "OU-HLQ-001",
+          type: "HALAQOH",
+          domain: "TAHFIZH",
+          genderComplex: "PUTRA",
+          parentId: null,
+          isActive: true,
+        }),
+      },
     } as unknown as PrismaClient;
 
     const fakeSession: UserSession = {
