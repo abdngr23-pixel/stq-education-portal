@@ -1754,78 +1754,79 @@ export async function checkPendidikanV2ProductionReadiness(
                 if (authRes.decision !== "ALLOW") {
                   policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} ${authRes.code}: ${authRes.reason} (runtime NOT_READY)`);
                 }
-              } else if (target.positionCode === "PETUGAS_OPERASIONAL_KEASRAMAAN") {
-                // Real Keasramaan Representative Resource (DIR-2026-038: DOMAIN + PUTRI monitoring)
-                let activePutriSantri: any = null;
-                if (db.santri?.findFirst) {
-                  activePutriSantri = await db.santri.findFirst({
-                    where: {
-                      status: "AKTIF",
-                      jenisKelamin: "P",
-                    },
-                  }).catch(() => null);
-                } else if (db.santri?.findMany) {
-                  const santriList = await db.santri.findMany().catch(() => []);
-                  activePutriSantri = santriList.find(
-                    (s: any) => (!s.status || s.status === "AKTIF") && s.jenisKelamin === "P"
-                  ) || null;
-                }
+              }
+            } else if (target.expectedScope === "DOMAIN" && target.positionCode === "PETUGAS_OPERASIONAL_KEASRAMAAN") {
+              const anchorUnit = asg.unit?.isActive !== false ? (asg.unitId || asg.unit?.id) : null;
+              // Real Keasramaan Representative Resource (DIR-2026-038: DOMAIN + PUTRI monitoring)
+              let activePutriSantri: any = null;
+              if (db.santri?.findFirst) {
+                activePutriSantri = await db.santri.findFirst({
+                  where: {
+                    status: "AKTIF",
+                    jenisKelamin: "P",
+                  },
+                }).catch(() => null);
+              } else if (db.santri?.findMany) {
+                const santriList = await db.santri.findMany().catch(() => []);
+                activePutriSantri = santriList.find(
+                  (s: any) => (!s.status || s.status === "AKTIF") && s.jenisKelamin === "P"
+                ) || null;
+              }
 
-                if (!activePutriSantri) {
-                  policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_NOT_READY (no representative active santriwati putri found)`);
-                  continue;
-                }
+              if (!activePutriSantri) {
+                policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_NOT_READY (no representative active santriwati putri found)`);
+                continue;
+              }
 
-                // Canonical runtime check
-                const mockAssignment: CanonicalAssignmentWithDetails = {
-                  id: asg.id,
+              // Canonical runtime check
+              const mockAssignment: CanonicalAssignmentWithDetails = {
+                id: asg.id,
+                userId: user.id,
+                positionId: asg.positionId || asg.position?.id || "pos-id",
+                positionCode: target.positionCode,
+                positionName: asg.position?.name || target.positionCode,
+                domain: asg.position?.domain || "KEASRAMAAN",
+                unitId: anchorUnit || "OU-OSDA-PUTRI",
+                unitCode: asg.unit?.code || "OU-OSDA-PUTRI",
+                unitName: asg.unit?.name || "OSDA Putri",
+                unitGenderComplex: "PUTRI",
+                status: "ACTIVE",
+                validFrom: asg.validFrom ? new Date(asg.validFrom) : new Date(0),
+                validUntil: asg.validUntil ? new Date(asg.validUntil) : null,
+                positionCapabilities: [
+                  {
+                    capabilityCode: target.capabilityCode,
+                    scopeType: "DOMAIN",
+                    businessRuleState: "VERIFIED_PRODUCTION",
+                  },
+                ],
+                scopeUnits: [],
+              };
+
+              const resolvedContext: ResolvedResourceContext = {
+                santriId: activePutriSantri.id,
+                orgUnitIds: [],
+                genderComplex: "PUTRI",
+                orgDomain: "KEASRAMAAN",
+              };
+
+              const authRes = await authorizeCanonical({
+                identity: {
                   userId: user.id,
-                  positionId: asg.positionId || asg.position?.id || "pos-id",
-                  positionCode: target.positionCode,
-                  positionName: asg.position?.name || target.positionCode,
-                  domain: asg.position?.domain || "KEASRAMAAN",
-                  unitId: anchorUnit || "OU-OSDA-PUTRI",
-                  unitCode: asg.unit?.code || "OU-OSDA-PUTRI",
-                  unitName: asg.unit?.name || "OSDA Putri",
-                  unitGenderComplex: "PUTRI",
-                  status: "ACTIVE",
-                  validFrom: asg.validFrom ? new Date(asg.validFrom) : new Date(0),
-                  validUntil: asg.validUntil ? new Date(asg.validUntil) : null,
-                  positionCapabilities: [
-                    {
-                      capabilityCode: target.capabilityCode,
-                      scopeType: "DOMAIN",
-                      businessRuleState: "VERIFIED_PRODUCTION",
-                    },
-                  ],
-                  scopeUnits: [],
-                };
-
-                const resolvedContext: ResolvedResourceContext = {
-                  santriId: activePutriSantri.id,
-                  orgUnitIds: [],
+                  username: user.username || `user-${user.id}`,
+                  status: user.status || "AKTIF",
+                  accountType: "UNIT",
                   genderComplex: "PUTRI",
-                  orgDomain: "KEASRAMAAN",
-                };
+                  placementUnitId: anchorUnit || "OU-OSDA-PUTRI",
+                  mockAssignments: [mockAssignment],
+                } as any,
+                capability: target.capabilityCode,
+                resourceContext: { santriId: activePutriSantri.id },
+                resolvedContext,
+              });
 
-                const authRes = await authorizeCanonical({
-                  identity: {
-                    userId: user.id,
-                    username: user.username || `user-${user.id}`,
-                    status: user.status || "AKTIF",
-                    accountType: "UNIT",
-                    genderComplex: "PUTRI",
-                    placementUnitId: anchorUnit || "OU-OSDA-PUTRI",
-                    mockAssignments: [mockAssignment],
-                  } as any,
-                  capability: target.capabilityCode,
-                  resourceContext: { santriId: activePutriSantri.id },
-                  resolvedContext,
-                });
-
-                if (authRes.decision !== "ALLOW") {
-                  policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} ${authRes.code}: ${authRes.reason} (runtime NOT_READY)`);
-                }
+              if (authRes.decision !== "ALLOW") {
+                policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} ${authRes.code}: ${authRes.reason} (runtime NOT_READY)`);
               }
             }
           }

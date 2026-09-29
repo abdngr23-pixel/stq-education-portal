@@ -371,16 +371,16 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const capGate = report.gates.find((g) => g.gate === "CAPABILITIES_REGISTERED");
       assert.ok(capGate);
       assert.strictEqual(capGate.status, "READY");
-      assert.ok(capGate.details.includes("All 8 required activation capabilities registered"));
+      assert.ok(capGate.details.includes(`All ${REQUIRED_UAT_ACTIVATION_CAPABILITIES.length} required activation capabilities registered`));
     });
 
     it("2.9 Proof 3: All required activation capability rows present => registration gate READY", async () => {
       // Programmatic verification of capability subsets derived from UAT_ACTIVATION_TARGETS
       assert.strictEqual(EDUCATION_SESSION_ACTIVATION_CAPABILITIES.length, 4);
-      assert.strictEqual(APPROVED_UAT_TARGET_CAPABILITY_CODES.length, 4);
+      assert.strictEqual(APPROVED_UAT_TARGET_CAPABILITY_CODES.length, 3);
       assert.strictEqual(REQUIRED_STUDI_UMUM_TEACHER_CAPABILITIES.length, 3);
       assert.strictEqual(REQUIRED_KEPESANTRENAN_TEACHER_CAPABILITIES.length, 4);
-      assert.strictEqual(REQUIRED_UAT_ACTIVATION_CAPABILITIES.length, 8);
+      assert.strictEqual(REQUIRED_UAT_ACTIVATION_CAPABILITIES.length, 7);
 
       const mockDb = {
         capability: {
@@ -2445,7 +2445,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         (p) => p.capabilityCode === "keasramaan.permission.read"
       );
       assert.ok(targetPolicy, "Target policy for keasramaan.permission.read must exist in UAT_ACTIVATION_TARGETS");
-      assert.strictEqual(targetPolicy.scopeType, "ASSIGNED_UNITS");
+      assert.strictEqual(targetPolicy.scopeType, "DOMAIN");
 
       // 2. Runtime authorizeCanonical evaluation with approved ASSIGNED_UNITS position capability (PETUGAS_OPERASIONAL_KEASRAMAAN)
       // TEST_ONLY_SIMULATED_STATE: VERIFIED_PRODUCTION is simulated in this isolated test harness;
@@ -2705,16 +2705,16 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       );
     });
 
-    it("5.5 Proof 5: keasramaan.permission.read (ASSIGNED_UNITS): resource outside assigned asrama unit => DENY (SCOPE_MISMATCH) & Gate 8 NOT_READY", async () => {
+    it("5.5 Proof 5: keasramaan.permission.read (DOMAIN): resource with PUTRA gender complex => DENY (GENDER_COMPLEX_DENIED) & Gate 8 NOT_READY when no active santriwati putri", async () => {
       // 1. Runtime authorizeCanonical evaluation
       const keasramaanIdentity = {
         userId: "usr-asrama-op",
-        username: "asrama.op",
+        username: "osda.putri",
         accountType: "UNIT" as const,
         status: "AKTIF",
-        name: "Petugas Asrama Putra",
-        genderComplex: "PUTRA" as const,
-        placementUnitId: "asr-putra-1",
+        name: "OSDA Putri",
+        genderComplex: "PUTRI" as const,
+        placementUnitId: "ou-osda-putri",
       };
       const keasramaanAssignment = {
         id: "asg-asr-1",
@@ -2723,20 +2723,20 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
         positionName: "Petugas Operasional Keasramaan",
         domain: "KEASRAMAAN",
-        unitId: "asr-putra-1",
-        unitCode: "ASR-PUTRA-1",
-        unitName: "Asrama Putra 1",
-        unitGenderComplex: "PUTRA" as const,
+        unitId: "ou-osda-putri",
+        unitCode: "OU-OSDA-PUTRI",
+        unitName: "OSDA Putri",
+        unitGenderComplex: "PUTRI" as const,
         status: "ACTIVE" as const,
         validFrom: new Date(Date.now() - 86400000),
         validUntil: null,
         requiresPersonalAccount: false,
-        scopeUnits: [{ unitId: "asr-putra-1", unitCode: "ASR-PUTRA-1" }],
-        scopedUnits: [{ unitId: "asr-putra-1", unit: { id: "asr-putra-1", isActive: true } }],
+        scopeUnits: [],
+        scopedUnits: [],
         positionCapabilities: [
           {
             capabilityCode: "keasramaan.permission.read",
-            scopeType: "ASSIGNED_UNITS" as const,
+            scopeType: "DOMAIN" as const,
             businessRuleState: "VERIFIED_PRODUCTION" as const,
           },
         ],
@@ -2747,41 +2747,42 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         capability: "keasramaan.permission.read",
         resolvedContext: {
           resourceId: "perm-outside-1",
-          orgUnitIds: ["asr-putra-2"], // Outside unit but same gender complex
+          orgUnitIds: [],
           orgDomain: "KEASRAMAAN",
           genderComplex: "PUTRA",
         },
         dataProvider: {
           getIdentity: async () => keasramaanIdentity,
           getActiveAssignments: async () => [keasramaanAssignment] as any,
-          getUnitAccountPlacement: async () => ({ unitId: "asr-putra-1", count: 1 }),
+          getUnitAccountPlacement: async () => ({ unitId: "ou-osda-putri", count: 1 }),
           resolveResourceContext: async () => null,
           verifyHumanExecutor: async () => null,
         },
       });
 
       assert.strictEqual(authDeny.decision, "DENY");
-      assert.strictEqual(authDeny.code, "SCOPE_MISMATCH");
+      assert.strictEqual(authDeny.code, "GENDER_COMPLEX_DENIED");
 
       // 2. Gate 8 Production Readiness Check
       const assignments = createUatAssignments({
         overridePosCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
         overridePatch: (base) => ({
           ...base,
-          unitId: "asr-putra-1",
-          scopedUnits: [{ unitId: "asr-putra-1", unit: { id: "asr-putra-1", isActive: true } }],
+          unitId: "ou-osda-putri",
+          scopedUnits: [],
         }),
       });
 
       const mockDb = createDefaultMockDb(assignments, {
-        placementFindFirst: async (args: any) => {
-          if (args?.where?.kamarId?.in?.includes("asr-putra-1")) {
-            return null; // No active placement in permitted unit
+        santriFindFirst: async (args: any) => {
+          if (args?.where?.jenisKelamin === "P") {
+            return null; // No active santriwati putri
           }
-          return { id: "skp-default", kamarId: "asr-putra-1", santriId: "san-1", isActive: true, santri: { status: "AKTIF" } };
+          const hId = args?.where?.halaqohId || "ou-uat-1";
+          return { id: "san-putra-1", halaqohId: hId, status: "AKTIF", jenisKelamin: "L" };
         },
-        placementFindMany: async () => [
-          { id: "skp-outside", kamarId: "asr-putri-2", santriId: "san-2", isActive: true, santri: { status: "AKTIF" } },
+        santriFindMany: async () => [
+          { id: "san-putra-1", halaqohId: "ou-uat-1", status: "AKTIF", jenisKelamin: "L" },
         ],
       });
 
@@ -2790,8 +2791,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.ok(userGate);
       assert.strictEqual(userGate.status, "NOT_READY");
       assert.ok(
-        userGate.details.includes("SCOPE_MISMATCH") && userGate.details.includes("keasramaan.permission.read"),
-        `Expected SCOPE_MISMATCH for keasramaan.permission.read, got: ${userGate.details}`
+        userGate.details.includes("TARGET_RESOURCE_SCOPE_NOT_READY") && userGate.details.includes("keasramaan.permission.read"),
+        `Expected TARGET_RESOURCE_SCOPE_NOT_READY for keasramaan.permission.read, got: ${userGate.details}`
       );
     });
 
@@ -2948,8 +2949,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     });
 
     it("5.8 Proof 8: exact CANONICAL_UAT_TARGET_POLICIES matches UAT_ACTIVATION_TARGETS definitions with no legacy aliases", () => {
-      // 1. Exact count is 5 (POT tahfizh.reward.issue removed per Gate 5 owner mandate)
-      assert.strictEqual(CANONICAL_UAT_TARGET_POLICIES.length, 5, "Must have exactly 5 canonical UAT target policies");
+      // 1. Exact count is 4 (POK keasramaan.permission.create removed per DIR-2026-038 read-only model)
+      assert.strictEqual(CANONICAL_UAT_TARGET_POLICIES.length, 4, "Must have exactly 4 canonical UAT target policies");
 
       // 2. Build expected list directly from UAT_ACTIVATION_TARGETS
       const expectedPolicies = [

@@ -61,11 +61,16 @@ export async function ajukanIzinAction(input: AjukanIzinData) {
     return { success: false, message: "Database error resolving user identity (FAIL CLOSED)." };
   }
 
-  if (!dbUser || dbUser.status !== "AKTIF") {
-    return { success: false, message: "Akses Ditolak: Pengguna tidak aktif atau tidak ditemukan." };
+  if (dbUser && dbUser.status !== "AKTIF") {
+    return { success: false, message: "Akses Ditolak: Pengguna tidak aktif (FAIL CLOSED)." };
   }
 
-  if (dbUser.accountType === "UNIT" || dbUser.username === "osda.putri" || session.username === "osda.putri") {
+  const isUnitAccount =
+    dbUser?.accountType === "UNIT" ||
+    (session as unknown as { accountType?: string }).accountType === "UNIT" ||
+    session.username === "osda.putri";
+
+  if (isUnitAccount) {
     return {
       success: false,
       message: "Akses Ditolak: Akun UNIT (osda.putri) hanya berwenang untuk monitoring READ-ONLY dan dilarang melakukan pengajuan perizinan (DIR-2026-038).",
@@ -319,11 +324,16 @@ export async function konfirmasiKembaliIzinAction(params: { izinId: string }) {
     return { success: false, message: "Database error resolving user identity (FAIL CLOSED)." };
   }
 
-  if (!dbUser || dbUser.status !== "AKTIF") {
-    return { success: false, message: "Akses Ditolak: Pengguna tidak aktif atau tidak ditemukan." };
+  if (dbUser && dbUser.status !== "AKTIF") {
+    return { success: false, message: "Akses Ditolak: Pengguna tidak aktif (FAIL CLOSED)." };
   }
 
-  if (dbUser.accountType === "UNIT" || dbUser.username === "osda.putri" || session.username === "osda.putri") {
+  const isUnitReturn =
+    dbUser?.accountType === "UNIT" ||
+    (session as unknown as { accountType?: string }).accountType === "UNIT" ||
+    session.username === "osda.putri";
+
+  if (isUnitReturn) {
     return {
       success: false,
       message: "Akses Ditolak: Akun UNIT (osda.putri) hanya berwenang untuk monitoring READ-ONLY dan dilarang melakukan konfirmasi kepulangan perizinan (DIR-2026-038).",
@@ -416,14 +426,19 @@ export async function batalkanIzinAction(params: { izinId: string; alasan: strin
     return { success: false, message: "Database error resolving user identity (FAIL CLOSED)." };
   }
 
-  if (!dbUser || dbUser.status !== "AKTIF") {
-    return { success: false, message: "Akses Ditolak: Pengguna tidak aktif atau tidak ditemukan." };
+  if (dbUser && dbUser.status !== "AKTIF") {
+    return { success: false, message: "Akses Ditolak: Pengguna tidak aktif (FAIL CLOSED)." };
   }
 
-  if (dbUser.accountType === "UNIT" || dbUser.username === "osda.putri" || session.username === "osda.putri") {
+  const isUnitCancel =
+    dbUser?.accountType === "UNIT" ||
+    (session as unknown as { accountType?: string }).accountType === "UNIT" ||
+    session.username === "osda.putri";
+
+  if (isUnitCancel) {
     return {
       success: false,
-      message: "Akses Ditolak: Akun UNIT (osda.putri) hanya berwenang untuk monitoring READ-ONLY dan dilarang membatalkan perizinan (DIR-2026-038).",
+      message: "Akses Ditolak: Akun UNIT (osda.putri) hanya berwenang untuk monitoring READ-ONLY dan tidak memiliki hak akses membatalkan perizinan (DIR-2026-038).",
     };
   }
 
@@ -534,11 +549,16 @@ export async function verifikasiIzinAction(params: {
     return { success: false, message: "Database error resolving user identity (FAIL CLOSED)." };
   }
 
-  if (!dbUser || dbUser.status !== "AKTIF") {
-    return { success: false, message: "Akses Ditolak: Pengguna tidak aktif atau tidak ditemukan." };
+  if (dbUser && dbUser.status !== "AKTIF") {
+    return { success: false, message: "Akses Ditolak: Pengguna tidak aktif (FAIL CLOSED)." };
   }
 
-  if (dbUser.accountType === "UNIT" || dbUser.username === "osda.putri" || session.username === "osda.putri") {
+  const isUnitVerify =
+    dbUser?.accountType === "UNIT" ||
+    (session as unknown as { accountType?: string }).accountType === "UNIT" ||
+    session.username === "osda.putri";
+
+  if (isUnitVerify) {
     return {
       success: false,
       message: "Akses Ditolak: Akun UNIT (osda.putri) hanya berwenang untuk monitoring READ-ONLY dan dilarang melakukan verifikasi/approval perizinan (DIR-2026-038).",
