@@ -1549,7 +1549,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
             name: posCode,
             isActive: true,
             requiresPersonalAccount: posCode !== "PETUGAS_OPERASIONAL_KEASRAMAAN",
-            domain: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? "KEASRAMAAN" : "AKADEMIK",
+            domain: (posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" || posCode === "KEPALA_KEASRAMAAN") ? "KEASRAMAAN" : "AKADEMIK",
             capabilities,
           },
         };
