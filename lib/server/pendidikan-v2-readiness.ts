@@ -43,6 +43,12 @@ import {
   authorizeCanonical,
   CanonicalAssignmentWithDetails,
 } from "@/lib/auth/canonical-evaluator";
+import {
+  resolveHalaqohForCanonicalOrgUnit,
+  resolveCanonicalOrgUnitForHalaqoh,
+  HalaqohMappingError,
+  HalaqohOrgUnitMapping,
+} from "./halaqoh-canonical-mapping";
 
 export type ReadinessStatus = "READY" | "BLOCKED" | "NOT_READY";
 
@@ -1785,23 +1791,66 @@ export async function checkPendidikanV2ProductionReadiness(
             }
 
             if (target.expectedScope === "HALAQOH") {
-              const anchorUnit = asg.unit?.isActive !== false ? (asg.unitId || asg.unit?.id) : null;
+              const anchorUnit = asg.unitId || asg.unit?.id;
 
               if (!anchorUnit) {
                 policyIssues.push(`${target.positionCode}: assignment ${asg.id} has scope HALAQOH but no active anchor halaqoh configured (TARGET_RESOURCE_SCOPE_NOT_READY)`);
                 continue;
               }
 
-              // Resolve ACTUAL active Santri from database
+              // Resolve Assignment anchor canonical OrgUnit via authoritative bridge
+              let halaqohMapping: HalaqohOrgUnitMapping | null = null;
+              try {
+                halaqohMapping = await resolveHalaqohForCanonicalOrgUnit(anchorUnit, db as any);
+              } catch (err: unknown) {
+                if (err instanceof HalaqohMappingError && err.code === "DATABASE_ERROR") {
+                  throw new Error(`Database error resolving halaqoh mapping for ${anchorUnit}: ${err.message}`);
+                }
+                policyIssues.push(
+                  `${target.positionCode}: assignment ${asg.id} halaqoh mapping error for ${anchorUnit}: ${err instanceof Error ? err.message : String(err)} (runtime NOT_READY)`
+                );
+                continue;
+              }
+
+              if (!halaqohMapping) {
+                let anchorUnitObj = asg.unit || (asg.unitId ? unitsMap.get(asg.unitId) : null);
+                if (!anchorUnitObj && db.orgUnit?.findMany) {
+                  try {
+                    const found = await db.orgUnit.findMany({
+                      where: { OR: [{ id: anchorUnit }, { code: anchorUnit }] },
+                      select: { id: true, code: true, type: true, domain: true, isActive: true },
+                    });
+                    if (found && found.length > 0) anchorUnitObj = found[0];
+                  } catch {
+                    // ignore
+                  }
+                }
+                if (anchorUnitObj && anchorUnitObj.isActive === false) {
+                  policyIssues.push(
+                    `${target.positionCode}: assignment ${asg.id} canonical OrgUnit ${anchorUnit} is inactive (TARGET_RESOURCE_SCOPE_NOT_READY)`
+                  );
+                } else if (anchorUnitObj && (anchorUnitObj.type !== "HALAQOH" || anchorUnitObj.domain !== "TAHFIZH")) {
+                  policyIssues.push(
+                    `${target.positionCode}: assignment ${asg.id} canonical OrgUnit ${anchorUnit} type/domain mismatch (expected HALAQOH/TAHFIZH) (TARGET_RESOURCE_SCOPE_NOT_READY)`
+                  );
+                } else {
+                  policyIssues.push(
+                    `${target.positionCode}: assignment ${asg.id} missing active source Halaqoh mapping for canonical OrgUnit ${anchorUnit} (TARGET_RESOURCE_SCOPE_NOT_READY)`
+                  );
+                }
+                continue;
+              }
+
+              // Resolve ACTUAL active Santri from database using mapping.halaqohId (Halaqoh.id)
               let repSantri: any = null;
               if (db.santri?.findFirst) {
                 try {
                   repSantri = await db.santri.findFirst({
                     where: {
                       status: "AKTIF",
-                      halaqohId: anchorUnit,
+                      halaqohId: halaqohMapping.halaqohId,
                     },
-                    select: { id: true, halaqohId: true, status: true },
+                    select: { id: true, halaqohId: true, status: true, jenisKelamin: true },
                   });
                 } catch (err: unknown) {
                   throw new Error(`Santri repository query failed: ${String(err)}`);
@@ -1813,7 +1862,7 @@ export async function checkPendidikanV2ProductionReadiness(
                 } catch (err: unknown) {
                   throw new Error(`Santri repository query failed: ${String(err)}`);
                 }
-                repSantri = santris.find((s: any) => (s.status === "AKTIF" || !s.status) && s.halaqohId === anchorUnit) || null;
+                repSantri = santris.find((s: any) => (s.status === "AKTIF" || !s.status) && s.halaqohId === halaqohMapping.halaqohId) || null;
               }
 
               if (!repSantri) {
@@ -1824,7 +1873,7 @@ export async function checkPendidikanV2ProductionReadiness(
                     outsideSantri = await db.santri.findFirst({
                       where: {
                         status: "AKTIF",
-                        halaqohId: { not: anchorUnit },
+                        halaqohId: { not: halaqohMapping.halaqohId },
                       },
                       select: { id: true, halaqohId: true },
                     });
@@ -1838,13 +1887,44 @@ export async function checkPendidikanV2ProductionReadiness(
                   } catch (err: unknown) {
                     throw new Error(`Santri repository query failed: ${String(err)}`);
                   }
-                  outsideSantri = santris.find((s: any) => (s.status === "AKTIF" || !s.status) && s.halaqohId && s.halaqohId !== anchorUnit) || null;
+                  outsideSantri = santris.find((s: any) => (s.status === "AKTIF" || !s.status) && s.halaqohId && s.halaqohId !== halaqohMapping.halaqohId) || null;
                 }
 
                 if (outsideSantri && outsideSantri.halaqohId) {
-                  policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} SCOPE_MISMATCH: santri halaqoh ${outsideSantri.halaqohId} does not match assigned halaqoh ${anchorUnit} (runtime NOT_READY)`);
+                  // Resolve outside Santri's legacy halaqoh to canonical OrgUnit via authoritative bridge
+                  let outsideMapping: HalaqohOrgUnitMapping | null = null;
+                  try {
+                    outsideMapping = await resolveCanonicalOrgUnitForHalaqoh(outsideSantri.halaqohId, db as any);
+                  } catch (err: unknown) {
+                    if (err instanceof HalaqohMappingError && err.code === "DATABASE_ERROR") {
+                      throw new Error(`Database error resolving outside halaqoh mapping for ${outsideSantri.halaqohId}: ${err.message}`);
+                    }
+                    policyIssues.push(
+                      `${target.positionCode}: grant ${target.capabilityCode} outside santri halaqoh mapping error for ${outsideSantri.halaqohId}: ${err instanceof Error ? err.message : String(err)} (runtime NOT_READY)`
+                    );
+                    continue;
+                  }
+
+                  if (!outsideMapping) {
+                    policyIssues.push(
+                      `${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_NOT_READY (outside Santri halaqoh has no canonical OrgUnit mapping)`
+                    );
+                    continue;
+                  }
+
+                  if (outsideMapping.orgUnitId !== halaqohMapping.orgUnitId) {
+                    policyIssues.push(
+                      `${target.positionCode}: grant ${target.capabilityCode} SCOPE_MISMATCH: santri halaqoh ${outsideMapping.orgUnitId} does not match assigned halaqoh ${halaqohMapping.orgUnitId} (runtime NOT_READY)`
+                    );
+                  } else {
+                    policyIssues.push(
+                      `${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_NOT_READY (no representative active santri found in assigned halaqoh ${halaqohMapping.orgUnitCode})`
+                    );
+                  }
                 } else {
-                  policyIssues.push(`${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_NOT_READY (no representative active santri found in assigned halaqoh ${anchorUnit})`);
+                  policyIssues.push(
+                    `${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_NOT_READY (no representative active santri found in assigned halaqoh ${halaqohMapping.orgUnitCode})`
+                  );
                 }
                 continue;
               }
@@ -1857,9 +1937,9 @@ export async function checkPendidikanV2ProductionReadiness(
                 positionCode: target.positionCode,
                 positionName: asg.position?.name || target.positionCode,
                 domain: asg.position?.domain || "TAHFIZH",
-                unitId: anchorUnit,
-                unitCode: asg.unit?.code || "OU-HLQ",
-                unitName: asg.unit?.name || "Halaqoh",
+                unitId: halaqohMapping.orgUnitId,
+                unitCode: halaqohMapping.orgUnitCode || asg.unit?.code || "OU-HLQ",
+                unitName: asg.unit?.name || halaqohMapping.halaqohName || "Halaqoh",
                 status: "ACTIVE",
                 validFrom: asg.validFrom ? new Date(asg.validFrom) : new Date(0),
                 validUntil: asg.validUntil ? new Date(asg.validUntil) : null,
@@ -1875,9 +1955,10 @@ export async function checkPendidikanV2ProductionReadiness(
 
               const resolvedContext: ResolvedResourceContext = {
                 santriId: repSantri.id,
-                halaqohId: repSantri.halaqohId,
-                orgUnitIds: [repSantri.halaqohId],
+                halaqohId: halaqohMapping.orgUnitId,
+                orgUnitIds: [halaqohMapping.orgUnitId],
                 orgDomain: "TAHFIZH",
+                genderComplex: halaqohMapping.genderComplex || (repSantri.jenisKelamin === "L" ? "PUTRA" : repSantri.jenisKelamin === "P" ? "PUTRI" : "TIDAK_TERIKAT"),
               };
 
               const authRes = await authorizeCanonical({
