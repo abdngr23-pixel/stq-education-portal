@@ -377,10 +377,10 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     it("2.9 Proof 3: All required activation capability rows present => registration gate READY", async () => {
       // Programmatic verification of capability subsets derived from UAT_ACTIVATION_TARGETS
       assert.strictEqual(EDUCATION_SESSION_ACTIVATION_CAPABILITIES.length, 4);
-      assert.strictEqual(APPROVED_UAT_TARGET_CAPABILITY_CODES.length, 3);
+      assert.strictEqual(APPROVED_UAT_TARGET_CAPABILITY_CODES.length, 8);
       assert.strictEqual(REQUIRED_STUDI_UMUM_TEACHER_CAPABILITIES.length, 3);
       assert.strictEqual(REQUIRED_KEPESANTRENAN_TEACHER_CAPABILITIES.length, 4);
-      assert.strictEqual(REQUIRED_UAT_ACTIVATION_CAPABILITIES.length, 7);
+      assert.strictEqual(REQUIRED_UAT_ACTIVATION_CAPABILITIES.length, 12);
 
       const mockDb = {
         capability: {
@@ -1549,7 +1549,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
             name: posCode,
             isActive: true,
             requiresPersonalAccount: posCode !== "PETUGAS_OPERASIONAL_KEASRAMAAN",
-            domain: posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" ? "KEASRAMAAN" : "AKADEMIK",
+            domain: (posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN" || posCode === "KEPALA_KEASRAMAAN") ? "KEASRAMAAN" : "AKADEMIK",
             capabilities,
           },
         };
@@ -2949,8 +2949,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     });
 
     it("5.8 Proof 8: exact CANONICAL_UAT_TARGET_POLICIES matches UAT_ACTIVATION_TARGETS definitions with no legacy aliases", () => {
-      // 1. Exact count is 4 (POK keasramaan.permission.create removed per DIR-2026-038 read-only model)
-      assert.strictEqual(CANONICAL_UAT_TARGET_POLICIES.length, 4, "Must have exactly 4 canonical UAT target policies");
+      // 1. Reconciled count is 19 (including C1 mutation, D1 privacy, and C1 read targets)
+      assert.strictEqual(CANONICAL_UAT_TARGET_POLICIES.length, 19, "Must have exactly 19 canonical UAT target policies");
 
       // 2. Build expected list directly from UAT_ACTIVATION_TARGETS
       const expectedPolicies = [

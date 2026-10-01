@@ -22,6 +22,7 @@ describe("Remediation Round 4: Perizinan, Kedisiplinan & Kesehatan ABAC Fail-Clo
   const STAFF_PH1 = "stf-r4-ph1";
   const STAFF_OTHER = "stf-r4-other";
   const STAFF_KS = "stf-r4-ks";
+  const STAFF_MK = "stf-r4-mk";
 
   const HALAQOH_1 = "hlq-r4-01";
   const HALAQOH_2 = "hlq-r4-02";
@@ -71,6 +72,7 @@ describe("Remediation Round 4: Perizinan, Kedisiplinan & Kesehatan ABAC Fail-Clo
         { id: STAFF_PH1, staffCode: "STF-R4-PH1", nama: "Ustadz PH Satu", noHp: "082222", roleStaff: "PH", status: "AKTIF", isKepalaBidangTahfidz: false },
         { id: STAFF_OTHER, staffCode: "STF-R4-OTH", nama: "Ustadz Other", noHp: "083333", roleStaff: "MT", status: "AKTIF", isKepalaBidangTahfidz: false },
         { id: STAFF_KS, staffCode: "STF-R4-KS", nama: "Kiai Pimpinan", noHp: "084444", roleStaff: "KS", status: "AKTIF", isKepalaBidangTahfidz: false },
+        { id: STAFF_MK, staffCode: "STF-R4-MK", nama: "Ustadz MK", noHp: "085555", roleStaff: "MK", status: "AKTIF", isKepalaBidangTahfidz: false },
       ],
     });
 
@@ -106,10 +108,46 @@ describe("Remediation Round 4: Perizinan, Kedisiplinan & Kesehatan ABAC Fail-Clo
         { id: USER_PH_UNLINKED, username: "r4.pembina.unlinked", role: "PH", staffId: null, passwordHash: "dummy" },
         { id: USER_KS, username: "r4.mudir.ks", role: "KS", staffId: STAFF_KS, passwordHash: "dummy" },
         { id: USER_ADM, username: "r4.admin.tu", role: "ADM", passwordHash: "dummy" },
-        { id: USER_MK, username: "r4.kesantrian.mk", role: "MK", passwordHash: "dummy" },
+        { id: USER_MK, username: "r4.kesantrian.mk", role: "MK", staffId: STAFF_MK, passwordHash: "dummy" },
         { id: USER_OSDA, username: "r4.poskestren.osda", role: "OSDA", passwordHash: "dummy" },
         { id: USER_GA, username: "r4.sarpras.ga", role: "GA", passwordHash: "dummy" },
         { id: USER_YAY, username: "r4.pengurus.yay", role: "YAY", passwordHash: "dummy" },
+      ],
+    });
+
+    // 4b. Canonical OrgUnits, Positions, Capabilities & Assignments for Gate 5 Authority
+    await prisma.orgUnit.createMany({
+      data: [
+        { id: "ou-r4-root", code: "OU-ROOT", name: "Pesantren Root", type: "INSTITUTION", domain: "MANAJEMEN", genderComplex: "TIDAK_TERIKAT", isActive: true },
+        { id: "ou-r4-keasramaan", code: "OU-KEASRAMAAN", name: "Direktorat Keasramaan", type: "DOMAIN", domain: "KEASRAMAAN", genderComplex: "TIDAK_TERIKAT", isActive: true },
+      ],
+    });
+
+    await prisma.position.createMany({
+      data: [
+        { id: "pos-r4-mudir", code: "MUDIR", name: "Mudir Pesantren", domain: "MANAJEMEN", requiresPersonalAccount: true, isActive: true },
+        { id: "pos-r4-ks", code: "KEPALA_KEASRAMAAN", name: "Kepala Keasramaan", domain: "KEASRAMAAN", requiresPersonalAccount: true, isActive: true },
+      ],
+    });
+
+    await prisma.capability.createMany({
+      data: [
+        { code: "keasramaan.permission.read", namespace: "KEASRAMAAN", name: "Read Permission", description: "Read permission" },
+      ],
+      skipDuplicates: true,
+    });
+
+    await prisma.positionCapability.createMany({
+      data: [
+        { id: "pc-r4-mudir-read", positionId: "pos-r4-mudir", capabilityCode: "keasramaan.permission.read", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+        { id: "pc-r4-ks-read", positionId: "pos-r4-ks", capabilityCode: "keasramaan.permission.read", scopeType: "DOMAIN", businessRuleState: "VERIFIED_PRODUCTION" },
+      ],
+    });
+
+    await prisma.assignment.createMany({
+      data: [
+        { id: "asg-r4-ks", userId: USER_KS, positionId: "pos-r4-mudir", unitId: "ou-r4-root", status: "ACTIVE", createdById: USER_KS },
+        { id: "asg-r4-mk", userId: USER_MK, positionId: "pos-r4-ks", unitId: "ou-r4-keasramaan", status: "ACTIVE", createdById: USER_KS },
       ],
     });
 
@@ -283,13 +321,24 @@ describe("Remediation Round 4: Perizinan, Kedisiplinan & Kesehatan ABAC Fail-Clo
       }
     });
 
-    it("5. authorized managerial roles (KS, ADM, MK) -> can access records", async () => {
-      for (const role of ["KS", "ADM", "MK"] as const) {
-        setTestSession({ userId: `usr-${role.toLowerCase()}`, username: `mgr.${role.toLowerCase()}`, name: `Manager ${role}`, role });
-        const res = await getPerizinanListAction();
-        assert.equal(res.success, true, `Role ${role} harus dapat membaca daftar perizinan`);
-        assert.ok(res.data.length >= 2, `Role ${role} harus melihat setidaknya 2 perizinan`);
-      }
+    it("5. canonical authorized personal roles (Mudir KS, Kepala Keasramaan MK) -> can access records; ADM -> denied", async () => {
+      // KS (Mudir) -> GLOBAL read -> success
+      setTestSession({ userId: USER_KS, username: "r4.mudir.ks", name: "Mudir", role: "KS" });
+      const resKS = await getPerizinanListAction();
+      assert.equal(resKS.success, true, "Mudir harus dapat membaca daftar perizinan");
+      assert.ok(resKS.data.length >= 2, "Mudir harus melihat setidaknya 2 perizinan");
+
+      // MK (Kepala Keasramaan) -> DOMAIN read -> success
+      setTestSession({ userId: USER_MK, username: "r4.kesantrian.mk", name: "MK", role: "MK" });
+      const resMK = await getPerizinanListAction();
+      assert.equal(resMK.success, true, "Kepala Keasramaan harus dapat membaca daftar perizinan");
+      assert.ok(resMK.data.length >= 2, "Kepala Keasramaan harus melihat setidaknya 2 perizinan");
+
+      // ADM -> NO CURRENT CANONICAL GRANT -> strictly denied
+      setTestSession({ userId: USER_ADM, username: "r4.admin.tu", name: "Admin", role: "ADM" });
+      const resADM = await getPerizinanListAction();
+      assert.equal(resADM.success, false, "ADM tanpa canonical grant harus ditolak (ADM_PERMISSION_READ_POLICY: DEFERRED / NO_CURRENT_AUTHORITY)");
+      assert.deepEqual(resADM.data, []);
     });
 
     it("6. getPerizinanListAction returned payload does not leak relations/raw user projections", async () => {

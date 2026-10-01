@@ -15,8 +15,12 @@ import {
   KEPESANTRENAN_REQUIRED_ACADEMIC_AUTH_CAPABILITIES,
   KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES,
   evaluateKepesantrenanAcademicAuthPolicies,
+  evaluateGate5RuntimeActivation,
 } from "../lib/server/pendidikan-v2-readiness";
-import { authorizeCanonical } from "../lib/auth/canonical-evaluator";
+import {
+  authorizeCanonical,
+  CanonicalAssignmentWithDetails,
+} from "../lib/auth/canonical-evaluator";
 
 describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
   // =========================================================================
@@ -530,7 +534,7 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
             name: posCode,
             isActive: true,
             requiresPersonalAccount: !isUnit,
-            domain: isUnit ? "KEASRAMAAN" : "AKADEMIK",
+            domain: (isUnit || posCode === "KEPALA_KEASRAMAAN") ? "KEASRAMAAN" : "AKADEMIK",
             capabilities,
           },
         };
@@ -1220,6 +1224,640 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
       assert.strictEqual(res.status, "BLOCKED");
       assert.ok(res.details.includes("UNAUTHORIZED_KEPESANTRENAN_ACADEMIC_RUNTIME_AUTHORITY"));
       assert.strictEqual(KEPESANTRENAN_APPROVED_ACADEMIC_AUTH_POLICIES.length, 4);
+    });
+  });
+
+  // =========================================================================
+  // SECTION 14: C1/D1 AUTHORITY & PRIVACY READINESS FAIL-CLOSED (R1-BLOCKER-03)
+  // =========================================================================
+  describe("14. C1/D1 Authority & Privacy Readiness Fail-Closed Tests", () => {
+    it("1. Missing student.guardian_contact.read catalog entry => readiness NOT_READY", async () => {
+      const mockDb = {
+        capability: {
+          findMany: async () => [
+            { code: "academic.schedule.read" },
+            { code: "academic.session.start" },
+            { code: "academic.material.record" },
+            { code: "academic.attendance.record" },
+            { code: "tahfizh.recap.manage" },
+            { code: "tahfizh.target.manage" },
+            { code: "keasramaan.permission.read" },
+            { code: "keasramaan.permission.create" },
+            { code: "keasramaan.permission.update" },
+            { code: "keasramaan.permission.approve_mk" },
+            { code: "keasramaan.permission.approve_ks" },
+            // Missing: student.guardian_contact.read
+          ],
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "CAPABILITIES_REGISTERED");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(gate.details.includes("student.guardian_contact.read"));
+    });
+
+    it("2. Missing required C1 PositionCapability target => readiness NOT_READY", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes('SELECT DISTINCT p."code"')) {
+            return [
+              { code: "MUDIR" },
+              { code: "KABID_TAHFIZH" },
+              { code: "KEPALA_KEASRAMAAN" },
+              { code: "PETUGAS_OPERASIONAL_TAHFIZH" },
+              { code: "MUSYRIF_TAHFIZH" },
+              { code: "PEMBINA_HALAQOH" },
+              { code: "GURU_KEPESANTRENAN" },
+            ];
+          }
+          if (sql.includes('COUNT(*)::text as count FROM "org_units"')) {
+            return [{ count: "0" }];
+          }
+          if (sql.includes('FROM "positions" p')) {
+            // Missing required C1 target keasramaan.permission.create
+            return [];
+          }
+          return [];
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(
+        gate.details.includes("missing PositionCapability for keasramaan.permission.create") ||
+        gate.details.includes("Target policy definition mismatch")
+      );
+    });
+
+    it("3. Missing D1 PositionCapability target => readiness NOT_READY", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes('SELECT DISTINCT p."code"')) {
+            return [
+              { code: "MUDIR" },
+              { code: "KABID_TAHFIZH" },
+              { code: "KEPALA_KEASRAMAAN" },
+              { code: "PETUGAS_OPERASIONAL_TAHFIZH" },
+              { code: "MUSYRIF_TAHFIZH" },
+              { code: "PEMBINA_HALAQOH" },
+              { code: "GURU_KEPESANTRENAN" },
+            ];
+          }
+          if (sql.includes('COUNT(*)::text as count FROM "org_units"')) {
+            return [{ count: "0" }];
+          }
+          if (sql.includes('FROM "positions" p')) {
+            // C1 target present, but D1 target student.guardian_contact.read absent
+            return [
+              {
+                position_code: "MUDIR",
+                capability_code: "keasramaan.permission.create",
+                scope_type: "GLOBAL",
+                business_rule_state: "APPROVED_TARGET_PENDING_TECHNICAL",
+              },
+            ];
+          }
+          return [];
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(
+        gate.details.includes("student.guardian_contact.read") ||
+        gate.details.includes("Target policy definition mismatch")
+      );
+    });
+
+    it("4. Wrong scope for D1 target => NOT_READY", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes('SELECT DISTINCT p."code"')) {
+            return [
+              { code: "MUDIR" },
+              { code: "KABID_TAHFIZH" },
+              { code: "KEPALA_KEASRAMAAN" },
+              { code: "PETUGAS_OPERASIONAL_TAHFIZH" },
+              { code: "MUSYRIF_TAHFIZH" },
+              { code: "PEMBINA_HALAQOH" },
+              { code: "GURU_KEPESANTRENAN" },
+            ];
+          }
+          if (sql.includes('COUNT(*)::text as count FROM "org_units"')) {
+            return [{ count: "0" }];
+          }
+          if (sql.includes('FROM "positions" p')) {
+            // D1 target with wrong scope HALAQOH instead of GLOBAL
+            return [
+              {
+                position_code: "MUDIR",
+                capability_code: "student.guardian_contact.read",
+                scope_type: "HALAQOH",
+                business_rule_state: "APPROVED_TARGET_PENDING_TECHNICAL",
+              },
+            ];
+          }
+          return [];
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(
+        gate.details.includes("target policy scope mismatch for student.guardian_contact.read") ||
+        gate.details.includes("expected GLOBAL, found HALAQOH")
+      );
+    });
+
+    it("5. Wrong position for guardian-contact capability => NOT_READY", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes('SELECT DISTINCT p."code"')) {
+            return [
+              { code: "MUDIR" },
+              { code: "KABID_TAHFIZH" },
+              { code: "KEPALA_KEASRAMAAN" },
+              { code: "PETUGAS_OPERASIONAL_TAHFIZH" },
+              { code: "MUSYRIF_TAHFIZH" },
+              { code: "PEMBINA_HALAQOH" },
+              { code: "GURU_KEPESANTRENAN" },
+            ];
+          }
+          if (sql.includes('COUNT(*)::text as count FROM "org_units"')) {
+            return [{ count: "0" }];
+          }
+          if (sql.includes('FROM "positions" p')) {
+            // Guardian capability on wrong position GURU_KEPESANTRENAN
+            return [
+              {
+                position_code: "GURU_KEPESANTRENAN",
+                capability_code: "student.guardian_contact.read",
+                scope_type: "GLOBAL",
+                business_rule_state: "APPROVED_TARGET_PENDING_TECHNICAL",
+              },
+            ];
+          }
+          return [];
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(
+        gate.details.includes("MUDIR: missing PositionCapability for student.guardian_contact.read") ||
+        gate.details.includes("missing PositionCapability")
+      );
+    });
+
+    it("6. Stale OSDA mutation target => MUST_NOT_PROMOTE notice", () => {
+      const result = evaluateGate5RuntimeActivation({
+        livePositionCapabilities: [
+          {
+            positionCode: "PETUGAS_OPERASIONAL_KEASRAMAAN",
+            capabilityCode: "keasramaan.permission.create",
+            businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+          },
+        ],
+      });
+
+      assert.ok(result.details.includes("SUPERSEDED / MUST_NOT_PROMOTE"));
+      assert.ok(result.details.includes("keasramaan.permission.create"));
+    });
+
+    it("7. DB query error => BLOCKED, never treated as empty", async () => {
+      const mockDb = {
+        capability: {
+          findMany: async () => {
+            throw new Error("PostgreSQL connection terminated unexpectedly");
+          },
+        },
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "CAPABILITIES_REGISTERED");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "BLOCKED");
+      assert.strictEqual(gate.reason, "DATABASE_UNAVAILABLE");
+      assert.ok(gate.details.includes("DATABASE_UNAVAILABLE"));
+
+      // Also verify evaluateGate5RuntimeActivation handles query error fail-closed:
+      const actResult = evaluateGate5RuntimeActivation({
+        inspectionState: "DATABASE_ERROR",
+        inspectionErrorMessage: "Connection reset by peer",
+      });
+      assert.strictEqual(actResult.status, "BLOCKED");
+      assert.ok(actResult.details.includes("QUERY ERROR != EMPTY RESULT"));
+    });
+  });
+
+  // =========================================================================
+  // SECTION 15: R2 DATABASE QUERY ERROR FAIL-CLOSED & DOMAIN VALIDATION TESTS
+  // =========================================================================
+  describe("15. R2 Database Query Error Fail-Closed & Domain Validation Tests", () => {
+    it("1. Gate7 Prisma capability query error => BLOCKED / DATABASE_UNAVAILABLE", async () => {
+      const mockDb = {
+        capability: {
+          findMany: async () => {
+            throw new Error("Connection timed out to capability table");
+          },
+        },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "CAPABILITIES_REGISTERED");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "BLOCKED");
+      assert.strictEqual(gate.reason, "DATABASE_UNAVAILABLE");
+      assert.strictEqual(gate.blocking, true);
+      assert.ok(gate.details.includes("DATABASE_UNAVAILABLE: Error: Capability repository query failed"));
+    });
+
+    it("2. Gate7 raw SQL capability query error => BLOCKED / DATABASE_UNAVAILABLE", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes("capabilities")) {
+            throw new Error("Relation 'capabilities' does not exist or connection failed");
+          }
+          return [];
+        },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "CAPABILITIES_REGISTERED");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "BLOCKED");
+      assert.strictEqual(gate.reason, "DATABASE_UNAVAILABLE");
+      assert.strictEqual(gate.blocking, true);
+      assert.ok(gate.details.includes("DATABASE_UNAVAILABLE: Error: Raw SQL capability query failed"));
+    });
+
+    it("3. Gate8 PositionCapability query error => BLOCKED / DATABASE_UNAVAILABLE", async () => {
+      const mockDb = {
+        assignment: {
+          findMany: async () => [],
+        },
+        positionCapability: {
+          findMany: async () => {
+            throw new Error("Network error contacting position_capabilities table");
+          },
+        },
+        user: { findMany: async () => [] },
+        position: { findMany: async () => [] },
+        orgUnit: { findMany: async () => [] },
+        staff: { findMany: async () => [] },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "BLOCKED");
+      assert.strictEqual(gate.reason, "DATABASE_UNAVAILABLE");
+      assert.strictEqual(gate.blocking, true);
+      assert.ok(gate.details.includes("PositionCapability repository query failed"));
+    });
+
+    it("4. Gate8 User repository query error when required => BLOCKED / DATABASE_UNAVAILABLE", async () => {
+      const mockDb = {
+        assignment: {
+          findMany: async () => [
+            { id: "asg-1", userId: "u-1" },
+          ],
+        },
+        user: {
+          findMany: async () => {
+            throw new Error("PostgreSQL connection refused on users query");
+          },
+        },
+        position: { findMany: async () => [] },
+        orgUnit: { findMany: async () => [] },
+        staff: { findMany: async () => [] },
+        halaqoh: { findMany: async () => [] },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "BLOCKED");
+      assert.strictEqual(gate.reason, "DATABASE_UNAVAILABLE");
+      assert.strictEqual(gate.blocking, true);
+      assert.ok(gate.details.includes("User repository query failed"));
+    });
+
+    it("5. Gate8 Position repository query error => BLOCKED / DATABASE_UNAVAILABLE", async () => {
+      const mockDb = {
+        assignment: {
+          findMany: async () => [],
+        },
+        position: {
+          findMany: async () => {
+            throw new Error("Deadlock detected during positions query");
+          },
+        },
+        user: { findMany: async () => [] },
+        orgUnit: { findMany: async () => [] },
+        staff: { findMany: async () => [] },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "BLOCKED");
+      assert.strictEqual(gate.reason, "DATABASE_UNAVAILABLE");
+      assert.strictEqual(gate.blocking, true);
+      assert.ok(gate.details.includes("Position repository query failed"));
+    });
+
+    it("6. Gate8 OrgUnit repository query error => BLOCKED / DATABASE_UNAVAILABLE", async () => {
+      const mockDb = {
+        assignment: {
+          findMany: async () => [],
+        },
+        orgUnit: {
+          findMany: async () => {
+            throw new Error("OrgUnit read query failed: socket closed");
+          },
+        },
+        position: { findMany: async () => [] },
+        user: { findMany: async () => [] },
+        staff: { findMany: async () => [] },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "BLOCKED");
+      assert.strictEqual(gate.reason, "DATABASE_UNAVAILABLE");
+      assert.strictEqual(gate.blocking, true);
+      assert.ok(gate.details.includes("OrgUnit repository query failed"));
+    });
+
+    it("7. Gate8 Staff repository query error when required => BLOCKED / DATABASE_UNAVAILABLE", async () => {
+      const mockDb = {
+        assignment: {
+          findMany: async () => [],
+        },
+        staff: {
+          findMany: async () => {
+            throw new Error("Staff repository unavailable");
+          },
+        },
+        position: { findMany: async () => [] },
+        user: { findMany: async () => [] },
+        orgUnit: { findMany: async () => [] },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "BLOCKED");
+      assert.strictEqual(gate.reason, "DATABASE_UNAVAILABLE");
+      assert.strictEqual(gate.blocking, true);
+      assert.ok(gate.details.includes("Staff repository query failed"));
+    });
+
+    it("8. Gate8 AssignmentScopeUnit query error when required => BLOCKED / DATABASE_UNAVAILABLE", async () => {
+      const mockDb = {
+        assignment: {
+          findMany: async () => [
+            { id: "asg-1", userId: "u-1" },
+          ],
+        },
+        assignmentScopeUnit: {
+          findMany: async () => {
+            throw new Error("AssignmentScopeUnit query failed: disk I/O error");
+          },
+        },
+        position: { findMany: async () => [] },
+        user: { findMany: async () => [] },
+        orgUnit: { findMany: async () => [] },
+        staff: { findMany: async () => [] },
+        halaqoh: { findMany: async () => [] },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "BLOCKED");
+      assert.strictEqual(gate.reason, "DATABASE_UNAVAILABLE");
+      assert.strictEqual(gate.blocking, true);
+      assert.ok(gate.details.includes("AssignmentScopeUnit repository query failed"));
+    });
+
+    it("9. Gate8 raw assignment coverage SQL error => BLOCKED / DATABASE_UNAVAILABLE", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes("FROM \"assignments\"")) {
+            throw new Error("Syntax error or connection failure in assignments query");
+          }
+          return [];
+        },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "BLOCKED");
+      assert.strictEqual(gate.reason, "DATABASE_UNAVAILABLE");
+      assert.strictEqual(gate.blocking, true);
+      assert.ok(gate.details.includes("Raw SQL assignment coverage query failed"));
+    });
+
+    it("10. Gate8 raw Kamar count SQL error => BLOCKED / DATABASE_UNAVAILABLE", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes("COUNT(*)::text as count FROM \"org_units\" WHERE \"type\" = 'KAMAR'")) {
+            throw new Error("Kamar count query failed: table locked");
+          }
+          if (sql.includes("FROM \"assignments\"")) {
+            return [];
+          }
+          return [];
+        },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "BLOCKED");
+      assert.strictEqual(gate.reason, "DATABASE_UNAVAILABLE");
+      assert.strictEqual(gate.blocking, true);
+      assert.ok(gate.details.includes("Raw SQL Kamar count query failed"));
+    });
+
+    it("11. Gate8 raw PositionCapability SQL error => BLOCKED / DATABASE_UNAVAILABLE", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes("FROM \"position_capabilities\"") || sql.includes("JOIN \"position_capabilities\"")) {
+            throw new Error("PositionCapability raw query failed: relation not available");
+          }
+          if (sql.includes("FROM \"assignments\"")) {
+            return [];
+          }
+          if (sql.includes("COUNT(*)::text")) {
+            return [{ count: "1" }];
+          }
+          return [];
+        },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "BLOCKED");
+      assert.strictEqual(gate.reason, "DATABASE_UNAVAILABLE");
+      assert.strictEqual(gate.blocking, true);
+      assert.ok(gate.details.includes("Raw SQL PositionCapability query failed"));
+    });
+
+    it("12. successful query returning genuine [] => remains legitimate empty-state behavior, NOT DATABASE_UNAVAILABLE", async () => {
+      const mockDb = {
+        capability: {
+          findMany: async () => [],
+        },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "CAPABILITIES_REGISTERED");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.strictEqual(gate.reason, undefined);
+      assert.ok(gate.details.includes("Missing required activation capabilities"));
+    });
+
+    it("13. successful Kamar count query returning 0 => preserves legitimate zero-Kamar/deferred semantics", async () => {
+      const mockDb = {
+        assignment: {
+          findMany: async () => [],
+        },
+        positionCapability: {
+          findMany: async () => [],
+        },
+        position: { findMany: async () => [] },
+        user: { findMany: async () => [] },
+        orgUnit: {
+          findMany: async () => [
+            { id: "ou-root", code: "OU-STQ-ROOT", type: "INSTITUTION", isActive: true },
+          ],
+        },
+        staff: { findMany: async () => [] },
+        halaqoh: { findMany: async () => [] },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(!gate.details.includes("PEMBINA_HALAQOH"));
+      assert.ok(gate.details.includes("MUDIR"));
+    });
+
+    it("14. C1/D1 missing PositionCapability => still correctly NOT_READY", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes('SELECT DISTINCT p."code"')) {
+            return [
+              { code: "MUDIR" },
+              { code: "KABID_TAHFIZH" },
+              { code: "KEPALA_KEASRAMAAN", pos_domain: "KEASRAMAAN" },
+              { code: "PETUGAS_OPERASIONAL_TAHFIZH" },
+              { code: "MUSYRIF_TAHFIZH" },
+              { code: "PEMBINA_HALAQOH" },
+              { code: "GURU_KEPESANTRENAN" },
+            ];
+          }
+          if (sql.includes('COUNT(*)::text as count FROM "org_units"')) {
+            return [{ count: "0" }];
+          }
+          if (sql.includes('FROM "positions" p')) {
+            // Empty position capabilities
+            return [];
+          }
+          return [];
+        },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(gate.details.includes("missing PositionCapability") || gate.details.includes("Target policy definition mismatch"));
+    });
+
+    it("15. pending PositionCapability => still zero runtime authority", async () => {
+      const mockAssignment: CanonicalAssignmentWithDetails = {
+        id: "asg-test-pending",
+        userId: "usr-mudir",
+        positionId: "pos-mudir",
+        positionCode: "MUDIR",
+        positionName: "Mudir",
+        domain: "INSTITUTIONAL",
+        unitId: "ou-root",
+        unitCode: "OU-STQ-ROOT",
+        unitName: "Root",
+        unitGenderComplex: "TIDAK_TERIKAT",
+        status: "ACTIVE",
+        validFrom: new Date(0),
+        validUntil: null,
+        positionCapabilities: [
+          {
+            capabilityCode: "student.guardian_contact.read",
+            scopeType: "GLOBAL",
+            businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+          },
+        ],
+        scopeUnits: [],
+      };
+
+      const result = await authorizeCanonical({
+        identity: {
+          userId: "usr-mudir",
+          username: "mudir",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-mudir",
+          staffStatus: "AKTIF",
+          mockAssignments: [mockAssignment],
+        } as any,
+        capability: "student.guardian_contact.read",
+        resourceContext: { santriId: "san-1" },
+        resolvedContext: { santriId: "san-1", orgUnitIds: [], genderComplex: "PUTRA" },
+      });
+
+      assert.strictEqual(result.decision, "DENY");
+      assert.strictEqual(result.code, "CAPABILITY_NOT_GRANTED");
+    });
+
+    it("16. wrong DOMAIN anchor/context => cannot satisfy DOMAIN KEASRAMAAN target", async () => {
+      const mockDb = {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes('SELECT DISTINCT p."code"')) {
+            return [
+              { code: "MUDIR" },
+              { code: "KABID_TAHFIZH" },
+              { code: "KEPALA_KEASRAMAAN", pos_domain: "AKADEMIK", unit_domain: "AKADEMIK" }, // WRONG DOMAIN (must be KEASRAMAAN)
+              { code: "PETUGAS_OPERASIONAL_TAHFIZH" },
+              { code: "MUSYRIF_TAHFIZH" },
+              { code: "PEMBINA_HALAQOH" },
+              { code: "GURU_KEPESANTRENAN" },
+            ];
+          }
+          if (sql.includes('COUNT(*)::text as count FROM "org_units"')) {
+            return [{ count: "0" }];
+          }
+          if (sql.includes('FROM "positions" p')) {
+            return [
+              {
+                position_code: "KEPALA_KEASRAMAAN",
+                capability_code: "keasramaan.permission.read",
+                scope_type: "DOMAIN",
+                business_rule_state: "APPROVED_TARGET_PENDING_TECHNICAL",
+              },
+            ];
+          }
+          return [];
+        },
+      };
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(gate.details.includes("target policy domain mismatch for keasramaan.permission.read (expected domain KEASRAMAAN"));
     });
   });
 });
