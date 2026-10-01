@@ -10,6 +10,7 @@ import {
   CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES,
   FORBIDDEN_TAHFIZH_REWARD_POSITIONS,
 } from "@/types/architecture-lock";
+import { generateCanonicalBaselineCapabilities } from "@/lib/auth/backfill-dry-run";
 
 describe("Gate 7 R2 — Tahfizh Reward Authority Readiness Integrity", () => {
   // Base valid leadership rows
@@ -427,5 +428,38 @@ describe("Gate 7 R2 — Tahfizh Reward Authority Readiness Integrity", () => {
     assert.ok(FORBIDDEN_TAHFIZH_REWARD_POSITIONS.includes("MUSYRIF_TAHFIZH"));
     assert.ok(FORBIDDEN_TAHFIZH_REWARD_POSITIONS.includes("PEMBINA_HALAQOH"));
     assert.ok(FORBIDDEN_TAHFIZH_REWARD_POSITIONS.includes("ADM"));
+  });
+
+  // R2.1-04: Regression test for Source Unity
+  it("R2.1-04: generateCanonicalBaselineCapabilities() reward entries match CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES exactly", () => {
+    const allBaseline = generateCanonicalBaselineCapabilities();
+    const rewardEntries = allBaseline.filter((p) => p.capabilityCode === "tahfizh.reward.issue");
+
+    // Expected reward count = 2
+    assert.strictEqual(rewardEntries.length, 2, "Expected exactly 2 reward entries in baseline");
+    assert.strictEqual(rewardEntries.length, CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES.length);
+
+    for (const policy of CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES) {
+      const match = rewardEntries.find((r) => r.positionCode === policy.positionCode);
+      assert.ok(match, `Missing baseline reward entry for ${policy.positionCode}`);
+      assert.strictEqual(match.capabilityCode, policy.capabilityCode);
+      assert.strictEqual(match.scopeType, policy.scopeType);
+      assert.strictEqual(match.businessRuleState, policy.businessRuleState);
+    }
+  });
+
+  it("R2.1-04: Gate 11 dynamically derives from CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES", () => {
+    // Passing rows matching the canonical manifest produces READY
+    const manifestRows = CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES.map((p) => ({
+      positionCode: p.positionCode,
+      capabilityCode: p.capabilityCode,
+      scopeType: p.scopeType,
+      businessRuleState: p.businessRuleState,
+    }));
+
+    const result = evaluateStalePositionCapabilityPolicy(manifestRows);
+    assert.strictEqual(result.status, "READY");
+    assert.strictEqual(result.blocking, true);
+    assert.ok(result.details.includes("All required Tahfizh reward authorities verified active"));
   });
 });

@@ -22,6 +22,7 @@ import {
   GenderComplex,
   BusinessRuleState,
   ScopeType,
+  CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES,
 } from "@/types/architecture-lock";
 import { Role } from "@/types/auth";
 import { LEGACY_ROLE_MAP, CANONICAL_POSITION_CODES } from "./compatibility";
@@ -276,6 +277,15 @@ export function generateCanonicalBaselinePositions(): ProposedPosition[] {
  * Generates verified baseline PositionCapability mappings
  */
 export function generateCanonicalBaselineCapabilities(): ProposedPositionCapability[] {
+  // Reward authority baseline mappings derived strictly from canonical manifest (DIR-2026-023)
+  const canonicalRewardBaseline: ProposedPositionCapability[] =
+    CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES.map((policy) => ({
+      positionCode: policy.positionCode,
+      capabilityCode: policy.capabilityCode,
+      scopeType: policy.scopeType,
+      businessRuleState: policy.businessRuleState,
+    }));
+
   return [
     // Mudir
     {
@@ -290,12 +300,7 @@ export function generateCanonicalBaselineCapabilities(): ProposedPositionCapabil
       scopeType: "GLOBAL",
       businessRuleState: "VERIFIED_PRODUCTION",
     },
-    {
-      positionCode: CANONICAL_POSITION_CODES.MUDIR,
-      capabilityCode: "tahfizh.reward.issue",
-      scopeType: "GLOBAL",
-      businessRuleState: "VERIFIED_PRODUCTION",
-    },
+    ...canonicalRewardBaseline.filter((p) => p.positionCode === CANONICAL_POSITION_CODES.MUDIR),
     {
       positionCode: CANONICAL_POSITION_CODES.MUDIR,
       capabilityCode: "tahfizh.policy.manage",
@@ -340,12 +345,7 @@ export function generateCanonicalBaselineCapabilities(): ProposedPositionCapabil
       scopeType: "DOMAIN",
       businessRuleState: "VERIFIED_PRODUCTION",
     },
-    {
-      positionCode: CANONICAL_POSITION_CODES.KABID_TAHFIZH,
-      capabilityCode: "tahfizh.reward.issue",
-      scopeType: "DOMAIN",
-      businessRuleState: "VERIFIED_PRODUCTION",
-    },
+    ...canonicalRewardBaseline.filter((p) => p.positionCode === CANONICAL_POSITION_CODES.KABID_TAHFIZH),
     // Note: tahfizh.policy.manage is intentionally NOT granted to Kabid Tahfizh (Mudir only)
 
     // Musyrif Tahfizh (Ordinary)

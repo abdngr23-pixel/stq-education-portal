@@ -856,7 +856,7 @@ export interface StalePositionCapabilityPolicyEvaluationResult {
 export function evaluateStalePositionCapabilityPolicy(
   rows: Array<{
     positionCode?: string;
-    position?: { code: string };
+    position?: { code: string; domain?: string };
     capabilityCode?: string;
     scopeType?: string | null;
     businessRuleState?: string | null;
@@ -867,7 +867,7 @@ export function evaluateStalePositionCapabilityPolicy(
       status: "NOT_READY",
       reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
       details: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Missing required reward authority rows (tahfizh.reward.issue)",
-      remediationAdvice: "Provision MUDIR (GLOBAL) and KABID_TAHFIZH (DOMAIN) PositionCapability for tahfizh.reward.issue",
+      remediationAdvice: "Provision required leadership PositionCapability rows for tahfizh.reward.issue per CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES",
       blocking: true,
     };
   }
@@ -875,19 +875,20 @@ export function evaluateStalePositionCapabilityPolicy(
   // 1. Check for unauthorized / forbidden positions holding tahfizh.reward.issue
   const normalizedRows = rows.map((r) => ({
     positionCode: r.position?.code ?? r.positionCode ?? "",
+    positionDomain: r.position?.domain,
     capabilityCode: r.capabilityCode ?? "",
     scopeType: r.scopeType ?? null,
     businessRuleState: r.businessRuleState ?? null,
   }));
 
+  const allowedPositions: readonly string[] = CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES.map((p) => p.positionCode);
   const forbiddenPositions: readonly string[] = FORBIDDEN_TAHFIZH_REWARD_POSITIONS;
 
   // A. Check unauthorized VERIFIED_PRODUCTION authority (BLOCKED)
   const unauthorizedVerified = normalizedRows.filter(
     (r) =>
       r.businessRuleState === "VERIFIED_PRODUCTION" &&
-      (forbiddenPositions.includes(r.positionCode) ||
-        (r.positionCode !== "MUDIR" && r.positionCode !== "KABID_TAHFIZH"))
+      (forbiddenPositions.includes(r.positionCode) || !allowedPositions.includes(r.positionCode as any))
   );
 
   if (unauthorizedVerified.length > 0) {
@@ -908,8 +909,7 @@ export function evaluateStalePositionCapabilityPolicy(
   const unauthorizedPending = normalizedRows.filter(
     (r) =>
       r.businessRuleState !== "VERIFIED_PRODUCTION" &&
-      (forbiddenPositions.includes(r.positionCode) ||
-        (r.positionCode !== "MUDIR" && r.positionCode !== "KABID_TAHFIZH"))
+      (forbiddenPositions.includes(r.positionCode) || !allowedPositions.includes(r.positionCode as any))
   );
 
   if (unauthorizedPending.length > 0) {
@@ -926,106 +926,93 @@ export function evaluateStalePositionCapabilityPolicy(
     };
   }
 
-  // 2. Validate required positive MUDIR authority
-  const mudirRows = normalizedRows.filter((r) => r.positionCode === "MUDIR");
-  if (mudirRows.length === 0) {
-    return {
-      status: "NOT_READY",
-      reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
-      details: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Missing required MUDIR reward authority row (tahfizh.reward.issue)",
-      remediationAdvice: "Provision MUDIR PositionCapability for tahfizh.reward.issue with scope GLOBAL and state VERIFIED_PRODUCTION",
-      blocking: true,
-    };
+  // 2. Validate required positive authority derived dynamically from CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES
+  const nonVerified: Array<{ policy: (typeof CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES)[number]; row: typeof normalizedRows[0] }> = [];
+
+  for (const policy of CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES) {
+    const matchingRows = normalizedRows.filter(
+      (r) => r.positionCode === policy.positionCode && (!r.capabilityCode || r.capabilityCode === policy.capabilityCode)
+    );
+
+    if (matchingRows.length === 0) {
+      return {
+        status: "NOT_READY",
+        reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
+        details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Missing required ${policy.positionCode} reward authority row (${policy.capabilityCode})`,
+        remediationAdvice: `Provision ${policy.positionCode} PositionCapability for ${policy.capabilityCode} with scope ${policy.scopeType} and state ${policy.businessRuleState}`,
+        blocking: true,
+      };
+    }
+
+    if (matchingRows.length > 1) {
+      return {
+        status: "NOT_READY",
+        reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
+        details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Duplicate ${policy.positionCode} reward authority rows found (${matchingRows.length}); exactly one row required`,
+        remediationAdvice: `Resolve duplicate ${policy.positionCode} PositionCapability rows to exactly one row`,
+        blocking: true,
+      };
+    }
+
+    const row = matchingRows[0];
+    if (row.scopeType !== policy.scopeType) {
+      return {
+        status: "NOT_READY",
+        reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
+        details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Invalid ${policy.positionCode} reward authority scope '${row.scopeType}'; expected ${policy.scopeType}`,
+        remediationAdvice: `Correct ${policy.positionCode} PositionCapability scopeType to ${policy.scopeType}`,
+        blocking: true,
+      };
+    }
+
+    // Canonical domain expectation check:
+    // If policy specifies a domain (e.g. DOMAIN: TAHFIZH), verify through canonical position contract
+    if (policy.domain) {
+      // If position domain metadata was provided, verify it matches
+      if (row.positionDomain && row.positionDomain !== policy.domain) {
+        return {
+          status: "NOT_READY",
+          reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
+          details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Invalid ${policy.positionCode} domain '${row.positionDomain}'; expected ${policy.domain}`,
+          remediationAdvice: `Correct ${policy.positionCode} domain to ${policy.domain}`,
+          blocking: true,
+        };
+      }
+    }
+
+    if (row.businessRuleState !== policy.businessRuleState) {
+      nonVerified.push({ policy, row });
+    }
   }
-  if (mudirRows.length > 1) {
+
+  // 3. Validate runtime businessRuleState
+  if (nonVerified.length > 0) {
+    if (nonVerified.length === CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES.length) {
+      const summary = nonVerified.map((item) => `${item.policy.positionCode} (status: ${item.row.businessRuleState})`).join(" and ");
+      return {
+        status: "NOT_READY",
+        reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
+        details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Required reward authority for ${summary} is not runtime active (VERIFIED_PRODUCTION required)`,
+        remediationAdvice: `Promote ${nonVerified.map((item) => item.policy.positionCode).join(" and ")} PositionCapability businessRuleState to VERIFIED_PRODUCTION via approved migration`,
+        blocking: true,
+      };
+    }
+
+    const first = nonVerified[0];
     return {
       status: "NOT_READY",
       reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
-      details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Duplicate MUDIR reward authority rows found (${mudirRows.length}); exactly one row required`,
-      remediationAdvice: "Resolve duplicate MUDIR PositionCapability rows to exactly one row",
-      blocking: true,
-    };
-  }
-  const mudir = mudirRows[0];
-  if (mudir.scopeType !== "GLOBAL") {
-    return {
-      status: "NOT_READY",
-      reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
-      details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Invalid MUDIR reward authority scope '${mudir.scopeType}'; expected GLOBAL`,
-      remediationAdvice: "Correct MUDIR PositionCapability scopeType to GLOBAL",
+      details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: ${first.policy.positionCode} reward authority is '${first.row.businessRuleState}'; expected ${first.policy.businessRuleState}`,
+      remediationAdvice: `Promote ${first.policy.positionCode} PositionCapability businessRuleState to ${first.policy.businessRuleState}`,
       blocking: true,
     };
   }
 
-  // 3. Validate required positive KABID_TAHFIZH authority
-  const kabidRows = normalizedRows.filter((r) => r.positionCode === "KABID_TAHFIZH");
-  if (kabidRows.length === 0) {
-    return {
-      status: "NOT_READY",
-      reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
-      details: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Missing required KABID_TAHFIZH reward authority row (tahfizh.reward.issue)",
-      remediationAdvice: "Provision KABID_TAHFIZH PositionCapability for tahfizh.reward.issue with scope DOMAIN and state VERIFIED_PRODUCTION",
-      blocking: true,
-    };
-  }
-  if (kabidRows.length > 1) {
-    return {
-      status: "NOT_READY",
-      reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
-      details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Duplicate KABID_TAHFIZH reward authority rows found (${kabidRows.length}); exactly one row required`,
-      remediationAdvice: "Resolve duplicate KABID_TAHFIZH PositionCapability rows to exactly one row",
-      blocking: true,
-    };
-  }
-  const kabid = kabidRows[0];
-  if (kabid.scopeType !== "DOMAIN") {
-    return {
-      status: "NOT_READY",
-      reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
-      details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Invalid KABID_TAHFIZH reward authority scope '${kabid.scopeType}'; expected DOMAIN`,
-      remediationAdvice: "Correct KABID_TAHFIZH PositionCapability scopeType to DOMAIN",
-      blocking: true,
-    };
-  }
-
-  // 4. Validate runtime businessRuleState
-  const mudirVerified = mudir.businessRuleState === "VERIFIED_PRODUCTION";
-  const kabidVerified = kabid.businessRuleState === "VERIFIED_PRODUCTION";
-
-  if (!mudirVerified && !kabidVerified) {
-    return {
-      status: "NOT_READY",
-      reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
-      details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Required reward authority for MUDIR (status: ${mudir.businessRuleState}) and KABID_TAHFIZH (status: ${kabid.businessRuleState}) is not runtime active (VERIFIED_PRODUCTION required)`,
-      remediationAdvice: "Promote MUDIR and KABID_TAHFIZH PositionCapability businessRuleState to VERIFIED_PRODUCTION via approved migration",
-      blocking: true,
-    };
-  }
-
-  if (!mudirVerified) {
-    return {
-      status: "NOT_READY",
-      reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
-      details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: MUDIR reward authority is '${mudir.businessRuleState}'; expected VERIFIED_PRODUCTION`,
-      remediationAdvice: "Promote MUDIR PositionCapability businessRuleState to VERIFIED_PRODUCTION",
-      blocking: true,
-    };
-  }
-
-  if (!kabidVerified) {
-    return {
-      status: "NOT_READY",
-      reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
-      details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: KABID_TAHFIZH reward authority is '${kabid.businessRuleState}'; expected VERIFIED_PRODUCTION`,
-      remediationAdvice: "Promote KABID_TAHFIZH PositionCapability businessRuleState to VERIFIED_PRODUCTION",
-      blocking: true,
-    };
-  }
-
-  // 5. All positive and negative conditions met => READY
+  // 4. All positive and negative conditions met => READY
+  const verifiedSummary = CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES.map((p) => `${p.positionCode}: ${p.scopeType}`).join(", ");
   return {
     status: "READY",
-    details: "All required Tahfizh reward authorities verified active (MUDIR: GLOBAL, KABID_TAHFIZH: DOMAIN); zero unauthorized reward authority found; No stale PETUGAS_OPERASIONAL_TAHFIZH / tahfizh.reward.issue policy rows found",
+    details: `All required Tahfizh reward authorities verified active (${verifiedSummary}); zero unauthorized reward authority found; No stale PETUGAS_OPERASIONAL_TAHFIZH / tahfizh.reward.issue policy rows found`,
     blocking: true,
   };
 }
