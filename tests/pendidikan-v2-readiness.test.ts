@@ -483,10 +483,12 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
             ? "STF-0004"
             : posCode === "MUSYRIF_TAHFIZH"
             ? "STF-0003"
+            : posCode === "PEMBINA_HALAQOH"
+            ? "STF-0003"
             : `STF-00${idx + 10}`;
         const staffId = `stf-${staffCode.toLowerCase()}`;
-        const isMusyrifTahfizh = posCode === "MUSYRIF_TAHFIZH";
-        const unitId = isMusyrifTahfizh ? "ou-hlq-1" : `ou-req-${idx}`;
+        const isHalaqohScope = posCode === "MUSYRIF_TAHFIZH" || posCode === "PEMBINA_HALAQOH";
+        const unitId = isHalaqohScope ? "ou-hlq-1" : `ou-req-${idx}`;
 
         return {
           id: `asg-req-${idx}`,
@@ -497,7 +499,7 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
           validUntil: null,
           unitId,
           scopeUnits: [{ unitId }],
-          unit: isMusyrifTahfizh
+          unit: isHalaqohScope
             ? {
                 id: "ou-hlq-1",
                 code: "OU-HLQ-0001",
@@ -588,15 +590,24 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
         },
         // Gate 5: Org units
         orgUnit: {
-          findMany: async () => [
-            { id: "ou-root", code: "OU-STQ-ROOT", name: "STQ Darul Ulum Cendekia", type: "INSTITUTION", domain: "INSTITUTIONAL", parentId: null, isActive: true },
-            { id: "ou-tahfizh", code: "OU-TAHFIZH", name: "Tahfizh", type: "DOMAIN", domain: "TAHFIZH", parentId: "ou-root", isActive: true },
-            { id: "ou-keasramaan", code: "OU-KEASRAMAAN", name: "Keasramaan", type: "DOMAIN", domain: "KEASRAMAAN", parentId: "ou-root", isActive: true },
-            { id: "ou-1", code: "OU-OSDA-ROOT", isActive: true },
-            { id: "ou-2", code: "OU-OSDA-PUTRI", isActive: true },
-            { id: "ou-3", code: "OU-TKS-ROOT", isActive: true },
-            { id: "ou-hlq-1", code: "OU-HLQ-0001", type: "HALAQOH", domain: "TAHFIZH", parentId: "ou-tahfizh", parent: { code: "OU-TAHFIZH" }, genderComplex: "PUTRA", isActive: true },
-          ],
+          findMany: async (args?: any) => {
+            const units = [
+              { id: "ou-root", code: "OU-STQ-ROOT", name: "STQ Darul Ulum Cendekia", type: "INSTITUTION", domain: "INSTITUTIONAL", parentId: null, isActive: true },
+              { id: "ou-tahfizh", code: "OU-TAHFIZH", name: "Tahfizh", type: "DOMAIN", domain: "TAHFIZH", parentId: "ou-root", isActive: true },
+              { id: "ou-keasramaan", code: "OU-KEASRAMAAN", name: "Keasramaan", type: "DOMAIN", domain: "KEASRAMAAN", parentId: "ou-root", isActive: true },
+              { id: "ou-1", code: "OU-OSDA-ROOT", isActive: true },
+              { id: "ou-2", code: "OU-OSDA-PUTRI", isActive: true },
+              { id: "ou-3", code: "OU-TKS-ROOT", isActive: true },
+              { id: "ou-hlq-1", code: "OU-HLQ-0001", type: "HALAQOH", domain: "TAHFIZH", parentId: "ou-tahfizh", parent: { code: "OU-TAHFIZH" }, genderComplex: "PUTRA", isActive: true },
+            ];
+            if (args?.where?.OR) {
+              return units.filter((u) => args.where.OR.some((cond: any) => cond.id === u.id || cond.code === u.code));
+            }
+            if (args?.where?.code) {
+              return units.filter((u) => u.code === args.where.code);
+            }
+            return units;
+          },
         },
         // Gate 6: Positions
         position: {
@@ -645,7 +656,19 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
         },
         // Gate authoritative halaqoh delegate
         halaqoh: {
-          findMany: async () => [],
+          findMany: async (args?: any) => {
+            if (args?.where?.halaqohCode) {
+              return [
+                { id: "hlq-1", halaqohCode: args.where.halaqohCode, nama: "Halaqoh 0001", status: "AKTIF" },
+              ];
+            }
+            if (args?.where?.OR) {
+              return [
+                { id: "hlq-1", halaqohCode: "HLQ-0001", nama: "Halaqoh 0001", status: "AKTIF" },
+              ];
+            }
+            return [];
+          },
         },
         // Gate 9: Teaching assignments (all 12 covered)
         teachingAssignment: {
@@ -656,13 +679,13 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
           findFirst: async (args: any) => {
             const hId = args?.where?.halaqohId;
             if (typeof hId === "string") {
-              return { id: `san-${hId}`, halaqohId: hId, status: "AKTIF" };
+              return { id: `san-${hId}`, halaqohId: hId, status: "AKTIF", jenisKelamin: "L" };
             }
             if (args?.where?.halaqohId?.in && Array.isArray(args.where.halaqohId.in)) {
               const matched = args.where.halaqohId.in[0];
-              return { id: `san-${matched}`, halaqohId: matched, status: "AKTIF" };
+              return { id: `san-${matched}`, halaqohId: matched, status: "AKTIF", jenisKelamin: "L" };
             }
-            return { id: "san-default", halaqohId: "ou-req-3", status: "AKTIF" };
+            return { id: "san-default", halaqohId: "hlq-1", status: "AKTIF", jenisKelamin: "L" };
           },
           findMany: async (args?: any) => {
             if (args?.where?.status === "AKTIF" && !args?.where?.halaqohId) {
@@ -670,7 +693,7 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
             }
             return CANONICAL_REQUIRED_POSITION_CODES.map((_, idx) => ({
               id: `san-req-${idx}`,
-              halaqohId: `ou-req-${idx}`,
+              halaqohId: `hlq-${idx}`,
               status: "AKTIF",
               cohortId: null,
             }));
@@ -1858,6 +1881,427 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
       assert.ok(gate);
       assert.strictEqual(gate.status, "NOT_READY");
       assert.ok(gate.details.includes("target policy domain mismatch for keasramaan.permission.read (expected domain KEASRAMAAN"));
+    });
+  });
+
+  // =========================================================================
+  // SECTION 16: HALAQOH CANONICAL MAPPING RESOURCE SCOPE REGRESSION TESTS (R1)
+  // =========================================================================
+  describe("16. Halaqoh Canonical Mapping Resource Scope Regression Tests (R1)", () => {
+    function buildMockDb(options: {
+      legacyHalaqohId?: string;
+      canonicalOrgUnitId?: string;
+      orgUnitCode?: string;
+      halaqohCode?: string;
+      orgUnitActive?: boolean;
+      halaqohActive?: boolean;
+      includeSourceHalaqoh?: boolean;
+      santriHalaqohId?: string | null;
+      outsideSantriHalaqohId?: string | null;
+      dbErrorOnOrgUnit?: boolean;
+    } = {}) {
+      const legacyHId = options.legacyHalaqohId ?? "legacy-hlq-id-001";
+      const canonicalOuId = options.canonicalOrgUnitId ?? "canonical-ou-id-001";
+      const ouCode = options.orgUnitCode ?? "OU-HLQ-0001";
+      const hlqCode = options.halaqohCode ?? "HLQ-0001";
+      const isOuActive = options.orgUnitActive !== false;
+      const isHlqActive = options.halaqohActive !== false;
+      const includeHlq = options.includeSourceHalaqoh !== false;
+      const santriHId = options.santriHalaqohId !== undefined ? options.santriHalaqohId : legacyHId;
+      const outsideHId = options.outsideSantriHalaqohId;
+
+      const orgUnits = [
+        { id: "ou-root", code: "OU-STQ-ROOT", name: "STQ Darul Ulum Cendekia", type: "INSTITUTION", domain: "INSTITUTIONAL", parentId: null, isActive: true },
+        { id: "ou-tahfizh", code: "OU-TAHFIZH", name: "Tahfizh", type: "DOMAIN", domain: "TAHFIZH", parentId: "ou-root", isActive: true },
+        { id: "ou-keasramaan", code: "OU-KEASRAMAAN", name: "Keasramaan", type: "DOMAIN", domain: "KEASRAMAAN", parentId: "ou-root", isActive: true },
+        { id: "ou-1", code: "OU-OSDA-ROOT", isActive: true },
+        { id: "ou-2", code: "OU-OSDA-PUTRI", isActive: true },
+        { id: "ou-3", code: "OU-TKS-ROOT", isActive: true },
+        {
+          id: canonicalOuId,
+          code: ouCode,
+          name: "Halaqoh 0001",
+          type: "HALAQOH",
+          domain: "TAHFIZH",
+          parentId: "ou-tahfizh",
+          parent: { code: "OU-TAHFIZH" },
+          genderComplex: "PUTRA",
+          isActive: isOuActive,
+        },
+        {
+          id: "canonical-ou-id-002",
+          code: "OU-HLQ-0002",
+          name: "Halaqoh 0002",
+          type: "HALAQOH",
+          domain: "TAHFIZH",
+          parentId: "ou-tahfizh",
+          parent: { code: "OU-TAHFIZH" },
+          genderComplex: "PUTRA",
+          isActive: true,
+        },
+      ];
+
+      const halaqohs = includeHlq
+        ? [
+            {
+              id: legacyHId,
+              halaqohCode: hlqCode,
+              nama: "Halaqoh Abu Bakar",
+              status: isHlqActive ? "AKTIF" : "NONAKTIF",
+            },
+            {
+              id: "legacy-hlq-id-002",
+              halaqohCode: "HLQ-0002",
+              nama: "Halaqoh Umar",
+              status: "AKTIF",
+            },
+          ]
+        : [
+            {
+              id: "legacy-hlq-id-002",
+              halaqohCode: "HLQ-0002",
+              nama: "Halaqoh Umar",
+              status: "AKTIF",
+            },
+          ];
+
+      const positions = CANONICAL_REQUIRED_POSITION_CODES.map((code, idx) => ({
+        id: `pos-${idx}`,
+        code,
+        name: code,
+        domain: code.includes("KEASRAMAAN") ? "KEASRAMAAN" : "TAHFIZH",
+        isActive: true,
+        requiresPersonalAccount: code !== "PETUGAS_OPERASIONAL_KEASRAMAAN",
+      }));
+
+      const users = [
+        { id: "u-mt-1", username: "musyrif.1", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-1", role: "MT" },
+        { id: "u-ks-1", username: "kepala.keasramaan", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-2", role: "KS" },
+        { id: "u-mudir-1", username: "mudir.1", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-3", role: "GA" },
+        { id: "u-kt-1", username: "kabid.tahfizh", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-4", role: "MT" },
+        { id: "u-pot-1", username: "pot.1", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-5", role: "PH" },
+        { id: "u-gk-1", username: "guru.kepesantrenan", status: "AKTIF", accountType: "PERSONAL", staffId: "stf-6", role: "GA" },
+        { id: "u-osda-1", username: "osda.putri", status: "AKTIF", accountType: "UNIT", staffId: null, role: "MK" },
+      ];
+
+      const staffs = [
+        { id: "stf-1", staffCode: "STF-0001", status: "AKTIF" },
+        { id: "stf-2", staffCode: "STF-0004", status: "AKTIF" },
+        { id: "stf-3", staffCode: "STF-0003", status: "AKTIF" },
+        { id: "stf-4", staffCode: "STF-0002", status: "AKTIF" },
+        { id: "stf-5", staffCode: "STF-0005", status: "AKTIF" },
+        { id: "stf-6", staffCode: "STF-0006", status: "AKTIF" },
+      ];
+
+      const assignments = CANONICAL_REQUIRED_POSITION_CODES.map((posCode, idx) => {
+        const isMT = posCode === "MUSYRIF_TAHFIZH";
+        const isPH = posCode === "PEMBINA_HALAQOH";
+        const isPOT = posCode === "PETUGAS_OPERASIONAL_TAHFIZH";
+        const isPOK = posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN";
+        const isKK = posCode === "KEPALA_KEASRAMAAN";
+        const isGK = posCode === "GURU_KEPESANTRENAN";
+        const isKT = posCode === "KABID_TAHFIZH";
+
+        let unitId = "ou-root";
+        let user = users.find((u) => u.username === "mudir.1")!;
+        let staff: any = staffs.find((s) => s.staffCode === "STF-0003");
+
+        if (isMT || isPH) {
+          unitId = canonicalOuId;
+          user = users.find((u) => u.username === "musyrif.1")!;
+          staff = staffs.find((s) => s.staffCode === "STF-0001");
+        } else if (isPOT) {
+          unitId = "ou-tahfizh";
+          user = users.find((u) => u.username === "pot.1")!;
+          staff = staffs.find((s) => s.staffCode === "STF-0005");
+        } else if (isPOK) {
+          unitId = "ou-2"; // OU-OSDA-PUTRI
+          user = users.find((u) => u.username === "osda.putri")!;
+          staff = undefined;
+        } else if (isKK) {
+          unitId = "ou-keasramaan";
+          user = users.find((u) => u.username === "kepala.keasramaan")!;
+          staff = staffs.find((s) => s.staffCode === "STF-0004");
+        } else if (isKT) {
+          unitId = "ou-tahfizh";
+          user = users.find((u) => u.username === "kabid.tahfizh")!;
+          staff = staffs.find((s) => s.staffCode === "STF-0002");
+        } else if (isGK) {
+          unitId = "ou-root";
+          user = users.find((u) => u.username === "guru.kepesantrenan")!;
+          staff = staffs.find((s) => s.staffCode === "STF-0006");
+        }
+
+        const unitObj = orgUnits.find((u) => u.id === unitId);
+
+        return {
+          id: `asg-${posCode.toLowerCase()}-${idx}`,
+          userId: user.id,
+          user: isPOK
+            ? { ...user, unitPlacements: [{ unitId }] }
+            : { ...user, staff },
+          positionId: `pos-${idx}`,
+          position: positions.find((p) => p.code === posCode),
+          unitId,
+          unit: unitObj,
+          staff,
+          status: "ACTIVE",
+          validFrom: new Date(Date.now() - 86400000),
+          validUntil: null,
+          scopeUnits: [{ unitId: canonicalOuId, unit: orgUnits.find((u) => u.id === canonicalOuId) }],
+          scopedUnits: [{ unitId: canonicalOuId, unit: orgUnits.find((u) => u.id === canonicalOuId) }],
+        };
+      });
+
+      if (!isOuActive) {
+        assignments.push({
+          id: "asg-mt-active-cov",
+          userId: "u-mt-1",
+          user: { ...users[0], staff: staffs[0] },
+          positionId: "pos-4",
+          position: positions.find((p) => p.code === "MUSYRIF_TAHFIZH"),
+          unitId: "canonical-ou-id-002",
+          unit: orgUnits.find((u) => u.id === "canonical-ou-id-002"),
+          staff: staffs[0],
+          status: "ACTIVE",
+          validFrom: new Date(Date.now() - 86400000),
+          validUntil: null,
+          scopeUnits: [],
+          scopedUnits: [],
+        });
+        assignments.push({
+          id: "asg-ph-active-cov",
+          userId: "u-mt-1",
+          user: { ...users[0], staff: staffs[0] },
+          positionId: "pos-5",
+          position: positions.find((p) => p.code === "PEMBINA_HALAQOH"),
+          unitId: "canonical-ou-id-002",
+          unit: orgUnits.find((u) => u.id === "canonical-ou-id-002"),
+          staff: staffs[0],
+          status: "ACTIVE",
+          validFrom: new Date(Date.now() - 86400000),
+          validUntil: null,
+          scopeUnits: [],
+          scopedUnits: [],
+        });
+      }
+
+      return {
+        $queryRawUnsafe: async (sql: string) => {
+          if (sql.includes("health_cases_v2")) {
+            return [{ table_name: "health_cases_v2" }, { table_name: "health_case_v2_events" }];
+          }
+          if (sql.includes("HealthStatusV2")) {
+            return [{ typname: "HealthStatusV2" }];
+          }
+          if (sql.includes("education_cohorts")) {
+            return [
+              { table_name: "education_cohorts" },
+              { table_name: "teaching_assignments" },
+              { table_name: "education_sessions" },
+              { table_name: "education_session_participants" },
+              { table_name: "education_session_attendances" },
+            ];
+          }
+          if (sql.includes("EducationTrack")) {
+            return [
+              { typname: "EducationTrack" },
+              { typname: "PedagogicalLevel" },
+              { typname: "EducationSessionStatus" },
+              { typname: "EducationAttendanceStatus" },
+            ];
+          }
+          if (sql.includes("canonical_audit_logs")) {
+            return [{ table_name: "canonical_audit_logs" }];
+          }
+          return [];
+        },
+        orgUnit: {
+          findMany: async (args?: any) => {
+            if (options.dbErrorOnOrgUnit) {
+              throw new Error("PostgreSQL connection failure on org_units table");
+            }
+            if (args?.where?.OR) {
+              return orgUnits.filter((u) =>
+                args.where.OR.some((cond: any) => cond.id === u.id || cond.code === u.code)
+              );
+            }
+            if (args?.where?.code) {
+              return orgUnits.filter((u) => u.code === args.where.code);
+            }
+            return orgUnits;
+          },
+        },
+        halaqoh: {
+          findMany: async (args?: any) => {
+            if (args?.include?.pembina) {
+              return [];
+            }
+            if (args?.where?.OR) {
+              return halaqohs.filter((h) =>
+                args.where.OR.some((cond: any) => cond.id === h.id || cond.halaqohCode === h.halaqohCode)
+              );
+            }
+            if (args?.where?.halaqohCode) {
+              return halaqohs.filter((h) => h.halaqohCode === args.where.halaqohCode);
+            }
+            return halaqohs;
+          },
+        },
+        position: {
+          findMany: async () => positions,
+        },
+        user: {
+          findMany: async () => users,
+        },
+        staff: {
+          findMany: async () => staffs,
+        },
+        assignment: {
+          findMany: async () => assignments,
+        },
+        positionCapability: {
+          findMany: async () =>
+            CANONICAL_UAT_TARGET_POLICIES.map((p) => ({
+              positionId: positions.find((pos) => pos.code === p.positionCode)?.id || `pos-${p.positionCode}`,
+              positionCode: p.positionCode,
+              capabilityCode: p.capabilityCode,
+              scopeType: p.expectedScope,
+              businessRuleState: "VERIFIED_PRODUCTION",
+              position: { code: p.positionCode, isActive: true },
+            })),
+        },
+        santri: {
+          findFirst: async (args?: any) => {
+            if (args?.where?.jenisKelamin === "P") {
+              return { id: "san-putri-1", halaqohId: santriHId || legacyHId, status: "AKTIF", jenisKelamin: "P" };
+            }
+            if (args?.where?.halaqohId && typeof args.where.halaqohId === "string") {
+              if (args.where.halaqohId === santriHId) {
+                return { id: "san-rep-1", halaqohId: santriHId, status: "AKTIF", jenisKelamin: "L" };
+              }
+              return null;
+            }
+            if (args?.where?.halaqohId?.in && Array.isArray(args.where.halaqohId.in)) {
+              return { id: "san-pot-1", halaqohId: canonicalOuId, status: "AKTIF", jenisKelamin: "L" };
+            }
+            if (args?.where?.halaqohId?.not) {
+              if (outsideHId) {
+                return { id: "san-outside-1", halaqohId: outsideHId, status: "AKTIF", jenisKelamin: "L" };
+              }
+              return null;
+            }
+            return null;
+          },
+          findMany: async () => {
+            const list: any[] = [];
+            if (santriHId) list.push({ id: "san-rep-1", halaqohId: santriHId, status: "AKTIF", jenisKelamin: "L" });
+            if (outsideHId) list.push({ id: "san-outside-1", halaqohId: outsideHId, status: "AKTIF", jenisKelamin: "L" });
+            return list;
+          },
+        },
+      };
+    }
+
+    it("A. distinct legacy/canonical IDs + valid mapping => no SCOPE_MISMATCH", async () => {
+      const mockDb = buildMockDb({
+        legacyHalaqohId: "legacy-hlq-id-001",
+        canonicalOrgUnitId: "canonical-ou-id-001",
+        santriHalaqohId: "legacy-hlq-id-001",
+      });
+
+      // The IDs MUST intentionally differ
+      assert.notStrictEqual("canonical-ou-id-001", "legacy-hlq-id-001");
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      // USER_ASSIGNMENTS_READY must NOT fail with SCOPE_MISMATCH
+      assert.ok(
+        !gate.details.includes("SCOPE_MISMATCH"),
+        `Expected no SCOPE_MISMATCH but got: ${gate.details}`
+      );
+    });
+
+    it("B. missing Halaqoh-to-OrgUnit mapping => fail closed (NOT_READY)", async () => {
+      const mockDb = buildMockDb({
+        includeSourceHalaqoh: false,
+      });
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(gate.details.includes("missing active source Halaqoh mapping"));
+    });
+
+    it("C. inactive source Halaqoh => fail closed (NOT_READY)", async () => {
+      const mockDb = buildMockDb({
+        halaqohActive: false,
+      });
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(gate.details.includes("missing active source Halaqoh mapping"));
+    });
+
+    it("D. inactive canonical OrgUnit => fail closed (NOT_READY)", async () => {
+      const mockDb = buildMockDb({
+        orgUnitActive: false,
+      });
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(gate.details.includes("is inactive (TARGET_RESOURCE_SCOPE_NOT_READY)"));
+    });
+
+    it("E. genuinely different mapped Halaqoh => SCOPE_MISMATCH / NOT_READY", async () => {
+      const mockDb = buildMockDb({
+        legacyHalaqohId: "legacy-hlq-id-001",
+        canonicalOrgUnitId: "canonical-ou-id-001",
+        santriHalaqohId: null, // No santri in assigned halaqoh
+        outsideSantriHalaqohId: "legacy-hlq-id-002", // Outside santri in HLQ-0002
+      });
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(gate.details.includes("SCOPE_MISMATCH"));
+      // Verified that comparison is between canonical OrgUnit IDs
+      assert.ok(gate.details.includes("canonical-ou-id-002"));
+      assert.ok(gate.details.includes("canonical-ou-id-001"));
+    });
+
+    it("F. mapping database query error => DATABASE_UNAVAILABLE / blocking", async () => {
+      const mockDb = buildMockDb({
+        dbErrorOnOrgUnit: true,
+      });
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "BLOCKED");
+      assert.strictEqual(gate.reason, "DATABASE_UNAVAILABLE");
+      assert.strictEqual(gate.blocking, true);
+    });
+
+    it("G. no raw-ID fallback when mapping is unavailable", async () => {
+      const mockDb = buildMockDb({
+        includeSourceHalaqoh: false,
+        // Even if Santri.halaqohId is set to the canonical OrgUnit ID, lack of mapping must fail closed
+        santriHalaqohId: "canonical-ou-id-001",
+      });
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(gate.details.includes("missing active source Halaqoh mapping"));
     });
   });
 });

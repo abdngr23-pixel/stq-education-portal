@@ -31,7 +31,7 @@ import {
   matchStudiUmumSession,
   matchKepesantrenanSession,
 } from "../lib/pendidikan-v2";
-import { UAT_ACTIVATION_TARGETS, POSITION_ACCOUNT_MODALITY_CONTRACT } from "../types/architecture-lock";
+import { UAT_ACTIVATION_TARGETS, POSITION_ACCOUNT_MODALITY_CONTRACT, CANONICAL_ASSIGNMENT_ANCHORS } from "../types/architecture-lock";
 
 describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PROOF", () => {
   let prisma: PrismaClient;
@@ -1513,6 +1513,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         }
 
         const isUnit = posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN";
+        const isHalaqoh = posCode === "MUSYRIF_TAHFIZH" || posCode === "PEMBINA_HALAQOH";
         const staffCode =
           posCode === "PETUGAS_OPERASIONAL_TAHFIZH"
             ? "STF-0005"
@@ -1520,10 +1521,19 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
             ? "STF-0004"
             : posCode === "MUSYRIF_TAHFIZH"
             ? "STF-0003"
+            : posCode === "PEMBINA_HALAQOH"
+            ? "STF-0003"
             : `STF-REQ-${idx}`;
         const staffObj = isUnit
           ? null
           : { id: `stf-req-${idx}`, staffCode, code: staffCode, status: "AKTIF" };
+
+        const expectedAnchor = (CANONICAL_ASSIGNMENT_ANCHORS as Record<string, string>)[posCode];
+        const unitId = isHalaqoh ? "ou-hlq-1" : isUnit ? "ou-asr-unit-1" : expectedAnchor ? expectedAnchor.toLowerCase().replace(/_/g, "-") : `ou-req-${idx}`;
+        const unitCode = isHalaqoh ? "OU-HLQ-0001" : expectedAnchor || (isUnit ? "ASR-PUTRA-1" : `OU-REQ-${idx}`);
+        const unitObj = isHalaqoh
+          ? { id: "ou-hlq-1", code: "OU-HLQ-0001", type: "HALAQOH", domain: "TAHFIZH", parentId: "ou-tahfizh", parent: { code: "OU-TAHFIZH" }, genderComplex: "PUTRA", isActive: true }
+          : { id: unitId, code: unitCode, type: expectedAnchor === "OU-STQ-ROOT" ? "ROOT" : expectedAnchor ? "DOMAIN" : "UNIT", domain: posCode.includes("KEASRAMAAN") ? "KEASRAMAAN" : "AKADEMIK", isActive: true };
 
         const base = {
           id: `asg-req-${idx}`,
@@ -1532,8 +1542,10 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           status: "ACTIVE",
           validFrom: new Date(Date.now() - 86400000),
           validUntil: null,
-          unitId: `ou-req-${idx}`,
-          scopeUnits: [{ unitId: `ou-req-${idx}` }],
+          unitId,
+          unit: unitObj,
+          scopeUnits: [{ unitId }],
+          scopedUnits: [{ unitId, unit: unitObj }],
           staff: staffObj,
           user: {
             id: `usr-req-${idx}`,
@@ -2029,10 +2041,47 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         positionCapability: {
           findMany: async () => [],
         },
-        halaqoh: { findMany: async () => [] },
+        orgUnit: {
+          findMany: async (args?: any) => {
+            const list = [
+              { id: "ou-stq-root", code: "OU-STQ-ROOT", type: "ROOT", domain: "STQ", isActive: true },
+              { id: "ou-tahfizh", code: "OU-TAHFIZH", type: "DOMAIN", domain: "TAHFIZH", isActive: true },
+              { id: "ou-keasramaan", code: "OU-KEASRAMAAN", type: "DOMAIN", domain: "KEASRAMAAN", isActive: true },
+              { id: "ou-hlq-1", code: "OU-HLQ-0001", type: "HALAQOH", domain: "TAHFIZH", parentId: "ou-tahfizh", parent: { code: "OU-TAHFIZH" }, genderComplex: "PUTRA", isActive: true },
+              { id: "ou-asr-unit-1", code: "ASR-PUTRA-1", type: "KAMAR", domain: "KEASRAMAAN", genderComplex: "PUTRA", isActive: true },
+            ];
+            if (args?.where?.OR) {
+              return list.filter((u) => args.where.OR.some((cond: any) => cond.id === u.id || cond.code === u.code));
+            }
+            return list;
+          },
+        },
+        halaqoh: {
+          findMany: async (args?: any) => {
+            if (args?.include?.pembina) {
+              return [];
+            }
+            const list = [
+              { id: "hlq-1", halaqohCode: "HLQ-0001", nama: "Halaqoh 0001", status: "AKTIF" },
+            ];
+            if (args?.where?.halaqohCode) {
+              return list.filter((h) => h.halaqohCode === args.where.halaqohCode);
+            }
+            if (args?.where?.id) {
+              return list.filter((h) => h.id === args.where.id);
+            }
+            if (args?.where?.OR) {
+              return list.filter((h) => args.where.OR.some((cond: any) => cond.id === h.id || cond.halaqohCode === h.halaqohCode));
+            }
+            return list;
+          },
+        },
         santri: {
           findFirst: async (args: any) => {
             const hId = args?.where?.halaqohId;
+            if (hId === "hlq-1" || hId === "ou-hlq-1") {
+              return { id: "san-hlq-1", halaqohId: "hlq-1", status: "AKTIF" };
+            }
             if (typeof hId === "string") {
               return { id: `san-${hId}`, halaqohId: hId, status: "AKTIF" };
             }
@@ -2040,12 +2089,12 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
               const matched = args.where.halaqohId.in[0];
               return { id: `san-${matched}`, halaqohId: matched, status: "AKTIF" };
             }
-            return { id: "san-default", halaqohId: "ou-req-3", status: "AKTIF" };
+            return { id: "san-default", halaqohId: "hlq-1", status: "AKTIF" };
           },
           findMany: async () => {
             return CANONICAL_REQUIRED_POSITION_CODES.map((_, idx) => ({
               id: `san-req-${idx}`,
-              halaqohId: `ou-req-${idx}`,
+              halaqohId: "hlq-1",
               status: "AKTIF",
             }));
           },
@@ -2179,6 +2228,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       }
 
       const isUnit = posCode === "PETUGAS_OPERASIONAL_KEASRAMAAN";
+      const isHalaqoh = posCode === "MUSYRIF_TAHFIZH" || posCode === "PEMBINA_HALAQOH";
       const staffCode =
         posCode === "PETUGAS_OPERASIONAL_TAHFIZH"
           ? "STF-0005"
@@ -2186,10 +2236,19 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           ? "STF-0004"
           : posCode === "MUSYRIF_TAHFIZH"
           ? "STF-0003"
+          : posCode === "PEMBINA_HALAQOH"
+          ? "STF-0003"
           : `STF-UAT-${idx}`;
       const staffObj = isUnit
         ? null
         : { id: `stf-uat-${idx}`, staffCode, code: staffCode, status: "AKTIF" };
+
+      const expectedAnchor = (CANONICAL_ASSIGNMENT_ANCHORS as Record<string, string>)[posCode];
+      const unitId = isHalaqoh ? "ou-hlq-1" : isUnit ? "ou-asr-unit-1" : expectedAnchor ? expectedAnchor.toLowerCase().replace(/_/g, "-") : `ou-uat-${idx}`;
+      const unitCode = isHalaqoh ? "OU-HLQ-0001" : expectedAnchor || (isUnit ? "ASR-PUTRA-1" : `OU-UAT-${idx}`);
+      const unitObj = isHalaqoh
+        ? { id: "ou-hlq-1", code: "OU-HLQ-0001", type: "HALAQOH", domain: "TAHFIZH", parentId: "ou-tahfizh", parent: { code: "OU-TAHFIZH" }, genderComplex: "PUTRA", isActive: true }
+        : { id: unitId, code: unitCode, type: expectedAnchor === "OU-STQ-ROOT" ? "ROOT" : expectedAnchor ? "DOMAIN" : "UNIT", domain: posCode.includes("KEASRAMAAN") ? "KEASRAMAAN" : "TAHFIZH", isActive: true };
 
       const base = {
         id: `asg-uat-${idx}`,
@@ -2198,9 +2257,10 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         status: "ACTIVE",
         validFrom: new Date(Date.now() - 86400000),
         validUntil: null,
-        unitId: `ou-uat-${idx}`,
-        scopeUnits: [{ unitId: `ou-uat-${idx}` }],
-        scopedUnits: [{ unitId: `ou-uat-${idx}`, unit: { id: `ou-uat-${idx}`, isActive: true } }],
+        unitId,
+        unit: unitObj,
+        scopeUnits: [{ unitId }],
+        scopedUnits: [{ unitId, unit: unitObj }],
         staff: staffObj,
         user: {
           id: `usr-uat-${idx}`,
@@ -2240,16 +2300,84 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         santriFindMany?: (args: any) => Promise<any>;
         placementFindFirst?: (args: any) => Promise<any>;
         placementFindMany?: (args: any) => Promise<any>;
+        orgUnitFindMany?: (args: any) => Promise<any>;
+        halaqohFindMany?: (args: any) => Promise<any>;
       }
     ) => ({
       assignment: { findMany: async () => assignments },
       positionCapability: { findMany: async () => [] },
-      halaqoh: { findMany: async () => [] },
+      orgUnit: {
+        findMany:
+          overrides?.orgUnitFindMany ??
+          (async (args?: any) => {
+            const list = [
+              { id: "ou-stq-root", code: "OU-STQ-ROOT", type: "ROOT", domain: "STQ", isActive: true },
+              { id: "ou-tahfizh", code: "OU-TAHFIZH", type: "DOMAIN", domain: "TAHFIZH", isActive: true },
+              { id: "ou-keasramaan", code: "OU-KEASRAMAAN", type: "DOMAIN", domain: "KEASRAMAAN", isActive: true },
+              { id: "ou-hlq-1", code: "OU-HLQ-0001", type: "HALAQOH", domain: "TAHFIZH", parentId: "ou-tahfizh", parent: { code: "OU-TAHFIZH" }, genderComplex: "PUTRA", isActive: true },
+              { id: "hlq-unit-1", code: "OU-HLQ-0001", type: "HALAQOH", domain: "TAHFIZH", parentId: "ou-tahfizh", parent: { code: "OU-TAHFIZH" }, genderComplex: "PUTRA", isActive: true },
+              { id: "ou-different-99", code: "OU-HLQ-0002", type: "HALAQOH", domain: "TAHFIZH", parentId: "ou-tahfizh", parent: { code: "OU-TAHFIZH" }, genderComplex: "PUTRA", isActive: true },
+              { id: "ou-asr-unit-1", code: "ASR-PUTRA-1", type: "KAMAR", domain: "KEASRAMAAN", genderComplex: "PUTRA", isActive: true },
+              { id: "asr-putra-1", code: "ASR-PUTRA-1", type: "KAMAR", domain: "KEASRAMAAN", genderComplex: "PUTRA", isActive: true },
+            ];
+            if (args?.where?.id) {
+              return list.filter((u) => u.id === args.where.id);
+            }
+            if (args?.where?.code) {
+              return list.filter((u) => u.code === args.where.code);
+            }
+            if (args?.where?.OR) {
+              const matched = list.filter((u) => args.where.OR.some((cond: any) => cond.id === u.id || cond.code === u.code));
+              const seen = new Set<string>();
+              return matched.filter((u) => {
+                if (seen.has(u.code)) return false;
+                seen.add(u.code);
+                return true;
+              });
+            }
+            return list;
+          }),
+      },
+      halaqoh: {
+        findMany:
+          overrides?.halaqohFindMany ??
+          (async (args?: any) => {
+            if (args?.include?.pembina) {
+              return [];
+            }
+            const list = [
+              { id: "hlq-1", halaqohCode: "HLQ-0001", nama: "Halaqoh 0001", status: "AKTIF" },
+              { id: "hlq-different-99", halaqohCode: "HLQ-0002", nama: "Halaqoh 0002", status: "AKTIF" },
+            ];
+            if (args?.where?.halaqohCode) {
+              return list.filter((h) => h.halaqohCode === args.where.halaqohCode);
+            }
+            if (args?.where?.id) {
+              return list.filter((h) => h.id === args.where.id);
+            }
+            if (args?.where?.OR) {
+              const matched = list.filter((h) => args.where.OR.some((cond: any) => cond.id === h.id || cond.halaqohCode === h.halaqohCode));
+              const seen = new Set<string>();
+              return matched.filter((h) => {
+                if (seen.has(h.halaqohCode)) return false;
+                seen.add(h.halaqohCode);
+                return true;
+              });
+            }
+            return list;
+          }),
+      },
       santri: {
         findFirst:
           overrides?.santriFindFirst ??
           (async (args: any) => {
             const hId = args?.where?.halaqohId;
+            if (hId && typeof hId === "object" && "not" in hId) {
+              return { id: "san-diff-2", halaqohId: "hlq-different-99", status: "AKTIF" };
+            }
+            if (hId === "hlq-1" || hId === "ou-hlq-1" || hId === "hlq-unit-1") {
+              return { id: "san-hlq-1", halaqohId: "hlq-1", status: "AKTIF" };
+            }
             if (typeof hId === "string") {
               return { id: `san-${hId}`, halaqohId: hId, status: "AKTIF" };
             }
@@ -2257,13 +2385,14 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
               const matched = args.where.halaqohId.in[0];
               if (matched) return { id: `san-${matched}`, halaqohId: matched, status: "AKTIF" };
             }
-            return { id: "san-uat-default", halaqohId: "ou-tahfizh-unit-1", status: "AKTIF" };
+            return { id: "san-uat-default", halaqohId: "hlq-1", status: "AKTIF" };
           }),
         findMany:
           overrides?.santriFindMany ??
           (async () => [
-            { id: "san-uat-1", halaqohId: "ou-tahfizh-unit-1", status: "AKTIF" },
-            { id: "san-own-1", halaqohId: "hlq-unit-1", status: "AKTIF" },
+            { id: "san-uat-1", halaqohId: "hlq-1", status: "AKTIF" },
+            { id: "san-own-1", halaqohId: "hlq-1", status: "AKTIF" },
+            { id: "san-diff-2", halaqohId: "hlq-different-99", status: "AKTIF" },
           ]),
       },
       santriKamarPlacement: {
@@ -2606,11 +2735,15 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       // 2. Gate 8 Production Readiness Check
       const assignments = createUatAssignments({
         overridePosCode: "MUSYRIF_TAHFIZH",
-        overridePatch: (base) => ({
-          ...base,
-          unitId: "hlq-unit-1",
-          scopedUnits: [],
-        }),
+        overridePatch: (base) => {
+          const unitObj = { id: "hlq-unit-1", code: "OU-HLQ-0001", type: "HALAQOH", domain: "TAHFIZH", parentId: "ou-tahfizh", parent: { code: "OU-TAHFIZH" }, genderComplex: "PUTRA", isActive: true };
+          return {
+            ...base,
+            unitId: "hlq-unit-1",
+            unit: unitObj,
+            scopedUnits: [{ unitId: "hlq-unit-1", unit: unitObj }],
+          };
+        },
       });
 
       const mockDb = createDefaultMockDb(assignments);
@@ -2676,19 +2809,23 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       // 2. Gate 8 Production Readiness Check
       const assignments = createUatAssignments({
         overridePosCode: "MUSYRIF_TAHFIZH",
-        overridePatch: (base) => ({
-          ...base,
-          unitId: "hlq-unit-1",
-          scopedUnits: [],
-        }),
+        overridePatch: (base) => {
+          const unitObj = { id: "hlq-unit-1", code: "OU-HLQ-0001", type: "HALAQOH", domain: "TAHFIZH", parentId: "ou-tahfizh", parent: { code: "OU-TAHFIZH" }, genderComplex: "PUTRA", isActive: true };
+          return {
+            ...base,
+            unitId: "hlq-unit-1",
+            unit: unitObj,
+            scopedUnits: [{ unitId: "hlq-unit-1", unit: unitObj }],
+          };
+        },
       });
 
       const mockDb = createDefaultMockDb(assignments, {
         santriFindFirst: async (args: any) => {
-          if (args?.where?.halaqohId === "hlq-unit-1") {
+          if (args?.where?.halaqohId === "hlq-1" || args?.where?.halaqohId === "hlq-unit-1") {
             return null; // Mismatched: no active santri in anchor unit hlq-unit-1
           }
-          return { id: "san-default", halaqohId: "ou-default", status: "AKTIF" };
+          return { id: "san-default", halaqohId: "hlq-different-99", status: "AKTIF" };
         },
         santriFindMany: async () => [
           { id: "san-diff-2", halaqohId: "hlq-different-99", status: "AKTIF" },
