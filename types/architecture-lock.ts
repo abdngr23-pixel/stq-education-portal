@@ -635,6 +635,10 @@ export const KEASRAMAAN_KAMAR_CAPABILITIES = {
   MANAGE: "keasramaan.kamar.manage",
 } as const;
 
+export const STUDENT_PRIVACY_CAPABILITIES = {
+  GUARDIAN_CONTACT_READ: "student.guardian_contact.read",
+} as const;
+
 /**
  * Approved code-level target policy only. This manifest provisions nothing and
  * grants zero runtime authority while its state remains pending technical.
@@ -934,6 +938,149 @@ export const UAT_ACTIVATION_TARGETS = {
     preventPutraAccess: true,
     businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
     notes: "Santriwati technical operational unit account for READ-ONLY monitoring per DIR-2026-038. Strictly prevents PUTRA data leakage.",
+  },
+} as const;
+
+/**
+ * DIR-2026-039 (C1): Canonical Personal Permission Mutation Target Policies
+ * Target policies for PERSONAL accounts mutating Keasramaan permissions.
+ * State: APPROVED_TARGET_PENDING_TECHNICAL (ZERO runtime authority before Gate 5B promotion).
+ */
+export const CANONICAL_PERSONAL_PERMISSION_MUTATION_TARGET_POLICIES = {
+  PEMBINA_HALAQOH: [
+    {
+      positionCode: "PEMBINA_HALAQOH" as const,
+      capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.CREATE,
+      scopeType: "KAMAR" as const,
+      businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+      notes: "Mudabbir own assigned Kamar create only. Same-day keluar komplek approved, overnight/pulang pending MK.",
+    },
+    {
+      positionCode: "PEMBINA_HALAQOH" as const,
+      capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.UPDATE,
+      scopeType: "KAMAR" as const,
+      businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+      notes: "Mudabbir return confirmation and cancellation within own assigned Kamar scope only.",
+    },
+  ],
+  KEPALA_KEASRAMAAN: [
+    {
+      positionCode: "KEPALA_KEASRAMAAN" as const,
+      capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.CREATE,
+      scopeType: "DOMAIN" as const,
+      domain: "KEASRAMAAN" as const,
+      businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+      notes: "Kepala Keasramaan domain create authority.",
+    },
+    {
+      positionCode: "KEPALA_KEASRAMAAN" as const,
+      capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.UPDATE,
+      scopeType: "DOMAIN" as const,
+      domain: "KEASRAMAAN" as const,
+      businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+      notes: "Kepala Keasramaan domain update authority.",
+    },
+    {
+      positionCode: "KEPALA_KEASRAMAAN" as const,
+      capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.APPROVE_MK,
+      scopeType: "DOMAIN" as const,
+      domain: "KEASRAMAAN" as const,
+      businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+      notes: "Kepala Keasramaan MK-tier approval and escalation authority. Cannot exercise approve_ks.",
+    },
+  ],
+  MUDIR: [
+    {
+      positionCode: "MUDIR" as const,
+      capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.CREATE,
+      scopeType: "GLOBAL" as const,
+      businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+      notes: "Mudir institutional create authority.",
+    },
+    {
+      positionCode: "MUDIR" as const,
+      capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.UPDATE,
+      scopeType: "GLOBAL" as const,
+      businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+      notes: "Mudir institutional update authority.",
+    },
+    {
+      positionCode: "MUDIR" as const,
+      capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.APPROVE_KS,
+      scopeType: "GLOBAL" as const,
+      businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+      notes: "Mudir final approval authority.",
+    },
+  ],
+} as const;
+
+/**
+ * DIR-2026-040 (D1): Canonical Guardian Contact Privacy Target Policies
+ * Dedicated field-level capability for noHpWali disclosure.
+ * State: APPROVED_TARGET_PENDING_TECHNICAL (ZERO runtime authority before Gate 5B promotion).
+ */
+export const CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES = {
+  MUDIR: {
+    positionCode: "MUDIR" as const,
+    capabilityCode: STUDENT_PRIVACY_CAPABILITIES.GUARDIAN_CONTACT_READ,
+    scopeType: "GLOBAL" as const,
+    businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+    notes: "Mudir institutional access to guardian contacts.",
+  },
+  KEPALA_KEASRAMAAN: {
+    positionCode: "KEPALA_KEASRAMAAN" as const,
+    capabilityCode: STUDENT_PRIVACY_CAPABILITIES.GUARDIAN_CONTACT_READ,
+    scopeType: "DOMAIN" as const,
+    domain: "KEASRAMAAN" as const,
+    businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+    notes: "Kepala Keasramaan domain access to guardian contacts.",
+  },
+  MUSYRIF_TAHFIZH: {
+    positionCode: "MUSYRIF_TAHFIZH" as const,
+    capabilityCode: STUDENT_PRIVACY_CAPABILITIES.GUARDIAN_CONTACT_READ,
+    scopeType: "HALAQOH" as const,
+    businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+    notes: "Direct supervising Musyrif access to own halaqoh santri guardian contacts.",
+  },
+  PEMBINA_HALAQOH: {
+    positionCode: "PEMBINA_HALAQOH" as const,
+    capabilityCode: STUDENT_PRIVACY_CAPABILITIES.GUARDIAN_CONTACT_READ,
+    scopeType: "KAMAR" as const,
+    businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+    notes: "Direct supervising Mudabbir access to own kamar santri guardian contacts.",
+  },
+} as const;
+
+/**
+ * Canonical Personal Permission Read Target Policies (R1 Remediation)
+ * Derived from approved C1 Keasramaan workflow:
+ * - MUDIR: GLOBAL
+ * - KEPALA_KEASRAMAAN: DOMAIN / KEASRAMAAN
+ * - PEMBINA_HALAQOH: KAMAR (only own active Kamar placements)
+ * State: APPROVED_TARGET_PENDING_TECHNICAL (ZERO runtime authority before Gate 5B promotion).
+ */
+export const CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES = {
+  PEMBINA_HALAQOH: {
+    positionCode: "PEMBINA_HALAQOH" as const,
+    capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+    scopeType: "KAMAR" as const,
+    businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+    notes: "Mudabbir own assigned Kamar permission read only.",
+  },
+  KEPALA_KEASRAMAAN: {
+    positionCode: "KEPALA_KEASRAMAAN" as const,
+    capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+    scopeType: "DOMAIN" as const,
+    domain: "KEASRAMAAN" as const,
+    businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+    notes: "Kepala Keasramaan domain permission read authority.",
+  },
+  MUDIR: {
+    positionCode: "MUDIR" as const,
+    capabilityCode: KEASRAMAAN_PERMISSION_CAPABILITIES.READ,
+    scopeType: "GLOBAL" as const,
+    businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+    notes: "Mudir institutional permission read authority.",
   },
 } as const;
 
