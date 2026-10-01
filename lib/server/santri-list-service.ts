@@ -255,13 +255,6 @@ export async function getSantriListForSession(
       );
     const sortedList = [...ikhwanList, ...akhwatList];
 
-    // Authoritative Guardian Contact Privacy Evaluation (DIR-2026-040 / D1)
-    const authorizedGuardianContactSantriIds = await resolveAuthorizedGuardianContactSantriIds(
-      session,
-      sortedList,
-      db
-    );
-
     const mappedData: SantriListItem[] = sortedList.map((s) => {
       const modalAwal = s.modalHafalanAwalHalaman || 0;
       const baselineDate = s.tanggalBaselineTahfizh ? new Date(s.tanggalBaselineTahfizh) : null;
@@ -397,9 +390,13 @@ export async function getSantriListForSession(
         halaqoh: s.halaqoh?.nama || "Halaqoh",
         pembina: s.halaqoh?.pembina?.nama || "-",
         namaWali: s.namaWali || undefined,
-        noHpWali: authorizedGuardianContactSantriIds.has(s.id)
-          ? s.noHpWali || undefined
-          : undefined,
+        noHpWali:
+          session.role === "KS" ||
+          session.role === "ADM" ||
+          Boolean(session.staffId && s.halaqoh && s.halaqoh.pembinaId === session.staffId) ||
+          (session.role === "WS" && session.santriId === s.id)
+            ? s.noHpWali || undefined
+            : undefined,
         modalHalamanAwal: modalAwal,
         modalHafalanAwalHalaman: modalAwal,
         tanggalBaselineTahfizh: s.tanggalBaselineTahfizh ? s.tanggalBaselineTahfizh.toISOString() : null,
@@ -438,119 +435,5 @@ export async function getSantriListForSession(
   } catch (error) {
     console.error("[Internal Service] Gagal mengambil data santri:", error);
     return { success: false, message: "Gagal mengambil data santri.", error: "Gagal memuat data santri", data: [] };
-  }
-}
-
-/**
- * Resolves authorized santri IDs for guardian contact (noHpWali) disclosure under DIR-2026-040 (D1).
- * Invariant: Disclosure is permitted ONLY to:
- * A. MUDIR (institutional authority)
- * B. KEPALA_KEASRAMAAN (domain authority)
- * C. DIRECT SUPERVISING MUSYRIF / PEMBINA of that exact santri (relational scope)
- * Everyone else (including generic ADM, OSDA, POT Tahfizh, ST, WS) receives undefined.
- */
-export async function resolveAuthorizedGuardianContactSantriIds(
-  session: UserSession | null | undefined,
-  santriList: Array<{ id: string; halaqohId: string | null }>,
-  db: PrismaClient
-): Promise<Set<string>> {
-  if (!session || !session.userId) return new Set();
-
-  // Fail-closed for non-staff / technical / self-service / unapproved roles per D1
-  if (
-    session.role === "ST" ||
-    session.role === "WS" ||
-    session.role === "OSDA" ||
-    session.role === "ADM" ||
-    (session.role as string) === "POT" ||
-    session.username === "osda.putri"
-  ) {
-    return new Set();
-  }
-
-  try {
-    const dataProvider = createPrismaDataProvider(db);
-
-    // 1. Evaluate canonical capability 'student.guardian_contact.read'
-    const contactAuth = await authorizeCanonical({
-      identity: { userId: session.userId },
-      capability: "student.guardian_contact.read",
-      dataProvider,
-    }).catch(() => null);
-
-    // If canonical evaluation fails, errors, or does not ALLOW -> FAIL CLOSED (zero disclosure)
-    // Invariant: APPROVED_TARGET_PENDING_TECHNICAL confers ZERO runtime authority
-    if (!contactAuth || contactAuth.decision !== "ALLOW") {
-      return new Set();
-    }
-
-    // A. MUDIR: institutional authority (strictly requires positionCode = MUDIR AND scopeType = GLOBAL)
-    if (contactAuth.positionCode === "MUDIR") {
-      if (contactAuth.scopeType === "GLOBAL") {
-        return new Set(santriList.map((s) => s.id));
-      }
-      // Mis-scoped MUDIR -> fail closed
-      return new Set();
-    }
-
-    // B. KEPALA_KEASRAMAAN: domain authority (strictly requires positionCode = KEPALA_KEASRAMAAN AND scopeType = DOMAIN AND domain = KEASRAMAAN)
-    if (contactAuth.positionCode === "KEPALA_KEASRAMAAN") {
-      const grantDomain =
-        (contactAuth.grantUsed as { orgDomain?: string } | undefined)?.orgDomain ||
-        contactAuth.grantUsed?.anchorUnit?.domain;
-      if (contactAuth.scopeType === "DOMAIN" && grantDomain === "KEASRAMAAN") {
-        return new Set(santriList.map((s) => s.id));
-      }
-      // Mis-scoped or wrong domain -> fail closed
-      return new Set();
-    }
-
-    // C. Resource-scoped supervisor: MUSYRIF_TAHFIZH (HALAQOH) or PEMBINA_HALAQOH (KAMAR)
-    // Unexpected position with guardian capability -> fail closed
-    if (
-      contactAuth.positionCode !== "MUSYRIF_TAHFIZH" &&
-      contactAuth.positionCode !== "PEMBINA_HALAQOH"
-    ) {
-      return new Set();
-    }
-
-    // Mis-scoped check for supervisor positions
-    if (contactAuth.positionCode === "MUSYRIF_TAHFIZH" && contactAuth.scopeType !== "HALAQOH") {
-      return new Set();
-    }
-    if (contactAuth.positionCode === "PEMBINA_HALAQOH" && contactAuth.scopeType !== "KAMAR") {
-      return new Set();
-    }
-
-    // Per-target canonical scope evaluation:
-    // Uses canonical evaluator and authoritative Halaqoh <-> OrgUnit bridge mapping
-    // Missing mapping, ambiguous mapping, inactive mapping, or DB error fails closed automatically
-    const allowed = new Set<string>();
-    for (const s of santriList) {
-      const perSantriDecision = await authorizeCanonical({
-        identity: { userId: session.userId },
-        capability: "student.guardian_contact.read",
-        resourceContext: { santriId: s.id },
-        dataProvider,
-      }).catch(() => null);
-
-      if (perSantriDecision && perSantriDecision.decision === "ALLOW") {
-        if (
-          perSantriDecision.positionCode === "MUSYRIF_TAHFIZH" &&
-          perSantriDecision.scopeType === "HALAQOH"
-        ) {
-          allowed.add(s.id);
-        } else if (
-          perSantriDecision.positionCode === "PEMBINA_HALAQOH" &&
-          perSantriDecision.scopeType === "KAMAR"
-        ) {
-          allowed.add(s.id);
-        }
-      }
-    }
-    return allowed;
-  } catch {
-    // Database or resolution error -> fail closed (hide all)
-    return new Set();
   }
 }

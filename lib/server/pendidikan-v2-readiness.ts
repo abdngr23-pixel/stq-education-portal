@@ -23,9 +23,6 @@ import {
   GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES,
   GATE5_DEFERRED_UNIT_ASSIGNMENT_POSITION_CODES,
   CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT,
-  CANONICAL_PERSONAL_PERMISSION_MUTATION_TARGET_POLICIES,
-  CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES,
-  CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES,
 } from "@/types/architecture-lock";
 export {
   CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT,
@@ -35,9 +32,6 @@ export {
   CANONICAL_REQUIRED_POSITION_CODES,
   GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES,
   GATE5_DEFERRED_UNIT_ASSIGNMENT_POSITION_CODES,
-  CANONICAL_PERSONAL_PERMISSION_MUTATION_TARGET_POLICIES,
-  CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES,
-  CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES,
 };
 import {
   authorizeCanonical,
@@ -381,6 +375,30 @@ export const EDUCATION_SESSION_ACTIVATION_CAPABILITIES = [
   ACADEMIC_CAPABILITIES.ATTENDANCE_RECORD,
 ] as const;
 
+export const APPROVED_UAT_TARGET_CAPABILITY_CODES = [
+  UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].capabilityCode,
+  UAT_ACTIVATION_TARGETS.TARGET_MANAGEMENT.MUSYRIF_TAHFIZH.capabilityCode,
+  UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].capabilityCode,
+] as const;
+
+export const REQUIRED_UAT_ACTIVATION_CAPABILITIES = [
+  ...EDUCATION_SESSION_ACTIVATION_CAPABILITIES,
+  ...APPROVED_UAT_TARGET_CAPABILITY_CODES,
+] as const;
+
+export const REQUIRED_STUDI_UMUM_TEACHER_CAPABILITIES = [
+  ACADEMIC_CAPABILITIES.SCHEDULE_READ,
+  ACADEMIC_CAPABILITIES.SESSION_START,
+  ACADEMIC_CAPABILITIES.MATERIAL_RECORD,
+] as const;
+
+export const REQUIRED_KEPESANTRENAN_TEACHER_CAPABILITIES = [
+  ACADEMIC_CAPABILITIES.SCHEDULE_READ,
+  ACADEMIC_CAPABILITIES.SESSION_START,
+  ACADEMIC_CAPABILITIES.MATERIAL_RECORD,
+  ACADEMIC_CAPABILITIES.ATTENDANCE_RECORD,
+] as const;
+
 /**
  * Approved UAT target effective grant policy definitions (M3.3C1).
  * Declarative policy manifest for approved UAT targets.
@@ -389,14 +407,11 @@ export const EDUCATION_SESSION_ACTIVATION_CAPABILITIES = [
 export interface UatTargetPolicySpec {
   positionCode: string;
   capabilityCode: string;
-  expectedScope: "GLOBAL" | "ASSIGNED_UNITS" | "HALAQOH" | "DOMAIN" | "KAMAR";
+  expectedScope: "GLOBAL" | "ASSIGNED_UNITS" | "HALAQOH" | "DOMAIN";
   expectedBusinessState: "APPROVED_TARGET_PENDING_TECHNICAL";
-  domain?: string;
-  notes?: string;
 }
 
 export const CANONICAL_UAT_TARGET_POLICIES: readonly UatTargetPolicySpec[] = [
-  // 1. Base UAT activation targets (Tahfizh + OSDA Putri read-only)
   {
     positionCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.positionCode,
     capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_TAHFIZH.policies[0].capabilityCode,
@@ -420,101 +435,7 @@ export const CANONICAL_UAT_TARGET_POLICIES: readonly UatTargetPolicySpec[] = [
     capabilityCode: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].capabilityCode,
     expectedScope: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].scopeType as "DOMAIN",
     expectedBusinessState: UAT_ACTIVATION_TARGETS.OPERATIONAL_KEASRAMAAN.policies[0].businessRuleState as "APPROVED_TARGET_PENDING_TECHNICAL",
-    domain: "KEASRAMAAN",
   },
-
-  // 2. C1 Personal Permission Read Targets (NEW_C1_READ_TARGETS)
-  {
-    positionCode: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.PEMBINA_HALAQOH.positionCode,
-    capabilityCode: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.PEMBINA_HALAQOH.capabilityCode,
-    expectedScope: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.PEMBINA_HALAQOH.scopeType,
-    expectedBusinessState: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.PEMBINA_HALAQOH.businessRuleState,
-  },
-  {
-    positionCode: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.KEPALA_KEASRAMAAN.positionCode,
-    capabilityCode: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.KEPALA_KEASRAMAAN.capabilityCode,
-    expectedScope: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.KEPALA_KEASRAMAAN.scopeType,
-    expectedBusinessState: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.KEPALA_KEASRAMAAN.businessRuleState,
-    domain: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.KEPALA_KEASRAMAAN.domain,
-  },
-  {
-    positionCode: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.MUDIR.positionCode,
-    capabilityCode: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.MUDIR.capabilityCode,
-    expectedScope: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.MUDIR.scopeType,
-    expectedBusinessState: CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES.MUDIR.businessRuleState,
-  },
-
-  // 3. C1 Personal Permission Mutation Targets (C1_MUTATION_TARGETS)
-  ...CANONICAL_PERSONAL_PERMISSION_MUTATION_TARGET_POLICIES.PEMBINA_HALAQOH.map((p) => ({
-    positionCode: p.positionCode,
-    capabilityCode: p.capabilityCode,
-    expectedScope: p.scopeType,
-    expectedBusinessState: p.businessRuleState,
-  })),
-  ...CANONICAL_PERSONAL_PERMISSION_MUTATION_TARGET_POLICIES.KEPALA_KEASRAMAAN.map((p) => ({
-    positionCode: p.positionCode,
-    capabilityCode: p.capabilityCode,
-    expectedScope: p.scopeType,
-    expectedBusinessState: p.businessRuleState,
-    domain: p.domain,
-  })),
-  ...CANONICAL_PERSONAL_PERMISSION_MUTATION_TARGET_POLICIES.MUDIR.map((p) => ({
-    positionCode: p.positionCode,
-    capabilityCode: p.capabilityCode,
-    expectedScope: p.scopeType,
-    expectedBusinessState: p.businessRuleState,
-  })),
-
-  // 4. D1 Guardian Contact Privacy Targets (D1_PRIVACY_TARGETS)
-  {
-    positionCode: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.MUDIR.positionCode,
-    capabilityCode: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.MUDIR.capabilityCode,
-    expectedScope: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.MUDIR.scopeType,
-    expectedBusinessState: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.MUDIR.businessRuleState,
-  },
-  {
-    positionCode: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.KEPALA_KEASRAMAAN.positionCode,
-    capabilityCode: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.KEPALA_KEASRAMAAN.capabilityCode,
-    expectedScope: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.KEPALA_KEASRAMAAN.scopeType,
-    expectedBusinessState: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.KEPALA_KEASRAMAAN.businessRuleState,
-    domain: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.KEPALA_KEASRAMAAN.domain,
-  },
-  {
-    positionCode: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.MUSYRIF_TAHFIZH.positionCode,
-    capabilityCode: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.MUSYRIF_TAHFIZH.capabilityCode,
-    expectedScope: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.MUSYRIF_TAHFIZH.scopeType,
-    expectedBusinessState: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.MUSYRIF_TAHFIZH.businessRuleState,
-  },
-  {
-    positionCode: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.PEMBINA_HALAQOH.positionCode,
-    capabilityCode: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.PEMBINA_HALAQOH.capabilityCode,
-    expectedScope: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.PEMBINA_HALAQOH.scopeType,
-    expectedBusinessState: CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES.PEMBINA_HALAQOH.businessRuleState,
-  },
-] as const;
-
-export const APPROVED_UAT_TARGET_CAPABILITY_CODES = Array.from(
-  new Set(CANONICAL_UAT_TARGET_POLICIES.map((p) => p.capabilityCode))
-);
-
-export const REQUIRED_UAT_ACTIVATION_CAPABILITIES = Array.from(
-  new Set([
-    ...EDUCATION_SESSION_ACTIVATION_CAPABILITIES,
-    ...APPROVED_UAT_TARGET_CAPABILITY_CODES,
-  ])
-);
-
-export const REQUIRED_STUDI_UMUM_TEACHER_CAPABILITIES = [
-  ACADEMIC_CAPABILITIES.SCHEDULE_READ,
-  ACADEMIC_CAPABILITIES.SESSION_START,
-  ACADEMIC_CAPABILITIES.MATERIAL_RECORD,
-] as const;
-
-export const REQUIRED_KEPESANTRENAN_TEACHER_CAPABILITIES = [
-  ACADEMIC_CAPABILITIES.SCHEDULE_READ,
-  ACADEMIC_CAPABILITIES.SESSION_START,
-  ACADEMIC_CAPABILITIES.MATERIAL_RECORD,
-  ACADEMIC_CAPABILITIES.ATTENDANCE_RECORD,
 ] as const;
 
 /**
@@ -984,14 +905,9 @@ export async function checkPendidikanV2ProductionReadiness(
           staffRecords.filter((s) => s.status === "AKTIF" || s.status === "ACTIVE").map((s) => s.id)
         );
       } else if (typeof db.$queryRawUnsafe === "function") {
-        let staffRows: Array<{ id: string }>;
-        try {
-          staffRows = await db.$queryRawUnsafe<Array<{ id: string }>>(`
-            SELECT id FROM "staff" WHERE status IN ('AKTIF', 'ACTIVE');
-          `);
-        } catch (err: unknown) {
-          throw new Error(`Raw SQL staff query failed: ${String(err)}`);
-        }
+        const staffRows = await db.$queryRawUnsafe<Array<{ id: string }>>(`
+          SELECT id FROM "staff" WHERE status IN ('AKTIF', 'ACTIVE');
+        `).catch(() => []);
         activeStaffIds = new Set(staffRows.map((s) => s.id));
       }
 
@@ -1198,12 +1114,7 @@ export async function checkPendidikanV2ProductionReadiness(
   // Gate 7: Required Capabilities Registered (Verifies exact required activation capabilities)
   try {
     if (db.capability) {
-      let caps: any[];
-      try {
-        caps = await db.capability.findMany();
-      } catch (err: unknown) {
-        throw new Error(`Capability repository query failed: ${String(err)}`);
-      }
+      const caps = await db.capability.findMany();
       const capCodes = new Set(caps.map((c: any) => c.code));
       const missing = REQUIRED_UAT_ACTIVATION_CAPABILITIES.filter((c) => !capCodes.has(c));
       if (missing.length === 0) {
@@ -1221,14 +1132,9 @@ export async function checkPendidikanV2ProductionReadiness(
         });
       }
     } else if (typeof db.$queryRawUnsafe === "function") {
-      let rows: Array<{ code: string }>;
-      try {
-        rows = await db.$queryRawUnsafe<Array<{ code: string }>>(`
-          SELECT "code" FROM "capabilities";
-        `);
-      } catch (err: unknown) {
-        throw new Error(`Raw SQL capability query failed: ${String(err)}`);
-      }
+      const rows = await db.$queryRawUnsafe<Array<{ code: string }>>(`
+        SELECT "code" FROM "capabilities";
+      `).catch(() => []);
       const capCodes = new Set(rows.map((r) => r.code));
       const missing = REQUIRED_UAT_ACTIVATION_CAPABILITIES.filter((c) => !capCodes.has(c));
       if (missing.length === 0) {
@@ -1248,51 +1154,35 @@ export async function checkPendidikanV2ProductionReadiness(
       gates.push({ gate: "CAPABILITIES_REGISTERED", status: "NOT_READY", details: "Capability repository unavailable" });
     }
   } catch (err: unknown) {
-    gates.push({
-      gate: "CAPABILITIES_REGISTERED",
-      status: "BLOCKED",
-      reason: "DATABASE_UNAVAILABLE",
-      details: `DATABASE_UNAVAILABLE: ${String(err)}`,
-      blocking: true,
-    });
+    gates.push({ gate: "CAPABILITIES_REGISTERED", status: "NOT_READY", details: String(err) });
   }
 
   // Gate 8: User Assignments Ready (Verifies active coverage of all approved target positions with active user/position/orgUnit/staff chains and UAT target policy validation)
   try {
     const now = new Date();
     if (db.assignment) {
-      let asgs: any[];
-      try {
-        asgs = await db.assignment.findMany({
-          where: {
-            status: "ACTIVE",
-            OR: [{ validUntil: null }, { validUntil: { gte: now } }],
-          },
-          include: {
-            position: true,
-            user: true,
-            unit: true,
-            scopedUnits: {
-              include: {
-                unit: true,
-              },
+      const asgs = await db.assignment.findMany({
+        where: {
+          status: "ACTIVE",
+          OR: [{ validUntil: null }, { validUntil: { gte: now } }],
+        },
+        include: {
+          position: true,
+          user: true,
+          unit: true,
+          scopedUnits: {
+            include: {
+              unit: true,
             },
           },
-        });
-      } catch (err: unknown) {
-        throw new Error(`Assignment repository query failed: ${String(err)}`);
-      }
+        },
+      });
 
       const asgScopeUnitsMap = new Map<string, any[]>();
       if (db.assignmentScopeUnit?.findMany && asgs.some((a: any) => !a.scopedUnits)) {
-        let allScopeUnits: any[];
-        try {
-          allScopeUnits = await db.assignmentScopeUnit.findMany({
-            include: { unit: true },
-          });
-        } catch (err: unknown) {
-          throw new Error(`AssignmentScopeUnit repository query failed: ${String(err)}`);
-        }
+        const allScopeUnits = await db.assignmentScopeUnit.findMany({
+          include: { unit: true },
+        }).catch(() => []);
         for (const su of allScopeUnits) {
           const list = asgScopeUnitsMap.get(su.assignmentId) || [];
           list.push(su);
@@ -1302,34 +1192,19 @@ export async function checkPendidikanV2ProductionReadiness(
 
       let usersMap = new Map<string, any>();
       if (db.user && asgs.some((a: any) => !a.user && a.userId)) {
-        let users: any[];
-        try {
-          users = await db.user.findMany();
-        } catch (err: unknown) {
-          throw new Error(`User repository query failed: ${String(err)}`);
-        }
+        const users = await db.user.findMany().catch(() => []);
         usersMap = new Map(users.map((u: any) => [u.id, u]));
       }
 
       let positionsMap = new Map<string, any>();
       if (db.position) {
-        let positions: any[];
-        try {
-          positions = await db.position.findMany();
-        } catch (err: unknown) {
-          throw new Error(`Position repository query failed: ${String(err)}`);
-        }
+        const positions = await db.position.findMany().catch(() => []);
         positionsMap = new Map(positions.map((p: any) => [p.id, p]));
       }
 
       let unitsMap = new Map<string, any>();
       if (db.orgUnit) {
-        let units: any[];
-        try {
-          units = await db.orgUnit.findMany();
-        } catch (err: unknown) {
-          throw new Error(`OrgUnit repository query failed: ${String(err)}`);
-        }
+        const units = await db.orgUnit.findMany().catch(() => []);
         unitsMap = new Map(units.map((u: any) => [u.id, u]));
         for (const u of units) {
           if (u.code) unitsMap.set(u.code, u);
@@ -1338,12 +1213,7 @@ export async function checkPendidikanV2ProductionReadiness(
 
       let staffMap = new Map<string, any>();
       if (db.staff) {
-        let staffs: any[];
-        try {
-          staffs = await db.staff.findMany();
-        } catch (err: unknown) {
-          throw new Error(`Staff repository query failed: ${String(err)}`);
-        }
+        const staffs = await db.staff.findMany().catch(() => []);
         staffMap = new Map(staffs.map((s: any) => [s.id, s]));
       }
 
@@ -1674,12 +1544,7 @@ export async function checkPendidikanV2ProductionReadiness(
       // Gather position capabilities for UAT target policies validation
       const pcsByPosCode = new Map<string, any[]>();
       if (db.positionCapability) {
-        let allPcs: any[];
-        try {
-          allPcs = await db.positionCapability.findMany();
-        } catch (err: unknown) {
-          throw new Error(`PositionCapability repository query failed: ${String(err)}`);
-        }
+        const allPcs = await db.positionCapability.findMany().catch(() => []);
         for (const pc of allPcs) {
           const pos = positionsMap.get(pc.positionId) || Array.from(positionsMap.values()).find((p) => p.id === pc.positionId);
           const pCode = pos?.code || pc.positionCode;
@@ -1735,35 +1600,6 @@ export async function checkPendidikanV2ProductionReadiness(
           continue;
         }
 
-        // Target domain validation (e.g. DOMAIN / KEASRAMAAN)
-        if (target.domain) {
-          const matchingAsgs = asgs.filter((a: any) => {
-            const pCode = a.position?.code || (a.positionId ? positionsMap.get(a.positionId)?.code : null) || a.positionCode;
-            return pCode === target.positionCode;
-          });
-          if (matchingAsgs.length === 0) {
-            policyIssues.push(`${target.positionCode}: missing active assignment to validate domain context for ${target.capabilityCode} (expected domain ${target.domain})`);
-            continue;
-          }
-          const hasMatchingDomain = matchingAsgs.some((a: any) => {
-            const pos = a.position || (a.positionId ? positionsMap.get(a.positionId) : null);
-            const unit = a.unit || (a.unitId ? unitsMap.get(a.unitId) : null);
-            const effectiveDomain = pos?.domain || unit?.domain;
-            return effectiveDomain === target.domain;
-          });
-          if (!hasMatchingDomain) {
-            const actualDomains = matchingAsgs
-              .map((a: any) => {
-                const pos = a.position || (a.positionId ? positionsMap.get(a.positionId) : null);
-                const unit = a.unit || (a.unitId ? unitsMap.get(a.unitId) : null);
-                return pos?.domain || unit?.domain || "NONE";
-              })
-              .join(", ");
-            policyIssues.push(`${target.positionCode}: target policy domain mismatch for ${target.capabilityCode} (expected domain ${target.domain}, found ${actualDomains})`);
-            continue;
-          }
-        }
-
         if (matchPc.businessRuleState !== "VERIFIED_PRODUCTION") {
           if (matchPc.businessRuleState === target.expectedBusinessState) {
             pendingTechnicalIssues.push(`${target.positionCode}: grant ${target.capabilityCode} is APPROVED_TARGET_PENDING_TECHNICAL (TARGET_POLICY_READY, RUNTIME_NOT_READY: POLICY_APPROVED_NOT_RUNTIME_ACTIVE)`);
@@ -1795,24 +1631,15 @@ export async function checkPendidikanV2ProductionReadiness(
               // Resolve ACTUAL active Santri from database
               let repSantri: any = null;
               if (db.santri?.findFirst) {
-                try {
-                  repSantri = await db.santri.findFirst({
-                    where: {
-                      status: "AKTIF",
-                      halaqohId: anchorUnit,
-                    },
-                    select: { id: true, halaqohId: true, status: true },
-                  });
-                } catch (err: unknown) {
-                  throw new Error(`Santri repository query failed: ${String(err)}`);
-                }
+                repSantri = await db.santri.findFirst({
+                  where: {
+                    status: "AKTIF",
+                    halaqohId: anchorUnit,
+                  },
+                  select: { id: true, halaqohId: true, status: true },
+                }).catch(() => null);
               } else if (db.santri?.findMany) {
-                let santris: any[];
-                try {
-                  santris = await db.santri.findMany();
-                } catch (err: unknown) {
-                  throw new Error(`Santri repository query failed: ${String(err)}`);
-                }
+                const santris = await db.santri.findMany().catch(() => []);
                 repSantri = santris.find((s: any) => (s.status === "AKTIF" || !s.status) && s.halaqohId === anchorUnit) || null;
               }
 
@@ -1820,24 +1647,15 @@ export async function checkPendidikanV2ProductionReadiness(
                 // Check if any active santri exists outside this halaqoh to distinguish SCOPE_MISMATCH from TARGET_RESOURCE_SCOPE_NOT_READY
                 let outsideSantri: any = null;
                 if (db.santri?.findFirst) {
-                  try {
-                    outsideSantri = await db.santri.findFirst({
-                      where: {
-                        status: "AKTIF",
-                        halaqohId: { not: anchorUnit },
-                      },
-                      select: { id: true, halaqohId: true },
-                    });
-                  } catch (err: unknown) {
-                    throw new Error(`Santri repository query failed: ${String(err)}`);
-                  }
+                  outsideSantri = await db.santri.findFirst({
+                    where: {
+                      status: "AKTIF",
+                      halaqohId: { not: anchorUnit },
+                    },
+                    select: { id: true, halaqohId: true },
+                  }).catch(() => null);
                 } else if (db.santri?.findMany) {
-                  let santris: any[];
-                  try {
-                    santris = await db.santri.findMany();
-                  } catch (err: unknown) {
-                    throw new Error(`Santri repository query failed: ${String(err)}`);
-                  }
+                  const santris = await db.santri.findMany().catch(() => []);
                   outsideSantri = santris.find((s: any) => (s.status === "AKTIF" || !s.status) && s.halaqohId && s.halaqohId !== anchorUnit) || null;
                 }
 
@@ -1915,24 +1733,15 @@ export async function checkPendidikanV2ProductionReadiness(
                 // Real Tahfizh Representative Resource: find active santri whose halaqoh is in permittedUnits
                 let targetSantri: any = null;
                 if (db.santri?.findFirst) {
-                  try {
-                    targetSantri = await db.santri.findFirst({
-                      where: {
-                        status: "AKTIF",
-                        halaqohId: { in: permittedUnits },
-                      },
-                      select: { id: true, halaqohId: true, status: true },
-                    });
-                  } catch (err: unknown) {
-                    throw new Error(`Santri repository query failed: ${String(err)}`);
-                  }
+                  targetSantri = await db.santri.findFirst({
+                    where: {
+                      status: "AKTIF",
+                      halaqohId: { in: permittedUnits },
+                    },
+                    select: { id: true, halaqohId: true, status: true },
+                  }).catch(() => null);
                 } else if (db.santri?.findMany) {
-                  let santris: any[];
-                  try {
-                    santris = await db.santri.findMany();
-                  } catch (err: unknown) {
-                    throw new Error(`Santri repository query failed: ${String(err)}`);
-                  }
+                  const santris = await db.santri.findMany().catch(() => []);
                   targetSantri = santris.find((s: any) => (s.status === "AKTIF" || !s.status) && s.halaqohId && permittedUnits.includes(s.halaqohId)) || null;
                 }
 
@@ -1940,24 +1749,15 @@ export async function checkPendidikanV2ProductionReadiness(
                   // Check if active santri exists outside permittedUnits
                   let outsideSantri: any = null;
                   if (db.santri?.findFirst) {
-                    try {
-                      outsideSantri = await db.santri.findFirst({
-                        where: {
-                          status: "AKTIF",
-                          halaqohId: { notIn: permittedUnits },
-                        },
-                        select: { id: true, halaqohId: true },
-                      });
-                    } catch (err: unknown) {
-                      throw new Error(`Santri repository query failed: ${String(err)}`);
-                    }
+                    outsideSantri = await db.santri.findFirst({
+                      where: {
+                        status: "AKTIF",
+                        halaqohId: { notIn: permittedUnits },
+                      },
+                      select: { id: true, halaqohId: true },
+                    }).catch(() => null);
                   } else if (db.santri?.findMany) {
-                    let santris: any[];
-                    try {
-                      santris = await db.santri.findMany();
-                    } catch (err: unknown) {
-                      throw new Error(`Santri repository query failed: ${String(err)}`);
-                    }
+                    const santris = await db.santri.findMany().catch(() => []);
                     outsideSantri = santris.find((s: any) => (s.status === "AKTIF" || !s.status) && s.halaqohId && !permittedUnits.includes(s.halaqohId)) || null;
                   }
 
@@ -2023,23 +1823,14 @@ export async function checkPendidikanV2ProductionReadiness(
               // Real Keasramaan Representative Resource (DIR-2026-038: DOMAIN + PUTRI monitoring)
               let activePutriSantri: any = null;
               if (db.santri?.findFirst) {
-                try {
-                  activePutriSantri = await db.santri.findFirst({
-                    where: {
-                      status: "AKTIF",
-                      jenisKelamin: "P",
-                    },
-                  });
-                } catch (err: unknown) {
-                  throw new Error(`Santri repository query failed: ${String(err)}`);
-                }
+                activePutriSantri = await db.santri.findFirst({
+                  where: {
+                    status: "AKTIF",
+                    jenisKelamin: "P",
+                  },
+                }).catch(() => null);
               } else if (db.santri?.findMany) {
-                let santriList: any[];
-                try {
-                  santriList = await db.santri.findMany();
-                } catch (err: unknown) {
-                  throw new Error(`Santri repository query failed: ${String(err)}`);
-                }
+                const santriList = await db.santri.findMany().catch(() => []);
                 activePutriSantri = santriList.find(
                   (s: any) => (!s.status || s.status === "AKTIF") && s.jenisKelamin === "P"
                 ) || null;
@@ -2149,58 +1940,35 @@ export async function checkPendidikanV2ProductionReadiness(
         });
       }
     } else if (typeof db.$queryRawUnsafe === "function") {
-      let asgRows: Array<{
-        code: string;
-        pos_domain?: string;
-        unit_domain?: string;
-        unit_gender_complex?: string;
-      }>;
-      try {
-        asgRows = await db.$queryRawUnsafe<Array<{
-          code: string;
-          pos_domain?: string;
-          unit_domain?: string;
-          unit_gender_complex?: string;
-        }>>(`
-          SELECT DISTINCT p."code" as code,
-            p."domain"::text as pos_domain,
-            o."domain"::text as unit_domain,
-            o."gender_complex"::text as unit_gender_complex
-          FROM "assignments" a
-          JOIN "positions" p ON a."position_id" = p."id"
-          LEFT JOIN "org_units" o ON a."unit_id" = o."id"
-          LEFT JOIN "users" u ON a."user_id" = u."id"
-          LEFT JOIN "staff" s ON u."staff_id" = s."id"
-          WHERE a."status" = 'ACTIVE' 
-            AND (a."valid_from" IS NULL OR a."valid_from" <= NOW())
-            AND (a."valid_until" IS NULL OR a."valid_until" >= NOW())
-            AND p."is_active" = true
-            AND (o."id" IS NULL OR o."is_active" = true)
-            AND (
-              p."requires_personal_account" = false 
-              OR (
-                u."id" IS NOT NULL
-                AND u."status" IN ('AKTIF', 'ACTIVE')
-                AND (u."account_type" IS NULL OR u."account_type" = 'PERSONAL')
-                AND u."staff_id" IS NOT NULL
-                AND s."id" IS NOT NULL
-                AND s."status" IN ('AKTIF', 'ACTIVE')
-              )
-            );
-        `);
-      } catch (err: unknown) {
-        throw new Error(`Raw SQL assignment coverage query failed: ${String(err)}`);
-      }
+      const asgRows = await db.$queryRawUnsafe<Array<{ code: string }>>(`
+        SELECT DISTINCT p."code" 
+        FROM "assignments" a
+        JOIN "positions" p ON a."position_id" = p."id"
+        LEFT JOIN "org_units" o ON a."unit_id" = o."id"
+        LEFT JOIN "users" u ON a."user_id" = u."id"
+        LEFT JOIN "staff" s ON u."staff_id" = s."id"
+        WHERE a."status" = 'ACTIVE' 
+          AND (a."valid_from" IS NULL OR a."valid_from" <= NOW())
+          AND (a."valid_until" IS NULL OR a."valid_until" >= NOW())
+          AND p."is_active" = true
+          AND (o."id" IS NULL OR o."is_active" = true)
+          AND (
+            p."requires_personal_account" = false 
+            OR (
+              u."id" IS NOT NULL
+              AND u."status" IN ('AKTIF', 'ACTIVE')
+              AND (u."account_type" IS NULL OR u."account_type" = 'PERSONAL')
+              AND u."staff_id" IS NOT NULL
+              AND s."id" IS NOT NULL
+              AND s."status" IN ('AKTIF', 'ACTIVE')
+            )
+          );
+      `).catch(() => []);
       const coveredCodes = new Set(asgRows.map((r) => r.code));
 
-      let kamarRows: Array<{ count: string }>;
-      try {
-        kamarRows = await db.$queryRawUnsafe<Array<{ count: string }>>(`
-          SELECT COUNT(*)::text as count FROM "org_units" WHERE "type" = 'KAMAR' AND "is_active" = true;
-        `);
-      } catch (err: unknown) {
-        throw new Error(`Raw SQL Kamar count query failed: ${String(err)}`);
-      }
+      const kamarRows = await db.$queryRawUnsafe<Array<{ count: string }>>(`
+        SELECT COUNT(*)::text as count FROM "org_units" WHERE "type" = 'KAMAR' AND "is_active" = true;
+      `).catch(() => [{ count: "0" }]);
       const activeKamarCount = parseInt(kamarRows[0]?.count || "0", 10);
 
       let missingPositions = GATE3_REQUIRED_ACTIVE_ASSIGNMENT_POSITION_CODES.filter((c) => !coveredCodes.has(c));
@@ -2210,34 +1978,22 @@ export async function checkPendidikanV2ProductionReadiness(
         deferredPembinaHalaqoh = true;
       }
 
-      const targetPosCodes = Array.from(new Set(CANONICAL_UAT_TARGET_POLICIES.map((t) => t.positionCode)));
-      const targetPosSql = targetPosCodes.map((c) => `'${c}'`).join(", ");
-      let pcRows: Array<{
+      const pcRows = await db.$queryRawUnsafe<Array<{
         position_code: string;
         capability_code: string;
         scope_type: string;
         business_rule_state: string;
-      }>;
-      try {
-        pcRows = await db.$queryRawUnsafe<Array<{
-          position_code: string;
-          capability_code: string;
-          scope_type: string;
-          business_rule_state: string;
-        }>>(`
-          SELECT 
-            p."code" as position_code,
-            pc."capability_code",
-            pc."scope_type",
-            pc."business_rule_state"
-          FROM "positions" p
-          JOIN "position_capabilities" pc ON pc."position_id" = p."id"
-          WHERE p."code" IN (${targetPosSql})
-            AND p."is_active" = true;
-        `);
-      } catch (err: unknown) {
-        throw new Error(`Raw SQL PositionCapability query failed: ${String(err)}`);
-      }
+      }>>(`
+        SELECT 
+          p."code" as position_code,
+          pc."capability_code",
+          pc."scope_type",
+          pc."business_rule_state"
+        FROM "positions" p
+        JOIN "position_capabilities" pc ON pc."position_id" = p."id"
+        WHERE p."code" IN ('PETUGAS_OPERASIONAL_TAHFIZH', 'MUSYRIF_TAHFIZH', 'PEMBINA_HALAQOH', 'PETUGAS_OPERASIONAL_KEASRAMAAN')
+          AND p."is_active" = true;
+      `).catch(() => []);
 
       const policyIssues: string[] = [];
       const pendingTechnicalIssues: string[] = [];
@@ -2255,24 +2011,6 @@ export async function checkPendidikanV2ProductionReadiness(
         if (matchPc.scope_type !== target.expectedScope) {
           policyIssues.push(`${target.positionCode}: target policy scope mismatch for ${target.capabilityCode} (expected ${target.expectedScope}, found ${matchPc.scope_type || "NONE"})`);
           continue;
-        }
-
-        // Target domain validation (e.g. DOMAIN / KEASRAMAAN)
-        if (target.domain) {
-          const matchingAsgs = asgRows.filter((r) => r.code === target.positionCode);
-          if (matchingAsgs.length === 0) {
-            policyIssues.push(`${target.positionCode}: missing active assignment to validate domain context for ${target.capabilityCode} (expected domain ${target.domain})`);
-            continue;
-          }
-          const hasMatchingDomain = matchingAsgs.some((r) => {
-            const effectiveDomain = r.pos_domain || r.unit_domain;
-            return effectiveDomain === target.domain;
-          });
-          if (!hasMatchingDomain) {
-            const actualDomains = matchingAsgs.map((r) => r.pos_domain || r.unit_domain || "NONE").join(", ");
-            policyIssues.push(`${target.positionCode}: target policy domain mismatch for ${target.capabilityCode} (expected domain ${target.domain}, found ${actualDomains})`);
-            continue;
-          }
         }
 
         if (matchPc.business_rule_state !== "VERIFIED_PRODUCTION") {
@@ -2319,13 +2057,7 @@ export async function checkPendidikanV2ProductionReadiness(
       gates.push({ gate: "USER_ASSIGNMENTS_READY", status: "NOT_READY", details: "Cannot inspect user assignments" });
     }
   } catch (err: unknown) {
-    gates.push({
-      gate: "USER_ASSIGNMENTS_READY",
-      status: "BLOCKED",
-      reason: "DATABASE_UNAVAILABLE",
-      details: `DATABASE_UNAVAILABLE: ${String(err)}`,
-      blocking: true,
-    });
+    gates.push({ gate: "USER_ASSIGNMENTS_READY", status: "NOT_READY", details: String(err) });
   }
 
   // Gate 9: Teaching Assignments Ready (Validates planning / scheduled-teacher coverage for the 12 Kepesantrenan slots)
@@ -3066,21 +2798,16 @@ export async function checkPendidikanV2ProductionReadiness(
   // Both prerequisites require independent canonical evidence and remain false under current lock.
   let osdaUserStatus: string = CANONICAL_PETUGAS_OPERASIONAL_KEASRAMAAN_CONTRACT.targetUserStatus;
 
-  let liveInspectionState: LiveInspectionState = "INSPECTION_UNAVAILABLE";
-  let liveInspectionError: string | undefined;
-
   if (db.user) {
-    try {
-      const users = await db.user.findMany();
-      const osdaUser = (users || []).find((u: any) => u.username === "osda.putri");
-      if (osdaUser) {
-        osdaUserStatus = osdaUser.status;
-      }
-    } catch (err: unknown) {
-      liveInspectionState = "DATABASE_ERROR";
-      liveInspectionError = `Failed to query users: ${String(err)}`;
+    const users = await db.user.findMany().catch(() => []);
+    const osdaUser = (users || []).find((u: any) => u.username === "osda.putri");
+    if (osdaUser) {
+      osdaUserStatus = osdaUser.status;
     }
   }
+
+  let liveInspectionState: LiveInspectionState = "INSPECTION_UNAVAILABLE";
+  let liveInspectionError: string | undefined;
   let liveUnitPositionCapabilities: Array<{
     positionCode?: string;
     capabilityCode?: string;

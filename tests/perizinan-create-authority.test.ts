@@ -28,7 +28,7 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
   before(async () => {
     prisma = await startTestDatabase();
 
-    // 1. Positions for Keasramaan Authority
+    // 1. Position PEMBINA_HALAQOH (Canonical Position for Mudhabbir)
     const posPembina = await prisma.position.upsert({
       where: { code: "PEMBINA_HALAQOH" },
       update: {},
@@ -40,29 +40,7 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
       },
     });
 
-    const posMK = await prisma.position.upsert({
-      where: { code: "KEPALA_KEASRAMAAN" },
-      update: {},
-      create: {
-        id: "pos-pzn-kepala-keasramaan",
-        code: "KEPALA_KEASRAMAAN",
-        name: "Kepala Keasramaan",
-        domain: "KEASRAMAAN",
-      },
-    });
-
-    const posKS = await prisma.position.upsert({
-      where: { code: "MUDIR" },
-      update: {},
-      create: {
-        id: "pos-pzn-mudir",
-        code: "MUDIR",
-        name: "Mudir Pesantren",
-        domain: "INSTITUTIONAL",
-      },
-    });
-
-    // 1b. Capabilities
+    // 1b. Capability keasramaan.permission.create
     await prisma.capability.upsert({
       where: { code: "keasramaan.permission.create" },
       update: {},
@@ -74,18 +52,7 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
       },
     });
 
-    await prisma.capability.upsert({
-      where: { code: "keasramaan.permission.update" },
-      update: {},
-      create: {
-        code: "keasramaan.permission.update",
-        namespace: "KEASRAMAAN",
-        name: "Update Permission",
-        description: "Kapabilitas memperbarui/konfirmasi/membatalkan perizinan santri",
-      },
-    });
-
-    // 1c. PositionCapability mapping for all 3 positions
+    // 1c. PositionCapability for PEMBINA_HALAQOH
     await prisma.positionCapability.upsert({
       where: {
         positionId_capabilityCode: {
@@ -93,9 +60,11 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
           capabilityCode: "keasramaan.permission.create",
         },
       },
-      update: { businessRuleState: "VERIFIED_PRODUCTION" },
+      update: {
+        businessRuleState: "VERIFIED_PRODUCTION",
+      },
       create: {
-        id: "cap-pzn-perm-create-pembina",
+        id: "cap-pzn-perm-create",
         positionId: posPembina.id,
         capabilityCode: "keasramaan.permission.create",
         scopeType: "UNIT",
@@ -103,112 +72,9 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
       },
     });
 
-    await prisma.positionCapability.upsert({
-      where: {
-        positionId_capabilityCode: {
-          positionId: posPembina.id,
-          capabilityCode: "keasramaan.permission.update",
-        },
-      },
-      update: { businessRuleState: "VERIFIED_PRODUCTION" },
-      create: {
-        id: "cap-pzn-perm-update-pembina",
-        positionId: posPembina.id,
-        capabilityCode: "keasramaan.permission.update",
-        scopeType: "UNIT",
-        businessRuleState: "VERIFIED_PRODUCTION",
-      },
-    });
-
-    await prisma.positionCapability.upsert({
-      where: {
-        positionId_capabilityCode: {
-          positionId: posMK.id,
-          capabilityCode: "keasramaan.permission.create",
-        },
-      },
-      update: { businessRuleState: "VERIFIED_PRODUCTION" },
-      create: {
-        id: "cap-pzn-perm-create-mk",
-        positionId: posMK.id,
-        capabilityCode: "keasramaan.permission.create",
-        scopeType: "DOMAIN",
-        businessRuleState: "VERIFIED_PRODUCTION",
-      },
-    });
-
-    await prisma.positionCapability.upsert({
-      where: {
-        positionId_capabilityCode: {
-          positionId: posMK.id,
-          capabilityCode: "keasramaan.permission.update",
-        },
-      },
-      update: { businessRuleState: "VERIFIED_PRODUCTION" },
-      create: {
-        id: "cap-pzn-perm-update-mk",
-        positionId: posMK.id,
-        capabilityCode: "keasramaan.permission.update",
-        scopeType: "DOMAIN",
-        businessRuleState: "VERIFIED_PRODUCTION",
-      },
-    });
-
-    await prisma.positionCapability.upsert({
-      where: {
-        positionId_capabilityCode: {
-          positionId: posKS.id,
-          capabilityCode: "keasramaan.permission.create",
-        },
-      },
-      update: { businessRuleState: "VERIFIED_PRODUCTION" },
-      create: {
-        id: "cap-pzn-perm-create-ks",
-        positionId: posKS.id,
-        capabilityCode: "keasramaan.permission.create",
-        scopeType: "GLOBAL",
-        businessRuleState: "VERIFIED_PRODUCTION",
-      },
-    });
-
-    await prisma.positionCapability.upsert({
-      where: {
-        positionId_capabilityCode: {
-          positionId: posKS.id,
-          capabilityCode: "keasramaan.permission.update",
-        },
-      },
-      update: { businessRuleState: "VERIFIED_PRODUCTION" },
-      create: {
-        id: "cap-pzn-perm-update-ks",
-        positionId: posKS.id,
-        capabilityCode: "keasramaan.permission.update",
-        scopeType: "GLOBAL",
-        businessRuleState: "VERIFIED_PRODUCTION",
-      },
-    });
-
-    // 2. OrgUnits for Scope (Authoritative KAMAR in KEASRAMAAN domain + Domain/Institution)
+    // 2. OrgUnits for Scope (Authoritative KAMAR in KEASRAMAAN domain)
     await prisma.orgUnit.createMany({
       data: [
-        {
-          id: "ou-pzn-keasramaan",
-          code: "OU-PZN-KEASRAMAAN",
-          name: "Direktorat Keasramaan",
-          type: "DOMAIN",
-          domain: "KEASRAMAAN",
-          genderComplex: "TIDAK_TERIKAT",
-          isActive: true,
-        },
-        {
-          id: "ou-pzn-pesantren",
-          code: "OU-PZN-PESANTREN",
-          name: "Pesantren Pusat",
-          type: "INSTITUTION",
-          domain: "INSTITUTIONAL",
-          genderComplex: "TIDAK_TERIKAT",
-          isActive: true,
-        },
         {
           id: "ou-pzn-hlq-01",
           code: "OU-PZN-HLQ-01",
@@ -406,34 +272,16 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
       ],
     });
 
-    // 7. Active Assignments for Mudabbir, MK, and KS
-    await prisma.assignment.createMany({
-      data: [
-        {
-          id: "asg-pzn-mudabbir",
-          userId: "usr-pzn-mudabbir",
-          positionId: posPembina.id,
-          unitId: "ou-pzn-hlq-01",
-          status: "ACTIVE",
-          createdById: "usr-pzn-ks",
-        },
-        {
-          id: "asg-pzn-mk",
-          userId: "usr-pzn-mk",
-          positionId: posMK.id,
-          unitId: "ou-pzn-keasramaan",
-          status: "ACTIVE",
-          createdById: "usr-pzn-ks",
-        },
-        {
-          id: "asg-pzn-ks",
-          userId: "usr-pzn-ks",
-          positionId: posKS.id,
-          unitId: "ou-pzn-pesantren",
-          status: "ACTIVE",
-          createdById: "usr-pzn-ks",
-        },
-      ],
+    // 7. Active Assignment for Mudabbir -> Position PEMBINA_HALAQOH
+    await prisma.assignment.create({
+      data: {
+        id: "asg-pzn-mudabbir",
+        userId: "usr-pzn-mudabbir",
+        positionId: posPembina.id,
+        unitId: "ou-pzn-hlq-01",
+        status: "ACTIVE",
+        createdById: "usr-pzn-ks",
+      },
     });
   });
 
@@ -954,12 +802,9 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
   });
 
   it("9b. Mudhabbir with ACTIVE PEMBINA_HALAQOH assignment but capability is PROPOSED -> DENY", async () => {
-    const pos = await prisma.position.findUnique({ where: { code: "PEMBINA_HALAQOH" } });
-    assert.ok(pos, "Position PEMBINA_HALAQOH must exist");
-
-    // Temporarily set capability state to PROPOSED_TBD for PEMBINA_HALAQOH
+    // Temporarily set capability state to PROPOSED_TBD
     await prisma.positionCapability.updateMany({
-      where: { positionId: pos.id, capabilityCode: "keasramaan.permission.create" },
+      where: { capabilityCode: "keasramaan.permission.create" },
       data: { businessRuleState: "PROPOSED_TBD" },
     });
 
@@ -985,19 +830,16 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
     } finally {
       // Restore capability to VERIFIED_PRODUCTION
       await prisma.positionCapability.updateMany({
-        where: { positionId: pos.id, capabilityCode: "keasramaan.permission.create" },
+        where: { capabilityCode: "keasramaan.permission.create" },
         data: { businessRuleState: "VERIFIED_PRODUCTION" },
       });
     }
   });
 
   it("9c. Mudhabbir with ACTIVE PEMBINA_HALAQOH assignment but NO permission.create capability -> DENY", async () => {
-    const pos = await prisma.position.findUnique({ where: { code: "PEMBINA_HALAQOH" } });
-    assert.ok(pos, "Position PEMBINA_HALAQOH must exist");
-
-    // Temporarily delete capability for PEMBINA_HALAQOH only
+    // Temporarily delete capability
     await prisma.positionCapability.deleteMany({
-      where: { positionId: pos.id, capabilityCode: "keasramaan.permission.create" },
+      where: { capabilityCode: "keasramaan.permission.create" },
     });
 
     try {
@@ -1020,16 +862,19 @@ describe("PR #11 Write Authority Alignment: Perizinan Create / Record Authority 
       assert.strictEqual(res.success, false, "Missing capability must be DENIED");
       assert.match(res.message, /tidak memiliki kapabilitas 'keasramaan.permission.create'/i);
     } finally {
-      // Restore capability for PEMBINA_HALAQOH
-      await prisma.positionCapability.create({
-        data: {
-          id: "cap-pzn-perm-create-restored",
-          positionId: pos.id,
-          capabilityCode: "keasramaan.permission.create",
-          scopeType: "UNIT",
-          businessRuleState: "VERIFIED_PRODUCTION",
-        },
-      });
+      // Restore capability
+      const pos = await prisma.position.findUnique({ where: { code: "PEMBINA_HALAQOH" } });
+      if (pos) {
+        await prisma.positionCapability.create({
+          data: {
+            id: "cap-pzn-perm-create-restored",
+            positionId: pos.id,
+            capabilityCode: "keasramaan.permission.create",
+            scopeType: "UNIT",
+            businessRuleState: "VERIFIED_PRODUCTION",
+          },
+        });
+      }
     }
   });
 

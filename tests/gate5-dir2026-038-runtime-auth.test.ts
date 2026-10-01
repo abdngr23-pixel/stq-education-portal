@@ -745,25 +745,25 @@ describe("GATE 5 — DIR-2026-038 RUNTIME AUTHORIZATION & BOUNDARY TEST SUITE", 
   // =========================================================================
   // Recount derivation check (Workstream 7)
   // =========================================================================
-  it("Derives exact activation target recount per DIR-2026-038 and Gate 5 reconciliation", () => {
-    // Distinct activation capabilities (4 session + 8 target capabilities)
+  it("Derives exact activation target recount per DIR-2026-038", () => {
+    // Distinct activation capabilities
     assert.strictEqual(
       REQUIRED_UAT_ACTIVATION_CAPABILITIES.length,
-      12,
-      `Expected 12 distinct activation capabilities, found ${REQUIRED_UAT_ACTIVATION_CAPABILITIES.length}`
+      7,
+      `Expected 7 distinct activation capabilities, found ${REQUIRED_UAT_ACTIVATION_CAPABILITIES.length}`
     );
 
     assert.strictEqual(
       APPROVED_UAT_TARGET_CAPABILITY_CODES.length,
-      8,
-      `Expected 8 approved target capability codes, found ${APPROVED_UAT_TARGET_CAPABILITY_CODES.length}`
+      3,
+      `Expected 3 approved target capability codes, found ${APPROVED_UAT_TARGET_CAPABILITY_CODES.length}`
     );
 
-    // Canonical UAT target policies count (4 base UAT + 3 C1 Read + 8 C1 Mutation + 4 D1 Privacy)
+    // Canonical UAT target policies count
     assert.strictEqual(
       CANONICAL_UAT_TARGET_POLICIES.length,
-      19,
-      `Expected 19 canonical UAT target policies, found ${CANONICAL_UAT_TARGET_POLICIES.length}`
+      4,
+      `Expected 4 canonical UAT target policies (POT, MT, PH, POK), found ${CANONICAL_UAT_TARGET_POLICIES.length}`
     );
 
     // POK policy in canonical target policies must be DOMAIN scope
