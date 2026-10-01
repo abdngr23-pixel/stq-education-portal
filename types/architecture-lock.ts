@@ -942,6 +942,52 @@ export const UAT_ACTIVATION_TARGETS = {
 } as const;
 
 /**
+ * CANONICAL TAHFIZH REWARD AUTHORITY POLICY MANIFEST (DIR-2026-023 / Gate 7 R2)
+ *
+ * Defines the single source of truth for Tahfizh achievement reward issuance (tahfizh.reward.issue).
+ * Reward issuance is strictly restricted to institutional leadership (Mudir, GLOBAL)
+ * and domain leadership (Kabid Tahfizh, DOMAIN: TAHFIZH).
+ *
+ * Operational staff (POT), ordinary Musyrif Tahfizh, Pembina Halaqoh, and Admin
+ * hold ZERO reward issuance runtime authority.
+ */
+export interface CanonicalTahfizhRewardAuthorityPolicy {
+  positionCode: "MUDIR" | "KABID_TAHFIZH";
+  capabilityCode: "tahfizh.reward.issue";
+  scopeType: "GLOBAL" | "DOMAIN";
+  domain?: "TAHFIZH";
+  businessRuleState: "VERIFIED_PRODUCTION";
+  notes: string;
+}
+
+export const CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES: readonly CanonicalTahfizhRewardAuthorityPolicy[] = [
+  {
+    positionCode: "MUDIR",
+    capabilityCode: "tahfizh.reward.issue",
+    scopeType: "GLOBAL",
+    businessRuleState: "VERIFIED_PRODUCTION",
+    notes: "Institutional authority: Mudir holds GLOBAL reward issuance authority across all santri.",
+  },
+  {
+    positionCode: "KABID_TAHFIZH",
+    capabilityCode: "tahfizh.reward.issue",
+    scopeType: "DOMAIN",
+    domain: "TAHFIZH",
+    businessRuleState: "VERIFIED_PRODUCTION",
+    notes: "Domain authority: Kabid Tahfizh holds DOMAIN reward issuance authority within Ketahfidzhan domain.",
+  },
+] as const;
+
+export const FORBIDDEN_TAHFIZH_REWARD_POSITIONS = [
+  "PETUGAS_OPERASIONAL_TAHFIZH",
+  "MUSYRIF_TAHFIZH",
+  "PEMBINA_HALAQOH",
+  "ADM",
+] as const;
+
+export type ForbiddenTahfizhRewardPosition = (typeof FORBIDDEN_TAHFIZH_REWARD_POSITIONS)[number];
+
+/**
  * DIR-2026-039 (C1): Canonical Personal Permission Mutation Target Policies
  * Target policies for PERSONAL accounts mutating Keasramaan permissions.
  * State: APPROVED_TARGET_PENDING_TECHNICAL (ZERO runtime authority before Gate 5B promotion).
