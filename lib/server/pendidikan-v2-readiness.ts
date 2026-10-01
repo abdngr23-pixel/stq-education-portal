@@ -1899,12 +1899,28 @@ export async function checkPendidikanV2ProductionReadiness(
                     if (err instanceof HalaqohMappingError && err.code === "DATABASE_ERROR") {
                       throw new Error(`Database error resolving outside halaqoh mapping for ${outsideSantri.halaqohId}: ${err.message}`);
                     }
+                    policyIssues.push(
+                      `${target.positionCode}: grant ${target.capabilityCode} outside santri halaqoh mapping error for ${outsideSantri.halaqohId}: ${err instanceof Error ? err.message : String(err)} (runtime NOT_READY)`
+                    );
+                    continue;
                   }
 
-                  const outsideCanonicalOrgUnitId = outsideMapping?.orgUnitId ?? outsideSantri.halaqohId;
-                  policyIssues.push(
-                    `${target.positionCode}: grant ${target.capabilityCode} SCOPE_MISMATCH: santri halaqoh ${outsideCanonicalOrgUnitId} does not match assigned halaqoh ${halaqohMapping.orgUnitId} (runtime NOT_READY)`
-                  );
+                  if (!outsideMapping) {
+                    policyIssues.push(
+                      `${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_NOT_READY (outside Santri halaqoh has no canonical OrgUnit mapping)`
+                    );
+                    continue;
+                  }
+
+                  if (outsideMapping.orgUnitId !== halaqohMapping.orgUnitId) {
+                    policyIssues.push(
+                      `${target.positionCode}: grant ${target.capabilityCode} SCOPE_MISMATCH: santri halaqoh ${outsideMapping.orgUnitId} does not match assigned halaqoh ${halaqohMapping.orgUnitId} (runtime NOT_READY)`
+                    );
+                  } else {
+                    policyIssues.push(
+                      `${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_NOT_READY (no representative active santri found in assigned halaqoh ${halaqohMapping.orgUnitCode})`
+                    );
+                  }
                 } else {
                   policyIssues.push(
                     `${target.positionCode}: grant ${target.capabilityCode} TARGET_RESOURCE_SCOPE_NOT_READY (no representative active santri found in assigned halaqoh ${halaqohMapping.orgUnitCode})`

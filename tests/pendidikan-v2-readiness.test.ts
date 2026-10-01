@@ -2303,5 +2303,55 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
       assert.strictEqual(gate.status, "NOT_READY");
       assert.ok(gate.details.includes("missing active source Halaqoh mapping"));
     });
+
+    it("H. outside santri with unmapped legacy halaqoh => TARGET_RESOURCE_SCOPE_NOT_READY without raw-ID comparison", async () => {
+      const mockDb = buildMockDb({
+        legacyHalaqohId: "legacy-hlq-id-001",
+        canonicalOrgUnitId: "canonical-ou-id-001",
+        santriHalaqohId: null, // No representative santri in assigned halaqoh
+        outsideSantriHalaqohId: "legacy-unmapped-halaqoh-id", // Outside santri has unmapped legacy halaqoh
+      });
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "NOT_READY");
+      assert.ok(
+        gate.details.includes("TARGET_RESOURCE_SCOPE_NOT_READY"),
+        `Expected TARGET_RESOURCE_SCOPE_NOT_READY in details: ${gate.details}`
+      );
+      assert.ok(
+        !gate.details.includes("SCOPE_MISMATCH"),
+        `Must NOT emit SCOPE_MISMATCH when outside mapping is unproven: ${gate.details}`
+      );
+      assert.ok(
+        !gate.details.includes("santri halaqoh legacy-unmapped-halaqoh-id does not match"),
+        `Must NOT report raw legacy ID as canonical OrgUnit: ${gate.details}`
+      );
+    });
+
+    it("I. outside santri mapping database query error => DATABASE_UNAVAILABLE / BLOCKED", async () => {
+      const mockDb = buildMockDb({
+        legacyHalaqohId: "legacy-hlq-id-001",
+        canonicalOrgUnitId: "canonical-ou-id-001",
+        santriHalaqohId: null,
+        outsideSantriHalaqohId: "legacy-hlq-id-002",
+      });
+
+      const origHalaqohFindMany = mockDb.halaqoh.findMany;
+      mockDb.halaqoh.findMany = async (args?: any) => {
+        if (args?.where?.OR?.some((cond: any) => cond.id === "legacy-hlq-id-002" || cond.halaqohCode === "legacy-hlq-id-002")) {
+          throw new Error("PostgreSQL connection error while resolving outside halaqoh mapping");
+        }
+        return origHalaqohFindMany(args);
+      };
+
+      const report = await checkPendidikanV2ProductionReadiness(mockDb as any);
+      const gate = report.gates.find((g) => g.gate === "USER_ASSIGNMENTS_READY");
+      assert.ok(gate);
+      assert.strictEqual(gate.status, "BLOCKED");
+      assert.strictEqual(gate.reason, "DATABASE_UNAVAILABLE");
+      assert.strictEqual(gate.blocking, true);
+    });
   });
 });
