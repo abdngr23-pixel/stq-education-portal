@@ -1166,9 +1166,23 @@ describe("GATE 5 — RUNTIME AUTHORIZATION REMEDIATION TEST SUITE (24 SCENARIOS)
     assert.ok(gateResult.details.includes("VERIFIED_PRODUCTION"));
   });
 
-  // 22. Stale POT reward row absent => stale-policy gate READY
-  it("22. Stale POT reward row absent => stale-policy gate READY", () => {
-    const gateResult = evaluateStalePositionCapabilityPolicy([]);
+  // 22. Stale POT reward row absent and valid leadership reward active => stale-policy gate READY
+  it("22. Stale POT reward row absent and valid leadership reward active => stale-policy gate READY", () => {
+    const validRows = [
+      {
+        capabilityCode: "tahfizh.reward.issue",
+        scopeType: "GLOBAL",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        position: { code: "MUDIR", domain: "INSTITUTIONAL", isActive: true },
+      },
+      {
+        capabilityCode: "tahfizh.reward.issue",
+        scopeType: "DOMAIN",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        position: { code: "KABID_TAHFIZH", domain: "TAHFIZH", isActive: true },
+      },
+    ];
+    const gateResult = evaluateStalePositionCapabilityPolicy(validRows);
     assert.strictEqual(gateResult.status, "READY");
     assert.strictEqual(gateResult.blocking, true);
     assert.ok(gateResult.details.includes("No stale PETUGAS_OPERASIONAL_TAHFIZH"));
@@ -1903,7 +1917,7 @@ describe("GATE 5 — ROUND 2 STRICT RUNTIME HARDENING TESTS (SCENARIOS A - L)", 
     assert.ok(result.details.includes("MUSYRIF_TAHFIZH:academic.schedule.read:GLOBAL"));
   });
 
-  // K. Stale policy raw-query failure => never READY
+  // K. Stale policy raw-query failure => never READY (BLOCKED / DATABASE_UNAVAILABLE)
   it("K. Stale policy raw-query failure => never READY", async () => {
     const mockDb: any = {
       $queryRawUnsafe: async (query: string) => {
@@ -1919,9 +1933,10 @@ describe("GATE 5 — ROUND 2 STRICT RUNTIME HARDENING TESTS (SCENARIOS A - L)", 
 
     assert.ok(staleGate, "Gate STALE_POSITION_CAPABILITY_POLICY_READY must be present");
     assert.notStrictEqual(staleGate?.status, "READY", "Gate must NEVER be READY on query failure");
-    assert.strictEqual(staleGate?.status, "NOT_READY");
+    assert.strictEqual(staleGate?.status, "BLOCKED");
+    assert.strictEqual(staleGate?.reason, "DATABASE_UNAVAILABLE");
     assert.strictEqual(staleGate?.blocking, true);
-    assert.ok(staleGate?.details.includes("DATABASE_QUERY_FAILED"));
+    assert.ok(staleGate?.details.includes("DATABASE_UNAVAILABLE"));
   });
 
   // L. Schedule TOCTOU: pre-check A, transaction reload B => zero session mutation

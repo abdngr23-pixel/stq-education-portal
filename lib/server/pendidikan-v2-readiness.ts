@@ -26,6 +26,8 @@ import {
   CANONICAL_PERSONAL_PERMISSION_MUTATION_TARGET_POLICIES,
   CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES,
   CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES,
+  CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES,
+  FORBIDDEN_TAHFIZH_REWARD_POSITIONS,
 } from "@/types/architecture-lock";
 export {
   CANONICAL_ORG_UNIT_HIERARCHY_CONTRACT,
@@ -38,6 +40,8 @@ export {
   CANONICAL_PERSONAL_PERMISSION_MUTATION_TARGET_POLICIES,
   CANONICAL_GUARDIAN_CONTACT_PRIVACY_TARGET_POLICIES,
   CANONICAL_PERSONAL_PERMISSION_READ_TARGET_POLICIES,
+  CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES,
+  FORBIDDEN_TAHFIZH_REWARD_POSITIONS,
 };
 import {
   authorizeCanonical,
@@ -824,50 +828,231 @@ export function evaluateKepesantrenanAcademicAuthPolicies(
 
 export interface StalePositionCapabilityPolicyEvaluationResult {
   status: ReadinessStatus;
+  reason?: string;
   details: string;
   blocking: true;
   remediationAdvice?: string;
 }
 
 /**
- * Evaluates stale PositionCapability policy cleanup (M3.3C2 gate).
- * Explicitly rejects stale PETUGAS_OPERASIONAL_TAHFIZH -> tahfizh.reward.issue policy.
- * - If absent: READY
- * - If APPROVED_TARGET_PENDING_TECHNICAL or PROPOSED_TBD: NOT_READY, blocking=true
- * - If VERIFIED_PRODUCTION: BLOCKED, blocking=true
+ * Evaluates complete Tahfizh reward-authority integrity (Gate 11: STALE_POSITION_CAPABILITY_POLICY_READY).
+ * Broadened under Gate 7 R2 (DIR-2026-023) from only "stale POT reward row" to complete reward authority integrity:
+ *
+ * 1. Prohibited / Unauthorized authority:
+ *    - PETUGAS_OPERASIONAL_TAHFIZH (superseded per DIR-2026-023)
+ *    - ordinary MUSYRIF_TAHFIZH
+ *    - PEMBINA_HALAQOH
+ *    - ADM
+ *    - Any unauthorized position with VERIFIED_PRODUCTION => BLOCKED / UNAUTHORIZED_RUNTIME_AUTHORITY
+ *    - Any unauthorized position with APPROVED_TARGET_PENDING_TECHNICAL => NOT_READY / STALE_POLICY_REQUIRES_CLEANUP
+ *
+ * 2. Required positive authority:
+ *    - MUDIR: exactly 1 row, scope = GLOBAL, state = VERIFIED_PRODUCTION
+ *    - KABID_TAHFIZH: exactly 1 row, scope = DOMAIN, state = VERIFIED_PRODUCTION
+ *    - If either is missing, pending, or wrong scope => NOT_READY / REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE
+ *
+ * 3. Exact approved state => READY
  */
 export function evaluateStalePositionCapabilityPolicy(
-  staleRows: Array<{
+  rows: Array<{
     positionCode?: string;
+    position?: { code: string; domain?: string | null; isActive?: boolean };
+    positionDomain?: string | null;
+    positionIsActive?: boolean;
     capabilityCode?: string;
+    scopeType?: string | null;
     businessRuleState?: string | null;
   }>
 ): StalePositionCapabilityPolicyEvaluationResult {
-  if (!staleRows || staleRows.length === 0) {
+  if (!rows) {
     return {
-      status: "READY",
-      details: "No stale PETUGAS_OPERASIONAL_TAHFIZH / tahfizh.reward.issue policy rows found",
+      status: "NOT_READY",
+      reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
+      details: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Missing required reward authority rows (tahfizh.reward.issue)",
+      remediationAdvice: "Provision required leadership PositionCapability rows for tahfizh.reward.issue per CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES",
       blocking: true,
     };
   }
 
-  const verified = staleRows.filter((r) => r.businessRuleState === "VERIFIED_PRODUCTION");
-  if (verified.length > 0) {
+  // 1. Check for unauthorized / forbidden positions holding tahfizh.reward.issue
+  const normalizedRows = rows.map((r) => ({
+    positionCode: r.position?.code ?? r.positionCode ?? "",
+    positionDomain: r.position?.domain !== undefined ? r.position.domain : (r.positionDomain !== undefined ? r.positionDomain : undefined),
+    positionIsActive: r.position?.isActive !== undefined ? r.position.isActive : (r.positionIsActive !== undefined ? r.positionIsActive : undefined),
+    capabilityCode: r.capabilityCode ?? "",
+    scopeType: r.scopeType ?? null,
+    businessRuleState: r.businessRuleState ?? null,
+  }));
+
+  const allowedPositions: readonly string[] = CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES.map((p) => p.positionCode);
+  const forbiddenPositions: readonly string[] = FORBIDDEN_TAHFIZH_REWARD_POSITIONS;
+
+  // A. Check unauthorized VERIFIED_PRODUCTION authority (BLOCKED)
+  const unauthorizedVerified = normalizedRows.filter(
+    (r) =>
+      r.businessRuleState === "VERIFIED_PRODUCTION" &&
+      (forbiddenPositions.includes(r.positionCode) || !allowedPositions.includes(r.positionCode as any))
+  );
+
+  if (unauthorizedVerified.length > 0) {
+    const offender = unauthorizedVerified[0];
+    const isPot = offender.positionCode === "PETUGAS_OPERASIONAL_TAHFIZH";
     return {
       status: "BLOCKED",
-      details: "UNAUTHORIZED_STALE_RUNTIME_AUTHORITY: Stale PETUGAS_OPERASIONAL_TAHFIZH / tahfizh.reward.issue row exists with VERIFIED_PRODUCTION status",
-      remediationAdvice: "Revoke and remove unauthorized VERIFIED_PRODUCTION stale authority immediately",
+      reason: "UNAUTHORIZED_RUNTIME_AUTHORITY",
+      details: isPot
+        ? "UNAUTHORIZED_STALE_RUNTIME_AUTHORITY: Stale PETUGAS_OPERASIONAL_TAHFIZH / tahfizh.reward.issue row exists with VERIFIED_PRODUCTION status"
+        : `UNAUTHORIZED_RUNTIME_AUTHORITY: Position ${offender.positionCode} has unauthorized VERIFIED_PRODUCTION reward authority (tahfizh.reward.issue)`,
+      remediationAdvice: `Revoke and remove unauthorized VERIFIED_PRODUCTION reward authority from ${offender.positionCode} immediately`,
       blocking: true,
     };
   }
 
+  // B. Check unauthorized stale pending rows requiring cleanup (NOT_READY)
+  const unauthorizedPending = normalizedRows.filter(
+    (r) =>
+      r.businessRuleState !== "VERIFIED_PRODUCTION" &&
+      (forbiddenPositions.includes(r.positionCode) || !allowedPositions.includes(r.positionCode as any))
+  );
+
+  if (unauthorizedPending.length > 0) {
+    const offender = unauthorizedPending[0];
+    const isPot = offender.positionCode === "PETUGAS_OPERASIONAL_TAHFIZH";
+    return {
+      status: "NOT_READY",
+      reason: "STALE_POLICY_REQUIRES_CLEANUP",
+      details: isPot
+        ? "STALE_POSITION_CAPABILITY_POLICY_REQUIRES_CLEANUP: Stale PETUGAS_OPERASIONAL_TAHFIZH / tahfizh.reward.issue row exists and requires cleanup before activation"
+        : `STALE_POLICY_REQUIRES_CLEANUP: Stale ${offender.positionCode} / tahfizh.reward.issue policy row exists and requires cleanup before activation`,
+      remediationAdvice: `Remove stale ${offender.positionCode} / tahfizh.reward.issue target row in database`,
+      blocking: true,
+    };
+  }
+
+  // 2. Validate required positive authority derived dynamically from CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES
+  const nonVerified: Array<{ policy: (typeof CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES)[number]; row: typeof normalizedRows[0] }> = [];
+
+  for (const policy of CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES) {
+    // Exact capability matching (R2.2 requirement 4: r.capabilityCode === policy.capabilityCode)
+    const matchingRows = normalizedRows.filter(
+      (r) => r.positionCode === policy.positionCode && r.capabilityCode === policy.capabilityCode
+    );
+
+    if (matchingRows.length === 0) {
+      return {
+        status: "NOT_READY",
+        reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
+        details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Missing required ${policy.positionCode} reward authority row (${policy.capabilityCode})`,
+        remediationAdvice: `Provision ${policy.positionCode} PositionCapability for ${policy.capabilityCode} with scope ${policy.scopeType} and state ${policy.businessRuleState}`,
+        blocking: true,
+      };
+    }
+
+    if (matchingRows.length > 1) {
+      return {
+        status: "NOT_READY",
+        reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
+        details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Duplicate ${policy.positionCode} reward authority rows found (${matchingRows.length}); exactly one row required`,
+        remediationAdvice: `Resolve duplicate ${policy.positionCode} PositionCapability rows to exactly one row`,
+        blocking: true,
+      };
+    }
+
+    const row = matchingRows[0];
+
+    // Position must be active and must have explicit active metadata (R2.3 requirement 1)
+    if (row.positionIsActive === false) {
+      return {
+        status: "NOT_READY",
+        reason: "REQUIRED_REWARD_AUTHORITY_POSITION_INACTIVE",
+        details: `REQUIRED_REWARD_AUTHORITY_POSITION_INACTIVE: Position ${policy.positionCode} is inactive (is_active: false); reward authority requires an active position`,
+        remediationAdvice: `Activate position ${policy.positionCode} in positions table`,
+        blocking: true,
+      };
+    }
+
+    if (row.positionIsActive === undefined || row.positionIsActive === null) {
+      return {
+        status: "NOT_READY",
+        reason: "REQUIRED_REWARD_AUTHORITY_POSITION_METADATA_MISSING",
+        details: `REQUIRED_REWARD_AUTHORITY_POSITION_METADATA_MISSING: Position ${policy.positionCode} is missing required is_active metadata`,
+        remediationAdvice: `Ensure position query includes is_active attribute for ${policy.positionCode}`,
+        blocking: true,
+      };
+    }
+
+    if (row.scopeType !== policy.scopeType) {
+      return {
+        status: "NOT_READY",
+        reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
+        details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Invalid ${policy.positionCode} reward authority scope '${row.scopeType}'; expected ${policy.scopeType}`,
+        remediationAdvice: `Correct ${policy.positionCode} PositionCapability scopeType to ${policy.scopeType}`,
+        blocking: true,
+      };
+    }
+
+    // Canonical domain expectation check (R2.3 requirement 2 - exact required-domain semantics):
+    // For any canonical policy containing domain, the evaluator must require exact equality fail-closed.
+    if (policy.domain) {
+      if (row.positionDomain === undefined || row.positionDomain === null || row.positionDomain === "") {
+        return {
+          status: "NOT_READY",
+          reason: "REQUIRED_REWARD_AUTHORITY_POSITION_METADATA_MISSING",
+          details: `REQUIRED_REWARD_AUTHORITY_POSITION_METADATA_MISSING: Position ${policy.positionCode} is missing required domain metadata (expected '${policy.domain}')`,
+          remediationAdvice: `Ensure position query includes domain attribute for ${policy.positionCode}`,
+          blocking: true,
+        };
+      }
+
+      if (row.positionDomain !== policy.domain) {
+        return {
+          status: "NOT_READY",
+          reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
+          details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Invalid ${policy.positionCode} domain '${row.positionDomain}'; expected ${policy.domain}`,
+          remediationAdvice: `Correct ${policy.positionCode} domain to ${policy.domain}`,
+          blocking: true,
+        };
+      }
+    }
+
+    if (row.businessRuleState !== policy.businessRuleState) {
+      nonVerified.push({ policy, row });
+    }
+  }
+
+  // 3. Validate runtime businessRuleState
+  if (nonVerified.length > 0) {
+    if (nonVerified.length === CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES.length) {
+      const summary = nonVerified.map((item) => `${item.policy.positionCode} (status: ${item.row.businessRuleState})`).join(" and ");
+      return {
+        status: "NOT_READY",
+        reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
+        details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: Required reward authority for ${summary} is not runtime active (VERIFIED_PRODUCTION required)`,
+        remediationAdvice: `Promote ${nonVerified.map((item) => item.policy.positionCode).join(" and ")} PositionCapability businessRuleState to VERIFIED_PRODUCTION via approved migration`,
+        blocking: true,
+      };
+    }
+
+    const first = nonVerified[0];
+    return {
+      status: "NOT_READY",
+      reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
+      details: `REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE: ${first.policy.positionCode} reward authority is '${first.row.businessRuleState}'; expected ${first.policy.businessRuleState}`,
+      remediationAdvice: `Promote ${first.policy.positionCode} PositionCapability businessRuleState to ${first.policy.businessRuleState}`,
+      blocking: true,
+    };
+  }
+
+  // 4. All positive and negative conditions met => READY
+  const verifiedSummary = CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES.map((p) => `${p.positionCode}: ${p.scopeType}`).join(", ");
   return {
-    status: "NOT_READY",
-    details: "STALE_POSITION_CAPABILITY_POLICY_REQUIRES_CLEANUP: Stale PETUGAS_OPERASIONAL_TAHFIZH / tahfizh.reward.issue row exists and requires cleanup before activation",
-    remediationAdvice: "Remove stale PETUGAS_OPERASIONAL_TAHFIZH / tahfizh.reward.issue target row in database",
+    status: "READY",
+    details: `All required Tahfizh reward authorities verified active (${verifiedSummary}); zero unauthorized reward authority found; No stale PETUGAS_OPERASIONAL_TAHFIZH / tahfizh.reward.issue policy rows found`,
     blocking: true,
   };
 }
+
+export const evaluateTahfizhRewardAuthorityIntegrity = evaluateStalePositionCapabilityPolicy;
 
 /**
  * Diagnostic function: Evaluates all canonical production readiness gates.
@@ -2722,16 +2907,20 @@ export async function checkPendidikanV2ProductionReadiness(
     });
   }
 
-  // Gate 11: Stale Position Capability Policy Ready (Rejects stale PETUGAS_OPERASIONAL_TAHFIZH -> tahfizh.reward.issue)
+  // Gate 11: Stale Position Capability Policy Ready (Broadened to complete Tahfizh reward-authority integrity per Gate 7 R2)
   try {
-    let staleRows: Array<{ positionCode?: string; capabilityCode?: string; businessRuleState?: string | null }> = [];
+    let staleRows: Array<{
+      positionCode?: string;
+      positionDomain?: string | null;
+      positionIsActive?: boolean;
+      capabilityCode?: string;
+      scopeType?: string | null;
+      businessRuleState?: string | null;
+    }> = [];
     if (db.positionCapability) {
       const rows = await db.positionCapability.findMany({
         where: {
           capabilityCode: "tahfizh.reward.issue",
-          position: {
-            code: "PETUGAS_OPERASIONAL_TAHFIZH",
-          },
         },
         include: {
           position: true,
@@ -2739,26 +2928,46 @@ export async function checkPendidikanV2ProductionReadiness(
       });
       staleRows = rows.map((r: any) => ({
         positionCode: r.position?.code ?? r.positionCode,
+        positionDomain: r.position?.domain !== undefined ? r.position.domain : (r.positionDomain !== undefined ? r.positionDomain : undefined),
+        positionIsActive: r.position?.isActive !== undefined ? r.position.isActive : (r.positionIsActive !== undefined ? r.positionIsActive : undefined),
         capabilityCode: r.capabilityCode,
+        scopeType: r.scopeType,
         businessRuleState: r.businessRuleState,
       }));
     } else if (typeof db.$queryRawUnsafe === "function") {
-      const rows = await db.$queryRawUnsafe<Array<{ capability_code: string; business_rule_state: string; position_code: string }>>(`
-        SELECT pc.capability_code, pc.business_rule_state::text, p.code as position_code
+      const rows = await db.$queryRawUnsafe<Array<{
+        capability_code: string;
+        scope_type: string;
+        business_rule_state: string;
+        position_code: string;
+        position_domain: string | null;
+        position_active: boolean;
+      }>>(`
+        SELECT
+          pc.capability_code,
+          pc.scope_type::text,
+          pc.business_rule_state::text,
+          p.code as position_code,
+          p.domain as position_domain,
+          p.is_active as position_active
         FROM position_capabilities pc
         JOIN positions p ON p.id = pc.position_id
-        WHERE p.code = 'PETUGAS_OPERASIONAL_TAHFIZH' AND pc.capability_code = 'tahfizh.reward.issue';
+        WHERE pc.capability_code = 'tahfizh.reward.issue';
       `);
       staleRows = rows.map((r: any) => ({
         positionCode: r.position_code,
+        positionDomain: r.position_domain !== null && r.position_domain !== undefined ? r.position_domain : undefined,
+        positionIsActive: r.position_active !== null && r.position_active !== undefined ? Boolean(r.position_active) : undefined,
         capabilityCode: r.capability_code,
+        scopeType: r.scope_type,
         businessRuleState: r.business_rule_state,
       }));
     } else {
       gates.push({
         gate: "STALE_POSITION_CAPABILITY_POLICY_READY",
-        status: "NOT_READY",
-        details: "DATABASE_UNAVAILABLE: PositionCapability repository unavailable to verify stale policies",
+        status: "BLOCKED",
+        reason: "DATABASE_UNAVAILABLE",
+        details: "DATABASE_UNAVAILABLE: PositionCapability repository unavailable to verify reward authority policies",
         remediationAdvice: "Database connection must provide PositionCapability repository or query interface",
         blocking: true,
       });
@@ -2770,6 +2979,7 @@ export async function checkPendidikanV2ProductionReadiness(
       gates.push({
         gate: "STALE_POSITION_CAPABILITY_POLICY_READY",
         status: staleGateResult.status,
+        reason: staleGateResult.reason,
         details: staleGateResult.details,
         remediationAdvice: staleGateResult.remediationAdvice,
         blocking: true,
@@ -2778,8 +2988,9 @@ export async function checkPendidikanV2ProductionReadiness(
   } catch (err: unknown) {
     gates.push({
       gate: "STALE_POSITION_CAPABILITY_POLICY_READY",
-      status: "NOT_READY",
-      details: `DATABASE_QUERY_FAILED: Gagal memverifikasi kebijakan basi (${err instanceof Error ? err.message : String(err)})`,
+      status: "BLOCKED",
+      reason: "DATABASE_UNAVAILABLE",
+      details: `DATABASE_UNAVAILABLE: Gagal memverifikasi kebijakan reward authority (${err instanceof Error ? err.message : String(err)})`,
       remediationAdvice: "Periksa koneksi database dan skema tabel position_capabilities",
       blocking: true,
     });
