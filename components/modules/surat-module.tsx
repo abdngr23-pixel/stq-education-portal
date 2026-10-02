@@ -47,7 +47,14 @@ export function SuratModule({
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  const currentSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
+  const currentSantri =
+    santriList.find((s) => s.nis === selectedSantriNis) ||
+    santriList[0] || {
+      nama: "-",
+      nis: "-",
+      kelas: "-",
+      halaqoh: "-",
+    };
 
   const handleBuatDraf = () => {
     setFeedback({
@@ -154,11 +161,15 @@ export function SuratModule({
                 onChange={(e) => setSelectedSantriNis(e.target.value)}
                 className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold"
               >
-                {santriList.map((s) => (
-                  <option key={s.nis} value={s.nis}>
-                    {s.nama} ({s.nis} - {s.kelas})
-                  </option>
-                ))}
+                {santriList.length === 0 ? (
+                  <option value="">Memuat data santri atau belum ada santri...</option>
+                ) : (
+                  santriList.map((s) => (
+                    <option key={s.nis} value={s.nis}>
+                      {s.nama} ({s.nis} - {s.kelas})
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 
