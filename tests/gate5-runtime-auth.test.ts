@@ -1173,13 +1173,13 @@ describe("GATE 5 — RUNTIME AUTHORIZATION REMEDIATION TEST SUITE (24 SCENARIOS)
         capabilityCode: "tahfizh.reward.issue",
         scopeType: "GLOBAL",
         businessRuleState: "VERIFIED_PRODUCTION",
-        position: { code: "MUDIR" },
+        position: { code: "MUDIR", domain: "INSTITUTIONAL", isActive: true },
       },
       {
         capabilityCode: "tahfizh.reward.issue",
         scopeType: "DOMAIN",
         businessRuleState: "VERIFIED_PRODUCTION",
-        position: { code: "KABID_TAHFIZH" },
+        position: { code: "KABID_TAHFIZH", domain: "TAHFIZH", isActive: true },
       },
     ];
     const gateResult = evaluateStalePositionCapabilityPolicy(validRows);

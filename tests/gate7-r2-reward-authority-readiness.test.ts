@@ -322,13 +322,13 @@ describe("Gate 7 R2 — Tahfizh Reward Authority Readiness Integrity", () => {
                 capabilityCode: "tahfizh.reward.issue",
                 scopeType: "GLOBAL",
                 businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
-                position: { code: "MUDIR" },
+                position: { code: "MUDIR", domain: "INSTITUTIONAL", isActive: true },
               },
               {
                 capabilityCode: "tahfizh.reward.issue",
                 scopeType: "DOMAIN",
                 businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
-                position: { code: "KABID_TAHFIZH" },
+                position: { code: "KABID_TAHFIZH", domain: "TAHFIZH", isActive: true },
               },
             ];
           }
@@ -537,5 +537,81 @@ describe("Gate 7 R2 — Tahfizh Reward Authority Readiness Integrity", () => {
     assert.strictEqual(res.blocking, true);
     assert.strictEqual(res.reason, "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE");
     assert.ok(res.details.includes("Missing required MUDIR reward authority row (tahfizh.reward.issue)"));
+  });
+
+  // R2.3-01: MUDIR positionIsActive missing => NOT_READY
+  it("R2.3-01: MUDIR correct capability/scope/state but positionIsActive missing => NOT_READY", () => {
+    const rows = [
+      {
+        capabilityCode: "tahfizh.reward.issue",
+        scopeType: "GLOBAL",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        position: { code: "MUDIR", domain: "INSTITUTIONAL" }, // isActive missing
+      },
+      validKabid,
+    ];
+    const res = evaluateStalePositionCapabilityPolicy(rows);
+    assert.strictEqual(res.status, "NOT_READY");
+    assert.strictEqual(res.blocking, true);
+    assert.strictEqual(res.reason, "REQUIRED_REWARD_AUTHORITY_POSITION_METADATA_MISSING");
+    assert.ok(res.details.includes("missing required is_active metadata"));
+  });
+
+  // R2.3-02: KABID_TAHFIZH positionDomain missing => NOT_READY
+  it("R2.3-02: KABID_TAHFIZH correct capability/scope/state, active=true, but positionDomain missing => NOT_READY", () => {
+    const rows = [
+      validMudir,
+      {
+        capabilityCode: "tahfizh.reward.issue",
+        scopeType: "DOMAIN",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        position: { code: "KABID_TAHFIZH", isActive: true }, // domain missing
+      },
+    ];
+    const res = evaluateStalePositionCapabilityPolicy(rows);
+    assert.strictEqual(res.status, "NOT_READY");
+    assert.strictEqual(res.blocking, true);
+    assert.strictEqual(res.reason, "REQUIRED_REWARD_AUTHORITY_POSITION_METADATA_MISSING");
+    assert.ok(res.details.includes("missing required domain metadata"));
+  });
+
+  // R2.3-03: KABID_TAHFIZH positionDomain = null => NOT_READY
+  it("R2.3-03: KABID_TAHFIZH positionDomain = null => NOT_READY", () => {
+    const rows = [
+      validMudir,
+      {
+        capabilityCode: "tahfizh.reward.issue",
+        scopeType: "DOMAIN",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        position: { code: "KABID_TAHFIZH", domain: null, isActive: true },
+      },
+    ];
+    const res = evaluateStalePositionCapabilityPolicy(rows);
+    assert.strictEqual(res.status, "NOT_READY");
+    assert.strictEqual(res.blocking, true);
+    assert.strictEqual(res.reason, "REQUIRED_REWARD_AUTHORITY_POSITION_METADATA_MISSING");
+    assert.ok(res.details.includes("missing required domain metadata"));
+  });
+
+  // R2.3-04: Exact canonical metadata => READY
+  it("R2.3-04: Exact canonical metadata: MUDIR active true + KABID active true + domain TAHFIZH => READY", () => {
+    const rows = [
+      {
+        capabilityCode: "tahfizh.reward.issue",
+        scopeType: "GLOBAL",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        position: { code: "MUDIR", domain: "INSTITUTIONAL", isActive: true },
+      },
+      {
+        capabilityCode: "tahfizh.reward.issue",
+        scopeType: "DOMAIN",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        position: { code: "KABID_TAHFIZH", domain: "TAHFIZH", isActive: true },
+      },
+    ];
+    const res = evaluateStalePositionCapabilityPolicy(rows);
+    assert.strictEqual(res.status, "READY");
+    assert.strictEqual(res.blocking, true);
+    assert.ok(res.details.includes("All required Tahfizh reward authorities verified active"));
   });
 });

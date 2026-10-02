@@ -878,7 +878,7 @@ export function evaluateStalePositionCapabilityPolicy(
   const normalizedRows = rows.map((r) => ({
     positionCode: r.position?.code ?? r.positionCode ?? "",
     positionDomain: r.position?.domain !== undefined ? r.position.domain : (r.positionDomain !== undefined ? r.positionDomain : undefined),
-    positionIsActive: r.position?.isActive !== undefined ? r.position.isActive : (r.positionIsActive !== undefined ? r.positionIsActive : true),
+    positionIsActive: r.position?.isActive !== undefined ? r.position.isActive : (r.positionIsActive !== undefined ? r.positionIsActive : undefined),
     capabilityCode: r.capabilityCode ?? "",
     scopeType: r.scopeType ?? null,
     businessRuleState: r.businessRuleState ?? null,
@@ -960,13 +960,23 @@ export function evaluateStalePositionCapabilityPolicy(
 
     const row = matchingRows[0];
 
-    // Position must be active (R2.2 requirement 2)
+    // Position must be active and must have explicit active metadata (R2.3 requirement 1)
     if (row.positionIsActive === false) {
       return {
         status: "NOT_READY",
         reason: "REQUIRED_REWARD_AUTHORITY_POSITION_INACTIVE",
         details: `REQUIRED_REWARD_AUTHORITY_POSITION_INACTIVE: Position ${policy.positionCode} is inactive (is_active: false); reward authority requires an active position`,
         remediationAdvice: `Activate position ${policy.positionCode} in positions table`,
+        blocking: true,
+      };
+    }
+
+    if (row.positionIsActive === undefined || row.positionIsActive === null) {
+      return {
+        status: "NOT_READY",
+        reason: "REQUIRED_REWARD_AUTHORITY_POSITION_METADATA_MISSING",
+        details: `REQUIRED_REWARD_AUTHORITY_POSITION_METADATA_MISSING: Position ${policy.positionCode} is missing required is_active metadata`,
+        remediationAdvice: `Ensure position query includes is_active attribute for ${policy.positionCode}`,
         blocking: true,
       };
     }
@@ -981,11 +991,20 @@ export function evaluateStalePositionCapabilityPolicy(
       };
     }
 
-    // Canonical domain expectation check (R2.2 requirement 3):
-    // If policy specifies a domain (e.g. DOMAIN: TAHFIZH), verify through canonical position contract
+    // Canonical domain expectation check (R2.3 requirement 2 - exact required-domain semantics):
+    // For any canonical policy containing domain, the evaluator must require exact equality fail-closed.
     if (policy.domain) {
-      // If position domain metadata was provided, verify it matches
-      if (row.positionDomain !== undefined && row.positionDomain !== policy.domain) {
+      if (row.positionDomain === undefined || row.positionDomain === null || row.positionDomain === "") {
+        return {
+          status: "NOT_READY",
+          reason: "REQUIRED_REWARD_AUTHORITY_POSITION_METADATA_MISSING",
+          details: `REQUIRED_REWARD_AUTHORITY_POSITION_METADATA_MISSING: Position ${policy.positionCode} is missing required domain metadata (expected '${policy.domain}')`,
+          remediationAdvice: `Ensure position query includes domain attribute for ${policy.positionCode}`,
+          blocking: true,
+        };
+      }
+
+      if (row.positionDomain !== policy.domain) {
         return {
           status: "NOT_READY",
           reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
@@ -2910,7 +2929,7 @@ export async function checkPendidikanV2ProductionReadiness(
       staleRows = rows.map((r: any) => ({
         positionCode: r.position?.code ?? r.positionCode,
         positionDomain: r.position?.domain !== undefined ? r.position.domain : (r.positionDomain !== undefined ? r.positionDomain : undefined),
-        positionIsActive: r.position?.isActive !== undefined ? r.position.isActive : (r.positionIsActive !== undefined ? r.positionIsActive : true),
+        positionIsActive: r.position?.isActive !== undefined ? r.position.isActive : (r.positionIsActive !== undefined ? r.positionIsActive : undefined),
         capabilityCode: r.capabilityCode,
         scopeType: r.scopeType,
         businessRuleState: r.businessRuleState,
@@ -2938,7 +2957,7 @@ export async function checkPendidikanV2ProductionReadiness(
       staleRows = rows.map((r: any) => ({
         positionCode: r.position_code,
         positionDomain: r.position_domain !== null && r.position_domain !== undefined ? r.position_domain : undefined,
-        positionIsActive: r.position_active !== undefined ? Boolean(r.position_active) : true,
+        positionIsActive: r.position_active !== null && r.position_active !== undefined ? Boolean(r.position_active) : undefined,
         capabilityCode: r.capability_code,
         scopeType: r.scope_type,
         businessRuleState: r.business_rule_state,
