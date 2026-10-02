@@ -176,7 +176,7 @@ export default function LoginPage() {
                           required
                           value={username}
                           onChange={(e) => setUsername(e.target.value)}
-                          placeholder="Contoh: razan.mt atau SAN-0001"
+                          placeholder="Contoh: mudir.ks atau SAN-0001"
                           className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-700 bg-slate-950/80 text-white placeholder:text-slate-500 text-sm focus:outline-hidden focus:ring-2 focus:ring-[#0E7C3A] transition-all min-h-[44px]"
                         />
                       </div>
