@@ -6,6 +6,7 @@ import { requireRole } from '@/lib/auth';
 export interface AuditLogResponse<T = unknown> {
   success: boolean;
   message: string;
+  errorCode?: string;
   data?: T;
   error?: string;
 }
@@ -26,7 +27,7 @@ export interface AuditLogItem {
 
 /**
  * Mengambil daftar catatan jejak audit transaksi (Audit Trail)
- * Akses: YAY, KS, ADM
+ * Akses: YAY, KS, ADM (Legacy role compatibility; canonical capability system.audit.read is PROPOSED_TBD)
  */
 export async function getAuditLogsAction(): Promise<AuditLogResponse<AuditLogItem[]>> {
   try {
@@ -68,17 +69,25 @@ export async function getAuditLogsAction(): Promise<AuditLogResponse<AuditLogIte
       };
     } catch (err: unknown) {
       console.error('[Action Error] getAuditLogsAction (findMany):', err);
-      const errorMsg = err instanceof Error ? err.message : 'Gagal memuat log audit dari basis data.';
       return {
         success: false,
         message: 'Gagal memuat log audit dari basis data.',
-        error: errorMsg,
+        errorCode: 'AUDIT_LOG_QUERY_FAILED',
+        error: 'AUDIT_LOG_QUERY_FAILED',
         data: [],
       };
     }
   } catch (err: unknown) {
     console.error('[Action Error] getAuditLogsAction (auth):', err);
-    const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, message: errorMsg, error: errorMsg, data: [] };
+    const isAuthErr = err instanceof Error && (err.message.includes('UNAUTHORIZED') || err.message.includes('FORBIDDEN'));
+    const message = isAuthErr ? (err as Error).message : 'Terjadi kesalahan sistem';
+    const errorCode = isAuthErr ? 'AUTH_REQUIRED' : 'INTERNAL_ERROR';
+    return {
+      success: false,
+      message,
+      errorCode,
+      error: errorCode,
+      data: [],
+    };
   }
 }
