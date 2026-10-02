@@ -123,6 +123,7 @@ export function SantriModule({
             </button>
             <button
               type="button"
+              data-testid="subtab-kelola-halaqoh"
               onClick={() => setActiveSubTab("halaqoh")}
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all",

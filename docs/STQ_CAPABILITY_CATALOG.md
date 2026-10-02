@@ -136,12 +136,20 @@ Canonical V2 statuses are EXACTLY: `DIPANTAU`, `PULIH`, `DIRUJUK`, `DARURAT`.
 | `sponsor.report.send_wa` | Mengirim laporan progres hafalan via WA | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
 
 ### 3.5. Administrasi Sistem (`system.*`)
-| Capability Code | Description | Authorized Positions | Status |
+| Capability Code | Description | Authorized Positions & Scope | Business Rule State |
 | :--- | :--- | :--- | :--- |
 | `system.user.manage` | Manajemen akun dan reset password | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
 | `system.assignment.manage` | Manajemen penetapan penugasan (Assignment) | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
-| `system.audit.read` | Memeriksa rekam jejak forensic Audit Log | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
+| `system.audit.read` | Memeriksa rekam jejak forensic Audit Log | `MUDIR` (`GLOBAL`) | **APPROVED_TARGET_PENDING_TECHNICAL** |
 | `system.calendar.manage` | Mengatur kalender kegiatan & libur pondok | **TBD — BUSINESS OWNER APPROVAL REQUIRED** | Proposed |
+
+#### System Audit Boundary Invariants (Owner Decision 2026-10-03):
+1. **Canonical Mudir Authority**: Only canonical Position `MUDIR` with `GLOBAL` scope is approved for forensic audit trail inspection.
+2. **Explicit ADM Exclusion**: `ADM` (Staf Admin TU) is strictly denied access (`DENY`); audit log inspection is an executive governance privilege.
+3. **Legacy Role YAY Exclusion**: Legacy role `YAY` receives zero authority by role alone (`DENY`).
+4. **Yayasan Access Deferred**: Canonical Yayasan governance policy is deferred until the canonical Yayasan Position and organizational structure are formally verified and separately approved.
+5. **Activation Triple**: The policy grant state is `APPROVED_TARGET_PENDING_TECHNICAL`. It confers zero runtime authority until formal production technical activation promotes it to `VERIFIED_PRODUCTION`.
+
 
 ---
 

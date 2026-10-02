@@ -639,6 +639,10 @@ export const STUDENT_PRIVACY_CAPABILITIES = {
   GUARDIAN_CONTACT_READ: "student.guardian_contact.read",
 } as const;
 
+export const SYSTEM_AUDIT_CAPABILITIES = {
+  READ: "system.audit.read",
+} as const;
+
 /**
  * Approved code-level target policy only. This manifest provisions nothing and
  * grants zero runtime authority while its state remains pending technical.
@@ -648,6 +652,20 @@ export const KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY = {
   capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
   scopeType: "DOMAIN",
   domain: "KEASRAMAAN",
+  businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+} as const;
+
+/**
+ * Owner-Approved Target Policy (R1.1 / 2026-10-03):
+ * system.audit.read approved for canonical Position MUDIR with scope GLOBAL.
+ * ADM = DENY; Legacy role YAY = DENY; Yayasan canonical access = DEFERRED.
+ * This manifest provisions nothing and grants zero runtime authority while its state remains pending technical.
+ */
+export const SYSTEM_AUDIT_READ_TARGET_POLICY = {
+  positionCode: "MUDIR",
+  capabilityCode: SYSTEM_AUDIT_CAPABILITIES.READ,
+  scopeType: "GLOBAL",
+  domain: "INSTITUTIONAL",
   businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
 } as const;
 

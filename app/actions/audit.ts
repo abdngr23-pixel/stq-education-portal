@@ -1,7 +1,12 @@
 'use server';
 
 import prisma from '@/lib/prisma';
-import { requireRole } from '@/lib/auth';
+import { getCurrentSession } from '@/lib/auth';
+import {
+  authorizeCanonical,
+  createPrismaDataProvider,
+  type ICanonicalDataProvider,
+} from '@/lib/auth/canonical-evaluator';
 
 export interface AuditLogResponse<T = unknown> {
   success: boolean;
@@ -25,14 +30,61 @@ export interface AuditLogItem {
   };
 }
 
+export interface GetAuditLogsOptions {
+  dataProvider?: ICanonicalDataProvider;
+  now?: Date;
+}
+
 /**
  * Mengambil daftar catatan jejak audit transaksi (Audit Trail)
- * Akses: YAY, KS, ADM (Legacy role compatibility; canonical capability system.audit.read is PROPOSED_TBD)
+ * Otorisasi Kanonikal:
+ * - Kapabilitas: `system.audit.read`
+ * - Posisi yang disetujui Owner: `MUDIR`
+ * - Cakupan: `GLOBAL`
+ * - State: `VERIFIED_PRODUCTION` (Active runtime requirement)
+ * - ADM & role YAY: Ditolak (DENY)
  */
-export async function getAuditLogsAction(): Promise<AuditLogResponse<AuditLogItem[]>> {
+export async function getAuditLogsAction(
+  options?: GetAuditLogsOptions
+): Promise<AuditLogResponse<AuditLogItem[]>> {
   try {
-    await requireRole(['YAY', 'KS', 'ADM']);
+    const session = await getCurrentSession();
+    if (!session || !session.userId) {
+      return {
+        success: false,
+        message: 'UNAUTHORIZED: Silakan login terlebih dahulu.',
+        errorCode: 'UNAUTHORIZED',
+        error: 'UNAUTHORIZED',
+        data: [],
+      };
+    }
 
+    const dataProvider = options?.dataProvider || createPrismaDataProvider(prisma);
+
+    const authDecision = await authorizeCanonical({
+      identity: session,
+      capability: 'system.audit.read',
+      dataProvider,
+      now: options?.now,
+    });
+
+    if (authDecision.decision !== 'ALLOW') {
+      const isSystemError =
+        authDecision.decision === 'ERROR' ||
+        authDecision.code === 'SYSTEM_FAIL_CLOSED';
+
+      return {
+        success: false,
+        message: isSystemError
+          ? 'Gagal memverifikasi wewenang: basis data otorisasi tidak dapat diakses.'
+          : `FORBIDDEN: ${authDecision.reason || 'Anda tidak memiliki wewenang membaca log audit lembaga.'}`,
+        errorCode: authDecision.code || 'FORBIDDEN',
+        error: authDecision.code || 'FORBIDDEN',
+        data: [],
+      };
+    }
+
+    // Hanya lakukan query basis data SETELAH otorisasi kanonikal ALLOW
     try {
       const logs = await prisma.auditLog.findMany({
         take: 100,
@@ -79,14 +131,11 @@ export async function getAuditLogsAction(): Promise<AuditLogResponse<AuditLogIte
     }
   } catch (err: unknown) {
     console.error('[Action Error] getAuditLogsAction (auth):', err);
-    const isAuthErr = err instanceof Error && (err.message.includes('UNAUTHORIZED') || err.message.includes('FORBIDDEN'));
-    const message = isAuthErr ? (err as Error).message : 'Terjadi kesalahan sistem';
-    const errorCode = isAuthErr ? 'AUTH_REQUIRED' : 'INTERNAL_ERROR';
     return {
       success: false,
-      message,
-      errorCode,
-      error: errorCode,
+      message: 'Terjadi kesalahan sistem',
+      errorCode: 'INTERNAL_ERROR',
+      error: 'INTERNAL_ERROR',
       data: [],
     };
   }
