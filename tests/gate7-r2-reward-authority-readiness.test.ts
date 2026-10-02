@@ -18,14 +18,14 @@ describe("Gate 7 R2 — Tahfizh Reward Authority Readiness Integrity", () => {
     capabilityCode: "tahfizh.reward.issue",
     scopeType: "GLOBAL",
     businessRuleState: "VERIFIED_PRODUCTION",
-    position: { code: "MUDIR" },
+    position: { code: "MUDIR", domain: "INSTITUTIONAL", isActive: true },
   };
 
   const validKabid = {
     capabilityCode: "tahfizh.reward.issue",
     scopeType: "DOMAIN",
     businessRuleState: "VERIFIED_PRODUCTION",
-    position: { code: "KABID_TAHFIZH" },
+    position: { code: "KABID_TAHFIZH", domain: "TAHFIZH", isActive: true },
   };
 
   // TEST R2-01: Mudir VERIFIED GLOBAL + Kabid VERIFIED DOMAIN + zero forbidden reward rows => Gate 11 READY
@@ -373,13 +373,13 @@ describe("Gate 7 R2 — Tahfizh Reward Authority Readiness Integrity", () => {
         capabilityCode: "tahfizh.reward.issue",
         scopeType: "GLOBAL",
         businessRuleState: "VERIFIED_PRODUCTION",
-        position: { code: "MUDIR" },
+        position: { code: "MUDIR", domain: "INSTITUTIONAL", isActive: true },
       },
       {
         capabilityCode: "tahfizh.reward.issue",
         scopeType: "DOMAIN",
         businessRuleState: "VERIFIED_PRODUCTION",
-        position: { code: "KABID_TAHFIZH" },
+        position: { code: "KABID_TAHFIZH", domain: "TAHFIZH", isActive: true },
       },
     ]);
     assert.strictEqual(gate11.status, "READY");
@@ -452,6 +452,8 @@ describe("Gate 7 R2 — Tahfizh Reward Authority Readiness Integrity", () => {
     // Passing rows matching the canonical manifest produces READY
     const manifestRows = CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES.map((p) => ({
       positionCode: p.positionCode,
+      positionDomain: p.domain,
+      positionIsActive: true,
       capabilityCode: p.capabilityCode,
       scopeType: p.scopeType,
       businessRuleState: p.businessRuleState,
@@ -461,5 +463,79 @@ describe("Gate 7 R2 — Tahfizh Reward Authority Readiness Integrity", () => {
     assert.strictEqual(result.status, "READY");
     assert.strictEqual(result.blocking, true);
     assert.ok(result.details.includes("All required Tahfizh reward authorities verified active"));
+  });
+
+  // R2.2-01: Inactive Position validation
+  it("R2.2-01: MUDIR inactive => NOT_READY (REQUIRED_REWARD_AUTHORITY_POSITION_INACTIVE)", () => {
+    const rows = [
+      { ...validMudir, position: { code: "MUDIR", isActive: false } },
+      validKabid,
+    ];
+    const res = evaluateStalePositionCapabilityPolicy(rows);
+    assert.strictEqual(res.status, "NOT_READY");
+    assert.strictEqual(res.blocking, true);
+    assert.strictEqual(res.reason, "REQUIRED_REWARD_AUTHORITY_POSITION_INACTIVE");
+    assert.ok(res.details.includes("Position MUDIR is inactive"));
+  });
+
+  it("R2.2-01: KABID_TAHFIZH inactive => NOT_READY (REQUIRED_REWARD_AUTHORITY_POSITION_INACTIVE)", () => {
+    const rows = [
+      validMudir,
+      { ...validKabid, position: { code: "KABID_TAHFIZH", isActive: false } },
+    ];
+    const res = evaluateStalePositionCapabilityPolicy(rows);
+    assert.strictEqual(res.status, "NOT_READY");
+    assert.strictEqual(res.blocking, true);
+    assert.strictEqual(res.reason, "REQUIRED_REWARD_AUTHORITY_POSITION_INACTIVE");
+    assert.ok(res.details.includes("Position KABID_TAHFIZH is inactive"));
+  });
+
+  // R2.2-02: Domain enforcement for KABID_TAHFIZH
+  it("R2.2-02: KABID_TAHFIZH position.domain KEASRAMAAN => NOT_READY", () => {
+    const rows = [
+      validMudir,
+      {
+        ...validKabid,
+        position: { code: "KABID_TAHFIZH", domain: "KEASRAMAAN", isActive: true },
+      },
+    ];
+    const res = evaluateStalePositionCapabilityPolicy(rows);
+    assert.strictEqual(res.status, "NOT_READY");
+    assert.strictEqual(res.blocking, true);
+    assert.strictEqual(res.reason, "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE");
+    assert.ok(res.details.includes("Invalid KABID_TAHFIZH domain 'KEASRAMAAN'; expected TAHFIZH"));
+  });
+
+  it("R2.2-02: KABID_TAHFIZH position.domain TAHFIZH => valid (READY)", () => {
+    const rows = [
+      {
+        ...validMudir,
+        position: { code: "MUDIR", domain: "INSTITUTIONAL", isActive: true },
+      },
+      {
+        ...validKabid,
+        position: { code: "KABID_TAHFIZH", domain: "TAHFIZH", isActive: true },
+      },
+    ];
+    const res = evaluateStalePositionCapabilityPolicy(rows);
+    assert.strictEqual(res.status, "READY");
+    assert.strictEqual(res.blocking, true);
+  });
+
+  // R2.2-03: Strict capability code matching
+  it("R2.2-03: MUDIR row with correct position/scope/state but capabilityCode missing => NOT_READY", () => {
+    const rows = [
+      {
+        scopeType: "GLOBAL",
+        businessRuleState: "VERIFIED_PRODUCTION",
+        position: { code: "MUDIR", isActive: true },
+      },
+      validKabid,
+    ];
+    const res = evaluateStalePositionCapabilityPolicy(rows as any);
+    assert.strictEqual(res.status, "NOT_READY");
+    assert.strictEqual(res.blocking, true);
+    assert.strictEqual(res.reason, "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE");
+    assert.ok(res.details.includes("Missing required MUDIR reward authority row (tahfizh.reward.issue)"));
   });
 });

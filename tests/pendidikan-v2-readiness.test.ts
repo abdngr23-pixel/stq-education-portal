@@ -634,8 +634,8 @@ describe("GATE 5 — PENDIDIKAN V2 READINESS REMEDIATION TESTS", () => {
           findMany: async (args?: any) => {
             if (args?.where?.capabilityCode === "tahfizh.reward.issue") {
               return [
-                { capabilityCode: "tahfizh.reward.issue", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "MUDIR", isActive: true } },
-                { capabilityCode: "tahfizh.reward.issue", scopeType: "DOMAIN", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "KABID_TAHFIZH", isActive: true } },
+                { capabilityCode: "tahfizh.reward.issue", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "MUDIR", domain: "INSTITUTIONAL", isActive: true } },
+                { capabilityCode: "tahfizh.reward.issue", scopeType: "DOMAIN", businessRuleState: "VERIFIED_PRODUCTION", position: { code: "KABID_TAHFIZH", domain: "TAHFIZH", isActive: true } },
               ];
             }
             return [

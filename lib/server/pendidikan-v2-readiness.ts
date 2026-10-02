@@ -856,7 +856,9 @@ export interface StalePositionCapabilityPolicyEvaluationResult {
 export function evaluateStalePositionCapabilityPolicy(
   rows: Array<{
     positionCode?: string;
-    position?: { code: string; domain?: string };
+    position?: { code: string; domain?: string | null; isActive?: boolean };
+    positionDomain?: string | null;
+    positionIsActive?: boolean;
     capabilityCode?: string;
     scopeType?: string | null;
     businessRuleState?: string | null;
@@ -875,7 +877,8 @@ export function evaluateStalePositionCapabilityPolicy(
   // 1. Check for unauthorized / forbidden positions holding tahfizh.reward.issue
   const normalizedRows = rows.map((r) => ({
     positionCode: r.position?.code ?? r.positionCode ?? "",
-    positionDomain: r.position?.domain,
+    positionDomain: r.position?.domain !== undefined ? r.position.domain : (r.positionDomain !== undefined ? r.positionDomain : undefined),
+    positionIsActive: r.position?.isActive !== undefined ? r.position.isActive : (r.positionIsActive !== undefined ? r.positionIsActive : true),
     capabilityCode: r.capabilityCode ?? "",
     scopeType: r.scopeType ?? null,
     businessRuleState: r.businessRuleState ?? null,
@@ -930,8 +933,9 @@ export function evaluateStalePositionCapabilityPolicy(
   const nonVerified: Array<{ policy: (typeof CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES)[number]; row: typeof normalizedRows[0] }> = [];
 
   for (const policy of CANONICAL_TAHFIZH_REWARD_AUTHORITY_POLICIES) {
+    // Exact capability matching (R2.2 requirement 4: r.capabilityCode === policy.capabilityCode)
     const matchingRows = normalizedRows.filter(
-      (r) => r.positionCode === policy.positionCode && (!r.capabilityCode || r.capabilityCode === policy.capabilityCode)
+      (r) => r.positionCode === policy.positionCode && r.capabilityCode === policy.capabilityCode
     );
 
     if (matchingRows.length === 0) {
@@ -955,6 +959,18 @@ export function evaluateStalePositionCapabilityPolicy(
     }
 
     const row = matchingRows[0];
+
+    // Position must be active (R2.2 requirement 2)
+    if (row.positionIsActive === false) {
+      return {
+        status: "NOT_READY",
+        reason: "REQUIRED_REWARD_AUTHORITY_POSITION_INACTIVE",
+        details: `REQUIRED_REWARD_AUTHORITY_POSITION_INACTIVE: Position ${policy.positionCode} is inactive (is_active: false); reward authority requires an active position`,
+        remediationAdvice: `Activate position ${policy.positionCode} in positions table`,
+        blocking: true,
+      };
+    }
+
     if (row.scopeType !== policy.scopeType) {
       return {
         status: "NOT_READY",
@@ -965,11 +981,11 @@ export function evaluateStalePositionCapabilityPolicy(
       };
     }
 
-    // Canonical domain expectation check:
+    // Canonical domain expectation check (R2.2 requirement 3):
     // If policy specifies a domain (e.g. DOMAIN: TAHFIZH), verify through canonical position contract
     if (policy.domain) {
       // If position domain metadata was provided, verify it matches
-      if (row.positionDomain && row.positionDomain !== policy.domain) {
+      if (row.positionDomain !== undefined && row.positionDomain !== policy.domain) {
         return {
           status: "NOT_READY",
           reason: "REQUIRED_REWARD_AUTHORITY_NOT_RUNTIME_ACTIVE",
@@ -2874,7 +2890,14 @@ export async function checkPendidikanV2ProductionReadiness(
 
   // Gate 11: Stale Position Capability Policy Ready (Broadened to complete Tahfizh reward-authority integrity per Gate 7 R2)
   try {
-    let staleRows: Array<{ positionCode?: string; capabilityCode?: string; scopeType?: string | null; businessRuleState?: string | null }> = [];
+    let staleRows: Array<{
+      positionCode?: string;
+      positionDomain?: string | null;
+      positionIsActive?: boolean;
+      capabilityCode?: string;
+      scopeType?: string | null;
+      businessRuleState?: string | null;
+    }> = [];
     if (db.positionCapability) {
       const rows = await db.positionCapability.findMany({
         where: {
@@ -2886,19 +2909,36 @@ export async function checkPendidikanV2ProductionReadiness(
       });
       staleRows = rows.map((r: any) => ({
         positionCode: r.position?.code ?? r.positionCode,
+        positionDomain: r.position?.domain !== undefined ? r.position.domain : (r.positionDomain !== undefined ? r.positionDomain : undefined),
+        positionIsActive: r.position?.isActive !== undefined ? r.position.isActive : (r.positionIsActive !== undefined ? r.positionIsActive : true),
         capabilityCode: r.capabilityCode,
         scopeType: r.scopeType,
         businessRuleState: r.businessRuleState,
       }));
     } else if (typeof db.$queryRawUnsafe === "function") {
-      const rows = await db.$queryRawUnsafe<Array<{ capability_code: string; scope_type: string; business_rule_state: string; position_code: string }>>(`
-        SELECT pc.capability_code, pc.scope_type::text, pc.business_rule_state::text, p.code as position_code
+      const rows = await db.$queryRawUnsafe<Array<{
+        capability_code: string;
+        scope_type: string;
+        business_rule_state: string;
+        position_code: string;
+        position_domain: string | null;
+        position_active: boolean;
+      }>>(`
+        SELECT
+          pc.capability_code,
+          pc.scope_type::text,
+          pc.business_rule_state::text,
+          p.code as position_code,
+          p.domain as position_domain,
+          p.is_active as position_active
         FROM position_capabilities pc
         JOIN positions p ON p.id = pc.position_id
         WHERE pc.capability_code = 'tahfizh.reward.issue';
       `);
       staleRows = rows.map((r: any) => ({
         positionCode: r.position_code,
+        positionDomain: r.position_domain !== null && r.position_domain !== undefined ? r.position_domain : undefined,
+        positionIsActive: r.position_active !== undefined ? Boolean(r.position_active) : true,
         capabilityCode: r.capability_code,
         scopeType: r.scope_type,
         businessRuleState: r.business_rule_state,
