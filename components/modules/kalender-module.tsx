@@ -18,6 +18,7 @@ import {
   X,
   MapPin,
   Filter,
+  Lock,
 } from "lucide-react";
 
 export interface AgendaItem {
@@ -89,14 +90,27 @@ export function KalenderModule({
         {/* Action button */}
         {subTab === "kalender" && canAddAgenda && (
           <Button
-            onClick={() => setShowAddModal(true)}
-            leftIcon={<PlusCircle className="h-4 w-4" />}
+            disabled={true}
+            title="Fitur perubahan data belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked)"
+            leftIcon={<Lock className="h-4 w-4 text-slate-400" />}
             size="sm"
+            variant="secondary"
+            className="cursor-not-allowed opacity-60 text-slate-400 border-slate-200 bg-slate-50"
           >
-            Tambah Agenda
+            Tambah Agenda (Terkunci)
           </Button>
         )}
       </div>
+
+      {/* Post-Launch Locked Notice */}
+      {subTab === "kalender" && (
+        <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 flex items-center gap-2.5 text-xs text-amber-800">
+          <Lock className="h-4 w-4 shrink-0 text-amber-700" />
+          <span>
+            Fitur penambahan agenda kalender belum diaktifkan pada tahap peluncuran ini. Kalender akademik berada dalam mode lihat (read-only) (Post-Launch Locked).
+          </span>
+        </div>
+      )}
 
       {/* Sub-tab Pill Switcher */}
       <div className="flex items-center gap-2 p-1.5 bg-slate-100/90 rounded-2xl w-fit border border-slate-200/80">

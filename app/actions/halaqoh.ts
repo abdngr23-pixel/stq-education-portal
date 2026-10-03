@@ -1,7 +1,7 @@
 "use server";
 
 import prisma from "@/lib/prisma";
-import { getCurrentSession, recordAuditLog } from "@/lib/auth";
+import { getCurrentSession } from "@/lib/auth";
 import { Prisma } from "@prisma/client";
 
 export interface CreateHalaqohInput {
@@ -151,213 +151,41 @@ export async function getHalaqohDetailAction(halaqohId: string) {
  * Server Action: Buat Halaqoh Baru (Wewenang KS & ADM)
  */
 export async function createHalaqohAction(input: CreateHalaqohInput) {
-  const session = await getCurrentSession();
-  if (!session) {
-    return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
-  }
-
-  // Wajib Mudir/KS atau Admin
-  if (!["KS", "ADM"].includes(session.role)) {
-    return {
-      success: false,
-      message: "Akses Ditolak: Hanya Kepala Sekolah / Mudir dan Admin yang berwenang membuat halaqoh.",
-    };
-  }
-
-  try {
-    const count = await prisma.halaqoh.count();
-    const halaqohCode = `HLQ-${String(count + 1).padStart(4, "0")}`;
-    if (!input.pembinaId || typeof input.pembinaId !== "string" || !input.pembinaId.trim()) {
-      return { success: false, message: "Musyrif pembina wajib dipilih." };
-    }
-
-    const staff = await prisma.staff.findUnique({
-      where: { id: input.pembinaId.trim() },
-    });
-    if (!staff) {
-      return { success: false, message: "Akses Ditolak: Staf pembina tidak ditemukan." };
-    }
-    if (staff.status !== "AKTIF") {
-      return { success: false, message: "Akses Ditolak: Staf yang dipilih tidak aktif." };
-    }
-    if (!["MT", "PH"].includes(staff.roleStaff)) {
-      return {
-        success: false,
-        message: "Akses Ditolak: Staf yang dipilih tidak memenuhi syarat sebagai pembina halaqoh (Hanya staf aktif dengan peran MT atau PH).",
-      };
-    }
-    const pembinaId = staff.id;
-
-    const newHalaqoh = await prisma.halaqoh.create({
-      data: {
-        halaqohCode,
-        nama: input.nama,
-        pembinaId,
-        tahunAjaran: input.tahunAjaran,
-        status: "AKTIF",
-        createdBy: session.username,
-      },
-      include: {
-        pembina: true,
-      },
-    });
-
-    await recordAuditLog({
-      userId: session.userId,
-      action: "CREATE_HALAQOH",
-      entity: "Halaqoh",
-      entityId: newHalaqoh.id,
-      details: {
-        halaqohCode,
-        nama: newHalaqoh.nama,
-        pembina: (newHalaqoh as { pembina?: { nama?: string } | null }).pembina?.nama,
-        tahunAjaran: newHalaqoh.tahunAjaran,
-      },
-    });
-
-    return {
-      success: true,
-      message: `Halaqoh "${newHalaqoh.nama}" berhasil dibuat.`,
-      data: newHalaqoh,
-    };
-  } catch (error) {
-    console.error("Gagal membuat halaqoh baru:", error);
-    return { success: false, message: "Gagal menyimpan halaqoh ke pangkalan data." };
-  }
+  void input;
+  return {
+    success: false,
+    message: "Fitur pembuatan halaqoh baru belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked).",
+    errorCode: "POLICY_NOT_ACTIVE",
+    error: "POLICY_NOT_ACTIVE",
+  };
 }
 
 /**
  * Server Action: Tugaskan / Ganti Pembina Musyrif Halaqoh (Wewenang KS & ADM)
  */
 export async function assignPembinaHalaqohAction(halaqohId: string, pembinaId: string) {
-  const session = await getCurrentSession();
-  if (!session) {
-    return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
-  }
-
-  if (!["KS", "ADM"].includes(session.role)) {
-    return {
-      success: false,
-      message: "Akses Ditolak: Hanya Kepala Sekolah / Mudir dan Admin yang berwenang menugaskan pembina halaqoh.",
-    };
-  }
-
-  try {
-    const staff = await prisma.staff.findUnique({
-      where: { id: pembinaId },
-    });
-
-    if (!staff || staff.status !== "AKTIF" || !["MT", "PH"].includes(staff.roleStaff)) {
-      return {
-        success: false,
-        message: "Akses Ditolak: Staf yang dipilih tidak memenuhi syarat sebagai pembina halaqoh (Hanya staf aktif dengan peran MT atau PH).",
-      };
-    }
-
-    const updated = await prisma.halaqoh.update({
-      where: { id: halaqohId },
-      data: {
-        pembinaId,
-      },
-      include: {
-        pembina: true,
-      },
-    });
-
-    await recordAuditLog({
-      userId: session.userId,
-      action: "ASSIGN_PEMBINA_HALAQOH",
-      entity: "Halaqoh",
-      entityId: updated.id,
-      details: {
-        halaqohNama: updated.nama,
-        pembinaBaru: staff.nama,
-      },
-    });
-
-    return {
-      success: true,
-      message: `Pembina halaqoh "${updated.nama}" berhasil diperbarui menjadi ${staff.nama}.`,
-      data: updated,
-    };
-  } catch (error) {
-    console.error("Gagal menugaskan pembina halaqoh:", error);
-    return { success: false, message: "Gagal memperbarui pembina halaqoh." };
-  }
+  void halaqohId;
+  void pembinaId;
+  return {
+    success: false,
+    message: "Fitur penugasan pembina halaqoh belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked).",
+    errorCode: "POLICY_NOT_ACTIVE",
+    error: "POLICY_NOT_ACTIVE",
+  };
 }
 
 /**
  * Server Action: Pindahkan Santri ke Halaqoh Lain (Wewenang KS & ADM)
  */
 export async function pindahkanSantriHalaqohAction(santriId: string, newHalaqohId: string) {
-  const session = await getCurrentSession();
-  if (!session) {
-    return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
-  }
-
-  if (!["KS", "ADM"].includes(session.role)) {
-    return {
-      success: false,
-      message: "Akses Ditolak: Hanya Kepala Sekolah / Mudir dan Admin yang berwenang memindahkan santri halaqoh.",
-    };
-  }
-
-  try {
-    const halaqohTujuan = await prisma.halaqoh.findUnique({
-      where: { id: newHalaqohId },
-    });
-
-    if (!halaqohTujuan) {
-      return { success: false, message: "Halaqoh tujuan tidak ditemukan." };
-    }
-
-    const santri = await prisma.santri.update({
-      where: { id: santriId },
-      data: {
-        halaqohId: newHalaqohId,
-      },
-      select: {
-        id: true,
-        nis: true,
-        nama: true,
-        kelas: true,
-        jenisKelamin: true,
-        status: true,
-        isYatimDhuafa: true,
-        targetAkhirProgramJuz: true,
-        modalHafalanAwalHalaman: true,
-        tanggalBaselineTahfizh: true,
-        namaWali: true,
-        noHpWali: true,
-        halaqohId: true,
-        createdAt: true,
-        updatedAt: true,
-        createdBy: true,
-        halaqoh: true,
-      },
-    });
-
-    await recordAuditLog({
-      userId: session.userId,
-      action: "PINDAH_HALAQOH_SANTRI",
-      entity: "Santri",
-      entityId: santri.id,
-      details: {
-        santriNama: santri.nama,
-        santriNis: santri.nis,
-        halaqohBaru: halaqohTujuan.nama,
-      },
-    });
-
-    return {
-      success: true,
-      message: `Santri ${santri.nama} berhasil dipindahkan ke ${halaqohTujuan.nama}.`,
-      data: santri,
-    };
-  } catch (error) {
-    console.error("Gagal memindahkan santri halaqoh:", error);
-    return { success: false, message: "Gagal memperbarui halaqoh santri." };
-  }
+  void santriId;
+  void newHalaqohId;
+  return {
+    success: false,
+    message: "Fitur pemindahan santri halaqoh belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked).",
+    errorCode: "POLICY_NOT_ACTIVE",
+    error: "POLICY_NOT_ACTIVE",
+  };
 }
 
 /**

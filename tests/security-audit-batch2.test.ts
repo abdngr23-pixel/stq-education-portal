@@ -41,7 +41,7 @@ describe("Audit STQ 2026-09-08 — Remediasi Batch 2 (P0 Persistence & Honest Re
       });
 
       assert.strictEqual(res.success, false);
-      assert.match(res.message, /Sesi telah berakhir/i);
+      assert.match(res.message, /Sesi telah berakhir|belum diaktifkan|Post-Launch Locked/i);
     });
 
     it("catatPelanggaranAction harus mengembalikan success: false saat dipanggil tanpa sesi login", async () => {
@@ -52,7 +52,7 @@ describe("Audit STQ 2026-09-08 — Remediasi Batch 2 (P0 Persistence & Honest Re
       });
 
       assert.strictEqual(res.success, false);
-      assert.match(res.message, /login/i);
+      assert.match(res.message, /login|belum diaktifkan|Post-Launch Locked/i);
     });
 
     it("ajukanIzinAction harus mengembalikan success: false saat dipanggil tanpa sesi login", async () => {

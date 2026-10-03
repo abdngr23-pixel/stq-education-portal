@@ -15,6 +15,7 @@ import {
   AlertCircle,
   X,
   FileCheck,
+  Lock,
 } from "lucide-react";
 
 export interface SuratModuleProps {
@@ -47,7 +48,14 @@ export function SuratModule({
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  const currentSantri = santriList.find((s) => s.nis === selectedSantriNis) || santriList[0];
+  const currentSantri =
+    santriList.find((s) => s.nis === selectedSantriNis) ||
+    santriList[0] || {
+      nama: "-",
+      nis: "-",
+      kelas: "-",
+      halaqoh: "-",
+    };
 
   const handleBuatDraf = () => {
     setFeedback({
@@ -69,6 +77,14 @@ export function SuratModule({
             Penyusunan naskah administrasi baku berstandar {INSTITUTION_CONFIG.schoolName} • Draf oleh: {currentUserName} ({userRole})
           </p>
         </div>
+      </div>
+
+      {/* Post-Launch Locked Notice */}
+      <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 flex items-center gap-2.5 text-xs text-amber-800">
+        <Lock className="h-4 w-4 shrink-0 text-amber-700" />
+        <span>
+          Fitur penerbitan surat resmi otomatis belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked). Pratinjau draf dan cetak format dokumen resmi tetap tersedia.
+        </span>
       </div>
 
       {/* Feedback Alert */}
@@ -154,11 +170,15 @@ export function SuratModule({
                 onChange={(e) => setSelectedSantriNis(e.target.value)}
                 className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold"
               >
-                {santriList.map((s) => (
-                  <option key={s.nis} value={s.nis}>
-                    {s.nama} ({s.nis} - {s.kelas})
-                  </option>
-                ))}
+                {santriList.length === 0 ? (
+                  <option value="">Memuat data santri atau belum ada santri...</option>
+                ) : (
+                  santriList.map((s) => (
+                    <option key={s.nis} value={s.nis}>
+                      {s.nama} ({s.nis} - {s.kelas})
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 

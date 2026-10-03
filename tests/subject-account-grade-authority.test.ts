@@ -195,6 +195,22 @@ describe("PRE-LAUNCH PR-1: Studi Umum Subject Account Grade Isolation & End-to-E
         kategori: "KEPESANTRENAN",
       },
     });
+
+    // 11. Seed a Nilai record for read testing (since input mutations are POST_LAUNCH_LOCKED on Day-1)
+    await prisma.nilaiAkademik.create({
+      data: {
+        id: "nilai-seed-mat-01",
+        santriId: SANTRI_ID,
+        mapelId: MAPEL_MAT,
+        semester: 1,
+        tahunAjaran: "2026/2027",
+        jenis: JenisNilai.TUGAS,
+        angka: 90,
+        huruf: "A",
+        namaPengajarSnapshot: "Bpk. Hendra Gunawan, M.Pd",
+        dicatatOlehUserId: USER_MAT_ID,
+      },
+    });
   });
 
   after(async () => {
@@ -204,6 +220,7 @@ describe("PRE-LAUNCH PR-1: Studi Umum Subject Account Grade Isolation & End-to-E
 
   it("1. Unauthenticated call to inputNilaiAction -> DENY", async () => {
     setTestSession(null);
+    const initialCount = await prisma.nilaiAkademik.count();
     const res = await inputNilaiAction({
       santriId: SANTRI_ID,
       mapelId: MAPEL_MAT,
@@ -216,7 +233,9 @@ describe("PRE-LAUNCH PR-1: Studi Umum Subject Account Grade Isolation & End-to-E
     });
 
     assert.strictEqual(res.success, false);
-    assert.match(res.message || "", /login|sesi/i);
+    assert.strictEqual(res.errorCode, "POLICY_NOT_ACTIVE");
+    const postCount = await prisma.nilaiAkademik.count();
+    assert.strictEqual(postCount, initialCount, "Zero DB writes");
   });
 
   it("2. SUBJECT account before valid session -> DENY grade mutation", async () => {
@@ -228,6 +247,7 @@ describe("PRE-LAUNCH PR-1: Studi Umum Subject Account Grade Isolation & End-to-E
     };
     setTestSession(sessionMat);
 
+    const initialCount = await prisma.nilaiAkademik.count();
     // Call without educationSessionId
     const res = await inputNilaiAction({
       santriId: SANTRI_ID,
@@ -239,10 +259,12 @@ describe("PRE-LAUNCH PR-1: Studi Umum Subject Account Grade Isolation & End-to-E
     });
 
     assert.strictEqual(res.success, false);
-    assert.match(res.message || "", /educationSessionId|sesi pembelajaran/i);
+    assert.strictEqual(res.errorCode, "POLICY_NOT_ACTIVE");
+    const postCount = await prisma.nilaiAkademik.count();
+    assert.strictEqual(postCount, initialCount, "Zero DB writes");
   });
 
-  it("3. SUBJECT account A + valid session A -> ALLOW (snapshot strictly derived from session.actualTeacherName)", async () => {
+  it("3. SUBJECT account A + valid session A -> POST_LAUNCH_LOCKED: deny score mutation on Day-1", async () => {
     const sessionMat: UserSession = {
       userId: USER_MAT_ID,
       username: "tech.mapel.matematika",
@@ -255,7 +277,6 @@ describe("PRE-LAUNCH PR-1: Studi Umum Subject Account Grade Isolation & End-to-E
       where: { mapelId: MAPEL_MAT },
     });
 
-    // Notice client passes forged namaPengajarSnapshot: "HACKER_CLIENT_NAME"
     const res = await inputNilaiAction({
       santriId: SANTRI_ID,
       mapelId: MAPEL_MAT,
@@ -265,34 +286,17 @@ describe("PRE-LAUNCH PR-1: Studi Umum Subject Account Grade Isolation & End-to-E
       jenis: JenisNilai.TUGAS,
       angka: 92,
       catatan: "Pemahaman aljabar sangat baik",
-      namaPengajarSnapshot: "HACKER_FORGED_NAME", // Client-forged snapshot must be IGNORED!
+      namaPengajarSnapshot: "HACKER_FORGED_NAME",
     });
 
-    assert.strictEqual(res.success, true, "Subject account must be allowed to write grades for valid started session");
-    assert.match(res.message || "", /berhasil disimpan/i);
+    assert.strictEqual(res.success, false, "Score mutation must be denied server-side on Day-1");
+    assert.strictEqual(res.errorCode, "POLICY_NOT_ACTIVE");
+    assert.match(res.message || "", /belum diaktifkan|Post-Launch Locked/i);
 
-    // Verify DB record
     const postCount = await prisma.nilaiAkademik.count({
       where: { mapelId: MAPEL_MAT },
     });
-    assert.strictEqual(postCount, initialCount + 1, "Nilai record must be inserted in DB");
-
-    const record = await prisma.nilaiAkademik.findFirst({
-      where: {
-        santriId: SANTRI_ID,
-        mapelId: MAPEL_MAT,
-      },
-    });
-    assert.ok(record, "Nilai record must exist");
-    assert.strictEqual(record.guruId, null, "guruId must be null for subject account without staffId");
-    // CRITICAL: Snapshot derived from session.actualTeacherName, NOT client-supplied snapshot!
-    assert.strictEqual(
-      record.namaPengajarSnapshot,
-      "Bpk. Hendra Gunawan, M.Pd",
-      "namaPengajarSnapshot must be derived server-side from EducationSession.actualTeacherName"
-    );
-    assert.strictEqual(record.dicatatOlehUserId, USER_MAT_ID, "dicatatOlehUserId must record subject account userId");
-    assert.strictEqual(record.huruf, "A", "Huruf must be calculated dynamically");
+    assert.strictEqual(postCount, initialCount, "Zero DB writes: Nilai record must NOT be inserted");
   });
 
   it("4. SUBJECT account A -> CROSS-SUBJECT WRITE to Subject B is strictly DENIED server-side (Zero DB writes)", async () => {
@@ -320,7 +324,7 @@ describe("PRE-LAUNCH PR-1: Studi Umum Subject Account Grade Isolation & End-to-E
     });
 
     assert.strictEqual(res.success, false, "Cross-subject grade write must be denied server-side");
-    assert.match(res.message || "", /Akses Ditolak: Sesi pembelajaran ini dimulai oleh akun lain|Akses Ditolak: Akun mata pelajaran tidak berwenang/i);
+    assert.strictEqual(res.errorCode, "POLICY_NOT_ACTIVE");
 
     // Verify ZERO writes to DB
     const postBigCount = await prisma.nilaiAkademik.count({
@@ -338,6 +342,7 @@ describe("PRE-LAUNCH PR-1: Studi Umum Subject Account Grade Isolation & End-to-E
     };
     setTestSession(sessionMat);
 
+    const initialCount = await prisma.nilaiAkademik.count();
     const res = await inputNilaiAction({
       santriId: "san-out-of-scope", // Not in sess-mat-valid-01 participants!
       mapelId: MAPEL_MAT,
@@ -349,7 +354,9 @@ describe("PRE-LAUNCH PR-1: Studi Umum Subject Account Grade Isolation & End-to-E
     });
 
     assert.strictEqual(res.success, false, "Santri outside session scope must be denied");
-    assert.match(res.message || "", /di luar cakupan peserta sesi/i);
+    assert.strictEqual(res.errorCode, "POLICY_NOT_ACTIVE");
+    const postCount = await prisma.nilaiAkademik.count();
+    assert.strictEqual(postCount, initialCount, "Zero DB writes");
   });
 
   it("6. PERSONAL user + active subject binding -> DENY subject-account authority", async () => {
@@ -361,6 +368,7 @@ describe("PRE-LAUNCH PR-1: Studi Umum Subject Account Grade Isolation & End-to-E
     };
     setTestSession(sessionPersonal);
 
+    const initialCount = await prisma.nilaiAkademik.count();
     const res = await inputNilaiAction({
       santriId: SANTRI_ID,
       mapelId: MAPEL_MAT,
@@ -371,9 +379,10 @@ describe("PRE-LAUNCH PR-1: Studi Umum Subject Account Grade Isolation & End-to-E
       angka: 85,
     });
 
-    // PERSONAL user does NOT have accountType = SUBJECT, nor are they the teacher of the session
     assert.strictEqual(res.success, false, "Personal user must not gain subject-account grading authority");
-    assert.match(res.message || "", /Akses Ditolak/i);
+    assert.strictEqual(res.errorCode, "POLICY_NOT_ACTIVE");
+    const postCount = await prisma.nilaiAkademik.count();
+    assert.strictEqual(postCount, initialCount, "Zero DB writes");
   });
 
   it("7. ADM role calling inputNilaiAction -> DENY (cannot widen ADM authority)", async () => {
@@ -385,6 +394,7 @@ describe("PRE-LAUNCH PR-1: Studi Umum Subject Account Grade Isolation & End-to-E
     };
     setTestSession(sessionAdmin);
 
+    const initialCount = await prisma.nilaiAkademik.count();
     const res = await inputNilaiAction({
       santriId: SANTRI_ID,
       mapelId: MAPEL_MAT,
@@ -396,7 +406,9 @@ describe("PRE-LAUNCH PR-1: Studi Umum Subject Account Grade Isolation & End-to-E
     });
 
     assert.strictEqual(res.success, false, "ADM must not have direct grade write authority");
-    assert.match(res.message || "", /Role ADM tidak memiliki hak akses/i);
+    assert.strictEqual(res.errorCode, "POLICY_NOT_ACTIVE");
+    const postCount = await prisma.nilaiAkademik.count();
+    assert.strictEqual(postCount, initialCount, "Zero DB writes");
   });
 
   it("8. GA calling inputNilaiAction for Kepesantrenan mapel -> DENY (cannot bypass Kepesantrenan authorization)", async () => {
@@ -408,6 +420,7 @@ describe("PRE-LAUNCH PR-1: Studi Umum Subject Account Grade Isolation & End-to-E
     };
     setTestSession(sessionGA);
 
+    const initialCount = await prisma.nilaiAkademik.count();
     const res = await inputNilaiAction({
       santriId: SANTRI_ID,
       mapelId: "mapel-kepesantrenan-01",
@@ -418,7 +431,9 @@ describe("PRE-LAUNCH PR-1: Studi Umum Subject Account Grade Isolation & End-to-E
     });
 
     assert.strictEqual(res.success, false, "GA cannot input grades for Kepesantrenan subjects");
-    assert.match(res.message || "", /tidak memiliki wewenang mengelola penilaian kepesantrenan/i);
+    assert.strictEqual(res.errorCode, "POLICY_NOT_ACTIVE");
+    const postCount = await prisma.nilaiAkademik.count();
+    assert.strictEqual(postCount, initialCount, "Zero DB writes");
   });
 
   it("9. SUBJECT account A -> READ grades for bound Subject A succeeds", async () => {

@@ -1,18 +1,20 @@
 'use server';
 
 import prisma from '@/lib/prisma';
-import { getSession, requireRole, recordAuditLog } from '@/lib/auth';
+import { getSession } from '@/lib/auth';
 
 export interface KalenderResponse<T = unknown> {
   success: boolean;
   message: string;
   data?: T;
   error?: string;
+  errorCode?: string;
 }
 
 /**
- * Tambah Agenda / Kegiatan Pesantren
- * Akses: ADM, KS
+ * Tambah Agenda / Kegiatan Pesantren (POST_LAUNCH_LOCKED)
+ * Wewenang mutasi system.calendar.manage belum disetujui secara kanonikal.
+ * Fail-closed Day-1: menolak mutasi server-side dan zero DB delta.
  */
 export async function tambahAgendaAction(formData: {
   judul: string;
@@ -23,42 +25,13 @@ export async function tambahAgendaAction(formData: {
   targetPeserta: string; // "SEMUA", "KELAS_7", "KELAS_8", "ASATIDZ"
   lokasi?: string;
 }): Promise<KalenderResponse> {
-  try {
-    const session = await requireRole(['ADM', 'KS']);
-
-    if (!formData.judul.trim() || !formData.tanggalMulai) {
-      return { success: false, message: 'Judul dan tanggal mulai agenda wajib diisi.' };
-    }
-
-    const agenda = await prisma.kalenderAkademik.create({
-      data: {
-        judul: formData.judul,
-        deskripsi: formData.deskripsi,
-        tanggalMulai: new Date(formData.tanggalMulai),
-        tanggalSelesai: formData.tanggalSelesai ? new Date(formData.tanggalSelesai) : null,
-        kategori: formData.kategori,
-        targetPeserta: formData.targetPeserta,
-        lokasi: formData.lokasi,
-      },
-    });
-
-    await recordAuditLog(
-      session.userId,
-      'TAMBAH_AGENDA_KALENDER',
-      'KalenderAkademik',
-      agenda.id,
-      { judul: formData.judul, kategori: formData.kategori }
-    );
-
-    return {
-      success: true,
-      message: `Agenda "${formData.judul}" berhasil ditambahkan ke kalender akademik.`,
-      data: agenda,
-    };
-  } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, message: errorMsg, error: errorMsg };
-  }
+  void formData;
+  return {
+    success: false,
+    message: 'Fitur penambahan agenda kalender belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked).',
+    errorCode: 'POLICY_NOT_ACTIVE',
+    error: 'POLICY_NOT_ACTIVE',
+  };
 }
 
 /**

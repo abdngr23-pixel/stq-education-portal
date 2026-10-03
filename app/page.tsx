@@ -820,6 +820,32 @@ export default function Home() {
     };
   }, [activeTab, selectedRole]);
 
+  // Lazy fetch untuk Audit (hanya ketika tab audit aktif dan role diizinkan: YAY, KS, ADM)
+  useEffect(() => {
+    if (activeTab !== "audit" || !["YAY", "KS", "ADM"].includes(selectedRole)) return;
+    let isMounted = true;
+    getAuditLogsAction()
+      .then((res) => {
+        if (!isMounted) return;
+        if (res.success && Array.isArray(res.data)) {
+          setAuditLogsList(res.data as AuditLogItem[]);
+        } else {
+          setAuditLogsList([]);
+          setFeedback({ type: "error", text: res.message || "Gagal memuat log audit dari server." });
+        }
+      })
+      .catch((e) => {
+        if (isMounted) {
+          setAuditLogsList([]);
+          setFeedback({ type: "error", text: e?.message || "Koneksi log audit gagal." });
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeTab, selectedRole]);
+
   // Audit refresh
   const handleRefreshAuditLogs = async () => {
     startTransition(async () => {
@@ -827,6 +853,8 @@ export default function Home() {
       if (res.success && res.data) {
         setAuditLogsList(res.data as AuditLogItem[]);
         setFeedback({ type: "success", text: "Catatan jejak audit berhasil disinkronkan dari server." });
+      } else {
+        setFeedback({ type: "error", text: res.message || "Gagal menyinkronkan log audit dari server." });
       }
     });
   };

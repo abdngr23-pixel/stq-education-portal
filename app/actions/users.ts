@@ -1,29 +1,47 @@
 'use server';
 
-import crypto from 'crypto';
 import prisma from '@/lib/prisma';
-import { requireRole, recordAuditLog, hashPassword } from '@/lib/auth';
-import { UserStatus } from '@prisma/client';
+import { requireRole } from '@/lib/auth';
 
 export interface UsersResponse<T = unknown> {
   success: boolean;
   message: string;
   data?: T;
   error?: string;
+  errorCode?: string;
 }
 
 /**
- * Mengambil daftar pengguna & staf sistem
+ * Dedicated Safe User Projection DTO (SEV-0 Blocker Remediation AUDIT-R1_3-001)
+ * Strictly excludes: passwordHash, password, sessionToken, sessions, email, phone, staff.noHp, internal authorization relations.
+ */
+export interface SafeUserItemDTO {
+  id: string;
+  username: string;
+  role: string;
+  status: string;
+  isPetugasPresensiPutri: boolean;
+  staff: { nama: string } | null;
+  santri: { id: string; nama: string; nis: string; jenisKelamin: string } | null;
+}
+
+/**
+ * Mengambil daftar pengguna & staf sistem dengan safe projection
  * Akses: ADM, KS, YAY (05_ROLE_PERMISSION_MATRIX.md)
  */
-export async function getUsersListAction(): Promise<UsersResponse> {
+export async function getUsersListAction(): Promise<UsersResponse<SafeUserItemDTO[]>> {
   try {
     await requireRole(['ADM', 'KS', 'YAY']);
 
     const users = await prisma.user.findMany({
-      include: {
-        staff: { select: { nama: true, staffCode: true, noHp: true } },
-        santri: { select: { id: true, nama: true, nis: true, kelas: true, jenisKelamin: true } },
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        status: true,
+        isPetugasPresensiPutri: true,
+        staff: { select: { nama: true } },
+        santri: { select: { id: true, nama: true, nis: true, jenisKelamin: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 100,
@@ -32,167 +50,67 @@ export async function getUsersListAction(): Promise<UsersResponse> {
     return {
       success: true,
       message: 'Berhasil memuat daftar pengguna',
-      data: users,
+      data: users as SafeUserItemDTO[],
     };
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, message: errorMsg, error: errorMsg };
+    if (err instanceof Error) {
+      if (err.message.includes('UNAUTHORIZED') || err.message.toLowerCase().includes('login')) {
+        return { success: false, message: 'Silakan login terlebih dahulu', error: 'UNAUTHORIZED', errorCode: 'UNAUTHORIZED' };
+      }
+      if (err.message.includes('FORBIDDEN') || err.message.toLowerCase().includes('tidak memiliki akses') || err.message.toLowerCase().includes('akses ditolak')) {
+        return { success: false, message: 'Akses Ditolak: Anda tidak memiliki kewenangan untuk melihat daftar pengguna.', error: 'UNAUTHORIZED', errorCode: 'UNAUTHORIZED' };
+      }
+    }
+    // Error Sanitization (AUDIT-R1_3-001): Never expose raw Prisma/database internal errors to client
+    console.error('[UsersAction Error: getUsersListAction]', err);
+    return {
+      success: false,
+      message: 'Terjadi kesalahan sistem saat memuat daftar pengguna.',
+      error: 'INTERNAL_ERROR',
+      errorCode: 'INTERNAL_ERROR',
+    };
   }
 }
 
 /**
- * Toggle status aktif/nonaktif akun pengguna
- * Akses: ADM, KS
+ * Toggle status aktif/nonaktif akun pengguna (POST_LAUNCH_LOCKED)
+ * Menolak mutasi pada Day-1 karena wewenang mutasi system.user.manage belum aktif (AUDIT-R1_3-003).
  */
 export async function toggleUserStatusAction(userId: string): Promise<UsersResponse> {
-  try {
-    const session = await requireRole(['ADM', 'KS']);
-
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      return { success: false, message: 'Pengguna tidak ditemukan.' };
-    }
-
-    const newStatus = user.status === UserStatus.AKTIF ? UserStatus.NONAKTIF : UserStatus.AKTIF;
-
-    const updated = await prisma.user.update({
-      where: { id: userId },
-      data: { status: newStatus },
-    });
-
-    // Jika akun dinonaktifkan, cabut seluruh sesi aktif
-    if (newStatus === UserStatus.NONAKTIF) {
-      await prisma.session.deleteMany({ where: { userId: user.id } });
-    }
-
-    await recordAuditLog(
-      session.userId,
-      'TOGGLE_USER_STATUS',
-      'User',
-      user.id,
-      { username: user.username, statusLama: user.status, statusBaru: newStatus }
-    );
-
-    return {
-      success: true,
-      message: `Status akun ${user.username} berhasil diubah menjadi ${newStatus}.`,
-      data: updated,
-    };
-  } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, message: errorMsg, error: errorMsg };
-  }
+  void userId;
+  return {
+    success: false,
+    message: 'Fitur perubahan status pengguna belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked).',
+    errorCode: 'POLICY_NOT_ACTIVE',
+    error: 'POLICY_NOT_ACTIVE',
+  };
 }
 
 /**
- * Reset kata sandi pengguna dengan password acak sementara & pencabutan sesi lama
- * Akses: ADM, KS
+ * Reset kata sandi pengguna (POST_LAUNCH_LOCKED)
+ * Menolak mutasi pada Day-1 karena wewenang mutasi system.user.manage belum aktif (AUDIT-R1_3-003).
  */
-export async function resetUserPasswordAction(userId: string): Promise<UsersResponse> {
-  try {
-    const session = await requireRole(['ADM', 'KS']);
-
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      return { success: false, message: 'Pengguna tidak ditemukan.' };
-    }
-
-    // Generate sandi sementara acak (bukan default statis)
-    const tempPassword = `DUC-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-    const newHash = await hashPassword(tempPassword);
-
-    await prisma.user.update({
-      where: { id: userId },
-      data: { passwordHash: newHash },
-    });
-
-    // Cabut seluruh sesi aktif lama pengguna
-    await prisma.session.deleteMany({ where: { userId: user.id } });
-
-    // Jangan catat plain password ke log audit
-    await recordAuditLog(
-      session.userId,
-      'RESET_PASSWORD',
-      'User',
-      user.id,
-      { targetUser: user.username, reason: 'RESET_BY_ADMIN' }
-    );
-
-    return {
-      success: true,
-      message: `Kata sandi akun ${user.username} berhasil di-reset dengan sandi acak: "${tempPassword}". Seluruh sesi lama telah dicabut.`,
-      data: { temporaryPassword: tempPassword },
-    };
-  } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, message: errorMsg, error: errorMsg };
-  }
+export async function resetUserPasswordAction(userId: string, newPassword?: string): Promise<UsersResponse> {
+  void userId;
+  void newPassword;
+  return {
+    success: false,
+    message: 'Fitur reset kata sandi pengguna belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked).',
+    errorCode: 'POLICY_NOT_ACTIVE',
+    error: 'POLICY_NOT_ACTIVE',
+  };
 }
 
 /**
- * Toggle hak akses Petugas Presensi Putri untuk santri putri
- * Akses: ADM, KS (05_ROLE_PERMISSION_MATRIX.md)
- * Aturan Bisnis:
- * - Hanya santri dengan jenisKelamin === "P" yang dapat dijadikan Petugas Presensi Putri.
- * - Server re-check memastikan tidak dapat diberikan kepada santri putra atau non-santri.
+ * Toggle hak akses Petugas Presensi Putri (POST_LAUNCH_LOCKED)
+ * Menolak mutasi pada Day-1 karena wewenang mutasi system.user.manage belum aktif (AUDIT-R1_3-003).
  */
 export async function togglePetugasPresensiPutriAction(userId: string): Promise<UsersResponse> {
-  try {
-    const session = await requireRole(['ADM', 'KS']);
-
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        santri: { select: { id: true, nama: true, nis: true, jenisKelamin: true } },
-      },
-    });
-
-    if (!user) {
-      return { success: false, message: 'Pengguna tidak ditemukan.' };
-    }
-
-    if (user.role !== 'ST' || !user.santri) {
-      return {
-        success: false,
-        message: 'Akses Ditolak: Wewenang Petugas Presensi Putri hanya dapat diberikan kepada akun santri.',
-      };
-    }
-
-    if (user.santri.jenisKelamin !== 'P') {
-      return {
-        success: false,
-        message: `Validasi Gagal: Santri ${user.santri.nama} berjenis kelamin laki-laki (L). Petugas Presensi Putri khusus santriwati (P).`,
-      };
-    }
-
-    const newStatus = !user.isPetugasPresensiPutri;
-
-    const updated = await prisma.user.update({
-      where: { id: userId },
-      data: { isPetugasPresensiPutri: newStatus },
-    });
-
-    await recordAuditLog(
-      session.userId,
-      'TOGGLE_PETUGAS_PRESENSI_PUTRI',
-      'User',
-      user.id,
-      {
-        username: user.username,
-        santriNama: user.santri.nama,
-        santriNis: user.santri.nis,
-        isPetugasPresensiPutri: newStatus,
-        assignedBy: session.username,
-      }
-    );
-
-    return {
-      success: true,
-      message: `Status Petugas Presensi Putri untuk ${user.santri.nama} (${user.username}) berhasil diubah menjadi: ${newStatus ? 'AKTIF' : 'NONAKTIF'}.`,
-      data: updated,
-    };
-  } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem';
-    return { success: false, message: errorMsg, error: errorMsg };
-  }
+  void userId;
+  return {
+    success: false,
+    message: 'Fitur pengaturan hak akses khusus pengguna belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked).',
+    errorCode: 'POLICY_NOT_ACTIVE',
+    error: 'POLICY_NOT_ACTIVE',
+  };
 }

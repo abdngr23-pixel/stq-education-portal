@@ -1,10 +1,9 @@
 "use server";
 
 import prisma from "@/lib/prisma";
-import { getCurrentSession, recordAuditLog } from "@/lib/auth";
+import { getCurrentSession } from "@/lib/auth";
 import { UserSession } from "@/types/auth";
-import { StatusSP, KategoriBintang, TingkatPelanggaran, Prisma } from "@prisma/client";
-import { hitungPoinPelanggaran } from "@/lib/educational-rules";
+import { KategoriBintang, Prisma } from "@prisma/client";
 
 export interface CatatPelanggaranData {
   santriId: string;
@@ -19,248 +18,41 @@ export interface CatatPelanggaranData {
  * 2. Akumulasi Poin Pelanggaran
  * 3. Penerbitan otomatis Surat Peringatan (SP 1 >= 20, SP 2 >= 40, SP 3 >= 60)
  */
-export async function catatPelanggaranAction(input: CatatPelanggaranData) {
-  const session = await getCurrentSession();
-  if (!session) {
-    return { success: false, message: "Silakan login terlebih dahulu." };
-  }
+export interface CatatPelanggaranResultData {
+  id: string;
+  kodePelanggaran: string;
+  poinFinal: number;
+  isPengulangan: boolean;
+}
 
-  // Otoritas pencatatan pelanggaran santri (PR #11 Technical Baseline):
-  // Mudir (KS) dan Musyrif Keasramaan (MK) saja.
-  // Mudabbir business authority = ALLOW, namun implementasi teknis ditangguhkan (deferred)
-  // hingga STQ Architecture Lock karena belum memiliki representasi penugasan kanonikal.
-  // Seluruh role lain (ADM, MT, PH, OSDA, GA, YAY, WS, ST) dan unauthenticated: DITOLAK (DENY).
-  if (session.role !== "KS" && session.role !== "MK") {
-    return {
-      success: false,
-      message: `Akses ditolak: Role ${session.role} tidak memiliki kewenangan mencatat pelanggaran santri. Otoritas hanya dimiliki Mudir (KS) dan Musyrif Keasramaan (MK).`,
-    };
-  }
-
-  try {
-    const kategori = await prisma.kategoriPelanggaran.findUnique({
-      where: { id: input.kategoriId },
-    });
-
-    if (!kategori) {
-      return { success: false, message: "Kategori pelanggaran tidak valid." };
-    }
-
-    // 1. Cek apakah ada pengulangan kategori yang sama untuk santri ini
-    const existingCount = await prisma.pelanggaranSantri.count({
-      where: {
-        santriId: input.santriId,
-        kategoriId: input.kategoriId,
-      },
-    });
-
-    const isPengulangan = existingCount > 0;
-    // Aturan Bisnis: jika berulang, poin dikalikan dua sesuai educational-rules
-    const poinDasarVal = kategori.poinDasar ?? 0;
-    const poinFinal = hitungPoinPelanggaran(poinDasarVal, isPengulangan);
-
-    const sanksiSnapshot =
-      kategori.sanksi ||
-      (poinFinal > 0 ? `${poinFinal} Poin` : "Hukuman Langsung / Pembinaan");
-
-    // Pencatat staff (Fail-Closed, tanpa fallback staf sembarangan)
-    let pencatatStaffId = session.staffId;
-    if (!pencatatStaffId) {
-      const userWithStaff = await prisma.user.findUnique({
-        where: { id: session.userId },
-        select: { staffId: true },
-      });
-      pencatatStaffId = userWithStaff?.staffId || null;
-    }
-
-    if (!pencatatStaffId) {
-      return {
-        success: false,
-        message: "Akses Ditolak: Akun Anda tidak memiliki relasi staf pencatat resmi di pangkalan data.",
-      };
-    }
-
-    const pencatatStaff = await prisma.staff.findUnique({ where: { id: pencatatStaffId } });
-    if (!pencatatStaff) {
-      return { success: false, message: "Data profil staf pencatat tidak ditemukan." };
-    }
-
-    const timePart = Date.now().toString(36).toUpperCase();
-    const randPart = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const kodePelanggaran = `PLG-${timePart}-${randPart}`;
-
-    // Simpan pelanggaran dengan snapshot identitas
-    const newPelanggaran = await prisma.pelanggaranSantri.create({
-      data: {
-        kodePelanggaran,
-        santriId: input.santriId,
-        kategoriId: input.kategoriId,
-        namaPelanggaranSnapshot: kategori.nama,
-        kategoriSnapshot: kategori.tingkat,
-        sanksiSnapshot: sanksiSnapshot,
-        poinFinal,
-        isPengulangan,
-        kronologi: input.kronologi,
-        pencatatId: pencatatStaff.id,
-      },
-      include: {
-        santri: true,
-        kategori: true,
-      },
-    });
-
-    // 2. Hitung total akumulasi poin aktif santri
-    const allPelanggaran = await prisma.pelanggaranSantri.findMany({
-      where: { santriId: input.santriId },
-    });
-    const totalPoin = allPelanggaran.reduce((acc, curr) => acc + curr.poinFinal, 0);
-
-    let spNotice = "";
-    // Evaluasi SP HANYA untuk Kategori 3
-    // Aturan: Kategori 1 (hukuman langsung) dan Kategori 2 (pemberian point) TIDAK BOLEH memicu SP!
-    const isKategori3 =
-      kategori.tingkat === TingkatPelanggaran.KATEGORI_3 ||
-      kategori.tingkat === TingkatPelanggaran.BERAT;
-
-    if (isKategori3) {
-      const now = new Date();
-      const oneYearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
-      const threeYearsAgo = new Date(now.getTime() - 3 * 365 * 24 * 60 * 60 * 1000);
-
-      // Ambil seluruh pelanggaran Kategori 3 yang pernah dilakukan santri ini
-      const historicalKat3 = await prisma.pelanggaranSantri.findMany({
-        where: {
-          santriId: input.santriId,
-          kategori: {
-            tingkat: { in: [TingkatPelanggaran.KATEGORI_3, TingkatPelanggaran.BERAT] },
-          },
-          id: { not: newPelanggaran.id },
-        },
-        select: { id: true, kategoriId: true, createdAt: true },
-      });
-
-      // Filter berdasarkan aturan pemutihan:
-      // - Pelanggaran sejenis (kategoriId sama): masa aktif 3 tahun
-      // - Pelanggaran umum (kategoriId beda): masa aktif 1 tahun
-      const activePriorKat3 = historicalKat3.filter((p) => {
-        if (p.kategoriId === input.kategoriId) {
-          return p.createdAt >= threeYearsAgo;
-        } else {
-          return p.createdAt >= oneYearAgo;
-        }
-      });
-
-      // Total Kategori 3 aktif termasuk yang baru dicatat
-      const totalActiveKat3 = activePriorKat3.length + 1;
-      const spLevel = Math.min(totalActiveKat3, 3); // SP 1, 2, atau 3
-
-      // Cek apakah SP tingkat ini sudah diterbitkan
-      const existingSP = await prisma.suratPeringatan.findFirst({
-        where: {
-          santriId: input.santriId,
-          tingkatSP: spLevel,
-          status: StatusSP.AKTIF,
-        },
-      });
-
-      if (!existingSP) {
-        const spCount = await prisma.suratPeringatan.count();
-        const nomorSP = `00${spCount + 1}/SP-${spLevel}/DUC/${new Date().getFullYear()}`;
-
-        await prisma.suratPeringatan.create({
-          data: {
-            nomorSP,
-            santriId: input.santriId,
-            tingkatSP: spLevel,
-            totalPoinSaatTerbit: totalPoin,
-            status: StatusSP.AKTIF,
-          },
-        });
-        spNotice = ` PERINGATAN: Pelanggaran Kategori 3 ke-${totalActiveKat3}! ${nomorSP} (SP ${spLevel}) otomatis diterbitkan.`;
-      }
-    }
-
-    // Catat audit trail
-    await recordAuditLog({
-      userId: session.userId,
-      action: "CATAT_PELANGGARAN",
-      entity: "PelanggaranSantri",
-      entityId: newPelanggaran.id,
-      details: {
-        kodePelanggaran,
-        santriNis: newPelanggaran.santri.nis,
-        kategori: kategori.nama,
-        poinDasar: kategori.poinDasar,
-        poinFinal,
-        isPengulangan,
-        totalPoinSaatIni: totalPoin,
-      },
-    });
-
-    const pengulanganText = isPengulangan ? " (Terdeteksi Pengulangan: Poin x2)" : "";
-
-    return {
-      success: true,
-      message: `Pelanggaran ${newPelanggaran.santri.nama} (${kategori.nama}) berhasil dicatat. Poin sanksi: ${poinFinal}${pengulanganText}.${spNotice}`,
-      data: newPelanggaran,
-      totalPoin,
-    };
-  } catch (error) {
-    console.error("Gagal mencatat pelanggaran:", error);
-    return { success: false, message: "Terjadi kesalahan saat memproses pelanggaran." };
-  }
+export async function catatPelanggaranAction(input: CatatPelanggaranData): Promise<{
+  success: boolean;
+  message: string;
+  errorCode?: string;
+  error?: string;
+  data?: CatatPelanggaranResultData;
+  totalPoin?: number;
+}> {
+  void input;
+  return {
+    success: false,
+    message: "Fitur perubahan data belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked).",
+    errorCode: "POLICY_NOT_ACTIVE",
+    error: "POLICY_NOT_ACTIVE",
+  };
 }
 
 /**
  * Server Action: Pemutihan Surat Peringatan (Khusus Kepala Sekolah / Mudir KS)
  */
 export async function putihkanSPAction(params: { spId: string; keterangan: string }) {
-  const session = await getCurrentSession();
-  if (!session) {
-    return { success: false, message: "Silakan login terlebih dahulu." };
-  }
-
-  // Hanya Kepala Sekolah/Mudir (KS) yang memiliki otoritas memutihkan SP
-  if (session.role !== "KS") {
-    return {
-      success: false,
-      message: "Hanya Kepala Sekolah/Mudir (KS) yang berwenang melakukan pemutihan Surat Peringatan.",
-    };
-  }
-
-  try {
-    const sp = await prisma.suratPeringatan.update({
-      where: { id: params.spId },
-      data: {
-        status: StatusSP.DIPUTIHKAN,
-        keteranganPemutihan: params.keterangan,
-        tanggalPemutihan: new Date(),
-      },
-      include: { santri: true },
-    });
-
-    await recordAuditLog({
-      userId: session.userId,
-      action: "PEMUTIHAN_SP",
-      entity: "SuratPeringatan",
-      entityId: sp.id,
-      details: {
-        nomorSP: sp.nomorSP,
-        santri: sp.santri.nama,
-        keterangan: params.keterangan,
-        diputihkanOleh: session.username,
-      },
-    });
-
-    return {
-      success: true,
-      message: `${sp.nomorSP} atas nama ${sp.santri.nama} telah resmi diputihkan oleh Mudir.`,
-      data: sp,
-    };
-  } catch (error) {
-    console.error("Gagal memutihkan SP:", error);
-    return { success: false, message: "Gagal memproses pemutihan SP." };
-  }
+  void params;
+  return {
+    success: false,
+    message: "Fitur perubahan data belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked).",
+    errorCode: "POLICY_NOT_ACTIVE",
+    error: "POLICY_NOT_ACTIVE",
+  };
 }
 
 /**
@@ -272,35 +64,13 @@ export async function anugerahkanBintangAction(params: {
   kategori: KategoriBintang;
   prestasi: string;
 }) {
-  const session = await getCurrentSession();
-  if (!session) {
-    return { success: false, message: "Silakan login terlebih dahulu." };
-  }
-
-  if (session.role !== "KS" && session.role !== "ADM") {
-    return { success: false, message: "Hanya Mudir (KS) dan Admin (ADM) yang dapat mencatat penganugerahan bintang." };
-  }
-
-  try {
-    const bintang = await prisma.bintangSantri.create({
-      data: {
-        santriId: params.santriId,
-        periode: params.periode,
-        kategori: params.kategori,
-        prestasi: params.prestasi,
-      },
-      include: { santri: true },
-    });
-
-    return {
-      success: true,
-      message: `Bintang penghargaan kategori ${params.kategori} berhasil dianugerahkan kepada ${bintang.santri.nama}.`,
-      data: bintang,
-    };
-  } catch (error) {
-    console.error("Gagal menganugerahkan bintang:", error);
-    return { success: false, message: "Gagal menyimpan data bintang santri." };
-  }
+  void params;
+  return {
+    success: false,
+    message: "Fitur perubahan data belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked).",
+    errorCode: "POLICY_NOT_ACTIVE",
+    error: "POLICY_NOT_ACTIVE",
+  };
 }
 
 /**

@@ -196,13 +196,14 @@ export async function runIsolatedE2EVerification() {
     }
 
     // 4. Jalankan Server Next.js Test Sebagai Child Process Terisolasi (tanpa shell wrapper)
-    console.log("\n[4] Memulai Next.js test server...");
+    // Gunakan --webpack untuk menghindari issue resolusi next/font/google pada Turbopack di test environment
+    console.log("\n[4] Memulai Next.js test server (dev mode via --webpack)...");
     const nextCli = require.resolve("next/dist/bin/next");
     const isWin = process.platform === "win32";
 
     nextServerProcess = spawn(
       process.execPath,
-      [nextCli, "dev", "-p", testNextPort.toString(), "-H", "127.0.0.1"],
+      [nextCli, "dev", "--webpack", "-p", testNextPort.toString(), "-H", "127.0.0.1"],
       {
         cwd: rootDir,
         env: {

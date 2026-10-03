@@ -144,7 +144,7 @@ describe("PR #11 Write Authority Alignment: Kedisiplinan Create / Record Authori
     });
 
     assert.strictEqual(res.success, false);
-    assert.match(res.message, /login/i);
+    assert.match(res.message, /login|belum diaktifkan|Post-Launch Locked/i);
 
     const postPelanggaran = await prisma.pelanggaranSantri.count();
     const postSP = await prisma.suratPeringatan.count();
@@ -178,7 +178,7 @@ describe("PR #11 Write Authority Alignment: Kedisiplinan Create / Record Authori
       });
 
       assert.strictEqual(res.success, false, `Role ${role} harus ditolak`);
-      assert.match(res.message, /kewenangan|Akses ditolak/i);
+      assert.match(res.message, /kewenangan|Akses ditolak|belum diaktifkan|Post-Launch Locked/i);
 
       const postPelanggaran = await prisma.pelanggaranSantri.count();
       const postSP = await prisma.suratPeringatan.count();
@@ -211,7 +211,7 @@ describe("PR #11 Write Authority Alignment: Kedisiplinan Create / Record Authori
     });
 
     assert.strictEqual(res.success, false, "MT harus ditolak mencatat pelanggaran");
-    assert.match(res.message, /kewenangan|Akses ditolak/i);
+    assert.match(res.message, /kewenangan|Akses ditolak|belum diaktifkan|Post-Launch Locked/i);
 
     const postPelanggaran = await prisma.pelanggaranSantri.count();
     const postSP = await prisma.suratPeringatan.count();
@@ -243,7 +243,7 @@ describe("PR #11 Write Authority Alignment: Kedisiplinan Create / Record Authori
     });
 
     assert.strictEqual(res.success, false, "PH harus ditolak mencatat pelanggaran");
-    assert.match(res.message, /kewenangan|Akses ditolak/i);
+    assert.match(res.message, /kewenangan|Akses ditolak|belum diaktifkan|Post-Launch Locked/i);
 
     const postPelanggaran = await prisma.pelanggaranSantri.count();
     const postSP = await prisma.suratPeringatan.count();
@@ -254,7 +254,7 @@ describe("PR #11 Write Authority Alignment: Kedisiplinan Create / Record Authori
     assert.strictEqual(postAudit, initialAudit, "Zero DB writes: AuditLog tidak bertambah");
   });
 
-  it("KS -> ALLOW: Mudir (KS) berhak mencatat pelanggaran santri", async () => {
+  it("KS -> POST_LAUNCH_LOCKED: Mudir (KS) dilarang mutasi pelanggaran pada Day-1 launch (zero DB writes)", async () => {
     const sessionKS: UserSession = {
       userId: USER_KS,
       username: "mudir.stq",
@@ -272,14 +272,15 @@ describe("PR #11 Write Authority Alignment: Kedisiplinan Create / Record Authori
       kronologi: "Pencatatan resmi pelanggaran oleh Mudir Pesantren",
     });
 
-    assert.strictEqual(res.success, true, "Mudir (KS) harus berhasil mencatat pelanggaran");
-    assert.ok(res.data?.id, "Harus mengembalikan ID pelanggaran");
+    assert.strictEqual(res.success, false, "Mudir (KS) harus ditolak server-side karena mutasi kedisiplinan belum aktif");
+    assert.strictEqual(res.errorCode, "POLICY_NOT_ACTIVE");
+    assert.match(res.message, /belum diaktifkan|Post-Launch Locked/i);
 
     const postPelanggaran = await prisma.pelanggaranSantri.count();
-    assert.strictEqual(postPelanggaran, initialPelanggaran + 1, "PelanggaranSantri harus bertambah 1");
+    assert.strictEqual(postPelanggaran, initialPelanggaran, "Zero DB writes: PelanggaranSantri tidak bertambah");
   });
 
-  it("MK -> ALLOW: Musyrif Keasramaan (MK) berhak mencatat pelanggaran santri", async () => {
+  it("MK -> POST_LAUNCH_LOCKED: Musyrif Keasramaan (MK) dilarang mutasi pelanggaran pada Day-1 launch (zero DB writes)", async () => {
     const sessionMK: UserSession = {
       userId: USER_MK,
       username: "musyrif.mk",
@@ -297,10 +298,11 @@ describe("PR #11 Write Authority Alignment: Kedisiplinan Create / Record Authori
       kronologi: "Pencatatan resmi pelanggaran oleh Musyrif Keasramaan",
     });
 
-    assert.strictEqual(res.success, true, "Musyrif Keasramaan (MK) harus berhasil mencatat pelanggaran");
-    assert.ok(res.data?.id, "Harus mengembalikan ID pelanggaran");
+    assert.strictEqual(res.success, false, "Musyrif Keasramaan (MK) harus ditolak server-side karena mutasi kedisiplinan belum aktif");
+    assert.strictEqual(res.errorCode, "POLICY_NOT_ACTIVE");
+    assert.match(res.message, /belum diaktifkan|Post-Launch Locked/i);
 
     const postPelanggaran = await prisma.pelanggaranSantri.count();
-    assert.strictEqual(postPelanggaran, initialPelanggaran + 1, "PelanggaranSantri harus bertambah 1");
+    assert.strictEqual(postPelanggaran, initialPelanggaran, "Zero DB writes: PelanggaranSantri tidak bertambah");
   });
 });
