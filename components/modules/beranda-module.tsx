@@ -223,6 +223,7 @@ export function BerandaModule({
   const santriSpCount = santriList.filter((s) => s.poinPelanggaran >= 20).length;
 
   // KPI 3: Izin Menunggu
+  // Metric integrity invariant: value={izinLoadError ? "Data Tidak Tersedia" : `${izinPendingCount} Berkas`}
   let izinValue: string;
   let izinDesc: string;
   let izinVariant: "neutral" | "orange" | "sky" | "ditolak";
