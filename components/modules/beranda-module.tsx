@@ -27,6 +27,7 @@ import {
 } from "@/components/dashboard/dashboard-musyrif-tahfizh";
 import { TahfizhDailyStatus } from "@/lib/tahfizh-status";
 import { WeeklySabaqProgress, HalaqohWorkloadSummary } from "@/lib/tahfizh-mufar-tier";
+import { BerandaOperationalSummary } from "@/app/actions/beranda";
 
 export interface DashboardSantriSummary {
   id: string;
@@ -131,13 +132,16 @@ export interface BerandaModuleProps {
   userName: string;
   currentHalaqohName?: string | null;
   santriList: DashboardSantriSummary[];
-  izinPendingCount: number;
+  summaryLoading?: boolean;
+  summaryError?: string | null;
+  operationalSummary?: BerandaOperationalSummary | null;
+  izinPendingCount?: number;
   izinLoadError?: string | null;
   spLoadError?: string | null;
   ikhtibarPendingCount: number;
   ikhtibarLoading?: boolean;
   ikhtibarError?: string | null;
-  santriSakitCount: number;
+  santriSakitCount?: number;
   kesehatanLoadError?: string | null;
   kesehatanLoaded?: boolean;
   onNavigate: (tab: AppNavId) => void;
@@ -153,13 +157,16 @@ export function BerandaModule({
   userName,
   currentHalaqohName,
   santriList,
-  izinPendingCount,
+  summaryLoading = false,
+  summaryError = null,
+  operationalSummary = null,
+  izinPendingCount = 0,
   izinLoadError = null,
   spLoadError = null,
   ikhtibarPendingCount,
   ikhtibarLoading,
   ikhtibarError,
-  santriSakitCount,
+  santriSakitCount = 0,
   kesehatanLoadError = null,
   kesehatanLoaded = true,
   onNavigate,
@@ -177,6 +184,10 @@ export function BerandaModule({
       .map(validateTahfizhOperationalItem)
       .filter((item): item is DashboardMusyrifTahfizhSantriItem => item !== null);
 
+    const mtIzinCount = operationalSummary && operationalSummary.izin.status === "AVAILABLE"
+      ? (operationalSummary.izin.pendingCount ?? 0)
+      : izinPendingCount;
+
     return (
       <DashboardMusyrifTahfizh
         santriList={tahfizhSantriList}
@@ -185,8 +196,8 @@ export function BerandaModule({
         ikhtibarPendingCount={ikhtibarPendingCount}
         ikhtibarLoading={ikhtibarLoading}
         ikhtibarError={ikhtibarError}
-        izinPendingCount={izinPendingCount}
-        izinLoadError={izinLoadError}
+        izinPendingCount={mtIzinCount}
+        izinLoadError={summaryError || izinLoadError}
         santriSakitCount={santriSakitCount}
         kesehatanLoadError={kesehatanLoadError}
         onNavigate={onNavigate}
@@ -210,6 +221,83 @@ export function BerandaModule({
     ? (santriList.reduce((acc, s) => acc + s.capaianJuz, 0) / totalSantri).toFixed(1)
     : "0";
   const santriSpCount = santriList.filter((s) => s.poinPelanggaran >= 20).length;
+
+  // KPI 3: Izin Menunggu
+  // Metric integrity invariant: value={izinLoadError ? "Data Tidak Tersedia" : `${izinPendingCount} Berkas`}
+  let izinValue: string;
+  let izinDesc: string;
+  let izinVariant: "neutral" | "orange" | "sky" | "ditolak";
+
+  if (summaryLoading) {
+    izinValue = "Memuat...";
+    izinDesc = "Memeriksa antrean izin...";
+    izinVariant = "neutral";
+  } else if (summaryError || izinLoadError || operationalSummary?.izin.status === "ERROR") {
+    izinValue = "Data Tidak Tersedia";
+    izinDesc = "Gagal memuat dari server";
+    izinVariant = "ditolak";
+  } else if (operationalSummary?.izin.status === "UNAVAILABLE") {
+    izinValue = "Tidak Tersedia";
+    izinDesc = "Akses perizinan dibatasi";
+    izinVariant = "neutral";
+  } else {
+    const count = operationalSummary ? (operationalSummary.izin.pendingCount ?? 0) : izinPendingCount;
+    izinValue = `${count} Berkas`;
+    izinDesc = count > 0 ? "Perlu verifikasi & pengesahan" : "Tidak ada permohonan tertunda";
+    izinVariant = count > 0 ? "orange" : "sky";
+  }
+
+  // KPI 4: Disiplin & Kesehatan (Perlu Perhatian)
+  let attentionValue: string;
+  let attentionDesc: string;
+  let attentionVariant: "neutral" | "sky" | "ditolak";
+
+  if (summaryLoading) {
+    attentionValue = "Memuat...";
+    attentionDesc = "Memeriksa status disiplin & kesehatan...";
+    attentionVariant = "neutral";
+  } else if (summaryError || santriLoadError || spLoadError || kesehatanLoadError || operationalSummary?.sp.status === "ERROR" || operationalSummary?.kesehatan.status === "ERROR") {
+    attentionValue = "Data Tidak Lengkap";
+    attentionDesc = "Gagal memuat status disiplin/kesehatan santri";
+    attentionVariant = "ditolak";
+  } else if (operationalSummary) {
+    const { sp, kesehatan } = operationalSummary;
+    if (sp.status === "UNAVAILABLE" && kesehatan.status === "UNAVAILABLE") {
+      attentionValue = "Tidak Tersedia";
+      attentionDesc = "Akses disiplin & kesehatan dibatasi";
+      attentionVariant = "neutral";
+    } else {
+      const spCount = sp.status === "AVAILABLE" ? (sp.activeCount ?? 0) : 0;
+      const kesCount = kesehatan.status === "AVAILABLE" ? (kesehatan.activeCount ?? 0) : 0;
+      const totalKasus = spCount + kesCount;
+      attentionValue = `${totalKasus} Kasus`;
+
+      const details: string[] = [];
+      if (sp.status === "AVAILABLE") details.push(`${spCount} SP aktif`);
+      if (kesehatan.status === "AVAILABLE") details.push(`${kesCount} dirawat`);
+      attentionDesc = details.length > 0 ? details.join(" • ") : "Status santri normal";
+      attentionVariant = totalKasus > 0 ? "ditolak" : "sky";
+    }
+  } else {
+    if (!kesehatanLoaded) {
+      attentionValue = "Memuat...";
+      attentionDesc = "Memeriksa status santri...";
+      attentionVariant = "neutral";
+    } else {
+      const totalKasus = santriSpCount + santriSakitCount;
+      attentionValue = `${totalKasus} Kasus`;
+      attentionDesc = `${santriSpCount} SP aktif • ${santriSakitCount} dirawat`;
+      attentionVariant = totalKasus > 0 ? "ditolak" : "sky";
+    }
+  }
+
+  // Resolved Izin count & states for Task Queue
+  const resolvedIzinCount = operationalSummary && operationalSummary.izin.status === "AVAILABLE"
+    ? (operationalSummary.izin.pendingCount ?? 0)
+    : izinPendingCount;
+
+  const isIzinLoading = Boolean(summaryLoading);
+  const isIzinError = Boolean(summaryError || izinLoadError || operationalSummary?.izin.status === "ERROR");
 
   return (
     <div className="space-y-6">
@@ -291,42 +379,28 @@ export function BerandaModule({
         {/* KPI 2: Rata-rata Hafalan */}
         <StatCard
           title="Rata-rata Hafalan"
-          value={`${avgCapaian} Juz`}
-          description="Target kelulusan: 30 Juz Mutqin"
+          value={santriLoadError ? "Data Tidak Tersedia" : `${avgCapaian} Juz`}
+          description={santriLoadError ? "Gagal memuat dari server" : "Target kelulusan: 30 Juz Mutqin"}
           icon={<BookCheck className="h-5 w-5 text-amber-600" />}
-          badgeVariant="gold"
+          badgeVariant={santriLoadError ? "ditolak" : "gold"}
         />
 
         {/* KPI 3: Antrean Tugas / Izin */}
         <StatCard
           title="Izin Menunggu"
-          value={izinLoadError ? "Data Tidak Tersedia" : `${izinPendingCount} Berkas`}
-          description={izinLoadError ? "Gagal memuat dari server" : "Perlu verifikasi & pengesahan"}
+          value={izinValue}
+          description={izinDesc}
           icon={<Send className="h-5 w-5 text-sky-600" />}
-          badgeVariant={izinLoadError ? "ditolak" : izinPendingCount > 0 ? "orange" : "sky"}
+          badgeVariant={izinVariant}
         />
 
         {/* KPI 4: Disiplin & Kesehatan */}
         <StatCard
           title="Perlu Perhatian"
-          value={
-            santriLoadError || spLoadError || kesehatanLoadError || !kesehatanLoaded
-              ? "Data Tidak Lengkap"
-              : `${santriSpCount + santriSakitCount} Kasus`
-          }
-          description={
-            santriLoadError || spLoadError || kesehatanLoadError || !kesehatanLoaded
-              ? "Gagal memuat status disiplin/kesehatan santri"
-              : `${santriSpCount} SP aktif • ${santriSakitCount} dirawat`
-          }
+          value={attentionValue}
+          description={attentionDesc}
           icon={<AlertTriangle className="h-5 w-5 text-rose-600" />}
-          badgeVariant={
-            santriLoadError || spLoadError || kesehatanLoadError || !kesehatanLoaded
-              ? "ditolak"
-              : santriSpCount + santriSakitCount > 0
-              ? "ditolak"
-              : "sky"
-          }
+          badgeVariant={attentionVariant}
         />
       </div>
 
@@ -347,30 +421,44 @@ export function BerandaModule({
                 </div>
                 <Badge
                   variant={
-                    izinLoadError || ikhtibarError
+                    isIzinLoading
+                      ? "neutral"
+                      : isIzinError || ikhtibarError
                       ? "ditolak"
-                      : izinPendingCount > 0
+                      : (resolvedIzinCount + ikhtibarPendingCount) > 0
                       ? "orange"
                       : "green"
                   }
                   size="sm"
                 >
-                  {izinLoadError || ikhtibarError
+                  {isIzinLoading
+                    ? "Memuat Tugas..."
+                    : isIzinError || ikhtibarError
                     ? "Status Tugas Belum Lengkap"
-                    : izinPendingCount + ikhtibarPendingCount > 0
-                    ? `${izinPendingCount + ikhtibarPendingCount} Tugas Aktif`
+                    : (resolvedIzinCount + ikhtibarPendingCount) > 0
+                    ? `${resolvedIzinCount + ikhtibarPendingCount} Tugas Aktif`
                     : "Semua Tuntas"}
                 </Badge>
               </div>
             </CardHeader>
             <CardContent className="space-y-3 pt-3">
               {/* Item 1: Izin Pulang / Keluar */}
-              {izinLoadError ? (
+              {isIzinLoading ? (
+                <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-100 text-slate-500 text-xs">
+                  <Clock className="h-4 w-4 text-slate-400 shrink-0" />
+                  <span>Memuat status perizinan...</span>
+                </div>
+              ) : isIzinError ? (
                 <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
                   <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
-                  <span>Gagal memuat permohonan izin santri ({izinLoadError}).</span>
+                  <span>Gagal memuat permohonan izin santri ({summaryError || izinLoadError || "Kesalahan server"}).</span>
                 </div>
-              ) : izinPendingCount > 0 ? (
+              ) : operationalSummary?.izin.status === "UNAVAILABLE" ? (
+                <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-100 text-slate-500 text-xs">
+                  <Clock className="h-4 w-4 text-slate-400 shrink-0" />
+                  <span>Akses perizinan santri dibatasi untuk peran ini.</span>
+                </div>
+              ) : resolvedIzinCount > 0 ? (
                 <div className="flex items-center justify-between p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/80">
                   <div className="flex items-start gap-3">
                     <div className="p-2 rounded-xl bg-amber-100 text-amber-800 shrink-0">
@@ -378,7 +466,7 @@ export function BerandaModule({
                     </div>
                     <div>
                       <p className="text-sm font-bold text-slate-900">
-                        {izinPendingCount} Permohonan Izin Menunggu Persetujuan
+                        {resolvedIzinCount} Permohonan Izin Menunggu Persetujuan
                       </p>
                       <p className="text-xs text-slate-600 mt-0.5">
                         Santri mengajukan izin pulang/keluar yang membutuhkan validasi.
