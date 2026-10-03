@@ -318,7 +318,7 @@ describe("P0 Dashboard Data Honesty + Beranda Summary Remediation", () => {
       });
 
       const origFindUnique = defaultPrisma.user.findUnique;
-      (defaultPrisma.user as any).findUnique = async () => {
+      (defaultPrisma.user as unknown as { findUnique: () => Promise<never> }).findUnique = async () => {
         throw new Error("Simulated database failure during identity hydration in canonical auth evaluator");
       };
 
@@ -329,7 +329,7 @@ describe("P0 Dashboard Data Honesty + Beranda Summary Remediation", () => {
         assert.ok(!res.data || res.data.izin.status !== "UNAVAILABLE", "Evaluator ERROR must NOT be collapsed to UNAVAILABLE");
         assert.ok(!res.data || res.data.izin.pendingCount !== 0, "Evaluator ERROR must NOT become 0");
       } finally {
-        (defaultPrisma.user as any).findUnique = origFindUnique;
+        (defaultPrisma.user as unknown as { findUnique: typeof origFindUnique }).findUnique = origFindUnique;
       }
     });
 
@@ -342,7 +342,7 @@ describe("P0 Dashboard Data Honesty + Beranda Summary Remediation", () => {
       });
 
       const origCount = defaultPrisma.perizinanSantri.count;
-      (defaultPrisma.perizinanSantri as any).count = async () => {
+      (defaultPrisma.perizinanSantri as unknown as { count: () => Promise<never> }).count = async () => {
         throw new Error("FATAL: password authentication failed for user postgres_admin at 10.0.1.42:5432");
       };
 
@@ -355,7 +355,7 @@ describe("P0 Dashboard Data Honesty + Beranda Summary Remediation", () => {
         assert.ok(!res.data || res.data.izin.status !== "UNAVAILABLE", "THROWN error must NOT become UNAVAILABLE");
         assert.ok(!res.data || res.data.izin.pendingCount !== 0, "THROWN error must NOT become 0");
       } finally {
-        (defaultPrisma.perizinanSantri as any).count = origCount;
+        (defaultPrisma.perizinanSantri as unknown as { count: typeof origCount }).count = origCount;
       }
     });
   });
