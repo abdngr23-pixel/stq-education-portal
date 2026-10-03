@@ -1,20 +1,19 @@
 -- ============================================================================
--- STQ EDUCATION PORTAL — SYSTEM_AUDIT_READ PRODUCTION ACTIVATION PLAN
+-- STQ EDUCATION PORTAL — CORRECTED SYSTEM_AUDIT_READ PRODUCTION ACTIVATION PLAN
 -- File: SYSTEM_AUDIT_READ_PRODUCTION_ACTIVATION_PLAN.sql
 -- Status: PREPARE ONLY — DO NOT EXECUTE ON PRODUCTION WITHOUT OWNER AUTHORIZATION
 -- Purpose: Canonical activation of capability 'system.audit.read' for Position 'MUDIR'
 -- Scope: GLOBAL
 -- Target State: VERIFIED_PRODUCTION
--- Policy Authority: Owner Decision 2026-10-03 (STQ Launch Completion R1.1)
+-- Policy Authority: Owner Decision 2026-10-03 (STQ Launch Completion R1.1/R1.2)
 --
 -- Safety Invariants:
 -- 1. Strictly transactional (atomic execution wrapped in DO $$ ... $$).
 -- 2. Dynamic ID discovery (no hardcoded UUID/cuid values).
 -- 3. Fail-closed preconditions:
 --    - Active MUDIR position must exist.
---    - Capability 'system.audit.read' must exist or be created under namespace 'SYSTEM'.
 --    - No unexpected grant for 'system.audit.read' (no ADM grant, no YAY grant).
--- 4. Idempotency: UPSERT semantics on (position_id, capability_code).
+-- 4. State-preserving audit capture: records whether capability or grant existed prior.
 -- 5. Exact post-condition verification: exactly 1 MUDIR / GLOBAL grant with VERIFIED_PRODUCTION.
 -- ============================================================================
 
@@ -24,6 +23,10 @@ DECLARE
     v_pos_active BOOLEAN;
     v_unexpected_grants INTEGER;
     v_target_pc_id TEXT;
+    v_cap_existed_before BOOLEAN := false;
+    v_pc_existed_before BOOLEAN := false;
+    v_prior_scope TEXT := NULL;
+    v_prior_state TEXT := NULL;
     v_final_count INTEGER;
     v_final_state TEXT;
     v_final_scope TEXT;
@@ -48,9 +51,13 @@ BEGIN
     RAISE NOTICE 'Precondition passed: Discovered active MUDIR position id = %', v_mudir_pos_id;
 
     -- ------------------------------------------------------------------------
-    -- STEP 2: PRECONDITION - Ensure Capability semantic definition exists
+    -- STEP 2: PRE-STATE AUDIT - Capture existence of capability
     -- ------------------------------------------------------------------------
-    IF NOT EXISTS (SELECT 1 FROM capabilities WHERE code = 'system.audit.read') THEN
+    IF EXISTS (SELECT 1 FROM capabilities WHERE code = 'system.audit.read') THEN
+        v_cap_existed_before := true;
+        RAISE NOTICE 'Pre-state: Capability system.audit.read already existed.';
+    ELSE
+        v_cap_existed_before := false;
         INSERT INTO capabilities (code, namespace, name, description, is_dangerous, created_at)
         VALUES (
             'system.audit.read',
@@ -61,8 +68,6 @@ BEGIN
             NOW()
         );
         RAISE NOTICE 'Created semantic capability definition: system.audit.read';
-    ELSE
-        RAISE NOTICE 'Precondition passed: Capability system.audit.read already exists.';
     END IF;
 
     -- ------------------------------------------------------------------------
@@ -79,22 +84,27 @@ BEGIN
     END IF;
 
     -- ------------------------------------------------------------------------
-    -- STEP 4: CANONICAL ACTIVATION - Upsert PositionCapability for MUDIR
+    -- STEP 4: PRE-STATE AUDIT & CANONICAL ACTIVATION FOR MUDIR
     -- ------------------------------------------------------------------------
-    SELECT id INTO v_target_pc_id
+    SELECT id, scope_type::text, business_rule_state::text
+    INTO v_target_pc_id, v_prior_scope, v_prior_state
     FROM position_capabilities
     WHERE position_id = v_mudir_pos_id
       AND capability_code = 'system.audit.read';
 
     IF v_target_pc_id IS NOT NULL THEN
-        -- Existing grant row found: promote to VERIFIED_PRODUCTION & GLOBAL
+        v_pc_existed_before := true;
+        RAISE NOTICE 'Pre-state: PositionCapability existed with id = %, prior scope = %, prior state = %', v_target_pc_id, v_prior_scope, v_prior_state;
+
         UPDATE position_capabilities
         SET scope_type = 'GLOBAL',
             business_rule_state = 'VERIFIED_PRODUCTION'
         WHERE id = v_target_pc_id;
         RAISE NOTICE 'Updated existing PositionCapability id = % to VERIFIED_PRODUCTION (GLOBAL)', v_target_pc_id;
     ELSE
-        -- Insert new canonical grant row with generated cuid-like identifier
+        v_pc_existed_before := false;
+        RAISE NOTICE 'Pre-state: PositionCapability did NOT exist prior to activation.';
+
         v_target_pc_id := 'pc_mudir_audit_' || substr(md5(random()::text || clock_timestamp()::text), 1, 16);
         INSERT INTO position_capabilities (id, position_id, capability_code, scope_type, business_rule_state)
         VALUES (
@@ -120,12 +130,12 @@ BEGIN
     END IF;
 
     IF v_final_state != 'VERIFIED_PRODUCTION' THEN
-        RAISE EXCEPTION 'POST-CONDITION FAILURE: Target businessRuleState is %, expected VERIFIED_PRODUCTION.', v_final_state;
+        RAISE EXCEPTION 'POST-CONDITION FAILURE: Expected businessRuleState VERIFIED_PRODUCTION, found %.', v_final_state;
     END IF;
 
     IF v_final_scope != 'GLOBAL' THEN
-        RAISE EXCEPTION 'POST-CONDITION FAILURE: Target scopeType is %, expected GLOBAL.', v_final_scope;
+        RAISE EXCEPTION 'POST-CONDITION FAILURE: Expected scopeType GLOBAL, found %.', v_final_scope;
     END IF;
 
-    RAISE NOTICE '=== ACTIVATION PLAN COMPLETED SUCCESSFULLY (EXACT 1 MUDIR GLOBAL GRANT VERIFIED) ===';
+    RAISE NOTICE '=== ACTIVATION PLAN COMPLETED SUCCESSFULLY (EXACTLY 1 MUDIR / GLOBAL / VERIFIED_PRODUCTION GRANT) ===';
 END $$;

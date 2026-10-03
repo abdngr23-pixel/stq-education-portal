@@ -2,7 +2,7 @@ name: STQ Education Portal CI
 
 on:
   push:
-    branches: [ "main", "master", "review/*" ]
+    branches: [ "main", "master", "review/*", "launch/*", "candidate/*" ]
   pull_request:
     branches: [ "main", "master" ]
 
@@ -94,6 +94,27 @@ jobs:
           CHROME_PATH: "/usr/bin/google-chrome"
         run: npm run qa:pwa
 
+      - name: Run Complete Day-1 Assertion-Driven Browser UAT
+        timeout-minutes: 15
+        env:
+          NODE_ENV: test
+          IS_TEST_RUN: "true"
+          ALLOW_ISOLATED_TEST_DB: "true"
+          TEST_DATABASE_URL: "postgresql://postgres:postgrespassword@127.0.0.1:5433/stq_test?schema=test_portal"
+          CHROME_PATH: "/usr/bin/google-chrome"
+        run: npm run uat:day1
+
+      - name: Upload Day-1 Browser UAT Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: day1-uat-${{ github.sha }}
+          path: |
+            artifacts/uat_screenshots/
+            artifacts/day1_uat_execution_results.json
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Upload Visual QA Artifacts (if generated)
         uses: actions/upload-artifact@v4
         if: always()
@@ -102,3 +123,4 @@ jobs:
           path: artifacts/visual-qa/
           if-no-files-found: ignore
           retention-days: 7
+
