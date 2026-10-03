@@ -87,14 +87,12 @@ export function UsersModule({
         </div>
       </div>
 
-      {!canManageUsers && (
-        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-center gap-3 text-xs text-amber-800">
-          <Lock className="h-4 w-4 shrink-0 text-amber-700" />
-          <span>
-            Anda masuk dengan peran <strong>{userRole}</strong>. Halaman ini hanya dalam mode lihat (read-only). Perubahan status dan reset kata sandi memerlukan hak akses Administrator (ADM) atau Mudir (KS).
-          </span>
-        </div>
-      )}
+      <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-center gap-3 text-xs text-amber-800">
+        <Lock className="h-4 w-4 shrink-0 text-amber-700" />
+        <span>
+          Fitur perubahan data belum diaktifkan pada tahap peluncuran ini. Daftar akun pengguna ditampilkan dalam mode lihat (read-only), sedangkan fungsi perubahan status, reset kata sandi, dan wewenang khusus dikunci (Post-Launch Locked).
+        </span>
+      </div>
 
       {/* Filter and Search Bar */}
       <div className="flex flex-col sm:flex-row gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
@@ -195,18 +193,9 @@ export function UsersModule({
                             <Button
                               size="sm"
                               variant="secondary"
-                              className={`text-[11px] h-8 px-2.5 ${
-                                user.isPetugasPresensiPutri
-                                  ? "border-purple-300 text-purple-800 bg-purple-50 hover:bg-purple-100 font-bold"
-                                  : "border-slate-200 text-slate-600 hover:text-purple-700"
-                              }`}
-                              onClick={() => onTogglePetugasPutri(user.id)}
-                              disabled={!canManageUsers || isPending}
-                              title={
-                                user.isPetugasPresensiPutri
-                                  ? "Cabut wewenang Petugas Presensi Putri"
-                                  : "Tetapkan sebagai Petugas Presensi Putri"
-                              }
+                              className="text-[11px] h-8 px-2.5 opacity-50 cursor-not-allowed"
+                              disabled={true}
+                              title="Fitur perubahan data belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked)"
                             >
                               <ShieldCheck
                                 className={`h-3 w-3 mr-1 ${
@@ -219,18 +208,18 @@ export function UsersModule({
                           <Button
                             size="sm"
                             variant="secondary"
-                            className="text-[11px] h-8 px-2.5"
-                            onClick={() => onToggleStatus(user.id)}
-                            disabled={!canManageUsers || isPending}
+                            className="text-[11px] h-8 px-2.5 opacity-50 cursor-not-allowed"
+                            disabled={true}
+                            title="Fitur perubahan data belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked)"
                           >
                             {user.status === "AKTIF" ? "Nonaktifkan" : "Aktifkan"}
                           </Button>
                           <Button
                             size="sm"
                             variant="secondary"
-                            className="text-[11px] h-8 px-2.5 border-slate-300"
-                            onClick={() => onResetPassword(user.username)}
-                            disabled={!canManageUsers || isPending}
+                            className="text-[11px] h-8 px-2.5 border-slate-300 opacity-50 cursor-not-allowed"
+                            disabled={true}
+                            title="Fitur perubahan data belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked)"
                             leftIcon={<KeyRound className="h-3 w-3 text-amber-600" />}
                           >
                             Buat Sandi Baru

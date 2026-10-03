@@ -829,6 +829,10 @@ export function AkademikModule({
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4 pt-4">
+                  <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 flex items-center gap-2 text-xs text-amber-800">
+                    <Lock className="h-4 w-4 shrink-0 text-amber-700" />
+                    <span>Fitur perubahan dan penginputan nilai belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked).</span>
+                  </div>
                   <div>
                     <label className="text-xs font-bold text-slate-700 block mb-1">
                       Pilih Santri
@@ -909,13 +913,13 @@ export function AkademikModule({
                   </div>
 
                   <Button
-                    variant="primary"
-                    onClick={handleSaveNilai}
-                    disabled={isPending || !currentSantri}
-                    className="w-full min-h-[48px] font-bold text-sm bg-[#0E7C3A] hover:bg-[#0B642E]"
+                    variant="secondary"
+                    disabled={true}
+                    title="Fitur perubahan data belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked)"
+                    className="w-full min-h-[48px] font-bold text-sm bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60"
                   >
-                    <CheckCircle2 className="h-4 w-4 mr-1.5" />
-                    {isPending ? "Menyimpan..." : "Simpan Nilai Santri"}
+                    <Lock className="h-4 w-4 mr-1.5 text-slate-400" />
+                    Simpan Nilai Santri (Terkunci)
                   </Button>
                 </CardContent>
               </Card>

@@ -12,6 +12,7 @@ import {
   AlertCircle,
   PlusCircle,
   UserCheck,
+  Lock,
 } from "lucide-react";
 import {
   createHalaqohAction,
@@ -141,23 +142,33 @@ export function ManajemenHalaqoh({
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => setShowMoveModal(true)}
-            leftIcon={<ArrowRightLeft className="h-4 w-4 text-emerald-700" />}
-            className="text-xs font-semibold"
+            disabled={true}
+            title="Fitur perubahan data belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked)"
+            leftIcon={<Lock className="h-4 w-4 text-slate-400" />}
+            className="text-xs font-semibold cursor-not-allowed opacity-60 text-slate-400"
           >
             Pindahkan Santri
           </Button>
 
           <Button
-            variant="primary"
+            variant="secondary"
             size="sm"
-            onClick={() => setShowCreateModal(true)}
-            leftIcon={<PlusCircle className="h-4 w-4" />}
-            className="text-xs font-semibold bg-[#0E7C3A] hover:bg-[#0B642E]"
+            disabled={true}
+            title="Fitur perubahan data belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked)"
+            leftIcon={<Lock className="h-4 w-4 text-slate-400" />}
+            className="text-xs font-semibold cursor-not-allowed opacity-60 text-slate-400"
           >
             Buat Halaqoh Baru
           </Button>
         </div>
+      </div>
+
+      {/* Post-Launch Locked Notice */}
+      <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 flex items-center gap-2.5 text-xs text-amber-800">
+        <Lock className="h-4 w-4 shrink-0 text-amber-700" />
+        <span>
+          Fitur perubahan data belum diaktifkan pada tahap peluncuran ini. Struktur kelompok halaqoh dan penugasan pembina berada dalam mode lihat (read-only), sedangkan fungsi pembuatan kelompok, penugasan pembina, dan perpindahan santri dikunci (Post-Launch Locked).
+        </span>
       </div>
 
       {notification && (
@@ -215,15 +226,12 @@ export function ManajemenHalaqoh({
                   variant="secondary"
                   size="sm"
                   fullWidth
-                  onClick={() => {
-                    setSelectedHalaqohForAssign(h);
-                    setAssignStaffId(h.pembina?.id || "");
-                    setShowAssignModal(true);
-                  }}
-                  leftIcon={<UserCheck className="h-3.5 w-3.5 text-[#0E7C3A]" />}
-                  className="text-xs h-8"
+                  disabled={true}
+                  title="Fitur perubahan data belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked)"
+                  leftIcon={<Lock className="h-3.5 w-3.5 text-slate-400" />}
+                  className="text-xs h-8 text-slate-400 cursor-not-allowed opacity-60"
                 >
-                  Ganti / Tugaskan Pembina
+                  Ganti Pembina (Terkunci)
                 </Button>
               </div>
             </CardContent>

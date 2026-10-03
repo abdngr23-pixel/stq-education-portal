@@ -28,6 +28,7 @@ import {
   AlertCircle,
   X,
   RotateCcw,
+  Lock,
 } from "lucide-react";
 
 export interface PelanggaranRecord {
@@ -363,14 +364,23 @@ export function KedisiplinanModule({
 
         {(userRole === "KS" || userRole === "MK") && (
           <Button
-            variant="primary"
-            onClick={() => setShowAddDialog(true)}
-            className="bg-[#0E7C3A] hover:bg-[#0B642E] text-white font-bold text-xs sm:text-sm gap-2 min-h-[44px] shadow-xs shrink-0"
+            variant="secondary"
+            disabled={true}
+            title="Fitur perubahan data belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked)"
+            className="text-slate-400 border-slate-200 bg-slate-50 font-bold text-xs sm:text-sm gap-2 min-h-[44px] shadow-xs shrink-0 cursor-not-allowed"
           >
-            <PlusCircle className="h-4 w-4" />
-            + Catat Pelanggaran
+            <Lock className="h-4 w-4 text-slate-400" />
+            + Catat Pelanggaran (Terkunci)
           </Button>
         )}
+      </div>
+
+      {/* Post-Launch Locked Notice */}
+      <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 flex items-center gap-2.5 text-xs text-amber-800">
+        <Lock className="h-4 w-4 shrink-0 text-amber-700" />
+        <span>
+          Fitur perubahan data belum diaktifkan pada tahap peluncuran ini. Log pelanggaran dan surat peringatan ditampilkan dalam mode lihat (read-only), sedangkan fungsi pencatatan baru dan pemutihan SP dikunci (Post-Launch Locked).
+        </span>
       </div>
 
       {/* Feedback Alert */}
@@ -455,12 +465,12 @@ export function KedisiplinanModule({
                       <Button
                         variant="secondary"
                         size="sm"
-                        onClick={() => handlePutihkanSP(sp.id, sp.santriNama)}
-                        disabled={isPending}
-                        className="text-xs font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 min-h-[36px]"
+                        disabled={true}
+                        title="Fitur perubahan data belum diaktifkan pada tahap peluncuran ini (Post-Launch Locked)"
+                        className="text-xs font-bold text-slate-400 bg-slate-100 min-h-[36px] cursor-not-allowed opacity-60"
                       >
-                        <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                        Putihkan SP
+                        <Lock className="h-3.5 w-3.5 mr-1 text-slate-400" />
+                        Putihkan SP (Terkunci)
                       </Button>
                     )}
                   </div>

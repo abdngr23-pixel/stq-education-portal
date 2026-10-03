@@ -15,7 +15,7 @@ import {
   getAssignableStaffAction,
 } from "../app/actions/halaqoh";
 
-describe("P0 RBAC & ABAC Enclosure: Halaqoh Management Actions", () => {
+describe("P0 RBAC & ABAC Enclosure: Halaqoh Management Actions (Canonical Scope Lock)", () => {
   let prisma: PrismaClient;
 
   const STAFF_MT1 = "stf-hlq-mt1";
@@ -58,258 +58,207 @@ describe("P0 RBAC & ABAC Enclosure: Halaqoh Management Actions", () => {
     username: "pengasuhan.pesantren",
     name: "Ust. Pengasuhan",
     role: "PH",
+    staffId: STAFF_PH1,
   };
 
   const sessionMK: UserSession = {
     userId: "usr-hlq-mk",
-    username: "kesantrian.pesantren",
-    name: "Ust. Kesantrian",
+    username: "musyrif.keasramaan",
+    name: "Ust. Keasramaan",
     role: "MK",
   };
 
   before(async () => {
     prisma = await startTestDatabase();
 
-    // 1. Seed Staff
+    // 1. Staf Musyrif Tahfizh & Pengasuhan
     await prisma.staff.createMany({
       data: [
-        { id: STAFF_MT1, staffCode: "STF-MT-01", nama: "Musyrif Tahfizh 1", roleStaff: "MT", status: "AKTIF", noHp: "0811111111" },
-        { id: STAFF_MT2, staffCode: "STF-MT-02", nama: "Musyrif Tahfizh 2", roleStaff: "MT", status: "AKTIF", noHp: "0822222222" },
-        { id: STAFF_PH1, staffCode: "STF-PH-01", nama: "Mudhabbir Pengasuhan 1", roleStaff: "PH", status: "AKTIF", noHp: "0844444444" },
-        { id: STAFF_KS, staffCode: "STF-KS-01", nama: "K.H. Mudir Pesantren", roleStaff: "KS", status: "AKTIF", noHp: "0833333333" },
-        { id: STAFF_ADM1, staffCode: "STF-ADM-01", nama: "Staf Tata Usaha", roleStaff: "ADM", status: "AKTIF", noHp: "0855555555" },
-        { id: STAFF_INAKTIF, staffCode: "STF-IN-01", nama: "Staf Nonaktif", roleStaff: "MT", status: "NONAKTIF", noHp: "0899999999" },
+        {
+          id: STAFF_MT1,
+          staffCode: "STF-MT-01",
+          nama: "Ustadz Zaid Tahfizh",
+          noHp: "0811111111",
+          roleStaff: "MT",
+          status: "AKTIF",
+        },
+        {
+          id: STAFF_MT2,
+          staffCode: "STF-MT-02",
+          nama: "Ustadz Umar Tahfizh",
+          noHp: "0811111112",
+          roleStaff: "MT",
+          status: "AKTIF",
+        },
+        {
+          id: STAFF_PH1,
+          staffCode: "STF-PH-01",
+          nama: "Ustadz Ali Pengasuhan",
+          noHp: "0811111113",
+          roleStaff: "PH",
+          status: "AKTIF",
+        },
+        {
+          id: STAFF_KS,
+          staffCode: "STF-KS-01",
+          nama: "Kiai Mudir STQ",
+          noHp: "0811111114",
+          roleStaff: "KS",
+          status: "AKTIF",
+        },
+        {
+          id: STAFF_ADM1,
+          staffCode: "STF-ADM-01",
+          nama: "Staf Tata Usaha",
+          noHp: "0811111115",
+          roleStaff: "ADM",
+          status: "AKTIF",
+        },
+        {
+          id: STAFF_INAKTIF,
+          staffCode: "STF-OFF-01",
+          nama: "Staf Nonaktif",
+          noHp: "0811111116",
+          roleStaff: "MT",
+          status: "NONAKTIF",
+        },
       ],
     });
 
-    // 2. Seed Users
-    await prisma.user.createMany({
-      data: [
-        { id: sessionKS.userId, username: sessionKS.username, role: "KS", staffId: STAFF_KS, passwordHash: "dummy" },
-        { id: sessionADM.userId, username: sessionADM.username, role: "ADM", passwordHash: "dummy" },
-        { id: sessionMT.userId, username: sessionMT.username, role: "MT", staffId: STAFF_MT1, passwordHash: "dummy" },
-        { id: sessionPH.userId, username: sessionPH.username, role: "PH", passwordHash: "dummy" },
-        { id: sessionMK.userId, username: sessionMK.username, role: "MK", passwordHash: "dummy" },
-      ],
-    });
-
-    // 3. Seed Halaqoh
+    // 2. Halaqoh Awal
     await prisma.halaqoh.createMany({
       data: [
-        { id: HALAQOH_1, halaqohCode: "HLQ-0001", nama: "Halaqoh Abu Bakar", pembinaId: STAFF_MT1, tahunAjaran: "2024/2025" },
-        { id: HALAQOH_2, halaqohCode: "HLQ-0002", nama: "Halaqoh Umar", pembinaId: STAFF_MT2, tahunAjaran: "2024/2025" },
+        {
+          id: HALAQOH_1,
+          halaqohCode: "HLQ-0001",
+          nama: "Halaqoh Al-Fatihah",
+          pembinaId: STAFF_MT1,
+          tahunAjaran: "2024/2025",
+          status: "AKTIF",
+        },
+        {
+          id: HALAQOH_2,
+          halaqohCode: "HLQ-0002",
+          nama: "Halaqoh Al-Baqarah",
+          pembinaId: STAFF_MT2,
+          tahunAjaran: "2024/2025",
+          status: "AKTIF",
+        },
       ],
     });
 
-    // 4. Seed Santri
+    // 3. Santri
     await prisma.santri.create({
       data: {
         id: SANTRI_1,
-        nis: "SAN-HLQ-001",
-        nama: "Santri Pindah Halaqoh",
+        nis: "SAN-HLQ-01",
+        nama: "Abdullah Santri Uji",
+        kelas: "7A",
+        jenisKelamin: "L",
         halaqohId: HALAQOH_1,
         status: "AKTIF",
-        jenisKelamin: "L",
-        kelas: "7A",
       },
     });
   });
 
   after(async () => {
-    setTestSession(null);
+    setTestSession(undefined);
     await stopTestDatabase();
   });
 
   // =========================================================================
-  // 1. createHalaqohAction Guard Tests
+  // 1. createHalaqohAction Guard Tests (POST_LAUNCH_LOCKED)
   // =========================================================================
-  describe("1. createHalaqohAction Security Guards", () => {
-    it("menolak jika tidak ada sesi", async () => {
-      setTestSession(null);
-      const res = await createHalaqohAction({ nama: "Halaqoh Baru", tahunAjaran: "2024/2025" });
-      assert.strictEqual(res.success, false);
-      assert.ok(res.message.includes("Sesi telah berakhir"));
-    });
+  describe("1. createHalaqohAction Security Guards (Post-Launch Locked)", () => {
+    it("menolak pembuatan halaqoh baru pada Day-1 launch untuk semua peran (zero DB delta)", async () => {
+      const initialCount = await prisma.halaqoh.count();
 
-    it("menolak MT membuat halaqoh baru", async () => {
-      setTestSession(sessionMT);
-      const res = await createHalaqohAction({ nama: "Halaqoh MT", tahunAjaran: "2024/2025" });
-      assert.strictEqual(res.success, false);
-      assert.ok(res.message.includes("Akses Ditolak"));
-    });
-
-    it("menolak PH dan MK membuat halaqoh baru", async () => {
-      setTestSession(sessionPH);
-      const resPH = await createHalaqohAction({ nama: "Halaqoh PH", tahunAjaran: "2024/2025" });
-      assert.strictEqual(resPH.success, false);
-      assert.ok(resPH.message.includes("Akses Ditolak"));
-
-      setTestSession(sessionMK);
-      const resMK = await createHalaqohAction({ nama: "Halaqoh MK", tahunAjaran: "2024/2025" });
-      assert.strictEqual(resMK.success, false);
-      assert.ok(resMK.message.includes("Akses Ditolak"));
-    });
-
-    it("menolak pembuatan halaqoh tanpa pembina (pembinaId wajib eksplisit)", async () => {
+      // Test KS
       setTestSession(sessionKS);
-      const res = await createHalaqohAction({
-        nama: "Halaqoh Tanpa Pembina",
-        tahunAjaran: "2024/2025",
-      });
-      assert.strictEqual(res.success, false);
-      assert.ok(res.message.includes("Musyrif pembina wajib dipilih."));
-    });
-
-    it("mengizinkan KS membuat halaqoh baru dengan MT valid", async () => {
-      setTestSession(sessionKS);
-      const res = await createHalaqohAction({
-        nama: "Halaqoh Utsman",
+      const resKS = await createHalaqohAction({
+        nama: "Halaqoh Baru KS",
         pembinaId: STAFF_MT1,
         tahunAjaran: "2024/2025",
       });
-      assert.strictEqual(res.success, true);
-      assert.ok(res.message.includes("berhasil dibuat"));
-    });
-
-    it("mengizinkan KS membuat halaqoh baru dengan PH valid", async () => {
-      setTestSession(sessionKS);
-      const res = await createHalaqohAction({
-        nama: "Halaqoh PH Valid",
-        pembinaId: STAFF_PH1,
-        tahunAjaran: "2024/2025",
-      });
-      assert.strictEqual(res.success, true);
-      assert.ok(res.message.includes("berhasil dibuat"));
-    });
-
-    it("mengizinkan ADM membuat halaqoh baru", async () => {
-      setTestSession(sessionADM);
-      const res = await createHalaqohAction({
-        nama: "Halaqoh Ali",
-        pembinaId: STAFF_MT2,
-        tahunAjaran: "2024/2025",
-      });
-      assert.strictEqual(res.success, true);
-      assert.ok(res.message.includes("berhasil dibuat"));
-    });
-
-    it("menolak pembuatan halaqoh jika pembina nonaktif", async () => {
-      setTestSession(sessionKS);
-      const res = await createHalaqohAction({
-        nama: "Halaqoh Pembina Nonaktif",
-        pembinaId: STAFF_INAKTIF,
-        tahunAjaran: "2024/2025",
-      });
-      assert.strictEqual(res.success, false);
-      assert.ok(res.message.includes("tidak aktif"));
-    });
-
-    it("menolak pembuatan halaqoh dengan pembina dari role staf tidak memenuhi syarat (KS, ADM)", async () => {
-      setTestSession(sessionKS);
-      const resKS = await createHalaqohAction({
-        nama: "Halaqoh KS Pembina",
-        pembinaId: STAFF_KS,
-        tahunAjaran: "2024/2025",
-      });
       assert.strictEqual(resKS.success, false);
-      assert.ok(resKS.message.includes("tidak memenuhi syarat"));
+      assert.strictEqual(resKS.errorCode, "POLICY_NOT_ACTIVE");
+      assert.match(resKS.message, /belum diaktifkan|Post-Launch Locked/i);
 
+      // Test ADM
+      setTestSession(sessionADM);
       const resADM = await createHalaqohAction({
-        nama: "Halaqoh ADM Pembina",
-        pembinaId: STAFF_ADM1,
+        nama: "Halaqoh Baru ADM",
+        pembinaId: STAFF_MT1,
         tahunAjaran: "2024/2025",
       });
       assert.strictEqual(resADM.success, false);
-      assert.ok(resADM.message.includes("tidak memenuhi syarat"));
+      assert.strictEqual(resADM.errorCode, "POLICY_NOT_ACTIVE");
+
+      // Test MT
+      setTestSession(sessionMT);
+      const resMT = await createHalaqohAction({
+        nama: "Halaqoh Baru MT",
+        pembinaId: STAFF_MT1,
+        tahunAjaran: "2024/2025",
+      });
+      assert.strictEqual(resMT.success, false);
+      assert.strictEqual(resMT.errorCode, "POLICY_NOT_ACTIVE");
+
+      const postCount = await prisma.halaqoh.count();
+      assert.strictEqual(postCount, initialCount, "Zero DB delta: Halaqoh tidak bertambah");
     });
   });
 
   // =========================================================================
-  // 2. assignPembinaHalaqohAction Guard Tests
+  // 2. assignPembinaHalaqohAction Guard Tests (POST_LAUNCH_LOCKED)
   // =========================================================================
-  describe("2. assignPembinaHalaqohAction Security Guards", () => {
-    it("menolak MT mengubah penugasan pembina halaqoh", async () => {
-      setTestSession(sessionMT);
-      const res = await assignPembinaHalaqohAction(HALAQOH_1, STAFF_MT2);
-      assert.strictEqual(res.success, false);
-      assert.ok(res.message.includes("Akses Ditolak"));
-    });
+  describe("2. assignPembinaHalaqohAction Security Guards (Post-Launch Locked)", () => {
+    it("menolak penugasan pembina halaqoh pada Day-1 launch untuk semua peran (zero DB delta)", async () => {
+      const halaqohBefore = await prisma.halaqoh.findUnique({ where: { id: HALAQOH_1 } });
 
-    it("menolak PH mengubah penugasan pembina halaqoh", async () => {
-      setTestSession(sessionPH);
-      const res = await assignPembinaHalaqohAction(HALAQOH_1, STAFF_MT2);
-      assert.strictEqual(res.success, false);
-      assert.ok(res.message.includes("Akses Ditolak"));
-    });
-
-    it("mengizinkan KS menugaskan pembina halaqoh", async () => {
       setTestSession(sessionKS);
-      const res = await assignPembinaHalaqohAction(HALAQOH_1, STAFF_MT2);
-      assert.strictEqual(res.success, true);
-      assert.ok(res.message.includes("berhasil diperbarui"));
-
-      const h1 = await prisma.halaqoh.findUnique({ where: { id: HALAQOH_1 } });
-      assert.strictEqual(h1?.pembinaId, STAFF_MT2);
-    });
-
-    it("mengizinkan ADM menugaskan pembina halaqoh", async () => {
-      setTestSession(sessionADM);
-      const res = await assignPembinaHalaqohAction(HALAQOH_1, STAFF_MT1);
-      assert.strictEqual(res.success, true);
-      assert.ok(res.message.includes("berhasil diperbarui"));
-
-      const h1 = await prisma.halaqoh.findUnique({ where: { id: HALAQOH_1 } });
-      assert.strictEqual(h1?.pembinaId, STAFF_MT1);
-    });
-
-    it("menolak penugasan pembina halaqoh dari role staf tidak memenuhi syarat (KS, ADM)", async () => {
-      setTestSession(sessionKS);
-      const resKS = await assignPembinaHalaqohAction(HALAQOH_1, STAFF_KS);
+      const resKS = await assignPembinaHalaqohAction(HALAQOH_1, STAFF_MT2);
       assert.strictEqual(resKS.success, false);
-      assert.ok(resKS.message.includes("tidak memenuhi syarat"));
+      assert.strictEqual(resKS.errorCode, "POLICY_NOT_ACTIVE");
+      assert.match(resKS.message, /belum diaktifkan|Post-Launch Locked/i);
 
-      const resADM = await assignPembinaHalaqohAction(HALAQOH_1, STAFF_ADM1);
-      assert.strictEqual(resADM.success, false);
-      assert.ok(resADM.message.includes("tidak memenuhi syarat"));
-    });
-  });
-
-  // =========================================================================
-  // 3. pindahkanSantriHalaqohAction Guard Tests
-  // =========================================================================
-  describe("3. pindahkanSantriHalaqohAction Security Guards", () => {
-    it("menolak MT memindahkan santri antar-halaqoh", async () => {
-      setTestSession(sessionMT);
-      const res = await pindahkanSantriHalaqohAction(SANTRI_1, HALAQOH_2);
-      assert.strictEqual(res.success, false);
-      assert.ok(res.message.includes("Akses Ditolak"));
-    });
-
-    it("mengizinkan KS memindahkan santri antar-halaqoh", async () => {
-      setTestSession(sessionKS);
-      const res = await pindahkanSantriHalaqohAction(SANTRI_1, HALAQOH_2);
-      assert.strictEqual(res.success, true);
-      assert.ok(res.message.includes("berhasil dipindahkan"));
-
-      const santri = await prisma.santri.findUnique({ where: { id: SANTRI_1 } });
-      assert.strictEqual(santri?.halaqohId, HALAQOH_2);
-    });
-
-    it("mengizinkan ADM memindahkan santri kembali ke halaqoh asal", async () => {
       setTestSession(sessionADM);
-      const res = await pindahkanSantriHalaqohAction(SANTRI_1, HALAQOH_1);
-      assert.strictEqual(res.success, true);
-      assert.ok(res.message.includes("berhasil dipindahkan"));
+      const resADM = await assignPembinaHalaqohAction(HALAQOH_1, STAFF_MT2);
+      assert.strictEqual(resADM.success, false);
+      assert.strictEqual(resADM.errorCode, "POLICY_NOT_ACTIVE");
 
-      const santri = await prisma.santri.findUnique({ where: { id: SANTRI_1 } });
-      assert.strictEqual(santri?.halaqohId, HALAQOH_1);
+      const halaqohAfter = await prisma.halaqoh.findUnique({ where: { id: HALAQOH_1 } });
+      assert.strictEqual(halaqohAfter?.pembinaId, halaqohBefore?.pembinaId, "Zero DB delta: Pembina tidak berubah");
     });
   });
 
   // =========================================================================
-  // 4. getAssignableStaffAction Guard Tests
+  // 3. pindahkanSantriHalaqohAction Guard Tests (POST_LAUNCH_LOCKED)
   // =========================================================================
-  describe("4. getAssignableStaffAction RBAC Protection", () => {
+  describe("3. pindahkanSantriHalaqohAction Security Guards (Post-Launch Locked)", () => {
+    it("menolak pemindahan santri halaqoh pada Day-1 launch untuk semua peran (zero DB delta)", async () => {
+      const santriBefore = await prisma.santri.findUnique({ where: { id: SANTRI_1 } });
+
+      setTestSession(sessionKS);
+      const resKS = await pindahkanSantriHalaqohAction(SANTRI_1, HALAQOH_2);
+      assert.strictEqual(resKS.success, false);
+      assert.strictEqual(resKS.errorCode, "POLICY_NOT_ACTIVE");
+      assert.match(resKS.message, /belum diaktifkan|Post-Launch Locked/i);
+
+      setTestSession(sessionADM);
+      const resADM = await pindahkanSantriHalaqohAction(SANTRI_1, HALAQOH_2);
+      assert.strictEqual(resADM.success, false);
+      assert.strictEqual(resADM.errorCode, "POLICY_NOT_ACTIVE");
+
+      const santriAfter = await prisma.santri.findUnique({ where: { id: SANTRI_1 } });
+      assert.strictEqual(santriAfter?.halaqohId, santriBefore?.halaqohId, "Zero DB delta: Santri tidak berpindah halaqoh");
+    });
+  });
+
+  // =========================================================================
+  // 4. getAssignableStaffAction Guard Tests (ACTIVE READ QUERY)
+  // =========================================================================
+  describe("4. getAssignableStaffAction RBAC Protection (Read Query)", () => {
     it("menolak jika tidak ada sesi (data kosong)", async () => {
       setTestSession(null);
       const res = await getAssignableStaffAction();

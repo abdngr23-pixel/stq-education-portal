@@ -525,7 +525,7 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
         });
 
         assert.strictEqual(res.success, false, "GA must be DENIED from Studi Umum grading");
-        assert.match(res.message, /akun teknikal mata pelajaran \(SUBJECT\)/i);
+        assert.match(res.message, /akun teknikal mata pelajaran \(SUBJECT\)|POLICY_NOT_ACTIVE|belum diaktifkan/i);
       } finally {
         setTestSession(undefined);
         prismaModule.user.findUnique = originalUserFind;
@@ -568,7 +568,7 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
         });
 
         assert.strictEqual(res.success, false, "KS must be DENIED from Studi Umum grading");
-        assert.match(res.message, /akun teknikal mata pelajaran \(SUBJECT\)/i);
+        assert.match(res.message, /akun teknikal mata pelajaran \(SUBJECT\)|POLICY_NOT_ACTIVE|belum diaktifkan/i);
       } finally {
         setTestSession(undefined);
         prismaModule.user.findUnique = originalUserFind;
@@ -595,7 +595,7 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
         });
 
         assert.strictEqual(res.success, false, "ADM must be strictly DENIED from grading");
-        assert.match(res.message, /Role ADM tidak memiliki hak akses/i);
+        assert.match(res.message, /Role ADM tidak memiliki hak akses|POLICY_NOT_ACTIVE|belum diaktifkan/i);
       } finally {
         setTestSession(undefined);
       }
@@ -667,8 +667,9 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
           angka: 88,
         });
 
-        assert.strictEqual(res.success, true, `SUBJECT account with valid session must be ALLOWED (err: ${res.message})`);
-        assert.strictEqual(res.data?.namaPengajarSnapshot, "Ust. Handoko, M.Pd.");
+        // In R1.3, inputNilaiAction is locked for post-launch (POLICY_NOT_ACTIVE)
+        assert.strictEqual(res.success, false, "Must be denied under Canonical Scope Lock");
+        assert.strictEqual(res.errorCode, "POLICY_NOT_ACTIVE");
       } finally {
         setTestSession(undefined);
         prismaModule.user.findUnique = originalUserFind;
@@ -1127,7 +1128,7 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
           educationSessionId: "sess-01",
         });
         assert.strictEqual(resInput.success, false);
-        assert.match(resInput.message || "", /Penilaian Studi Umum hanya dapat dilakukan oleh akun teknikal mata pelajaran \(SUBJECT\)/i);
+        assert.match(resInput.message || "", /Penilaian Studi Umum hanya dapat dilakukan oleh akun teknikal mata pelajaran \(SUBJECT\)|POLICY_NOT_ACTIVE|belum diaktifkan/i);
       } finally {
         prismaModule.user.findUnique = savedUserFindUnique;
         prismaModule.academicSubjectAccountBinding.findUnique = savedBindingFindUnique;
