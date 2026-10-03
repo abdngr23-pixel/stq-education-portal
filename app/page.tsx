@@ -60,6 +60,7 @@ import { AuditModule } from "@/components/modules/audit-module";
 import { getPerizinanListAction } from "@/app/actions/kesantrian";
 import { getPelanggaranListAction, getSPListAction } from "@/app/actions/kedisiplinan";
 import { PortalWaliModule, SaranItem } from "@/components/modules/portal-wali-module";
+import { getBerandaOperationalSummaryAction, type BerandaOperationalSummary } from "@/app/actions/beranda";
 
 // Data Jejak Audit Awal Bersih Tanpa Mock Data
 const INITIAL_AUDIT_LOGS: AuditLogItem[] = [];
@@ -286,6 +287,28 @@ export default function Home() {
     }
   }, []);
 
+  // Beranda Lightweight Operational Summary
+  const [berandaSummary, setBerandaSummary] = useState<BerandaOperationalSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState<boolean>(true);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+
+  const fetchBerandaSummaryData = useCallback(async () => {
+    setSummaryLoading(true);
+    setSummaryError(null);
+    try {
+      const res = await getBerandaOperationalSummaryAction();
+      if (res.success && res.data) {
+        setBerandaSummary(res.data);
+      } else {
+        setSummaryError(res.message || "Gagal memuat ringkasan operasional Beranda.");
+      }
+    } catch (err: unknown) {
+      setSummaryError(err instanceof Error ? err.message : "Gagal memuat ringkasan operasional Beranda.");
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, []);
+
   // Ref stabil untuk selectedRole agar tidak memicu re-render / re-fetch pada popstate listener
   const selectedRoleRef = useRef<Role>(selectedRole);
   useEffect(() => {
@@ -346,18 +369,19 @@ export default function Home() {
           }
         }
 
-        // Remediation Round 4: Do not eagerly overfetch perizinan, pelanggaran, SP, and kesehatan on init.
-        // Controlled unavailable states preserve Error != Empty without sending full datasets across domains.
-        setIzinLoadError("Data perizinan belum dimuat.");
-        setPelanggaranLoadError("Data pelanggaran belum dimuat.");
-        setSpLoadError("Data SP belum dimuat.");
-        setKesehatanLoadError("Data kesehatan belum dimuat.");
+        // P0 Remediation: Explicit load semantics (idle/loading/loaded/error)
+        // Full module datasets remain lazy. Lightweight Beranda operational summary fetched securely.
+        setIzinLoadError(null);
+        setPelanggaranLoadError(null);
+        setSpLoadError(null);
+        setKesehatanLoadError(null);
         setKesehatanLoaded(false);
         setActiveKesehatanRecordsCount(0);
 
         if (isMounted) {
           await fetchSantriData();
           await fetchIkhtibarData();
+          await fetchBerandaSummaryData();
           if (session.role === "MT" || ["KS", "ADM", "YAY"].includes(session.role)) {
             await fetchOperationalMonitoring(session.role);
           }
@@ -898,6 +922,9 @@ export default function Home() {
             currentHalaqohName={currentHalaqohName}
             santriList={santriList}
             santriLoadError={santriLoadError}
+            summaryLoading={summaryLoading}
+            summaryError={summaryError}
+            operationalSummary={berandaSummary}
             izinPendingCount={izinPendingCount}
             izinLoadError={izinLoadError}
             spLoadError={spLoadError}

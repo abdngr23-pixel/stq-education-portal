@@ -535,14 +535,24 @@ describe("Remediation Round 4: Perizinan, Kedisiplinan & Kesehatan ABAC Fail-Clo
       assert.ok(!initAppBody.includes("getSPListAction()"), "initApp must not eagerly invoke getSPListAction");
     });
 
-    it("2. Beranda counters continue to satisfy Error != Empty without wide cross-domain fetch", () => {
+    it("2. Beranda counters satisfy Not-Loaded != Error and use lightweight operational summary without wide cross-domain fetch", () => {
       const pagePath = path.resolve(__dirname, "../app/page.tsx");
       const content = fs.readFileSync(pagePath, "utf-8");
 
-      assert.ok(content.includes('setIzinLoadError("Data perizinan belum dimuat.")'), "Default perizinan error initialized");
-      assert.ok(content.includes('setPelanggaranLoadError("Data pelanggaran belum dimuat.")'), "Default pelanggaran error initialized");
-      assert.ok(content.includes('setSpLoadError("Data SP belum dimuat.")'), "Default SP error initialized");
-      assert.ok(content.includes('setKesehatanLoadError("Data kesehatan belum dimuat.")'), "Default kesehatan error initialized");
+      // Verify that uninitialized state does not set false error strings
+      assert.ok(!content.includes('setIzinLoadError("Data perizinan belum dimuat.")'), "No false perizinan error initialized");
+      assert.ok(!content.includes('setPelanggaranLoadError("Data pelanggaran belum dimuat.")'), "No false pelanggaran error initialized");
+      assert.ok(!content.includes('setSpLoadError("Data SP belum dimuat.")'), "No false SP error initialized");
+      assert.ok(!content.includes('setKesehatanLoadError("Data kesehatan belum dimuat.")'), "No false kesehatan error initialized");
+
+      // Verify clean initial null error states
+      assert.ok(content.includes("setIzinLoadError(null)"), "Default perizinan error initialized to null");
+      assert.ok(content.includes("setPelanggaranLoadError(null)"), "Default pelanggaran error initialized to null");
+      assert.ok(content.includes("setSpLoadError(null)"), "Default SP error initialized to null");
+      assert.ok(content.includes("setKesehatanLoadError(null)"), "Default kesehatan error initialized to null");
+
+      // Verify Beranda uses lightweight summary action instead of eager full dataset fetch
+      assert.ok(content.includes("getBerandaOperationalSummaryAction"), "Lightweight Beranda operational summary invoked");
     });
   });
 });
