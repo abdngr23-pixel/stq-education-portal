@@ -232,7 +232,7 @@ export function BerandaModule({
     izinValue = "Memuat...";
     izinDesc = "Memeriksa antrean izin...";
     izinVariant = "neutral";
-  } else if (summaryError || izinLoadError) {
+  } else if (summaryError || izinLoadError || operationalSummary?.izin.status === "ERROR") {
     izinValue = "Data Tidak Tersedia";
     izinDesc = "Gagal memuat dari server";
     izinVariant = "ditolak";
@@ -256,7 +256,7 @@ export function BerandaModule({
     attentionValue = "Memuat...";
     attentionDesc = "Memeriksa status disiplin & kesehatan...";
     attentionVariant = "neutral";
-  } else if (summaryError || santriLoadError || spLoadError || kesehatanLoadError) {
+  } else if (summaryError || santriLoadError || spLoadError || kesehatanLoadError || operationalSummary?.sp.status === "ERROR" || operationalSummary?.kesehatan.status === "ERROR") {
     attentionValue = "Data Tidak Lengkap";
     attentionDesc = "Gagal memuat status disiplin/kesehatan santri";
     attentionVariant = "ditolak";
@@ -297,7 +297,7 @@ export function BerandaModule({
     : izinPendingCount;
 
   const isIzinLoading = Boolean(summaryLoading);
-  const isIzinError = Boolean(summaryError || izinLoadError);
+  const isIzinError = Boolean(summaryError || izinLoadError || operationalSummary?.izin.status === "ERROR");
 
   return (
     <div className="space-y-6">
@@ -451,7 +451,12 @@ export function BerandaModule({
               ) : isIzinError ? (
                 <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
                   <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
-                  <span>Gagal memuat permohonan izin santri ({summaryError || izinLoadError}).</span>
+                  <span>Gagal memuat permohonan izin santri ({summaryError || izinLoadError || "Kesalahan server"}).</span>
+                </div>
+              ) : operationalSummary?.izin.status === "UNAVAILABLE" ? (
+                <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-100 text-slate-500 text-xs">
+                  <Clock className="h-4 w-4 text-slate-400 shrink-0" />
+                  <span>Akses perizinan santri dibatasi untuk peran ini.</span>
                 </div>
               ) : resolvedIzinCount > 0 ? (
                 <div className="flex items-center justify-between p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/80">

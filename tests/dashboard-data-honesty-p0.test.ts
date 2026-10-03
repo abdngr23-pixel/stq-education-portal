@@ -21,6 +21,7 @@ import {
 import { startTestDatabase, stopTestDatabase } from "./test-db-manager";
 import { setTestSession } from "../lib/auth";
 import { getBerandaOperationalSummaryAction } from "../app/actions/beranda";
+import defaultPrisma from "../lib/prisma";
 
 describe("P0 Dashboard Data Honesty + Beranda Summary Remediation", () => {
   let prisma: PrismaClient;
@@ -257,8 +258,8 @@ describe("P0 Dashboard Data Honesty + Beranda Summary Remediation", () => {
     });
   });
 
-  describe("D. Real Summary Endpoint Success for Authorized Mudir", () => {
-    it("1. Mudir retrieves authoritative summary counts from production database", async () => {
+  describe("D. ALLOW vs DENY Semantics", () => {
+    it("1. ALLOW: Authorized Mudir -> AVAILABLE + correct count", async () => {
       setTestSession({
         userId: USER_MUDIR,
         username: "p0.mudir",
@@ -282,22 +283,8 @@ describe("P0 Dashboard Data Honesty + Beranda Summary Remediation", () => {
       assert.equal(res.data.kesehatan.status, "AVAILABLE");
       assert.equal(res.data.kesehatan.activeCount, 1);
     });
-  });
 
-  describe("E. Real Summary Failure Handling", () => {
-    const berandaPath = path.resolve(__dirname, "../components/modules/beranda-module.tsx");
-    const berandaContent = fs.readFileSync(berandaPath, "utf-8");
-
-    it("1. When summaryError is set, displays fail-closed error presentation", () => {
-      assert.ok(berandaContent.includes('summaryError || izinLoadError'), "Must handle summaryError for izin");
-      assert.ok(berandaContent.includes('summaryError || santriLoadError || spLoadError || kesehatanLoadError'), "Must handle summaryError for attention");
-      assert.ok(berandaContent.includes('attentionValue = "Data Tidak Lengkap"'), "Must show Data Tidak Lengkap on error");
-      assert.ok(berandaContent.includes('izinValue = "Data Tidak Tersedia"'), "Must show Data Tidak Tersedia on error");
-    });
-  });
-
-  describe("F. Security Regression & Confidentiality", () => {
-    it("1. GA (Guru Akademik) role receives UNAVAILABLE for health and SP, NEVER fake 0", async () => {
+    it("2. DENY: Unauthorized legitimate role (GA) -> UNAVAILABLE, null counts, NEVER fake 0", async () => {
       setTestSession({
         userId: USER_GA,
         username: "p0.guru",
@@ -309,18 +296,105 @@ describe("P0 Dashboard Data Honesty + Beranda Summary Remediation", () => {
       assert.equal(res.success, true);
       assert.ok(res.data);
 
-      // GA has no access to permissions, SP, or health
+      // GA has legitimate lack of authority -> UNAVAILABLE
       assert.equal(res.data.izin.status, "UNAVAILABLE");
-      assert.equal(res.data.izin.pendingCount, null);
+      assert.equal(res.data.izin.pendingCount, null, "Denied permission must be null, not 0");
 
       assert.equal(res.data.sp.status, "UNAVAILABLE");
-      assert.equal(res.data.sp.activeCount, null);
+      assert.equal(res.data.sp.activeCount, null, "Denied SP must be null, not 0");
 
       assert.equal(res.data.kesehatan.status, "UNAVAILABLE");
-      assert.equal(res.data.kesehatan.activeCount, null);
+      assert.equal(res.data.kesehatan.activeCount, null, "Denied health must be null, not 0");
+    });
+  });
+
+  describe("E. ORR-008 Evaluator Error & Thrown Failures (ERROR != UNAVAILABLE)", () => {
+    it("1. EVALUATOR ERROR: Canonical evaluator failure returns fail-closed error, NOT UNAVAILABLE, NOT 0, NOT healthy", async () => {
+      setTestSession({
+        userId: USER_MUDIR,
+        username: "p0.mudir",
+        role: "KS",
+        name: "KH. Mudir Utama",
+      });
+
+      const origFindUnique = defaultPrisma.user.findUnique;
+      (defaultPrisma.user as any).findUnique = async () => {
+        throw new Error("Simulated database failure during identity hydration in canonical auth evaluator");
+      };
+
+      try {
+        const res = await getBerandaOperationalSummaryAction();
+        assert.equal(res.success, false, "Must return success = false on evaluator error");
+        assert.ok(res.message, "Must return truthful error message");
+        assert.ok(!res.data || res.data.izin.status !== "UNAVAILABLE", "Evaluator ERROR must NOT be collapsed to UNAVAILABLE");
+        assert.ok(!res.data || res.data.izin.pendingCount !== 0, "Evaluator ERROR must NOT become 0");
+      } finally {
+        (defaultPrisma.user as any).findUnique = origFindUnique;
+      }
     });
 
-    it("2. Summary response returns zero PII (no names, phones, or medical descriptions)", async () => {
+    it("2. THROWN FAILURE: Unexpected database error produces sanitized error state, NOT UNAVAILABLE, NOT 0", async () => {
+      setTestSession({
+        userId: USER_MUDIR,
+        username: "p0.mudir",
+        role: "KS",
+        name: "KH. Mudir Utama",
+      });
+
+      const origCount = defaultPrisma.perizinanSantri.count;
+      (defaultPrisma.perizinanSantri as any).count = async () => {
+        throw new Error("FATAL: password authentication failed for user postgres_admin at 10.0.1.42:5432");
+      };
+
+      try {
+        const res = await getBerandaOperationalSummaryAction();
+        assert.equal(res.success, false, "Must return success = false on thrown query exception");
+        assert.ok(res.message, "Must return sanitized error message");
+        assert.ok(!res.message.includes("postgres_admin"), "Must not leak DB user credentials in UI error");
+        assert.ok(!res.message.includes("10.0.1.42"), "Must not leak internal IP address in UI error");
+        assert.ok(!res.data || res.data.izin.status !== "UNAVAILABLE", "THROWN error must NOT become UNAVAILABLE");
+        assert.ok(!res.data || res.data.izin.pendingCount !== 0, "THROWN error must NOT become 0");
+      } finally {
+        (defaultPrisma.perizinanSantri as any).count = origCount;
+      }
+    });
+  });
+
+  describe("F. UI Error & Unauthorized Distinction (DENY != ERROR, UNAVAILABLE != ERROR)", () => {
+    const berandaPath = path.resolve(__dirname, "../components/modules/beranda-module.tsx");
+    const berandaContent = fs.readFileSync(berandaPath, "utf-8");
+
+    it("1. Real summary failure displays fail-closed error presentation ('Data Tidak Tersedia', 'Data Tidak Lengkap', red task banner)", () => {
+      assert.ok(berandaContent.includes('summaryError || izinLoadError'), "Must handle summaryError for izin");
+      assert.ok(berandaContent.includes('summaryError || santriLoadError || spLoadError || kesehatanLoadError'), "Must handle summaryError for attention");
+      assert.ok(berandaContent.includes('attentionValue = "Data Tidak Lengkap"'), "Must show Data Tidak Lengkap on error");
+      assert.ok(berandaContent.includes('izinValue = "Data Tidak Tersedia"'), "Must show Data Tidak Tersedia on error");
+      assert.ok(berandaContent.includes("Gagal memuat permohonan izin santri"), "Task Queue must show error alert on actual failure");
+    });
+
+    it("2. Legitimate unauthorized role displays neutral access restricted notice, NOT red server failure", () => {
+      assert.ok(berandaContent.includes('operationalSummary?.izin.status === "UNAVAILABLE"'), "Must handle UNAVAILABLE specifically");
+      assert.ok(berandaContent.includes('izinDesc = "Akses perizinan dibatasi"'), "Must explain access is restricted");
+      assert.ok(berandaContent.includes('Akses perizinan santri dibatasi untuk peran ini.'), "Task Queue must show neutral restriction notice");
+    });
+
+    it("3. Proves DENY != ERROR and UNAVAILABLE != ERROR semantics", () => {
+      // UNAVAILABLE uses neutral variant, while ERROR uses ditolak
+      assert.ok(
+        berandaContent.includes('operationalSummary?.izin.status === "UNAVAILABLE"') &&
+        berandaContent.includes('izinVariant = "neutral"'),
+        "UNAVAILABLE must use neutral badge variant"
+      );
+      assert.ok(
+        berandaContent.includes('summaryError || izinLoadError') &&
+        berandaContent.includes('izinVariant = "ditolak"'),
+        "ERROR must use ditolak (red) badge variant"
+      );
+    });
+  });
+
+  describe("G. Security Regression & Confidentiality", () => {
+    it("1. Summary response returns zero PII (no names, phones, or medical descriptions)", async () => {
       setTestSession({
         userId: USER_MUDIR,
         username: "p0.mudir",

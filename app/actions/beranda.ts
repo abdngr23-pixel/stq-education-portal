@@ -5,7 +5,7 @@ import { getCurrentSession } from "@/lib/auth";
 import { createPrismaDataProvider, authorizeCanonical } from "@/lib/auth/canonical-evaluator";
 import { StatusIzin, StatusSP, StatusKesehatan } from "@prisma/client";
 
-export type SummaryAvailability = "AVAILABLE" | "UNAVAILABLE";
+export type SummaryAvailability = "AVAILABLE" | "UNAVAILABLE" | "ERROR";
 
 export interface SummaryMetricItem {
   status: SummaryAvailability;
@@ -60,56 +60,75 @@ export async function getBerandaOperationalSummaryAction(): Promise<BerandaSumma
           },
         });
         izinStatus = "AVAILABLE";
+      } else {
+        izinStatus = "UNAVAILABLE";
       }
     } else {
       // Staf/Institusional: Evaluasi kapabilitas keasramaan.permission.read
-      try {
-        const dataProvider = createPrismaDataProvider(prisma);
-        const authRes = await authorizeCanonical({
-          identity: { userId: session.userId },
-          capability: "keasramaan.permission.read",
-          dataProvider,
-        }).catch(() => null);
+      const dataProvider = createPrismaDataProvider(prisma);
+      const authRes = await authorizeCanonical({
+        identity: { userId: session.userId },
+        capability: "keasramaan.permission.read",
+        dataProvider,
+      });
 
-        if (authRes && authRes.decision === "ALLOW") {
-          if (authRes.positionCode === "MUDIR" && authRes.scopeType === "GLOBAL") {
-            izinPendingCount = await prisma.perizinanSantri.count({
-              where: {
-                status: { in: [StatusIzin.MENUNGGU_MK, StatusIzin.MENUNGGU_KS] },
-              },
+      // ORR-008: ERROR != UNAVAILABLE. Evaluator failure must fail closed with truthful error.
+      if (authRes.decision === "ERROR") {
+        return {
+          success: false,
+          message: "Gagal memverifikasi otorisasi perizinan santri.",
+        };
+      }
+
+      if (authRes.decision === "DENY") {
+        // Legitimate absence of permission -> UNAVAILABLE
+        izinStatus = "UNAVAILABLE";
+        izinPendingCount = null;
+      } else if (authRes.decision === "ALLOW") {
+        if (authRes.positionCode === "MUDIR" && authRes.scopeType === "GLOBAL") {
+          izinPendingCount = await prisma.perizinanSantri.count({
+            where: {
+              status: { in: [StatusIzin.MENUNGGU_MK, StatusIzin.MENUNGGU_KS] },
+            },
+          });
+          izinStatus = "AVAILABLE";
+        } else if (authRes.positionCode === "KEPALA_KEASRAMAAN" && authRes.scopeType === "DOMAIN") {
+          izinPendingCount = await prisma.perizinanSantri.count({
+            where: {
+              status: { in: [StatusIzin.MENUNGGU_MK, StatusIzin.MENUNGGU_KS] },
+            },
+          });
+          izinStatus = "AVAILABLE";
+        } else if (authRes.positionCode === "PEMBINA_HALAQOH" && authRes.scopeType === "KAMAR") {
+          const kamarId = authRes.grantUsed?.anchorUnitId || authRes.grantUsed?.unitIds?.[0];
+          if (kamarId) {
+            const placements = await prisma.santriKamarPlacement.findMany({
+              where: { kamarId, isActive: true },
+              select: { santriId: true },
             });
-            izinStatus = "AVAILABLE";
-          } else if (authRes.positionCode === "KEPALA_KEASRAMAAN" && authRes.scopeType === "DOMAIN") {
-            izinPendingCount = await prisma.perizinanSantri.count({
-              where: {
-                status: { in: [StatusIzin.MENUNGGU_MK, StatusIzin.MENUNGGU_KS] },
-              },
-            });
-            izinStatus = "AVAILABLE";
-          } else if (authRes.positionCode === "PEMBINA_HALAQOH" && authRes.scopeType === "KAMAR") {
-            const kamarId = authRes.grantUsed?.anchorUnitId || authRes.grantUsed?.unitIds?.[0];
-            if (kamarId) {
-              const placements = await prisma.santriKamarPlacement.findMany({
-                where: { kamarId, isActive: true },
-                select: { santriId: true },
+            const allowedSantriIds = placements.map((p) => p.santriId);
+            if (allowedSantriIds.length > 0) {
+              izinPendingCount = await prisma.perizinanSantri.count({
+                where: {
+                  santriId: { in: allowedSantriIds },
+                  status: { in: [StatusIzin.MENUNGGU_MK, StatusIzin.MENUNGGU_KS] },
+                },
               });
-              const allowedSantriIds = placements.map((p) => p.santriId);
-              if (allowedSantriIds.length > 0) {
-                izinPendingCount = await prisma.perizinanSantri.count({
-                  where: {
-                    santriId: { in: allowedSantriIds },
-                    status: { in: [StatusIzin.MENUNGGU_MK, StatusIzin.MENUNGGU_KS] },
-                  },
-                });
-              } else {
-                izinPendingCount = 0;
-              }
-              izinStatus = "AVAILABLE";
+            } else {
+              izinPendingCount = 0;
             }
+            izinStatus = "AVAILABLE";
+          } else {
+            izinStatus = "UNAVAILABLE";
           }
+        } else {
+          izinStatus = "UNAVAILABLE";
         }
-      } catch (err) {
-        console.error("[getBerandaOperationalSummaryAction] Gagal evaluasi izin:", err);
+      } else {
+        return {
+          success: false,
+          message: "Status otorisasi tidak dikenal.",
+        };
       }
     }
 
@@ -194,11 +213,10 @@ export async function getBerandaOperationalSummaryAction(): Promise<BerandaSumma
       },
     };
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : "Terjadi kesalahan sistem";
     console.error("[getBerandaOperationalSummaryAction] Error:", err);
     return {
       success: false,
-      message: errorMsg,
+      message: "Gagal memuat ringkasan operasional Beranda dari server.",
     };
   }
 }
