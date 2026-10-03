@@ -188,28 +188,31 @@ export async function runIsolatedE2EVerification() {
     }
 
     const rootDir = path.resolve(__dirname, "..");
-    const hasNextBuild = fs.existsSync(path.join(rootDir, ".next"));
+    const testDistDir = path.join(rootDir, ".next-test-e2e");
+    if (fs.existsSync(testDistDir)) {
+      try {
+        fs.rmSync(testDistDir, { recursive: true, force: true });
+      } catch {}
+    }
 
     // 4. Jalankan Server Next.js Test Sebagai Child Process Terisolasi (tanpa shell wrapper)
-    console.log(`\n[4] Memulai Next.js test server (${hasNextBuild ? "production mode via next start" : "dev mode via next dev --webpack"})...`);
+    // Gunakan --webpack untuk menghindari issue resolusi next/font/google pada Turbopack di test environment
+    console.log("\n[4] Memulai Next.js test server (dev mode via --webpack)...");
     const nextCli = require.resolve("next/dist/bin/next");
     const isWin = process.platform === "win32";
 
-    const serverArgs = hasNextBuild
-      ? [nextCli, "start", "-p", testNextPort.toString()]
-      : [nextCli, "dev", "--webpack", "-p", testNextPort.toString(), "-H", "127.0.0.1"];
-
     nextServerProcess = spawn(
       process.execPath,
-      serverArgs,
+      [nextCli, "dev", "--webpack", "-p", testNextPort.toString(), "-H", "127.0.0.1"],
       {
         cwd: rootDir,
         env: {
           ...process.env,
           PORT: testNextPort.toString(),
+          NEXT_DIST_DIR: ".next-test-e2e",
           DATABASE_URL: testDbUrl,
           TEST_DATABASE_URL: testDbUrl,
-          NODE_ENV: hasNextBuild ? "production" : "test",
+          NODE_ENV: "test",
           IS_TEST_RUN: "true",
           ALLOW_ISOLATED_TEST_DB: "true",
           AUTH_SECRET: "stq_portal_test_secret_session_key_min_32_characters_long_2026",
