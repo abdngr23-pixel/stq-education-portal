@@ -6,6 +6,7 @@ import { DashboardSantriSummary } from "./beranda-module";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SantriPicker } from "@/components/ui/santri-picker";
 import { PrintSurat } from "@/components/print/print-surat";
 import { INSTITUTION_CONFIG } from "@/lib/institution-config";
 import {
@@ -165,21 +166,18 @@ export function SuratModule({
               <label className="text-xs font-bold text-slate-700 block mb-1">
                 Santri Terkait
               </label>
-              <select
+              <SantriPicker
+                items={santriList}
                 value={selectedSantriNis}
-                onChange={(e) => setSelectedSantriNis(e.target.value)}
-                className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold"
-              >
-                {santriList.length === 0 ? (
-                  <option value="">Memuat data santri atau belum ada santri...</option>
-                ) : (
-                  santriList.map((s) => (
-                    <option key={s.nis} value={s.nis}>
-                      {s.nama} ({s.nis} - {s.kelas})
-                    </option>
-                  ))
-                )}
-              </select>
+                onChange={(val) => setSelectedSantriNis(val)}
+                valueKey="nis"
+                placeholder={
+                  santriList.length === 0
+                    ? "Memuat data santri atau belum ada santri..."
+                    : "-- Pilih Santri Terkait --"
+                }
+                emptyMessage="Memuat data santri atau belum ada santri..."
+              />
             </div>
 
             <div>

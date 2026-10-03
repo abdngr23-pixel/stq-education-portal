@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { SantriPicker } from "@/components/ui/santri-picker";
 import {
   ajukanIzinAction,
   verifikasiIzinAction,
@@ -620,17 +621,13 @@ export function PerizinanModule({
                 <label className="text-xs font-bold text-slate-700 block mb-1">
                   Pilih Santri
                 </label>
-                <select
+                <SantriPicker
+                  items={santriList}
                   value={selectedSantriNis}
-                  onChange={(e) => setSelectedSantriNis(e.target.value)}
-                  className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold"
-                >
-                  {santriList.map((s) => (
-                    <option key={s.nis} value={s.nis}>
-                      {s.nama} ({s.nis} - {s.kelas})
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => setSelectedSantriNis(val)}
+                  valueKey="nis"
+                  placeholder="-- Pilih Santri --"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
