@@ -35,22 +35,33 @@ import { CANONICAL_POSITION_CODES } from "../lib/auth/compatibility";
 import {
   authorizeCanonical,
   createPrismaDataProvider,
+  ICanonicalDataProvider,
 } from "../lib/auth/canonical-evaluator";
 import {
   PendidikanV2Service,
 } from "../lib/server/pendidikan-v2-service";
 import {
   createHealthV2Service,
+  HealthV2Service,
 } from "../lib/server/health-v2-service";
 import {
   getDaftarKesehatanAction,
   catatKesehatanAction,
 } from "../app/actions/kesehatan";
 
+interface HealthRecordItem {
+  id: string;
+  santriId: string;
+}
+
+interface HealthCreateResult {
+  id: string;
+}
+
 describe("DIR-2026-016 / ORR-047 / ORR-049: Lisa Cross-Domain Corrective Implementation", () => {
   let prisma: PrismaClient;
-  let dataProvider: any;
-  let healthService: any;
+  let dataProvider: ICanonicalDataProvider;
+  let healthService: HealthV2Service;
 
   // Identifiers
   const LISA_USER_ID = "usr-lisa-test";
@@ -769,8 +780,9 @@ describe("DIR-2026-016 / ORR-047 / ORR-049: Lisa Cross-Domain Corrective Impleme
       assert.ok(Array.isArray(res.data));
 
       // Must receive exactly the 2 PUTRI records (PUTRI A and PUTRI B)
-      assert.strictEqual((res.data as any[]).length, 2, "Lisa must receive only PUTRI records");
-      const returnedSantriIds = (res.data as any[]).map((r: any) => r.santriId);
+      const records = (res.data ?? []) as HealthRecordItem[];
+      assert.strictEqual(records.length, 2, "Lisa must receive only PUTRI records");
+      const returnedSantriIds = records.map((r) => r.santriId);
       assert.ok(returnedSantriIds.includes(SANTRI_PUTRI_A_ID));
       assert.ok(returnedSantriIds.includes(SANTRI_PUTRI_B_ID));
       assert.strictEqual(
@@ -821,7 +833,8 @@ describe("DIR-2026-016 / ORR-047 / ORR-049: Lisa Cross-Domain Corrective Impleme
 
       const res = await getDaftarKesehatanAction();
       assert.strictEqual(res.success, true);
-      assert.strictEqual((res.data as any[]).length, 3, "KS must see all records (PUTRI and PUTRA)");
+      const records = (res.data ?? []) as HealthRecordItem[];
+      assert.strictEqual(records.length, 3, "KS must see all records (PUTRI and PUTRA)");
     });
   });
 
@@ -865,7 +878,8 @@ describe("DIR-2026-016 / ORR-047 / ORR-049: Lisa Cross-Domain Corrective Impleme
       });
 
       assert.strictEqual(res.success, true);
-      const createdId = (res.data as any)?.id;
+      const createdRecord = res.data as HealthCreateResult | undefined;
+      const createdId = createdRecord?.id;
 
       // Verify directly from DB
       const record = await prisma.catatanKesehatan.findUnique({
