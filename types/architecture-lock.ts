@@ -222,6 +222,8 @@ export interface EffectiveCapabilityGrant {
   businessRuleState: BusinessRuleState;
   anchorUnit?: CanonicalOperationalUnitContext;
   scopeUnits?: CanonicalOperationalUnitContext[];
+  genderComplex?: GenderComplex;
+  orgDomain?: OrgDomain;
 }
 
 /**
@@ -791,6 +793,24 @@ export const GURU_KEPESANTRENAN_POSITION_CONTRACT = {
 } as const;
 
 /**
+ * Canonical Position Contract for Pengawas Santriwati (PENGAWAS_SANTRIWATI)
+ * Generic position definition per DIR-2026-016 (ORR-049).
+ * Strictly non-production-writing — architecture contract only.
+ */
+export const PENGAWAS_SANTRIWATI_POSITION_CONTRACT = {
+  code: "PENGAWAS_SANTRIWATI" as const,
+  name: "Pengawas Santriwati" as const,
+  domain: "KEASRAMAAN" as const,
+  requiresPersonalAccount: true as const,
+  isLeadership: false as const,
+  allowedUnitTypes: ["ORGANIZATION", "DOMAIN"] as const,
+  targetCapabilities: [
+    "health.case.read_detail",
+  ] as const,
+  scopeType: "DOMAIN" as const,
+} as const;
+
+/**
  * Canonical Teacher Mapping Contract for Kepesantrenan Subjects (12 Slots)
  * Per Level-0 Owner Directive DIR-2026-031 (and DIR-2026-028 where relevant to teacher modality).
  * Declarative contract mapping confirmed human teacher names to exact curriculum slots.
@@ -1163,6 +1183,7 @@ export const POSITION_ACCOUNT_MODALITY_CONTRACT: Record<string, AccountType> = {
   KABID_TAHFIZH: "PERSONAL",
   MUSYRIF_TAHFIZH: "PERSONAL",
   PETUGAS_OPERASIONAL_TAHFIZH: "PERSONAL",
+  PENGAWAS_SANTRIWATI: "PERSONAL",
 } as const;
 
 /**

@@ -9,6 +9,7 @@ import {
   ALL_STAFF_ACCOUNTS,
   getHalaqohByStaff,
 } from "@/types/auth";
+import { createPrismaDataProvider, authorizeCanonical } from "@/lib/auth/canonical-evaluator";
 
 async function setSessionCookie(token: string): Promise<void> {
   try {
@@ -358,10 +359,28 @@ export async function getCurrentUserAction(): Promise<{
   santriId?: string | null;
   halaqohName?: string | null;
   isKepalaBidangTahfidz?: boolean;
+  canReadHealthDetail?: boolean;
 } | null> {
   try {
     const session = await getCurrentSession();
     if (!session) return null;
+
+    let canReadHealthDetail = false;
+    if (session.role === "KS" || session.role === "MK" || session.role === "ADM") {
+      canReadHealthDetail = true;
+    } else {
+      try {
+        const dataProvider = createPrismaDataProvider(prisma);
+        const healthAuth = await authorizeCanonical({
+          identity: { userId: session.userId },
+          capability: "health.case.read_detail",
+          dataProvider,
+        });
+        canReadHealthDetail = healthAuth.decision === "ALLOW";
+      } catch {
+        canReadHealthDetail = false;
+      }
+    }
 
     return {
       id: session.userId,
@@ -373,6 +392,7 @@ export async function getCurrentUserAction(): Promise<{
       santriId: session.santriId ?? null,
       halaqohName: session.halaqohName ?? null,
       isKepalaBidangTahfidz: session.isKepalaBidangTahfidz ?? false,
+      canReadHealthDetail,
     };
   } catch {
     return null;

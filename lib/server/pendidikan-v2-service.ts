@@ -436,20 +436,9 @@ export class PendidikanV2Service {
             continue;
           }
         } else {
-          // Non-Kepesantrenan (e.g. Studi Umum for non-subject account)
-          const sessionReadAuth = await authorizeCanonical({
-            identity: actorIdentity,
-            capability: "academic.schedule.read",
-            resourceContext: {
-              educationSessionId: s.id,
-            },
-            dataProvider: this.dataProvider,
-            isMutation: false,
-          });
-
-          if (sessionReadAuth.decision === "ALLOW") {
-            authorizedSessions.push(s);
-          }
+          // Non-SUBJECT actor MUST NEVER receive STUDI_UMUM rows merely because academic.schedule.read is granted.
+          // Rule: AccountType.SUBJECT may read only STUDI_UMUM rows for its own active subject binding.
+          continue;
         }
       }
     }

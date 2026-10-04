@@ -324,8 +324,13 @@ export function normalizeNavTab(rawTab: string | null | undefined): AppNavId {
   return map[rawTab] || "beranda";
 }
 
-export function isNavPermitted(tab: AppNavId, role: Role): boolean {
+export function isNavPermitted(
+  tab: AppNavId,
+  role: Role,
+  entitlements?: { canReadHealthDetail?: boolean }
+): boolean {
   if (tab === "beranda") return true;
+  if (tab === "kesehatan" && entitlements?.canReadHealthDetail) return true;
   return ROLE_NAV_MAP[role]?.includes(tab) ?? false;
 }
 
