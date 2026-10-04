@@ -9,6 +9,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { SantriPicker } from "@/components/ui/santri-picker";
 import {
   createSetoranAction,
   getRecentSetoranAction,
@@ -1053,22 +1054,19 @@ export function TahfizhModule({
                   <label htmlFor="santri-selector" className="text-xs font-bold text-slate-700 block mb-1.5">
                     Nama Santri
                   </label>
-                  <select
+                  <SantriPicker
                     id="santri-selector"
+                    items={setoranSantriList}
                     value={effectiveSantriId}
-                    onChange={(e) => handleSelectSantri(e.target.value)}
-                    className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-[#0E7C3A]/20 transition-colors"
-                  >
-                    {setoranSantriList.length === 0 ? (
-                      <option value="">Memuat data santri dari basis data...</option>
-                    ) : (
-                      setoranSantriList.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.nama} — Kelas {s.kelas} — {s.nis}
-                        </option>
-                      ))
-                    )}
-                  </select>
+                    onChange={(val) => handleSelectSantri(val)}
+                    valueKey="id"
+                    placeholder={
+                      setoranSantriList.length === 0
+                        ? "Memuat data santri dari basis data..."
+                        : "-- Pilih Santri --"
+                    }
+                    emptyMessage="Memuat data santri dari basis data..."
+                  />
                 </div>
 
                 {/* STATUS HAFALAN SANTRI: 5 METRIK RIIL RINGKAS & BERSIH (FLAT PANEL ANTI-SLOP) */}
@@ -2078,17 +2076,13 @@ export function TahfizhModule({
                 <label className="text-xs font-bold text-slate-700 block mb-1">
                   Pilih Santri Peserta Ujian
                 </label>
-                <select
+                <SantriPicker
+                  items={santriList}
                   value={ajukanSantriNis}
-                  onChange={(e) => setAjukanSantriNis(e.target.value)}
-                  className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-900 focus:bg-white"
-                >
-                  {santriList.map((s) => (
-                    <option key={s.id} value={s.nis}>
-                      {s.nama} ({s.nis}) — {s.kelas}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => setAjukanSantriNis(val)}
+                  valueKey="nis"
+                  placeholder="-- Pilih Santri Peserta Ujian --"
+                />
               </div>
 
               <div>
