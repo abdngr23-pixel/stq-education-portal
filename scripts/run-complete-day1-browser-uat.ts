@@ -346,6 +346,70 @@ export async function runCompleteDay1BrowserUAT(): Promise<{
       },
     });
 
+    // Ensure Capability tahfizh.policy.manage & grant for Mudir (GLOBAL / VERIFIED_PRODUCTION)
+    await testPrisma.capability.upsert({
+      where: { code: "tahfizh.policy.manage" },
+      update: {},
+      create: {
+        code: "tahfizh.policy.manage",
+        namespace: CapabilityNamespace.TAHFIZH,
+        name: "Policy Manage",
+        description: "Mengelola kebijakan reward dan sanksi tahfizh",
+      },
+    });
+
+    await testPrisma.positionCapability.upsert({
+      where: {
+        positionId_capabilityCode: {
+          positionId: posMudir.id,
+          capabilityCode: "tahfizh.policy.manage",
+        },
+      },
+      update: {
+        scopeType: ScopeType.GLOBAL,
+        businessRuleState: BusinessRuleState.VERIFIED_PRODUCTION,
+      },
+      create: {
+        id: "pc-mudir-tahfizh-policy",
+        positionId: posMudir.id,
+        capabilityCode: "tahfizh.policy.manage",
+        scopeType: ScopeType.GLOBAL,
+        businessRuleState: BusinessRuleState.VERIFIED_PRODUCTION,
+      },
+    });
+
+    // Ensure Capability tahfizh.reward.issue & grant for Mudir (GLOBAL / VERIFIED_PRODUCTION)
+    await testPrisma.capability.upsert({
+      where: { code: "tahfizh.reward.issue" },
+      update: {},
+      create: {
+        code: "tahfizh.reward.issue",
+        namespace: CapabilityNamespace.TAHFIZH,
+        name: "Reward Issue",
+        description: "Menerbitkan reward tasmi dan simaan tahfizh",
+      },
+    });
+
+    await testPrisma.positionCapability.upsert({
+      where: {
+        positionId_capabilityCode: {
+          positionId: posMudir.id,
+          capabilityCode: "tahfizh.reward.issue",
+        },
+      },
+      update: {
+        scopeType: ScopeType.GLOBAL,
+        businessRuleState: BusinessRuleState.VERIFIED_PRODUCTION,
+      },
+      create: {
+        id: "pc-mudir-tahfizh-reward",
+        positionId: posMudir.id,
+        capabilityCode: "tahfizh.reward.issue",
+        scopeType: ScopeType.GLOBAL,
+        businessRuleState: BusinessRuleState.VERIFIED_PRODUCTION,
+      },
+    });
+
     // Ensure OrgUnit STQ Central
     const orgUnitCentral = await testPrisma.orgUnit.upsert({
       where: { code: "STQ_CENTRAL" },
