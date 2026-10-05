@@ -437,18 +437,60 @@ export class PendidikanV2Service {
           }
         } else {
           // Non-Kepesantrenan (e.g. Studi Umum for non-subject account)
-          // Per DIR-2026-016 / ORR-047, legacy roles (GA, KS, ADM) must NEVER independently authorize Studi Umum rows.
-          // However, a teacher scheduled for a specific session seeing their own schedule is legitimate
-          // when authorized via canonical capability academic.schedule.read.
-          // Non-scheduled / foreign actors (such as Kepesantrenan-only actors like Lisa) fail closed.
-          const isScheduledTeacher =
-            !!(actorIdentity.staffId && (
-              s.scheduledStaffId === actorIdentity.staffId ||
-              s.scheduledTeacherAssignment?.staffId === actorIdentity.staffId
-            ));
-
-          if (!isScheduledTeacher) {
+          // Per DIR-2026-016 / ORR-047:
+          // A Kepesantrenan-only teacher accidentally placed into scheduledStaffId on a Studi Umum session
+          // MUST NOT gain Studi Umum read.
+          // For PERSONAL non-SUBJECT Studi Umum schedule read, require ALL of the following 10 invariants:
+          // 1. actor accountType = PERSONAL
+          // 2. actor has active Staff
+          // 3. session scheduled Staff = actor Staff
+          // 4. session has canonical scheduledTeacherAssignment
+          // 5. scheduledTeacherAssignment.staffId = actor Staff
+          // 6. scheduledTeacherAssignment.educationTrack = STUDI_UMUM
+          // 7. scheduledTeacherAssignment.isActive = true
+          // 8. validFrom <= relevant session date
+          // 9. validUntil is null or relevant session date <= validUntil
+          // 10. canonical academic.schedule.read = ALLOW
+          if (actorIdentity.accountType !== "PERSONAL" || !actorIdentity.staffId) {
             continue;
+          }
+
+          if (!s.scheduledStaffId || s.scheduledStaffId !== actorIdentity.staffId) {
+            continue;
+          }
+
+          const ta = s.scheduledTeacherAssignment;
+          if (!ta) {
+            // Missing canonical teaching assignment -> fail closed
+            continue;
+          }
+
+          if (ta.staffId !== actorIdentity.staffId) {
+            continue;
+          }
+
+          if (ta.educationTrack !== "STUDI_UMUM") {
+            // Track mismatch (e.g. Kepesantrenan teacher accidentally scheduled on Studi Umum) -> fail closed
+            continue;
+          }
+
+          if (ta.isActive !== true) {
+            continue;
+          }
+
+          const sessionDate = s.scheduledDate instanceof Date ? s.scheduledDate : new Date(s.scheduledDate);
+          if (ta.validFrom) {
+            const validFrom = ta.validFrom instanceof Date ? ta.validFrom : new Date(ta.validFrom);
+            if (validFrom > sessionDate) {
+              continue;
+            }
+          }
+
+          if (ta.validUntil) {
+            const validUntil = ta.validUntil instanceof Date ? ta.validUntil : new Date(ta.validUntil);
+            if (sessionDate > validUntil) {
+              continue;
+            }
           }
 
           const sessionReadAuth = await authorizeCanonical({

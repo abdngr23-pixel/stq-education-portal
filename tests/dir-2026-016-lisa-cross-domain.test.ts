@@ -23,6 +23,8 @@ import {
   EducationTrack,
   EducationSessionStatus,
   HealthStatusV2,
+  GenderComplex,
+  PedagogicalLevel,
 } from "@prisma/client";
 import { startTestDatabase, stopTestDatabase } from "./test-db-manager";
 import { setTestSession } from "../lib/auth";
@@ -783,6 +785,99 @@ describe("DIR-2026-016 / ORR-047 / ORR-049: Lisa Cross-Domain Corrective Impleme
         sessions.some((s) => s.educationTrack === "STUDI_UMUM"),
         false,
         "academic.schedule.read alone on non-SUBJECT account must fail closed"
+      );
+    });
+
+    it("8. Lisa accidentally placed into scheduledStaffId on Studi Umum session with NO TeachingAssignment => DENY / ZERO ROW", async () => {
+      const service = new PendidikanV2Service({ db: prisma });
+
+      // Deliberately place Lisa into scheduledStaffId of a Studi Umum session without teaching assignment
+      const ACCIDENTAL_SU_1 = "sess-su-lisa-no-ta-accidental";
+      await prisma.educationSession.create({
+        data: {
+          id: ACCIDENTAL_SU_1,
+          educationTrack: EducationTrack.STUDI_UMUM,
+          subjectId: SUBJ_MAT_ID,
+          scheduledStaffId: LISA_STAFF_ID,
+          scheduledTeacherAssignmentId: null,
+          scheduledDate: new Date("2026-10-10"),
+          status: EducationSessionStatus.SCHEDULED,
+        },
+      });
+
+      // 1. Direct Studi Umum query => PERMISSION_DENIED (no authorized Studi Umum rows)
+      await assert.rejects(
+        () => service.getEducationSessions({ educationTrack: "STUDI_UMUM" }, { actorUserId: LISA_USER_ID }),
+        /PERMISSION_DENIED/,
+        "Lisa requesting Studi Umum track must fail closed even when scheduledStaffId is set"
+      );
+
+      // 2. Unfiltered query => Lisa receives only her Kepesantrenan session; accidental Studi Umum row is excluded
+      const sessions = await service.getEducationSessions(undefined, { actorUserId: LISA_USER_ID });
+      assert.strictEqual(
+        sessions.some((s) => s.sessionId === ACCIDENTAL_SU_1),
+        false,
+        "Studi Umum session without TeachingAssignment must be completely excluded"
+      );
+      assert.strictEqual(
+        sessions.filter((s) => s.educationTrack === "STUDI_UMUM").length,
+        0,
+        "Lisa must receive zero Studi Umum rows"
+      );
+    });
+
+    it("9. Lisa accidentally placed into scheduledStaffId on Studi Umum session with Kepesantrenan TeachingAssignment => DENY / ZERO ROW", async () => {
+      const service = new PendidikanV2Service({ db: prisma });
+
+      // Seed a Kepesantrenan teaching assignment for Lisa if not present
+      const TA_KPS_LISA = "ta-kps-lisa-negative";
+      await prisma.teachingAssignment.upsert({
+        where: { id: TA_KPS_LISA },
+        create: {
+          id: TA_KPS_LISA,
+          mapelId: SUBJ_ARB_ID,
+          staffId: LISA_STAFF_ID,
+          educationTrack: EducationTrack.KEPESANTRENAN,
+          genderComplex: GenderComplex.PUTRI,
+          pedagogicalLevel: PedagogicalLevel.TINGKAT_1,
+          isActive: true,
+          validFrom: new Date("2026-01-01"),
+        },
+        update: {},
+      });
+
+      // Deliberately place Lisa on a Studi Umum session linked to her Kepesantrenan teaching assignment
+      const ACCIDENTAL_SU_2 = "sess-su-lisa-kps-ta-accidental";
+      await prisma.educationSession.create({
+        data: {
+          id: ACCIDENTAL_SU_2,
+          educationTrack: EducationTrack.STUDI_UMUM,
+          subjectId: SUBJ_MAT_ID,
+          scheduledStaffId: LISA_STAFF_ID,
+          scheduledTeacherAssignmentId: TA_KPS_LISA,
+          scheduledDate: new Date("2026-10-10"),
+          status: EducationSessionStatus.SCHEDULED,
+        },
+      });
+
+      // 1. Direct Studi Umum query => PERMISSION_DENIED
+      await assert.rejects(
+        () => service.getEducationSessions({ educationTrack: "STUDI_UMUM" }, { actorUserId: LISA_USER_ID }),
+        /PERMISSION_DENIED/,
+        "Track mismatch between session (STUDI_UMUM) and teaching assignment (KEPESANTRENAN) must fail closed"
+      );
+
+      // 2. Unfiltered query => Zero Studi Umum rows
+      const sessions = await service.getEducationSessions(undefined, { actorUserId: LISA_USER_ID });
+      assert.strictEqual(
+        sessions.some((s) => s.sessionId === ACCIDENTAL_SU_2),
+        false,
+        "Studi Umum session with Kepesantrenan TeachingAssignment must be completely excluded"
+      );
+      assert.strictEqual(
+        sessions.filter((s) => s.educationTrack === "STUDI_UMUM").length,
+        0,
+        "Lisa must receive zero Studi Umum rows"
       );
     });
   });

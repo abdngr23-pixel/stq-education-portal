@@ -1033,11 +1033,11 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       // 6. Teaching Assignments
       await prisma.teachingAssignment.createMany({
         data: [
-          { id: "ta-mat-ahmad", mapelId: MAT_MAPEL_ID, staffId: STF_AHMAD, educationTrack: "STUDI_UMUM", genderComplex: "PUTRA", isActive: true, validFrom: new Date(Date.now() - 86400000) },
-          { id: "ta-arb-abi", mapelId: ARB_MAPEL_ID, staffId: STF_ABI, educationTrack: "KEPESANTRENAN", genderComplex: "PUTRA", pedagogicalLevel: "TINGKAT_1", isActive: true, validFrom: new Date(Date.now() - 86400000) },
-          { id: "ta-arb-kamal", mapelId: ARB_MAPEL_ID, staffId: STF_KAMAL, educationTrack: "KEPESANTRENAN", genderComplex: "PUTRA", pedagogicalLevel: "TINGKAT_2", isActive: true, validFrom: new Date(Date.now() - 86400000) },
-          { id: "ta-arb-andi", mapelId: ARB_MAPEL_ID, staffId: STF_ANDI, educationTrack: "KEPESANTRENAN", genderComplex: "PUTRA", pedagogicalLevel: "TINGKAT_3", isActive: true, validFrom: new Date(Date.now() - 86400000) },
-          { id: "ta-arb-lisa", mapelId: ARB_MAPEL_ID, staffId: STF_LISA, educationTrack: "KEPESANTRENAN", genderComplex: "PUTRI", isActive: true, validFrom: new Date(Date.now() - 86400000) },
+          { id: "ta-mat-ahmad", mapelId: MAT_MAPEL_ID, staffId: STF_AHMAD, educationTrack: "STUDI_UMUM", genderComplex: "PUTRA", isActive: true, validFrom: new Date("2026-09-01T00:00:00Z") },
+          { id: "ta-arb-abi", mapelId: ARB_MAPEL_ID, staffId: STF_ABI, educationTrack: "KEPESANTRENAN", genderComplex: "PUTRA", pedagogicalLevel: "TINGKAT_1", isActive: true, validFrom: new Date("2026-09-01T00:00:00Z") },
+          { id: "ta-arb-kamal", mapelId: ARB_MAPEL_ID, staffId: STF_KAMAL, educationTrack: "KEPESANTRENAN", genderComplex: "PUTRA", pedagogicalLevel: "TINGKAT_2", isActive: true, validFrom: new Date("2026-09-01T00:00:00Z") },
+          { id: "ta-arb-andi", mapelId: ARB_MAPEL_ID, staffId: STF_ANDI, educationTrack: "KEPESANTRENAN", genderComplex: "PUTRA", pedagogicalLevel: "TINGKAT_3", isActive: true, validFrom: new Date("2026-09-01T00:00:00Z") },
+          { id: "ta-arb-lisa", mapelId: ARB_MAPEL_ID, staffId: STF_LISA, educationTrack: "KEPESANTRENAN", genderComplex: "PUTRI", isActive: true, validFrom: new Date("2026-09-01T00:00:00Z") },
         ],
       });
 
