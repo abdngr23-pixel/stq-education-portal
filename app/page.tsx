@@ -77,6 +77,7 @@ export default function Home() {
   const [halaqohFilter, setHalaqohFilter] = useState<string>("ALL");
   const [activeTab, setActiveTab] = useState<AppNavId>("beranda");
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
+  const [canReadHealthDetail, setCanReadHealthDetail] = useState<boolean>(false);
   const [isPending, startTransition] = useTransition();
 
   // Santri Loading & Error States
@@ -152,10 +153,14 @@ export default function Home() {
   // Nama halaqoh murni berasal dari session DB (Eliminasi fallback katalog statis)
   const currentHalaqohName = serverHalaqohName || null;
 
-  // Allowed tabs based on official server role
+  // Allowed tabs based on official server role & capability entitlements
   const allowedTabs = useMemo(() => {
-    return ROLE_NAV_MAP[selectedRole] || ["beranda"];
-  }, [selectedRole]);
+    const baseTabs = [...(ROLE_NAV_MAP[selectedRole] || ["beranda"])];
+    if (canReadHealthDetail && !baseTabs.includes("kesehatan")) {
+      baseTabs.push("kesehatan");
+    }
+    return baseTabs;
+  }, [selectedRole, canReadHealthDetail]);
 
   // Helper untuk memuat ulang daftar halaqoh dari server secara aman (Role-aware & fail-closed)
   const fetchHalaqohData = async (roleToCheck?: Role) => {
@@ -315,6 +320,11 @@ export default function Home() {
     selectedRoleRef.current = selectedRole;
   }, [selectedRole]);
 
+  const canReadHealthDetailRef = useRef<boolean>(false);
+  useEffect(() => {
+    canReadHealthDetailRef.current = canReadHealthDetail;
+  }, [canReadHealthDetail]);
+
   // -------------------------------------------------------------
   // SYNC DENGAN SESI SERVER RESMI (Hanya dieksekusi 1x saat mount)
   // -------------------------------------------------------------
@@ -338,6 +348,9 @@ export default function Home() {
         setCurrentUserName(session.name || "");
         setIsKepalaBidangTahfidz(Boolean(session.isKepalaBidangTahfidz));
         if (session.halaqohName) setServerHalaqohName(session.halaqohName);
+        const healthEntitled = Boolean(session.canReadHealthDetail);
+        setCanReadHealthDetail(healthEntitled);
+        canReadHealthDetailRef.current = healthEntitled;
 
         // Baca parameter navigasi aman (HANYA tab dan filter lokasi)
         if (typeof window !== "undefined") {
@@ -347,7 +360,7 @@ export default function Home() {
 
           if (rawTab) {
             const normalized = normalizeNavTab(rawTab);
-            if (isNavPermitted(normalized, session.role)) {
+            if (isNavPermitted(normalized, session.role, { canReadHealthDetail: healthEntitled })) {
               setActiveTab(normalized);
             } else {
               setActiveTab("beranda");
@@ -417,7 +430,7 @@ export default function Home() {
       // Validasi izin akses tab pada navigasi browser Back / Forward
       if (t) {
         const normalized = normalizeNavTab(t);
-        if (isNavPermitted(normalized, selectedRoleRef.current)) {
+        if (isNavPermitted(normalized, selectedRoleRef.current, { canReadHealthDetail: canReadHealthDetailRef.current })) {
           setActiveTab(normalized);
         } else {
           setActiveTab("beranda");
@@ -536,7 +549,7 @@ export default function Home() {
       });
     }
 
-    if (activeTab === "kesehatan" && ["KS", "ADM", "MK", "OSDA", "WS", "ST"].includes(selectedRole)) {
+    if (activeTab === "kesehatan" && (["KS", "ADM", "MK", "OSDA", "WS", "ST"].includes(selectedRole) || canReadHealthDetail)) {
       getDaftarKesehatanAction().then((res) => {
         if (res.success && res.data && Array.isArray(res.data)) {
           const activePatients = res.data.filter(
@@ -556,7 +569,7 @@ export default function Home() {
         setKesehatanLoaded(false);
       });
     }
-  }, [activeTab, selectedRole, isSessionLoading]);
+  }, [activeTab, selectedRole, isSessionLoading, canReadHealthDetail]);
 
   // Escape key listener untuk menutup modal global
   useEffect(() => {
@@ -572,7 +585,7 @@ export default function Home() {
   // Tab Selection Handler dengan RBAC & History Push yang aman
   const handleSelectTab = (tab: AppNavId) => {
     // Validasi RBAC
-    if (!isNavPermitted(tab, selectedRole)) {
+    if (!isNavPermitted(tab, selectedRole, { canReadHealthDetail })) {
       setFeedback({
         type: "error",
         text: `Modul "${ALL_NAV_ITEMS[tab]?.label || tab}" tidak diizinkan untuk peran ${selectedRole}.`,

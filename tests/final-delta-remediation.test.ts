@@ -696,6 +696,14 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
               status: "SCHEDULED",
               scheduledDate: new Date("2026-09-21T00:00:00Z"),
               scheduledStaffId: "stf-ahmad",
+              scheduledTeacherAssignment: {
+                id: "ta-ahmad-mat",
+                staffId: "stf-ahmad",
+                educationTrack: "STUDI_UMUM",
+                isActive: true,
+                validFrom: new Date("2026-01-01T00:00:00Z"),
+                validUntil: null,
+              },
               subject: { nama: "Matematika", kodeMapel: "MAT" },
             },
           ],
@@ -719,7 +727,7 @@ describe("PR #28 FINAL DELTA REMEDIATION REGRESSION SUITE", () => {
             return { userId, status: "AKTIF", accountType: "SUBJECT", username: "tech.mat" };
           }
           if (userId === "usr-ga-human") {
-            return { userId, status: "AKTIF", accountType: "INDIVIDUAL", role: "GA", username: "guru.ahmad", staffId: "stf-ahmad" };
+            return { userId, status: "AKTIF", accountType: "PERSONAL", role: "GA", username: "guru.ahmad", staffId: "stf-ahmad" };
           }
           return null;
         },

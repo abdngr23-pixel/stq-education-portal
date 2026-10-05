@@ -4,7 +4,7 @@ import prisma from '@/lib/prisma';
 import { requireRole, getSession, recordAuditLog } from '@/lib/auth';
 import { StatusKesehatan, Prisma } from '@prisma/client';
 import { shadowAuthorizeIfEnabled } from '@/lib/auth/shadow-engine';
-import { createPrismaDataProvider } from '@/lib/auth/canonical-evaluator';
+import { createPrismaDataProvider, authorizeCanonical } from '@/lib/auth/canonical-evaluator';
 
 export interface KesehatanResponse<T = unknown> {
   success: boolean;
@@ -41,6 +41,10 @@ export async function catatKesehatanAction(formData: {
       dataProviderFactory: () => createPrismaDataProvider(prisma),
     });
 
+    if (!formData.tindakan || !formData.tindakan.trim()) {
+      return { success: false, message: 'Tindakan medis wajib diisi.' };
+    }
+
     const santri = await prisma.santri.findUnique({
       where: { id: formData.santriId },
       select: { id: true, nama: true },
@@ -51,13 +55,14 @@ export async function catatKesehatanAction(formData: {
     }
 
     const sanitizedDiagnosa = formData.diagnosa?.trim() || null;
+    const sanitizedTindakan = formData.tindakan.trim();
 
     const catatan = await prisma.catatanKesehatan.create({
       data: {
         santriId: formData.santriId,
-        keluhan: formData.keluhan,
+        keluhan: formData.keluhan.trim(),
         diagnosa: sanitizedDiagnosa,
-        tindakan: formData.tindakan,
+        tindakan: sanitizedTindakan,
         status: formData.status || StatusKesehatan.RAWAT_PONDOK,
         dicatatOleh: session.username,
       },
@@ -174,15 +179,55 @@ export async function getDaftarKesehatanAction(filterStatus?: StatusKesehatan): 
       where.santriId = session.santriId;
     } else if (session.role === 'KS' || session.role === 'MK' || session.role === 'ADM') {
       // Otoritas manajerial & medis asrama global (PR #11 Technical Baseline): Mudir (KS), Musyrif Keasramaan (MK), Admin/TU (ADM).
-      // Mudabbir & OSDA Petugas Kesehatan: Business authority = ALLOW, namun implementasi teknis ditangguhkan (deferred)
-      // ke STQ Architecture Lock karena belum ada model penugasan kanonikal.
     } else {
-      // Role tanpa hak akses membaca data kesehatan global (MT, PH, GA, YAY, generic OSDA): FAIL-CLOSED
-      return {
-        success: false,
-        message: `Akses Ditolak: Role ${session.role} tidak memiliki otorisasi membaca data kesehatan.`,
-        data: [],
-      };
+      // Canonical authorization evaluation for positions such as PENGAWAS_SANTRIWATI (DIR-2026-016 / ORR-049)
+      const dataProvider = createPrismaDataProvider(prisma);
+      const authDecision = await authorizeCanonical({
+        identity: { userId: session.userId },
+        capability: "health.case.read_detail",
+        dataProvider,
+      });
+
+      if (authDecision.decision === "ALLOW") {
+        const grant = authDecision.grantUsed;
+        const positionCode = grant?.positionCode || authDecision.positionCode;
+        const capabilityCode = grant?.capabilityCode || authDecision.capabilityCode;
+        const scopeType = grant?.scopeType || authDecision.scopeType;
+        const orgDomain = grant?.orgDomain || grant?.anchorUnit?.domain;
+        const genderComplex = grant?.genderComplex || grant?.anchorUnit?.genderComplex;
+
+        // Strict 5-point contract check per DIR-2026-016 / ORR-049:
+        // A KAMAR/HALAQOH/UNIT or non-matching domain/gender scoped grant must NEVER silently become all-PUTRI access.
+        // For the Owner-approved position, accept ONLY the exact contract:
+        // 1. positionCode = PENGAWAS_SANTRIWATI
+        // 2. capability = health.case.read_detail
+        // 3. scopeType = DOMAIN
+        // 4. grant orgDomain = KEASRAMAAN
+        // 5. grant genderComplex = PUTRI
+        const isAuthorizedPengawasSantriwati =
+          positionCode === "PENGAWAS_SANTRIWATI" &&
+          capabilityCode === "health.case.read_detail" &&
+          scopeType === "DOMAIN" &&
+          orgDomain === "KEASRAMAAN" &&
+          genderComplex === "PUTRI";
+
+        if (isAuthorizedPengawasSantriwati) {
+          where.santri = { jenisKelamin: "P" };
+        } else {
+          return {
+            success: false,
+            message: "Akses Ditolak: Lingkup otorisasi kesehatan tidak memenuhi kontrak kanonikal yang diizinkan.",
+            data: [],
+          };
+        }
+      } else {
+        // Role / principal tanpa hak akses membaca data kesehatan: FAIL-CLOSED
+        return {
+          success: false,
+          message: `Akses Ditolak: Role ${session.role} tidak memiliki otorisasi membaca data kesehatan.`,
+          data: [],
+        };
+      }
     }
 
     const list = await prisma.catatanKesehatan.findMany({

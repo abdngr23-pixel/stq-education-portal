@@ -337,12 +337,16 @@ This document serves as the persistent repository registry for authoritative Bus
   3. OSDA PUTRI: May see, monitor, and supervise OSDA PUTRI; does **NOT** automatically become executor of every OSDA operational function.
   4. Health: Special Business Owner decision permits reading detail Health cases for **ALL SANTRIWATI** (PUTRI only). Broader than default Mudabbir room responsibility, but must still be implemented via Position + Capability + Scope, never username hardcoding.
   5. PUTRA Boundary: All queries and mutations targeting PUTRA halaqoh, kamar, and santri are denied fail-closed.
+- **Owner Policy:** `APPROVED`
+- **ORR-047 Code:** `IMPLEMENTED IN PR #43 / NOT YET PRODUCTION VERIFIED`
+- **ORR-049 Design:** `PENGAWAS_SANTRIWATI (DOMAIN KEASRAMAAN / PUTRI, health.case.read_detail only)`
+- **Production Activation:** `NOT YET EXECUTED`
 - **Affected Domain:** CROSS-DOMAIN / AUTHORIZATION / SCOPE
-- **Implementation Status:** `CODE_PARTIAL` (Scope boundaries defined in `types/architecture-lock.ts:144,601`; runtime services lack complete multi-domain integration for Lisa; release train lacks assignment seeding in production)
-- **Production Status:** `NOT_LIVE` (Pending Gate C2B/C2C assignment activation)
+- **Implementation Status:** `CODE_COMPLETE_PR43` (Strict Studi Umum non-SUBJECT containment implemented in `PendidikanV2Service`; canonical position contract `PENGAWAS_SANTRIWATI` defined and enforced in `app/actions/kesehatan.ts` and `app/actions/auth.ts` without username hardcoding)
+- **Production Status:** `NOT_YET_EXECUTED` (Zero production writes executed in Batch V2.2; pending PR #43 approval and controlled production provisioning)
 - **Supersedes / Superseded-By:** None
-- **Acceptance Criteria:** Access evaluator allows operations on santriwati / PUTRI halaqoh & kamar; strictly denies access to PUTRA halaqoh, kamar, and santri.
-- **Evidence / Reference:** `docs/STQ_M3_RELEASE_MANIFEST.md` REL-CAP-08, `docs/STQ_ARCHITECTURE_LOCK.md:144`.
+- **Acceptance Criteria:** Access evaluator allows operations on santriwati / PUTRI halaqoh & kamar; strictly denies access to PUTRA halaqoh, kamar, and santri; non-SUBJECT personal actors fail closed on Studi Umum schedules.
+- **Evidence / Reference:** `docs/STQ_M3_RELEASE_MANIFEST.md` REL-CAP-08, `docs/STQ_ARCHITECTURE_LOCK.md:144`, PR #43 (`fix/v2-2-dir-2026-016-lisa-cross-domain`), `tests/dir-2026-016-lisa-cross-domain.test.ts`.
 
 ---
 

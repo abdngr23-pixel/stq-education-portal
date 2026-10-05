@@ -65,8 +65,8 @@ export function KesehatanModule({
               santri: item.santri.nama,
               nis: item.santri.nis,
               keluhan: item.keluhan,
-              diagnosa: item.diagnosa || "Dalam observasi Poskestren",
-              tindakan: item.tindakan || "Istirahat di UKS",
+              diagnosa: item.diagnosa || "Belum ada diagnosis",
+              tindakan: item.tindakan || "—",
               status: item.status,
               tanggal: new Date(item.tanggal).toLocaleDateString("id-ID"),
             }))
@@ -130,13 +130,17 @@ export function KesehatanModule({
       setFeedback({ type: "error", message: "Keluhan medis santri wajib diisi." });
       return;
     }
+    if (!tindakanInput.trim()) {
+      setFeedback({ type: "error", message: "Tindakan medis santri wajib diisi." });
+      return;
+    }
 
     startTransition(async () => {
       const res = await catatKesehatanAction({
         santriId: target.id,
-        keluhan: keluhanInput,
-        diagnosa: diagnosaInput || "Dalam observasi Poskestren",
-        tindakan: tindakanInput || "Istirahat di UKS",
+        keluhan: keluhanInput.trim(),
+        diagnosa: diagnosaInput.trim() ? diagnosaInput.trim() : undefined,
+        tindakan: tindakanInput.trim(),
         status: statusInput,
       });
 
@@ -146,9 +150,9 @@ export function KesehatanModule({
           id: recorded.id,
           santri: target.nama,
           nis: target.nis,
-          keluhan: keluhanInput,
-          diagnosa: diagnosaInput || "Dalam observasi Poskestren",
-          tindakan: tindakanInput || "Istirahat di UKS",
+          keluhan: keluhanInput.trim(),
+          diagnosa: diagnosaInput.trim() || "Belum ada diagnosis",
+          tindakan: tindakanInput.trim() || "—",
           status: statusInput,
           tanggal: new Date().toLocaleDateString("id-ID"),
         };
