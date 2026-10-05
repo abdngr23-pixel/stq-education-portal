@@ -55,6 +55,8 @@ export interface RecordTasmiSimaanInput {
   nilai: number;
   predikat: NilaiSetoran;
   catatan?: string;
+  isBilGhaib?: boolean;
+  isSatuDuduk?: boolean;
 }
 
 /**
@@ -867,6 +869,31 @@ export async function recordTasmiSimaanAction(input: RecordTasmiSimaanInput) {
     return { success: false, message: "Profil staf penguji Anda belum terhubung. Akses ditolak." };
   }
 
+  // Validasi kriteria Sima'an (ORR-075: kelipatan 5 juz, bil-ghaib, satu duduk)
+  if (input.jenis === "SIMAAN") {
+    const declaredJuz = Number(input.juz);
+    if (![5, 10, 15, 20, 25, 30].includes(declaredJuz)) {
+      return {
+        success: false,
+        message: "Ujian Sima'an hanya berlaku untuk kelipatan 5 juz (Juz 5, 10, 15, 20, 25, atau 30).",
+      };
+    }
+
+    if (input.isBilGhaib !== true) {
+      return {
+        success: false,
+        message: "Ujian Sima'an wajib dilaksanakan secara bil-ghaib (tanpa melihat mushaf).",
+      };
+    }
+
+    if (input.isSatuDuduk !== true) {
+      return {
+        success: false,
+        message: "Ujian Sima'an wajib dilaksanakan dalam satu kali duduk.",
+      };
+    }
+  }
+
   try {
     const musyrifStaff = await prisma.staff.findUnique({ where: { id: session.staffId } });
 
@@ -885,6 +912,8 @@ export async function recordTasmiSimaanAction(input: RecordTasmiSimaanInput) {
         nilai: Number(input.nilai),
         predikat: input.predikat,
         catatan: input.catatan,
+        isBilGhaib: input.jenis === "SIMAAN" ? Boolean(input.isBilGhaib) : (input.isBilGhaib ?? null),
+        isSatuDuduk: input.jenis === "SIMAAN" ? Boolean(input.isSatuDuduk) : (input.isSatuDuduk ?? null),
       },
       include: {
         santri: true,
@@ -903,6 +932,8 @@ export async function recordTasmiSimaanAction(input: RecordTasmiSimaanInput) {
         juz: input.juz,
         nilai: input.nilai,
         predikat: input.predikat,
+        isBilGhaib: testRecord.isBilGhaib,
+        isSatuDuduk: testRecord.isSatuDuduk,
       },
     });
 

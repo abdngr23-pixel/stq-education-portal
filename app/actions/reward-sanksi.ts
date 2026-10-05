@@ -3,8 +3,7 @@
 import prisma from "@/lib/prisma";
 import { getCurrentSession, recordAuditLog } from "@/lib/auth";
 import { StatusHakLibur, JenisTransaksiBintang, StatusSanksiKunjungan, Prisma } from "@prisma/client";
-import { shadowAuthorizeIfEnabled } from "@/lib/auth/shadow-engine";
-import { createPrismaDataProvider } from "@/lib/auth/canonical-evaluator";
+import { createPrismaDataProvider, authorizeCanonical } from "@/lib/auth/canonical-evaluator";
 
 /**
  * Mengambil konfigurasi kebijakan reward & sanksi aktif
@@ -63,10 +62,20 @@ export async function updateKebijakanRewardSanksiAction(params: {
     return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
   }
 
-  if (session.role !== "KS") {
+  // Otoritas Canonical: tahfizh.policy.manage (MUDIR ONLY, GLOBAL scope)
+  // ZERO fallback to session.role, username, display name.
+  const dataProvider = createPrismaDataProvider(prisma);
+  const authRes = await authorizeCanonical({
+    identity: { userId: session.userId },
+    capability: "tahfizh.policy.manage",
+    dataProvider,
+    isMutation: true,
+  });
+
+  if (authRes.decision !== "ALLOW") {
     return {
       success: false,
-      message: "Akses Ditolak: Hanya Mudir (KS) yang memiliki otoritas mengubah kebijakan reward & sanksi.",
+      message: `Akses Ditolak: Hanya Mudir (KS) yang memiliki otoritas mengubah kebijakan reward & sanksi. (${authRes.reason || "DENIED"})`,
     };
   }
 
@@ -137,37 +146,22 @@ export async function prosesRewardTasmiSimaanAction(tasmiSimaanId: string) {
     return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
   }
 
-  // Otoritas Penerbitan Reward: Khusus Mudir (KS).
-  // POT (PETUGAS_OPERASIONAL_TAHFIZH / musyirfah.putri) MUST NOT gain tahfizh.reward.issue per DIR-2026-023, DIR-2026-034, and DIR-2026-038.
-  if (session.username === "musyirfah.putri") {
-    return {
-      success: false,
-      message: "Akses Ditolak: PETUGAS_OPERASIONAL_TAHFIZH tidak memiliki kewenangan penerbitan reward (DIR-2026-023/DIR-2026-038).",
-    };
-  }
-  const isAuthorizedIssuer = session.role === "KS" || Boolean(session.isKepalaBidangTahfidz);
-
-  // Representative Milestone 2 shadow evaluation (Safe-by-default: OFF in production)
-  // When CANONICAL_AUTH_SHADOW_ENABLED=false: zero additional canonical/shadow context queries.
-  // When shadow flag=true: createPrismaDataProvider.resolveResourceContext({ resourceId: tasmiSimaanId })
-  // lazily hydrates TasmiSimaan -> Santri -> halaqoh/domain without caller-constructed context.
-  const isAllowed = await shadowAuthorizeIfEnabled({
-    session,
-    capabilityCode: "tahfizh.reward.issue",
-    legacyCheck: () => isAuthorizedIssuer,
-    resourceContext: {
-      resourceId: tasmiSimaanId,
-    },
-    resourceType: "TasmiSimaan",
-    resourceId: tasmiSimaanId,
+  // Otoritas Canonical: tahfizh.reward.issue (MUDIR / KABID_TAHFIZH)
+  // ZERO fallback to session.role, session.isKepalaBidangTahfidz, or hardcoded username.
+  // Context dihidrasi secara server-side dari resourceId tasmiSimaanId (untrusted caller).
+  const dataProvider = createPrismaDataProvider(prisma);
+  const authRes = await authorizeCanonical({
+    identity: { userId: session.userId },
+    capability: "tahfizh.reward.issue",
+    resourceContext: { resourceId: tasmiSimaanId },
+    dataProvider,
     isMutation: true,
-    dataProviderFactory: () => createPrismaDataProvider(prisma),
   });
 
-  if (!isAllowed) {
+  if (authRes.decision !== "ALLOW") {
     return {
       success: false,
-      message: "Akses Ditolak: Anda tidak berwenang. Penerbitan reward Tasmi'/Sima'an hanya berwenang dilakukan oleh Mudir atau Kabid Tahfizh.",
+      message: `Akses Ditolak: Anda tidak berwenang. Penerbitan reward Tasmi'/Sima'an hanya berwenang dilakukan oleh Mudir atau Kabid Tahfizh. (${authRes.reason || "DENIED"})`,
     };
   }
 
@@ -868,6 +862,8 @@ export async function getDaftarTasmiSimaanEligibleAction() {
         isRewarded: item.hakLiburList.length > 0 && item.hakLiburList.some((h) => h.status !== "DIBATALKAN"),
         hakLibur: item.hakLiburList[0] || null,
         bintang: item.transaksiBintangList[0] || null,
+        isBilGhaib: item.isBilGhaib,
+        isSatuDuduk: item.isSatuDuduk,
       })),
     };
   } catch (error) {

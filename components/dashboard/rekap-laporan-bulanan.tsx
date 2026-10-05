@@ -211,6 +211,8 @@ export function RekapLaporanBulanan({
   const [testNilai, setTestNilai] = useState<number>(90);
   const [testPredikat, setTestPredikat] = useState<NilaiSetoran>("MUMTAZ");
   const [testCatatan, setTestCatatan] = useState<string>("");
+  const [testIsBilGhaib, setTestIsBilGhaib] = useState<boolean>(true);
+  const [testIsSatuDuduk, setTestIsSatuDuduk] = useState<boolean>(true);
 
   // Fetch report data callback (bisa digunakan untuk coba lagi)
   const loadData = React.useCallback(async (hId: string, bln: number, ta: string) => {
@@ -382,6 +384,8 @@ export function RekapLaporanBulanan({
         nilai: Number(testNilai),
         predikat: testPredikat,
         catatan: testCatatan,
+        isBilGhaib: testJenis === "SIMAAN" ? testIsBilGhaib : undefined,
+        isSatuDuduk: testJenis === "SIMAAN" ? testIsSatuDuduk : undefined,
       });
 
       if (res.success) {
@@ -1411,13 +1415,56 @@ export function RekapLaporanBulanan({
                   </select>
                 </div>
 
-                <Input
-                  label="Juz yang Diuji (1-30)"
-                  type="number"
-                  value={testJuz}
-                  onChange={(e) => setTestJuz(Number(e.target.value))}
-                />
+                {testJenis === "SIMAAN" ? (
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">
+                      Kelipatan 5 Juz
+                    </label>
+                    <select
+                      value={testJuz}
+                      onChange={(e) => setTestJuz(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold"
+                    >
+                      {[5, 10, 15, 20, 25, 30].map((j) => (
+                        <option key={j} value={j}>Juz {j}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <Input
+                    label="Juz yang Diuji (1-30)"
+                    type="number"
+                    value={testJuz}
+                    onChange={(e) => setTestJuz(Number(e.target.value))}
+                  />
+                )}
               </div>
+
+              {testJenis === "SIMAAN" && (
+                <div className="p-2.5 rounded-xl bg-purple-50/60 border border-purple-100 space-y-2">
+                  <span className="text-[11px] font-bold text-purple-900 block">Kriteria Wajib Sima&apos;an (SOURCE-TAH-001):</span>
+                  <div className="flex items-center gap-4 text-xs text-purple-800">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={testIsBilGhaib}
+                        onChange={(e) => setTestIsBilGhaib(e.target.checked)}
+                        className="rounded text-purple-600"
+                      />
+                      <span>Bil-Ghaib (tanpa mushaf)</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={testIsSatuDuduk}
+                        onChange={(e) => setTestIsSatuDuduk(e.target.checked)}
+                        className="rounded text-purple-600"
+                      />
+                      <span>Satu Duduk (sekaligus)</span>
+                    </label>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-2">
                 <Input

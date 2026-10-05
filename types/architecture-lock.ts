@@ -622,6 +622,7 @@ export const TAHFIZH_M32_CAPABILITIES = {
   TARGET_MANAGE: "tahfizh.target.manage",
   REWARD_ISSUE: "tahfizh.reward.issue",
   SETORAN_CREATE: "tahfizh.setoran.create",
+  POLICY_MANAGE: "tahfizh.policy.manage",
 } as const;
 
 export const KEASRAMAAN_PERMISSION_CAPABILITIES = {

@@ -1301,6 +1301,20 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
                   },
                 ];
               }
+              if (t.jenis === "MANZIL") {
+                return [
+                  {
+                    id: "set-prev-sabaq-manzil",
+                    santriId: "san-multi-type",
+                    jenis: "SABAQ",
+                    halamanMulai: 1,
+                    halamanSelesai: 20,
+                    jumlahHalaman: 20.0,
+                    tanggal: new Date("2026-09-08T08:00:00.000Z"),
+                    status: "SELESAI",
+                  },
+                ];
+              }
               return [];
             },
           },
@@ -1317,6 +1331,20 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.2: UAT BUSINESS RULES & AUTHORIZ
                         halamanMulai: 1,
                         halamanSelesai: 5,
                         jumlahHalaman: 5.0,
+                        tanggal: new Date("2026-09-08T08:00:00.000Z"),
+                        status: "SELESAI",
+                      },
+                    ];
+                  }
+                  if (t.jenis === "MANZIL") {
+                    return [
+                      {
+                        id: "set-prev-sabaq-manzil",
+                        santriId: "san-multi-type",
+                        jenis: "SABAQ",
+                        halamanMulai: 1,
+                        halamanSelesai: 20,
+                        jumlahHalaman: 20.0,
                         tanggal: new Date("2026-09-08T08:00:00.000Z"),
                         status: "SELESAI",
                       },

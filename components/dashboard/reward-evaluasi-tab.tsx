@@ -62,6 +62,8 @@ interface TasmiItem {
   predikat: string;
   catatan?: string | null;
   isRewarded: boolean;
+  isBilGhaib?: boolean | null;
+  isSatuDuduk?: boolean | null;
 }
 
 interface PreviewSantri {
@@ -634,6 +636,23 @@ export function RewardEvaluasiTab({
                           >
                             {item.jenis}
                           </Badge>
+                          {item.jenis === "SIMAAN" && (
+                            <div className="mt-1">
+                              {item.isBilGhaib === true && item.isSatuDuduk === true ? (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  Bil-Ghaib • 1 Duduk
+                                </span>
+                              ) : item.isBilGhaib == null || item.isSatuDuduk == null ? (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                                  Belum terverifikasi
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                                  Kriteria Belum Lengkap
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td className="p-2.5 font-semibold">Juz {item.juz}</td>
                         <td className="p-2.5">

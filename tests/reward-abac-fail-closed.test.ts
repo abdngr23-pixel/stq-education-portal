@@ -137,6 +137,62 @@ describe("P0 ABAC Fail-Closed: Reward & Sanksi Evaluasi Tasmi / Simaan", () => {
       ],
     });
 
+    // 4b. Seed Canonical Architecture Lock Fixtures for Reward Issuance Authority
+    await prisma.orgUnit.createMany({
+      data: [
+        { id: "ou-rwd-hlq-1", code: "OU-HLQ-RWD-01", name: "Halaqoh Al-Fatihah", type: "HALAQOH", domain: "TAHFIZH", genderComplex: "PUTRA", isActive: true },
+        { id: "ou-rwd-hlq-2", code: "OU-HLQ-RWD-02", name: "Halaqoh Al-Baqarah", type: "HALAQOH", domain: "TAHFIZH", genderComplex: "PUTRA", isActive: true },
+      ],
+      skipDuplicates: true,
+    });
+
+    const posMudir = await prisma.position.upsert({
+      where: { code: "MUDIR" },
+      update: {},
+      create: { id: "pos-rwd-mudir", code: "MUDIR", name: "Mudir", domain: "INSTITUTIONAL" },
+    });
+    const posKabid = await prisma.position.upsert({
+      where: { code: "KABID_TAHFIZH" },
+      update: {},
+      create: { id: "pos-rwd-kabid", code: "KABID_TAHFIZH", name: "Kepala Bidang Tahfizh", domain: "TAHFIZH" },
+    });
+
+    await prisma.capability.upsert({
+      where: { code: "tahfizh.reward.issue" },
+      update: {},
+      create: { code: "tahfizh.reward.issue", name: "tahfizh.reward.issue", namespace: "TAHFIZH", description: "Reward Issue" },
+    });
+
+    await prisma.positionCapability.upsert({
+      where: { positionId_capabilityCode: { positionId: posMudir.id, capabilityCode: "tahfizh.reward.issue" } },
+      update: { scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+      create: {
+        positionId: posMudir.id,
+        capabilityCode: "tahfizh.reward.issue",
+        scopeType: "GLOBAL",
+        businessRuleState: "VERIFIED_PRODUCTION",
+      },
+    });
+
+    await prisma.positionCapability.upsert({
+      where: { positionId_capabilityCode: { positionId: posKabid.id, capabilityCode: "tahfizh.reward.issue" } },
+      update: { scopeType: "DOMAIN", businessRuleState: "VERIFIED_PRODUCTION" },
+      create: {
+        positionId: posKabid.id,
+        capabilityCode: "tahfizh.reward.issue",
+        scopeType: "DOMAIN",
+        businessRuleState: "VERIFIED_PRODUCTION",
+      },
+    });
+
+    await prisma.assignment.createMany({
+      data: [
+        { id: "asg-rwd-mudir", userId: sessionKS.userId, positionId: posMudir.id, unitId: "ou-rwd-hlq-1", status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: sessionKS.userId },
+        { id: "asg-rwd-kabid", userId: sessionMTKabid.userId, positionId: posKabid.id, unitId: "ou-rwd-hlq-1", status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: sessionMTKabid.userId },
+      ],
+      skipDuplicates: true,
+    });
+
     // 5. Seed Kebijakan Reward
     await prisma.kebijakanRewardSanksi.create({
       data: {
