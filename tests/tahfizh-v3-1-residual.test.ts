@@ -17,57 +17,18 @@ describe("BATCH V3.1 — TAHFIZH RESIDUAL REMEDIATION (ORR-073, ORR-075, ORR-078
   // =========================================================================
   describe("Part A — ORR-073: MANZIL Expected Range Server Calculation", () => {
 
-    // 1. normal current-cycle MANZIL
-    it("1. normal current-cycle MANZIL: derives expected range from startPage to latest active SABAQ", () => {
-      // Santri in Juz 30 (startPage: 582, endPage: 604)
+    // 1. first SABAQ = 0.5 page -> expected MANZIL = 0.5
+    it("1. first SABAQ = 0.5 page: expected MANZIL = 0.5", () => {
+      // Santri in Juz 1 (startPage: 1), starts with first 0.5 page
       const sabaqRecords: SetoranLikeRecord[] = [
         {
-          id: "set-01",
-          jenis: "SABAQ",
-          status: "AKTIF",
-          juz: 30,
-          halamanMulai: 582,
-          halamanSelesai: 583,
-          jumlahHalaman: 2.0,
-          tanggal: new Date("2026-09-01T08:00:00Z"),
-        },
-        {
-          id: "set-02",
-          jenis: "SABAQ",
-          status: "AKTIF",
-          juz: 30,
-          halamanMulai: 584,
-          halamanSelesai: 586,
-          jumlahHalaman: 3.0,
-          tanggal: new Date("2026-09-02T08:00:00Z"),
-        },
-      ];
-
-      const res = calculateManzilExpectedRange({
-        targetJuz: 30,
-        sabaqRecords,
-        effectiveOccurredAt: new Date("2026-09-03T08:00:00Z"),
-      });
-
-      assert.strictEqual(res.valid, true);
-      assert.strictEqual(res.cycleJuz, 30);
-      assert.strictEqual(res.expectedHalamanMulai, 582); // start of Juz 30
-      assert.strictEqual(res.expectedHalamanSelesai, 586); // latest active SABAQ
-      assert.strictEqual(res.expectedJumlahHalaman, 5); // 586 - 582 + 1 = 5
-    });
-
-    // 2. first week of new cycle
-    it("2. first week of new cycle: start is page 1 of new juz and end is latest first-week page", () => {
-      // Santri starts Juz 1 (startPage: 1, endPage: 21)
-      const sabaqRecords: SetoranLikeRecord[] = [
-        {
-          id: "set-juz1-01",
+          id: "set-01-half",
           jenis: "SABAQ",
           status: "AKTIF",
           juz: 1,
           halamanMulai: 1,
-          halamanSelesai: 2,
-          jumlahHalaman: 2.0,
+          halamanSelesai: 1,
+          jumlahHalaman: 0.5,
           tanggal: new Date("2026-09-01T08:00:00Z"),
         },
       ];
@@ -81,13 +42,260 @@ describe("BATCH V3.1 — TAHFIZH RESIDUAL REMEDIATION (ORR-073, ORR-075, ORR-078
       assert.strictEqual(res.valid, true);
       assert.strictEqual(res.cycleJuz, 1);
       assert.strictEqual(res.expectedHalamanMulai, 1);
-      assert.strictEqual(res.expectedHalamanSelesai, 2);
-      assert.strictEqual(res.expectedJumlahHalaman, 2);
+      assert.strictEqual(res.expectedHalamanSelesai, 1);
+      assert.strictEqual(res.expectedJumlahHalaman, 0.5); // Fractional, NOT rounded to 1.0
     });
 
-    // 3. week immediately before Tasmi'
-    it("3. week immediately before Tasmi': full juz memorized before Tasmi recitation", () => {
-      // Santri finished all 21 pages of Juz 1, preparing for Tasmi
+    // 2. page 1 full + page 2 half -> expected MANZIL = 1.5
+    it("2. page 1 full + page 2 half: expected MANZIL = 1.5", () => {
+      const sabaqRecords: SetoranLikeRecord[] = [
+        {
+          id: "set-p1-full",
+          jenis: "SABAQ",
+          status: "AKTIF",
+          juz: 1,
+          halamanMulai: 1,
+          halamanSelesai: 1,
+          jumlahHalaman: 1.0,
+          tanggal: new Date("2026-09-01T08:00:00Z"),
+        },
+        {
+          id: "set-p2-half",
+          jenis: "SABAQ",
+          status: "AKTIF",
+          juz: 1,
+          halamanMulai: 2,
+          halamanSelesai: 2,
+          jumlahHalaman: 0.5,
+          tanggal: new Date("2026-09-02T08:00:00Z"),
+        },
+      ];
+
+      const res = calculateManzilExpectedRange({
+        targetJuz: 1,
+        sabaqRecords,
+        effectiveOccurredAt: new Date("2026-09-03T08:00:00Z"),
+      });
+
+      assert.strictEqual(res.valid, true);
+      assert.strictEqual(res.expectedHalamanMulai, 1);
+      assert.strictEqual(res.expectedHalamanSelesai, 2);
+      assert.strictEqual(res.expectedJumlahHalaman, 1.5);
+    });
+
+    // 3. two 0.5 SABAQ records covering same page -> union must cap at 1.0
+    it("3. two 0.5 SABAQ records covering same page: union must cap at 1.0", () => {
+      const sabaqRecords: SetoranLikeRecord[] = [
+        {
+          id: "set-p1-first-half",
+          jenis: "SABAQ",
+          status: "AKTIF",
+          juz: 1,
+          halamanMulai: 1,
+          halamanSelesai: 1,
+          jumlahHalaman: 0.5,
+          tanggal: new Date("2026-09-01T08:00:00Z"),
+        },
+        {
+          id: "set-p1-second-half",
+          jenis: "SABAQ",
+          status: "AKTIF",
+          juz: 1,
+          halamanMulai: 1,
+          halamanSelesai: 1,
+          jumlahHalaman: 0.5,
+          tanggal: new Date("2026-09-02T08:00:00Z"),
+        },
+      ];
+
+      const res = calculateManzilExpectedRange({
+        targetJuz: 1,
+        sabaqRecords,
+        effectiveOccurredAt: new Date("2026-09-03T08:00:00Z"),
+      });
+
+      assert.strictEqual(res.valid, true);
+      assert.strictEqual(res.expectedHalamanMulai, 1);
+      assert.strictEqual(res.expectedHalamanSelesai, 1);
+      assert.strictEqual(res.expectedJumlahHalaman, 1.0); // Capped at 1.0
+    });
+
+    // 4. cancelled 0.5 contribution -> must contribute zero
+    it("4. cancelled 0.5 contribution: must contribute zero", () => {
+      const sabaqRecords: SetoranLikeRecord[] = [
+        {
+          id: "set-aktif-half",
+          jenis: "SABAQ",
+          status: "AKTIF",
+          juz: 1,
+          halamanMulai: 1,
+          halamanSelesai: 1,
+          jumlahHalaman: 0.5,
+          tanggal: new Date("2026-09-01T08:00:00Z"),
+        },
+        {
+          id: "set-batal-p2-half",
+          jenis: "SABAQ",
+          status: "DIBATALKAN",
+          juz: 1,
+          halamanMulai: 2,
+          halamanSelesai: 2,
+          jumlahHalaman: 0.5,
+          tanggal: new Date("2026-09-02T08:00:00Z"),
+        },
+      ];
+
+      const res = calculateManzilExpectedRange({
+        targetJuz: 1,
+        sabaqRecords,
+        effectiveOccurredAt: new Date("2026-09-03T08:00:00Z"),
+      });
+
+      assert.strictEqual(res.valid, true);
+      assert.strictEqual(res.expectedHalamanMulai, 1);
+      assert.strictEqual(res.expectedHalamanSelesai, 1); // Page 2 cancelled, excluded
+      assert.strictEqual(res.expectedJumlahHalaman, 0.5);
+    });
+
+    // 5. future partial SABAQ -> must contribute zero
+    it("5. future partial SABAQ: must contribute zero", () => {
+      const sabaqRecords: SetoranLikeRecord[] = [
+        {
+          id: "set-now-p1",
+          jenis: "SABAQ",
+          status: "AKTIF",
+          juz: 1,
+          halamanMulai: 1,
+          halamanSelesai: 1,
+          jumlahHalaman: 1.0,
+          tanggal: new Date("2026-09-05T08:00:00Z"),
+        },
+        {
+          id: "set-future-p2-half",
+          jenis: "SABAQ",
+          status: "AKTIF",
+          juz: 1,
+          halamanMulai: 2,
+          halamanSelesai: 2,
+          jumlahHalaman: 0.5,
+          tanggal: new Date("2026-09-10T08:00:00Z"), // Future relative to effectiveOccurredAt
+        },
+      ];
+
+      const res = calculateManzilExpectedRange({
+        targetJuz: 1,
+        sabaqRecords,
+        effectiveOccurredAt: new Date("2026-09-05T12:00:00Z"),
+      });
+
+      assert.strictEqual(res.valid, true);
+      assert.strictEqual(res.expectedHalamanMulai, 1);
+      assert.strictEqual(res.expectedHalamanSelesai, 1);
+      assert.strictEqual(res.expectedJumlahHalaman, 1.0);
+    });
+
+    // 6. backdated MANZIL before later half-page SABAQ -> must exclude later fraction
+    it("6. backdated MANZIL before later half-page SABAQ: must exclude later fraction", () => {
+      const sabaqRecords: SetoranLikeRecord[] = [
+        {
+          id: "set-senin",
+          jenis: "SABAQ",
+          status: "AKTIF",
+          juz: 30,
+          halamanMulai: 582,
+          halamanSelesai: 584,
+          jumlahHalaman: 3.0,
+          tanggal: new Date("2026-09-01T08:00:00Z"), // Tuesday
+        },
+        {
+          id: "set-kamis-half",
+          jenis: "SABAQ",
+          status: "AKTIF",
+          juz: 30,
+          halamanMulai: 585,
+          halamanSelesai: 585,
+          jumlahHalaman: 0.5,
+          tanggal: new Date("2026-09-03T08:00:00Z"), // Thursday
+        },
+      ];
+
+      // Backdated MANZIL on Wednesday (2026-09-02)
+      const res = calculateManzilExpectedRange({
+        targetJuz: 30,
+        sabaqRecords,
+        effectiveOccurredAt: new Date("2026-09-02T12:00:00Z"),
+      });
+
+      assert.strictEqual(res.valid, true);
+      assert.strictEqual(res.expectedHalamanMulai, 582);
+      assert.strictEqual(res.expectedHalamanSelesai, 584);
+      assert.strictEqual(res.expectedJumlahHalaman, 3.0); // Thursday 0.5 fraction excluded
+    });
+
+    // 7. coverage gap -> FAIL CLOSED
+    it("7. coverage gap: FAIL CLOSED with MANZIL_COVERAGE_GAP", () => {
+      // Santri has page 1 covered (1.0), page 2 empty (0), page 3 half covered (0.5)
+      const sabaqRecords: SetoranLikeRecord[] = [
+        {
+          id: "set-p1",
+          jenis: "SABAQ",
+          status: "AKTIF",
+          juz: 1,
+          halamanMulai: 1,
+          halamanSelesai: 1,
+          jumlahHalaman: 1.0,
+          tanggal: new Date("2026-09-01T08:00:00Z"),
+        },
+        {
+          id: "set-p3-half",
+          jenis: "SABAQ",
+          status: "AKTIF",
+          juz: 1,
+          halamanMulai: 3,
+          halamanSelesai: 3,
+          jumlahHalaman: 0.5,
+          tanggal: new Date("2026-09-02T08:00:00Z"),
+        },
+      ];
+
+      const res = calculateManzilExpectedRange({
+        targetJuz: 1,
+        sabaqRecords,
+        effectiveOccurredAt: new Date("2026-09-03T08:00:00Z"),
+      });
+
+      assert.strictEqual(res.valid, false);
+      assert.match(res.message || "", /MANZIL_COVERAGE_GAP/i);
+    });
+
+    // 8. malformed fractional allocation -> FAIL CLOSED
+    it("8. malformed fractional allocation: FAIL CLOSED with DATA_INTEGRITY_ERROR", () => {
+      const malformedRecords: SetoranLikeRecord[] = [
+        {
+          id: "set-corrupt-span",
+          jenis: "SABAQ",
+          status: "AKTIF",
+          juz: 1,
+          halamanMulai: 1,
+          halamanSelesai: 3,
+          jumlahHalaman: 0.5, // 0.5 cannot span 3 pages (expectedSpan: 1)
+          tanggal: new Date("2026-09-01T08:00:00Z"),
+        },
+      ];
+
+      const res = calculateManzilExpectedRange({
+        targetJuz: 1,
+        sabaqRecords: malformedRecords,
+        effectiveOccurredAt: new Date("2026-09-02T08:00:00Z"),
+      });
+
+      assert.strictEqual(res.valid, false);
+      assert.match(res.message || "", /DATA_INTEGRITY_ERROR/i);
+    });
+
+    // 9. full-page historical scenario -> must preserve previous correct result
+    it("9. full-page historical scenario: preserves previous correct result", () => {
+      // Santri finished all 21 pages of Juz 1 (full pages)
       const sabaqRecords: SetoranLikeRecord[] = [
         {
           id: "set-full-juz1",
@@ -104,179 +312,18 @@ describe("BATCH V3.1 — TAHFIZH RESIDUAL REMEDIATION (ORR-073, ORR-075, ORR-078
       const res = calculateManzilExpectedRange({
         targetJuz: 1,
         sabaqRecords,
-        tasmiRecords: [], // No Tasmi yet
+        tasmiRecords: [],
         effectiveOccurredAt: new Date("2026-09-11T08:00:00Z"),
       });
 
       assert.strictEqual(res.valid, true);
       assert.strictEqual(res.expectedHalamanMulai, 1);
       assert.strictEqual(res.expectedHalamanSelesai, 21);
-      assert.strictEqual(res.expectedJumlahHalaman, 21);
+      assert.strictEqual(res.expectedJumlahHalaman, 21.0);
     });
 
-    // 4. cancelled SABAQ
-    it("4. cancelled SABAQ: DIBATALKAN records are strictly excluded from calculating max reached page", () => {
-      const sabaqRecords: SetoranLikeRecord[] = [
-        {
-          id: "set-aktif",
-          jenis: "SABAQ",
-          status: "AKTIF",
-          juz: 1,
-          halamanMulai: 1,
-          halamanSelesai: 3,
-          jumlahHalaman: 3.0,
-          tanggal: new Date("2026-09-01T08:00:00Z"),
-        },
-        {
-          id: "set-batal",
-          jenis: "SABAQ",
-          status: "DIBATALKAN",
-          juz: 1,
-          halamanMulai: 4,
-          halamanSelesai: 6,
-          jumlahHalaman: 3.0,
-          tanggal: new Date("2026-09-02T08:00:00Z"),
-        },
-      ];
-
-      const res = calculateManzilExpectedRange({
-        targetJuz: 1,
-        sabaqRecords,
-        effectiveOccurredAt: new Date("2026-09-03T08:00:00Z"),
-      });
-
-      assert.strictEqual(res.valid, true);
-      assert.strictEqual(res.expectedHalamanMulai, 1);
-      assert.strictEqual(res.expectedHalamanSelesai, 3); // Page 6 is excluded because it's DIBATALKAN
-      assert.strictEqual(res.expectedJumlahHalaman, 3);
-    });
-
-    // 5. backdated MANZIL
-    it("5. backdated MANZIL: SABAQ subsequent to effectiveOccurredAt are strictly excluded", () => {
-      const sabaqRecords: SetoranLikeRecord[] = [
-        {
-          id: "set-senin",
-          jenis: "SABAQ",
-          status: "AKTIF",
-          juz: 30,
-          halamanMulai: 582,
-          halamanSelesai: 584,
-          jumlahHalaman: 3.0,
-          tanggal: new Date("2026-09-01T08:00:00Z"), // Tuesday
-        },
-        {
-          id: "set-kamis",
-          jenis: "SABAQ",
-          status: "AKTIF",
-          juz: 30,
-          halamanMulai: 585,
-          halamanSelesai: 588,
-          jumlahHalaman: 4.0,
-          tanggal: new Date("2026-09-03T08:00:00Z"), // Thursday
-        },
-      ];
-
-      // Backdated MANZIL recorded for Wednesday (2026-09-02)
-      const res = calculateManzilExpectedRange({
-        targetJuz: 30,
-        sabaqRecords,
-        effectiveOccurredAt: new Date("2026-09-02T12:00:00Z"),
-      });
-
-      assert.strictEqual(res.valid, true);
-      assert.strictEqual(res.expectedHalamanMulai, 582);
-      assert.strictEqual(res.expectedHalamanSelesai, 584); // Thursday progress (585-588) cannot leak into Wednesday
-      assert.strictEqual(res.expectedJumlahHalaman, 3);
-    });
-
-    // 6. future SABAQ exclusion
-    it("6. future SABAQ exclusion: future records cannot influence current calculation", () => {
-      const sabaqRecords: SetoranLikeRecord[] = [
-        {
-          id: "set-now",
-          jenis: "SABAQ",
-          status: "AKTIF",
-          juz: 1,
-          halamanMulai: 1,
-          halamanSelesai: 5,
-          jumlahHalaman: 5.0,
-          tanggal: new Date("2026-09-05T08:00:00Z"),
-        },
-        {
-          id: "set-future",
-          jenis: "SABAQ",
-          status: "AKTIF",
-          juz: 1,
-          halamanMulai: 6,
-          halamanSelesai: 10,
-          jumlahHalaman: 5.0,
-          tanggal: new Date("2026-09-10T08:00:00Z"), // Future relative to setoran
-        },
-      ];
-
-      const res = calculateManzilExpectedRange({
-        targetJuz: 1,
-        sabaqRecords,
-        effectiveOccurredAt: new Date("2026-09-05T12:00:00Z"),
-      });
-
-      assert.strictEqual(res.valid, true);
-      assert.strictEqual(res.expectedHalamanSelesai, 5);
-    });
-
-    // 7. no eligible progress
-    it("7. no eligible progress: returns invalid/fail-closed when no active SABAQ exists for target juz", () => {
-      const sabaqRecords: SetoranLikeRecord[] = [
-        {
-          id: "set-other-juz",
-          jenis: "SABAQ",
-          status: "AKTIF",
-          juz: 2,
-          halamanMulai: 22,
-          halamanSelesai: 25,
-          jumlahHalaman: 4.0,
-          tanggal: new Date("2026-09-01T08:00:00Z"),
-        },
-      ];
-
-      // Asking for Juz 1 where 0 SABAQ exists
-      const res = calculateManzilExpectedRange({
-        targetJuz: 1,
-        sabaqRecords,
-        effectiveOccurredAt: new Date("2026-09-02T08:00:00Z"),
-      });
-
-      assert.strictEqual(res.valid, false);
-      assert.match(res.message || "", /Belum ada capaian hafalan Sabaq yang sah/i);
-    });
-
-    // 8. malformed historical data fail-closed
-    it("8. malformed historical data fail-closed: fails closed when historical SABAQ has invalid pages or NaN", () => {
-      const malformedRecords: SetoranLikeRecord[] = [
-        {
-          id: "set-corrupt",
-          jenis: "SABAQ",
-          status: "AKTIF",
-          juz: 1,
-          halamanMulai: 25, // corrupt: halamanMulai > halamanSelesai
-          halamanSelesai: 10,
-          jumlahHalaman: -15,
-          tanggal: new Date("2026-09-01T08:00:00Z"),
-        },
-      ];
-
-      const res = calculateManzilExpectedRange({
-        targetJuz: 1,
-        sabaqRecords: malformedRecords,
-        effectiveOccurredAt: new Date("2026-09-02T08:00:00Z"),
-      });
-
-      assert.strictEqual(res.valid, false);
-      assert.match(res.message || "", /DATA_INTEGRITY_ERROR/i);
-    });
-
-    // 9. Tasmi boundary
-    it("9. Tasmi boundary: completed Tasmi closes the cycle for that juz; subsequent MANZIL fails closed", () => {
+    // 10. Tasmi boundary
+    it("10. Tasmi boundary: completed Tasmi closes the cycle for that juz; subsequent MANZIL fails closed", () => {
       const sabaqRecords: SetoranLikeRecord[] = [
         {
           id: "set-juz1-all",

@@ -464,11 +464,64 @@ export function calculateManzilExpectedRange(
     };
   }
 
-  // 7. Hitung rentang ekspektasi Manzil
+  // 7. Bangun keterisian halaman eksak (Exact Stored Coverage) via canonical allocateSabaqPages
+  const rawPageCoverage: Record<number, number> = {};
+  for (const sabaq of cycleSabaq) {
+    let alloc: Record<number, number>;
+    try {
+      alloc = allocateSabaqPages(sabaq.halamanMulai, sabaq.halamanSelesai, sabaq.jumlahHalaman);
+    } catch {
+      return {
+        valid: false,
+        message: "DATA_INTEGRITY_ERROR: Alokasi halaman setoran Sabaq mengandung rekaman tidak valid atau rusak.",
+      };
+    }
+    for (const [pageStr, fraction] of Object.entries(alloc)) {
+      const p = Number(pageStr);
+      rawPageCoverage[p] = (rawPageCoverage[p] || 0) + fraction;
+    }
+  }
+
+  // Union must cap at 1.0 per page
+  const coverage: Record<number, number> = {};
+  for (const [pageStr, totalFraction] of Object.entries(rawPageCoverage)) {
+    const p = Number(pageStr);
+    coverage[p] = Math.min(1.0, totalFraction);
+  }
+
+  const coveredPages = Object.keys(coverage)
+    .map(Number)
+    .filter((p) => (coverage[p] || 0) > 0);
+
+  if (coveredPages.length === 0) {
+    return {
+      valid: false,
+      message: `Belum ada capaian hafalan Sabaq yang sah pada Juz ${targetJuz} sebelum tanggal setoran ini. Setoran Manzil tidak dapat diajukan tanpa progres Sabaq resmi.`,
+    };
+  }
+
   const expectedHalamanMulai = juzInfo.startPage;
-  const maxReachedPage = Math.max(...cycleSabaq.map((s) => s.halamanSelesai));
-  const expectedHalamanSelesai = maxReachedPage;
-  const expectedJumlahHalaman = expectedHalamanSelesai - expectedHalamanMulai + 1;
+  const expectedHalamanSelesai = Math.max(...coveredPages);
+
+  // 8. Gap Handling (Continuous coverage assertion: SOURCE-TAH-001)
+  // "dari halaman pertama sampai hafalan terakhir"
+  // Jika ada halaman antara juz start dan latest covered page dengan 0 coverage -> FAIL CLOSED: MANZIL_COVERAGE_GAP
+  for (let p = expectedHalamanMulai; p <= expectedHalamanSelesai; p++) {
+    const pageCov = coverage[p] || 0;
+    if (pageCov <= 0) {
+      return {
+        valid: false,
+        message: `MANZIL_COVERAGE_GAP: Terdapat halaman hafalan Sabaq yang belum terselesaikan (${p}) antara awal Juz (${expectedHalamanMulai}) dan halaman terakhir hafalan (${expectedHalamanSelesai}). Manzil harus mencakup hafalan berkesinambungan tanpa celah.`,
+      };
+    }
+  }
+
+  // 9. Hitung expectedJumlahHalaman sebagai SUM of exact covered fractions (bukan integer span)
+  let sumFractions = 0;
+  for (let p = expectedHalamanMulai; p <= expectedHalamanSelesai; p++) {
+    sumFractions += coverage[p] || 0;
+  }
+  const expectedJumlahHalaman = Math.round(sumFractions * 10) / 10;
 
   return {
     valid: true,

@@ -356,7 +356,7 @@ export async function saveSetoranTahfizhCore(
       };
     }
 
-    if (jmlHalaman !== manzilRes.expectedJumlahHalaman) {
+    if (Math.abs(jmlHalaman - (manzilRes.expectedJumlahHalaman ?? 0)) > 0.001) {
       return {
         success: false,
         message: `Volume setoran Manzil (${jmlHalaman}) harus tepat sesuai dengan rentang hafalan (${manzilRes.expectedJumlahHalaman} halaman).`,

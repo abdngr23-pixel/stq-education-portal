@@ -304,7 +304,25 @@ describe("INTEGRASI P0.1: Concurrency, Idempotensi, & Persistensi Nyata (Postgre
     assert.equal(resKhatamSabaq.success, false);
     assert.match(resKhatamSabaq.message, /target hafalan 30 juz telah selesai/i);
 
-    // Namun jenis setoran lain (seperti MANZIL atau MUFAR) tetap diizinkan untuk muroja'ah
+    // Namun jenis setoran lain (seperti MANZIL atau MUFAR) tetap diizinkan untuk muroja'ah.
+    // Seed SABAQ pendahulu juz 30 (582..603) agar siklus MANZIL dari awal juz terpenuhi tanpa celah.
+    await prisma.setoranTahfizh.create({
+      data: {
+        setoranCode: `SET-TEST-KHATAM-582-${Date.now()}`,
+        santriId: FIXTURES.SANTRI_KHATAM,
+        musyrifId: FIXTURES.STAFF_ID,
+        tanggal: new Date("2026-09-08T08:00:00.000Z"),
+        jenis: "SABAQ",
+        juz: 30,
+        halamanMulai: 582,
+        halamanSelesai: 603,
+        jumlahHalaman: 22,
+        nilai: "MUMTAZ",
+        status: "AKTIF",
+        createdBy: FIXTURES.USERNAME,
+      },
+    });
+
     const resKhatamManzil = await saveSetoranTahfizhCore(prisma, {
       input: {
         santriId: FIXTURES.SANTRI_KHATAM,
