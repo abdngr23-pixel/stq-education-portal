@@ -74,12 +74,24 @@ describe("DIR-2026-016 / ORR-047 / ORR-049: Lisa Cross-Domain Corrective Impleme
   const GENERIC_OSDA_USER_ID = "usr-generic-osda";
   const MUDIR_KS_USER_ID = "usr-mudir-ks";
 
+  const USR_KAMAR_PUTRI_ID = "usr-kamar-putri-test";
+  const USR_HALAQOH_PUTRI_ID = "usr-halaqoh-putri-test";
+  const USR_WRONG_DOMAIN_ID = "usr-wrong-domain-test";
+  const USR_PUTRA_DOMAIN_ID = "usr-putra-domain-test";
+
   const OU_ROOT_ID = "ou-stq-root-test";
   const OU_OSDA_PUTRI_ID = "ou-osda-putri-test";
   const OU_TAHFIZH_ID = "ou-tahfizh-test";
+  const OU_KAMAR_PUTRI_ID = "ou-kamar-putri-test";
+  const OU_HALAQOH_PUTRI_ID = "ou-halaqoh-putri-test";
+  const OU_ASRAMA_PUTRA_ID = "ou-asrama-putra-test";
 
   const POS_GURU_ID = "pos-guru-kps-test";
   const POS_PENGAWAS_ID = "pos-pengawas-santriwati-test";
+  const POS_KAMAR_ID = "pos-kamar-putri-test";
+  const POS_HALAQOH_ID = "pos-halaqoh-putri-test";
+  const POS_WRONG_DOMAIN_ID = "pos-wrong-domain-test";
+  const POS_PUTRA_DOMAIN_ID = "pos-putra-domain-test";
 
   const SUBJ_MAT_ID = "sbj-mat-test";
   const SUBJ_BIG_ID = "sbj-big-test";
@@ -134,6 +146,36 @@ describe("DIR-2026-016 / ORR-047 / ORR-049: Lisa Cross-Domain Corrective Impleme
           isActive: true,
           parentId: OU_ROOT_ID,
         },
+        {
+          id: OU_KAMAR_PUTRI_ID,
+          code: "OU-KMR-PUTRI",
+          name: "Kamar Putri 1",
+          type: "KAMAR",
+          domain: "KEASRAMAAN",
+          genderComplex: "PUTRI",
+          isActive: true,
+          parentId: OU_OSDA_PUTRI_ID,
+        },
+        {
+          id: OU_HALAQOH_PUTRI_ID,
+          code: "OU-HLQ-PUTRI",
+          name: "Halaqoh Putri 1",
+          type: "HALAQOH",
+          domain: "TAHFIZH",
+          genderComplex: "PUTRI",
+          isActive: true,
+          parentId: OU_TAHFIZH_ID,
+        },
+        {
+          id: OU_ASRAMA_PUTRA_ID,
+          code: "OU-ASR-PUTRA",
+          name: "Asrama Putra",
+          type: "ORGANIZATION",
+          domain: "KEASRAMAAN",
+          genderComplex: "PUTRA",
+          isActive: true,
+          parentId: OU_ROOT_ID,
+        },
       ],
     });
 
@@ -158,6 +200,46 @@ describe("DIR-2026-016 / ORR-047 / ORR-049: Lisa Cross-Domain Corrective Impleme
           requiresPersonalAccount: PENGAWAS_SANTRIWATI_POSITION_CONTRACT.requiresPersonalAccount,
           isLeadership: PENGAWAS_SANTRIWATI_POSITION_CONTRACT.isLeadership,
           allowedUnitTypes: [...PENGAWAS_SANTRIWATI_POSITION_CONTRACT.allowedUnitTypes],
+          isActive: true,
+        },
+        {
+          id: POS_KAMAR_ID,
+          code: "KETUA_KAMAR_PUTRI",
+          name: "Ketua Kamar Putri",
+          domain: "KEASRAMAAN",
+          requiresPersonalAccount: true,
+          isLeadership: false,
+          allowedUnitTypes: ["KAMAR"],
+          isActive: true,
+        },
+        {
+          id: POS_HALAQOH_ID,
+          code: "PEMBINA_HALAQOH_PUTRI",
+          name: "Pembina Halaqoh Putri",
+          domain: "TAHFIZH",
+          requiresPersonalAccount: true,
+          isLeadership: false,
+          allowedUnitTypes: ["HALAQOH"],
+          isActive: true,
+        },
+        {
+          id: POS_WRONG_DOMAIN_ID,
+          code: "PENGAWAS_TAHFIZH_PUTRI",
+          name: "Pengawas Tahfizh Putri",
+          domain: "TAHFIZH",
+          requiresPersonalAccount: true,
+          isLeadership: false,
+          allowedUnitTypes: ["DOMAIN"],
+          isActive: true,
+        },
+        {
+          id: POS_PUTRA_DOMAIN_ID,
+          code: "PENGAWAS_SANTRI_PUTRA",
+          name: "Pengawas Santri Putra",
+          domain: "KEASRAMAAN",
+          requiresPersonalAccount: true,
+          isLeadership: false,
+          allowedUnitTypes: ["ORGANIZATION"],
           isActive: true,
         },
       ],
@@ -238,6 +320,30 @@ describe("DIR-2026-016 / ORR-047 / ORR-049: Lisa Cross-Domain Corrective Impleme
         // PENGAWAS_SANTRIWATI: ONLY health.case.read_detail DOMAIN
         {
           positionId: POS_PENGAWAS_ID,
+          capabilityCode: "health.case.read_detail",
+          scopeType: "DOMAIN",
+          businessRuleState: "VERIFIED_PRODUCTION",
+        },
+        {
+          positionId: POS_KAMAR_ID,
+          capabilityCode: "health.case.read_detail",
+          scopeType: "KAMAR",
+          businessRuleState: "VERIFIED_PRODUCTION",
+        },
+        {
+          positionId: POS_HALAQOH_ID,
+          capabilityCode: "health.case.read_detail",
+          scopeType: "HALAQOH",
+          businessRuleState: "VERIFIED_PRODUCTION",
+        },
+        {
+          positionId: POS_WRONG_DOMAIN_ID,
+          capabilityCode: "health.case.read_detail",
+          scopeType: "DOMAIN",
+          businessRuleState: "VERIFIED_PRODUCTION",
+        },
+        {
+          positionId: POS_PUTRA_DOMAIN_ID,
           capabilityCode: "health.case.read_detail",
           scopeType: "DOMAIN",
           businessRuleState: "VERIFIED_PRODUCTION",
@@ -328,6 +434,38 @@ describe("DIR-2026-016 / ORR-047 / ORR-049: Lisa Cross-Domain Corrective Impleme
           status: "AKTIF",
           passwordHash: "dummy-hash",
         },
+        {
+          id: USR_KAMAR_PUTRI_ID,
+          username: "kamar.putri",
+          role: "MT",
+          accountType: AccountType.PERSONAL,
+          status: "AKTIF",
+          passwordHash: "dummy-hash",
+        },
+        {
+          id: USR_HALAQOH_PUTRI_ID,
+          username: "halaqoh.putri",
+          role: "MT",
+          accountType: AccountType.PERSONAL,
+          status: "AKTIF",
+          passwordHash: "dummy-hash",
+        },
+        {
+          id: USR_WRONG_DOMAIN_ID,
+          username: "wrong.domain",
+          role: "MT",
+          accountType: AccountType.PERSONAL,
+          status: "AKTIF",
+          passwordHash: "dummy-hash",
+        },
+        {
+          id: USR_PUTRA_DOMAIN_ID,
+          username: "putra.domain",
+          role: "MT",
+          accountType: AccountType.PERSONAL,
+          status: "AKTIF",
+          passwordHash: "dummy-hash",
+        },
       ],
     });
 
@@ -356,6 +494,38 @@ describe("DIR-2026-016 / ORR-047 / ORR-049: Lisa Cross-Domain Corrective Impleme
           userId: FOREIGN_TEACHER_USER_ID,
           positionId: POS_GURU_ID,
           unitId: OU_ROOT_ID,
+          status: "ACTIVE",
+          createdById: MUDIR_KS_USER_ID,
+        },
+        {
+          id: "asn-kamar-putri",
+          userId: USR_KAMAR_PUTRI_ID,
+          positionId: POS_KAMAR_ID,
+          unitId: OU_KAMAR_PUTRI_ID,
+          status: "ACTIVE",
+          createdById: MUDIR_KS_USER_ID,
+        },
+        {
+          id: "asn-halaqoh-putri",
+          userId: USR_HALAQOH_PUTRI_ID,
+          positionId: POS_HALAQOH_ID,
+          unitId: OU_HALAQOH_PUTRI_ID,
+          status: "ACTIVE",
+          createdById: MUDIR_KS_USER_ID,
+        },
+        {
+          id: "asn-wrong-domain",
+          userId: USR_WRONG_DOMAIN_ID,
+          positionId: POS_WRONG_DOMAIN_ID,
+          unitId: OU_TAHFIZH_ID,
+          status: "ACTIVE",
+          createdById: MUDIR_KS_USER_ID,
+        },
+        {
+          id: "asn-putra-domain",
+          userId: USR_PUTRA_DOMAIN_ID,
+          positionId: POS_PUTRA_DOMAIN_ID,
+          unitId: OU_ASRAMA_PUTRA_ID,
           status: "ACTIVE",
           createdById: MUDIR_KS_USER_ID,
         },
@@ -590,6 +760,31 @@ describe("DIR-2026-016 / ORR-047 / ORR-049: Lisa Cross-Domain Corrective Impleme
         /PERMISSION_DENIED/
       );
     });
+
+    it("6. Legacy role GA alone without SUBJECT binding => zero Studi Umum authority", async () => {
+      const service = new PendidikanV2Service({ db: prisma });
+      const sessions = await service.getEducationSessions(undefined, { actorUserId: FOREIGN_TEACHER_USER_ID });
+
+      // Foreign teacher has role="GA", but receives zero Studi Umum sessions
+      const hasStudiUmum = sessions.some((s) => s.educationTrack === "STUDI_UMUM");
+      assert.strictEqual(hasStudiUmum, false, "Legacy GA role alone must not authorize Studi Umum rows");
+      await assert.rejects(
+        () => service.getEducationSessions({ educationTrack: "STUDI_UMUM" }, { actorUserId: FOREIGN_TEACHER_USER_ID }),
+        /PERMISSION_DENIED/,
+        "Requesting Studi Umum track with legacy GA alone must fail closed"
+      );
+    });
+
+    it("7. academic.schedule.read alone on inappropriate position => zero Studi Umum authority", async () => {
+      const service = new PendidikanV2Service({ db: prisma });
+      // Foreign teacher has GURU_KEPESANTRENAN with academic.schedule.read (GLOBAL)
+      const sessions = await service.getEducationSessions(undefined, { actorUserId: FOREIGN_TEACHER_USER_ID });
+      assert.strictEqual(
+        sessions.some((s) => s.educationTrack === "STUDI_UMUM"),
+        false,
+        "academic.schedule.read alone on non-SUBJECT account must fail closed"
+      );
+    });
   });
 
   // =========================================================================
@@ -766,7 +961,7 @@ describe("DIR-2026-016 / ORR-047 / ORR-049: Lisa Cross-Domain Corrective Impleme
   // HEALTH READ PATH — END TO END (getDaftarKesehatanAction)
   // =========================================================================
   describe("Health Read Path End-to-End: getDaftarKesehatanAction", () => {
-    it("1. PENGAWAS_SANTRIWATI receives only PUTRI records and ZERO PUTRA leakage", async () => {
+    it("1. (A) PENGAWAS_SANTRIWATI DOMAIN / KEASRAMAAN / PUTRI receives all PUTRI records and ZERO PUTRA leakage", async () => {
       const sessionLisa: UserSession = {
         userId: LISA_USER_ID,
         username: "musyirfah.putri",
@@ -792,7 +987,63 @@ describe("DIR-2026-016 / ORR-047 / ORR-049: Lisa Cross-Domain Corrective Impleme
       );
     });
 
-    it("2. Ordinary MT without position/grant => DENY", async () => {
+    it("2. (B) health.case.read_detail KAMAR / PUTRI => MUST NOT receive all PUTRI (fails closed)", async () => {
+      setTestSession({
+        userId: USR_KAMAR_PUTRI_ID,
+        username: "kamar.putri",
+        name: "Ketua Kamar Putri",
+        role: "MT",
+      });
+
+      const res = await getDaftarKesehatanAction();
+      assert.strictEqual(res.success, false);
+      assert.match(res.message, /akses ditolak|otorisasi/i);
+      assert.deepStrictEqual(res.data, []);
+    });
+
+    it("3. (C) health.case.read_detail HALAQOH / PUTRI => MUST NOT receive all PUTRI (fails closed)", async () => {
+      setTestSession({
+        userId: USR_HALAQOH_PUTRI_ID,
+        username: "halaqoh.putri",
+        name: "Pembina Halaqoh Putri",
+        role: "MT",
+      });
+
+      const res = await getDaftarKesehatanAction();
+      assert.strictEqual(res.success, false);
+      assert.match(res.message, /akses ditolak|otorisasi/i);
+      assert.deepStrictEqual(res.data, []);
+    });
+
+    it("4. (D) health.case.read_detail DOMAIN / wrong domain (TAHFIZH) / PUTRI => DENY", async () => {
+      setTestSession({
+        userId: USR_WRONG_DOMAIN_ID,
+        username: "wrong.domain",
+        name: "Pengawas Tahfizh Putri",
+        role: "MT",
+      });
+
+      const res = await getDaftarKesehatanAction();
+      assert.strictEqual(res.success, false);
+      assert.match(res.message, /akses ditolak|otorisasi/i);
+      assert.deepStrictEqual(res.data, []);
+    });
+
+    it("5. (E) health.case.read_detail DOMAIN / KEASRAMAAN / PUTRA => MUST NOT receive PUTRI (fails closed)", async () => {
+      setTestSession({
+        userId: USR_PUTRA_DOMAIN_ID,
+        username: "putra.domain",
+        name: "Pengawas Santri Putra",
+        role: "MT",
+      });
+
+      const res = await getDaftarKesehatanAction();
+      assert.strictEqual(res.success, false);
+      assert.match(res.message, /akses ditolak|otorisasi/i);
+      assert.deepStrictEqual(res.data, []);
+    });
+
+    it("6. (F) Ordinary MT without position/grant => DENY", async () => {
       const sessionOrdinaryMT: UserSession = {
         userId: ORDINARY_MT_USER_ID,
         username: "ordinary.mt",
@@ -807,7 +1058,7 @@ describe("DIR-2026-016 / ORR-047 / ORR-049: Lisa Cross-Domain Corrective Impleme
       assert.deepStrictEqual(res.data, []);
     });
 
-    it("3. Generic OSDA => DENY", async () => {
+    it("7. (G) Generic OSDA => DENY", async () => {
       const sessionOSDA: UserSession = {
         userId: GENERIC_OSDA_USER_ID,
         username: "generic.osda",
@@ -822,7 +1073,7 @@ describe("DIR-2026-016 / ORR-047 / ORR-049: Lisa Cross-Domain Corrective Impleme
       assert.deepStrictEqual(res.data, []);
     });
 
-    it("4. KS / MK / ADM => global access without regression", async () => {
+    it("8. KS / MK / ADM => global access without regression", async () => {
       const sessionKS: UserSession = {
         userId: MUDIR_KS_USER_ID,
         username: "mudir.stq",

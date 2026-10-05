@@ -189,17 +189,34 @@ export async function getDaftarKesehatanAction(filterStatus?: StatusKesehatan): 
       });
 
       if (authDecision.decision === "ALLOW") {
-        const grantGender = authDecision.grantUsed?.genderComplex || authDecision.grantUsed?.anchorUnit?.genderComplex;
-        if (grantGender === "PUTRI") {
+        const grant = authDecision.grantUsed;
+        const positionCode = grant?.positionCode || authDecision.positionCode;
+        const capabilityCode = grant?.capabilityCode || authDecision.capabilityCode;
+        const scopeType = grant?.scopeType || authDecision.scopeType;
+        const orgDomain = grant?.orgDomain || grant?.anchorUnit?.domain;
+        const genderComplex = grant?.genderComplex || grant?.anchorUnit?.genderComplex;
+
+        // Strict 5-point contract check per DIR-2026-016 / ORR-049:
+        // A KAMAR/HALAQOH/UNIT or non-matching domain/gender scoped grant must NEVER silently become all-PUTRI access.
+        // For the Owner-approved position, accept ONLY the exact contract:
+        // 1. positionCode = PENGAWAS_SANTRIWATI
+        // 2. capability = health.case.read_detail
+        // 3. scopeType = DOMAIN
+        // 4. grant orgDomain = KEASRAMAAN
+        // 5. grant genderComplex = PUTRI
+        const isAuthorizedPengawasSantriwati =
+          positionCode === "PENGAWAS_SANTRIWATI" &&
+          capabilityCode === "health.case.read_detail" &&
+          scopeType === "DOMAIN" &&
+          orgDomain === "KEASRAMAAN" &&
+          genderComplex === "PUTRI";
+
+        if (isAuthorizedPengawasSantriwati) {
           where.santri = { jenisKelamin: "P" };
-        } else if (grantGender === "PUTRA") {
-          where.santri = { jenisKelamin: "L" };
-        } else if (authDecision.scopeType === "GLOBAL") {
-          // Unconstrained global scope
         } else {
           return {
             success: false,
-            message: "Akses Ditolak: Lingkup otorisasi kesehatan tidak dikenali.",
+            message: "Akses Ditolak: Lingkup otorisasi kesehatan tidak memenuhi kontrak kanonikal yang diizinkan.",
             data: [],
           };
         }

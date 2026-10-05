@@ -376,7 +376,20 @@ export async function getCurrentUserAction(): Promise<{
           capability: "health.case.read_detail",
           dataProvider,
         });
-        canReadHealthDetail = healthAuth.decision === "ALLOW";
+        const grant = healthAuth.grantUsed;
+        const positionCode = grant?.positionCode || healthAuth.positionCode;
+        const capabilityCode = grant?.capabilityCode || healthAuth.capabilityCode;
+        const scopeType = grant?.scopeType || healthAuth.scopeType;
+        const orgDomain = grant?.orgDomain || grant?.anchorUnit?.domain;
+        const genderComplex = grant?.genderComplex || grant?.anchorUnit?.genderComplex;
+
+        canReadHealthDetail =
+          healthAuth.decision === "ALLOW" &&
+          positionCode === "PENGAWAS_SANTRIWATI" &&
+          capabilityCode === "health.case.read_detail" &&
+          scopeType === "DOMAIN" &&
+          orgDomain === "KEASRAMAAN" &&
+          genderComplex === "PUTRI";
       } catch {
         canReadHealthDetail = false;
       }

@@ -904,6 +904,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
   // =========================================================================
   describe("3. Real Relational Seed & Disambiguation Collision Proofs", () => {
     const MAT_MAPEL_ID = "mp-su-mat";
+    const ENG_MAPEL_ID = "mp-su-eng";
     const ARB_MAPEL_ID = "mp-kp-arb";
     const FQH_MAPEL_ID = "mp-kp-fqh";
 
@@ -923,6 +924,8 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     const USR_KAMAL = "usr-c1-kamal";
     const USR_ANDI = "usr-c1-andi";
     const USR_LISA = "usr-c1-lisa";
+    const USR_TECH_MAT = "usr-c1-tech-mat";
+    const USR_TECH_ENG = "usr-c1-tech-eng";
 
     const POS_GURU = "pos-c1-guru";
     const OU_AKADEMIK = "ou-c1-akd";
@@ -932,6 +935,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       await prisma.mataPelajaran.createMany({
         data: [
           { id: MAT_MAPEL_ID, nama: "Matematika", kodeMapel: "MAT", kategori: "UMUM" },
+          { id: ENG_MAPEL_ID, nama: "Bahasa Inggris", kodeMapel: "BIG", kategori: "UMUM" },
           { id: ARB_MAPEL_ID, nama: "Bahasa Arab", kodeMapel: "ARB", kategori: "DINIYAH" },
           { id: FQH_MAPEL_ID, nama: "Fikih", kodeMapel: "FQH", kategori: "DINIYAH" },
         ],
@@ -957,7 +961,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
         ],
       });
 
-      // 4. Relational Users linked to Staff
+      // 4. Relational Users linked to Staff + Canonical Subject Accounts
       await prisma.user.createMany({
         data: [
           { id: USR_AHMAD, username: "guru.ahmad", staffId: STF_AHMAD, status: "AKTIF", role: "GA", passwordHash: "dummy" },
@@ -966,6 +970,16 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
           { id: USR_KAMAL, username: "guru.kamal", staffId: STF_KAMAL, status: "AKTIF", role: "GA", passwordHash: "dummy" },
           { id: USR_ANDI, username: "guru.andi", staffId: STF_ANDI, status: "AKTIF", role: "GA", passwordHash: "dummy" },
           { id: USR_LISA, username: "guru.lisa", staffId: STF_LISA, status: "AKTIF", role: "GA", passwordHash: "dummy" },
+          { id: USR_TECH_MAT, username: "tech.mapel.mat", staffId: null, status: "AKTIF", accountType: "SUBJECT", role: "GA", passwordHash: "dummy" },
+          { id: USR_TECH_ENG, username: "tech.mapel.eng", staffId: null, status: "AKTIF", accountType: "SUBJECT", role: "GA", passwordHash: "dummy" },
+        ],
+      });
+
+      // 4b. Canonical AcademicSubjectAccountBinding
+      await prisma.academicSubjectAccountBinding.createMany({
+        data: [
+          { userId: USR_TECH_MAT, subjectId: MAT_MAPEL_ID, isActive: true },
+          { userId: USR_TECH_ENG, subjectId: ENG_MAPEL_ID, isActive: true },
         ],
       });
 
@@ -1184,6 +1198,18 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
             genderGroup: "PUTRA",
             status: "SCHEDULED",
           },
+          // 9) English Studi Umum session for USR_TECH_ENG cross-subject containment proof
+          {
+            id: "sess-su-eng-1",
+            educationTrack: "STUDI_UMUM",
+            subjectId: ENG_MAPEL_ID,
+            scheduledDate: new Date("2026-09-21T00:00:00Z"),
+            cohortId: COHORT_1_ID,
+            programLevel: 1,
+            jp: 2,
+            genderGroup: "PUTRA",
+            status: "SCHEDULED",
+          },
         ],
       });
     });
@@ -1200,7 +1226,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     });
 
     it("3.2 Authenticated read returns real relational subject name, code, and teacher display", async () => {
-      const dtos = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
+      const dtos = await service.getEducationSessions(undefined, { actorUserId: USR_TECH_MAT });
       assert.ok(dtos.length >= 7);
 
       const matSession = dtos.find((d) => d.sessionId === "sess-col-date-1");
@@ -1212,19 +1238,19 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     });
 
     it("3.3 WITA date filter operates accurately across date boundaries", async () => {
-      const dtos21 = await service.getEducationSessions({ date: "2026-09-21" }, { actorUserId: USR_AHMAD });
+      const dtos21 = await service.getEducationSessions({ date: "2026-09-21" }, { actorUserId: USR_TECH_MAT });
       const ids21 = dtos21.map((d) => d.sessionId);
       assert.ok(ids21.includes("sess-col-date-1"));
       assert.ok(!ids21.includes("sess-col-date-2"), "Must not leak 2026-09-22 session into 2026-09-21 filter");
 
-      const dtos22 = await service.getEducationSessions({ date: "2026-09-22" }, { actorUserId: USR_AHMAD });
+      const dtos22 = await service.getEducationSessions({ date: "2026-09-22" }, { actorUserId: USR_TECH_MAT });
       const ids22 = dtos22.map((d) => d.sessionId);
       assert.ok(ids22.includes("sess-col-date-2"));
       assert.ok(!ids22.includes("sess-col-date-1"));
     });
 
     it("3.4 Collision Case 1: Same subject, different dates resolved without first-record ambiguity", async () => {
-      const dtos = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
+      const dtos = await service.getEducationSessions(undefined, { actorUserId: USR_TECH_MAT });
 
       const matchDate1 = matchStudiUmumSession(dtos, {
         scheduledDate: "2026-09-21",
@@ -1246,7 +1272,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     });
 
     it("3.5 Collision Case 2: Same subject, same date, different cohorts resolved strictly", async () => {
-      const dtos = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
+      const dtos = await service.getEducationSessions(undefined, { actorUserId: USR_TECH_MAT });
 
       const matchCoh1 = matchStudiUmumSession(dtos, {
         scheduledDate: "2026-09-23",
@@ -1266,7 +1292,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
     });
 
     it("3.6 Collision Case 3: Same subject, same date, same cohort, different JP resolved strictly", async () => {
-      const dtos = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
+      const dtos = await service.getEducationSessions(undefined, { actorUserId: USR_TECH_MAT });
 
       const matchJp1 = matchStudiUmumSession(dtos, {
         scheduledDate: "2026-09-24",
@@ -1335,7 +1361,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(matchT3.sessionId, "sess-kps-arb-t3");
       assert.strictEqual(matchT3.scheduledTeacherDisplay, "Ust. Andi Quarzy Ayatullah");
 
-      // Non-scheduled actor (Ust. Ahmad) must NOT see any of these Kepesantrenan sessions
+      // Non-scheduled Kepesantrenan actor (Ust. Ahmad) must NOT see any of these Kepesantrenan sessions
       const dtosAhmad = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
       assert.strictEqual(dtosAhmad.some((d) => d.educationTrack === "KEPESANTRENAN"), false);
     });
@@ -1363,29 +1389,12 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       // Non-scheduled actor (Ust. Ahmad) must NOT see Lisa's session
       const dtosAhmad = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
       assert.strictEqual(dtosAhmad.find((d) => d.sessionId === "sess-kps-putri"), undefined);
+
+      // Ustazah Lisa (PERSONAL GURU_KEPESANTRENAN) must receive ZERO Studi Umum rows
+      assert.strictEqual(dtosLisa.filter((d) => d.educationTrack === "STUDI_UMUM").length, 0);
     });
 
     it("3.9 Authorization proof: Direct Subject account binding without Staff profile or assignment", async () => {
-      const USR_TECH_MAT = "usr-c1-tech-mat";
-      await prisma.user.create({
-        data: {
-          id: USR_TECH_MAT,
-          username: "tech.mapel.mat",
-          staffId: null,
-          status: "AKTIF",
-          accountType: "SUBJECT",
-          role: "GA",
-          passwordHash: "dummy",
-        },
-      });
-      await prisma.academicSubjectAccountBinding.create({
-        data: {
-          userId: USR_TECH_MAT,
-          subjectId: MAT_MAPEL_ID,
-          isActive: true,
-        },
-      });
-
       // 1. Correct authorized subject account without Staff/Assignment (tech.mapel.mat for sess-col-date-1)
       const dtosMat = await service.getEducationSessions(undefined, { actorUserId: USR_TECH_MAT });
       const matSess = dtosMat.find((d) => d.sessionId === "sess-col-date-1");
@@ -1397,15 +1406,73 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       assert.strictEqual(matSess.attendanceDeniedReason, "STUDI_UMUM_ATTENDANCE_POLICY_DEFERRED");
       // Must exclude other subject sessions
       assert.strictEqual(dtosMat.find((d) => d.sessionId === "sess-col-ipa-1"), undefined, "Must exclude other subject sessions");
+      assert.strictEqual(dtosMat.find((d) => d.sessionId === "sess-su-eng-1"), undefined, "Must exclude English subject session from Math account read");
 
-      // 2. Non-subject user (Ust. Ahmad calling sess-col-date-1) => DENY mutation (requires SUBJECT account)
+      // 2. Subject English account (tech.mapel.eng) CANNOT read Math sessions
+      const dtosEng = await service.getEducationSessions(undefined, { actorUserId: USR_TECH_ENG });
+      assert.strictEqual(dtosEng.find((d) => d.sessionId === "sess-col-date-1"), undefined, "English account cannot read Math session");
+      assert.strictEqual(dtosEng.some((d) => d.subjectId === MAT_MAPEL_ID), false, "English account receives zero Math sessions");
+
+      // 3. Non-subject scheduled teacher (Ust. Ahmad calling sess-col-date-1) => DENY mutation (requires SUBJECT account)
       const dtosAhmad = await service.getEducationSessions(undefined, { actorUserId: USR_AHMAD });
       const ahmadSess = dtosAhmad.find((d) => d.sessionId === "sess-col-date-1");
-      assert.ok(ahmadSess);
-      assert.strictEqual(ahmadSess.mutationAvailable, false);
+      assert.ok(ahmadSess, "Scheduled teacher sees own scheduled session");
+      assert.strictEqual(ahmadSess.mutationAvailable, false, "Non-subject actor has mutationAvailable = false");
       assert.strictEqual(ahmadSess.mutationDeniedReason, "SUBJECT_ACCOUNT_REQUIRED");
 
-      // 3. Subject account bound to a different subject (IPA) has direct access to IPA but NOT Math
+      // 4. Unscheduled actor with legacy GA role and academic.schedule.read on position => ZERO Studi Umum rows & DENY
+      const USR_GA_UNSCHEDULED = "usr-c1-ga-unscheduled";
+      await prisma.user.create({
+        data: {
+          id: USR_GA_UNSCHEDULED,
+          username: "guru.unscheduled",
+          staffId: null,
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          role: "GA",
+          passwordHash: "dummy",
+        },
+      });
+      await prisma.assignment.create({
+        data: {
+          userId: USR_GA_UNSCHEDULED,
+          positionId: POS_GURU,
+          unitId: OU_AKADEMIK,
+          status: "ACTIVE",
+          validFrom: new Date(Date.now() - 86400000),
+          createdById: USR_GA_UNSCHEDULED,
+        },
+      });
+
+      await assert.rejects(
+        () => service.getEducationSessions(undefined, { actorUserId: USR_GA_UNSCHEDULED }),
+        /PERMISSION_DENIED/,
+        "Legacy GA role alone confers zero session authority and fails closed"
+      );
+      await assert.rejects(
+        () => service.getEducationSessions({ educationTrack: "STUDI_UMUM" }, { actorUserId: USR_GA_UNSCHEDULED }),
+        /PERMISSION_DENIED/,
+        "Requesting Studi Umum track directly as unscheduled non-SUBJECT account must fail closed"
+      );
+
+      // 5. PERSONAL GURU_KEPESANTRENAN Lisa => zero Studi Umum rows
+      const dtosLisa = await service.getEducationSessions(undefined, { actorUserId: USR_LISA });
+      assert.strictEqual(dtosLisa.filter((d) => d.educationTrack === "STUDI_UMUM").length, 0, "Lisa receives zero Studi Umum sessions");
+      await assert.rejects(
+        () => service.getEducationSessions({ educationTrack: "STUDI_UMUM" }, { actorUserId: USR_LISA }),
+        /PERMISSION_DENIED/,
+        "Lisa requesting Studi Umum track directly must fail closed"
+      );
+
+      // 6. Kepesantrenan scheduled teacher (Ust. Abi) => own Kepesantrenan only, zero foreign Kepesantrenan
+      const dtosAbi = await service.getEducationSessions(undefined, { actorUserId: USR_ABI });
+      assert.ok(dtosAbi.length >= 2);
+      assert.strictEqual(dtosAbi.every((d) => d.educationTrack === "KEPESANTRENAN" && d.scheduledStaffId === STF_ABI), true);
+      assert.strictEqual(dtosAbi.some((d) => d.sessionId === "sess-kps-putri"), false, "Abi cannot see Lisa's Kepesantrenan session");
+      assert.strictEqual(dtosAbi.some((d) => d.sessionId === "sess-kps-arb-t2"), false, "Abi cannot see Kamal's Kepesantrenan session");
+      assert.strictEqual(dtosLisa.some((d) => d.sessionId === "sess-kps-arb-t1"), false, "Lisa cannot see Abi's Kepesantrenan session");
+
+      // 6. Subject account bound to a different subject (IPA) has direct access to IPA but NOT Math
       const IPA_MAPEL_ID = "mapel-c1-ipa";
       await prisma.mataPelajaran.create({
         data: { id: IPA_MAPEL_ID, nama: "Ilmu Pengetahuan Alam", kodeMapel: "IPA", kategori: "UMUM" },
@@ -1448,7 +1515,7 @@ describe("STQ ARCHITECTURE LOCK — MILESTONE 3.3C1: REAL POSTGRESQL ROUND 2 PRO
       const otherSess = dtosOther.find((d) => d.sessionId === "sess-col-date-1");
       assert.strictEqual(otherSess, undefined, "Must exclude cross-subject Math session from other subject account read");
 
-      // 4. Subject account with NO binding fails closed on schedule read
+      // 7. Subject account with NO binding fails closed on schedule read
       const USR_TECH_NO_BIND = "usr-c1-tech-nobind";
       await prisma.user.create({
         data: {

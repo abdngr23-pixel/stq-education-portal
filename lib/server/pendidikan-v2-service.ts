@@ -437,18 +437,17 @@ export class PendidikanV2Service {
           }
         } else {
           // Non-Kepesantrenan (e.g. Studi Umum for non-subject account)
-          // Per DIR-2026-016 / ORR-047, actors without Studi Umum role/assignment (such as role MT / Kepesantrenan-only actors)
-          // must NEVER receive Studi Umum sessions merely because academic.schedule.read is granted.
-          const isStudiUmumAuthorized =
-            actorIdentity.role === "GA" ||
-            actorIdentity.role === "KS" ||
-            actorIdentity.role === "ADM" ||
+          // Per DIR-2026-016 / ORR-047, legacy roles (GA, KS, ADM) must NEVER independently authorize Studi Umum rows.
+          // However, a teacher scheduled for a specific session seeing their own schedule is legitimate
+          // when authorized via canonical capability academic.schedule.read.
+          // Non-scheduled / foreign actors (such as Kepesantrenan-only actors like Lisa) fail closed.
+          const isScheduledTeacher =
             !!(actorIdentity.staffId && (
               s.scheduledStaffId === actorIdentity.staffId ||
               s.scheduledTeacherAssignment?.staffId === actorIdentity.staffId
             ));
 
-          if (!isStudiUmumAuthorized) {
+          if (!isScheduledTeacher) {
             continue;
           }
 
