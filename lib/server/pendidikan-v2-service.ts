@@ -436,9 +436,35 @@ export class PendidikanV2Service {
             continue;
           }
         } else {
-          // Non-SUBJECT actor MUST NEVER receive STUDI_UMUM rows merely because academic.schedule.read is granted.
-          // Rule: AccountType.SUBJECT may read only STUDI_UMUM rows for its own active subject binding.
-          continue;
+          // Non-Kepesantrenan (e.g. Studi Umum for non-subject account)
+          // Per DIR-2026-016 / ORR-047, actors without Studi Umum role/assignment (such as role MT / Kepesantrenan-only actors)
+          // must NEVER receive Studi Umum sessions merely because academic.schedule.read is granted.
+          const isStudiUmumAuthorized =
+            actorIdentity.role === "GA" ||
+            actorIdentity.role === "KS" ||
+            actorIdentity.role === "ADM" ||
+            !!(actorIdentity.staffId && (
+              s.scheduledStaffId === actorIdentity.staffId ||
+              s.scheduledTeacherAssignment?.staffId === actorIdentity.staffId
+            ));
+
+          if (!isStudiUmumAuthorized) {
+            continue;
+          }
+
+          const sessionReadAuth = await authorizeCanonical({
+            identity: actorIdentity,
+            capability: "academic.schedule.read",
+            resourceContext: {
+              educationSessionId: s.id,
+            },
+            dataProvider: this.dataProvider,
+            isMutation: false,
+          });
+
+          if (sessionReadAuth.decision === "ALLOW") {
+            authorizedSessions.push(s);
+          }
         }
       }
     }
