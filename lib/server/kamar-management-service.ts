@@ -31,6 +31,7 @@ import {
   GenderComplex,
   KEASRAMAAN_KAMAR_CAPABILITIES,
   KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY,
+  MUDIR_KAMAR_MANAGE_TARGET_POLICY,
   ScopeType,
   UnitAccountExecutorContext,
 } from "@/types/architecture-lock";
@@ -63,12 +64,54 @@ export interface RenameKamarParams {
   dataProvider?: ICanonicalDataProvider;
 }
 
+export interface UpdateKamarParams {
+  callerIdentity: CanonicalIdentity | UserSession;
+  executorContext?: UnitAccountExecutorContext;
+  kamarId: string;
+  name?: string;
+  code?: string;
+  genderComplex?: GenderComplex;
+  isActive?: boolean;
+  notes?: string;
+  prismaClient?: PrismaClient;
+  dataProvider?: ICanonicalDataProvider;
+}
+
+export interface SetKamarActiveParams {
+  callerIdentity: CanonicalIdentity | UserSession;
+  executorContext?: UnitAccountExecutorContext;
+  kamarId: string;
+  isActive: boolean;
+  notes?: string;
+  prismaClient?: PrismaClient;
+  dataProvider?: ICanonicalDataProvider;
+}
+
 export interface AssignMudhabbirParams {
   callerIdentity: CanonicalIdentity | UserSession;
   executorContext?: UnitAccountExecutorContext;
   kamarId: string;
   mudhabbirUserId: string;
+  additionalKamarIds?: string[];
   notes?: string;
+  prismaClient?: PrismaClient;
+  dataProvider?: ICanonicalDataProvider;
+}
+
+export interface ValidateUsrohHierarchyResult {
+  valid: boolean;
+  code?: string;
+  reason?: string;
+}
+
+export interface CreateUsrohParams {
+  callerIdentity: CanonicalIdentity | UserSession;
+  executorContext?: UnitAccountExecutorContext;
+  code: string;
+  name: string;
+  parentId: string;
+  genderComplex?: GenderComplex;
+  metadata?: Record<string, unknown>;
   prismaClient?: PrismaClient;
   dataProvider?: ICanonicalDataProvider;
 }
@@ -168,15 +211,21 @@ async function authorizeKamarManage(
     };
   }
 
-  if (
-    auth.positionCode !== KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.positionCode ||
-    auth.capabilityCode !== KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.capabilityCode ||
-    auth.scopeType !== "DOMAIN"
-  ) {
+  const isMudirAuthorized =
+    auth.positionCode === MUDIR_KAMAR_MANAGE_TARGET_POLICY.positionCode &&
+    auth.capabilityCode === KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE &&
+    (auth.scopeType === "GLOBAL" || auth.scopeType === "DOMAIN");
+
+  const isKepalaKeasramaanAuthorized =
+    auth.positionCode === KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.positionCode &&
+    auth.capabilityCode === KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.capabilityCode &&
+    auth.scopeType === "DOMAIN";
+
+  if (!isMudirAuthorized && !isKepalaKeasramaanAuthorized) {
     return {
       allowed: false,
       code: "CAPABILITY_NOT_GRANTED",
-      reason: `Only KEPALA_KEASRAMAAN is authorized to manage Kamar configuration (requires ${KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.positionCode} + ${KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.capabilityCode} @ DOMAIN scope).`,
+      reason: `Only KEPALA_KEASRAMAAN is authorized to manage Kamar configuration (requires ${KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.positionCode} + ${KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.capabilityCode} @ DOMAIN scope) or MUDIR (requires ${MUDIR_KAMAR_MANAGE_TARGET_POLICY.positionCode} + ${KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE} @ GLOBAL scope).`,
       auth,
     };
   }
@@ -278,9 +327,9 @@ export async function createKamar(params: CreateKamarParams): Promise<KamarOpera
 }
 
 /**
- * 2. Rename Kamar
+ * 2. Update Kamar (Edit name, code, genderComplex, or soft-disable isActive)
  */
-export async function renameKamar(params: RenameKamarParams): Promise<KamarOperationResult> {
+export async function updateKamar(params: UpdateKamarParams): Promise<KamarOperationResult> {
   const prisma = params.prismaClient || defaultPrisma;
   const dataProvider = params.dataProvider || createPrismaDataProvider(prisma as PrismaClient);
 
@@ -295,22 +344,54 @@ export async function renameKamar(params: RenameKamarParams): Promise<KamarOpera
     return { success: false, code: authCheck.code, reason: authCheck.reason };
   }
 
-  if (!params.newName || !params.newName.trim()) {
-    return { success: false, code: "INVALID_ARGUMENT", reason: "New Kamar name is required." };
-  }
-
   try {
     return await prisma.$transaction(async (tx) => {
       const kamar = await tx.orgUnit.findUnique({ where: { id: params.kamarId } });
-      if (!kamar || kamar.type !== "KAMAR" || kamar.domain !== "KEASRAMAAN" || !kamar.isActive) {
-        throw new Error(`Authoritative KEASRAMAAN KAMAR with ID ${params.kamarId} not found.`);
+      if (!kamar || kamar.type !== "KAMAR" || kamar.domain !== "KEASRAMAAN" || (!kamar.isActive && params.isActive === undefined)) {
+        throw new Error(`Authoritative active KEASRAMAAN KAMAR with ID ${params.kamarId} not found.`);
       }
 
       const beforeState = JSON.parse(JSON.stringify(kamar));
 
+      const updateData: {
+        name?: string;
+        code?: string;
+        genderComplex?: GenderComplex;
+        isActive?: boolean;
+      } = {};
+
+      if (params.name !== undefined) {
+        if (!params.name.trim()) {
+          throw new Error("Kamar name cannot be empty.");
+        }
+        updateData.name = params.name.trim();
+      }
+
+      if (params.code !== undefined && params.code.trim() !== kamar.code) {
+        if (!params.code.trim()) {
+          throw new Error("Kamar code cannot be empty.");
+        }
+        const existing = await tx.orgUnit.findUnique({ where: { code: params.code.trim() } });
+        if (existing) {
+          throw new Error(`OrgUnit with code ${params.code.trim()} already exists.`);
+        }
+        updateData.code = params.code.trim();
+      }
+
+      if (params.genderComplex !== undefined) {
+        if (params.genderComplex !== "PUTRA" && params.genderComplex !== "PUTRI" && params.genderComplex !== "CAMPUR") {
+          throw new Error("Explicit genderComplex (PUTRA/PUTRI/CAMPUR) is required.");
+        }
+        updateData.genderComplex = params.genderComplex;
+      }
+
+      if (params.isActive !== undefined) {
+        updateData.isActive = params.isActive;
+      }
+
       const updated = await tx.orgUnit.update({
         where: { id: params.kamarId },
-        data: { name: params.newName.trim() },
+        data: updateData,
       });
 
       const afterState = JSON.parse(JSON.stringify(updated));
@@ -322,7 +403,7 @@ export async function renameKamar(params: RenameKamarParams): Promise<KamarOpera
           technicalAccountUsername: params.callerIdentity.username,
           humanExecutorId: authCheck.auth.verifiedExecutor?.userId || null,
           humanExecutorName: authCheck.auth.verifiedExecutor?.name || null,
-          action: "KAMAR_RENAME",
+          action: "KAMAR_UPDATE",
           entity: "OrgUnit",
           entityId: kamar.id,
           capabilityCode: authCheck.provenance.capabilityCode,
@@ -332,6 +413,7 @@ export async function renameKamar(params: RenameKamarParams): Promise<KamarOpera
           unitId: kamar.id,
           beforeState,
           afterState,
+          reason: params.notes || undefined,
         },
       });
 
@@ -344,13 +426,42 @@ export async function renameKamar(params: RenameKamarParams): Promise<KamarOpera
     return {
       success: false,
       code: "SYSTEM_FAIL_CLOSED",
-      reason: `Failed to rename Kamar: ${err instanceof Error ? err.message : String(err)}`,
+      reason: `Failed to update Kamar: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 }
 
 /**
- * 3. Assign or Replace Mudhabbir
+ * Soft-disable or re-activate Kamar
+ */
+export async function setKamarActive(params: SetKamarActiveParams): Promise<KamarOperationResult> {
+  return updateKamar({
+    callerIdentity: params.callerIdentity,
+    executorContext: params.executorContext,
+    kamarId: params.kamarId,
+    isActive: params.isActive,
+    notes: params.notes || `Kamar ${params.isActive ? "activated" : "soft-disabled"}`,
+    prismaClient: params.prismaClient,
+    dataProvider: params.dataProvider,
+  });
+}
+
+/**
+ * 2b. Rename Kamar
+ */
+export async function renameKamar(params: RenameKamarParams): Promise<KamarOperationResult> {
+  return updateKamar({
+    callerIdentity: params.callerIdentity,
+    executorContext: params.executorContext,
+    kamarId: params.kamarId,
+    name: params.newName,
+    prismaClient: params.prismaClient,
+    dataProvider: params.dataProvider,
+  });
+}
+
+/**
+ * 3. Assign or Replace Mudhabbir (supports multi-Kamar scoping via AssignmentScopeUnit)
  */
 export async function assignMudhabbir(params: AssignMudhabbirParams): Promise<KamarOperationResult> {
   const prisma = params.prismaClient || defaultPrisma;
@@ -369,13 +480,26 @@ export async function assignMudhabbir(params: AssignMudhabbirParams): Promise<Ka
 
   try {
     return await prisma.$transaction(async (tx) => {
-      // 1. Verify Kamar exists and is active
+      // 1. Verify primary Kamar exists and is active
       const kamar = await tx.orgUnit.findUnique({ where: { id: params.kamarId } });
       if (!kamar || kamar.type !== "KAMAR" || kamar.domain !== "KEASRAMAAN" || !kamar.isActive) {
         throw new Error(`Authoritative active KEASRAMAAN KAMAR with ID ${params.kamarId} not found.`);
       }
 
+      // Collect all target room IDs (primary + additional), deduplicated
+      const targetRoomIds = Array.from(new Set([params.kamarId, ...(params.additionalKamarIds || [])]));
+
+      // Verify all additional rooms exist and are active KAMAR in KEASRAMAAN
+      for (const roomId of targetRoomIds) {
+        if (roomId === params.kamarId) continue;
+        const additionalRoom = await tx.orgUnit.findUnique({ where: { id: roomId } });
+        if (!additionalRoom || additionalRoom.type !== "KAMAR" || additionalRoom.domain !== "KEASRAMAAN" || !additionalRoom.isActive) {
+          throw new Error(`Additional KEASRAMAAN KAMAR with ID ${roomId} not found or inactive.`);
+        }
+      }
+
       // 2. Verify selected Mudhabbir candidate identity: must be PERSONAL, User AKTIF, Staff AKTIF
+      // Never infer Mudhabbir from username, role, Halaqoh, or name.
       const user = await tx.user.findUnique({
         where: { id: params.mudhabbirUserId },
         include: { staff: true },
@@ -406,10 +530,10 @@ export async function assignMudhabbir(params: AssignMudhabbirParams): Promise<Ka
 
       const now = new Date();
 
-      // 4. Deterministically close previous active Mudhabbir assignment for this Kamar
+      // 4. Deterministically close previous active Mudhabbir assignment for ALL target rooms
       const previousAssignments = await tx.assignment.findMany({
         where: {
-          unitId: kamar.id,
+          unitId: targetRoomIds.length === 1 ? targetRoomIds[0] : ({ in: targetRoomIds } as any),
           positionId: position.id,
           status: "ACTIVE",
         },
@@ -426,7 +550,7 @@ export async function assignMudhabbir(params: AssignMudhabbirParams): Promise<Ka
         });
       }
 
-      // 5. Create new canonical Assignment
+      // 5. Create new canonical Assignment with multi-kamar scoping via AssignmentScopeUnit
       const newAssignment = await tx.assignment.create({
         data: {
           userId: user.id,
@@ -437,6 +561,14 @@ export async function assignMudhabbir(params: AssignMudhabbirParams): Promise<Ka
           validUntil: null,
           notes: params.notes || "Canonical Mudhabbir Room Assignment",
           createdById: authCheck.auth.verifiedExecutor?.userId || params.callerIdentity.userId,
+          scopedUnits: {
+            create: targetRoomIds.map((uId) => ({ unitId: uId })),
+          },
+        },
+        include: {
+          scopedUnits: {
+            include: { unit: true },
+          },
         },
       });
 
@@ -809,6 +941,9 @@ export async function inspectKamarConfiguration(params: InspectKamarParams): Pro
               include: { staff: true },
             },
             position: true,
+            scopedUnits: {
+              include: { unit: true },
+            },
           },
         },
         santriKamarPlacements: {
@@ -827,6 +962,174 @@ export async function inspectKamarConfiguration(params: InspectKamarParams): Pro
       success: false,
       code: "SYSTEM_FAIL_CLOSED",
       reason: `Failed to inspect Kamar configuration: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
+
+/**
+ * 7. Validate Usroh Hierarchy (ORR-091)
+ * Enforces structural invariants:
+ * - type = USROH
+ * - domain = KEASRAMAAN
+ * - parent = OSDA (OU-OSDA-ROOT)
+ * - MUST NOT use Divisi Kebersihan as structural parent
+ */
+export function validateUsrohHierarchy(params: {
+  type: string;
+  domain: string;
+  parentOrgUnit: {
+    id: string;
+    code: string;
+    name: string;
+    type: string;
+    domain: string;
+    isActive: boolean;
+  };
+}): ValidateUsrohHierarchyResult {
+  if (params.type !== "USROH") {
+    return {
+      valid: false,
+      code: "INVALID_ORG_UNIT_TYPE",
+      reason: `Usroh OrgUnit must have type USROH (found: ${params.type}).`,
+    };
+  }
+
+  if (params.domain !== "KEASRAMAAN") {
+    return {
+      valid: false,
+      code: "INVALID_ORG_DOMAIN",
+      reason: `Usroh OrgUnit must belong to domain KEASRAMAAN (found: ${params.domain}).`,
+    };
+  }
+
+  if (!params.parentOrgUnit || !params.parentOrgUnit.isActive) {
+    return {
+      valid: false,
+      code: "PARENT_NOT_FOUND_OR_INACTIVE",
+      reason: "Parent OrgUnit not found or inactive.",
+    };
+  }
+
+  // Reject Divisi Kebersihan as structural parent
+  const parentCodeUpper = (params.parentOrgUnit.code || "").toUpperCase();
+  const parentNameUpper = (params.parentOrgUnit.name || "").toUpperCase();
+  if (
+    parentCodeUpper.includes("KEBERSIHAN") ||
+    parentNameUpper.includes("KEBERSIHAN")
+  ) {
+    return {
+      valid: false,
+      code: "FORBIDDEN_PARENT_DIVISI_KEBERSIHAN",
+      reason: "STRUCTURAL VIOLATION: Usroh must NOT use Divisi Kebersihan as structural parent.",
+    };
+  }
+
+  // Must have parent OSDA
+  const isOsdaParent =
+    parentCodeUpper === "OU-OSDA-ROOT" ||
+    (params.parentOrgUnit.type === "ORGANIZATION" &&
+      params.parentOrgUnit.domain === "KEASRAMAAN" &&
+      parentNameUpper.includes("OSDA"));
+
+  if (!isOsdaParent) {
+    return {
+      valid: false,
+      code: "INVALID_USROH_PARENT",
+      reason: `Usroh must have OSDA (OU-OSDA-ROOT) as structural parent (found parent: ${params.parentOrgUnit.code}).`,
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * 8. Create Usroh OrgUnit (ORR-091)
+ */
+export async function createUsrohOrgUnit(params: CreateUsrohParams): Promise<KamarOperationResult> {
+  const prisma = params.prismaClient || defaultPrisma;
+  const dataProvider = params.dataProvider || createPrismaDataProvider(prisma as PrismaClient);
+
+  // Authorization check (Mudir or authorized Keasramaan)
+  const authCheck = await authorizeKamarManage(
+    params.callerIdentity,
+    params.executorContext,
+    undefined,
+    dataProvider
+  );
+  if (!authCheck.allowed) {
+    return { success: false, code: authCheck.code, reason: authCheck.reason };
+  }
+
+  if (!params.code || !params.code.trim()) {
+    return { success: false, code: "INVALID_ARGUMENT", reason: "Usroh code is required." };
+  }
+  if (!params.name || !params.name.trim()) {
+    return { success: false, code: "INVALID_ARGUMENT", reason: "Usroh name is required (unnamed Usroh strictly prohibited)." };
+  }
+
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const parent = await tx.orgUnit.findUnique({ where: { id: params.parentId } });
+      if (!parent) {
+        throw new Error(`Parent OrgUnit with ID ${params.parentId} not found.`);
+      }
+
+      const validation = validateUsrohHierarchy({
+        type: "USROH",
+        domain: "KEASRAMAAN",
+        parentOrgUnit: parent,
+      });
+
+      if (!validation.valid) {
+        throw new Error(validation.reason || "Usroh hierarchy validation failed.");
+      }
+
+      const existingCode = await tx.orgUnit.findUnique({ where: { code: params.code.trim() } });
+      if (existingCode) {
+        throw new Error(`OrgUnit with code ${params.code.trim()} already exists.`);
+      }
+
+      const usroh = await tx.orgUnit.create({
+        data: {
+          code: params.code.trim(),
+          name: params.name.trim(),
+          type: "USROH",
+          domain: "KEASRAMAAN",
+          genderComplex: params.genderComplex || "CAMPUR",
+          parentId: parent.id,
+          isActive: true,
+          metadata: params.metadata ? JSON.parse(JSON.stringify(params.metadata)) : undefined,
+        },
+      });
+
+      await tx.canonicalAuditLog.create({
+        data: {
+          technicalAccountId: params.callerIdentity.userId,
+          technicalAccountUsername: params.callerIdentity.username,
+          humanExecutorId: authCheck.auth.verifiedExecutor?.userId || null,
+          humanExecutorName: authCheck.auth.verifiedExecutor?.name || null,
+          action: "USROH_CREATE",
+          entity: "OrgUnit",
+          entityId: usroh.id,
+          capabilityCode: authCheck.provenance.capabilityCode,
+          assignmentId: authCheck.provenance.assignmentId,
+          positionCode: authCheck.provenance.positionCode,
+          scopeType: authCheck.provenance.scopeType,
+          unitId: usroh.id,
+          afterState: JSON.parse(JSON.stringify(usroh)),
+        },
+      });
+
+      return {
+        success: true,
+        data: usroh,
+      };
+    });
+  } catch (err) {
+    return {
+      success: false,
+      code: "SYSTEM_FAIL_CLOSED",
+      reason: `Failed to create Usroh: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 }

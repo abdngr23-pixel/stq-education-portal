@@ -3,9 +3,10 @@ import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ShieldCheck, Award, Send, DollarSign, Check, Printer, FileSpreadsheet, Users } from "lucide-react";
+import { ShieldCheck, Award, Send, DollarSign, Check, Printer, FileSpreadsheet, Users, BedDouble } from "lucide-react";
 import { RekapLaporanBulanan } from "./rekap-laporan-bulanan";
 import { ManajemenHalaqoh } from "./manajemen-halaqoh";
+import { ManajemenKamarMudhabbir } from "./manajemen-kamar-mudhabbir";
 
 export interface DashboardMudirKSProps {
   totalSantri: number;
@@ -66,7 +67,7 @@ export function DashboardMudirKS({
   onPrintLaporan,
   isPending = false,
 }: DashboardMudirKSProps) {
-  const [activeTab, setActiveTab] = useState<"keputusan" | "laporan_bulanan" | "manajemen_halaqoh">("keputusan");
+  const [activeTab, setActiveTab] = useState<"keputusan" | "laporan_bulanan" | "manajemen_halaqoh" | "kamar_mudhabbir">("keputusan");
   const pendingIzin = izinEskalasiList.filter((i) => i.status === "MENUNGGU_KS");
   const pendingIkhtibar = ikhtibarTahap2List.filter((i) => i.status === "LULUS_TAHAP_1");
   const pendingAnggaran = pengajuanAnggaranList.filter((a) => a.status === "MENUNGGU_MUDIR");
@@ -146,6 +147,17 @@ export function DashboardMudirKS({
             <Users className="h-4 w-4" />
             Penugasan Halaqoh
           </button>
+          <button
+            onClick={() => setActiveTab("kamar_mudhabbir")}
+            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === "kamar_mudhabbir"
+                ? "bg-[#0E7C3A] text-white shadow-2xs"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            <BedDouble className="h-4 w-4" />
+            Keasramaan: Kamar &amp; Mudhabbir
+          </button>
         </div>
 
         <Button
@@ -172,6 +184,10 @@ export function DashboardMudirKS({
           staffMusyrifList={staffMusyrifList}
           santriList={santriList}
         />
+      )}
+
+      {activeTab === "kamar_mudhabbir" && (
+        <ManajemenKamarMudhabbir />
       )}
 
       {activeTab === "keputusan" && (

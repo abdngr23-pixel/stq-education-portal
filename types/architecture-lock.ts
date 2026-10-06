@@ -684,6 +684,19 @@ export const KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY = {
 } as const;
 
 /**
+ * Owner-Approved Mudir Kamar Configuration Policy (V4.1 / 2026-10-06):
+ * Kamar structure, occupant placement, and Mudhabbir appointment are a prerogative of MUDIR.
+ * keasramaan.kamar.manage approved for canonical Position MUDIR with scope GLOBAL.
+ */
+export const MUDIR_KAMAR_MANAGE_TARGET_POLICY = {
+  positionCode: "MUDIR",
+  capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
+  scopeType: "GLOBAL",
+  domain: "INSTITUTIONAL",
+  businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+} as const;
+
+/**
  * Owner-Approved Target Policy (R1.1 / 2026-10-03):
  * system.audit.read approved for canonical Position MUDIR with scope GLOBAL.
  * ADM = DENY; Legacy role YAY = DENY; Yayasan canonical access = DEFERRED.
