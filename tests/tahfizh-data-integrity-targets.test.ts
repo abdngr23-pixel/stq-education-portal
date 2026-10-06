@@ -285,6 +285,57 @@ describe("PR #6 — Tahfizh Data Integrity & Target Operationalization (43 Skena
       userId: sessionKabid.userId,
     });
 
+    const posKabidActual = await prisma.position.upsert({
+      where: { code: "KABID_TAHFIZH" },
+      update: {},
+      create: { id: "pos-kabid-tahfizh-canonical", code: "KABID_TAHFIZH", name: "Kepala Bidang Tahfizh", domain: "TAHFIZH" },
+    });
+
+    await prisma.capability.upsert({
+      where: { code: "tahfizh.reward.issue" },
+      update: {},
+      create: { code: "tahfizh.reward.issue", name: "tahfizh.reward.issue", namespace: "TAHFIZH", description: "Reward Issue" },
+    });
+
+    await prisma.positionCapability.upsert({
+      where: { positionId_capabilityCode: { positionId: posKabidActual.id, capabilityCode: "tahfizh.reward.issue" } },
+      update: { scopeType: "DOMAIN", businessRuleState: "VERIFIED_PRODUCTION" },
+      create: {
+        positionId: posKabidActual.id,
+        capabilityCode: "tahfizh.reward.issue",
+        scopeType: "DOMAIN",
+        businessRuleState: "VERIFIED_PRODUCTION",
+      },
+    });
+
+    const ouTahfizhPusat = await prisma.orgUnit.upsert({
+      where: { code: "OU-TAHFIZH-PUSAT" },
+      update: { isActive: true },
+      create: {
+        id: "ou-tahfizh-pusat",
+        code: "OU-TAHFIZH-PUSAT",
+        name: "Divisi Tahfizh Pusat",
+        type: "DOMAIN",
+        domain: "TAHFIZH",
+        genderComplex: "CAMPUR",
+        isActive: true,
+      },
+    });
+
+    await prisma.assignment.upsert({
+      where: { id: `asg-kabid-actual-${sessionKabid.userId}` },
+      update: { status: "ACTIVE", unitId: ouTahfizhPusat.id },
+      create: {
+        id: `asg-kabid-actual-${sessionKabid.userId}`,
+        userId: sessionKabid.userId,
+        positionId: posKabidActual.id,
+        unitId: ouTahfizhPusat.id,
+        status: "ACTIVE",
+        createdById: sessionKabid.userId,
+        validFrom: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+
     // 4. Seed Kebijakan Reward Sanksi
     await prisma.kebijakanRewardSanksi.create({
       data: {

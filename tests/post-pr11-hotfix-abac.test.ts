@@ -2,16 +2,124 @@
 process.env.IS_TEST_RUN = "true";
 process.env.ALLOW_ISOLATED_TEST_DB = "true";
 
-import { describe, it } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "fs";
 import path from "path";
+import { PrismaClient } from "@prisma/client";
+import { startTestDatabase, stopTestDatabase } from "./test-db-manager";
 import { setTestSession } from "../lib/auth";
 import { UserSession } from "../types/auth";
 import { prosesRewardTasmiSimaanAction, updateKebijakanRewardSanksiAction } from "../app/actions/reward-sanksi";
 import { getStatusKesehatanSemantics } from "../lib/kesehatan-status";
 
 describe("POST-PR11 HOTFIX VERIFICATION SUITE", () => {
+  let prisma: PrismaClient;
+  let validTasmiId = "";
+
+  before(async () => {
+    prisma = await startTestDatabase();
+
+    await prisma.orgUnit.createMany({
+      data: [
+        { id: "ou-pr11-hlq", code: "OU-HLQ-PR11", name: "Halaqoh PR11", type: "HALAQOH", domain: "TAHFIZH", genderComplex: "PUTRA", isActive: true },
+      ],
+      skipDuplicates: true,
+    });
+
+    const posMudir = await prisma.position.upsert({
+      where: { code: "MUDIR" },
+      update: {},
+      create: { id: "pos-pr11-mudir", code: "MUDIR", name: "Mudir", domain: "INSTITUTIONAL" },
+    });
+    const posKabid = await prisma.position.upsert({
+      where: { code: "KABID_TAHFIZH" },
+      update: {},
+      create: { id: "pos-pr11-kabid", code: "KABID_TAHFIZH", name: "Kepala Bidang Tahfizh", domain: "TAHFIZH" },
+    });
+
+    await prisma.capability.upsert({
+      where: { code: "tahfizh.reward.issue" },
+      update: {},
+      create: { code: "tahfizh.reward.issue", name: "tahfizh.reward.issue", namespace: "TAHFIZH", description: "Reward Issue" },
+    });
+    await prisma.capability.upsert({
+      where: { code: "tahfizh.policy.manage" },
+      update: {},
+      create: { code: "tahfizh.policy.manage", name: "tahfizh.policy.manage", namespace: "TAHFIZH", description: "Policy Manage" },
+    });
+
+    await prisma.positionCapability.upsert({
+      where: { positionId_capabilityCode: { positionId: posMudir.id, capabilityCode: "tahfizh.reward.issue" } },
+      update: { scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+      create: { positionId: posMudir.id, capabilityCode: "tahfizh.reward.issue", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+    });
+    await prisma.positionCapability.upsert({
+      where: { positionId_capabilityCode: { positionId: posMudir.id, capabilityCode: "tahfizh.policy.manage" } },
+      update: { scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+      create: { positionId: posMudir.id, capabilityCode: "tahfizh.policy.manage", scopeType: "GLOBAL", businessRuleState: "VERIFIED_PRODUCTION" },
+    });
+    await prisma.positionCapability.upsert({
+      where: { positionId_capabilityCode: { positionId: posKabid.id, capabilityCode: "tahfizh.reward.issue" } },
+      update: { scopeType: "DOMAIN", businessRuleState: "VERIFIED_PRODUCTION" },
+      create: { positionId: posKabid.id, capabilityCode: "tahfizh.reward.issue", scopeType: "DOMAIN", businessRuleState: "VERIFIED_PRODUCTION" },
+    });
+
+    await prisma.staff.createMany({
+      data: [
+        { id: "stf-razan", staffCode: "STF-RZ", nama: "Ust. Razan", roleStaff: "MT", status: "AKTIF", noHp: "0811" },
+        { id: "stf-mudir", staffCode: "STF-MD", nama: "K.H. Mudir", roleStaff: "KS", status: "AKTIF", noHp: "0812" },
+      ],
+      skipDuplicates: true,
+    });
+
+    await prisma.user.createMany({
+      data: [
+        { id: "usr-kabid-razan", username: "musyrif.tahfizh", role: "MT", staffId: "stf-razan", passwordHash: "dummy" },
+        { id: "usr-mudir", username: "mudir", role: "KS", staffId: "stf-mudir", passwordHash: "dummy" },
+      ],
+      skipDuplicates: true,
+    });
+
+    await prisma.assignment.createMany({
+      data: [
+        { id: "asg-pr11-mudir", userId: "usr-mudir", positionId: posMudir.id, unitId: "ou-pr11-hlq", status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: "usr-mudir" },
+        { id: "asg-pr11-kabid", userId: "usr-kabid-razan", positionId: posKabid.id, unitId: "ou-pr11-hlq", status: "ACTIVE", validFrom: new Date(Date.now() - 86400000), createdById: "usr-kabid-razan" },
+      ],
+      skipDuplicates: true,
+    });
+
+    const santri = await prisma.santri.create({
+      data: {
+        id: "san-pr11",
+        nis: "PR11-001",
+        nama: "Santri PR11",
+        status: "AKTIF",
+        jenisKelamin: "L",
+        kelas: "7A",
+      },
+    });
+
+    const tasmi = await prisma.tasmiSimaan.create({
+      data: {
+        id: "ts-pr11",
+        santri: { connect: { id: santri.id } },
+        musyrif: { connect: { id: "stf-razan" } },
+        jenis: "TASMI",
+        juz: 1,
+        tanggal: new Date(),
+        nilai: 90,
+        predikat: "MUMTAZ",
+      },
+    });
+    validTasmiId = tasmi.id;
+  });
+
+  after(async () => {
+    setTestSession(null);
+    await stopTestDatabase();
+  });
+
   // =========================================================================
   // CASE F: Health Data Honesty — Eliminasi False "Sehat"
   // =========================================================================
@@ -83,7 +191,7 @@ describe("POST-PR11 HOTFIX VERIFICATION SUITE", () => {
       };
       setTestSession(kabidSession);
 
-      const res = await prosesRewardTasmiSimaanAction("non-existent-id");
+      const res = await prosesRewardTasmiSimaanAction(validTasmiId);
       assert.notStrictEqual(res.message, "Akses Ditolak: Penerbitan reward Tasmi'/Sima'an hanya berwenang dilakukan oleh Mudir atau Kabid Tahfizh.");
       assert.ok(!res.message.includes("Akses Ditolak"), "Kabid Tahfizh must pass the authorization guard");
     });
@@ -99,7 +207,7 @@ describe("POST-PR11 HOTFIX VERIFICATION SUITE", () => {
       };
       setTestSession(mudirSession);
 
-      const res = await prosesRewardTasmiSimaanAction("non-existent-id");
+      const res = await prosesRewardTasmiSimaanAction(validTasmiId);
       assert.notStrictEqual(res.message, "Akses Ditolak: Penerbitan reward Tasmi'/Sima'an hanya berwenang dilakukan oleh Mudir atau Kabid Tahfizh.");
       assert.ok(!res.message.includes("Akses Ditolak"), "Mudir must pass the authorization guard");
     });

@@ -622,6 +622,32 @@ export const TAHFIZH_M32_CAPABILITIES = {
   TARGET_MANAGE: "tahfizh.target.manage",
   REWARD_ISSUE: "tahfizh.reward.issue",
   SETORAN_CREATE: "tahfizh.setoran.create",
+  POLICY_MANAGE: "tahfizh.policy.manage",
+} as const;
+
+/**
+ * Canonical capability metadata manifest for tahfizh.policy.manage (ORR-079 / Batch V3.1A)
+ * Business description strictly aligned with catalog:
+ * "Mengubah ambang nilai, bintang, dan kebijakan reward Tahfizh."
+ */
+export const TAHFIZH_POLICY_MANAGE_MANIFEST = {
+  code: TAHFIZH_M32_CAPABILITIES.POLICY_MANAGE,
+  namespace: "TAHFIZH" as CapabilityNamespace,
+  name: "Mengelola Kebijakan Reward Tahfizh",
+  description: "Mengubah ambang nilai, bintang, dan kebijakan reward Tahfizh.",
+  isDangerous: false,
+} as const;
+
+/**
+ * Approved target policy manifest for tahfizh.policy.manage (MUDIR = GLOBAL).
+ * This manifest provisions nothing and grants zero runtime authority while pending technical execution.
+ */
+export const TAHFIZH_POLICY_MANAGE_TARGET_POLICY = {
+  positionCode: "MUDIR",
+  capabilityCode: TAHFIZH_M32_CAPABILITIES.POLICY_MANAGE,
+  scopeType: "GLOBAL",
+  domain: "INSTITUTIONAL",
+  businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
 } as const;
 
 export const KEASRAMAAN_PERMISSION_CAPABILITIES = {

@@ -123,11 +123,10 @@ describe("Gate 2 Schema Drift Remediation — NilaiAkademik guru FK reconciliati
       const entries = fs.readdirSync(migrationsRoot, { withFileTypes: true });
       const dirs = entries.filter((e) => e.isDirectory()).map((e) => e.name).sort();
 
-      // Total migrations must be exactly 12 (11 historical + 1 remediation)
-      assert.equal(
-        dirs.length,
-        12,
-        `Expected exactly 12 migration directories (11 historical + 1 remediation), found ${dirs.length}`
+      // Total migrations must be at least 12 (11 historical + 1 remediation + forward migrations)
+      assert.ok(
+        dirs.length >= 12,
+        `Expected at least 12 migration directories (11 historical + remediation), found ${dirs.length}`
       );
 
       // Verify the 11 historical migrations are present in expected order

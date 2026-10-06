@@ -1139,6 +1139,8 @@ model TasmiSimaan {
   predikat    NilaiSetoran
   rincianKesalahan Json?       @map("rincian_kesalahan")
   catatan     String?
+  isBilGhaib  Boolean?         @map("is_bil_ghaib")
+  isSatuDuduk Boolean?         @map("is_satu_duduk")
 
   hakLiburList         HakLiburSantri[]
   transaksiBintangList TransaksiBintang[]

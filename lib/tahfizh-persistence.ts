@@ -4,6 +4,7 @@ import {
   allocateSabaqPages,
   validateProposedSabaqAllocation,
   calculateLatestSabaqPosition,
+  calculateManzilExpectedRange,
 } from "./tahfizh-page-allocation";
 import { getStartOfWeekWITA } from "./sabaqi";
 import { parseWITADate, getTodayWITADateString, getWITADayRange, getWitaDateString } from "./wita-date";
@@ -285,6 +286,81 @@ export async function saveSetoranTahfizhCore(
           message: `Cakupan halaman ${page} yang diajukan (${reqVol} halaman) melebihi batas Sabaq tersimpan pekan ini (${coveredVol} halaman).`,
         };
       }
+    }
+  }
+
+  // 3b. Validasi Manzil di Sisi Server (Fail-Closed: SOURCE-TAH-001 / ORR-073)
+  // "MANZIL: murojaah seluruh hafalan baru dari halaman pertama sampai hafalan terakhir sebelum Tasmi', dari awal juz baru sampai pekan terakhir sebelum Tasmi'"
+  if (input.jenis === "MANZIL") {
+    const sabaqRecords = typeof prismaClient.setoranTahfizh?.findMany === "function"
+      ? await prismaClient.setoranTahfizh.findMany({
+          where: {
+            santriId: input.santriId,
+            jenis: "SABAQ",
+          },
+          select: {
+            id: true,
+            jenis: true,
+            status: true,
+            juz: true,
+            halamanMulai: true,
+            halamanSelesai: true,
+            jumlahHalaman: true,
+            tanggal: true,
+            createdAt: true,
+          },
+          orderBy: { tanggal: "asc" },
+        })
+      : [];
+
+    const hasTasmiModel = typeof (prismaClient as unknown as { tasmiSimaan?: { findMany?: unknown } })?.tasmiSimaan?.findMany === "function";
+    const tasmiRecords = hasTasmiModel
+      ? await prismaClient.tasmiSimaan.findMany({
+          where: {
+            santriId: input.santriId,
+            jenis: "TASMI",
+          },
+          select: {
+            id: true,
+            juz: true,
+            jenis: true,
+            tanggal: true,
+            nilai: true,
+          },
+          orderBy: { tanggal: "asc" },
+        })
+      : [];
+
+    const manzilRes = calculateManzilExpectedRange({
+      targetJuz: declaredJuz,
+      sabaqRecords,
+      tasmiRecords,
+      effectiveOccurredAt,
+      santriId: input.santriId,
+    });
+
+    if (!manzilRes.valid) {
+      return {
+        success: false,
+        message: manzilRes.message || "Validasi rentang Manzil gagal.",
+      };
+    }
+
+    if (
+      halMulai !== manzilRes.expectedHalamanMulai ||
+      halSelesai !== manzilRes.expectedHalamanSelesai
+    ) {
+      return {
+        success: false,
+        message: `Setoran Manzil tidak valid: Rentang halaman yang diajukan (${halMulai}–${halSelesai}) tidak sesuai dengan ketentuan resmi Manzil (harus mencakup seluruh hafalan juz berjalan dari halaman ${manzilRes.expectedHalamanMulai} sampai ${manzilRes.expectedHalamanSelesai}, volume ${manzilRes.expectedJumlahHalaman} halaman).`,
+      };
+    }
+
+    if (Math.abs(jmlHalaman - (manzilRes.expectedJumlahHalaman ?? 0)) > 0.001) {
+      return {
+        success: false,
+        message: `Volume setoran Manzil (${jmlHalaman}) harus tepat sesuai dengan rentang hafalan (${manzilRes.expectedJumlahHalaman} halaman).`,
+      };
     }
   }
 

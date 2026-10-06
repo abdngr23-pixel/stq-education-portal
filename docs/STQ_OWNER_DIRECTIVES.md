@@ -987,7 +987,22 @@ Formal academic education is architecturally split into two distinct tracks: **S
 
 ---
 
-## 7. Maintenance & Evolution Protocol
+---
+
+## 8. Batch V3.1 / V3.1A — Tahfizh Residual Remediation Lifecycle Tracking
+
+Targeted Owner Requests under Master Completion Program Batch V3.1 and V3.1A:
+
+| Request Code | Focus Area | Artifact & Branch | Status | Operational Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| **ORR-073** | MANZIL Exact Fractional Coverage & Gap Handling | `lib/tahfizh-page-allocation.ts`<br/>`lib/tahfizh-persistence.ts`<br/>PR #44 | **CODE CORRECTED IN PR / PROD PENDING** | Reuses canonical `allocateSabaqPages()`; calculates exact union of fractional 0.5 coverage; enforces fail-closed `MANZIL_COVERAGE_GAP` for continuous sequence; enforces exact range and fractional volume in `saveSetoranTahfizhCore`. |
+| **ORR-075** | Sima'an Explicit Criteria (`isBilGhaib`, `isSatuDuduk`) | `prisma/schema.prisma`<br/>`prisma/migrations/20261005140000_v3_1_simaan_explicit_criteria`<br/>`scripts/predeploy-v3-1-schema.ts`<br/>PR #44 | **CODE+MIGRATION READY / SCHEMA PREDEPLOY REQUIRED / PROD PENDING** | Combined single-statement `ALTER TABLE "tasmi_simaan" ADD COLUMN "is_bil_ghaib" BOOLEAN, ADD COLUMN "is_satu_duduk" BOOLEAN;` without default to avoid fabricated historical backfill. *(Note on DDL Locking: While metadata-light without table rewrite, PostgreSQL ALTER TABLE still acquires a brief ACCESS EXCLUSIVE table lock; it must NOT be described as "zero lock")*. Requires guarded predeploy execution prior to app deployment. Historical null rows render neutral "Belum terverifikasi". |
+| **ORR-078** | Reward Issuance Canonical Authority | `app/actions/reward-sanksi.ts`<br/>PR #44 | **CANONICAL CODE READY / PROD DEPLOY PENDING** | Replaces legacy `session.role`, `isKepalaBidangTahfidz`, and hardcoded `musyirfah.putri` checks with canonical `tahfizh.reward.issue` and server-resolved `resourceContext`. MUDIR = GLOBAL (ALLOW), KABID_TAHFIZH = DOMAIN: TAHFIZH (ALLOW); all others DENY fail-closed. |
+| **ORR-079** | Reward Policy Edit Authority | `app/actions/reward-sanksi.ts`<br/>`scripts/provision-tahfizh-policy-manage.ts`<br/>PR #44 | **CANONICAL CODE READY / CAPABILITY+MUDIR GRANT PREDEPLOY REQUIRED / PROD PENDING** | Replaces legacy `session.role !== "KS"` with canonical `tahfizh.policy.manage`. Requires pre-deployment guarded 2-row atomic transaction provisioning `tahfizh.policy.manage` capability and MUDIR GLOBAL grant. MUDIR = GLOBAL (ALLOW); all other positions strictly DENY. |
+
+---
+
+## 9. Maintenance & Evolution Protocol
 
 When a new Business Owner directive is communicated:
 1. Verify whether the directive alters or supersedes an entry in this registry or [`docs/STQ_REQUIREMENT_SOURCE_MAP.md`](docs/STQ_REQUIREMENT_SOURCE_MAP.md).
@@ -996,3 +1011,4 @@ When a new Business Owner directive is communicated:
 4. If the directive supersedes an earlier entry, mark the earlier entry as `SUPERSEDED` and link both entries' `supersedes`/`superseded-by` fields.
 5. Update affected technical contracts (`types/architecture-lock.ts`) and release manifests accordingly.
 6. Never treat code availability as proof of production completion; maintain honest lifecycle statuses.
+

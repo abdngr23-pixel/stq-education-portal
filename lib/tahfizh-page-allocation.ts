@@ -11,6 +11,8 @@
  *   (halamanSelesai - halamanMulai + 1) === Math.ceil(jumlahHalaman).
  */
 
+import { JUZ_LIST } from "./quran-metadata";
+
 export interface SetoranLikeRecord {
   id?: string;
   jenis: string;
@@ -18,6 +20,7 @@ export interface SetoranLikeRecord {
   halamanMulai: number;
   halamanSelesai: number;
   jumlahHalaman: number;
+  juz?: number;
   tanggal?: Date | string | null;
   createdAt?: Date | string | null;
 }
@@ -306,3 +309,226 @@ export function calculateLatestSabaqPosition(
     saranHalamanSelesai,
   };
 }
+
+export interface ManzilTasmiRecordLike {
+  id?: string;
+  juz: number;
+  jenis: string;
+  tanggal: Date | string;
+  nilai?: number | null;
+}
+
+export interface ManzilExpectedRangeParams {
+  targetJuz: number;
+  sabaqRecords: SetoranLikeRecord[];
+  tasmiRecords?: ManzilTasmiRecordLike[];
+  effectiveOccurredAt: Date | string;
+  santriId?: string;
+}
+
+export interface ManzilExpectedRangeResult {
+  valid: boolean;
+  message?: string;
+  cycleJuz?: number;
+  expectedHalamanMulai?: number;
+  expectedHalamanSelesai?: number;
+  expectedJumlahHalaman?: number;
+}
+
+/**
+ * SOURCE-TAH-001 (Acuan Program Tahfidz STQ DUC 2026):
+ * "MANZIL:
+ *  - murojaah seluruh hafalan baru dari halaman pertama sampai hafalan terakhir sebelum Tasmi'
+ *  - dari awal juz baru sampai pekan terakhir sebelum Tasmi'"
+ *
+ * Menghitung rentang ekspektasi resmi setoran MANZIL:
+ * - Deterministic start boundary: halaman pertama juz berjalan (JUZ_LIST.startPage)
+ * - End boundary: halaman hafalan Sabaq tertinggi yang sah sebelum proses Tasmi'
+ * - Kausalitas WITA: riwayat masa depan (> effectiveOccurredAt) dikeluarkan dari perhitungan
+ * - Setoran berstatus DIBATALKAN dikeluarkan
+ * - Fail-closed: Jika tidak ada Sabaq yang sah pada juz berjalan, atau data historis malformed/inkonsisten,
+ *   atau Tasmi' telah diselesaikan sebelum tanggal setoran, validasi gagal.
+ */
+export function calculateManzilExpectedRange(
+  params: ManzilExpectedRangeParams
+): ManzilExpectedRangeResult {
+  const { targetJuz, sabaqRecords, tasmiRecords = [], effectiveOccurredAt } = params;
+
+  // 1. Validasi targetJuz
+  if (!Number.isInteger(targetJuz) || targetJuz < 1 || targetJuz > 30) {
+    return {
+      valid: false,
+      message: `Juz target Manzil tidak valid: ${targetJuz}. Wajib bilangan bulat 1 s/d 30.`,
+    };
+  }
+
+  const juzInfo = JUZ_LIST.find((j) => j.juz === targetJuz);
+  if (!juzInfo) {
+    return {
+      valid: false,
+      message: `Metadata batas resmi untuk Juz ${targetJuz} tidak ditemukan.`,
+    };
+  }
+
+  // 2. Validasi effectiveOccurredAt
+  if (!effectiveOccurredAt) {
+    return {
+      valid: false,
+      message: "Tanggal setoran (effectiveOccurredAt) wajib disertakan untuk kalkulasi Manzil.",
+    };
+  }
+  const effectiveTime = new Date(effectiveOccurredAt).getTime();
+  if (isNaN(effectiveTime)) {
+    return {
+      valid: false,
+      message: "Format tanggal setoran (effectiveOccurredAt) tidak valid.",
+    };
+  }
+
+  // 3. Verifikasi integritas historis (Fail-Closed pada malformed historical data)
+  for (const r of sabaqRecords) {
+    if (!r) continue;
+    if (r.status === "DIBATALKAN") continue;
+
+    if (
+      typeof r.halamanMulai !== "number" ||
+      !Number.isFinite(r.halamanMulai) ||
+      !Number.isInteger(r.halamanMulai) ||
+      r.halamanMulai < 1 ||
+      r.halamanMulai > 604 ||
+      typeof r.halamanSelesai !== "number" ||
+      !Number.isFinite(r.halamanSelesai) ||
+      !Number.isInteger(r.halamanSelesai) ||
+      r.halamanSelesai < 1 ||
+      r.halamanSelesai > 604 ||
+      r.halamanSelesai < r.halamanMulai ||
+      typeof r.jumlahHalaman !== "number" ||
+      !Number.isFinite(r.jumlahHalaman) ||
+      r.jumlahHalaman <= 0
+    ) {
+      return {
+        valid: false,
+        message: "DATA_INTEGRITY_ERROR: Data riwayat setoran Sabaq mengandung rekaman tidak valid atau format halaman rusak.",
+      };
+    }
+  }
+
+  // 4. Filter SABAQ yang sah secara temporal (Causality WITA: <= effectiveTime) & aktif (status !== DIBATALKAN)
+  const eligibleSabaq = sabaqRecords.filter((r) => {
+    if (r.status === "DIBATALKAN") return false;
+    if (r.jenis !== "SABAQ") return false;
+
+    const recordTime = r.tanggal
+      ? new Date(r.tanggal).getTime()
+      : r.createdAt
+      ? new Date(r.createdAt).getTime()
+      : 0;
+
+    if (recordTime > effectiveTime) {
+      return false; // Future record excluded
+    }
+
+    return true;
+  });
+
+  // 5. Filter SABAQ untuk juz berjalan (targetJuz)
+  const cycleSabaq = eligibleSabaq.filter((r) => {
+    const recordJuz = (r as unknown as { juz?: number }).juz;
+    if (recordJuz !== undefined && recordJuz !== targetJuz) {
+      return false;
+    }
+    return r.halamanMulai >= juzInfo.startPage && r.halamanSelesai <= juzInfo.endPage;
+  });
+
+  if (cycleSabaq.length === 0) {
+    return {
+      valid: false,
+      message: `Belum ada capaian hafalan Sabaq yang sah pada Juz ${targetJuz} sebelum tanggal setoran ini. Setoran Manzil tidak dapat diajukan tanpa progres Sabaq resmi.`,
+    };
+  }
+
+  // 6. Evaluasi batas Tasmi' ("sebelum masuk proses Tasmi'")
+  const relevantTasmi = tasmiRecords.filter((t) => {
+    if (t.jenis !== "TASMI") return false;
+    if (t.juz !== targetJuz) return false;
+    const tasmiTime = new Date(t.tanggal).getTime();
+    if (isNaN(tasmiTime) || tasmiTime > effectiveTime) return false;
+    // Tasmi' lulus jika nilai >= 80 (atau nilai null/undefined tapi terekam resmi)
+    return t.nilai === undefined || t.nilai === null || t.nilai >= 80.0;
+  });
+
+  if (relevantTasmi.length > 0) {
+    return {
+      valid: false,
+      message: `Ujian Tasmi' untuk Juz ${targetJuz} telah diselesaikan sebelum tanggal setoran ini. Siklus hafalan baru Manzil untuk Juz ${targetJuz} telah ditutup.`,
+    };
+  }
+
+  // 7. Bangun keterisian halaman eksak (Exact Stored Coverage) via canonical allocateSabaqPages
+  const rawPageCoverage: Record<number, number> = {};
+  for (const sabaq of cycleSabaq) {
+    let alloc: Record<number, number>;
+    try {
+      alloc = allocateSabaqPages(sabaq.halamanMulai, sabaq.halamanSelesai, sabaq.jumlahHalaman);
+    } catch {
+      return {
+        valid: false,
+        message: "DATA_INTEGRITY_ERROR: Alokasi halaman setoran Sabaq mengandung rekaman tidak valid atau rusak.",
+      };
+    }
+    for (const [pageStr, fraction] of Object.entries(alloc)) {
+      const p = Number(pageStr);
+      rawPageCoverage[p] = (rawPageCoverage[p] || 0) + fraction;
+    }
+  }
+
+  // Union must cap at 1.0 per page
+  const coverage: Record<number, number> = {};
+  for (const [pageStr, totalFraction] of Object.entries(rawPageCoverage)) {
+    const p = Number(pageStr);
+    coverage[p] = Math.min(1.0, totalFraction);
+  }
+
+  const coveredPages = Object.keys(coverage)
+    .map(Number)
+    .filter((p) => (coverage[p] || 0) > 0);
+
+  if (coveredPages.length === 0) {
+    return {
+      valid: false,
+      message: `Belum ada capaian hafalan Sabaq yang sah pada Juz ${targetJuz} sebelum tanggal setoran ini. Setoran Manzil tidak dapat diajukan tanpa progres Sabaq resmi.`,
+    };
+  }
+
+  const expectedHalamanMulai = juzInfo.startPage;
+  const expectedHalamanSelesai = Math.max(...coveredPages);
+
+  // 8. Gap Handling (Continuous coverage assertion: SOURCE-TAH-001)
+  // "dari halaman pertama sampai hafalan terakhir"
+  // Jika ada halaman antara juz start dan latest covered page dengan 0 coverage -> FAIL CLOSED: MANZIL_COVERAGE_GAP
+  for (let p = expectedHalamanMulai; p <= expectedHalamanSelesai; p++) {
+    const pageCov = coverage[p] || 0;
+    if (pageCov <= 0) {
+      return {
+        valid: false,
+        message: `MANZIL_COVERAGE_GAP: Terdapat halaman hafalan Sabaq yang belum terselesaikan (${p}) antara awal Juz (${expectedHalamanMulai}) dan halaman terakhir hafalan (${expectedHalamanSelesai}). Manzil harus mencakup hafalan berkesinambungan tanpa celah.`,
+      };
+    }
+  }
+
+  // 9. Hitung expectedJumlahHalaman sebagai SUM of exact covered fractions (bukan integer span)
+  let sumFractions = 0;
+  for (let p = expectedHalamanMulai; p <= expectedHalamanSelesai; p++) {
+    sumFractions += coverage[p] || 0;
+  }
+  const expectedJumlahHalaman = Math.round(sumFractions * 10) / 10;
+
+  return {
+    valid: true,
+    cycleJuz: targetJuz,
+    expectedHalamanMulai,
+    expectedHalamanSelesai,
+    expectedJumlahHalaman,
+  };
+}
+
