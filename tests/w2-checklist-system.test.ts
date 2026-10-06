@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import * as path from "path";
 import {
   createChecklistTemplate,
   createChecklistRun,
@@ -8,6 +9,16 @@ import {
   reviewChecklistRun,
   getChecklistRunById,
 } from "../lib/server/checklist-service";
+import {
+  createChecklistTemplateAction,
+  createChecklistRunAction,
+  recordChecklistPerformanceAction,
+  reviewChecklistRunAction,
+} from "../app/actions/checklist";
+import {
+  parseChecklistSchemaGuards,
+  verifyChecklistMigrationSqlAdditive,
+} from "../scripts/predeploy-w2-checklist-schema";
 import { ChecklistRunStatus, ChecklistItemStatus } from "@prisma/client";
 
 // In-memory mock Prisma client for deterministic, zero-DB-mutation testing
@@ -139,6 +150,8 @@ function createMockPrisma() {
   return {
     ...mockTx,
     getViolationCount: () => violationRecords.length,
+    getRunCount: () => runs.length,
+    getTemplateCount: () => templates.length,
   };
 }
 
@@ -449,5 +462,144 @@ describe("W2 Checklist System (ORR-098 & ORR-101)", () => {
     const res = await getChecklistRunById((runRes.data as any).id, mockPrisma as any);
     assert.equal(res.success, true);
     assert.equal((res.data as any).id, (runRes.data as any).id);
+  });
+
+  // Track 2A: External Server Mutation Actions Fail-Closed & Zero DB Writes
+  it("Track 2A: externally callable checklist mutation actions fail closed with POLICY_NOT_ACTIVE and perform 0 DB writes", async () => {
+    // 1. Template creation action
+    const tplRes = await createChecklistTemplateAction({
+      code: "TPL-FAIL-CLOSED",
+      name: "Template Fail Closed",
+      schema: [{ key: "f1", label: "Fail Item" }],
+    });
+    assert.equal(tplRes.success, false);
+    assert.equal(tplRes.error, "POLICY_NOT_ACTIVE");
+    assert.match(tplRes.message, /POLICY_NOT_ACTIVE/i);
+
+    // 2. Run creation action
+    const runRes = await createChecklistRunAction({
+      templateId: "tpl-dummy",
+    });
+    assert.equal(runRes.success, false);
+    assert.equal(runRes.error, "POLICY_NOT_ACTIVE");
+    assert.match(runRes.message, /POLICY_NOT_ACTIVE/i);
+
+    // 3. Performance recording action
+    const perfRes = await recordChecklistPerformanceAction({
+      runId: "run-dummy",
+      items: [{ itemKey: "f1", status: ChecklistItemStatus.PASS }],
+    });
+    assert.equal(perfRes.success, false);
+    assert.equal(perfRes.error, "POLICY_NOT_ACTIVE");
+    assert.match(perfRes.message, /POLICY_NOT_ACTIVE/i);
+
+    // 4. Review action
+    const revRes = await reviewChecklistRunAction({
+      runId: "run-dummy",
+      decision: "COMPLETED",
+    });
+    assert.equal(revRes.success, false);
+    assert.equal(revRes.error, "POLICY_NOT_ACTIVE");
+    assert.match(revRes.message, /POLICY_NOT_ACTIVE/i);
+  });
+
+  // Track 2D: Idempotency with Conflicting Payload Fails Closed
+  it("Track 2D: same clientRequestId + conflicting payload fails closed with CONFLICT_CLIENT_REQUEST_ID", async () => {
+    const mockPrisma = createMockPrisma();
+
+    const tpl1 = await createChecklistTemplate({
+      code: "TPL-PAYLOAD-1",
+      name: "Template Payload 1",
+      schema: [{ key: "p1", label: "P1" }],
+      prismaClient: mockPrisma as any,
+    });
+    const tpl2 = await createChecklistTemplate({
+      code: "TPL-PAYLOAD-2",
+      name: "Template Payload 2",
+      schema: [{ key: "p2", label: "P2" }],
+      prismaClient: mockPrisma as any,
+    });
+
+    const initialRes = await createChecklistRun({
+      templateId: (tpl1.data as any).id,
+      clientRequestId: "req-conflict-check-001",
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(initialRes.success, true);
+
+    // Replay with DIFFERENT templateId (conflicting payload)
+    const conflictRes = await createChecklistRun({
+      templateId: (tpl2.data as any).id,
+      clientRequestId: "req-conflict-check-001",
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(conflictRes.success, false);
+    assert.equal(conflictRes.code, "CONFLICT_CLIENT_REQUEST_ID");
+    assert.match(conflictRes.reason || "", /conflicting payload/i);
+  });
+
+  // Track 2D: Network Retry with Duplicate clientRequestId
+  it("Track 2D: network-style retry with duplicate clientRequestId produces exactly one durable mutation", async () => {
+    const mockPrisma = createMockPrisma();
+
+    const tpl = await createChecklistTemplate({
+      code: "TPL-RETRY-TEST",
+      name: "Template Retry Test",
+      schema: [{ key: "r1", label: "R1" }],
+      prismaClient: mockPrisma as any,
+    });
+
+    // Request 1
+    const res1 = await createChecklistRun({
+      templateId: (tpl.data as any).id,
+      clientRequestId: "network-retry-uuid-777",
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(res1.success, true);
+    assert.equal(res1.isIdempotentReplay, undefined);
+    assert.equal(mockPrisma.getRunCount(), 1);
+
+    // Simulated network retry (identical payload + clientRequestId)
+    const res2 = await createChecklistRun({
+      templateId: (tpl.data as any).id,
+      clientRequestId: "network-retry-uuid-777",
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(res2.success, true);
+    assert.equal(res2.isIdempotentReplay, true);
+    assert.equal((res2.data as any).id, (res1.data as any).id);
+    assert.equal(mockPrisma.getRunCount(), 1);
+  });
+
+  // Track 2C: Schema Preflight & Guard Safety
+  it("Track 2C: migration safety - predeploy script guards enforce read-only default and require approved flags", () => {
+    const defaultGuards = parseChecklistSchemaGuards([], {});
+    assert.equal(defaultGuards.hasExecuteFlag, false);
+    assert.equal(defaultGuards.hasApprovedScopeFlag, false);
+    assert.equal(defaultGuards.hasEnvApproval, false);
+    assert.equal(defaultGuards.isExecuteApproved, false);
+
+    const partialGuards = parseChecklistSchemaGuards(["--execute"], {});
+    assert.equal(partialGuards.isExecuteApproved, false);
+
+    const approvedGuards = parseChecklistSchemaGuards(
+      ["--execute", "--approved-scope=W2-CHECKLIST-SCHEMA"],
+      { PRODUCTION_MUTATION_APPROVED: "W2-CHECKLIST-SCHEMA" }
+    );
+    assert.equal(approvedGuards.isExecuteApproved, true);
+  });
+
+  // Track 2C: Migration Contents are ADDITIVE ONLY
+  it("Track 2C: migration safety - checklist migration SQL is strictly ADDITIVE ONLY with zero destructive statements", async () => {
+    const migrationSqlPath = path.join(
+      process.cwd(),
+      "prisma",
+      "migrations",
+      "20261006150000_w2_checklist_system",
+      "migration.sql"
+    );
+    const result = await verifyChecklistMigrationSqlAdditive(migrationSqlPath);
+    assert.equal(result.isAdditiveOnly, true);
+    assert.equal(result.destructiveKeywordsFound.length, 0);
   });
 });

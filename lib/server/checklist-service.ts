@@ -144,13 +144,25 @@ export async function createChecklistRun(
   }
 
   try {
-    // 1. Offline Idempotency Check: if clientRequestId supplied and already exists, replay
+    // 1. Offline Idempotency Check: if clientRequestId supplied and already exists, replay or detect conflict
     if (params.clientRequestId && params.clientRequestId.trim()) {
       const existingRun = await prisma.checklistRun.findUnique({
         where: { clientRequestId: params.clientRequestId.trim() },
         include: { items: true, template: true },
       });
       if (existingRun) {
+        const isPayloadMatching =
+          existingRun.templateId === params.templateId &&
+          (params.targetUnitId === undefined || existingRun.targetUnitId === (params.targetUnitId || null));
+
+        if (!isPayloadMatching) {
+          return {
+            success: false,
+            code: "CONFLICT_CLIENT_REQUEST_ID",
+            reason: `Duplicate clientRequestId '${params.clientRequestId}' with conflicting payload.`,
+          };
+        }
+
         return {
           success: true,
           data: existingRun,
