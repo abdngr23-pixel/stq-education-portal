@@ -369,6 +369,10 @@ model User {
   recordedSessionAttendances        EducationSessionAttendance[] @relation("SessionAttendanceRecorder")
   nilaiDicatatList                  NilaiAkademik[]              @relation("NilaiDicatatOlehUser")
 
+  // W2 Checklist Relations (ORR-098 & ORR-101)
+  checklistRunsPerformed            ChecklistRun[]               @relation("ChecklistRunsPerformed")
+  checklistRunsChecked              ChecklistRun[]               @relation("ChecklistRunsChecked")
+
   createdAt    DateTime    @default(now()) @map("created_at")
   updatedAt    DateTime    @updatedAt @map("updated_at")
 
@@ -1302,6 +1306,7 @@ model OrgUnit {
   scopedIn       AssignmentScopeUnit[]
   unitPlacements        UnitAccountPlacement[]
   santriKamarPlacements SantriKamarPlacement[]
+  checklistRuns         ChecklistRun[]
   createdAt      DateTime               @default(now()) @map("created_at")
   updatedAt      DateTime               @updatedAt @map("updated_at")
 
@@ -1592,4 +1597,91 @@ model AcademicSubjectAccountBinding {
   updatedAt DateTime      @updatedAt @map("updated_at")
 
   @@map("academic_subject_account_bindings")
+}
+
+// ====================================================
+// W2 CHECKLIST SYSTEM (ORR-098 & ORR-101)
+// ====================================================
+
+enum ChecklistRunStatus {
+  DRAFT
+  PERFORMED
+  UNDER_REVIEW
+  COMPLETED
+  NEEDS_CORRECTION
+  CANCELLED
+}
+
+enum ChecklistItemStatus {
+  PENDING
+  PASS
+  FAIL
+  NOT_APPLICABLE
+}
+
+model ChecklistTemplate {
+  id                String             @id @default(cuid())
+  code              String             @unique // e.g. "TPL-KEBERSIHAN-KAMAR"
+  name              String
+  domain            OrgDomain          @default(KEASRAMAAN)
+  version           Int                @default(1)
+  targetOrgUnitType OrgUnitType?       @map("target_org_unit_type")
+  isActive          Boolean            @default(true) @map("is_active")
+  schema            Json               // Structured items definition: key, label, required, criteria, etc.
+  metadata          Json?              @map("metadata")
+  runs              ChecklistRun[]
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  @@index([domain, isActive])
+  @@map("checklist_templates")
+}
+
+model ChecklistRun {
+  id              String             @id @default(cuid())
+  templateId      String             @map("template_id")
+  template        ChecklistTemplate  @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  templateVersion Int                @map("template_version")
+  targetUnitId    String?            @map("target_unit_id")
+  targetUnit      OrgUnit?           @relation(fields: [targetUnitId], references: [id], onDelete: Restrict)
+  status          ChecklistRunStatus @default(DRAFT)
+  clientRequestId String?            @unique @map("client_request_id")
+  version         Int                @default(1)
+  scheduledDate   DateTime?          @map("scheduled_date")
+  performedAt     DateTime?          @map("performed_at")
+  performedById   String?            @map("performed_by_id")
+  performedBy     User?              @relation("ChecklistRunsPerformed", fields: [performedById], references: [id], onDelete: Restrict)
+  checkedAt       DateTime?          @map("checked_at")
+  checkedById     String?            @map("checked_by_id")
+  checkedBy       User?              @relation("ChecklistRunsChecked", fields: [checkedById], references: [id], onDelete: Restrict)
+  notes           String?
+  correctionNotes String?            @map("correction_notes")
+  items           ChecklistItem[]
+  metadata        Json?              @map("metadata")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  @@index([templateId, status])
+  @@index([targetUnitId, status])
+  @@index([clientRequestId])
+  @@map("checklist_runs")
+}
+
+model ChecklistItem {
+  id            String              @id @default(cuid())
+  runId         String              @map("run_id")
+  run           ChecklistRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  itemKey       String              @map("item_key")
+  label         String
+  status        ChecklistItemStatus @default(PENDING)
+  notes         String?
+  photoUrl      String?             @map("photo_url")
+  checkedStatus ChecklistItemStatus? @map("checked_status")
+  checkedNotes  String?             @map("checked_notes")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+
+  @@unique([runId, itemKey])
+  @@index([runId])
+  @@map("checklist_items")
 }
