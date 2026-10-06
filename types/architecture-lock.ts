@@ -268,6 +268,41 @@ export interface ResolvedResourceContext {
 }
 
 /**
+ * Supervisory Takeover Provenance & Audit Record (ORR-086)
+ * Strict requirement: Atasan may take over neglected responsibility,
+ * but original PIC and context must remain auditable with ZERO attribution erasure.
+ */
+export interface SupervisoryTakeoverRecord {
+  id: string;
+  originalAssignmentId: string;
+  originalPic: {
+    userId: string;
+    name?: string;
+    positionCode?: string;
+  };
+  takeoverActor: {
+    userId: string;
+    name?: string;
+    positionCode?: string;
+  };
+  reason: string;
+  timestamp: Date;
+  resourceContext: {
+    resourceType: string;
+    resourceId: string;
+    domain: OrgDomain;
+    unitId?: string;
+    kamarId?: string;
+    genderComplex?: GenderComplex;
+    [key: string]: unknown;
+  };
+  beforeState: Record<string, unknown>;
+  afterState: Record<string, unknown>;
+  attributionPreserved: boolean;
+  workflowActivated: false;
+}
+
+/**
  * Canonical Authorization Result Code Union
  * Exactly ONE normalized union across all layers.
  */
@@ -436,6 +471,17 @@ export const ACADEMIC_CAPABILITIES = {
 
 export type AcademicCapabilityCode =
   (typeof ACADEMIC_CAPABILITIES)[keyof typeof ACADEMIC_CAPABILITIES];
+
+/**
+ * Canonical Keasramaan Domain Granular Capabilities
+ */
+export const KEASRAMAAN_CAPABILITIES = {
+  OSDA_MONITOR: "keasramaan.osda.monitor",
+  SUPERVISORY_TAKEOVER: "system.supervisory.takeover",
+} as const;
+
+export type KeasramaanCapabilityCode =
+  (typeof KEASRAMAAN_CAPABILITIES)[keyof typeof KEASRAMAAN_CAPABILITIES];
 
 /**
  * Candidate Prisma Schema Relational Parity Representation
@@ -832,6 +878,7 @@ export const PENGAWAS_SANTRIWATI_POSITION_CONTRACT = {
   allowedUnitTypes: ["ORGANIZATION", "DOMAIN"] as const,
   targetCapabilities: [
     "health.case.read_detail",
+    "keasramaan.osda.monitor",
   ] as const,
   scopeType: "DOMAIN" as const,
 } as const;
