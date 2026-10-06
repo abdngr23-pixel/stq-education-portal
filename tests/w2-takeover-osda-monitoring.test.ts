@@ -16,7 +16,7 @@ import {
   parseOsdaMonitorGuards,
   preflightOsdaMonitor,
 } from "../scripts/provision-w2-osda-monitor";
-import { GenderComplex, OrgDomain, ScopeType, BusinessRuleState } from "@prisma/client";
+import { GenderComplex, OrgDomain, ScopeType, BusinessRuleState, AssignmentStatus } from "@prisma/client";
 import {
   PENGAWAS_SANTRIWATI_POSITION_CONTRACT,
   KEASRAMAAN_CAPABILITIES,
@@ -98,7 +98,7 @@ describe("W2 Track 3 — Supervisory Takeover (ORR-086)", () => {
       unitCode: "OU-ASRAMA-ROOT",
       unitName: "Asrama Root",
       unitGenderComplex: GenderComplex.CAMPUR,
-      status: "ACTIVE",
+      status: AssignmentStatus.ACTIVE,
       validFrom: new Date(Date.now() - 86400000),
       validUntil: null,
       positionCapabilities: [
