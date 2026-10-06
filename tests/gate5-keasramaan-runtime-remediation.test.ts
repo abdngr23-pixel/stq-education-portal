@@ -1269,28 +1269,28 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     } as any;
   }
 
-  // 24. KEPALA_KEASRAMAAN with valid mocked canonical kamar.manage grant can manage Kamar
-  it("24. KEPALA_KEASRAMAAN with valid mocked canonical kamar.manage grant can manage Kamar", async () => {
+  // 24. MUDIR with valid mocked canonical kamar.manage grant can manage Kamar
+  it("24. MUDIR with valid mocked canonical kamar.manage grant can manage Kamar", async () => {
     const dataProvider = createMockDataProvider({
       identities: {
-        "user-kepala": {
-          userId: "user-kepala",
-          username: "kepala.keasramaan",
+        "user-mudir": {
+          userId: "user-mudir",
+          username: "mudir.stq",
           status: "AKTIF",
           accountType: "PERSONAL",
-          staffId: "stf-kepala",
+          staffId: "stf-mudir",
           staffStatus: "AKTIF",
         },
       },
       assignments: {
-        "user-kepala": [
+        "user-mudir": [
           {
-            id: "asg-kepala",
-            userId: "user-kepala",
-            positionId: "pos-kk",
-            positionCode: "KEPALA_KEASRAMAAN",
-            positionName: "Kepala Keasramaan",
-            domain: "KEASRAMAAN",
+            id: "asg-mudir",
+            userId: "user-mudir",
+            positionId: "pos-mudir",
+            positionCode: "MUDIR",
+            positionName: "Mudir",
+            domain: "INSTITUTIONAL",
             unitId: "ou-root",
             unitCode: "OU-ROOT",
             unitName: "Root",
@@ -1300,7 +1300,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "DOMAIN",
+                scopeType: "GLOBAL",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -1313,7 +1313,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     const mockPrisma = createMockPrismaForKamar();
 
     const res = await createKamar({
-      callerIdentity: { userId: "user-kepala", username: "kepala.keasramaan", status: "AKTIF", accountType: "PERSONAL" },
+      callerIdentity: { userId: "user-mudir", username: "mudir.stq", status: "AKTIF", accountType: "PERSONAL" },
       code: "KMR-ALI-01",
       name: "Kamar Ali Bin Abi Thalib",
       genderComplex: "PUTRA",
@@ -1327,8 +1327,8 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     assert.equal(mockPrisma.db.auditLogs.length, 1);
   });
 
-  // 25. non-KEPALA position cannot use kamar.manage
-  it("25. non-KEPALA position cannot use kamar.manage", async () => {
+  // 25. non-MUDIR position cannot use kamar.manage
+  it("25. non-MUDIR position cannot use kamar.manage", async () => {
     const dataProvider = createMockDataProvider({
       identities: {
         "user-mudhabbir": {
@@ -1381,31 +1381,32 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
 
     assert.equal(res.success, false);
     assert.equal(res.code, "CAPABILITY_NOT_GRANTED");
-    assert.ok(res.reason?.includes("Only KEPALA_KEASRAMAAN is authorized"));
+    assert.ok(res.reason?.includes("prerogatif MUDIR"));
   });
 
+  // 26. Kamar create validates type/domain/gender
   // 26. Kamar create validates type/domain/gender
   it("26. Kamar create validates type/domain/gender", async () => {
     const dataProvider = createMockDataProvider({
       identities: {
-        "user-kepala": {
-          userId: "user-kepala",
-          username: "kepala.keasramaan",
+        "user-mudir": {
+          userId: "user-mudir",
+          username: "mudir.stq",
           status: "AKTIF",
           accountType: "PERSONAL",
-          staffId: "stf-kepala",
+          staffId: "stf-mudir",
           staffStatus: "AKTIF",
         },
       },
       assignments: {
-        "user-kepala": [
+        "user-mudir": [
           {
-            id: "asg-kepala",
-            userId: "user-kepala",
-            positionId: "pos-kk",
-            positionCode: "KEPALA_KEASRAMAAN",
-            positionName: "Kepala Keasramaan",
-            domain: "KEASRAMAAN",
+            id: "asg-mudir",
+            userId: "user-mudir",
+            positionId: "pos-mudir",
+            positionCode: "MUDIR",
+            positionName: "Mudir",
+            domain: "INSTITUTIONAL",
             unitId: "ou-root",
             unitCode: "OU-ROOT",
             unitName: "Root",
@@ -1415,7 +1416,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "DOMAIN",
+                scopeType: "GLOBAL",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -1429,7 +1430,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
 
     // Invalid genderComplex
     const res = await createKamar({
-      callerIdentity: { userId: "user-kepala", username: "kepala.keasramaan", status: "AKTIF", accountType: "PERSONAL" },
+      callerIdentity: { userId: "user-mudir", username: "mudir.stq", status: "AKTIF", accountType: "PERSONAL" },
       code: "KMR-BAD-GENDER",
       name: "Bad Gender Room",
       genderComplex: "INVALID_GENDER" as any,
@@ -1456,24 +1457,24 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
 
     const dataProvider = createMockDataProvider({
       identities: {
-        "user-kepala": {
-          userId: "user-kepala",
-          username: "kepala.keasramaan",
+        "user-mudir": {
+          userId: "user-mudir",
+          username: "mudir.stq",
           status: "AKTIF",
           accountType: "PERSONAL",
-          staffId: "stf-kepala",
+          staffId: "stf-mudir",
           staffStatus: "AKTIF",
         },
       },
       assignments: {
-        "user-kepala": [
+        "user-mudir": [
           {
-            id: "asg-kepala",
-            userId: "user-kepala",
-            positionId: "pos-kk",
-            positionCode: "KEPALA_KEASRAMAAN",
-            positionName: "Kepala Keasramaan",
-            domain: "KEASRAMAAN",
+            id: "asg-mudir",
+            userId: "user-mudir",
+            positionId: "pos-mudir",
+            positionCode: "MUDIR",
+            positionName: "Mudir",
+            domain: "INSTITUTIONAL",
             unitId: "ou-root",
             unitCode: "OU-ROOT",
             unitName: "Root",
@@ -1483,7 +1484,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "DOMAIN",
+                scopeType: "GLOBAL",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -1494,7 +1495,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     });
 
     const res = await renameKamar({
-      callerIdentity: { userId: "user-kepala", username: "kepala.keasramaan", status: "AKTIF", accountType: "PERSONAL" },
+      callerIdentity: { userId: "user-mudir", username: "mudir.stq", status: "AKTIF", accountType: "PERSONAL" },
       kamarId: "kmr-1",
       newName: "Renamed Kamar Utsman",
       prismaClient: mockPrisma,
@@ -1534,24 +1535,24 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
 
     const dataProvider = createMockDataProvider({
       identities: {
-        "user-kepala": {
-          userId: "user-kepala",
-          username: "kepala.keasramaan",
+        "user-mudir": {
+          userId: "user-mudir",
+          username: "mudir.stq",
           status: "AKTIF",
           accountType: "PERSONAL",
-          staffId: "stf-kepala",
+          staffId: "stf-mudir",
           staffStatus: "AKTIF",
         },
       },
       assignments: {
-        "user-kepala": [
+        "user-mudir": [
           {
-            id: "asg-kepala",
-            userId: "user-kepala",
-            positionId: "pos-kk",
-            positionCode: "KEPALA_KEASRAMAAN",
-            positionName: "Kepala Keasramaan",
-            domain: "KEASRAMAAN",
+            id: "asg-mudir",
+            userId: "user-mudir",
+            positionId: "pos-mudir",
+            positionCode: "MUDIR",
+            positionName: "Mudir",
+            domain: "INSTITUTIONAL",
             unitId: "ou-root",
             unitCode: "OU-ROOT",
             unitName: "Root",
@@ -1561,7 +1562,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "DOMAIN",
+                scopeType: "GLOBAL",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -1572,7 +1573,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     });
 
     const res = await assignMudhabbir({
-      callerIdentity: { userId: "user-kepala", username: "kepala.keasramaan", status: "AKTIF", accountType: "PERSONAL" },
+      callerIdentity: { userId: "user-mudir", username: "mudir.stq", status: "AKTIF", accountType: "PERSONAL" },
       kamarId: "kmr-1",
       mudhabbirUserId: "user-unit-candidate",
       prismaClient: mockPrisma,
@@ -1615,24 +1616,24 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
 
     const dataProvider = createMockDataProvider({
       identities: {
-        "user-kepala": {
-          userId: "user-kepala",
-          username: "kepala.keasramaan",
+        "user-mudir": {
+          userId: "user-mudir",
+          username: "mudir.stq",
           status: "AKTIF",
           accountType: "PERSONAL",
-          staffId: "stf-kepala",
+          staffId: "stf-mudir",
           staffStatus: "AKTIF",
         },
       },
       assignments: {
-        "user-kepala": [
+        "user-mudir": [
           {
-            id: "asg-kepala",
-            userId: "user-kepala",
-            positionId: "pos-kk",
-            positionCode: "KEPALA_KEASRAMAAN",
-            positionName: "Kepala Keasramaan",
-            domain: "KEASRAMAAN",
+            id: "asg-mudir",
+            userId: "user-mudir",
+            positionId: "pos-mudir",
+            positionCode: "MUDIR",
+            positionName: "Mudir",
+            domain: "INSTITUTIONAL",
             unitId: "ou-root",
             unitCode: "OU-ROOT",
             unitName: "Root",
@@ -1642,7 +1643,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "DOMAIN",
+                scopeType: "GLOBAL",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -1653,7 +1654,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     });
 
     const res = await assignMudhabbir({
-      callerIdentity: { userId: "user-kepala", username: "kepala.keasramaan", status: "AKTIF", accountType: "PERSONAL" },
+      callerIdentity: { userId: "user-mudir", username: "mudir.stq", status: "AKTIF", accountType: "PERSONAL" },
       kamarId: "kmr-1",
       mudhabbirUserId: "user-new-mudhabbir",
       prismaClient: mockPrisma,
@@ -1698,24 +1699,24 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
 
     const dataProvider = createMockDataProvider({
       identities: {
-        "user-kepala": {
-          userId: "user-kepala",
-          username: "kepala.keasramaan",
+        "user-mudir": {
+          userId: "user-mudir",
+          username: "mudir.stq",
           status: "AKTIF",
           accountType: "PERSONAL",
-          staffId: "stf-kepala",
+          staffId: "stf-mudir",
           staffStatus: "AKTIF",
         },
       },
       assignments: {
-        "user-kepala": [
+        "user-mudir": [
           {
-            id: "asg-kepala",
-            userId: "user-kepala",
-            positionId: "pos-kk",
-            positionCode: "KEPALA_KEASRAMAAN",
-            positionName: "Kepala Keasramaan",
-            domain: "KEASRAMAAN",
+            id: "asg-mudir",
+            userId: "user-mudir",
+            positionId: "pos-mudir",
+            positionCode: "MUDIR",
+            positionName: "Mudir",
+            domain: "INSTITUTIONAL",
             unitId: "ou-root",
             unitCode: "OU-ROOT",
             unitName: "Root",
@@ -1725,7 +1726,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "DOMAIN",
+                scopeType: "GLOBAL",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -1736,7 +1737,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     });
 
     const res = await moveSantri({
-      callerIdentity: { userId: "user-kepala", username: "kepala.keasramaan", status: "AKTIF", accountType: "PERSONAL" },
+      callerIdentity: { userId: "user-mudir", username: "mudir.stq", status: "AKTIF", accountType: "PERSONAL" },
       santriId: "san-1",
       targetKamarId: "kmr-2",
       prismaClient: mockPrisma,
@@ -1778,24 +1779,24 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
 
     const dataProvider = createMockDataProvider({
       identities: {
-        "user-kepala": {
-          userId: "user-kepala",
-          username: "kepala.keasramaan",
+        "user-mudir": {
+          userId: "user-mudir",
+          username: "mudir.stq",
           status: "AKTIF",
           accountType: "PERSONAL",
-          staffId: "stf-kepala",
+          staffId: "stf-mudir",
           staffStatus: "AKTIF",
         },
       },
       assignments: {
-        "user-kepala": [
+        "user-mudir": [
           {
-            id: "asg-kepala",
-            userId: "user-kepala",
-            positionId: "pos-kk",
-            positionCode: "KEPALA_KEASRAMAAN",
-            positionName: "Kepala Keasramaan",
-            domain: "KEASRAMAAN",
+            id: "asg-mudir",
+            userId: "user-mudir",
+            positionId: "pos-mudir",
+            positionCode: "MUDIR",
+            positionName: "Mudir",
+            domain: "INSTITUTIONAL",
             unitId: "ou-root",
             unitCode: "OU-ROOT",
             unitName: "Root",
@@ -1805,7 +1806,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "DOMAIN",
+                scopeType: "GLOBAL",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -1816,7 +1817,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     });
 
     const res = await moveSantri({
-      callerIdentity: { userId: "user-kepala", username: "kepala.keasramaan", status: "AKTIF", accountType: "PERSONAL" },
+      callerIdentity: { userId: "user-mudir", username: "mudir.stq", status: "AKTIF", accountType: "PERSONAL" },
       santriId: "san-1",
       targetKamarId: "kmr-2",
       prismaClient: mockPrisma,
@@ -1851,24 +1852,24 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
 
     const dataProvider = createMockDataProvider({
       identities: {
-        "user-kepala": {
-          userId: "user-kepala",
-          username: "kepala.keasramaan",
+        "user-mudir": {
+          userId: "user-mudir",
+          username: "mudir.stq",
           status: "AKTIF",
           accountType: "PERSONAL",
-          staffId: "stf-kepala",
+          staffId: "stf-mudir",
           staffStatus: "AKTIF",
         },
       },
       assignments: {
-        "user-kepala": [
+        "user-mudir": [
           {
-            id: "asg-kepala",
-            userId: "user-kepala",
-            positionId: "pos-kk",
-            positionCode: "KEPALA_KEASRAMAAN",
-            positionName: "Kepala Keasramaan",
-            domain: "KEASRAMAAN",
+            id: "asg-mudir",
+            userId: "user-mudir",
+            positionId: "pos-mudir",
+            positionCode: "MUDIR",
+            positionName: "Mudir",
+            domain: "INSTITUTIONAL",
             unitId: "ou-root",
             unitCode: "OU-ROOT",
             unitName: "Root",
@@ -1878,7 +1879,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "DOMAIN",
+                scopeType: "GLOBAL",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -1889,7 +1890,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     });
 
     const res = await assignSantri({
-      callerIdentity: { userId: "user-kepala", username: "kepala.keasramaan", status: "AKTIF", accountType: "PERSONAL" },
+      callerIdentity: { userId: "user-mudir", username: "mudir.stq", status: "AKTIF", accountType: "PERSONAL" },
       kamarId: "kmr-putri",
       santriIds: ["san-putra"],
       prismaClient: mockPrisma,
@@ -1926,24 +1927,24 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
 
     const dataProvider = createMockDataProvider({
       identities: {
-        "user-kepala": {
-          userId: "user-kepala",
-          username: "kepala.keasramaan",
+        "user-mudir": {
+          userId: "user-mudir",
+          username: "mudir.stq",
           status: "AKTIF",
           accountType: "PERSONAL",
-          staffId: "stf-kepala",
+          staffId: "stf-mudir",
           staffStatus: "AKTIF",
         },
       },
       assignments: {
-        "user-kepala": [
+        "user-mudir": [
           {
-            id: "asg-kepala",
-            userId: "user-kepala",
-            positionId: "pos-kk",
-            positionCode: "KEPALA_KEASRAMAAN",
-            positionName: "Kepala Keasramaan",
-            domain: "KEASRAMAAN",
+            id: "asg-mudir",
+            userId: "user-mudir",
+            positionId: "pos-mudir",
+            positionCode: "MUDIR",
+            positionName: "Mudir",
+            domain: "INSTITUTIONAL",
             unitId: "ou-root",
             unitCode: "OU-ROOT",
             unitName: "Root",
@@ -1953,7 +1954,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "DOMAIN",
+                scopeType: "GLOBAL",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -1964,7 +1965,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     });
 
     const res = await assignSantri({
-      callerIdentity: { userId: "user-kepala", username: "kepala.keasramaan", status: "AKTIF", accountType: "PERSONAL" },
+      callerIdentity: { userId: "user-mudir", username: "mudir.stq", status: "AKTIF", accountType: "PERSONAL" },
       kamarId: "kmr-1",
       santriIds: ["san-1"],
       prismaClient: mockPrisma,
@@ -1994,24 +1995,24 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
 
     const dataProvider = createMockDataProvider({
       identities: {
-        "user-kepala": {
-          userId: "user-kepala",
-          username: "kepala.keasramaan",
+        "user-mudir": {
+          userId: "user-mudir",
+          username: "mudir.stq",
           status: "AKTIF",
           accountType: "PERSONAL",
-          staffId: "stf-kepala",
+          staffId: "stf-mudir",
           staffStatus: "AKTIF",
         },
       },
       assignments: {
-        "user-kepala": [
+        "user-mudir": [
           {
-            id: "asg-kepala",
-            userId: "user-kepala",
-            positionId: "pos-kk",
-            positionCode: "KEPALA_KEASRAMAAN",
-            positionName: "Kepala Keasramaan",
-            domain: "KEASRAMAAN",
+            id: "asg-mudir",
+            userId: "user-mudir",
+            positionId: "pos-mudir",
+            positionCode: "MUDIR",
+            positionName: "Mudir",
+            domain: "INSTITUTIONAL",
             unitId: "ou-root",
             unitCode: "OU-ROOT",
             unitName: "Root",
@@ -2021,7 +2022,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "DOMAIN",
+                scopeType: "GLOBAL",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -2032,7 +2033,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     });
 
     const res = await renameKamar({
-      callerIdentity: { userId: "user-kepala", username: "kepala.keasramaan", status: "AKTIF", accountType: "PERSONAL" },
+      callerIdentity: { userId: "user-mudir", username: "mudir.stq", status: "AKTIF", accountType: "PERSONAL" },
       kamarId: "kmr-1",
       newName: "Renamed Room",
       prismaClient: mockPrisma,
@@ -2060,24 +2061,24 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
 
     const dataProvider = createMockDataProvider({
       identities: {
-        "user-kepala": {
-          userId: "user-kepala",
-          username: "kepala.keasramaan",
+        "user-mudir": {
+          userId: "user-mudir",
+          username: "mudir.stq",
           status: "AKTIF",
           accountType: "PERSONAL",
-          staffId: "stf-kepala",
+          staffId: "stf-mudir",
           staffStatus: "AKTIF",
         },
       },
       assignments: {
-        "user-kepala": [
+        "user-mudir": [
           {
-            id: "asg-kepala-audit-test",
-            userId: "user-kepala",
-            positionId: "pos-kk",
-            positionCode: "KEPALA_KEASRAMAAN",
-            positionName: "Kepala Keasramaan",
-            domain: "KEASRAMAAN",
+            id: "asg-mudir-audit-test",
+            userId: "user-mudir",
+            positionId: "pos-mudir",
+            positionCode: "MUDIR",
+            positionName: "Mudir",
+            domain: "INSTITUTIONAL",
             unitId: "ou-root",
             unitCode: "OU-ROOT",
             unitName: "Root",
@@ -2087,7 +2088,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "DOMAIN",
+                scopeType: "GLOBAL",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -2098,7 +2099,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     });
 
     const res = await renameKamar({
-      callerIdentity: { userId: "user-kepala", username: "kepala.keasramaan", status: "AKTIF", accountType: "PERSONAL" },
+      callerIdentity: { userId: "user-mudir", username: "mudir.stq", status: "AKTIF", accountType: "PERSONAL" },
       kamarId: "kmr-1",
       newName: "Kamar Abu Bakar Ash-Shiddiq",
       prismaClient: mockPrisma,
@@ -2108,10 +2109,10 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     assert.equal(res.success, true);
     assert.equal(mockPrisma.db.auditLogs.length, 1);
     const log = mockPrisma.db.auditLogs[0];
-    assert.equal(log.assignmentId, "asg-kepala-audit-test");
-    assert.equal(log.positionCode, "KEPALA_KEASRAMAAN");
+    assert.equal(log.assignmentId, "asg-mudir-audit-test");
+    assert.equal(log.positionCode, "MUDIR");
     assert.equal(log.capabilityCode, KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE);
-    assert.equal(log.scopeType, "DOMAIN");
+    assert.equal(log.scopeType, "GLOBAL");
   });
 
   // 36. UNIT audit includes technicalAccount + humanExecutor
@@ -2528,24 +2529,24 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
   it("44. Inactive Kamar mutation regression: renameKamar on inactive room is DENIED", async () => {
     const dataProvider = createMockDataProvider({
       identities: {
-        "user-kepala": {
-          userId: "user-kepala",
-          username: "kepala.keasramaan",
+        "user-mudir": {
+          userId: "user-mudir",
+          username: "mudir.stq",
           status: "AKTIF",
           accountType: "PERSONAL",
-          staffId: "stf-kepala",
+          staffId: "stf-mudir",
           staffStatus: "AKTIF",
         },
       },
       assignments: {
-        "user-kepala": [
+        "user-mudir": [
           {
-            id: "asg-kepala",
-            userId: "user-kepala",
-            positionId: "pos-kk",
-            positionCode: "KEPALA_KEASRAMAAN",
-            positionName: "Kepala Keasramaan",
-            domain: "KEASRAMAAN",
+            id: "asg-mudir",
+            userId: "user-mudir",
+            positionId: "pos-mudir",
+            positionCode: "MUDIR",
+            positionName: "Mudir",
+            domain: "INSTITUTIONAL",
             unitId: "ou-root",
             unitCode: "OU-ROOT",
             unitName: "Root",
@@ -2555,7 +2556,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "DOMAIN",
+                scopeType: "GLOBAL",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -2580,7 +2581,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     });
 
     const res = await renameKamar({
-      callerIdentity: { userId: "user-kepala", username: "kepala.keasramaan", status: "AKTIF", accountType: "PERSONAL" },
+      callerIdentity: { userId: "user-mudir", username: "mudir.stq", status: "AKTIF", accountType: "PERSONAL" },
       kamarId: "kmr-inactive",
       newName: "Renamed Room",
       prismaClient: mockPrisma,
@@ -2688,24 +2689,24 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
   it("46. moveSantri no-op audit: moving to current room returns NO_CHANGE and records SANTRI_KAMAR_MOVE_NO_CHANGE", async () => {
     const dataProvider = createMockDataProvider({
       identities: {
-        "user-kepala": {
-          userId: "user-kepala",
-          username: "kepala.keasramaan",
+        "user-mudir": {
+          userId: "user-mudir",
+          username: "mudir.stq",
           status: "AKTIF",
           accountType: "PERSONAL",
-          staffId: "stf-kepala",
+          staffId: "stf-mudir",
           staffStatus: "AKTIF",
         },
       },
       assignments: {
-        "user-kepala": [
+        "user-mudir": [
           {
-            id: "asg-kepala",
-            userId: "user-kepala",
-            positionId: "pos-kk",
-            positionCode: "KEPALA_KEASRAMAAN",
-            positionName: "Kepala Keasramaan",
-            domain: "KEASRAMAAN",
+            id: "asg-mudir",
+            userId: "user-mudir",
+            positionId: "pos-mudir",
+            positionCode: "MUDIR",
+            positionName: "Mudir",
+            domain: "INSTITUTIONAL",
             unitId: "ou-root",
             unitCode: "OU-ROOT",
             unitName: "Root",
@@ -2715,7 +2716,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
             positionCapabilities: [
               {
                 capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "DOMAIN",
+                scopeType: "GLOBAL",
                 businessRuleState: "VERIFIED_PRODUCTION",
               },
             ],
@@ -2745,7 +2746,7 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     });
 
     const res = await moveSantri({
-      callerIdentity: { userId: "user-kepala", username: "kepala.keasramaan", status: "AKTIF", accountType: "PERSONAL" },
+      callerIdentity: { userId: "user-mudir", username: "mudir.stq", status: "AKTIF", accountType: "PERSONAL" },
       santriId: "san-1",
       targetKamarId: "kmr-target-1",
       prismaClient: mockPrisma,
@@ -2877,14 +2878,14 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
     assert.ok(gate5.details.includes("invalid genderComplex"));
   });
 
-  // 48. Kamar manage scope lockdown: KEPALA_KEASRAMAAN with GLOBAL is DENIED, DOMAIN is ALLOWED
-  it("48. Kamar manage scope lockdown: KEPALA_KEASRAMAAN with GLOBAL is DENIED, DOMAIN is ALLOWED", async () => {
-    // 48.1 KEPALA_KEASRAMAAN + VERIFIED kamar.manage + GLOBAL => DENY
-    const dataProviderGlobal = createMockDataProvider({
+  // 48. Kamar manage authority lockdown: KEPALA_KEASRAMAAN is SUPERSEDED, MUDIR with GLOBAL is ALLOWED
+  it("48. Kamar manage authority lockdown: KEPALA_KEASRAMAAN is SUPERSEDED, MUDIR with GLOBAL is ALLOWED", async () => {
+    // 48.1 KEPALA_KEASRAMAAN + VERIFIED kamar.manage => DENY (superseded by MUDIR/GLOBAL)
+    const dataProviderKK = createMockDataProvider({
       identities: {
-        "user-kk-global": {
-          userId: "user-kk-global",
-          username: "kk.global",
+        "user-kk-test": {
+          userId: "user-kk-test",
+          username: "kk.test",
           status: "AKTIF",
           accountType: "PERSONAL",
           staffId: "stf-kk",
@@ -2892,64 +2893,10 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
         },
       },
       assignments: {
-        "user-kk-global": [
+        "user-kk-test": [
           {
-            id: "asg-kk-global",
-            userId: "user-kk-global",
-            positionId: "pos-kk",
-            positionCode: "KEPALA_KEASRAMAAN",
-            positionName: "Kepala Keasramaan",
-            domain: "KEASRAMAAN",
-            unitId: "ou-root",
-            unitCode: "OU-ROOT",
-            unitName: "Root",
-            status: "ACTIVE",
-            validFrom: new Date(0),
-            validUntil: null,
-            positionCapabilities: [
-              {
-                capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
-                scopeType: "GLOBAL",
-                businessRuleState: "VERIFIED_PRODUCTION",
-              },
-            ],
-            scopeUnits: [],
-          },
-        ],
-      },
-    });
-
-    const mockPrisma1 = createMockPrismaForKamar();
-    const resGlobal = await createKamar({
-      callerIdentity: { userId: "user-kk-global", username: "kk.global", status: "AKTIF", accountType: "PERSONAL" },
-      code: "KMR-GLB-01",
-      name: "Kamar Global Test",
-      genderComplex: "PUTRA",
-      prismaClient: mockPrisma1,
-      dataProvider: dataProviderGlobal,
-    });
-
-    assert.equal(resGlobal.success, false);
-    assert.equal(resGlobal.code, "CAPABILITY_NOT_GRANTED");
-    assert.ok(resGlobal.reason?.includes("@ DOMAIN scope"));
-
-    // 48.2 KEPALA_KEASRAMAAN + VERIFIED kamar.manage + DOMAIN KEASRAMAAN => ALLOW
-    const dataProviderDomain = createMockDataProvider({
-      identities: {
-        "user-kk-domain": {
-          userId: "user-kk-domain",
-          username: "kk.domain",
-          status: "AKTIF",
-          accountType: "PERSONAL",
-          staffId: "stf-kk",
-          staffStatus: "AKTIF",
-        },
-      },
-      assignments: {
-        "user-kk-domain": [
-          {
-            id: "asg-kk-domain",
-            userId: "user-kk-domain",
+            id: "asg-kk-test",
+            userId: "user-kk-test",
             positionId: "pos-kk",
             positionCode: "KEPALA_KEASRAMAAN",
             positionName: "Kepala Keasramaan",
@@ -2973,18 +2920,72 @@ describe("GATE 5 — KEASRAMAAN RUNTIME REMEDIATION (40 SCENARIOS)", () => {
       },
     });
 
+    const mockPrisma1 = createMockPrismaForKamar();
+    const resKK = await createKamar({
+      callerIdentity: { userId: "user-kk-test", username: "kk.test", status: "AKTIF", accountType: "PERSONAL" },
+      code: "KMR-KK-01",
+      name: "Kamar KK Test",
+      genderComplex: "PUTRA",
+      prismaClient: mockPrisma1,
+      dataProvider: dataProviderKK,
+    });
+
+    assert.equal(resKK.success, false);
+    assert.equal(resKK.code, "CAPABILITY_NOT_GRANTED");
+    assert.ok(resKK.reason?.includes("DIBATALKAN/SUPERSEDED"));
+
+    // 48.2 MUDIR + VERIFIED kamar.manage + GLOBAL => ALLOW
+    const dataProviderMudir = createMockDataProvider({
+      identities: {
+        "user-mudir-glb": {
+          userId: "user-mudir-glb",
+          username: "mudir.glb",
+          status: "AKTIF",
+          accountType: "PERSONAL",
+          staffId: "stf-mudir",
+          staffStatus: "AKTIF",
+        },
+      },
+      assignments: {
+        "user-mudir-glb": [
+          {
+            id: "asg-mudir-glb",
+            userId: "user-mudir-glb",
+            positionId: "pos-mudir",
+            positionCode: "MUDIR",
+            positionName: "Mudir",
+            domain: "INSTITUTIONAL",
+            unitId: "ou-root",
+            unitCode: "OU-ROOT",
+            unitName: "Root",
+            status: "ACTIVE",
+            validFrom: new Date(0),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
+                scopeType: "GLOBAL",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [],
+          },
+        ],
+      },
+    });
+
     const mockPrisma2 = createMockPrismaForKamar();
-    const resDomain = await createKamar({
-      callerIdentity: { userId: "user-kk-domain", username: "kk.domain", status: "AKTIF", accountType: "PERSONAL" },
+    const resMudir = await createKamar({
+      callerIdentity: { userId: "user-mudir-glb", username: "mudir.glb", status: "AKTIF", accountType: "PERSONAL" },
       code: "KMR-DOM-01",
       name: "Kamar Domain Test",
       genderComplex: "PUTRA",
       prismaClient: mockPrisma2,
-      dataProvider: dataProviderDomain,
+      dataProvider: dataProviderMudir,
     });
 
-    assert.equal(resDomain.success, true);
-    assert.equal((resDomain.data as any).code, "KMR-DOM-01");
+    assert.equal(resMudir.success, true);
+    assert.equal((resMudir.data as any).code, "KMR-DOM-01");
   });
 
   // 49. ASSIGNED_UNITS fail-closed on inactive scope units (single active ALLOW, single inactive DENY, mixed active ALLOW & inactive DENY)

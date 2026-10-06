@@ -11,7 +11,6 @@ import {
   moveSantri,
   inspectKamarConfiguration,
   validateUsrohHierarchy,
-  createUsrohOrgUnit,
 } from "@/lib/server/kamar-management-service";
 import { GenderComplex } from "@/types/architecture-lock";
 
@@ -389,37 +388,13 @@ export async function validateUsrohHierarchyAction(input: {
 
 /**
  * 11. Create Usroh OrgUnit (ORR-091)
+ * LOCKED / FAIL-CLOSED: Mudir System Settings is approved specifically for
+ * Kamar, Santri Placement, and Mudhabbir. Active Usroh creation mutation remains
+ * fail-closed pending explicit Level-0 Business Owner delegation.
  */
-export async function createUsrohAction(input: {
-  code: string;
-  name: string;
-  parentId: string;
-  genderComplex?: GenderComplex;
-  metadata?: Record<string, unknown>;
-}): Promise<ActionResponse> {
-  const session = await getCurrentSession();
-  if (!session) {
-    return { success: false, message: "Sesi telah berakhir. Silakan login kembali." };
-  }
-
-  try {
-    const result = await createUsrohOrgUnit({
-      callerIdentity: session,
-      code: input.code,
-      name: input.name,
-      parentId: input.parentId,
-      genderComplex: input.genderComplex,
-      metadata: input.metadata,
-      prismaClient: prisma,
-    });
-
-    if (!result.success) {
-      return { success: false, message: result.reason || "Gagal membuat Usroh." };
-    }
-
-    return { success: true, data: result.data, message: "Usroh berhasil dibuat." };
-  } catch (error) {
-    console.error("Gagal membuat Usroh:", error);
-    return { success: false, message: "Terjadi kesalahan internal saat membuat Usroh." };
-  }
+export async function createUsrohAction(): Promise<ActionResponse> {
+  return {
+    success: false,
+    message: "USROH_MUTATION_LOCKED: Pembuatan Usroh belum didelegasikan secara aktif dalam System Settings Keasramaan oleh Business Owner.",
+  };
 }

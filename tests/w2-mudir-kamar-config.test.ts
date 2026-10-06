@@ -19,6 +19,7 @@ import {
   CanonicalIdentity,
   CanonicalAssignmentWithDetails,
   ICanonicalDataProvider,
+  authorizeCanonical,
 } from "../lib/auth/canonical-evaluator";
 
 function createMockDataProvider(opts: {
@@ -523,5 +524,296 @@ describe("W2 REMEDIATION — TRACK A (MUDIR KAMAR CONFIG) & TRACK E/F", () => {
     // Test 4: Verify exact 5 OSDA divisions and 6 TKS service units specified
     assert.strictEqual(TARGET_OSDA_DIVISIONS.length, 5);
     assert.strictEqual(TARGET_TKS_SERVICE_UNITS.length, 6);
+  });
+
+  // 12. Reconcile OSDA Division code drift: OU-OSDA-PENDIDIKAN authoritative
+  it("12. OSDA division code drift reconciled to OU-OSDA-PENDIDIKAN", () => {
+    const codes = TARGET_OSDA_DIVISIONS.map((d) => d.code);
+    assert.ok(codes.includes("OU-OSDA-PENDIDIKAN"), "OU-OSDA-PENDIDIKAN must be in target divisions");
+    assert.strictEqual(codes.includes("OU-OSDA-IBADAH"), false, "OU-OSDA-IBADAH must be removed/superseded");
+  });
+
+  // 13. Kamar gender contract: CAMPUR dorm strictly rejected
+  it("13. Kamar creation and update strictly reject CAMPUR dorms", async () => {
+    const mockPrisma = {
+      $transaction: async (cb: any) => cb(mockPrisma),
+    } as any;
+
+    const resCreate = await createKamar({
+      callerIdentity: mudirIdentity,
+      code: "KMR-CAMPUR",
+      name: "Kamar Campur",
+      genderComplex: "CAMPUR" as any,
+      prismaClient: mockPrisma,
+      dataProvider: mockDataProvider,
+    });
+    assert.strictEqual(resCreate.success, false);
+    assert.strictEqual(resCreate.code, "INVALID_ARGUMENT");
+    assert.match(resCreate.reason || "", /CAMPUR dilarang keras/i);
+  });
+
+  // 14. KEPALA_KEASRAMAAN superseded for kamar.manage
+  it("14. KEPALA_KEASRAMAAN is strictly rejected for keasramaan.kamar.manage (superseded by MUDIR/GLOBAL)", async () => {
+    const kkIdentity: CanonicalIdentity = {
+      userId: "kk-user-1",
+      username: "musyrif.keasramaan",
+      accountType: "PERSONAL",
+      status: "AKTIF",
+      staffId: "stf-kk",
+      staffStatus: "AKTIF",
+      santriId: null,
+    };
+
+    const kkDataProvider = createMockDataProvider({
+      identities: { "kk-user-1": kkIdentity },
+      assignments: {
+        "kk-user-1": [
+          {
+            id: "asg-kk-1",
+            userId: "kk-user-1",
+            positionId: "pos-kk",
+            positionCode: "KEPALA_KEASRAMAAN",
+            positionName: "Kepala Keasramaan",
+            domain: "KEASRAMAAN",
+            unitId: "OU-ASRAMA-ROOT",
+            unitCode: "OU-ASRAMA-ROOT",
+            unitName: "Asrama Root",
+            status: "ACTIVE",
+            validFrom: new Date(),
+            validUntil: null,
+            positionCapabilities: [
+              {
+                capabilityCode: "keasramaan.kamar.manage",
+                scopeType: "DOMAIN",
+                businessRuleState: "VERIFIED_PRODUCTION",
+              },
+            ],
+            scopeUnits: [],
+          },
+        ],
+      },
+    });
+
+    const res = await createKamar({
+      callerIdentity: kkIdentity,
+      code: "KMR-KK-FAIL",
+      name: "Kamar KK",
+      genderComplex: "PUTRA",
+      dataProvider: kkDataProvider,
+    });
+
+    assert.strictEqual(res.success, false);
+    assert.strictEqual(res.code, "CAPABILITY_NOT_GRANTED");
+    assert.match(res.reason || "", /DIBATALKAN\/SUPERSEDED/i);
+  });
+
+  // 15. Track 1D — Multi-Kamar Permission Matrix (ASSIGNED_UNITS)
+  it("15. Multi-Kamar Permission Matrix: Mudhabbir assigned Room A + Room B", async () => {
+    const mudhabbirIdentity: CanonicalIdentity = {
+      userId: "usr-mudhabbir-multi",
+      username: "mudhabbir.multi",
+      accountType: "PERSONAL",
+      status: "AKTIF",
+      staffId: "stf-mudhabbir-1",
+      staffStatus: "AKTIF",
+      santriId: null,
+    };
+
+    // Mudhabbir has active PEMBINA_HALAQOH assignment with ASSIGNED_UNITS containing room-a and room-b
+    const multiKamarAssignment: CanonicalAssignmentWithDetails = {
+      id: "asg-mudhabbir-multi",
+      userId: "usr-mudhabbir-multi",
+      positionId: "pos-ph",
+      positionCode: "PEMBINA_HALAQOH",
+      positionName: "Pembina Halaqoh",
+      domain: "KEASRAMAAN",
+      unitId: "kamar-a",
+      unitCode: "KMR-A",
+      unitName: "Kamar Abu Bakar",
+      status: "ACTIVE",
+      validFrom: new Date(),
+      validUntil: null,
+      positionCapabilities: [
+        {
+          capabilityCode: "keasramaan.permission.create",
+          scopeType: "ASSIGNED_UNITS",
+          businessRuleState: "VERIFIED_PRODUCTION",
+        },
+      ],
+      scopeUnits: [
+        {
+          unitId: "kamar-a",
+          unitCode: "KMR-A",
+          unitContext: {
+            unitId: "kamar-a",
+            unitCode: "KMR-A",
+            unitType: "KAMAR",
+            domain: "KEASRAMAAN",
+            genderComplex: "PUTRA",
+            parentId: "OU-ASRAMA-PUTRA",
+            ancestorUnitIds: ["OU-ASRAMA-PUTRA", "OU-STQ-ROOT"],
+            isActive: true,
+          },
+        },
+        {
+          unitId: "kamar-b",
+          unitCode: "KMR-B",
+          unitContext: {
+            unitId: "kamar-b",
+            unitCode: "KMR-B",
+            unitType: "KAMAR",
+            domain: "KEASRAMAAN",
+            genderComplex: "PUTRA",
+            parentId: "OU-ASRAMA-PUTRA",
+            ancestorUnitIds: ["OU-ASRAMA-PUTRA", "OU-STQ-ROOT"],
+            isActive: true,
+          },
+        },
+      ],
+    };
+
+    const multiDataProvider = createMockDataProvider({
+      identities: { "usr-mudhabbir-multi": mudhabbirIdentity },
+      assignments: { "usr-mudhabbir-multi": [multiKamarAssignment] },
+      resourceContexts: {
+        // Santri A in Room A
+        "santri-a": {
+          santriId: "santri-a",
+          orgUnitIds: ["kamar-a"],
+          genderComplex: "PUTRA",
+          orgDomain: "KEASRAMAAN",
+        },
+        // Santri B in Room B
+        "santri-b": {
+          santriId: "santri-b",
+          orgUnitIds: ["kamar-b"],
+          genderComplex: "PUTRA",
+          orgDomain: "KEASRAMAAN",
+        },
+        // Santri C in Room C (unassigned room)
+        "santri-c": {
+          santriId: "santri-c",
+          orgUnitIds: ["kamar-c"],
+          genderComplex: "PUTRA",
+          orgDomain: "KEASRAMAAN",
+        },
+        // Santri D without room placement
+        "santri-d": {
+          santriId: "santri-d",
+          orgUnitIds: [],
+          genderComplex: "PUTRA",
+          orgDomain: "KEASRAMAAN",
+        },
+        // Santri E in Room E (inactive room)
+        "santri-e": {
+          santriId: "santri-e",
+          orgUnitIds: ["kamar-inactive"],
+          genderComplex: "PUTRA",
+          orgDomain: "KEASRAMAAN",
+        },
+        // Santri Putri in Room Putri
+        "santri-putri": {
+          santriId: "santri-putri",
+          orgUnitIds: ["kamar-putri-1"],
+          genderComplex: "PUTRI",
+          orgDomain: "KEASRAMAAN",
+        },
+      },
+    });
+
+    // 1. Santri A in Room A => ALLOW
+    const resA = await authorizeCanonical({
+      identity: mudhabbirIdentity,
+      capability: "keasramaan.permission.create",
+      resourceContext: { santriId: "santri-a" },
+      dataProvider: multiDataProvider,
+    });
+    assert.strictEqual(resA.decision, "ALLOW");
+
+    // 2. Santri B in Room B => ALLOW
+    const resB = await authorizeCanonical({
+      identity: mudhabbirIdentity,
+      capability: "keasramaan.permission.create",
+      resourceContext: { santriId: "santri-b" },
+      dataProvider: multiDataProvider,
+    });
+    assert.strictEqual(resB.decision, "ALLOW");
+
+    // 3. Santri C in Room C (not assigned) => DENY
+    const resC = await authorizeCanonical({
+      identity: mudhabbirIdentity,
+      capability: "keasramaan.permission.create",
+      resourceContext: { santriId: "santri-c" },
+      dataProvider: multiDataProvider,
+    });
+    assert.strictEqual(resC.decision, "DENY");
+    assert.strictEqual(resC.code, "SCOPE_MISMATCH");
+
+    // 4. Missing Kamar placement => DENY
+    const resD = await authorizeCanonical({
+      identity: mudhabbirIdentity,
+      capability: "keasramaan.permission.create",
+      resourceContext: { santriId: "santri-d" },
+      dataProvider: multiDataProvider,
+    });
+    assert.strictEqual(resD.decision, "DENY");
+
+    // 5. Inactive Room => DENY
+    const resE = await authorizeCanonical({
+      identity: mudhabbirIdentity,
+      capability: "keasramaan.permission.create",
+      resourceContext: { santriId: "santri-e" },
+      dataProvider: multiDataProvider,
+    });
+    assert.strictEqual(resE.decision, "DENY");
+
+    // 6. Inactive Assignment => DENY
+    const inactiveDataProvider = createMockDataProvider({
+      identities: { "usr-mudhabbir-multi": mudhabbirIdentity },
+      assignments: {
+        "usr-mudhabbir-multi": [{ ...multiKamarAssignment, status: "EXPIRED" }],
+      },
+      resourceContexts: {
+        "santri-a": { santriId: "santri-a", orgUnitIds: ["kamar-a"], genderComplex: "PUTRA", orgDomain: "KEASRAMAAN" },
+      },
+    });
+    const resInactive = await authorizeCanonical({
+      identity: mudhabbirIdentity,
+      capability: "keasramaan.permission.create",
+      resourceContext: { santriId: "santri-a" },
+      dataProvider: inactiveDataProvider,
+    });
+    assert.strictEqual(resInactive.decision, "DENY");
+
+    // 7. Legacy PH role without canonical Assignment => DENY
+    const noAsgDataProvider = createMockDataProvider({
+      identities: { "usr-mudhabbir-multi": mudhabbirIdentity },
+      assignments: { "usr-mudhabbir-multi": [] },
+    });
+    const resNoAsg = await authorizeCanonical({
+      identity: mudhabbirIdentity,
+      capability: "keasramaan.permission.create",
+      resourceContext: { santriId: "santri-a" },
+      dataProvider: noAsgDataProvider,
+    });
+    assert.strictEqual(resNoAsg.decision, "DENY");
+
+    // 8. Username alone without identity/assignment => DENY
+    const resNoId = await authorizeCanonical({
+      identity: { userId: "stranger-1", username: "mudhabbir.fake", accountType: "PERSONAL" } as any,
+      capability: "keasramaan.permission.create",
+      resourceContext: { santriId: "santri-a" },
+      dataProvider: noAsgDataProvider,
+    });
+    assert.strictEqual(resNoId.decision, "DENY");
+
+    // 9. Gender Boundary: PUTRA Mudhabbir against PUTRI room => DENY
+    const resGender = await authorizeCanonical({
+      identity: mudhabbirIdentity,
+      capability: "keasramaan.permission.create",
+      resourceContext: { santriId: "santri-putri" },
+      dataProvider: multiDataProvider,
+    });
+    assert.strictEqual(resGender.decision, "DENY");
   });
 });

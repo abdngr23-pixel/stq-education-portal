@@ -214,18 +214,21 @@ async function authorizeKamarManage(
   const isMudirAuthorized =
     auth.positionCode === MUDIR_KAMAR_MANAGE_TARGET_POLICY.positionCode &&
     auth.capabilityCode === KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE &&
-    (auth.scopeType === "GLOBAL" || auth.scopeType === "DOMAIN");
+    auth.scopeType === "GLOBAL";
 
-  const isKepalaKeasramaanAuthorized =
-    auth.positionCode === KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.positionCode &&
-    auth.capabilityCode === KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.capabilityCode &&
-    auth.scopeType === "DOMAIN";
-
-  if (!isMudirAuthorized && !isKepalaKeasramaanAuthorized) {
+  if (!isMudirAuthorized) {
+    if (auth.positionCode === "KEPALA_KEASRAMAAN") {
+      return {
+        allowed: false,
+        code: "CAPABILITY_NOT_GRANTED",
+        reason: "Otoritas KEPALA_KEASRAMAAN untuk mengelola kamar telah DIBATALKAN/SUPERSEDED oleh keputusan Business Owner. Manajemen kamar, penempatan santri, dan penetapan Mudhabbir merupakan prerogatif mutlak MUDIR (MUDIR + keasramaan.kamar.manage @ GLOBAL scope).",
+        auth,
+      };
+    }
     return {
       allowed: false,
       code: "CAPABILITY_NOT_GRANTED",
-      reason: `Only KEPALA_KEASRAMAAN is authorized to manage Kamar configuration (requires ${KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.positionCode} + ${KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.capabilityCode} @ DOMAIN scope) or MUDIR (requires ${MUDIR_KAMAR_MANAGE_TARGET_POLICY.positionCode} + ${KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE} @ GLOBAL scope).`,
+      reason: `Manajemen struktur Kamar, penempatan santri, dan penetapan Mudhabbir merupakan hak prerogatif MUDIR (memerlukan ${MUDIR_KAMAR_MANAGE_TARGET_POLICY.positionCode} + ${KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE} @ GLOBAL scope). Posisi '${auth.positionCode}' ditolak.`,
       auth,
     };
   }
@@ -267,8 +270,12 @@ export async function createKamar(params: CreateKamarParams): Promise<KamarOpera
   if (!params.name || !params.name.trim()) {
     return { success: false, code: "INVALID_ARGUMENT", reason: "Kamar name is required." };
   }
-  if (!params.genderComplex || (params.genderComplex !== "PUTRA" && params.genderComplex !== "PUTRI" && params.genderComplex !== "CAMPUR")) {
-    return { success: false, code: "INVALID_ARGUMENT", reason: "Explicit genderComplex (PUTRA/PUTRI/CAMPUR) is required." };
+  if (!params.genderComplex || (params.genderComplex !== "PUTRA" && params.genderComplex !== "PUTRI")) {
+    return {
+      success: false,
+      code: "INVALID_ARGUMENT",
+      reason: "Explicit genderComplex (PUTRA atau PUTRI) wajib ditentukan. Kamar asrama santri CAMPUR dilarang keras.",
+    };
   }
 
   try {
@@ -379,8 +386,8 @@ export async function updateKamar(params: UpdateKamarParams): Promise<KamarOpera
       }
 
       if (params.genderComplex !== undefined) {
-        if (params.genderComplex !== "PUTRA" && params.genderComplex !== "PUTRI" && params.genderComplex !== "CAMPUR") {
-          throw new Error("Explicit genderComplex (PUTRA/PUTRI/CAMPUR) is required.");
+        if (params.genderComplex !== "PUTRA" && params.genderComplex !== "PUTRI") {
+          throw new Error("Explicit genderComplex (PUTRA atau PUTRI) wajib ditentukan. Kamar asrama santri CAMPUR dilarang keras.");
         }
         updateData.genderComplex = params.genderComplex;
       }
@@ -533,7 +540,7 @@ export async function assignMudhabbir(params: AssignMudhabbirParams): Promise<Ka
       // 4. Deterministically close previous active Mudhabbir assignment for ALL target rooms
       const previousAssignments = await tx.assignment.findMany({
         where: {
-          unitId: targetRoomIds.length === 1 ? targetRoomIds[0] : ({ in: targetRoomIds } as any),
+          unitId: targetRoomIds.length === 1 ? targetRoomIds[0] : { in: targetRoomIds },
           positionId: position.id,
           status: "ACTIVE",
         },

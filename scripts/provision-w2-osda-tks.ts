@@ -42,7 +42,7 @@ export const TARGET_OSDA_DIVISIONS: UnitTargetSpec[] = [
     parentCode: "OU-OSDA-ROOT",
   },
   {
-    code: "OU-OSDA-IBADAH",
+    code: "OU-OSDA-PENDIDIKAN",
     name: "Divisi Pendidikan dan Ibadah",
     type: "DIVISION",
     domain: "KEASRAMAAN",
