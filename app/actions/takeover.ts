@@ -19,6 +19,7 @@ export interface TakeoverActionResponse<T = unknown> {
  * Server Action for Supervisory Takeover (ORR-086)
  * Enables Atasan to assume responsibility for neglected tasks while strictly preserving
  * the original PIC attribution and audit provenance.
+ * Delegates canonical evaluation to executeSupervisoryTakeover in lib/server.
  */
 export async function executeSupervisoryTakeoverAction(input: {
   originalAssignmentId: string;
@@ -39,8 +40,8 @@ export async function executeSupervisoryTakeoverAction(input: {
       originalPic: input.originalPic,
       takeoverActor: {
         userId: session.userId,
-        positionCode: session.role === 'KS' ? 'MUDIR' : session.role === 'MK' ? 'KEPALA_KEASRAMAAN' : session.role,
-        isLeadership: session.role === 'KS' || session.role === 'MK',
+        name: session.name || session.username,
+        positionCode: session.role === 'KS' ? 'MUDIR' : session.role === 'MK' ? 'KEPALA_KEASRAMAAN' : (session.role || ''),
       },
       reason: input.reason,
       resourceContext: input.resourceContext,
