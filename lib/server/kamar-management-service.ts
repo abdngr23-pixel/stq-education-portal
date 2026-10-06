@@ -8,7 +8,7 @@
  *
  * NON-NEGOTIABLE INVARIANTS:
  * 1. Authorization: strictly requires authorizeCanonical with capability 'keasramaan.kamar.manage'
- *    conferred EXCLUSIVELY to KEPALA_KEASRAMAAN.
+ *    conferred EXCLUSIVELY to MUDIR with GLOBAL scope (INSTITUTIONAL domain).
  * 2. Room validation: OrgUnit.type === "KAMAR", OrgUnit.domain === "KEASRAMAAN", isActive === true.
  * 3. Gender boundary: room genderComplex must be explicit and strictly compatible with occupant Santri.
  * 4. Mudhabbir assignment: must be PERSONAL User, active User, active Staff, position PEMBINA_HALAQOH anchored to KAMAR.
@@ -30,7 +30,6 @@ import { UserSession } from "@/types/auth";
 import {
   GenderComplex,
   KEASRAMAAN_KAMAR_CAPABILITIES,
-  KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY,
   MUDIR_KAMAR_MANAGE_TARGET_POLICY,
   ScopeType,
   UnitAccountExecutorContext,
@@ -163,7 +162,7 @@ type KamarManageAuthorizationResult =
 
 /**
  * Validates canonical authority for kamar management.
- * Strictly restricted to KEPALA_KEASRAMAAN with valid keasramaan.kamar.manage grant.
+ * Strictly restricted to MUDIR with valid keasramaan.kamar.manage grant at GLOBAL scope.
  */
 async function authorizeKamarManage(
   callerIdentity: CanonicalIdentity | UserSession,
@@ -182,7 +181,7 @@ async function authorizeKamarManage(
       ? undefined
       : {
           orgUnitIds: [],
-          orgDomain: KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY.domain,
+          orgDomain: MUDIR_KAMAR_MANAGE_TARGET_POLICY.domain,
           genderComplex: "TIDAK_TERIKAT",
         },
     dataProvider,
@@ -651,13 +650,14 @@ export async function assignSantri(params: AssignSantriParams): Promise<KamarOpe
           throw new Error(`Active Santri with ID ${santriId} not found.`);
         }
 
-        // Gender boundary validation
+        // Gender boundary validation: Kamar must be strictly PUTRA or PUTRI (no CAMPUR for dorms)
+        if (kamar.genderComplex !== "PUTRA" && kamar.genderComplex !== "PUTRI") {
+          throw new Error(
+            `Kamar genderComplex invalid: Kamar ${kamar.name} has genderComplex ${kamar.genderComplex}. Active dorm rooms strictly require PUTRA or PUTRI.`
+          );
+        }
         const santriGender = santri.jenisKelamin === "L" ? "PUTRA" : santri.jenisKelamin === "P" ? "PUTRI" : "CAMPUR";
-        if (
-          kamar.genderComplex !== "CAMPUR" &&
-          kamar.genderComplex !== "TIDAK_TERIKAT" &&
-          santriGender !== kamar.genderComplex
-        ) {
+        if (santriGender !== kamar.genderComplex) {
           throw new Error(
             `Gender boundary violation: Santri ${santri.nama} (${santriGender}) cannot be placed in ${kamar.genderComplex} room.`
           );
@@ -770,13 +770,14 @@ export async function moveSantri(params: MoveSantriParams): Promise<KamarOperati
         throw new Error(`Active Santri with ID ${params.santriId} not found.`);
       }
 
-      // 3. Gender boundary validation
+      // 3. Gender boundary validation: Kamar must be strictly PUTRA or PUTRI (no CAMPUR for dorms)
+      if (targetKamar.genderComplex !== "PUTRA" && targetKamar.genderComplex !== "PUTRI") {
+        throw new Error(
+          `Kamar genderComplex invalid: Target Kamar ${targetKamar.name} has genderComplex ${targetKamar.genderComplex}. Active dorm rooms strictly require PUTRA or PUTRI.`
+        );
+      }
       const santriGender = santri.jenisKelamin === "L" ? "PUTRA" : santri.jenisKelamin === "P" ? "PUTRI" : "CAMPUR";
-      if (
-        targetKamar.genderComplex !== "CAMPUR" &&
-        targetKamar.genderComplex !== "TIDAK_TERIKAT" &&
-        santriGender !== targetKamar.genderComplex
-      ) {
+      if (santriGender !== targetKamar.genderComplex) {
         throw new Error(
           `Gender boundary violation: Santri ${santri.nama} (${santriGender}) cannot be moved to ${targetKamar.genderComplex} room.`
         );
@@ -1014,6 +1015,15 @@ export function validateUsrohHierarchy(params: {
       valid: false,
       code: "PARENT_NOT_FOUND_OR_INACTIVE",
       reason: "Parent OrgUnit not found or inactive.",
+    };
+  }
+
+  // Reject KAMAR as structural parent
+  if (params.parentOrgUnit.type === "KAMAR") {
+    return {
+      valid: false,
+      code: "FORBIDDEN_PARENT_KAMAR",
+      reason: "STRUCTURAL VIOLATION: Usroh must NOT use KAMAR as structural parent. Usroh must be parented under OU-OSDA-ROOT.",
     };
   }
 

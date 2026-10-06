@@ -162,6 +162,7 @@ export interface UnitPreflightStatus {
   existingId?: string;
   parentExists: boolean;
   parentId?: string;
+  driftErrors?: string[];
 }
 
 export interface StructuralPreflightReport {
@@ -171,6 +172,7 @@ export interface StructuralPreflightReport {
   tksServiceUnits: UnitPreflightStatus[];
   allParentsExist: boolean;
   missingUnitsCount: number;
+  configDrifts: string[];
 }
 
 export async function runStructuralPreflight(
@@ -194,26 +196,69 @@ export async function runStructuralPreflight(
   const osdaDivisions: UnitPreflightStatus[] = [];
   for (const spec of TARGET_OSDA_DIVISIONS) {
     const existing = await prisma.orgUnit.findUnique({ where: { code: spec.code } });
+    const driftErrors: string[] = [];
+    if (existing) {
+      if (existing.name !== spec.name) {
+        driftErrors.push(`name mismatch for ${spec.code}: expected "${spec.name}", found "${existing.name}"`);
+      }
+      if (existing.type !== spec.type) {
+        driftErrors.push(`type mismatch for ${spec.code}: expected "${spec.type}", found "${existing.type}"`);
+      }
+      if (existing.domain !== spec.domain) {
+        driftErrors.push(`domain mismatch for ${spec.code}: expected "${spec.domain}", found "${existing.domain}"`);
+      }
+      if (existing.genderComplex !== spec.genderComplex) {
+        driftErrors.push(`genderComplex mismatch for ${spec.code}: expected "${spec.genderComplex}", found "${existing.genderComplex}"`);
+      }
+      if (existing.parentId !== osdaRoot?.id) {
+        driftErrors.push(`parent mismatch for ${spec.code}: expected "${osdaRoot?.id}" (${spec.parentCode}), found "${existing.parentId}"`);
+      }
+    }
     osdaDivisions.push({
       spec,
       exists: Boolean(existing),
       existingId: existing?.id,
       parentExists: Boolean(osdaRoot),
       parentId: osdaRoot?.id,
+      driftErrors,
     });
   }
 
   const tksServiceUnits: UnitPreflightStatus[] = [];
   for (const spec of TARGET_TKS_SERVICE_UNITS) {
     const existing = await prisma.orgUnit.findUnique({ where: { code: spec.code } });
+    const driftErrors: string[] = [];
+    if (existing) {
+      if (existing.name !== spec.name) {
+        driftErrors.push(`name mismatch for ${spec.code}: expected "${spec.name}", found "${existing.name}"`);
+      }
+      if (existing.type !== spec.type) {
+        driftErrors.push(`type mismatch for ${spec.code}: expected "${spec.type}", found "${existing.type}"`);
+      }
+      if (existing.domain !== spec.domain) {
+        driftErrors.push(`domain mismatch for ${spec.code}: expected "${spec.domain}", found "${existing.domain}"`);
+      }
+      if (existing.genderComplex !== spec.genderComplex) {
+        driftErrors.push(`genderComplex mismatch for ${spec.code}: expected "${spec.genderComplex}", found "${existing.genderComplex}"`);
+      }
+      if (existing.parentId !== tksRoot?.id) {
+        driftErrors.push(`parent mismatch for ${spec.code}: expected "${tksRoot?.id}" (${spec.parentCode}), found "${existing.parentId}"`);
+      }
+    }
     tksServiceUnits.push({
       spec,
       exists: Boolean(existing),
       existingId: existing?.id,
       parentExists: Boolean(tksRoot),
       parentId: tksRoot?.id,
+      driftErrors,
     });
   }
+
+  const configDrifts = [
+    ...osdaDivisions.flatMap((u) => u.driftErrors || []),
+    ...tksServiceUnits.flatMap((u) => u.driftErrors || []),
+  ];
 
   const allParentsExist = Boolean(osdaRoot && tksRoot && osdaRoot.isActive && tksRoot.isActive);
   const missingUnitsCount =
@@ -227,6 +272,7 @@ export async function runStructuralPreflight(
     tksServiceUnits,
     allParentsExist,
     missingUnitsCount,
+    configDrifts,
   };
 }
 
@@ -234,6 +280,12 @@ export async function executeStructuralProvisioning(
   prisma: PrismaClient,
   preflight: StructuralPreflightReport
 ): Promise<{ success: boolean; createdUnits: string[]; message: string }> {
+  if (preflight.configDrifts.length > 0) {
+    throw new Error(
+      `STOP / CONFIG_DRIFT: Existing structural units have configuration drift. Silent repair prohibited. Details: ${preflight.configDrifts.join("; ")}`
+    );
+  }
+
   if (!preflight.allParentsExist) {
     throw new Error("PRECONDITION_FAILED: Parent OrgUnits (OU-OSDA-ROOT and OU-TKS-ROOT) must both exist and be active.");
   }
@@ -323,6 +375,12 @@ export async function main() {
   }
 
   console.log(`\nSummary: ${preflight.missingUnitsCount} units pending provisioning.`);
+  if (preflight.configDrifts.length > 0) {
+    console.log("\nCONFIGURATION DRIFT DETECTED:");
+    for (const drift of preflight.configDrifts) {
+      console.log(`  [CONFIG_DRIFT] ${drift}`);
+    }
+  }
 
   if (!guards.isExecuteApproved) {
     console.log("\nSAFE STOP: Script executed in READ-ONLY mode. ZERO mutations committed.");

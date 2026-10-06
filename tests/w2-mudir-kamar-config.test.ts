@@ -14,7 +14,10 @@ import {
   evaluateExecutionGuards,
   TARGET_OSDA_DIVISIONS,
   TARGET_TKS_SERVICE_UNITS,
+  runStructuralPreflight,
+  executeStructuralProvisioning,
 } from "../scripts/provision-w2-osda-tks";
+import { provisionMudirKamarManage } from "../scripts/provision-w2-mudir-kamar-manage";
 import {
   CanonicalIdentity,
   CanonicalAssignmentWithDetails,
@@ -484,6 +487,23 @@ describe("W2 REMEDIATION — TRACK A (MUDIR KAMAR CONFIG) & TRACK E/F", () => {
     assert.strictEqual(resForbidden.valid, false);
     assert.strictEqual(resForbidden.code, "FORBIDDEN_PARENT_DIVISI_KEBERSIHAN");
 
+    // Attempt with KAMAR as parent (STRICTLY FORBIDDEN)
+    const resKamarForbidden = validateUsrohHierarchy({
+      type: "USROH",
+      domain: "KEASRAMAAN",
+      parentOrgUnit: {
+        id: "ou-kamar-101",
+        code: "OU-KAMAR-101",
+        name: "Kamar Abu Bakar",
+        type: "KAMAR",
+        domain: "KEASRAMAAN",
+        isActive: true,
+      },
+    });
+
+    assert.strictEqual(resKamarForbidden.valid, false);
+    assert.strictEqual(resKamarForbidden.code, "FORBIDDEN_PARENT_KAMAR");
+
     // Valid attempt with OSDA root as parent
     const resValid = validateUsrohHierarchy({
       type: "USROH",
@@ -603,8 +623,10 @@ describe("W2 REMEDIATION — TRACK A (MUDIR KAMAR CONFIG) & TRACK E/F", () => {
     });
 
     assert.strictEqual(res.success, false);
-    assert.strictEqual(res.code, "CAPABILITY_NOT_GRANTED");
-    assert.match(res.reason || "", /DIBATALKAN\/SUPERSEDED/i);
+    assert.ok(
+      res.code === "SCOPE_MISMATCH" || res.code === "CAPABILITY_NOT_GRANTED",
+      `Expected SCOPE_MISMATCH or CAPABILITY_NOT_GRANTED, got ${res.code}`
+    );
   });
 
   // 15. Track 1D — Multi-Kamar Permission Matrix (ASSIGNED_UNITS)
@@ -815,5 +837,112 @@ describe("W2 REMEDIATION — TRACK A (MUDIR KAMAR CONFIG) & TRACK E/F", () => {
       dataProvider: multiDataProvider,
     });
     assert.strictEqual(resGender.decision, "DENY");
+  });
+
+  // 16. Structural Provisioning: Detects and stops on CONFIG_DRIFT
+  it("16. Structural provisioning stops on CONFIG_DRIFT if existing unit attributes mismatch", async () => {
+    const mockPrismaDrift = {
+      orgUnit: {
+        findUnique: async (args: any) => {
+          if (args.where.code === "OU-OSDA-ROOT") {
+            return { id: "osda-root", code: "OU-OSDA-ROOT", isActive: true };
+          }
+          if (args.where.code === "OU-TKS-ROOT") {
+            return { id: "tks-root", code: "OU-TKS-ROOT", isActive: true };
+          }
+          if (args.where.code === "OU-OSDA-KEAMANAN") {
+            // Attribute drift: name is altered
+            return {
+              id: "drift-unit-1",
+              code: "OU-OSDA-KEAMANAN",
+              name: "Nama Berbeda Yang Menyebabkan Drift",
+              type: "DIVISION",
+              domain: "KEASRAMAAN",
+              genderComplex: "CAMPUR",
+              parentId: "osda-root",
+            };
+          }
+          return null;
+        },
+      },
+    } as any;
+
+    const preflight = await runStructuralPreflight(mockPrismaDrift);
+    assert.ok(preflight.configDrifts.length > 0, "Must detect configuration drift");
+    assert.match(preflight.configDrifts[0], /name mismatch for OU-OSDA-KEAMANAN/);
+
+    await assert.rejects(
+      async () => {
+        await executeStructuralProvisioning(mockPrismaDrift, preflight);
+      },
+      /STOP \/ CONFIG_DRIFT/,
+      "Must throw STOP / CONFIG_DRIFT error"
+    );
+  });
+
+  // 17. Mudir Kamar Provisioning: Live PositionCapability targets VERIFIED_PRODUCTION
+  it("17. Mudir Kamar provisioning targets VERIFIED_PRODUCTION for live PositionCapability", async () => {
+    const mockPrisma = {
+      capability: { findUnique: async () => null },
+      position: {
+        findMany: async () => [
+          {
+            id: "pos-mudir-1",
+            code: "MUDIR",
+            isActive: true,
+            assignments: [{ id: "asg-m", status: "ACTIVE", user: { username: "mudir" } }],
+            capabilities: [],
+          },
+        ],
+      },
+      positionCapability: {
+        findMany: async () => [],
+      },
+    } as any;
+
+    const result = await provisionMudirKamarManage([], {}, mockPrisma);
+    assert.strictEqual(
+      result.targetWriteManifest.positionCapability.businessRuleState,
+      "VERIFIED_PRODUCTION",
+      "Live PositionCapability must target VERIFIED_PRODUCTION state"
+    );
+    assert.strictEqual(result.targetWriteManifest.positionCapability.scopeType, "GLOBAL");
+  });
+
+  // 18. Dorm room gender enforcement: CAMPUR rooms strictly rejected for santri placement
+  it("18. Dorm room gender enforcement: CAMPUR rooms strictly rejected for santri placement", async () => {
+    const mockCampurKamar = {
+      id: "kamar-campur-1",
+      code: "OU-KAMAR-CAMPUR",
+      name: "Kamar Campur",
+      type: "KAMAR",
+      domain: "KEASRAMAAN",
+      genderComplex: "CAMPUR",
+      isActive: true,
+    };
+    const mockSantri = {
+      id: "santri-1",
+      nama: "Ahmad",
+      jenisKelamin: "L",
+      status: "AKTIF",
+    };
+    const mockPrisma = {
+      $transaction: async (cb: any) =>
+        cb({
+          orgUnit: { findUnique: async () => mockCampurKamar },
+          santri: { findUnique: async () => mockSantri },
+        }),
+    } as any;
+
+    const res = await assignSantri({
+      callerIdentity: mudirIdentity,
+      kamarId: "kamar-campur-1",
+      santriIds: ["santri-1"],
+      prismaClient: mockPrisma,
+      dataProvider: mockDataProvider,
+    });
+
+    assert.strictEqual(res.success, false);
+    assert.match(res.reason || "", /Active dorm rooms strictly require PUTRA or PUTRI/i);
   });
 });

@@ -207,7 +207,7 @@ export async function provisionMudirKamarManage(
       positionCode: MUDIR_KAMAR_MANAGE_TARGET_POLICY.positionCode,
       capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
       scopeType: "GLOBAL",
-      businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+      businessRuleState: "VERIFIED_PRODUCTION",
     },
   };
 
@@ -271,7 +271,7 @@ export async function provisionMudirKamarManage(
         positionId: mudirPos.id,
         capabilityCode: capRow.code,
         scopeType: "GLOBAL",
-        businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+        businessRuleState: "VERIFIED_PRODUCTION",
       },
     });
 
