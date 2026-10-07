@@ -7,14 +7,17 @@ import {
 } from "../lib/server/takeover-service";
 import {
   evaluateOsdaMonitoringAccess,
+  authorizeOsdaMonitoring,
 } from "../lib/server/osda-monitoring-service";
 import {
   parseTakeoverGuards,
   preflightTakeoverCapability,
+  executeTakeoverProvisioning,
 } from "../scripts/provision-w2-takeover-capability";
 import {
   parseOsdaMonitorGuards,
   preflightOsdaMonitor,
+  executeOsdaMonitorProvisioning,
 } from "../scripts/provision-w2-osda-monitor";
 import { GenderComplex, OrgDomain, ScopeType, BusinessRuleState, AssignmentStatus } from "@prisma/client";
 import {
@@ -193,6 +196,143 @@ describe("W2 Track 3 — Supervisory Takeover (ORR-086)", () => {
     assert.equal(res.code, "CAPABILITY_NOT_GRANTED");
   });
 
+  it("3B: caller-supplied fake positionCode does NOT confer authority without active canonical assignment", async () => {
+    // Caller claims to be MUDIR, but has ZERO active assignments in database
+    const fakeMudirRes = await executeSupervisoryTakeover({
+      originalAssignmentId: "asg-1",
+      originalPic: { userId: "usr-pic", positionCode: "PEMBINA_HALAQOH" },
+      takeoverActor: {
+        userId: "usr-impostor",
+        name: "Impostor Claiming Mudir",
+        positionCode: "MUDIR", // Fake caller position
+        mockAssignments: [],   // Zero real assignments
+      },
+      reason: "Mengaku Atasan",
+      resourceContext: {
+        resourceType: "ChecklistRun",
+        resourceId: "run-1",
+        domain: OrgDomain.KEASRAMAAN,
+      },
+      beforeState: {},
+      afterState: {},
+    });
+
+    assert.equal(fakeMudirRes.success, false);
+    assert.equal(fakeMudirRes.code, "CAPABILITY_NOT_GRANTED");
+  });
+
+  it("3B: authorizes successfully when caller provides NO positionCode (resolved canonically from DB)", async () => {
+    const mockPrisma: any = {
+      auditLog: {
+        create: async ({ data }: any) => data,
+      },
+    };
+
+    const mockAssignment = {
+      id: "asg-mk-canon",
+      userId: "usr-real-mk",
+      positionId: "pos-mk",
+      positionCode: "KEPALA_KEASRAMAAN",
+      positionName: "Kepala Keasramaan",
+      domain: "KEASRAMAAN",
+      unitId: "OU-ASRAMA-ROOT",
+      unitCode: "OU-ASRAMA-ROOT",
+      unitName: "Asrama Root",
+      unitGenderComplex: GenderComplex.CAMPUR,
+      status: AssignmentStatus.ACTIVE,
+      validFrom: new Date(Date.now() - 86400000),
+      validUntil: null,
+      positionCapabilities: [
+        {
+          capabilityCode: "keasramaan.takeover.execute",
+          scopeType: ScopeType.DOMAIN,
+          businessRuleState: BusinessRuleState.VERIFIED_PRODUCTION,
+        },
+      ],
+      scopeUnits: [],
+    };
+
+    // Caller provides NO positionCode
+    const res = await executeSupervisoryTakeover({
+      originalAssignmentId: "asg-mudhabbir-1",
+      originalPic: {
+        userId: "usr-mudhabbir",
+        name: "Mudhabbir",
+        positionCode: "PEMBINA_HALAQOH",
+      },
+      takeoverActor: {
+        userId: "usr-real-mk",
+        name: "Kepala Keasramaan Real",
+        // Notice: NO positionCode provided here!
+        mockAssignments: [mockAssignment],
+      },
+      reason: "PIC sakit mendadak.",
+      resourceContext: {
+        resourceType: "ChecklistRun",
+        resourceId: "run-chk-1",
+        domain: OrgDomain.KEASRAMAAN,
+        unitId: "OU-ASRAMA-PUTRA",
+        genderComplex: GenderComplex.PUTRA,
+      },
+      beforeState: {},
+      afterState: {},
+      prismaClient: mockPrisma,
+    });
+
+    assert.equal(res.success, true);
+    assert.ok(res.data);
+    // Position code must be resolved canonically
+    assert.equal(res.data.takeoverActor.positionCode, "KEPALA_KEASRAMAAN");
+  });
+
+  it("3B: strictly denies KEPALA_SEKOLAH even if canonical assignment exists", async () => {
+    const mockAssignment = {
+      id: "asg-ks-1",
+      userId: "usr-ks",
+      positionId: "pos-ks",
+      positionCode: "KEPALA_SEKOLAH",
+      positionName: "Kepala Sekolah",
+      domain: "PENDIDIKAN",
+      unitId: "OU-SEKOLAH",
+      unitCode: "OU-SEKOLAH",
+      unitName: "Sekolah",
+      unitGenderComplex: GenderComplex.CAMPUR,
+      status: AssignmentStatus.ACTIVE,
+      validFrom: new Date(Date.now() - 86400000),
+      validUntil: null,
+      positionCapabilities: [
+        {
+          capabilityCode: "keasramaan.takeover.execute",
+          scopeType: ScopeType.GLOBAL,
+          businessRuleState: BusinessRuleState.VERIFIED_PRODUCTION,
+        },
+      ],
+      scopeUnits: [],
+    };
+
+    const res = await executeSupervisoryTakeover({
+      originalAssignmentId: "asg-1",
+      originalPic: { userId: "usr-pic", positionCode: "PEMBINA_HALAQOH" },
+      takeoverActor: {
+        userId: "usr-ks",
+        name: "Kepala Sekolah",
+        mockAssignments: [mockAssignment],
+      },
+      reason: "Takeover keasramaan oleh kepala sekolah",
+      resourceContext: {
+        resourceType: "ChecklistRun",
+        resourceId: "run-1",
+        domain: OrgDomain.KEASRAMAAN,
+      },
+      beforeState: {},
+      afterState: {},
+    });
+
+    assert.equal(res.success, false);
+    assert.equal(res.code, "SUPERVISORY_AUTHORITY_DENIED");
+    assert.match(res.reason || "", /KEPALA_SEKOLAH/i);
+  });
+
   it("3F: rejects takeover if mandatory provenance is missing", async () => {
     const resNoAssignment = await executeSupervisoryTakeover({
       originalAssignmentId: "",
@@ -359,6 +499,144 @@ describe("W2 Track 3D — OSDA PUTRI Monitoring Policy (ORR-048 / DIR-2026-016)"
     assert.equal(resNoAssignment.allowed, false);
     assert.equal(resNoAssignment.code, "NO_CANONICAL_ASSIGNMENT");
   });
+
+  it("3D: server-side authorizeOsdaMonitoring allows PENGAWAS_SANTRIWATI with active canonical assignment and VERIFIED_PRODUCTION", async () => {
+    const mockAssignment = {
+      id: "asg-lisa-canon",
+      userId: "usr-lisa",
+      positionId: "pos-pengawas",
+      positionCode: "PENGAWAS_SANTRIWATI",
+      positionName: "Pengawas Santriwati",
+      domain: "KEASRAMAAN",
+      unitId: "OU-OSDA-PUTRI",
+      unitCode: "OU-OSDA-PUTRI",
+      unitName: "OSDA Putri",
+      unitGenderComplex: GenderComplex.PUTRI,
+      status: AssignmentStatus.ACTIVE,
+      validFrom: new Date(Date.now() - 86400000),
+      validUntil: null,
+      positionCapabilities: [
+        {
+          capabilityCode: "keasramaan.osda.monitor",
+          scopeType: ScopeType.DOMAIN,
+          businessRuleState: BusinessRuleState.VERIFIED_PRODUCTION,
+        },
+      ],
+      scopeUnits: [],
+    };
+
+    const res = await authorizeOsdaMonitoring({
+      actorUserId: "usr-lisa",
+      actorUsername: "lisa",
+      targetResource: {
+        resourceId: "osda-eval-1",
+        domain: OrgDomain.KEASRAMAAN,
+        genderComplex: GenderComplex.PUTRI,
+        unitId: "OU-OSDA-PUTRI",
+      },
+      isMutation: false,
+      mockAssignments: [mockAssignment],
+    });
+
+    assert.equal(res.allowed, true);
+    assert.equal(res.code, "ALLOWED");
+    assert.equal(res.positionCode, "PENGAWAS_SANTRIWATI");
+  });
+
+  it("3D: server-side authorizeOsdaMonitoring strictly enforces fail-closed boundary rules", async () => {
+    const mockAssignment = {
+      id: "asg-lisa-canon",
+      userId: "usr-lisa",
+      positionId: "pos-pengawas",
+      positionCode: "PENGAWAS_SANTRIWATI",
+      positionName: "Pengawas Santriwati",
+      domain: "KEASRAMAAN",
+      unitId: "OU-OSDA-PUTRI",
+      unitCode: "OU-OSDA-PUTRI",
+      unitName: "OSDA Putri",
+      unitGenderComplex: GenderComplex.PUTRI,
+      status: AssignmentStatus.ACTIVE,
+      validFrom: new Date(Date.now() - 86400000),
+      validUntil: null,
+      positionCapabilities: [
+        {
+          capabilityCode: "keasramaan.osda.monitor",
+          scopeType: ScopeType.DOMAIN,
+          businessRuleState: BusinessRuleState.VERIFIED_PRODUCTION,
+        },
+      ],
+      scopeUnits: [],
+    };
+
+    // 1. Cross-gender PUTRA resource -> GENDER_COMPLEX_DENIED
+    const putraRes = await authorizeOsdaMonitoring({
+      actorUserId: "usr-lisa",
+      targetResource: {
+        resourceId: "osda-putra",
+        domain: OrgDomain.KEASRAMAAN,
+        genderComplex: GenderComplex.PUTRA,
+      },
+      isMutation: false,
+      mockAssignments: [mockAssignment],
+    });
+    assert.equal(putraRes.allowed, false);
+    assert.equal(putraRes.code, "GENDER_COMPLEX_DENIED");
+
+    // 2. Mutation attempt -> MUTATION_NOT_PERMITTED
+    const mutRes = await authorizeOsdaMonitoring({
+      actorUserId: "usr-lisa",
+      targetResource: {
+        resourceId: "osda-putri",
+        domain: OrgDomain.KEASRAMAAN,
+        genderComplex: GenderComplex.PUTRI,
+      },
+      isMutation: true,
+      mockAssignments: [mockAssignment],
+    });
+    assert.equal(mutRes.allowed, false);
+    assert.equal(mutRes.code, "MUTATION_NOT_PERMITTED");
+
+    // 3. Username alone with zero assignments -> NO_CANONICAL_ASSIGNMENT
+    const noAsgRes = await authorizeOsdaMonitoring({
+      actorUserId: "usr-lisa-unassigned",
+      actorUsername: "lisa",
+      targetResource: {
+        domain: OrgDomain.KEASRAMAAN,
+        genderComplex: GenderComplex.PUTRI,
+      },
+      isMutation: false,
+      mockAssignments: [],
+    });
+    assert.equal(noAsgRes.allowed, false);
+    assert.ok(
+      ["CAPABILITY_NOT_GRANTED", "NO_CANONICAL_ASSIGNMENT"].includes(noAsgRes.code),
+      `Expected fail-closed denial code, got: ${noAsgRes.code}`
+    );
+
+    // 4. Ordinary MT assignment -> CAPABILITY_NOT_GRANTED
+    const mtAssignment = {
+      ...mockAssignment,
+      positionCode: "MUSYRIF_TAHFIZH",
+      positionCapabilities: [
+        {
+          capabilityCode: "tahfizh.halaqoh.entry",
+          scopeType: ScopeType.ASSIGNED_UNITS,
+          businessRuleState: BusinessRuleState.VERIFIED_PRODUCTION,
+        },
+      ],
+    };
+    const mtRes = await authorizeOsdaMonitoring({
+      actorUserId: "usr-mt",
+      targetResource: {
+        domain: OrgDomain.KEASRAMAAN,
+        genderComplex: GenderComplex.PUTRI,
+      },
+      isMutation: false,
+      mockAssignments: [mtAssignment],
+    });
+    assert.equal(mtRes.allowed, false);
+    assert.equal(mtRes.code, "CAPABILITY_NOT_GRANTED");
+  });
 });
 
 describe("W2 Track 3C & 3E — Guarded Provisioning Script Invariants", () => {
@@ -483,5 +761,159 @@ describe("W2 Track 3C & 3E — Guarded Provisioning Script Invariants", () => {
     assert.equal(report.positionCapabilityCount, 0);
     assert.equal(report.targetScope, ScopeType.DOMAIN);
     assert.equal(report.allPreconditionsPass, true);
+  });
+
+  it("3C: executeTakeoverProvisioning defaults to read-only mode and executes atomic transaction when approved", async () => {
+    const caps: any[] = [];
+    const pcs: any[] = [];
+
+    const mockPrisma: any = {
+      capability: {
+        findUnique: async () => caps[0] || null,
+        create: async ({ data }: any) => {
+          caps.push(data);
+          return data;
+        },
+      },
+      position: {
+        findUnique: async ({ where }: any) => ({
+          id: `pos-${where.code}`,
+          code: where.code,
+        }),
+      },
+      positionCapability: {
+        findMany: async () =>
+          pcs.map((p) => ({
+            ...p,
+            position: { code: p.positionId === "pos-MUDIR" ? "MUDIR" : "KEPALA_KEASRAMAAN" },
+          })),
+        findFirst: async ({ where }: any) => pcs.find((p) => p.positionId === where.positionId) || null,
+        create: async ({ data }: any) => {
+          const record = { id: `pc-${pcs.length + 1}`, ...data };
+          pcs.push(record);
+          return record;
+        },
+      },
+      assignment: {
+        findMany: async () => [
+          {
+            id: "asg-m",
+            userId: "u-m",
+            position: { code: "MUDIR" },
+            user: { username: "mudir" },
+            unit: { code: "OU-STQ-ROOT" },
+            status: "ACTIVE",
+          },
+          {
+            id: "asg-mk",
+            userId: "u-mk",
+            position: { code: "KEPALA_KEASRAMAAN" },
+            user: { username: "kepala.keasramaan" },
+            unit: { code: "OU-ASRAMA-ROOT" },
+            status: "ACTIVE",
+          },
+        ],
+      },
+      $transaction: async (cb: any) => cb(mockPrisma),
+    };
+
+    // 1. Unapproved guards -> READ_ONLY mode
+    const readGuards = parseTakeoverGuards([], {});
+    const readRes = await executeTakeoverProvisioning(readGuards, mockPrisma);
+    assert.equal(readRes.mode, "READ_ONLY");
+    assert.equal(readRes.executed, false);
+    assert.equal(caps.length, 0);
+
+    // 2. Approved guards -> EXECUTED atomic transaction
+    const appGuards = parseTakeoverGuards(
+      ["--execute", "--approved-scope=W2-TAKEOVER"],
+      { PRODUCTION_MUTATION_APPROVED: "W2-TAKEOVER" }
+    );
+    const execRes = await executeTakeoverProvisioning(appGuards, mockPrisma);
+    assert.equal(execRes.mode, "EXECUTED");
+    assert.equal(execRes.executed, true);
+    assert.equal(execRes.createdCapabilityCount, 1);
+    assert.equal(execRes.createdPositionCapabilityCount, 2);
+    assert.equal(caps[0].code, "keasramaan.takeover.execute");
+    assert.equal(pcs.length, 2);
+    assert.equal(pcs[0].scopeType, ScopeType.GLOBAL);
+    assert.equal(pcs[0].businessRuleState, BusinessRuleState.VERIFIED_PRODUCTION);
+    assert.equal(pcs[1].scopeType, ScopeType.DOMAIN);
+    assert.equal(pcs[1].businessRuleState, BusinessRuleState.VERIFIED_PRODUCTION);
+  });
+
+  it("3E: executeOsdaMonitorProvisioning defaults to read-only mode and executes atomic transaction when approved", async () => {
+    const caps: any[] = [];
+    const pcs: any[] = [];
+
+    const mockPrisma: any = {
+      capability: {
+        findUnique: async () => caps[0] || null,
+        create: async ({ data }: any) => {
+          caps.push(data);
+          return data;
+        },
+      },
+      position: {
+        findUnique: async ({ where }: any) => ({
+          id: `pos-${where.code}`,
+          code: where.code,
+        }),
+      },
+      staff: {
+        findMany: async () => [
+          {
+            nama: "Ustadzah Lisa",
+            user: {
+              id: "usr-lisa",
+              username: "lisa",
+              assignments: [
+                {
+                  id: "asg-lisa-1",
+                  status: "ACTIVE",
+                  position: { code: "PENGAWAS_SANTRIWATI" },
+                  unit: { code: "OU-OSDA-PUTRI" },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      positionCapability: {
+        findMany: async () =>
+          pcs.map((p) => ({
+            ...p,
+            position: { code: "PENGAWAS_SANTRIWATI" },
+          })),
+        findFirst: async ({ where }: any) => pcs.find((p) => p.positionId === where.positionId) || null,
+        create: async ({ data }: any) => {
+          const record = { id: `pc-${pcs.length + 1}`, ...data };
+          pcs.push(record);
+          return record;
+        },
+      },
+      $transaction: async (cb: any) => cb(mockPrisma),
+    };
+
+    // 1. Unapproved -> READ_ONLY mode
+    const readGuards = parseOsdaMonitorGuards([], {});
+    const readRes = await executeOsdaMonitorProvisioning(readGuards, mockPrisma);
+    assert.equal(readRes.mode, "READ_ONLY");
+    assert.equal(readRes.executed, false);
+    assert.equal(caps.length, 0);
+
+    // 2. Approved -> EXECUTED mode
+    const appGuards = parseOsdaMonitorGuards(
+      ["--execute", "--approved-scope=W2-OSDA-MONITOR"],
+      { PRODUCTION_MUTATION_APPROVED: "W2-OSDA-MONITOR" }
+    );
+    const execRes = await executeOsdaMonitorProvisioning(appGuards, mockPrisma);
+    assert.equal(execRes.mode, "EXECUTED");
+    assert.equal(execRes.executed, true);
+    assert.equal(execRes.createdCapabilityCount, 1);
+    assert.equal(caps[0].code, "keasramaan.osda.monitor");
+    assert.equal(KEASRAMAAN_OSDA_MONITOR_TARGET_POLICY.isReadOnly, true);
+    assert.equal(pcs[0].scopeType, ScopeType.DOMAIN);
+    assert.equal(pcs[0].businessRuleState, BusinessRuleState.VERIFIED_PRODUCTION);
   });
 });

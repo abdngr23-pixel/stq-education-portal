@@ -97,10 +97,10 @@ export async function preflightTakeoverCapability(
     include: { position: true },
   });
 
-  const mudirGrant = positionCaps.find((pc) => pc.position.code === "MUDIR");
-  const mkGrant = positionCaps.find((pc) => pc.position.code === "KEPALA_KEASRAMAAN");
+  const mudirGrant = positionCaps.find((pc) => pc.position?.code === "MUDIR");
+  const mkGrant = positionCaps.find((pc) => pc.position?.code === "KEPALA_KEASRAMAAN");
   const conflicting = positionCaps.filter(
-    (pc) => pc.position.code !== "MUDIR" && pc.position.code !== "KEPALA_KEASRAMAAN"
+    (pc) => pc.position?.code !== "MUDIR" && pc.position?.code !== "KEPALA_KEASRAMAAN"
   );
 
   // 3. Active relevant assignments
@@ -161,13 +161,131 @@ export async function preflightTakeoverCapability(
     kepalaKeasramaanGrantScope: mkGrant?.scopeType,
     conflictingGrants: conflicting.map((c) => ({
       id: c.id,
-      positionCode: c.position.code,
+      positionCode: c.position?.code || "UNKNOWN",
       scopeType: c.scopeType,
       businessRuleState: c.businessRuleState,
     })),
     activeRelevantAssignments,
     allPreconditionsPass: validationErrors.length === 0,
     validationErrors,
+  };
+}
+
+export interface TakeoverProvisioningResult {
+  mode: "READ_ONLY" | "EXECUTED";
+  executed: boolean;
+  preflight: TakeoverPreflightReport;
+  createdCapabilityCount: number;
+  createdPositionCapabilityCount: number;
+  mudirPositionCapabilityId?: string;
+  kepalaKeasramaanPositionCapabilityId?: string;
+  postReport?: TakeoverPreflightReport;
+}
+
+export async function executeTakeoverProvisioning(
+  guards: ReturnType<typeof parseTakeoverGuards>,
+  prisma: PrismaClient = defaultPrisma
+): Promise<TakeoverProvisioningResult> {
+  const capabilityCode = KEASRAMAAN_CAPABILITIES.TAKEOVER_EXECUTE;
+  const preflight = await preflightTakeoverCapability(prisma);
+
+  if (!guards.isExecuteApproved) {
+    return {
+      mode: "READ_ONLY",
+      executed: false,
+      preflight,
+      createdCapabilityCount: 0,
+      createdPositionCapabilityCount: 0,
+    };
+  }
+
+  // Pre-execution invariant checks
+  if (!preflight.allPreconditionsPass) {
+    throw new Error(
+      `ABORT_PROVISIONING: Preconditions failed:\n${preflight.validationErrors.join("\n")}`
+    );
+  }
+
+  let createdCapability = 0;
+  let createdPositionCapability = 0;
+  let mudirPcId: string | undefined;
+  let mkPcId: string | undefined;
+
+  await prisma.$transaction(async (tx) => {
+    // 1. Recheck and create Capability if absent (no upsert, no update, no delete)
+    let liveCap = await tx.capability.findUnique({
+      where: { code: capabilityCode },
+    });
+    if (!liveCap) {
+      liveCap = await tx.capability.create({
+        data: {
+          code: capabilityCode,
+          name: "Supervisory Takeover Execution",
+          namespace: "KEASRAMAAN",
+          description:
+            "Otoritas Atasan (Mudir & Kepala Keasramaan) untuk mengambil alih tugas bawahan secara terstruktur tanpa menghilangkan atribusi PIC asli.",
+        },
+      });
+      createdCapability++;
+    }
+
+    // 2. Resolve Positions
+    const mudirPos = await tx.position.findUnique({ where: { code: "MUDIR" } });
+    if (!mudirPos) throw new Error("Position 'MUDIR' not found in database.");
+
+    const mkPos = await tx.position.findUnique({ where: { code: "KEPALA_KEASRAMAAN" } });
+    if (!mkPos) throw new Error("Position 'KEPALA_KEASRAMAAN' not found in database.");
+
+    // 3. Recheck PositionCapability for MUDIR (GLOBAL / VERIFIED_PRODUCTION)
+    const existingMudirPc = await tx.positionCapability.findFirst({
+      where: { positionId: mudirPos.id, capabilityCode },
+    });
+    if (!existingMudirPc) {
+      const pc = await tx.positionCapability.create({
+        data: {
+          positionId: mudirPos.id,
+          capabilityCode,
+          scopeType: ScopeType.GLOBAL,
+          businessRuleState: BusinessRuleState.VERIFIED_PRODUCTION,
+        },
+      });
+      mudirPcId = pc.id;
+      createdPositionCapability++;
+    } else {
+      mudirPcId = existingMudirPc.id;
+    }
+
+    // 4. Recheck PositionCapability for KEPALA_KEASRAMAAN (DOMAIN / VERIFIED_PRODUCTION)
+    const existingMkPc = await tx.positionCapability.findFirst({
+      where: { positionId: mkPos.id, capabilityCode },
+    });
+    if (!existingMkPc) {
+      const pc = await tx.positionCapability.create({
+        data: {
+          positionId: mkPos.id,
+          capabilityCode,
+          scopeType: ScopeType.DOMAIN,
+          businessRuleState: BusinessRuleState.VERIFIED_PRODUCTION,
+        },
+      });
+      mkPcId = pc.id;
+      createdPositionCapability++;
+    } else {
+      mkPcId = existingMkPc.id;
+    }
+  });
+
+  const postReport = await preflightTakeoverCapability(prisma);
+
+  return {
+    mode: "EXECUTED",
+    executed: true,
+    preflight,
+    createdCapabilityCount: createdCapability,
+    createdPositionCapabilityCount: createdPositionCapability,
+    mudirPositionCapabilityId: mudirPcId,
+    kepalaKeasramaanPositionCapabilityId: mkPcId,
+    postReport,
   };
 }
 
@@ -179,38 +297,19 @@ async function main() {
   const guards = parseTakeoverGuards();
   console.log(`Execution Mode: ${guards.isExecuteApproved ? "EXECUTE MUTATION" : "READ-ONLY PREFLIGHT"}`);
 
-  const report = await preflightTakeoverCapability();
+  const result = await executeTakeoverProvisioning(guards, defaultPrisma);
 
-  console.log("\n--- PREFLIGHT REPORT ---");
-  console.log(`Capability '${report.capabilityDetails.code}': count = ${report.capabilityCount} (${report.capabilityDetails.exists ? "EXISTS" : "ABSENT"})`);
-  console.log(`MUDIR Grant: count = ${report.mudirGrantCount}, state = ${report.mudirGrantState}, scope = ${report.mudirGrantScope || "N/A"}`);
-  console.log(`KEPALA_KEASRAMAAN Grant: count = ${report.kepalaKeasramaanGrantCount}, state = ${report.kepalaKeasramaanGrantState}, scope = ${report.kepalaKeasramaanGrantScope || "N/A"}`);
-  console.log(`Conflicting Grants: count = ${report.conflictingGrants.length}`);
-  console.log(`Active Relevant Assignments: count = ${report.activeRelevantAssignments.length}`);
-  for (const asg of report.activeRelevantAssignments) {
-    console.log(`  - [${asg.positionCode}] ${asg.username} (unit: ${asg.unitCode}, id: ${asg.id})`);
+  console.log("\n--- PROVISIONING REPORT ---");
+  console.log(`Mode: ${result.mode} (Executed: ${result.executed})`);
+  console.log(`Created Capability: ${result.createdCapabilityCount}`);
+  console.log(`Created PositionCapability: ${result.createdPositionCapabilityCount}`);
+
+  if (result.mode === "READ_ONLY") {
+    console.log("\n[SAFE STOP] Default read-only preflight. Zero database writes performed.");
+    for (const r of guards.guardReasons) console.log(`  - ${r}`);
+  } else {
+    console.log("\n[SUCCESS] Guarded provisioning executed successfully in atomic transaction.");
   }
-
-  if (report.validationErrors.length > 0) {
-    console.log("\n[!] Preflight Warnings / Errors:");
-    for (const err of report.validationErrors) {
-      console.log(`  - ${err}`);
-    }
-  }
-
-  if (!guards.isExecuteApproved) {
-    console.log("\n[SAFE STOP] Guards not met. Execution bypassed. Zero database writes performed.");
-    console.log("Guard Reasons:");
-    for (const reason of guards.guardReasons) {
-      console.log(`  - ${reason}`);
-    }
-    return;
-  }
-
-  // Future guarded execution mode (only runs when explicitly authorized by owner)
-  console.log("\nExecuting atomic provisioning for supervisory takeover...");
-  // In pre-merge hardening, this code path is never triggered.
-  throw new Error("PROVISIONING_MUTATION_LOCKED: Pre-merge hardening prohibits database mutation.");
 }
 
 if (require.main === module) {

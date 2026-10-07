@@ -170,7 +170,7 @@ export async function preflightOsdaMonitor(
     positionCapabilityCount: positionCaps.length,
     positionCapabilityDetails: positionCaps.map((pc) => ({
       id: pc.id,
-      positionCode: pc.position.code,
+      positionCode: pc.position?.code || "UNKNOWN",
       scopeType: pc.scopeType,
       businessRuleState: pc.businessRuleState,
     })),
@@ -178,6 +178,106 @@ export async function preflightOsdaMonitor(
     targetBusinessRuleState: BusinessRuleState.VERIFIED_PRODUCTION,
     allPreconditionsPass: validationErrors.length === 0,
     validationErrors,
+  };
+}
+
+export interface OsdaMonitorProvisioningResult {
+  mode: "READ_ONLY" | "EXECUTED";
+  executed: boolean;
+  preflight: OsdaMonitorPreflightReport;
+  createdCapabilityCount: number;
+  createdPositionCapabilityCount: number;
+  pengawasPositionCapabilityId?: string;
+  postReport?: OsdaMonitorPreflightReport;
+}
+
+export async function executeOsdaMonitorProvisioning(
+  guards: ReturnType<typeof parseOsdaMonitorGuards>,
+  prisma: PrismaClient = defaultPrisma
+): Promise<OsdaMonitorProvisioningResult> {
+  const capabilityCode = KEASRAMAAN_CAPABILITIES.OSDA_MONITOR;
+  const preflight = await preflightOsdaMonitor(prisma);
+
+  if (!guards.isExecuteApproved) {
+    return {
+      mode: "READ_ONLY",
+      executed: false,
+      preflight,
+      createdCapabilityCount: 0,
+      createdPositionCapabilityCount: 0,
+    };
+  }
+
+  // Pre-execution invariant checks
+  if (!preflight.allPreconditionsPass) {
+    throw new Error(
+      `ABORT_PROVISIONING: Preconditions failed:\n${preflight.validationErrors.join("\n")}`
+    );
+  }
+
+  let createdCapability = 0;
+  let createdPositionCapability = 0;
+  let pcId: string | undefined;
+
+  await prisma.$transaction(async (tx) => {
+    // 1. Recheck and create Capability if absent (read-only metadata, no mutation)
+    let liveCap = await tx.capability.findUnique({
+      where: { code: capabilityCode },
+    });
+    if (!liveCap) {
+      liveCap = await tx.capability.create({
+        data: {
+          code: capabilityCode,
+          name: "OSDA Putri Monitoring",
+          namespace: "KEASRAMAAN",
+          description:
+            "Akses read-only monitoring kegiatan santriwati OSDA Putri bagi Pengawas Santriwati tanpa wewenang mutasi.",
+        },
+      });
+      createdCapability++;
+    }
+
+    // 2. Resolve PENGAWAS_SANTRIWATI position
+    const pengawasPos = await tx.position.findUnique({
+      where: { code: "PENGAWAS_SANTRIWATI" },
+    });
+    if (!pengawasPos) {
+      throw new Error("Position 'PENGAWAS_SANTRIWATI' not found in database.");
+    }
+
+    // 3. Recheck PositionCapability (DOMAIN / VERIFIED_PRODUCTION)
+    const existingPc = await tx.positionCapability.findFirst({
+      where: { positionId: pengawasPos.id, capabilityCode },
+    });
+    if (!existingPc) {
+      const pc = await tx.positionCapability.create({
+        data: {
+          positionId: pengawasPos.id,
+          capabilityCode,
+          scopeType: ScopeType.DOMAIN,
+          businessRuleState: BusinessRuleState.VERIFIED_PRODUCTION,
+        },
+      });
+      pcId = pc.id;
+      createdPositionCapability++;
+    } else {
+      pcId = existingPc.id;
+    }
+
+    // Invariant: Existing active Lisa PENGAWAS_SANTRIWATI assignment is reused.
+    // Zero new Lisa assignments. Zero username-based authorization.
+  });
+
+  const postReport = await preflightOsdaMonitor(prisma);
+
+  return {
+    mode: "EXECUTED",
+    executed: true,
+    preflight,
+    createdCapabilityCount: createdCapability,
+    createdPositionCapabilityCount: createdPositionCapability,
+    pengawasPositionCapabilityId: pcId,
+    postReport,
   };
 }
 
@@ -189,38 +289,19 @@ async function main() {
   const guards = parseOsdaMonitorGuards();
   console.log(`Execution Mode: ${guards.isExecuteApproved ? "EXECUTE MUTATION" : "READ-ONLY PREFLIGHT"}`);
 
-  const report = await preflightOsdaMonitor();
+  const result = await executeOsdaMonitorProvisioning(guards, defaultPrisma);
 
-  console.log("\n--- PREFLIGHT REPORT ---");
-  console.log(`Capability '${report.capabilityDetails.code}': count = ${report.capabilityCount} (${report.capabilityDetails.exists ? "EXISTS" : "ABSENT"})`);
-  console.log(`Position 'PENGAWAS_SANTRIWATI': count = ${report.pengawasPositionCount} (${report.pengawasPositionDetails ? "EXISTS" : "ABSENT"})`);
-  console.log(`Lisa PENGAWAS_SANTRIWATI Assignments: count = ${report.lisaAssignmentCount}`);
-  for (const asg of report.lisaAssignmentDetails) {
-    console.log(`  - ${asg.staffName} (${asg.username}) -> Unit: ${asg.unitCode}, Status: ${asg.status}, ID: ${asg.id}`);
+  console.log("\n--- PROVISIONING REPORT ---");
+  console.log(`Mode: ${result.mode} (Executed: ${result.executed})`);
+  console.log(`Created Capability: ${result.createdCapabilityCount}`);
+  console.log(`Created PositionCapability: ${result.createdPositionCapabilityCount}`);
+
+  if (result.mode === "READ_ONLY") {
+    console.log("\n[SAFE STOP] Default read-only preflight. Zero database writes performed.");
+    for (const r of guards.guardReasons) console.log(`  - ${r}`);
+  } else {
+    console.log("\n[SUCCESS] Guarded provisioning executed successfully in atomic transaction.");
   }
-  console.log(`PositionCapability Count: ${report.positionCapabilityCount}`);
-  console.log(`Target Scope: ${report.targetScope}`);
-  console.log(`Target BusinessRuleState: ${report.targetBusinessRuleState}`);
-
-  if (report.validationErrors.length > 0) {
-    console.log("\n[!] Preflight Warnings / Errors:");
-    for (const err of report.validationErrors) {
-      console.log(`  - ${err}`);
-    }
-  }
-
-  if (!guards.isExecuteApproved) {
-    console.log("\n[SAFE STOP] Guards not met. Execution bypassed. Zero database writes performed.");
-    console.log("Guard Reasons:");
-    for (const reason of guards.guardReasons) {
-      console.log(`  - ${reason}`);
-    }
-    return;
-  }
-
-  // Future guarded execution mode
-  console.log("\nExecuting atomic provisioning for OSDA monitor...");
-  throw new Error("PROVISIONING_MUTATION_LOCKED: Pre-merge hardening prohibits database mutation.");
 }
 
 if (require.main === module) {

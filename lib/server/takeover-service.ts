@@ -1,4 +1,4 @@
-import { PrismaClient, OrgDomain, GenderComplex } from "@prisma/client";
+import { PrismaClient, OrgDomain, GenderComplex, ScopeType } from "@prisma/client";
 import defaultPrisma from "@/lib/prisma";
 import {
   SupervisoryTakeoverRecord,
@@ -15,7 +15,7 @@ import {
 export interface TakeoverActorIdentity {
   userId: string;
   name?: string;
-  positionCode: string;
+  positionCode?: string;
   domain?: OrgDomain;
   isLeadership?: boolean;
   staffId?: string;
@@ -169,20 +169,10 @@ export async function executeSupervisoryTakeover(
     };
   }
 
-  // 2. Canonical hierarchical supervisory authority check
-  const authCheck = validateSupervisoryAuthority(
-    params.takeoverActor,
-    params.resourceContext.domain
-  );
-  if (!authCheck.authorized) {
-    return {
-      success: false,
-      code: "SUPERVISORY_AUTHORITY_DENIED",
-      reason: authCheck.reason || "Pengambilalihan ditolak: tidak memiliki otoritas Atasan / Supervisor.",
-    };
-  }
+  // 2. Canonical Capability Authorization (Track 3B) - Evaluated FIRST
+  let resolvedPositionCode = params.takeoverActor.positionCode || "";
+  let resolvedScopeType: ScopeType | undefined;
 
-  // 3. Canonical Capability Authorization (Track 3B)
   if (!params.skipCanonicalAuthForTesting) {
     const dataProvider =
       params.dataProvider ||
@@ -227,6 +217,54 @@ export async function executeSupervisoryTakeover(
         reason: authDecision.reason || "Pengambilalihan ditolak: tidak memiliki kapabilitas kanonikal 'keasramaan.takeover.execute'.",
       };
     }
+
+    resolvedPositionCode = authDecision.positionCode || "";
+    resolvedScopeType = authDecision.scopeType;
+  }
+
+  // 3. Supervisory-level validation using resolved canonical decision attributes
+  // Caller-supplied positionCode does not confer authority; only canonical resolved position is trusted.
+  if (!resolvedPositionCode || !ALLOWED_SUPERVISORY_POSITIONS.has(resolvedPositionCode)) {
+    return {
+      success: false,
+      code: "SUPERVISORY_AUTHORITY_DENIED",
+      reason: `Posisi '${resolvedPositionCode || "UNKNOWN"}' bukan merupakan Atasan / Supervisor berwenang untuk takeover tugas Keasramaan (hanya MUDIR dan KEPALA_KEASRAMAAN).`,
+    };
+  }
+
+  if (resolvedPositionCode === "KEPALA_SEKOLAH") {
+    return {
+      success: false,
+      code: "SUPERVISORY_AUTHORITY_DENIED",
+      reason: "Posisi 'KEPALA_SEKOLAH' bukan merupakan otoritas supervisi kanonikal Keasramaan (hanya MUDIR dan KEPALA_KEASRAMAAN).",
+    };
+  }
+
+  if (resolvedPositionCode === "MUDIR") {
+    if (resolvedScopeType && resolvedScopeType !== ScopeType.GLOBAL) {
+      return {
+        success: false,
+        code: "SUPERVISORY_AUTHORITY_DENIED",
+        reason: `Posisi 'MUDIR' memerlukan scope 'GLOBAL', ditemukan '${resolvedScopeType}'.`,
+      };
+    }
+  }
+
+  if (resolvedPositionCode === "KEPALA_KEASRAMAAN") {
+    if (resolvedScopeType && resolvedScopeType !== ScopeType.DOMAIN) {
+      return {
+        success: false,
+        code: "SUPERVISORY_AUTHORITY_DENIED",
+        reason: `Posisi 'KEPALA_KEASRAMAAN' memerlukan scope 'DOMAIN', ditemukan '${resolvedScopeType}'.`,
+      };
+    }
+    if (params.resourceContext.domain !== OrgDomain.KEASRAMAAN) {
+      return {
+        success: false,
+        code: "SUPERVISORY_AUTHORITY_DENIED",
+        reason: `Posisi 'KEPALA_KEASRAMAAN' hanya memiliki wewenang supervisi atas domain 'KEASRAMAAN', bukan domain '${params.resourceContext.domain}'.`,
+      };
+    }
   }
 
   // 4. Assemble immutable takeover provenance record
@@ -244,7 +282,7 @@ export async function executeSupervisoryTakeover(
     takeoverActor: {
       userId: params.takeoverActor.userId,
       name: params.takeoverActor.name,
-      positionCode: params.takeoverActor.positionCode,
+      positionCode: resolvedPositionCode,
     },
     reason: params.reason.trim(),
     timestamp,

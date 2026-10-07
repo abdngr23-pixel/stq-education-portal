@@ -41,7 +41,6 @@ export async function executeSupervisoryTakeoverAction(input: {
       takeoverActor: {
         userId: session.userId,
         name: session.name || session.username,
-        positionCode: session.role === 'KS' ? 'MUDIR' : session.role === 'MK' ? 'KEPALA_KEASRAMAAN' : (session.role || ''),
       },
       reason: input.reason,
       resourceContext: input.resourceContext,
