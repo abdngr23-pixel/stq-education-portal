@@ -1,9 +1,6 @@
 'use server';
 
-import prisma from '@/lib/prisma';
-import { getSession } from '@/lib/auth';
 import {
-  getChecklistRunById,
   ChecklistTemplateItemSchema,
   PerformChecklistItemInput,
   ReviewChecklistItemInput,
@@ -101,34 +98,14 @@ export async function reviewChecklistRunAction(input: {
 
 /**
  * 5. Get Checklist Run Detail Action
+ * LOCKED / FAIL-CLOSED: Operational actors for Checklist read are not yet
+ * approved by Level-0 Business Owner. External invocations fail closed with POLICY_NOT_ACTIVE.
  */
 export async function getChecklistRunAction(runId: string): Promise<ChecklistActionResponse> {
-  try {
-    const session = await getSession();
-    if (!session || !session.userId) {
-      return { success: false, message: 'Autentikasi diperlukan.' };
-    }
-
-    const result = await getChecklistRunById(runId, prisma);
-
-    if (!result.success) {
-      return {
-        success: false,
-        message: result.reason || 'Checklist tidak ditemukan.',
-        error: result.code,
-      };
-    }
-
-    return {
-      success: true,
-      message: 'Data checklist berhasil dimuat.',
-      data: result.data,
-    };
-  } catch (err) {
-    return {
-      success: false,
-      message: 'Terjadi kesalahan sistem saat memuat data checklist.',
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
+  void runId;
+  return {
+    success: false,
+    message: 'POLICY_NOT_ACTIVE: Kebijakan operasional pembacaan checklist belum disetujui oleh Owner.',
+    error: 'POLICY_NOT_ACTIVE',
+  };
 }

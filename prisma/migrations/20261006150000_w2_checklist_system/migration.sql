@@ -62,7 +62,7 @@ CREATE TABLE "checklist_items" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "checklist_templates_code_key" ON "checklist_templates"("code");
+CREATE UNIQUE INDEX "checklist_templates_code_version_key" ON "checklist_templates"("code", "version");
 
 -- CreateIndex
 CREATE INDEX "checklist_templates_domain_is_active_idx" ON "checklist_templates"("domain", "is_active");

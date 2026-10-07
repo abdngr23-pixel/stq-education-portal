@@ -18,6 +18,7 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+import { execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import defaultPrisma from "../lib/prisma";
@@ -281,47 +282,68 @@ export async function predeployChecklistSchema(
     };
   }
 
-  // If approved and not yet applied, apply the migration SQL directly
-  const migrationSqlPath = path.join(
-    process.cwd(),
-    "prisma",
-    "migrations",
-    preflight.expectedMigrationName,
-    "migration.sql"
-  );
-  const sql = fs.readFileSync(migrationSqlPath, "utf-8");
+  // Pre-migration invariants verification
+  if (preflight.otherPendingMigrationsCount > 0) {
+    throw new Error(
+      `ABORT: Expected exactly 0 other pending migrations, found ${preflight.otherPendingMigrationsCount}.`
+    );
+  }
+  if (!preflight.migrationIsAdditiveOnly) {
+    throw new Error(
+      `ABORT: Expected migration to be strictly additive, found destructive patterns: ${preflight.destructiveKeywordsFound.join(", ")}`
+    );
+  }
 
-  await prisma.$executeRawUnsafe(sql);
+  // Canonical Prisma migration execution (no manual SQL or forged _prisma_migrations records)
+  console.log(`Executing canonical 'npx prisma migrate deploy' for ${preflight.expectedMigrationName}...`);
+  execSync("npx prisma migrate deploy", {
+    stdio: "inherit",
+    cwd: process.cwd(),
+    env: { ...process.env, ...env },
+  });
 
-  // Record migration in _prisma_migrations
-  await prisma.$executeRawUnsafe(
-    `INSERT INTO _prisma_migrations (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at, applied_steps_count)
-     VALUES ($1, $2, NOW(), $3, $4, NULL, NOW(), 1)`,
-    `cmu_${Date.now()}`,
-    "manual_guarded_w2_checklist",
-    preflight.expectedMigrationName,
-    "Guarded W2 Checklist Schema Migration Applied"
-  );
+  // Post-verification: ensure expected migration is applied and tables are present
+  const postPreflight = await runChecklistSchemaPreflight(prisma);
+  if (!postPreflight.expectedMigrationApplied) {
+    throw new Error(`POSTVERIFY_FAILED: Migration ${preflight.expectedMigrationName} is not recorded as applied in _prisma_migrations.`);
+  }
+  if (
+    postPreflight.checklistTablesStatus.checklist_templates !== "PRESENT" ||
+    postPreflight.checklistTablesStatus.checklist_runs !== "PRESENT" ||
+    postPreflight.checklistTablesStatus.checklist_items !== "PRESENT"
+  ) {
+    throw new Error("POSTVERIFY_FAILED: One or more checklist tables are not present in information_schema after migration deploy.");
+  }
+  if (postPreflight.otherPendingMigrationsCount !== 0) {
+    throw new Error(`POSTVERIFY_FAILED: Found unexpected pending migrations (${postPreflight.otherPendingMigrationsCount}) after deploy.`);
+  }
 
   return {
     mode: "EXECUTED",
-    preflight,
+    preflight: postPreflight,
     guards,
     applied: true,
   };
 }
 
 if (require.main === module) {
-  runChecklistSchemaPreflight()
-    .then((report) => {
-      console.log("=== W2 CHECKLIST SCHEMA PREFLIGHT REPORT ===");
-      console.log(JSON.stringify(report, null, 2));
-      const guards = parseChecklistSchemaGuards();
-      console.log("\n=== EXECUTION GUARDS ===");
-      console.log(JSON.stringify(guards, null, 2));
+  predeployChecklistSchema(process.argv, process.env, defaultPrisma)
+    .then((result) => {
+      console.log("=== W2 CHECKLIST SCHEMA PREDEPLOY REPORT ===");
+      console.log(`MODE: ${result.mode} (Applied: ${result.applied})`);
+      console.log("\n--- Preflight Report ---");
+      console.log(JSON.stringify(result.preflight, null, 2));
+      console.log("\n--- Execution Guards ---");
+      console.log(JSON.stringify(result.guards, null, 2));
+      if (result.mode === "EXECUTED") {
+        console.log("\nMIGRATION DEPLOYED AND POST-VERIFIED SUCCESSFULLY via canonical `prisma migrate deploy`.");
+      } else {
+        console.log("\nSAFE STOP: Executed in READ-ONLY mode. ZERO schema mutations executed.");
+      }
     })
     .catch((err) => {
-      console.error("FATAL Preflight Error:", err);
+      console.error("FATAL Predeploy Error:", err);
       process.exit(1);
-    });
+    })
+    .finally(() => defaultPrisma.$disconnect());
 }

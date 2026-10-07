@@ -1621,7 +1621,7 @@ enum ChecklistItemStatus {
 
 model ChecklistTemplate {
   id                String             @id @default(cuid())
-  code              String             @unique // e.g. "TPL-KEBERSIHAN-KAMAR"
+  code              String             // e.g. "TPL-KEBERSIHAN-KAMAR"
   name              String
   domain            OrgDomain          @default(KEASRAMAAN)
   version           Int                @default(1)
@@ -1633,6 +1633,7 @@ model ChecklistTemplate {
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
 
+  @@unique([code, version])
   @@index([domain, isActive])
   @@map("checklist_templates")
 }

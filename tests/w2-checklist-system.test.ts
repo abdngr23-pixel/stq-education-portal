@@ -14,6 +14,7 @@ import {
   createChecklistRunAction,
   recordChecklistPerformanceAction,
   reviewChecklistRunAction,
+  getChecklistRunAction,
 } from "../app/actions/checklist";
 import {
   parseChecklistSchemaGuards,
@@ -33,13 +34,27 @@ function createMockPrisma() {
 
   const mockTx: any = {
     checklistTemplate: {
+      findFirst: async ({ where, orderBy }: any) => {
+        let matched = templates.filter((t) => !where?.code || t.code === where.code);
+        if (orderBy?.version === "desc") {
+          matched = [...matched].sort((a, b) => b.version - a.version);
+        }
+        return matched[0] || null;
+      },
       findUnique: async ({ where }: any) => {
         if (where.id) return templates.find((t) => t.id === where.id) || null;
+        if (where.code_version) {
+          return (
+            templates.find(
+              (t) => t.code === where.code_version.code && t.version === where.code_version.version
+            ) || null
+          );
+        }
         if (where.code) return templates.find((t) => t.code === where.code) || null;
         return null;
       },
       create: async ({ data }: any) => {
-        const record = { id: `tpl_${Date.now()}_${Math.random()}`, ...data, version: 1 };
+        const record = { id: `tpl_${Date.now()}_${Math.random()}`, ...data };
         templates.push(record);
         return record;
       },
@@ -64,6 +79,11 @@ function createMockPrisma() {
         return run;
       },
       create: async ({ data, include }: any) => {
+        if (data.clientRequestId && runs.some((r) => r.clientRequestId === data.clientRequestId)) {
+          const err: any = new Error("Unique constraint failed on the fields: (client_request_id)");
+          err.code = "P2002";
+          throw err;
+        }
         const runId = `run_${Date.now()}_${Math.random()}`;
         const run = {
           id: runId,
@@ -112,6 +132,18 @@ function createMockPrisma() {
           };
         }
         return run;
+      },
+      updateMany: async ({ where, data }: any) => {
+        let count = 0;
+        for (let idx = 0; idx < runs.length; idx++) {
+          const r = runs[idx];
+          if (r.id === where.id && (where.version === undefined || r.version === where.version)) {
+            const newVersion = data.version?.increment ? r.version + data.version.increment : (data.version || r.version);
+            runs[idx] = { ...r, ...data, version: newVersion, updatedAt: new Date() };
+            count++;
+          }
+        }
+        return { count };
       },
       update: async ({ where, data, include }: any) => {
         const idx = runs.findIndex((r) => r.id === where.id);
@@ -179,25 +211,72 @@ describe("W2 Checklist System (ORR-098 & ORR-101)", () => {
     assert.equal(data.isActive, true);
   });
 
-  it("rejects duplicate template code", async () => {
+  it("supports real template versioning: logical code can repeat with incrementing immutable versions", async () => {
     const mockPrisma = createMockPrisma();
 
-    await createChecklistTemplate({
-      code: "TPL-DUPLICATE",
-      name: "Template Satu",
+    // 1. Create version 1
+    const v1Res = await createChecklistTemplate({
+      code: "TPL-KEBERSIHAN",
+      name: "Checklist Kebersihan v1",
       schema: [{ key: "k1", label: "Item 1" }],
       prismaClient: mockPrisma as any,
     });
+    assert.equal(v1Res.success, true);
+    const v1Data = v1Res.data as any;
+    assert.equal(v1Data.version, 1);
+    assert.equal(v1Data.code, "TPL-KEBERSIHAN");
 
-    const duplicateRes = await createChecklistTemplate({
-      code: "TPL-DUPLICATE",
-      name: "Template Dua",
-      schema: [{ key: "k2", label: "Item 2" }],
+    // Create a run against v1
+    const runV1 = await createChecklistRun({
+      templateId: v1Data.id,
       prismaClient: mockPrisma as any,
     });
+    assert.equal(runV1.success, true);
+    assert.equal((runV1.data as any).templateVersion, 1);
 
-    assert.equal(duplicateRes.success, false);
-    assert.equal(duplicateRes.code, "DUPLICATE_TEMPLATE_CODE");
+    // 2. Create version 2 with same code
+    const v2Res = await createChecklistTemplate({
+      code: "TPL-KEBERSIHAN",
+      name: "Checklist Kebersihan v2",
+      schema: [{ key: "k1", label: "Item 1" }, { key: "k2", label: "Item 2" }],
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(v2Res.success, true);
+    const v2Data = v2Res.data as any;
+    assert.equal(v2Data.version, 2);
+    assert.equal(v2Data.code, "TPL-KEBERSIHAN");
+    assert.notEqual(v1Data.id, v2Data.id);
+
+    // Old template v1 remains immutable and preserved
+    const fetchedV1 = await mockPrisma.checklistTemplate.findUnique({
+      where: { id: v1Data.id },
+    });
+    assert.equal(fetchedV1.version, 1);
+
+    // Create a run against v2
+    const runV2 = await createChecklistRun({
+      templateId: v2Data.id,
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(runV2.success, true);
+    assert.equal((runV2.data as any).templateVersion, 2);
+
+    // Verify historical run against v1 remains linked to version 1
+    const fetchedRunV1 = await mockPrisma.checklistRun.findUnique({
+      where: { id: (runV1.data as any).id },
+    });
+    assert.equal(fetchedRunV1.templateVersion, 1);
+
+    // 3. Reject explicit duplicate (code, version) tuple
+    const dupRes = await createChecklistTemplate({
+      code: "TPL-KEBERSIHAN",
+      name: "Checklist Kebersihan Duplicate v1",
+      version: 1,
+      schema: [{ key: "k1", label: "Item 1" }],
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(dupRes.success, false);
+    assert.equal(dupRes.code, "DUPLICATE_TEMPLATE_VERSION");
   });
 
   it("creates a ChecklistRun with items matching template schema", async () => {
@@ -339,6 +418,48 @@ describe("W2 Checklist System (ORR-098 & ORR-101)", () => {
 
     assert.equal(staleRes.success, false);
     assert.equal(staleRes.code, "CONFLICT_VERSION_MISMATCH");
+  });
+
+  it("atomic optimistic concurrency under real simultaneous transitions: exactly one winner, loser gets CONFLICT_VERSION_MISMATCH", async () => {
+    const mockPrisma = createMockPrisma();
+
+    const tplRes = await createChecklistTemplate({
+      code: "TPL-CONCURRENT-OPT",
+      name: "Template Concurrent Opt",
+      schema: [{ key: "c1", label: "C1" }],
+      prismaClient: mockPrisma as any,
+    });
+
+    const runRes = await createChecklistRun({
+      templateId: (tplRes.data as any).id,
+      prismaClient: mockPrisma as any,
+    });
+
+    const runId = (runRes.data as any).id;
+
+    // Simultaneous updates both targeting expectedVersion = 1
+    const [p1, p2] = await Promise.all([
+      recordChecklistPerformance({
+        runId,
+        performedById: "user-alpha",
+        expectedVersion: 1,
+        items: [{ itemKey: "c1", status: ChecklistItemStatus.PASS }],
+        prismaClient: mockPrisma as any,
+      }),
+      recordChecklistPerformance({
+        runId,
+        performedById: "user-beta",
+        expectedVersion: 1,
+        items: [{ itemKey: "c1", status: ChecklistItemStatus.FAIL }],
+        prismaClient: mockPrisma as any,
+      }),
+    ]);
+
+    const successes = [p1, p2].filter((r) => r.success);
+    const conflicts = [p1, p2].filter((r) => !r.success && r.code === "CONFLICT_VERSION_MISMATCH");
+
+    assert.equal(successes.length, 1);
+    assert.equal(conflicts.length, 1);
   });
 
   it("full lifecycle: PERFORMED -> NEEDS_CORRECTION -> PERFORMED -> COMPLETED", async () => {
@@ -501,6 +622,12 @@ describe("W2 Checklist System (ORR-098 & ORR-101)", () => {
     assert.equal(revRes.success, false);
     assert.equal(revRes.error, "POLICY_NOT_ACTIVE");
     assert.match(revRes.message, /POLICY_NOT_ACTIVE/i);
+
+    // 5. Run detail read action
+    const getRes = await getChecklistRunAction("run-dummy");
+    assert.equal(getRes.success, false);
+    assert.equal(getRes.error, "POLICY_NOT_ACTIVE");
+    assert.match(getRes.message, /POLICY_NOT_ACTIVE/i);
   });
 
   // Track 2D: Idempotency with Conflicting Payload Fails Closed
@@ -569,6 +696,39 @@ describe("W2 Checklist System (ORR-098 & ORR-101)", () => {
     assert.equal(res2.isIdempotentReplay, true);
     assert.equal((res2.data as any).id, (res1.data as any).id);
     assert.equal(mockPrisma.getRunCount(), 1);
+  });
+
+  // Track 2D: Simultaneous Concurrent Requests with Same clientRequestId Produce Exactly One Mutation
+  it("Track 2D: concurrent race with identical clientRequestId results in exactly ONE durable run and IDEMPOTENT_REPLAY", async () => {
+    const mockPrisma = createMockPrisma();
+
+    const tpl = await createChecklistTemplate({
+      code: "TPL-CONCURRENT-RACE",
+      name: "Template Concurrent Race",
+      schema: [{ key: "r1", label: "R1" }],
+      prismaClient: mockPrisma as any,
+    });
+
+    const [res1, res2] = await Promise.all([
+      createChecklistRun({
+        templateId: (tpl.data as any).id,
+        clientRequestId: "simultaneous-race-001",
+        prismaClient: mockPrisma as any,
+      }),
+      createChecklistRun({
+        templateId: (tpl.data as any).id,
+        clientRequestId: "simultaneous-race-001",
+        prismaClient: mockPrisma as any,
+      }),
+    ]);
+
+    assert.equal(res1.success, true);
+    assert.equal(res2.success, true);
+    assert.equal(mockPrisma.getRunCount(), 1);
+    assert.equal((res1.data as any).id, (res2.data as any).id);
+
+    const replays = [res1.isIdempotentReplay, res2.isIdempotentReplay].filter(Boolean);
+    assert.equal(replays.length, 1);
   });
 
   // Track 2C: Schema Preflight & Guard Safety

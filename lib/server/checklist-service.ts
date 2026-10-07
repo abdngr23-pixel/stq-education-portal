@@ -18,6 +18,7 @@ export interface CreateChecklistTemplateParams {
   code: string;
   name: string;
   domain?: OrgDomain;
+  version?: number;
   targetOrgUnitType?: OrgUnitType;
   schema: ChecklistTemplateItemSchema[];
   metadata?: Record<string, unknown>;
@@ -75,7 +76,10 @@ export interface ChecklistServiceResult<T = unknown> {
 }
 
 /**
- * 1. Create Checklist Template (Versioned)
+ * 1. Create Checklist Template (Versioned & Immutable)
+ * Logical code can repeat across versions: unique(code, version).
+ * For a new version: same logical code, version = previous + 1.
+ * Old template rows remain immutable and preserved.
  */
 export async function createChecklistTemplate(
   params: CreateChecklistTemplateParams
@@ -93,24 +97,40 @@ export async function createChecklistTemplate(
   }
 
   try {
-    const existing = await prisma.checklistTemplate.findUnique({
-      where: { code: params.code.trim() },
-    });
-    if (existing) {
-      return {
-        success: false,
-        code: "DUPLICATE_TEMPLATE_CODE",
-        reason: `ChecklistTemplate with code '${params.code}' already exists.`,
-      };
+    const code = params.code.trim();
+    let versionToUse = params.version;
+
+    if (!versionToUse) {
+      const latest = await prisma.checklistTemplate.findFirst({
+        where: { code },
+        orderBy: { version: "desc" },
+      });
+      versionToUse = latest ? latest.version + 1 : 1;
+    } else {
+      const existing = await prisma.checklistTemplate.findUnique({
+        where: {
+          code_version: {
+            code,
+            version: versionToUse,
+          },
+        },
+      });
+      if (existing) {
+        return {
+          success: false,
+          code: "DUPLICATE_TEMPLATE_VERSION",
+          reason: `ChecklistTemplate with code '${code}' and version ${versionToUse} already exists.`,
+        };
+      }
     }
 
     const template = await prisma.checklistTemplate.create({
       data: {
-        code: params.code.trim(),
+        code,
         name: params.name.trim(),
         domain: params.domain || "KEASRAMAAN",
         targetOrgUnitType: params.targetOrgUnitType,
-        version: 1,
+        version: versionToUse,
         isActive: true,
         schema: JSON.parse(JSON.stringify(params.schema)),
         metadata: params.metadata ? JSON.parse(JSON.stringify(params.metadata)) : undefined,
@@ -229,7 +249,41 @@ export async function createChecklistRun(
         data: run,
       };
     });
-  } catch (err) {
+  } catch (err: unknown) {
+    const errorObj = err as Record<string, unknown> | undefined;
+    const isUniqueViolation =
+      errorObj?.code === "P2002" ||
+      (typeof errorObj?.message === "string" &&
+        (errorObj.message.includes("Unique constraint") ||
+          errorObj.message.includes("client_request_id")));
+
+    if (isUniqueViolation && params.clientRequestId && params.clientRequestId.trim()) {
+      const existingRun = await prisma.checklistRun.findUnique({
+        where: { clientRequestId: params.clientRequestId.trim() },
+        include: { items: true, template: true },
+      });
+
+      if (existingRun) {
+        const isPayloadMatching =
+          existingRun.templateId === params.templateId &&
+          (params.targetUnitId === undefined || existingRun.targetUnitId === (params.targetUnitId || null));
+
+        if (!isPayloadMatching) {
+          return {
+            success: false,
+            code: "CONFLICT_CLIENT_REQUEST_ID",
+            reason: `Duplicate clientRequestId '${params.clientRequestId}' with conflicting payload.`,
+          };
+        }
+
+        return {
+          success: true,
+          data: existingRun,
+          isIdempotentReplay: true,
+        };
+      }
+    }
+
     return {
       success: false,
       code: "SYSTEM_FAIL_CLOSED",
@@ -300,15 +354,37 @@ export async function recordChecklistPerformance(
       }
 
       const now = new Date();
-      const updatedRun = await tx.checklistRun.update({
-        where: { id: run.id },
+      const expectedVer = params.expectedVersion !== undefined ? params.expectedVersion : run.version;
+
+      const updateResult = await tx.checklistRun.updateMany({
+        where: {
+          id: run.id,
+          version: expectedVer,
+        },
         data: {
           status: ChecklistRunStatus.PERFORMED,
           performedAt: now,
           performedById: params.performedById,
           notes: params.notes || run.notes,
-          version: run.version + 1,
+          version: { increment: 1 },
         },
+      });
+
+      if (updateResult.count === 0) {
+        const latest = await tx.checklistRun.findUnique({
+          where: { id: run.id },
+          include: { items: true, template: true },
+        });
+        return {
+          success: false,
+          code: "CONFLICT_VERSION_MISMATCH",
+          reason: `Version conflict: Expected version ${expectedVer}, but current version is ${latest?.version}.`,
+          data: latest,
+        };
+      }
+
+      const updatedRun = await tx.checklistRun.findUnique({
+        where: { id: run.id },
         include: { items: true, template: true },
       });
 
@@ -392,9 +468,13 @@ export async function reviewChecklistRun(
         params.decision === "COMPLETED"
           ? ChecklistRunStatus.COMPLETED
           : ChecklistRunStatus.NEEDS_CORRECTION;
+      const expectedVer = params.expectedVersion !== undefined ? params.expectedVersion : run.version;
 
-      const updatedRun = await tx.checklistRun.update({
-        where: { id: run.id },
+      const updateResult = await tx.checklistRun.updateMany({
+        where: {
+          id: run.id,
+          version: expectedVer,
+        },
         data: {
           status: targetStatus,
           checkedAt: now,
@@ -403,8 +483,25 @@ export async function reviewChecklistRun(
             params.decision === "NEEDS_CORRECTION"
               ? params.correctionNotes || run.correctionNotes
               : null,
-          version: run.version + 1,
+          version: { increment: 1 },
         },
+      });
+
+      if (updateResult.count === 0) {
+        const latest = await tx.checklistRun.findUnique({
+          where: { id: run.id },
+          include: { items: true, template: true },
+        });
+        return {
+          success: false,
+          code: "CONFLICT_VERSION_MISMATCH",
+          reason: `Version conflict: Expected version ${expectedVer}, but current version is ${latest?.version}.`,
+          data: latest,
+        };
+      }
+
+      const updatedRun = await tx.checklistRun.findUnique({
+        where: { id: run.id },
         include: { items: true, template: true },
       });
 
