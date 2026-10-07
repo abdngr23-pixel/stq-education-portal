@@ -268,6 +268,41 @@ export interface ResolvedResourceContext {
 }
 
 /**
+ * Supervisory Takeover Provenance & Audit Record (ORR-086)
+ * Strict requirement: Atasan may take over neglected responsibility,
+ * but original PIC and context must remain auditable with ZERO attribution erasure.
+ */
+export interface SupervisoryTakeoverRecord {
+  id: string;
+  originalAssignmentId: string;
+  originalPic: {
+    userId: string;
+    name?: string;
+    positionCode?: string;
+  };
+  takeoverActor: {
+    userId: string;
+    name?: string;
+    positionCode?: string;
+  };
+  reason: string;
+  timestamp: Date;
+  resourceContext: {
+    resourceType: string;
+    resourceId: string;
+    domain: OrgDomain;
+    unitId?: string;
+    kamarId?: string;
+    genderComplex?: GenderComplex;
+    [key: string]: unknown;
+  };
+  beforeState: Record<string, unknown>;
+  afterState: Record<string, unknown>;
+  attributionPreserved: boolean;
+  workflowActivated: false;
+}
+
+/**
  * Canonical Authorization Result Code Union
  * Exactly ONE normalized union across all layers.
  */
@@ -436,6 +471,18 @@ export const ACADEMIC_CAPABILITIES = {
 
 export type AcademicCapabilityCode =
   (typeof ACADEMIC_CAPABILITIES)[keyof typeof ACADEMIC_CAPABILITIES];
+
+/**
+ * Canonical Keasramaan Domain Granular Capabilities
+ */
+export const KEASRAMAAN_CAPABILITIES = {
+  OSDA_MONITOR: "keasramaan.osda.monitor",
+  TAKEOVER_EXECUTE: "keasramaan.takeover.execute",
+  SUPERVISORY_TAKEOVER: "keasramaan.takeover.execute",
+} as const;
+
+export type KeasramaanCapabilityCode =
+  (typeof KEASRAMAAN_CAPABILITIES)[keyof typeof KEASRAMAAN_CAPABILITIES];
 
 /**
  * Candidate Prisma Schema Relational Parity Representation
@@ -672,15 +719,79 @@ export const SYSTEM_AUDIT_CAPABILITIES = {
 } as const;
 
 /**
- * Approved code-level target policy only. This manifest provisions nothing and
- * grants zero runtime authority while its state remains pending technical.
+ * SUPERSEDED by Level-0 Business Owner Decision (2026-10-06):
+ * Prior draft assigning keasramaan.kamar.manage to KEPALA_KEASRAMAAN is formally SUPERSEDED.
+ * Kamar structure, Santri room placement, and Mudhabbir/Pembina Kamar appointment are
+ * strictly a MUDIR prerogative with Position MUDIR + keasramaan.kamar.manage @ GLOBAL scope.
+ * Retained solely as a historical superseded marker to prevent competing mutation grants.
  */
-export const KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY = {
+export const SUPERSEDED_KEASRAMAAN_KAMAR_MANAGE_POLICY = {
   positionCode: "KEPALA_KEASRAMAAN",
   capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
   scopeType: "DOMAIN",
   domain: "KEASRAMAAN",
+  businessRuleState: "PROPOSED_TBD" as const,
+  supersededBy: "MUDIR_KAMAR_MANAGE_TARGET_POLICY",
+} as const;
+
+/**
+ * Legacy alias retained for backward compatibility with existing contract imports,
+ * strictly mapped to SUPERSEDED_KEASRAMAAN_KAMAR_MANAGE_POLICY.
+ */
+export const KEASRAMAAN_KAMAR_MANAGE_TARGET_POLICY = SUPERSEDED_KEASRAMAAN_KAMAR_MANAGE_POLICY;
+
+/**
+ * Owner-Approved Mudir Kamar Configuration Policy (V4.1 / 2026-10-06):
+ * Kamar structure, occupant placement, and Mudhabbir appointment are a prerogative of MUDIR.
+ * keasramaan.kamar.manage approved for canonical Position MUDIR with scope GLOBAL.
+ */
+export const MUDIR_KAMAR_MANAGE_TARGET_POLICY = {
+  positionCode: "MUDIR",
+  capabilityCode: KEASRAMAAN_KAMAR_CAPABILITIES.MANAGE,
+  scopeType: "GLOBAL",
+  domain: "INSTITUTIONAL",
   businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL",
+} as const;
+
+/**
+ * Approved Target Policy: Supervisory Takeover - Mudir (ORR-086)
+ * MUDIR holds GLOBAL supervisory authority over Keasramaan tasks.
+ * Approved code-level target policy only. Zero runtime authority until provisioned.
+ */
+export const KEASRAMAAN_TAKEOVER_MUDIR_TARGET_POLICY = {
+  positionCode: "MUDIR",
+  capabilityCode: KEASRAMAAN_CAPABILITIES.TAKEOVER_EXECUTE,
+  scopeType: "GLOBAL" as const,
+  domain: "INSTITUTIONAL" as const,
+  businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+} as const;
+
+/**
+ * Approved Target Policy: Supervisory Takeover - Kepala Keasramaan (ORR-086)
+ * KEPALA_KEASRAMAAN holds DOMAIN / KEASRAMAAN supervisory authority.
+ * Approved code-level target policy only. Zero runtime authority until provisioned.
+ */
+export const KEASRAMAAN_TAKEOVER_KEPALA_KEASRAMAAN_TARGET_POLICY = {
+  positionCode: "KEPALA_KEASRAMAAN",
+  capabilityCode: KEASRAMAAN_CAPABILITIES.TAKEOVER_EXECUTE,
+  scopeType: "DOMAIN" as const,
+  domain: "KEASRAMAAN" as const,
+  businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
+} as const;
+
+/**
+ * Approved Target Policy: OSDA Putri Monitor (ORR-048 / DIR-2026-016)
+ * PENGAWAS_SANTRIWATI holds DOMAIN / KEASRAMAAN read-only monitoring with PUTRI containment.
+ * Approved code-level target policy only. Zero runtime authority until provisioned.
+ */
+export const KEASRAMAAN_OSDA_MONITOR_TARGET_POLICY = {
+  positionCode: "PENGAWAS_SANTRIWATI",
+  capabilityCode: KEASRAMAAN_CAPABILITIES.OSDA_MONITOR,
+  scopeType: "DOMAIN" as const,
+  domain: "KEASRAMAAN" as const,
+  genderContainment: "PUTRI" as const,
+  isReadOnly: true,
+  businessRuleState: "APPROVED_TARGET_PENDING_TECHNICAL" as const,
 } as const;
 
 /**
@@ -832,6 +943,7 @@ export const PENGAWAS_SANTRIWATI_POSITION_CONTRACT = {
   allowedUnitTypes: ["ORGANIZATION", "DOMAIN"] as const,
   targetCapabilities: [
     "health.case.read_detail",
+    "keasramaan.osda.monitor",
   ] as const,
   scopeType: "DOMAIN" as const,
 } as const;
