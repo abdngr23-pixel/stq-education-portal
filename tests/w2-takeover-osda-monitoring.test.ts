@@ -114,8 +114,33 @@ describe("W2 Track 3 — Supervisory Takeover (ORR-086)", () => {
       scopeUnits: [],
     };
 
+    const mockOriginalAssignment = {
+      id: "asg-mudhabbir-room-101",
+      userId: "usr-mudhabbir-1",
+      positionId: "pos-ph",
+      positionCode: "PEMBINA_HALAQOH",
+      positionName: "Pembina Halaqoh",
+      domain: "KEASRAMAAN",
+      unitId: "OU-ASRAMA-PUTRA",
+      unitCode: "OU-ASRAMA-PUTRA",
+      unitName: "Asrama Putra",
+      unitGenderComplex: GenderComplex.PUTRA,
+      status: AssignmentStatus.ACTIVE,
+      validFrom: new Date(Date.now() - 86400000),
+      validUntil: null,
+      positionCapabilities: [],
+      scopeUnits: [],
+      user: {
+        id: "usr-mudhabbir-1",
+        staffProfile: { nama: "Ahmad Mudhabbir" },
+      },
+      position: { code: "PEMBINA_HALAQOH" },
+      unit: { id: "OU-ASRAMA-PUTRA", domain: OrgDomain.KEASRAMAAN, genderComplex: GenderComplex.PUTRA },
+    };
+
     const res = await executeSupervisoryTakeover({
       originalAssignmentId: "asg-mudhabbir-room-101",
+      mockAssignments: [mockAssignment, mockOriginalAssignment],
       originalPic: {
         userId: "usr-mudhabbir-1",
         name: "Ahmad Mudhabbir",
@@ -126,7 +151,7 @@ describe("W2 Track 3 — Supervisory Takeover (ORR-086)", () => {
         name: "Ust. Fulan MK",
         positionCode: "KEPALA_KEASRAMAAN",
         domain: OrgDomain.KEASRAMAAN,
-        mockAssignments: [mockAssignment],
+        mockAssignments: [mockAssignment, mockOriginalAssignment],
       },
       reason: "Petugas utama berhalangan hadir dan checklist kebersihan malam belum dijalankan.",
       resourceContext: {
@@ -169,6 +194,148 @@ describe("W2 Track 3 — Supervisory Takeover (ORR-086)", () => {
     assert.equal(mockAuditLogs.length, 1);
     assert.equal(mockAuditLogs[0].action, "SUPERVISORY_TAKEOVER");
     assert.equal(mockAuditLogs[0].entity, "ChecklistRun");
+  });
+
+  it("Track D & E: ignores caller-supplied spoofed originalPic and spoofed resourceContext", async () => {
+    const mockAssignment = {
+      id: "asg-mk-super",
+      userId: "usr-mk-supervisor",
+      positionId: "pos-mk",
+      positionCode: "KEPALA_KEASRAMAAN",
+      positionName: "Kepala Keasramaan",
+      domain: "KEASRAMAAN",
+      unitId: "OU-ASRAMA-ROOT",
+      unitCode: "OU-ASRAMA-ROOT",
+      unitName: "Asrama Root",
+      unitGenderComplex: GenderComplex.CAMPUR,
+      status: AssignmentStatus.ACTIVE,
+      validFrom: new Date(Date.now() - 86400000),
+      validUntil: null,
+      positionCapabilities: [
+        {
+          capabilityCode: "keasramaan.takeover.execute",
+          scopeType: ScopeType.DOMAIN,
+          businessRuleState: BusinessRuleState.VERIFIED_PRODUCTION,
+        },
+      ],
+      scopeUnits: [],
+    };
+
+    const mockOriginalAssignment = {
+      id: "asg-real-ph",
+      userId: "usr-real-ph-id",
+      positionId: "pos-ph",
+      positionCode: "PEMBINA_HALAQOH",
+      positionName: "Pembina Halaqoh",
+      domain: "KEASRAMAAN",
+      unitId: "OU-ASRAMA-PUTRA",
+      unitCode: "OU-ASRAMA-PUTRA",
+      unitName: "Asrama Putra",
+      unitGenderComplex: GenderComplex.PUTRA,
+      status: AssignmentStatus.ACTIVE,
+      validFrom: new Date(Date.now() - 86400000),
+      validUntil: null,
+      positionCapabilities: [],
+      scopeUnits: [],
+      user: {
+        id: "usr-real-ph-id",
+        staffProfile: { nama: "Ust. Real PH" },
+      },
+      position: { code: "PEMBINA_HALAQOH" },
+      unit: { id: "OU-ASRAMA-PUTRA", domain: OrgDomain.KEASRAMAAN, genderComplex: GenderComplex.PUTRA },
+    };
+
+    // Caller attempts to spoof original PIC and resource context
+    const res = await executeSupervisoryTakeover({
+      originalAssignmentId: "asg-real-ph",
+      mockAssignments: [mockAssignment, mockOriginalAssignment],
+      originalPic: {
+        userId: "usr-impostor-pic",
+        name: "Impostor Claims Ownership",
+        positionCode: "MUDIR",
+      },
+      takeoverActor: {
+        userId: "usr-mk-supervisor",
+        name: "Kepala Keasramaan",
+        positionCode: "KEPALA_KEASRAMAAN",
+        domain: OrgDomain.KEASRAMAAN,
+        mockAssignments: [mockAssignment, mockOriginalAssignment],
+      },
+      reason: "Ambil alih tugas rutin kamar",
+      resourceType: "ChecklistRun",
+      resourceId: "run-chk-real",
+      resourceContext: {
+        domain: OrgDomain.TAHFIZH, // Spoofed domain claim
+        genderComplex: GenderComplex.PUTRI, // Spoofed gender claim
+      },
+    });
+
+    assert.equal(res.success, true);
+    assert.ok(res.data);
+    // Server-resolved PIC derived strictly from database / assignment
+    assert.equal(res.data.originalPic.userId, "usr-real-ph-id");
+    assert.equal(res.data.originalPic.name, "Ust. Real PH");
+    assert.equal(res.data.originalPic.positionCode, "PEMBINA_HALAQOH");
+    // Server-resolved domain derived from unit / assignment
+    assert.equal(res.data.resourceContext.domain, OrgDomain.KEASRAMAAN);
+    assert.equal(res.data.workflowActivated, false);
+  });
+
+  it("Track E: fails closed if original assignment is inactive", async () => {
+    const mockAssignment = {
+      id: "asg-mk-super",
+      userId: "usr-mk-supervisor",
+      positionId: "pos-mk",
+      positionCode: "KEPALA_KEASRAMAAN",
+      positionName: "Kepala Keasramaan",
+      domain: "KEASRAMAAN",
+      unitId: "OU-ASRAMA-ROOT",
+      unitCode: "OU-ASRAMA-ROOT",
+      unitName: "Asrama Root",
+      unitGenderComplex: GenderComplex.CAMPUR,
+      status: AssignmentStatus.ACTIVE,
+      validFrom: new Date(Date.now() - 86400000),
+      validUntil: null,
+      positionCapabilities: [
+        {
+          capabilityCode: "keasramaan.takeover.execute",
+          scopeType: ScopeType.DOMAIN,
+          businessRuleState: BusinessRuleState.VERIFIED_PRODUCTION,
+        },
+      ],
+      scopeUnits: [],
+    };
+
+    const mockInactiveAssignment = {
+      id: "asg-inactive-ph",
+      userId: "usr-inactive-ph",
+      positionId: "pos-ph",
+      positionCode: "PEMBINA_HALAQOH",
+      status: "INACTIVE", // Inactive assignment
+      validFrom: new Date(Date.now() - 86400000),
+      validUntil: null,
+      positionCapabilities: [],
+      scopeUnits: [],
+      user: { id: "usr-inactive-ph", staffProfile: { nama: "Inactive Staff" } },
+      position: { code: "PEMBINA_HALAQOH" },
+      unit: { id: "OU-ASRAMA-PUTRA", domain: OrgDomain.KEASRAMAAN },
+    };
+
+    const res = await executeSupervisoryTakeover({
+      originalAssignmentId: "asg-inactive-ph",
+      mockAssignments: [mockAssignment, mockInactiveAssignment as any],
+      takeoverActor: {
+        userId: "usr-mk-supervisor",
+        positionCode: "KEPALA_KEASRAMAAN",
+        mockAssignments: [mockAssignment, mockInactiveAssignment as any],
+      },
+      reason: "Ambil alih tugas mantan petugas",
+      resourceType: "ChecklistRun",
+      resourceId: "run-chk-1",
+    });
+
+    assert.equal(res.success, false);
+    assert.equal(res.code, "ORIGINAL_ASSIGNMENT_INACTIVE");
   });
 
   it("3B: fails closed when capability is not granted or zero production grants", async () => {
@@ -500,7 +667,7 @@ describe("W2 Track 3D — OSDA PUTRI Monitoring Policy (ORR-048 / DIR-2026-016)"
     assert.equal(resNoAssignment.code, "NO_CANONICAL_ASSIGNMENT");
   });
 
-  it("3D: server-side authorizeOsdaMonitoring allows PENGAWAS_SANTRIWATI with active canonical assignment and VERIFIED_PRODUCTION", async () => {
+  it("Track F: server-side authorizeOsdaMonitoring allows PENGAWAS_SANTRIWATI with actual PUTRI OSDA unit and VERIFIED_PRODUCTION", async () => {
     const mockAssignment = {
       id: "asg-lisa-canon",
       userId: "usr-lisa",
@@ -525,17 +692,26 @@ describe("W2 Track 3D — OSDA PUTRI Monitoring Policy (ORR-048 / DIR-2026-016)"
       scopeUnits: [],
     };
 
+    const mockOrgUnits = [
+      {
+        id: "OU-OSDA-PUTRI",
+        code: "OU-OSDA-PUTRI",
+        name: "OSDA Putri",
+        domain: OrgDomain.KEASRAMAAN,
+        genderComplex: GenderComplex.PUTRI,
+        isActive: true,
+      },
+    ];
+
     const res = await authorizeOsdaMonitoring({
       actorUserId: "usr-lisa",
       actorUsername: "lisa",
       targetResource: {
-        resourceId: "osda-eval-1",
-        domain: OrgDomain.KEASRAMAAN,
-        genderComplex: GenderComplex.PUTRI,
         unitId: "OU-OSDA-PUTRI",
       },
       isMutation: false,
       mockAssignments: [mockAssignment],
+      mockOrgUnits,
     });
 
     assert.equal(res.allowed, true);
@@ -543,7 +719,7 @@ describe("W2 Track 3D — OSDA PUTRI Monitoring Policy (ORR-048 / DIR-2026-016)"
     assert.equal(res.positionCode, "PENGAWAS_SANTRIWATI");
   });
 
-  it("3D: server-side authorizeOsdaMonitoring strictly enforces fail-closed boundary rules", async () => {
+  it("Track F: REQUIRED ATTACK TESTS against authorizeOsdaMonitoring", async () => {
     const mockAssignment = {
       id: "asg-lisa-canon",
       userId: "usr-lisa",
@@ -568,44 +744,117 @@ describe("W2 Track 3D — OSDA PUTRI Monitoring Policy (ORR-048 / DIR-2026-016)"
       scopeUnits: [],
     };
 
-    // 1. Cross-gender PUTRA resource -> GENDER_COMPLEX_DENIED
+    const mockOrgUnits = [
+      {
+        id: "OU-OSDA-PUTRI",
+        code: "OU-OSDA-PUTRI",
+        name: "OSDA Putri",
+        domain: OrgDomain.KEASRAMAAN,
+        genderComplex: GenderComplex.PUTRI,
+        isActive: true,
+      },
+      {
+        id: "OU-OSDA-PUTRA",
+        code: "OU-OSDA-PUTRA",
+        name: "OSDA Putra",
+        domain: OrgDomain.KEASRAMAAN,
+        genderComplex: GenderComplex.PUTRA,
+        isActive: true,
+      },
+      {
+        id: "OU-NON-OSDA",
+        code: "OU-SEKOLAH-PUTRI",
+        name: "Sekolah Putri Non-OSDA",
+        domain: OrgDomain.KEASRAMAAN,
+        genderComplex: GenderComplex.PUTRI,
+        isActive: true,
+      },
+      {
+        id: "OU-OSDA-INACTIVE",
+        code: "OU-OSDA-INACTIVE",
+        name: "OSDA Putri Inaktif",
+        domain: OrgDomain.KEASRAMAAN,
+        genderComplex: GenderComplex.PUTRI,
+        isActive: false,
+      },
+    ];
+
+    // Attack 1: PUTRA unit ID + caller claims PUTRI => DENY
     const putraRes = await authorizeOsdaMonitoring({
       actorUserId: "usr-lisa",
       targetResource: {
-        resourceId: "osda-putra",
-        domain: OrgDomain.KEASRAMAAN,
-        genderComplex: GenderComplex.PUTRA,
+        unitId: "OU-OSDA-PUTRA", // Actual unit is PUTRA
+        genderComplex: GenderComplex.PUTRI, // Caller falsely claims PUTRI
       },
       isMutation: false,
       mockAssignments: [mockAssignment],
+      mockOrgUnits,
     });
     assert.equal(putraRes.allowed, false);
     assert.equal(putraRes.code, "GENDER_COMPLEX_DENIED");
 
-    // 2. Mutation attempt -> MUTATION_NOT_PERMITTED
+    // Attack 2: non-OSDA unit ID + caller claims OSDA => DENY
+    const nonOsdaRes = await authorizeOsdaMonitoring({
+      actorUserId: "usr-lisa",
+      targetResource: {
+        unitId: "OU-NON-OSDA",
+      },
+      isMutation: false,
+      mockAssignments: [mockAssignment],
+      mockOrgUnits,
+    });
+    assert.equal(nonOsdaRes.allowed, false);
+    assert.equal(nonOsdaRes.code, "NON_OSDA_UNIT");
+
+    // Attack 3: inactive OSDA PUTRI unit => DENY
+    const inactiveRes = await authorizeOsdaMonitoring({
+      actorUserId: "usr-lisa",
+      targetResource: {
+        unitId: "OU-OSDA-INACTIVE",
+      },
+      isMutation: false,
+      mockAssignments: [mockAssignment],
+      mockOrgUnits,
+    });
+    assert.equal(inactiveRes.allowed, false);
+    assert.equal(inactiveRes.code, "UNIT_INACTIVE");
+
+    // Attack 4: unknown unit => DENY
+    const unknownRes = await authorizeOsdaMonitoring({
+      actorUserId: "usr-lisa",
+      targetResource: {
+        unitId: "OU-UNKNOWN-999",
+      },
+      isMutation: false,
+      mockAssignments: [mockAssignment],
+      mockOrgUnits,
+    });
+    assert.equal(unknownRes.allowed, false);
+    assert.equal(unknownRes.code, "RESOURCE_NOT_FOUND");
+
+    // Attack 5: PUTRI OSDA actual unit + mutation => DENY
     const mutRes = await authorizeOsdaMonitoring({
       actorUserId: "usr-lisa",
       targetResource: {
-        resourceId: "osda-putri",
-        domain: OrgDomain.KEASRAMAAN,
-        genderComplex: GenderComplex.PUTRI,
+        unitId: "OU-OSDA-PUTRI",
       },
       isMutation: true,
       mockAssignments: [mockAssignment],
+      mockOrgUnits,
     });
     assert.equal(mutRes.allowed, false);
     assert.equal(mutRes.code, "MUTATION_NOT_PERMITTED");
 
-    // 3. Username alone with zero assignments -> NO_CANONICAL_ASSIGNMENT
+    // Attack 6: username alone without canonical assignment => DENY
     const noAsgRes = await authorizeOsdaMonitoring({
       actorUserId: "usr-lisa-unassigned",
       actorUsername: "lisa",
       targetResource: {
-        domain: OrgDomain.KEASRAMAAN,
-        genderComplex: GenderComplex.PUTRI,
+        unitId: "OU-OSDA-PUTRI",
       },
       isMutation: false,
       mockAssignments: [],
+      mockOrgUnits,
     });
     assert.equal(noAsgRes.allowed, false);
     assert.ok(
@@ -613,7 +862,7 @@ describe("W2 Track 3D — OSDA PUTRI Monitoring Policy (ORR-048 / DIR-2026-016)"
       `Expected fail-closed denial code, got: ${noAsgRes.code}`
     );
 
-    // 4. Ordinary MT assignment -> CAPABILITY_NOT_GRANTED
+    // Attack 7: ordinary MT => DENY
     const mtAssignment = {
       ...mockAssignment,
       positionCode: "MUSYRIF_TAHFIZH",
@@ -628,29 +877,44 @@ describe("W2 Track 3D — OSDA PUTRI Monitoring Policy (ORR-048 / DIR-2026-016)"
     const mtRes = await authorizeOsdaMonitoring({
       actorUserId: "usr-mt",
       targetResource: {
-        domain: OrgDomain.KEASRAMAAN,
-        genderComplex: GenderComplex.PUTRI,
+        unitId: "OU-OSDA-PUTRI",
       },
       isMutation: false,
       mockAssignments: [mtAssignment],
+      mockOrgUnits,
     });
     assert.equal(mtRes.allowed, false);
     assert.equal(mtRes.code, "CAPABILITY_NOT_GRANTED");
+
+    // Attack 8: generic OSDA => DENY
+    const osdaAssignment = {
+      ...mockAssignment,
+      positionCode: "OSDA",
+      positionCapabilities: [],
+    };
+    const osdaRes = await authorizeOsdaMonitoring({
+      actorUserId: "usr-generic-osda",
+      targetResource: {
+        unitId: "OU-OSDA-PUTRI",
+      },
+      isMutation: false,
+      mockAssignments: [osdaAssignment],
+      mockOrgUnits,
+    });
+    assert.equal(osdaRes.allowed, false);
+    assert.equal(osdaRes.code, "CAPABILITY_NOT_GRANTED");
   });
 });
 
 describe("W2 Track 3C & 3E — Guarded Provisioning Script Invariants", () => {
   it("3C: takeover provisioning guards default to read-only and require all flags", () => {
-    // Default: read-only
     const defaultGuards = parseTakeoverGuards([], {});
     assert.equal(defaultGuards.isExecuteApproved, false);
     assert.equal(defaultGuards.guardReasons.length, 3);
 
-    // Missing env: blocked
     const cliOnly = parseTakeoverGuards(["--execute", "--approved-scope=W2-TAKEOVER"], {});
     assert.equal(cliOnly.isExecuteApproved, false);
 
-    // Full approval
     const approved = parseTakeoverGuards(
       ["--execute", "--approved-scope=W2-TAKEOVER"],
       { PRODUCTION_MUTATION_APPROVED: "W2-TAKEOVER" }
@@ -698,17 +962,64 @@ describe("W2 Track 3C & 3E — Guarded Provisioning Script Invariants", () => {
     assert.equal(report.allPreconditionsPass, true);
   });
 
+  it("Track G: takeover preflight stops with CONFIG_DRIFT if existing grants do not match targets", async () => {
+    // 1. MUDIR grant with wrong scope (DOMAIN instead of GLOBAL)
+    const mockDriftPrisma1: any = {
+      capability: { findUnique: async () => ({ code: "keasramaan.takeover.execute", namespace: "KEASRAMAAN" }) },
+      positionCapability: {
+        findMany: async () => [
+          {
+            id: "pc-drift-1",
+            position: { code: "MUDIR" },
+            scopeType: ScopeType.DOMAIN, // WRONG SCOPE
+            businessRuleState: BusinessRuleState.VERIFIED_PRODUCTION,
+          },
+        ],
+      },
+      assignment: {
+        findMany: async () => [
+          { id: "a1", userId: "u1", position: { code: "MUDIR" }, user: { username: "mudir" }, unit: { code: "OU-1" }, status: "ACTIVE" },
+          { id: "a2", userId: "u2", position: { code: "KEPALA_KEASRAMAAN" }, user: { username: "mk" }, unit: { code: "OU-1" }, status: "ACTIVE" },
+        ],
+      },
+    };
+    const report1 = await preflightTakeoverCapability(mockDriftPrisma1);
+    assert.equal(report1.allPreconditionsPass, false);
+    assert.ok(report1.validationErrors.some((e) => e.includes("CONFIG_DRIFT")));
+
+    // 2. Unexpected grant to non-target position -> CONFLICT_REQUIRES_OWNER_AUTHORIZATION
+    const mockConflictPrisma: any = {
+      capability: { findUnique: async () => ({ code: "keasramaan.takeover.execute", namespace: "KEASRAMAAN" }) },
+      positionCapability: {
+        findMany: async () => [
+          {
+            id: "pc-conflict-1",
+            position: { code: "KEPALA_SEKOLAH" }, // UNEXPECTED
+            scopeType: ScopeType.GLOBAL,
+            businessRuleState: BusinessRuleState.VERIFIED_PRODUCTION,
+          },
+        ],
+      },
+      assignment: {
+        findMany: async () => [
+          { id: "a1", userId: "u1", position: { code: "MUDIR" }, user: { username: "mudir" }, unit: { code: "OU-1" }, status: "ACTIVE" },
+          { id: "a2", userId: "u2", position: { code: "KEPALA_KEASRAMAAN" }, user: { username: "mk" }, unit: { code: "OU-1" }, status: "ACTIVE" },
+        ],
+      },
+    };
+    const report2 = await preflightTakeoverCapability(mockConflictPrisma);
+    assert.equal(report2.allPreconditionsPass, false);
+    assert.ok(report2.validationErrors.some((e) => e.includes("CONFLICT_REQUIRES_OWNER_AUTHORIZATION")));
+  });
+
   it("3E: osda monitor provisioning guards default to read-only and require all flags", () => {
-    // Default: read-only
     const defaultGuards = parseOsdaMonitorGuards([], {});
     assert.equal(defaultGuards.isExecuteApproved, false);
     assert.equal(defaultGuards.guardReasons.length, 3);
 
-    // Missing CLI flag: blocked
     const envOnly = parseOsdaMonitorGuards([], { PRODUCTION_MUTATION_APPROVED: "W2-OSDA-MONITOR" });
     assert.equal(envOnly.isExecuteApproved, false);
 
-    // Full approval
     const approved = parseOsdaMonitorGuards(
       ["--execute", "--approved-scope=W2-OSDA-MONITOR"],
       { PRODUCTION_MUTATION_APPROVED: "W2-OSDA-MONITOR" }
@@ -717,7 +1028,7 @@ describe("W2 Track 3C & 3E — Guarded Provisioning Script Invariants", () => {
     assert.equal(approved.guardReasons.length, 0);
   });
 
-  it("3E: osda monitor preflight runs read-only against mock Prisma", async () => {
+  it("Track H: osda monitor preflight resolves exact canonical identity musyirfah.putri", async () => {
     const mockPrisma: any = {
       capability: {
         findUnique: async () => null,
@@ -730,24 +1041,28 @@ describe("W2 Track 3C & 3E — Guarded Provisioning Script Invariants", () => {
           isActive: true,
         }),
       },
-      staff: {
-        findMany: async () => [
-          {
-            nama: "Ustadzah Lisa",
-            user: {
-              id: "usr-lisa",
-              username: "lisa",
-              assignments: [
-                {
-                  id: "asg-lisa-1",
-                  status: "ACTIVE",
-                  position: { code: "PENGAWAS_SANTRIWATI" },
-                  unit: { code: "OU-OSDA-PUTRI" },
-                },
-              ],
-            },
-          },
-        ],
+      user: {
+        findMany: async ({ where }: any) => {
+          if (where?.username === "musyirfah.putri") {
+            return [
+              {
+                id: "usr-lisa",
+                username: "musyirfah.putri",
+                name: "Ustadzah Lisa",
+                staffProfile: { nama: "Ustadzah Lisa" },
+                assignments: [
+                  {
+                    id: "asg-lisa-1",
+                    status: "ACTIVE",
+                    position: { code: "PENGAWAS_SANTRIWATI" },
+                    unit: { code: "OU-OSDA-PUTRI" },
+                  },
+                ],
+              },
+            ];
+          }
+          return [];
+        },
       },
       positionCapability: {
         findMany: async () => [],
@@ -761,6 +1076,70 @@ describe("W2 Track 3C & 3E — Guarded Provisioning Script Invariants", () => {
     assert.equal(report.positionCapabilityCount, 0);
     assert.equal(report.targetScope, ScopeType.DOMAIN);
     assert.equal(report.allPreconditionsPass, true);
+  });
+
+  it("Track H: osda monitor preflight halts if musyirfah.putri count is not exactly 1", async () => {
+    // Zero target users
+    const mockZeroPrisma: any = {
+      capability: { findUnique: async () => null },
+      position: { findUnique: async () => ({ id: "p1", code: "PENGAWAS_SANTRIWATI", isActive: true }) },
+      user: { findMany: async () => [] },
+      positionCapability: { findMany: async () => [] },
+    };
+    const zeroReport = await preflightOsdaMonitor(mockZeroPrisma);
+    assert.equal(zeroReport.allPreconditionsPass, false);
+    assert.ok(zeroReport.validationErrors.some((e) => e.includes("LISA_PREFLIGHT_TARGET")));
+
+    // Multiple target assignments
+    const mockMultiPrisma: any = {
+      capability: { findUnique: async () => null },
+      position: { findUnique: async () => ({ id: "p1", code: "PENGAWAS_SANTRIWATI", isActive: true }) },
+      user: {
+        findMany: async () => [
+          {
+            id: "usr-lisa",
+            username: "musyirfah.putri",
+            assignments: [
+              { id: "a1", status: "ACTIVE", unit: { code: "OU-1" } },
+              { id: "a2", status: "ACTIVE", unit: { code: "OU-2" } },
+            ],
+          },
+        ],
+      },
+      positionCapability: { findMany: async () => [] },
+    };
+    const multiReport = await preflightOsdaMonitor(mockMultiPrisma);
+    assert.equal(multiReport.allPreconditionsPass, false);
+    assert.ok(multiReport.validationErrors.some((e) => e.includes("LISA_PREFLIGHT_TARGET")));
+  });
+
+  it("Track G: osda monitor preflight stops with CONFIG_DRIFT if existing grant does not match DOMAIN", async () => {
+    const mockDriftPrisma: any = {
+      capability: { findUnique: async () => ({ code: "keasramaan.osda.monitor", namespace: "KEASRAMAAN" }) },
+      position: { findUnique: async () => ({ id: "p1", code: "PENGAWAS_SANTRIWATI", isActive: true }) },
+      user: {
+        findMany: async () => [
+          {
+            id: "usr-lisa",
+            username: "musyirfah.putri",
+            assignments: [{ id: "a1", status: "ACTIVE", unit: { code: "OU-1" } }],
+          },
+        ],
+      },
+      positionCapability: {
+        findMany: async () => [
+          {
+            id: "pc-drift",
+            position: { code: "PENGAWAS_SANTRIWATI" },
+            scopeType: ScopeType.GLOBAL, // WRONG SCOPE (expected DOMAIN)
+            businessRuleState: BusinessRuleState.VERIFIED_PRODUCTION,
+          },
+        ],
+      },
+    };
+    const report = await preflightOsdaMonitor(mockDriftPrisma);
+    assert.equal(report.allPreconditionsPass, false);
+    assert.ok(report.validationErrors.some((e) => e.includes("CONFIG_DRIFT")));
   });
 
   it("3C: executeTakeoverProvisioning defaults to read-only mode and executes atomic transaction when approved", async () => {
@@ -860,22 +1239,21 @@ describe("W2 Track 3C & 3E — Guarded Provisioning Script Invariants", () => {
           code: where.code,
         }),
       },
-      staff: {
+      user: {
         findMany: async () => [
           {
-            nama: "Ustadzah Lisa",
-            user: {
-              id: "usr-lisa",
-              username: "lisa",
-              assignments: [
-                {
-                  id: "asg-lisa-1",
-                  status: "ACTIVE",
-                  position: { code: "PENGAWAS_SANTRIWATI" },
-                  unit: { code: "OU-OSDA-PUTRI" },
-                },
-              ],
-            },
+            id: "usr-lisa",
+            username: "musyirfah.putri",
+            name: "Ustadzah Lisa",
+            staffProfile: { nama: "Ustadzah Lisa" },
+            assignments: [
+              {
+                id: "asg-lisa-1",
+                status: "ACTIVE",
+                position: { code: "PENGAWAS_SANTRIWATI" },
+                unit: { code: "OU-OSDA-PUTRI" },
+              },
+            ],
           },
         ],
       },

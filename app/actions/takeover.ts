@@ -2,11 +2,7 @@
 
 import prisma from '@/lib/prisma';
 import { getSession } from '@/lib/auth';
-import {
-  executeSupervisoryTakeover,
-  OriginalPicIdentity,
-  TakeoverResourceContext,
-} from '@/lib/server/takeover-service';
+import { executeSupervisoryTakeover } from '@/lib/server/takeover-service';
 
 export interface TakeoverActionResponse<T = unknown> {
   success: boolean;
@@ -15,20 +11,27 @@ export interface TakeoverActionResponse<T = unknown> {
   error?: string;
 }
 
+export interface SupervisoryTakeoverActionInput {
+  originalAssignmentId: string;
+  resourceType: string;
+  resourceId: string;
+  reason: string;
+  // Non-authoritative display snapshot hints, strictly ignored for authorization and provenance
+  displayHints?: {
+    beforeState?: Record<string, unknown>;
+    afterState?: Record<string, unknown>;
+  };
+}
+
 /**
  * Server Action for Supervisory Takeover (ORR-086)
- * Enables Atasan to assume responsibility for neglected tasks while strictly preserving
- * the original PIC attribution and audit provenance.
- * Delegates canonical evaluation to executeSupervisoryTakeover in lib/server.
+ * Server receives only selectors / business inputs: originalAssignmentId, resourceType, resourceId, reason.
+ * Does NOT accept or trust caller-supplied originalPic or resolved authorization context.
+ * Server resolves all entities, PIC provenance, and resource context directly from DB.
  */
-export async function executeSupervisoryTakeoverAction(input: {
-  originalAssignmentId: string;
-  originalPic: OriginalPicIdentity;
-  reason: string;
-  resourceContext: TakeoverResourceContext;
-  beforeState: Record<string, unknown>;
-  afterState: Record<string, unknown>;
-}): Promise<TakeoverActionResponse> {
+export async function executeSupervisoryTakeoverAction(
+  input: SupervisoryTakeoverActionInput
+): Promise<TakeoverActionResponse> {
   try {
     const session = await getSession();
     if (!session || !session.userId) {
@@ -37,15 +40,15 @@ export async function executeSupervisoryTakeoverAction(input: {
 
     const result = await executeSupervisoryTakeover({
       originalAssignmentId: input.originalAssignmentId,
-      originalPic: input.originalPic,
+      resourceType: input.resourceType,
+      resourceId: input.resourceId,
+      reason: input.reason,
       takeoverActor: {
         userId: session.userId,
         name: session.name || session.username,
       },
-      reason: input.reason,
-      resourceContext: input.resourceContext,
-      beforeState: input.beforeState,
-      afterState: input.afterState,
+      beforeState: input.displayHints?.beforeState,
+      afterState: input.displayHints?.afterState,
       prismaClient: prisma,
     });
 

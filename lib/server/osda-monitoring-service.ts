@@ -14,14 +14,24 @@ export interface AuthorizeOsdaMonitoringParams {
   actorUsername?: string;
   targetResource: {
     resourceId?: string;
-    domain?: OrgDomain;
-    genderComplex: GenderComplex;
     unitId?: string;
+    // Untrusted caller claims (ignored; server resolves actual unit from DB)
+    domain?: OrgDomain;
+    genderComplex?: GenderComplex;
   };
   isMutation: boolean;
   prismaClient?: PrismaClient;
   dataProvider?: ICanonicalDataProvider;
   mockAssignments?: CanonicalAssignmentWithDetails[];
+  mockOrgUnits?: Array<{
+    id: string;
+    code?: string;
+    name?: string;
+    domain: OrgDomain | string;
+    genderComplex?: GenderComplex | string;
+    isActive: boolean;
+    parentId?: string | null;
+  }>;
 }
 
 export interface AuthorizeOsdaMonitoringResult {
@@ -33,7 +43,10 @@ export interface AuthorizeOsdaMonitoringResult {
     | "CAPABILITY_NOT_GRANTED"
     | "NO_CANONICAL_ASSIGNMENT"
     | "DOMAIN_MISMATCH"
-    | "ZERO_PRODUCTION_GRANTS";
+    | "ZERO_PRODUCTION_GRANTS"
+    | "RESOURCE_NOT_FOUND"
+    | "UNIT_INACTIVE"
+    | "NON_OSDA_UNIT";
   reason: string;
   capabilityCode: string;
   positionCode?: string;
@@ -187,9 +200,17 @@ export function evaluateOsdaMonitoringAccess(
 /**
  * Server-side True Canonical Authorization Service for OSDA Monitoring (ORR-048 / DIR-2026-016)
  *
- * Does NOT trust caller-supplied actorPositionCode or hasCanonicalAssignment.
- * Resolves active assignments, position, capability, and scope directly from the database
- * or canonical data provider.
+ * TRACK F: SERVER-RESOLVED OSDA CONTEXT
+ * Does NOT trust caller-supplied targetResource.domain or targetResource.genderComplex.
+ * Resolves actual OrgUnit/resource from the database / mock entity store.
+ * Validates:
+ * 1. isMutation === false (read-only invariant)
+ * 2. actual unit exists
+ * 3. actual unit active
+ * 4. actual domain = KEASRAMAAN
+ * 5. actual resource belongs to OSDA structure
+ * 6. actual genderComplex = PUTRI
+ * Then invokes authorizeCanonical with server-resolved context.
  */
 export async function authorizeOsdaMonitoring(
   params: AuthorizeOsdaMonitoringParams
@@ -206,27 +227,110 @@ export async function authorizeOsdaMonitoring(
     };
   }
 
-  // 2. Invariant: PUTRA domain access is strictly DENIED (Zero PUTRA leakage)
-  if (params.targetResource.genderComplex === GenderComplex.PUTRA) {
+  // 2. Resolve target unit identifier
+  const targetUnitId = params.targetResource.unitId || params.targetResource.resourceId;
+  if (!targetUnitId || !targetUnitId.trim()) {
     return {
       allowed: false,
-      code: "GENDER_COMPLEX_DENIED",
-      reason: "Akses ditolak (fail-closed): Batasan gender complex PUTRI melarang akses terhadap sumber daya OSDA PUTRA.",
+      code: "RESOURCE_NOT_FOUND",
+      reason: "unitId atau resourceId target wajib disertakan untuk resolusi sumber daya.",
       capabilityCode,
     };
   }
 
-  // 3. Invariant: Domain must be KEASRAMAAN if specified
-  if (params.targetResource.domain && params.targetResource.domain !== OrgDomain.KEASRAMAAN) {
+  // 3. Server loads actual OrgUnit/resource from database or mock entity store
+  const prisma = params.prismaClient || defaultPrisma;
+  interface OsdaTargetUnitEntity {
+    id: string;
+    code?: string | null;
+    name?: string | null;
+    domain?: string | OrgDomain;
+    genderComplex?: string | GenderComplex | null;
+    isActive?: boolean;
+    parentId?: string | null;
+  }
+  let actualUnit: OsdaTargetUnitEntity | null = null;
+
+  if (params.mockOrgUnits) {
+    actualUnit = (params.mockOrgUnits.find(
+      (u) => u.id === targetUnitId || u.code === targetUnitId
+    ) as OsdaTargetUnitEntity) || null;
+  }
+
+  if (!actualUnit && prisma?.orgUnit) {
+    try {
+      actualUnit = await prisma.orgUnit.findFirst({
+        where: {
+          OR: [
+            { id: targetUnitId },
+            { code: targetUnitId },
+          ],
+        },
+      });
+    } catch {
+      // Ignored in minimal mock prisma environments
+    }
+  }
+
+  // Validation 1: actual unit exists
+  if (!actualUnit) {
+    return {
+      allowed: false,
+      code: "RESOURCE_NOT_FOUND",
+      reason: `Target unit '${targetUnitId}' tidak ditemukan di database.`,
+      capabilityCode,
+    };
+  }
+
+  // Validation 2: actual unit active
+  if (actualUnit.isActive === false) {
+    return {
+      allowed: false,
+      code: "UNIT_INACTIVE",
+      reason: `Target unit '${actualUnit.code || actualUnit.id}' berstatus tidak aktif.`,
+      capabilityCode,
+    };
+  }
+
+  // Validation 3: actual domain = KEASRAMAAN
+  if (actualUnit.domain !== OrgDomain.KEASRAMAAN && actualUnit.domain !== "KEASRAMAAN") {
     return {
       allowed: false,
       code: "DOMAIN_MISMATCH",
-      reason: `Monitoring OSDA hanya berlaku pada domain KEASRAMAAN, bukan domain '${params.targetResource.domain}'.`,
+      reason: `Target unit '${actualUnit.code || actualUnit.id}' domain '${actualUnit.domain}', bukan KEASRAMAAN.`,
       capabilityCode,
     };
   }
 
-  // 4. Invariant: User ID mandatory
+  // Validation 4: actual resource belongs to OSDA structure
+  const unitCode = (actualUnit.code || "").toUpperCase();
+  const unitName = (actualUnit.name || "").toUpperCase();
+  const unitParentId = (actualUnit.parentId || "").toUpperCase();
+  const belongsToOsda = Boolean(
+    (unitCode.startsWith("OU-OSDA") || unitCode === "OSDA" || unitCode.startsWith("OSDA-")) ||
+    (unitParentId.startsWith("OU-OSDA") || unitParentId === "OU-OSDA-ROOT" || unitParentId === "OU-OSDA-PUTRI") ||
+    (unitName.startsWith("OSDA") || unitName.includes("ORGANISASI SANTRI"))
+  );
+  if (!belongsToOsda) {
+    return {
+      allowed: false,
+      code: "NON_OSDA_UNIT",
+      reason: `Target unit '${actualUnit.code || actualUnit.id}' bukan merupakan bagian struktur OSDA.`,
+      capabilityCode,
+    };
+  }
+
+  // Validation 5: actual genderComplex = PUTRI
+  if (actualUnit.genderComplex !== GenderComplex.PUTRI && actualUnit.genderComplex !== "PUTRI") {
+    return {
+      allowed: false,
+      code: "GENDER_COMPLEX_DENIED",
+      reason: `Akses ditolak (fail-closed): Batasan gender complex PUTRI melarang akses terhadap unit OSDA ${actualUnit.genderComplex || "NON_PUTRI"}.`,
+      capabilityCode,
+    };
+  }
+
+  // Validation 6: Invariant: User ID mandatory
   if (!params.actorUserId || !params.actorUserId.trim()) {
     return {
       allowed: false,
@@ -236,8 +340,7 @@ export async function authorizeOsdaMonitoring(
     };
   }
 
-  // 5. True canonical authorization from database / dataProvider
-  const prisma = params.prismaClient || defaultPrisma;
+  // 4. True canonical authorization from database / dataProvider
   const dataProvider =
     params.dataProvider ||
     (params.mockAssignments ? undefined : (prisma ? createPrismaDataProvider(prisma) : undefined));
@@ -256,14 +359,14 @@ export async function authorizeOsdaMonitoring(
     identity: authIdentity,
     capability: capabilityCode,
     resourceContext: {
-      unitId: params.targetResource.unitId,
+      unitId: actualUnit.id,
     },
     resolvedContext: {
       resourceType: "OSDA_RESOURCE",
-      resourceId: params.targetResource.resourceId || "osda",
-      orgDomain: params.targetResource.domain || OrgDomain.KEASRAMAAN,
-      genderComplex: params.targetResource.genderComplex,
-      orgUnitIds: params.targetResource.unitId ? [params.targetResource.unitId] : [],
+      resourceId: actualUnit.id,
+      orgDomain: OrgDomain.KEASRAMAAN,
+      genderComplex: GenderComplex.PUTRI,
+      orgUnitIds: [actualUnit.id],
     },
     dataProvider,
     isMutation: false,
@@ -282,7 +385,7 @@ export async function authorizeOsdaMonitoring(
     };
   }
 
-  // 6. Enforce allowed positions: PENGAWAS_SANTRIWATI (or institutional MUDIR / KEPALA_KEASRAMAAN)
+  // 5. Enforce allowed positions: PENGAWAS_SANTRIWATI (or institutional MUDIR / KEPALA_KEASRAMAAN)
   const positionCode = authDecision.positionCode;
   if (!positionCode || !OSDA_MONITORING_POSITIONS.has(positionCode)) {
     return {
@@ -293,7 +396,7 @@ export async function authorizeOsdaMonitoring(
     };
   }
 
-  // 7. Enforce VERIFIED_PRODUCTION businessRuleState
+  // 6. Enforce VERIFIED_PRODUCTION businessRuleState
   if (
     authDecision.grantUsed &&
     authDecision.grantUsed.businessRuleState !== BusinessRuleState.VERIFIED_PRODUCTION

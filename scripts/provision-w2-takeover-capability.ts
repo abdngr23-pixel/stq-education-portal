@@ -129,9 +129,39 @@ export async function preflightTakeoverCapability(
 
   const validationErrors: string[] = [];
 
+  // Track G: Capability metadata safety checks
+  if (existingCap && existingCap.namespace !== "KEASRAMAAN") {
+    validationErrors.push(
+      `CONFIG_DRIFT: Existing Capability namespace is '${existingCap.namespace}', expected 'KEASRAMAAN'.`
+    );
+  }
+
+  // Track G: Config Drift checks on target grants
+  if (mudirGrant) {
+    if (
+      mudirGrant.scopeType !== ScopeType.GLOBAL ||
+      mudirGrant.businessRuleState !== BusinessRuleState.VERIFIED_PRODUCTION
+    ) {
+      validationErrors.push(
+        `CONFIG_DRIFT: Existing MUDIR grant has scope '${mudirGrant.scopeType}' and state '${mudirGrant.businessRuleState}', expected GLOBAL and VERIFIED_PRODUCTION.`
+      );
+    }
+  }
+
+  if (mkGrant) {
+    if (
+      mkGrant.scopeType !== ScopeType.DOMAIN ||
+      mkGrant.businessRuleState !== BusinessRuleState.VERIFIED_PRODUCTION
+    ) {
+      validationErrors.push(
+        `CONFIG_DRIFT: Existing KEPALA_KEASRAMAAN grant has scope '${mkGrant.scopeType}' and state '${mkGrant.businessRuleState}', expected DOMAIN and VERIFIED_PRODUCTION.`
+      );
+    }
+  }
+
   if (conflicting.length > 0) {
     validationErrors.push(
-      `CONFLICT_REQUIRES_OWNER_AUTHORIZATION: Found ${conflicting.length} unexpected grant(s) for positions: ${conflicting.map((c) => c.position.code).join(", ")}`
+      `CONFLICT_REQUIRES_OWNER_AUTHORIZATION: Found ${conflicting.length} unexpected grant(s) for positions: ${conflicting.map((c) => c.position?.code || "UNKNOWN").join(", ")}`
     );
   }
 
@@ -227,6 +257,24 @@ export async function executeTakeoverProvisioning(
         },
       });
       createdCapability++;
+    } else if (liveCap.namespace !== "KEASRAMAAN") {
+      throw new Error(`CONFIG_DRIFT: Capability namespace is '${liveCap.namespace}', expected 'KEASRAMAAN'.`);
+    }
+
+    // Track G: Transactional recheck for unexpected grants to other positions
+    const unexpectedTxGrants = await tx.positionCapability.findMany({
+      where: {
+        capabilityCode,
+        position: {
+          code: { notIn: ["MUDIR", "KEPALA_KEASRAMAAN"] },
+        },
+      },
+      include: { position: true },
+    });
+    if (unexpectedTxGrants.length > 0) {
+      throw new Error(
+        `CONFLICT_REQUIRES_OWNER_AUTHORIZATION: Unexpected grants found in transaction for positions: ${unexpectedTxGrants.map((u) => u.position?.code).join(", ")}`
+      );
     }
 
     // 2. Resolve Positions
@@ -252,6 +300,15 @@ export async function executeTakeoverProvisioning(
       mudirPcId = pc.id;
       createdPositionCapability++;
     } else {
+      // Track G: Strict match verification. Halts if drift detected.
+      if (
+        existingMudirPc.scopeType !== ScopeType.GLOBAL ||
+        existingMudirPc.businessRuleState !== BusinessRuleState.VERIFIED_PRODUCTION
+      ) {
+        throw new Error(
+          `CONFIG_DRIFT: Existing MUDIR PositionCapability has scope '${existingMudirPc.scopeType}' and state '${existingMudirPc.businessRuleState}', expected GLOBAL and VERIFIED_PRODUCTION.`
+        );
+      }
       mudirPcId = existingMudirPc.id;
     }
 
@@ -271,6 +328,15 @@ export async function executeTakeoverProvisioning(
       mkPcId = pc.id;
       createdPositionCapability++;
     } else {
+      // Track G: Strict match verification. Halts if drift detected.
+      if (
+        existingMkPc.scopeType !== ScopeType.DOMAIN ||
+        existingMkPc.businessRuleState !== BusinessRuleState.VERIFIED_PRODUCTION
+      ) {
+        throw new Error(
+          `CONFIG_DRIFT: Existing KEPALA_KEASRAMAAN PositionCapability has scope '${existingMkPc.scopeType}' and state '${existingMkPc.businessRuleState}', expected DOMAIN and VERIFIED_PRODUCTION.`
+        );
+      }
       mkPcId = existingMkPc.id;
     }
   });

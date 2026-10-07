@@ -101,34 +101,57 @@ export async function preflightOsdaMonitor(
     where: { code: "PENGAWAS_SANTRIWATI" },
   });
 
-  // 3. Lisa active assignments for PENGAWAS_SANTRIWATI
-  const lisaStaff = await prisma.staff.findMany({
-    where: { nama: { contains: "Lisa", mode: "insensitive" } },
+  // 3. Track H: Exact deterministic Lisa target discovery via canonical username 'musyirfah.putri'
+  const targetUsername = "musyirfah.putri";
+  const canonicalUsers = await prisma.user.findMany({
+    where: { username: targetUsername },
     include: {
-      user: {
-        include: {
-          assignments: {
-            where: { position: { code: "PENGAWAS_SANTRIWATI" }, status: "ACTIVE" },
-            include: { position: true, unit: true },
-          },
-        },
+      staff: true,
+      assignments: {
+        where: { position: { code: "PENGAWAS_SANTRIWATI" }, status: "ACTIVE" },
+        include: { position: true, unit: true },
       },
     },
   });
 
-  const lisaAssignments: OsdaMonitorPreflightReport["lisaAssignmentDetails"] = [];
-  for (const s of lisaStaff) {
-    if (s.user) {
-      for (const a of s.user.assignments) {
-        lisaAssignments.push({
-          id: a.id,
-          userId: s.user.id,
-          username: s.user.username,
-          staffName: s.nama,
-          unitCode: a.unit.code,
-          status: a.status,
-        });
-      }
+  const validationErrors: string[] = [];
+
+  // Track G: Capability metadata safety checks
+  if (existingCap && existingCap.namespace !== "KEASRAMAAN") {
+    validationErrors.push(
+      `CONFIG_DRIFT: Existing Capability namespace is '${existingCap.namespace}', expected 'KEASRAMAAN'.`
+    );
+  }
+
+  if (!pengawasPosition) {
+    validationErrors.push("Position PENGAWAS_SANTRIWATI does not exist in database.");
+  }
+
+  const targetUserCount = canonicalUsers.length;
+  let targetAssignmentCount = 0;
+  const canonicalAssignments: OsdaMonitorPreflightReport["lisaAssignmentDetails"] = [];
+
+  if (targetUserCount !== 1) {
+    validationErrors.push(
+      `LISA_PREFLIGHT_TARGET: Target username '${targetUsername}' count must be exactly 1, found ${targetUserCount}.`
+    );
+  } else {
+    const user = canonicalUsers[0];
+    targetAssignmentCount = user.assignments.length;
+    if (targetAssignmentCount !== 1) {
+      validationErrors.push(
+        `LISA_PREFLIGHT_TARGET: Target user '${targetUsername}' active PENGAWAS_SANTRIWATI assignment count must be exactly 1, found ${targetAssignmentCount}.`
+      );
+    }
+    for (const a of user.assignments) {
+      canonicalAssignments.push({
+        id: a.id,
+        userId: user.id,
+        username: user.username,
+        staffName: user.staff?.nama || user.username,
+        unitCode: a.unit?.code || "UNKNOWN",
+        status: a.status,
+      });
     }
   }
 
@@ -138,14 +161,25 @@ export async function preflightOsdaMonitor(
     include: { position: true },
   });
 
-  const validationErrors: string[] = [];
+  const pengawasGrants = positionCaps.filter((pc) => pc.position?.code === "PENGAWAS_SANTRIWATI");
+  const unexpectedGrants = positionCaps.filter((pc) => pc.position?.code !== "PENGAWAS_SANTRIWATI");
 
-  if (!pengawasPosition) {
-    validationErrors.push("Position PENGAWAS_SANTRIWATI does not exist in database.");
+  if (unexpectedGrants.length > 0) {
+    validationErrors.push(
+      `CONFLICT_REQUIRES_OWNER_AUTHORIZATION: Unexpected grant(s) found for positions: ${unexpectedGrants.map((u) => u.position?.code || "UNKNOWN").join(", ")}`
+    );
   }
 
-  if (lisaAssignments.length === 0) {
-    validationErrors.push("Lisa has zero active PENGAWAS_SANTRIWATI assignments.");
+  // Track G: Config Drift checks on target grants
+  for (const pg of pengawasGrants) {
+    if (
+      pg.scopeType !== ScopeType.DOMAIN ||
+      pg.businessRuleState !== BusinessRuleState.VERIFIED_PRODUCTION
+    ) {
+      validationErrors.push(
+        `CONFIG_DRIFT: Existing PENGAWAS_SANTRIWATI PositionCapability has scope '${pg.scopeType}' and state '${pg.businessRuleState}', expected DOMAIN and VERIFIED_PRODUCTION.`
+      );
+    }
   }
 
   return {
@@ -165,8 +199,8 @@ export async function preflightOsdaMonitor(
           isActive: pengawasPosition.isActive,
         }
       : undefined,
-    lisaAssignmentCount: lisaAssignments.length,
-    lisaAssignmentDetails: lisaAssignments,
+    lisaAssignmentCount: canonicalAssignments.length,
+    lisaAssignmentDetails: canonicalAssignments,
     positionCapabilityCount: positionCaps.length,
     positionCapabilityDetails: positionCaps.map((pc) => ({
       id: pc.id,
@@ -235,6 +269,24 @@ export async function executeOsdaMonitorProvisioning(
         },
       });
       createdCapability++;
+    } else if (liveCap.namespace !== "KEASRAMAAN") {
+      throw new Error(`CONFIG_DRIFT: Capability namespace is '${liveCap.namespace}', expected 'KEASRAMAAN'.`);
+    }
+
+    // Track G: Transactional recheck for unexpected grants
+    const unexpectedTxGrants = await tx.positionCapability.findMany({
+      where: {
+        capabilityCode,
+        position: {
+          code: { not: "PENGAWAS_SANTRIWATI" },
+        },
+      },
+      include: { position: true },
+    });
+    if (unexpectedTxGrants.length > 0) {
+      throw new Error(
+        `CONFLICT_REQUIRES_OWNER_AUTHORIZATION: Unexpected grants found in transaction for positions: ${unexpectedTxGrants.map((u) => u.position?.code).join(", ")}`
+      );
     }
 
     // 2. Resolve PENGAWAS_SANTRIWATI position
@@ -261,6 +313,15 @@ export async function executeOsdaMonitorProvisioning(
       pcId = pc.id;
       createdPositionCapability++;
     } else {
+      // Track G: Strict match verification. Halts if drift detected.
+      if (
+        existingPc.scopeType !== ScopeType.DOMAIN ||
+        existingPc.businessRuleState !== BusinessRuleState.VERIFIED_PRODUCTION
+      ) {
+        throw new Error(
+          `CONFIG_DRIFT: Existing PENGAWAS_SANTRIWATI PositionCapability has scope '${existingPc.scopeType}' and state '${existingPc.businessRuleState}', expected DOMAIN and VERIFIED_PRODUCTION.`
+        );
+      }
       pcId = existingPc.id;
     }
 
