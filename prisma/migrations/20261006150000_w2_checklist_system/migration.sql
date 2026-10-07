@@ -29,6 +29,7 @@ CREATE TABLE "checklist_runs" (
     "target_unit_id" TEXT,
     "status" "ChecklistRunStatus" NOT NULL DEFAULT 'DRAFT',
     "client_request_id" TEXT,
+    "request_payload_hash" TEXT,
     "version" INTEGER NOT NULL DEFAULT 1,
     "scheduled_date" TIMESTAMP(3),
     "performed_at" TIMESTAMP(3),
@@ -78,6 +79,9 @@ CREATE INDEX "checklist_runs_target_unit_id_status_idx" ON "checklist_runs"("tar
 
 -- CreateIndex
 CREATE INDEX "checklist_runs_client_request_id_idx" ON "checklist_runs"("client_request_id");
+
+-- CreateIndex
+CREATE INDEX "checklist_runs_request_payload_hash_idx" ON "checklist_runs"("request_payload_hash");
 
 -- CreateIndex
 CREATE INDEX "checklist_items_run_id_idx" ON "checklist_items"("run_id");

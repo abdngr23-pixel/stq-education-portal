@@ -5,7 +5,53 @@ import {
   OrgDomain,
   OrgUnitType,
 } from "@prisma/client";
+import * as crypto from "crypto";
 import defaultPrisma from "@/lib/prisma";
+
+/**
+ * Canonical JSON stringifier with recursive deterministic key sorting.
+ */
+export function canonicalizeJson(obj: unknown): string {
+  if (obj === null || obj === undefined) {
+    return "null";
+  }
+  if (typeof obj !== "object") {
+    return JSON.stringify(obj);
+  }
+  if (Array.isArray(obj)) {
+    return "[" + obj.map(canonicalizeJson).join(",") + "]";
+  }
+  const keys = Object.keys(obj as Record<string, unknown>).sort();
+  const entries = keys.map(
+    (k) => `${JSON.stringify(k)}:${canonicalizeJson((obj as Record<string, unknown>)[k])}`
+  );
+  return "{" + entries.join(",") + "}";
+}
+
+/**
+ * Derives canonical deterministic SHA-256 fingerprint for ChecklistRun creation payload.
+ * Normalizes templateId, targetUnitId, scheduledDate, and metadata.
+ */
+export function computeChecklistPayloadHash(payload: {
+  templateId: string;
+  targetUnitId?: string | null;
+  scheduledDate?: Date | string | null;
+  metadata?: Record<string, unknown> | null;
+}): string {
+  let normDate: string | null = null;
+  if (payload.scheduledDate) {
+    const d = payload.scheduledDate instanceof Date ? payload.scheduledDate : new Date(payload.scheduledDate);
+    normDate = isNaN(d.getTime()) ? String(payload.scheduledDate) : d.toISOString();
+  }
+  const canonicalObj = {
+    templateId: (payload.templateId || "").trim(),
+    targetUnitId: payload.targetUnitId ? payload.targetUnitId.trim() : null,
+    scheduledDate: normDate,
+    metadata: payload.metadata || null,
+  };
+  const canonicalString = canonicalizeJson(canonicalObj);
+  return crypto.createHash("sha256").update(canonicalString).digest("hex");
+}
 
 export interface ChecklistTemplateItemSchema {
   key: string;
@@ -163,6 +209,13 @@ export async function createChecklistRun(
     return { success: false, code: "INVALID_ARGUMENT", reason: "templateId is required." };
   }
 
+  const incomingPayloadHash = computeChecklistPayloadHash({
+    templateId: params.templateId,
+    targetUnitId: params.targetUnitId,
+    scheduledDate: params.scheduledDate,
+    metadata: params.metadata,
+  });
+
   try {
     // 1. Offline Idempotency Check: if clientRequestId supplied and already exists, replay or detect conflict
     if (params.clientRequestId && params.clientRequestId.trim()) {
@@ -171,15 +224,20 @@ export async function createChecklistRun(
         include: { items: true, template: true },
       });
       if (existingRun) {
-        const isPayloadMatching =
-          existingRun.templateId === params.templateId &&
-          (params.targetUnitId === undefined || existingRun.targetUnitId === (params.targetUnitId || null));
+        const existingHash =
+          existingRun.requestPayloadHash ||
+          computeChecklistPayloadHash({
+            templateId: existingRun.templateId,
+            targetUnitId: existingRun.targetUnitId,
+            scheduledDate: existingRun.scheduledDate,
+            metadata: existingRun.metadata as Record<string, unknown> | null,
+          });
 
-        if (!isPayloadMatching) {
+        if (existingHash !== incomingPayloadHash) {
           return {
             success: false,
             code: "CONFLICT_CLIENT_REQUEST_ID",
-            reason: `Duplicate clientRequestId '${params.clientRequestId}' with conflicting payload.`,
+            reason: `Duplicate clientRequestId '${params.clientRequestId}' with conflicting payload fingerprint.`,
           };
         }
 
@@ -227,6 +285,7 @@ export async function createChecklistRun(
           targetUnitId: params.targetUnitId || null,
           status: ChecklistRunStatus.DRAFT,
           clientRequestId: params.clientRequestId?.trim() || null,
+          requestPayloadHash: incomingPayloadHash,
           version: 1,
           scheduledDate: params.scheduledDate || null,
           metadata: params.metadata ? JSON.parse(JSON.stringify(params.metadata)) : undefined,
@@ -264,15 +323,20 @@ export async function createChecklistRun(
       });
 
       if (existingRun) {
-        const isPayloadMatching =
-          existingRun.templateId === params.templateId &&
-          (params.targetUnitId === undefined || existingRun.targetUnitId === (params.targetUnitId || null));
+        const existingHash =
+          existingRun.requestPayloadHash ||
+          computeChecklistPayloadHash({
+            templateId: existingRun.templateId,
+            targetUnitId: existingRun.targetUnitId,
+            scheduledDate: existingRun.scheduledDate,
+            metadata: existingRun.metadata as Record<string, unknown> | null,
+          });
 
-        if (!isPayloadMatching) {
+        if (existingHash !== incomingPayloadHash) {
           return {
             success: false,
             code: "CONFLICT_CLIENT_REQUEST_ID",
-            reason: `Duplicate clientRequestId '${params.clientRequestId}' with conflicting payload.`,
+            reason: `Duplicate clientRequestId '${params.clientRequestId}' with conflicting payload fingerprint.`,
           };
         }
 
@@ -296,6 +360,7 @@ export async function createChecklistRun(
  * 3. Record Checklist Performance (PERFORMED state)
  * Implements optimistic concurrency conflict detection
  * STRICTLY decoupled from WF-07: NEVER creates automatic discipline violations.
+ * ATOMIC GUARANTEE: Claim version CAS BEFORE mutating items. Loser performs ZERO writes.
  */
 export async function recordChecklistPerformance(
   params: RecordChecklistPerformanceParams
@@ -338,24 +403,10 @@ export async function recordChecklistPerformance(
         };
       }
 
-      // Update item statuses
-      for (const itemInput of params.items) {
-        const itemExists = run.items.find((i) => i.itemKey === itemInput.itemKey);
-        if (itemExists) {
-          await tx.checklistItem.update({
-            where: { id: itemExists.id },
-            data: {
-              status: itemInput.status,
-              notes: itemInput.notes || undefined,
-              photoUrl: itemInput.photoUrl || undefined,
-            },
-          });
-        }
-      }
-
       const now = new Date();
       const expectedVer = params.expectedVersion !== undefined ? params.expectedVersion : run.version;
 
+      // 1. ATOMIC CAS CLAIM FIRST: UPDATE ... WHERE id=? AND version=expectedVersion
       const updateResult = await tx.checklistRun.updateMany({
         where: {
           id: run.id,
@@ -370,6 +421,7 @@ export async function recordChecklistPerformance(
         },
       });
 
+      // 2. REQUIRE AFFECTED COUNT = 1; IF COUNT = 0, RETURN CONFLICT_VERSION_MISMATCH WITH ZERO ITEM WRITES!
       if (updateResult.count === 0) {
         const latest = await tx.checklistRun.findUnique({
           where: { id: run.id },
@@ -381,6 +433,21 @@ export async function recordChecklistPerformance(
           reason: `Version conflict: Expected version ${expectedVer}, but current version is ${latest?.version}.`,
           data: latest,
         };
+      }
+
+      // 3. ONLY AFTER SUCCESSFUL CLAIM MUTATE ITEMS
+      for (const itemInput of params.items) {
+        const itemExists = run.items.find((i) => i.itemKey === itemInput.itemKey);
+        if (itemExists) {
+          await tx.checklistItem.update({
+            where: { id: itemExists.id },
+            data: {
+              status: itemInput.status,
+              notes: itemInput.notes || undefined,
+              photoUrl: itemInput.photoUrl || undefined,
+            },
+          });
+        }
       }
 
       const updatedRun = await tx.checklistRun.findUnique({
@@ -405,6 +472,7 @@ export async function recordChecklistPerformance(
 /**
  * 4. Official Review Checklist Run (COMPLETED or NEEDS_CORRECTION)
  * STRICTLY decoupled from WF-07: zero automatic discipline violations.
+ * ATOMIC GUARANTEE: Claim version CAS BEFORE mutating items. Loser performs ZERO writes.
  */
 export async function reviewChecklistRun(
   params: ReviewChecklistRunParams
@@ -447,22 +515,6 @@ export async function reviewChecklistRun(
         };
       }
 
-      // Update checked item statuses if supplied
-      if (params.itemsReview && params.itemsReview.length > 0) {
-        for (const reviewItem of params.itemsReview) {
-          const itemExists = run.items.find((i) => i.itemKey === reviewItem.itemKey);
-          if (itemExists) {
-            await tx.checklistItem.update({
-              where: { id: itemExists.id },
-              data: {
-                checkedStatus: reviewItem.checkedStatus,
-                checkedNotes: reviewItem.checkedNotes || undefined,
-              },
-            });
-          }
-        }
-      }
-
       const now = new Date();
       const targetStatus =
         params.decision === "COMPLETED"
@@ -470,6 +522,7 @@ export async function reviewChecklistRun(
           : ChecklistRunStatus.NEEDS_CORRECTION;
       const expectedVer = params.expectedVersion !== undefined ? params.expectedVersion : run.version;
 
+      // 1. ATOMIC CAS CLAIM FIRST: UPDATE ... WHERE id=? AND version=expectedVersion
       const updateResult = await tx.checklistRun.updateMany({
         where: {
           id: run.id,
@@ -487,6 +540,7 @@ export async function reviewChecklistRun(
         },
       });
 
+      // 2. REQUIRE AFFECTED COUNT = 1; IF COUNT = 0, RETURN CONFLICT_VERSION_MISMATCH WITH ZERO ITEM WRITES!
       if (updateResult.count === 0) {
         const latest = await tx.checklistRun.findUnique({
           where: { id: run.id },
@@ -498,6 +552,22 @@ export async function reviewChecklistRun(
           reason: `Version conflict: Expected version ${expectedVer}, but current version is ${latest?.version}.`,
           data: latest,
         };
+      }
+
+      // 3. ONLY AFTER SUCCESSFUL CLAIM MUTATE ITEMS
+      if (params.itemsReview && params.itemsReview.length > 0) {
+        for (const reviewItem of params.itemsReview) {
+          const itemExists = run.items.find((i) => i.itemKey === reviewItem.itemKey);
+          if (itemExists) {
+            await tx.checklistItem.update({
+              where: { id: itemExists.id },
+              data: {
+                checkedStatus: reviewItem.checkedStatus,
+                checkedNotes: reviewItem.checkedNotes || undefined,
+              },
+            });
+          }
+        }
       }
 
       const updatedRun = await tx.checklistRun.findUnique({

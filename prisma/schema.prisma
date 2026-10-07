@@ -1646,25 +1646,27 @@ model ChecklistRun {
   targetUnitId    String?            @map("target_unit_id")
   targetUnit      OrgUnit?           @relation(fields: [targetUnitId], references: [id], onDelete: Restrict)
   status          ChecklistRunStatus @default(DRAFT)
-  clientRequestId String?            @unique @map("client_request_id")
-  version         Int                @default(1)
-  scheduledDate   DateTime?          @map("scheduled_date")
-  performedAt     DateTime?          @map("performed_at")
-  performedById   String?            @map("performed_by_id")
-  performedBy     User?              @relation("ChecklistRunsPerformed", fields: [performedById], references: [id], onDelete: Restrict)
-  checkedAt       DateTime?          @map("checked_at")
-  checkedById     String?            @map("checked_by_id")
-  checkedBy       User?              @relation("ChecklistRunsChecked", fields: [checkedById], references: [id], onDelete: Restrict)
-  notes           String?
-  correctionNotes String?            @map("correction_notes")
-  items           ChecklistItem[]
-  metadata        Json?              @map("metadata")
-  createdAt       DateTime           @default(now()) @map("created_at")
-  updatedAt       DateTime           @updatedAt @map("updated_at")
+  clientRequestId    String?            @unique @map("client_request_id")
+  requestPayloadHash String?            @map("request_payload_hash")
+  version            Int                @default(1)
+  scheduledDate      DateTime?          @map("scheduled_date")
+  performedAt        DateTime?          @map("performed_at")
+  performedById      String?            @map("performed_by_id")
+  performedBy        User?              @relation("ChecklistRunsPerformed", fields: [performedById], references: [id], onDelete: Restrict)
+  checkedAt          DateTime?          @map("checked_at")
+  checkedById        String?            @map("checked_by_id")
+  checkedBy          User?              @relation("ChecklistRunsChecked", fields: [checkedById], references: [id], onDelete: Restrict)
+  notes              String?
+  correctionNotes    String?            @map("correction_notes")
+  items              ChecklistItem[]
+  metadata           Json?              @map("metadata")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
 
   @@index([templateId, status])
   @@index([targetUnitId, status])
   @@index([clientRequestId])
+  @@index([requestPayloadHash])
   @@map("checklist_runs")
 }
 

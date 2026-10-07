@@ -2,12 +2,15 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import * as path from "path";
+import * as fs from "fs";
 import {
   createChecklistTemplate,
   createChecklistRun,
   recordChecklistPerformance,
   reviewChecklistRun,
   getChecklistRunById,
+  canonicalizeJson,
+  computeChecklistPayloadHash,
 } from "../lib/server/checklist-service";
 import {
   createChecklistTemplateAction,
@@ -19,6 +22,7 @@ import {
 import {
   parseChecklistSchemaGuards,
   verifyChecklistMigrationSqlAdditive,
+  runChecklistSchemaPreflight,
 } from "../scripts/predeploy-w2-checklist-schema";
 import { ChecklistRunStatus, ChecklistItemStatus } from "@prisma/client";
 
@@ -29,8 +33,11 @@ function createMockPrisma() {
   const items: any[] = [];
   const orgUnits: any[] = [
     { id: "OU-ASRAMA-PUTRA", code: "ASR-PA", name: "Asrama Putra", isActive: true },
+    { id: "OU-ASRAMA-PUTRI", code: "ASR-PI", name: "Asrama Putri", isActive: true },
   ];
   const violationRecords: any[] = []; // Invariant check: MUST REMAIN EMPTY
+  let itemUpdateCount = 0;
+  let runUpdateManySuccessCount = 0;
 
   const mockTx: any = {
     checklistTemplate: {
@@ -92,6 +99,7 @@ function createMockPrisma() {
           targetUnitId: data.targetUnitId,
           status: data.status,
           clientRequestId: data.clientRequestId,
+          requestPayloadHash: data.requestPayloadHash || null,
           version: data.version,
           scheduledDate: data.scheduledDate,
           metadata: data.metadata,
@@ -141,6 +149,7 @@ function createMockPrisma() {
             const newVersion = data.version?.increment ? r.version + data.version.increment : (data.version || r.version);
             runs[idx] = { ...r, ...data, version: newVersion, updatedAt: new Date() };
             count++;
+            runUpdateManySuccessCount++;
           }
         }
         return { count };
@@ -162,6 +171,7 @@ function createMockPrisma() {
     },
     checklistItem: {
       update: async ({ where, data }: any) => {
+        itemUpdateCount++;
         const idx = items.findIndex((i) => i.id === where.id);
         if (idx === -1) throw new Error("Item not found");
         items[idx] = { ...items[idx], ...data, updatedAt: new Date() };
@@ -174,8 +184,31 @@ function createMockPrisma() {
         return data;
       },
     },
+    user: {
+      count: async ({ where }: any) => {
+        if (where?.username === "mudir") return 1;
+        return 0;
+      },
+    },
     $transaction: async (cb: any) => {
       return cb(mockTx);
+    },
+    $queryRawUnsafe: async (sql: string) => {
+      if (sql.includes("information_schema.tables")) {
+        return [
+          { table_name: "checklist_templates" },
+          { table_name: "checklist_runs" },
+          { table_name: "checklist_items" },
+        ];
+      }
+      if (sql.includes("_prisma_migrations")) {
+        // Return simulated list of applied migrations up to the previous one
+        return [
+          { migration_name: "20260901000000_init" },
+          { migration_name: "20260920000000_auth_rbac" },
+        ];
+      }
+      return [];
     },
   };
 
@@ -184,6 +217,10 @@ function createMockPrisma() {
     getViolationCount: () => violationRecords.length,
     getRunCount: () => runs.length,
     getTemplateCount: () => templates.length,
+    getItemUpdateCount: () => itemUpdateCount,
+    getRunUpdateManySuccessCount: () => runUpdateManySuccessCount,
+    getRuns: () => runs,
+    getItems: () => items,
   };
 }
 
@@ -460,6 +497,85 @@ describe("W2 Checklist System (ORR-098 & ORR-101)", () => {
 
     assert.equal(successes.length, 1);
     assert.equal(conflicts.length, 1);
+  });
+
+  it("NON-NEGOTIABLE Track A: genuinely concurrent calls with same expectedVersion guarantee zero loser item writes and zero loser run writes", async () => {
+    const mockPrisma = createMockPrisma();
+
+    const tplRes = await createChecklistTemplate({
+      code: "TPL-CONCURRENT-ZERO-WRITE",
+      name: "Template Concurrent Zero Write",
+      schema: [
+        { key: "c1", label: "Check 1" },
+        { key: "c2", label: "Check 2" },
+      ],
+      prismaClient: mockPrisma as any,
+    });
+
+    const runRes = await createChecklistRun({
+      templateId: (tplRes.data as any).id,
+      prismaClient: mockPrisma as any,
+    });
+
+    const runId = (runRes.data as any).id;
+    const initialItemUpdateCount = mockPrisma.getItemUpdateCount();
+    const initialRunUpdateManySuccessCount = mockPrisma.getRunUpdateManySuccessCount();
+
+    // Two genuinely concurrent calls with same expectedVersion = 1
+    const [p1, p2] = await Promise.all([
+      recordChecklistPerformance({
+        runId,
+        performedById: "winner-candidate-1",
+        expectedVersion: 1,
+        items: [
+          { itemKey: "c1", status: ChecklistItemStatus.PASS, notes: "Candidate 1 item 1" },
+          { itemKey: "c2", status: ChecklistItemStatus.PASS, notes: "Candidate 1 item 2" },
+        ],
+        prismaClient: mockPrisma as any,
+      }),
+      recordChecklistPerformance({
+        runId,
+        performedById: "winner-candidate-2",
+        expectedVersion: 1,
+        items: [
+          { itemKey: "c1", status: ChecklistItemStatus.FAIL, notes: "Candidate 2 item 1" },
+          { itemKey: "c2", status: ChecklistItemStatus.FAIL, notes: "Candidate 2 item 2" },
+        ],
+        prismaClient: mockPrisma as any,
+      }),
+    ]);
+
+    const winner = p1.success ? p1 : p2;
+    const loser = !p1.success ? p1 : p2;
+
+    assert.equal(winner.success, true);
+    assert.equal(loser.success, false);
+    assert.equal(loser.code, "CONFLICT_VERSION_MISMATCH");
+
+    // Invariant: Final run version was bumped by winner only (from 1 to 2)
+    const finalRun = (mockPrisma.getRuns() as any[]).find((r) => r.id === runId);
+    assert.equal(finalRun.version, 2);
+
+    // Invariant: Exactly ONE run update succeeded across both calls (winner only)
+    assert.equal(mockPrisma.getRunUpdateManySuccessCount() - initialRunUpdateManySuccessCount, 1);
+
+    // Invariant: Exactly the winner's items (2 items) were written. Loser wrote 0 items!
+    const totalItemUpdates = mockPrisma.getItemUpdateCount() - initialItemUpdateCount;
+    assert.equal(totalItemUpdates, 2); // exactly winner's 2 items
+
+    // Invariant: The item records in DB match winner's payload only, zero partial writes from loser
+    const currentItems = (mockPrisma.getItems() as any[]).filter((i) => i.runId === runId);
+    if ((winner.data as any).performedById === "winner-candidate-1") {
+      assert.equal(currentItems.find((i) => i.itemKey === "c1").status, ChecklistItemStatus.PASS);
+      assert.equal(currentItems.find((i) => i.itemKey === "c1").notes, "Candidate 1 item 1");
+      assert.equal(currentItems.find((i) => i.itemKey === "c2").status, ChecklistItemStatus.PASS);
+      assert.equal(currentItems.find((i) => i.itemKey === "c2").notes, "Candidate 1 item 2");
+    } else {
+      assert.equal(currentItems.find((i) => i.itemKey === "c1").status, ChecklistItemStatus.FAIL);
+      assert.equal(currentItems.find((i) => i.itemKey === "c1").notes, "Candidate 2 item 1");
+      assert.equal(currentItems.find((i) => i.itemKey === "c2").status, ChecklistItemStatus.FAIL);
+      assert.equal(currentItems.find((i) => i.itemKey === "c2").notes, "Candidate 2 item 2");
+    }
   });
 
   it("full lifecycle: PERFORMED -> NEEDS_CORRECTION -> PERFORMED -> COMPLETED", async () => {
@@ -761,5 +877,285 @@ describe("W2 Checklist System (ORR-098 & ORR-101)", () => {
     const result = await verifyChecklistMigrationSqlAdditive(migrationSqlPath);
     assert.equal(result.isAdditiveOnly, true);
     assert.equal(result.destructiveKeywordsFound.length, 0);
+  });
+
+  // Track B: Full Idempotency Fingerprint & Canonical Key Ordering
+  it("Track B: canonicalizeJson produces deterministic string regardless of metadata object key order", () => {
+    const objA = { b: 2, a: 1, c: { z: "foo", y: "bar" } };
+    const objB = { a: 1, c: { y: "bar", z: "foo" }, b: 2 };
+
+    assert.equal(canonicalizeJson(objA), canonicalizeJson(objB));
+    assert.equal(canonicalizeJson(objA), '{"a":1,"b":2,"c":{"y":"bar","z":"foo"}}');
+  });
+
+  it("Track B: computeChecklistPayloadHash produces identical hash for same payload with different metadata key ordering", () => {
+    const hash1 = computeChecklistPayloadHash({
+      templateId: "tpl-123",
+      targetUnitId: "OU-ASRAMA-PUTRA",
+      scheduledDate: new Date("2026-10-10T08:00:00Z"),
+      metadata: { priority: "HIGH", inspector: "Ust. Ahmad" },
+    });
+    const hash2 = computeChecklistPayloadHash({
+      templateId: "tpl-123",
+      targetUnitId: "OU-ASRAMA-PUTRA",
+      scheduledDate: new Date("2026-10-10T08:00:00Z"),
+      metadata: { inspector: "Ust. Ahmad", priority: "HIGH" },
+    });
+
+    assert.equal(hash1, hash2);
+  });
+
+  it("Track B: same exact payload with duplicate clientRequestId returns IDEMPOTENT_REPLAY", async () => {
+    const mockPrisma = createMockPrisma();
+    const tpl = await createChecklistTemplate({
+      code: "TPL-FP-SAME",
+      name: "Template FP Same",
+      schema: [{ key: "f1", label: "F1" }],
+      prismaClient: mockPrisma as any,
+    });
+    const templateId = (tpl.data as any).id;
+    const scheduledDate = new Date("2026-10-10T00:00:00Z");
+
+    const res1 = await createChecklistRun({
+      templateId,
+      targetUnitId: "OU-ASRAMA-PUTRA",
+      scheduledDate,
+      clientRequestId: "req-fp-same-001",
+      metadata: { note: "inspection 1" },
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(res1.success, true);
+    assert.equal(res1.isIdempotentReplay, undefined);
+
+    const res2 = await createChecklistRun({
+      templateId,
+      targetUnitId: "OU-ASRAMA-PUTRA",
+      scheduledDate,
+      clientRequestId: "req-fp-same-001",
+      metadata: { note: "inspection 1" },
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(res2.success, true);
+    assert.equal(res2.isIdempotentReplay, true);
+    assert.equal((res2.data as any).id, (res1.data as any).id);
+    assert.equal(mockPrisma.getRunCount(), 1);
+  });
+
+  it("Track B: different templateId with duplicate clientRequestId returns CONFLICT_CLIENT_REQUEST_ID", async () => {
+    const mockPrisma = createMockPrisma();
+    const tpl1 = await createChecklistTemplate({
+      code: "TPL-FP-DIFF-TPL-1",
+      name: "Template 1",
+      schema: [{ key: "f1", label: "F1" }],
+      prismaClient: mockPrisma as any,
+    });
+    const tpl2 = await createChecklistTemplate({
+      code: "TPL-FP-DIFF-TPL-2",
+      name: "Template 2",
+      schema: [{ key: "f2", label: "F2" }],
+      prismaClient: mockPrisma as any,
+    });
+
+    const res1 = await createChecklistRun({
+      templateId: (tpl1.data as any).id,
+      clientRequestId: "req-diff-tpl-001",
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(res1.success, true);
+
+    const res2 = await createChecklistRun({
+      templateId: (tpl2.data as any).id,
+      clientRequestId: "req-diff-tpl-001",
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(res2.success, false);
+    assert.equal(res2.code, "CONFLICT_CLIENT_REQUEST_ID");
+    assert.match(res2.reason || "", /conflicting payload fingerprint/i);
+  });
+
+  it("Track B: different targetUnitId with duplicate clientRequestId returns CONFLICT_CLIENT_REQUEST_ID", async () => {
+    const mockPrisma = createMockPrisma();
+    const tpl = await createChecklistTemplate({
+      code: "TPL-FP-DIFF-UNIT",
+      name: "Template Unit Test",
+      schema: [{ key: "f1", label: "F1" }],
+      prismaClient: mockPrisma as any,
+    });
+    const templateId = (tpl.data as any).id;
+
+    const res1 = await createChecklistRun({
+      templateId,
+      targetUnitId: "OU-ASRAMA-PUTRA",
+      clientRequestId: "req-diff-unit-001",
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(res1.success, true);
+
+    const res2 = await createChecklistRun({
+      templateId,
+      targetUnitId: "OU-ASRAMA-PUTRI",
+      clientRequestId: "req-diff-unit-001",
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(res2.success, false);
+    assert.equal(res2.code, "CONFLICT_CLIENT_REQUEST_ID");
+    assert.match(res2.reason || "", /conflicting payload fingerprint/i);
+  });
+
+  it("Track B: different scheduledDate with duplicate clientRequestId returns CONFLICT_CLIENT_REQUEST_ID", async () => {
+    const mockPrisma = createMockPrisma();
+    const tpl = await createChecklistTemplate({
+      code: "TPL-FP-DIFF-DATE",
+      name: "Template Date Test",
+      schema: [{ key: "f1", label: "F1" }],
+      prismaClient: mockPrisma as any,
+    });
+    const templateId = (tpl.data as any).id;
+
+    const res1 = await createChecklistRun({
+      templateId,
+      scheduledDate: new Date("2026-10-10T00:00:00Z"),
+      clientRequestId: "req-diff-date-001",
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(res1.success, true);
+
+    const res2 = await createChecklistRun({
+      templateId,
+      scheduledDate: new Date("2026-10-11T00:00:00Z"),
+      clientRequestId: "req-diff-date-001",
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(res2.success, false);
+    assert.equal(res2.code, "CONFLICT_CLIENT_REQUEST_ID");
+    assert.match(res2.reason || "", /conflicting payload fingerprint/i);
+  });
+
+  it("Track B: different metadata with duplicate clientRequestId returns CONFLICT_CLIENT_REQUEST_ID", async () => {
+    const mockPrisma = createMockPrisma();
+    const tpl = await createChecklistTemplate({
+      code: "TPL-FP-DIFF-META",
+      name: "Template Meta Test",
+      schema: [{ key: "f1", label: "F1" }],
+      prismaClient: mockPrisma as any,
+    });
+    const templateId = (tpl.data as any).id;
+
+    const res1 = await createChecklistRun({
+      templateId,
+      metadata: { shift: "MORNING" },
+      clientRequestId: "req-diff-meta-001",
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(res1.success, true);
+
+    const res2 = await createChecklistRun({
+      templateId,
+      metadata: { shift: "EVENING" },
+      clientRequestId: "req-diff-meta-001",
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(res2.success, false);
+    assert.equal(res2.code, "CONFLICT_CLIENT_REQUEST_ID");
+    assert.match(res2.reason || "", /conflicting payload fingerprint/i);
+  });
+
+  it("Track B: same metadata with different object key ordering returns IDEMPOTENT_REPLAY", async () => {
+    const mockPrisma = createMockPrisma();
+    const tpl = await createChecklistTemplate({
+      code: "TPL-FP-KEY-ORDER",
+      name: "Template Key Order Test",
+      schema: [{ key: "f1", label: "F1" }],
+      prismaClient: mockPrisma as any,
+    });
+    const templateId = (tpl.data as any).id;
+
+    const res1 = await createChecklistRun({
+      templateId,
+      metadata: { alpha: 1, beta: 2, nested: { x: 10, y: 20 } },
+      clientRequestId: "req-key-order-001",
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(res1.success, true);
+
+    const res2 = await createChecklistRun({
+      templateId,
+      metadata: { beta: 2, nested: { y: 20, x: 10 }, alpha: 1 },
+      clientRequestId: "req-key-order-001",
+      prismaClient: mockPrisma as any,
+    });
+    assert.equal(res2.success, true);
+    assert.equal(res2.isIdempotentReplay, true);
+    assert.equal((res2.data as any).id, (res1.data as any).id);
+    assert.equal(mockPrisma.getRunCount(), 1);
+  });
+
+  it("Track B: parallel conflicting payload results in exactly one durable run and one conflict", async () => {
+    const mockPrisma = createMockPrisma();
+    const tpl1 = await createChecklistTemplate({
+      code: "TPL-PARALLEL-DIFF-1",
+      name: "Parallel Diff 1",
+      schema: [{ key: "f1", label: "F1" }],
+      prismaClient: mockPrisma as any,
+    });
+    const tpl2 = await createChecklistTemplate({
+      code: "TPL-PARALLEL-DIFF-2",
+      name: "Parallel Diff 2",
+      schema: [{ key: "f2", label: "F2" }],
+      prismaClient: mockPrisma as any,
+    });
+
+    const [res1, res2] = await Promise.all([
+      createChecklistRun({
+        templateId: (tpl1.data as any).id,
+        clientRequestId: "parallel-diff-req-001",
+        prismaClient: mockPrisma as any,
+      }),
+      createChecklistRun({
+        templateId: (tpl2.data as any).id,
+        clientRequestId: "parallel-diff-req-001",
+        prismaClient: mockPrisma as any,
+      }),
+    ]);
+
+    const successes = [res1, res2].filter((r) => r.success);
+    const conflicts = [res1, res2].filter((r) => !r.success && r.code === "CONFLICT_CLIENT_REQUEST_ID");
+
+    assert.equal(successes.length, 1);
+    assert.equal(conflicts.length, 1);
+    assert.equal(mockPrisma.getRunCount(), 1);
+  });
+
+  // Track C: Predeploy Exact Migration Set Verification
+  it("Track C: predeploy script verifies exact pending migration set difference and enforces {20261006150000_w2_checklist_system}", async () => {
+    // When all prior migrations on disk are in _prisma_migrations except 20261006150000_w2_checklist_system:
+    const migrationsDir = path.join(process.cwd(), "prisma", "migrations");
+    const diskDirs = fs
+      .readdirSync(migrationsDir)
+      .filter((f: string) => fs.statSync(path.join(migrationsDir, f)).isDirectory() && !f.startsWith("."));
+
+    const appliedPrior = diskDirs
+      .filter((d: string) => d !== "20261006150000_w2_checklist_system")
+      .map((d: string) => ({ migration_name: d }));
+
+    const mockPrismaForMigration = {
+      user: { count: async () => 1 },
+      orgUnit: { count: async () => 1 },
+      $queryRawUnsafe: async (sql: string) => {
+        if (sql.includes("information_schema.tables")) {
+          return [];
+        }
+        if (sql.includes("_prisma_migrations")) {
+          return appliedPrior;
+        }
+        return [];
+      },
+    };
+
+    const report = await runChecklistSchemaPreflight(mockPrismaForMigration as any);
+    assert.equal(report.expectedPendingSetMatches, true);
+    assert.equal(report.otherPendingMigrationsCount, 0);
+    assert.deepEqual(report.actualPendingMigrationsList, ["20261006150000_w2_checklist_system"]);
+    assert.equal(report.canExecuteSafely, true);
   });
 });

@@ -38,6 +38,8 @@ export interface ChecklistSchemaPreflightReport {
   expectedMigrationApplied: boolean;
   totalMigrationsOnDisk: number;
   totalMigrationsInDatabase: number;
+  actualPendingMigrationsList: string[];
+  expectedPendingSetMatches: boolean;
   otherPendingMigrationsCount: number;
   migrationIsAdditiveOnly: boolean;
   destructiveKeywordsFound: string[];
@@ -173,11 +175,13 @@ export async function runChecklistSchemaPreflight(
     blockers.push(`Failed to query information_schema.tables: ${(err as Error).message}`);
   }
 
-  // 3. Check migration history
+  // 3. Check migration history with EXACT set difference
   let totalMigrationsOnDisk = 0;
   let totalMigrationsInDatabase = 0;
   let expectedMigrationApplied = false;
   let otherPendingMigrationsCount = 0;
+  let actualPendingList: string[] = [];
+  let expectedPendingSetMatches = false;
 
   try {
     const migrationsDir = path.join(process.cwd(), "prisma", "migrations");
@@ -186,28 +190,46 @@ export async function runChecklistSchemaPreflight(
         .readdirSync(migrationsDir)
         .filter((f) => fs.statSync(path.join(migrationsDir, f)).isDirectory() && !f.startsWith("."));
       totalMigrationsOnDisk = diskDirs.length;
-    }
 
-    const appliedMigrations: Array<{ migration_name: string }> = await prisma.$queryRawUnsafe(`
-      SELECT migration_name
-      FROM _prisma_migrations
-      WHERE finished_at IS NOT NULL
-    `);
-    totalMigrationsInDatabase = appliedMigrations.length;
-    const appliedNames = new Set(appliedMigrations.map((m) => m.migration_name));
+      const appliedMigrations: Array<{ migration_name: string }> = await prisma.$queryRawUnsafe(`
+        SELECT migration_name
+        FROM _prisma_migrations
+        WHERE finished_at IS NOT NULL
+      `);
+      totalMigrationsInDatabase = appliedMigrations.length;
+      const appliedNames = new Set(appliedMigrations.map((m) => m.migration_name));
 
-    expectedMigrationApplied = appliedNames.has(expectedMigrationName);
+      expectedMigrationApplied = appliedNames.has(expectedMigrationName);
 
-    // Pending migrations check:
-    // If expected migration is not applied, other pending = total on disk - applied - 1 (the expected one)
-    if (expectedMigrationApplied) {
-      otherPendingMigrationsCount = Math.max(0, totalMigrationsOnDisk - totalMigrationsInDatabase);
-    } else {
-      otherPendingMigrationsCount = Math.max(0, totalMigrationsOnDisk - totalMigrationsInDatabase - 1);
-    }
+      // Exact set difference: disk migrations minus finished production migrations
+      actualPendingList = diskDirs.filter((name) => !appliedNames.has(name));
+      const actualPendingSet = new Set(actualPendingList);
 
-    if (otherPendingMigrationsCount > 0) {
-      blockers.push(`Unexpected pending migrations on disk (${otherPendingMigrationsCount}). Expected exactly 0 other pending migrations.`);
+      // Expected pending set:
+      // If expected migration is not yet applied, pending set must be EXACTLY {expectedMigrationName}
+      // If expected migration is already applied, pending set must be EXACTLY empty {}
+      const expectedPendingSet = expectedMigrationApplied
+        ? new Set<string>()
+        : new Set<string>([expectedMigrationName]);
+
+      const unexpectedPending = actualPendingList.filter((name) => !expectedPendingSet.has(name));
+      const missingExpected = [...expectedPendingSet].filter((name) => !actualPendingSet.has(name));
+
+      otherPendingMigrationsCount = unexpectedPending.length;
+      expectedPendingSetMatches = unexpectedPending.length === 0 && missingExpected.length === 0;
+
+      if (unexpectedPending.length > 0) {
+        blockers.push(
+          `Unexpected pending migrations on disk: [${unexpectedPending.join(", ")}]. Expected pending set: ${
+            expectedMigrationApplied ? "{}" : `{${expectedMigrationName}}`
+          }.`
+        );
+      }
+      if (missingExpected.length > 0) {
+        blockers.push(
+          `Missing expected pending migration on disk: [${missingExpected.join(", ")}].`
+        );
+      }
     }
   } catch (err) {
     blockers.push(`Failed to verify _prisma_migrations: ${(err as Error).message}`);
@@ -237,6 +259,8 @@ export async function runChecklistSchemaPreflight(
     expectedMigrationApplied,
     totalMigrationsOnDisk,
     totalMigrationsInDatabase,
+    actualPendingMigrationsList: actualPendingList,
+    expectedPendingSetMatches,
     otherPendingMigrationsCount,
     migrationIsAdditiveOnly: isAdditiveOnly,
     destructiveKeywordsFound,
@@ -283,9 +307,9 @@ export async function predeployChecklistSchema(
   }
 
   // Pre-migration invariants verification
-  if (preflight.otherPendingMigrationsCount > 0) {
+  if (!preflight.expectedPendingSetMatches || preflight.otherPendingMigrationsCount > 0) {
     throw new Error(
-      `ABORT: Expected exactly 0 other pending migrations, found ${preflight.otherPendingMigrationsCount}.`
+      `ABORT: Expected pending migrations set does not match. Found unexpected pending count: ${preflight.otherPendingMigrationsCount}.`
     );
   }
   if (!preflight.migrationIsAdditiveOnly) {
